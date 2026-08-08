@@ -40,6 +40,10 @@ from pipeline.env import load_env  # noqa: E402
 
 load_env()
 
+from pipeline.logging import setup_logging  # noqa: E402
+
+setup_logging()
+
 DEFAULT_OUTPUT = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "langfuse_logs"
 
 

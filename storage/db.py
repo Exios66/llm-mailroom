@@ -12,25 +12,63 @@ logger = structlog.get_logger(__name__)
 # MAILROOM_BASE_DIR (default ./data/mailroom.db).
 # Set DATABASE_URL to a Postgres URL (e.g.
 # postgresql+asyncpg://user:pass@host:5432/mailroom) to use Postgres instead.
-BASE_DIR = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")).resolve()
-DEFAULT_DB_URL = f"sqlite+aiosqlite:///{BASE_DIR / 'mailroom.db'}"
+# The URL is resolved lazily (per call) so MAILROOM_BASE_DIR changes are
+# honored — important for tests and multi-worker setups where the env differs
+# from the importing process's initial state.
+logger = structlog.get_logger(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or DEFAULT_DB_URL
 
-engine_kwargs = {"echo": False}
-if DATABASE_URL.startswith("sqlite"):
-    # NullPool: one fresh connection per session. aiosqlite connections are
-    # tied to the event loop that created them, so pooling across loops (the
-    # graph runs sync nodes that spawn asyncio.run()/threadsafe coroutines)
-    # would break. A fresh connection per session avoids cross-loop reuse.
-    engine_kwargs["poolclass"] = NullPool
-    try:
-        Path(DATABASE_URL.split("///", 1)[1]).parent.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        logger.debug("sqlite_dir_ensure_failed", url=DATABASE_URL)
+def _resolve_url() -> str:
+    if os.environ.get("DATABASE_URL"):
+        return os.environ["DATABASE_URL"]
+    base = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")).resolve()
+    return f"sqlite+aiosqlite:///{base / 'mailroom.db'}"
 
-engine = create_async_engine(DATABASE_URL, **engine_kwargs)
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+def _engine_kwargs(url: str) -> dict:
+    kwargs = {"echo": False}
+    if url.startswith("sqlite"):
+        # NullPool: one fresh connection per session. aiosqlite connections are
+        # tied to the event loop that created them, so pooling across loops (the
+        # graph runs sync nodes that spawn asyncio.run()/threadsafe coroutines)
+        # would break. A fresh connection per session avoids cross-loop reuse.
+        kwargs["poolclass"] = NullPool
+        try:
+            Path(url.split("///", 1)[1]).parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            logger.debug("sqlite_dir_ensure_failed", url=url)
+    return kwargs
+
+
+_engine = None
+_engine_url: str | None = None
+_sessionmaker = None
+
+
+def get_engine():
+    """Lazily-built async engine, keyed by the current resolved URL."""
+    global _engine, _engine_url, _sessionmaker
+    url = _resolve_url()
+    if _engine is None or _engine_url != url:
+        _engine = create_async_engine(url, **_engine_kwargs(url))
+        _engine_url = url
+        _sessionmaker = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+    return _engine
+
+
+def async_session():
+    """Return a new AsyncSession bound to the current URL's engine.
+
+    Replaces the module-level sessionmaker so the engine follows
+    MAILROOM_BASE_DIR/DATABASE_URL changes made after import. Call sites stay
+    identical (`async with async_session() as session`).
+    """
+    return _get_sessionmaker()()
+
+
+def _get_sessionmaker():
+    get_engine()
+    return _sessionmaker
 
 
 class Base(DeclarativeBase):
@@ -45,33 +83,37 @@ def _ensure_models_imported():
     import storage.audit_log  # noqa: F401
 
 
-_schema_checked = False
+_schema_checked_url: str | None = None
 
 
 def ensure_schema() -> bool:
     """Create all tables if they don't exist yet. Thread-safe, idempotent.
 
     Call before any read/write so a fresh install works with zero setup.
+    The idempotency cache is keyed by the resolved DB URL so a change of
+    MAILROOM_BASE_DIR (e.g. per-test temp dirs) creates the schema in the
+    right database.
     """
-    global _schema_checked
-    if _schema_checked:
+    global _schema_checked_url
+    url = _resolve_url()
+    if _schema_checked_url == url:
         return True
     _ensure_models_imported()
     try:
-        if DATABASE_URL.startswith("sqlite"):
+        if url.startswith("sqlite"):
             from sqlalchemy import create_engine
 
             # Sync sqlite driver (stdlib) — no event loop involvement, so this
             # is safe to call from graph nodes, watcher threads, or the API.
-            sync_url = DATABASE_URL.replace("+aiosqlite", "")
+            sync_url = url.replace("+aiosqlite", "")
             sync_engine = create_engine(sync_url)
             Base.metadata.create_all(sync_engine)  # checkfirst=True by default
             sync_engine.dispose()
         else:
             # Postgres: needs an async loop. Only safe outside a running loop.
             asyncio.run(init_db())
-        _schema_checked = True
-        logger.info("schema_ready", url=DATABASE_URL)
+        _schema_checked_url = url
+        logger.info("schema_ready", url=url)
         return True
     except Exception:
         logger.exception("schema_creation_failed")
@@ -80,9 +122,9 @@ def ensure_schema() -> bool:
 
 async def init_db():
     _ensure_models_imported()
-    async with engine.begin() as conn:
+    async with get_engine().begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("database_initialized", url=DATABASE_URL)
+    logger.info("database_initialized", url=_resolve_url())
 
 
 async def get_session() -> AsyncSession:
@@ -91,5 +133,5 @@ async def get_session() -> AsyncSession:
 
 
 async def close_db():
-    await engine.dispose()
+    await get_engine().dispose()
     logger.info("database_disposed")

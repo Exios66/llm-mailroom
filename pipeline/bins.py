@@ -90,6 +90,20 @@ def move_to_classified(file_path: Path, doc_type: str) -> Path:
     return dest
 
 
+def requeue_from_review(file_path: Path, worker_id: str) -> Path:
+    """Move a review-bin file back into a worker's processing dir (resume flow).
+
+    Used by the review-resume path: a human-approved document leaves the review
+    bin and is re-extracted from the file, then archived. Mirrors claim_file
+    (processing/<worker_id>/<name>) so all file movement stays in bins.py.
+    """
+    processing = processing_dir(worker_id)
+    processing.mkdir(parents=True, exist_ok=True)
+    dest = processing / file_path.name
+    shutil.move(str(file_path), str(dest))
+    return dest
+
+
 def move_to_review(file_path: Path, manifest) -> Path:
     dest_dir = review_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)

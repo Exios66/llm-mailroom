@@ -71,6 +71,49 @@ class TestRoutingLogic:
         }
         assert after_extraction(state) == "human_review"
 
+    def test_after_extraction_schema_invalid_first_attempt_retry(self):
+        # High stated confidence must NOT archive a schema-invalid extraction.
+        state = {
+            "doc_type": "contract",
+            "extracted_data": {"parties": "not-a-list"},
+            "extraction_confidence": 0.95,
+            "extraction_attempts": 1,
+            "conflict_detected": False,
+        }
+        assert after_extraction(state) == "retry_extract"
+
+    def test_after_extraction_schema_invalid_max_attempts_review(self):
+        state = {
+            "doc_type": "contract",
+            "extracted_data": {"parties": "not-a-list"},
+            "extraction_confidence": 0.95,
+            "extraction_attempts": 2,
+            "conflict_detected": False,
+        }
+        assert after_extraction(state) == "human_review"
+
+    def test_after_extraction_parse_error_first_attempt_retry(self):
+        state = {
+            "doc_type": "contract",
+            "extracted_data": {"_parse_error": True, "_raw": "not json"},
+            "extraction_confidence": 0.30,
+            "extraction_attempts": 1,
+            "conflict_detected": False,
+        }
+        assert after_extraction(state) == "retry_extract"
+
+    def test_after_extraction_schema_valid_high_confidence_ignores_extra_keys(self):
+        # Specialists embed instructions in the prompt; pydantic ignores extra
+        # keys like `_unsupported` / `reasoning` — must still route to report.
+        state = {
+            "doc_type": "contract",
+            "extracted_data": {"parties": ["Acme"], "_unsupported": True, "reasoning": "x"},
+            "extraction_confidence": 0.90,
+            "extraction_attempts": 1,
+            "conflict_detected": False,
+        }
+        assert after_extraction(state) == "compile_report"
+
     def test_after_boss_approved_routes_to_report(self):
         state = {"review_decision": "approved"}
         assert after_boss(state) == "compile_report"

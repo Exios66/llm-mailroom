@@ -31,6 +31,7 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "parse_error", "data_type": "BOOLEAN"},
     {"name": "schema_valid", "data_type": "BOOLEAN"},
     {"name": "stage_completed", "data_type": "BOOLEAN"},
+    {"name": "guardrail_triggered", "data_type": "BOOLEAN"},
     {"name": "classification_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "confidence_calibration_error", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
@@ -224,14 +225,17 @@ def emit_pipeline_scores(state: dict) -> dict:
     stage = state.get("stage")
     extracted = state.get("extracted_data") or {}
     checks = validate_extraction(state.get("doc_type"), extracted)
+    guardrail_fired = bool(state.get("extraction_guardrail")) or bool(state.get("classification_guardrail"))
     scores = {
         "parse_error": int(checks["parse_error"]),
         "schema_valid": int(checks["schema_valid"]),
         "stage_completed": int(stage == "archived"),
+        "guardrail_triggered": int(guardrail_fired),
     }
     score_trace("parse_error", scores["parse_error"], data_type="BOOLEAN")
     score_trace("schema_valid", scores["schema_valid"], data_type="BOOLEAN")
     score_trace("stage_completed", scores["stage_completed"], data_type="BOOLEAN")
+    score_trace("guardrail_triggered", scores["guardrail_triggered"], data_type="BOOLEAN")
 
     cls_conf = state.get("classification_confidence")
     if isinstance(cls_conf, (int, float)) and not isinstance(cls_conf, bool):

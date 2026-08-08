@@ -166,7 +166,7 @@ mailroom/
 ├── api/             # FastAPI: upload, review, status, audit
 ├── observability/   # Langfuse tracing + task-spec scores (backend-agnostic)
 ├── config/          # taxonomy.yaml — doc classes, thresholds, model mappings
-├── scripts/         # prepare_samples, run_pilot, run_quality_judges, sync_prompts, sync_langfuse_logs
+├── scripts/         # prepare_samples, run_pilot, run_quality_judges, sync_prompts, sync_dataset, sync_evaluators, sync_langfuse_logs
 ├── docker/          # docker-compose: Langfuse, Ollama (Postgres optional)
 ├── tests/           # pytest: unit, routing, e2e, judge, fixtures
 └── docs/            # Detailed documentation
@@ -262,15 +262,48 @@ Mailroom evaluates its own work against the **task specification** (the taxonomy
 | `completeness` | Did the specialist capture every field the document actually states? | `completeness`, `completeness_label` |
 | `correctness` | Are extracted field values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
 
+The same rubrics are **configured as live LLM-as-a-Judge evaluators in the Langfuse project**, wired to the pipeline's LLM generations via observation rules — every new trace is scored automatically, no script needed:
+
 ```bash
-# Pilot the pipeline, then run the judges over the results:
+python scripts/sync_evaluators.py        # create/update evaluators + rules (idempotent)
+python scripts/sync_evaluators.py --dry-run
+python scripts/sync_evaluators.py --disable   # pause rules
+```
+
+`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so the judges can run. Evaluators: `mailroom-classification-judge`, `mailroom-extraction-completeness-judge`, `mailroom-extraction-correctness-judge`; 11 observation rules target the sorter and specialist generations (`mailroom-*-rule-*`).
+
+### Evaluation dataset
+
+The pilot samples are mirrored into the **`mailroom-pilot` Langfuse dataset** (PDF text + ground truth + manifest metadata) for experiments and judge calibration:
+
+```bash
+python scripts/sync_dataset.py            # 12 items, deterministic ids (upsert-safe)
+python scripts/sync_dataset.py --include contract
+```
+
+### Offline judges over a pilot run
+
+```bash
 python scripts/run_pilot.py --real --scores        # needs OPENROUTER_API_KEY
 python scripts/run_quality_judges.py --real        # LLM-as-a-judge on every sample
 python scripts/run_quality_judges.py --mock        # deterministic fake judge
 python scripts/run_quality_judges.py --judges classification,completeness
 ```
 
-Judges attach scores to each sample's trace (configs auto-created), print a per-class calibration summary, and append an `evaluation` section to the pilot report. For production traces with no ground truth, run the classification judge on live logs.
+Judges attach scores to each sample's trace (configs auto-created), print a per-class calibration summary, and append an `evaluation` section to the pilot report. For production traces with no ground truth, the live Langfuse evaluators above cover the same dimensions automatically.
+
+## Guardrails
+
+Agents are LLMs — they can return junk even when the provider call succeeds. `pipeline/guards.py` is the deterministic safety net between raw agent output and routing decisions:
+
+- **Classification guard** — doc type must be in the taxonomy and confidence in `[0,1]`; unknown types still route to human review, out-of-range confidence is discarded.
+- **Extraction guard** — every extraction is JSON-parsed and validated against its Pydantic schema; a parse failure or schema violation clamps confidence below the routing threshold, forcing retry → human review instead of trusting bad output.
+
+Triggered guards are logged (`extraction_guardrail_triggered`), recorded on the state (`extraction_guardrail`), and scored (`guardrail_triggered`). On top of this, all LLM calls carry `max_tokens` caps and transient-failure retries.
+
+## Logging
+
+Structured logging via `pipeline/logging.py` (`setup_logging()`, called by every entrypoint): level from `LOG_LEVEL` (default `INFO`), renderer from `LOG_FORMAT` (`pretty` console or `json` for machine parsing). Noisy third-party loggers (httpx, openai, langfuse, opentelemetry) are silenced to WARNING.
 
 ## Local Model Cutover
 
