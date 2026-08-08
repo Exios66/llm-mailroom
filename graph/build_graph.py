@@ -948,10 +948,11 @@ def _emit_pipeline_result(root, result: dict, state: dict) -> None:
     the curated pipeline result. The input depends on the run mode:
 
     - Grounded runs (ground_truth carries `expected_fields`, i.e. pilot runs):
-      the judge gets the small extracted-vs-expected payload ONLY — the full
-      document text is NOT sent, which cuts the per-doc judge input from up to
-      100k chars (~25k tokens) to ~1-3k chars. The expected values ARE the
-      ground truth, so the document text adds no verification power.
+      the judge input is a labeled, pretty-printed expected-fields block. The
+      output contains the labeled pipeline result and extracted fields. The
+      full document text is NOT sent, which cuts the per-doc judge input from
+      up to 100k chars (~25k tokens) to ~1-3k chars. The expected values ARE
+      the ground truth, so the document text adds no verification power.
     - Live runs (no ground truth): the judge gets the (truncated) document
       text so it can verify grounding by rubric alone.
 
@@ -959,27 +960,41 @@ def _emit_pipeline_result(root, result: dict, state: dict) -> None:
     """
     if root is None:
         return
+    import json
+
     ground_truth = state.get("ground_truth")
     grounded = bool(ground_truth and ground_truth.get("expected_fields"))
+    extracted_data = result.get("extracted_data") or {}
+    # `_report` is a derived catalog summary and may contain a full recursive
+    # copy of the extraction. It is not part of any specialist schema and must
+    # never be sent to the evaluator.
+    judge_extracted_data = {
+        key: value for key, value in extracted_data.items() if not key.startswith("_")
+    }
     output = {
         "stage": result.get("stage"),
         "doc_type": result.get("doc_type"),
         "classification_confidence": result.get("classification_confidence"),
         "extraction_confidence": result.get("extraction_confidence"),
-        "extracted_data": result.get("extracted_data"),
+        "extracted_data": judge_extracted_data,
         "escalation_reason": result.get("escalation_reason"),
         "review_decision": result.get("review_decision"),
         "run_aborted": bool(result.get("run_aborted")),
         "error_message": result.get("error_message"),
     }
     if grounded:
-        # Skip the document text entirely: the judge compares extracted_data
-        # against the literal expected field values.
-        gen_input = {
-            "expected_fields": ground_truth["expected_fields"],
-            "extracted_data": result.get("extracted_data"),
-        }
-        metadata = {"pipeline": "mailroom", "grounded": True}
+        # Skip the document text entirely. The expected fields are the only
+        # judge input; extracted fields are in the output, avoiding duplication.
+        gen_input = (
+            "GROUNDED EVALUATION INPUT\n"
+            "The following fields are the literal expected values for this document.\n"
+            "Compare them only with output.extracted_data for this same document.\n\n"
+            "EXPECTED_FIELDS\n"
+            "```json\n"
+            f"{json.dumps(ground_truth['expected_fields'], ensure_ascii=False, indent=2)}\n"
+            "```"
+        )
+        metadata = {"pipeline": "mailroom", "grounded": True, "input_format": "expected-fields-only"}
     else:
         doc_text = result.get("doc_text") or state.get("doc_text") or ""
         gen_input = doc_text[:PIPELINE_RESULT_TEXT_LIMIT]
@@ -991,8 +1006,11 @@ def _emit_pipeline_result(root, result: dict, state: dict) -> None:
         # When the caller knows the expected outcome (pilot runs pass the
         # manifest ground truth), expose it here so the live evaluator can
         # decide a binary CORRECT/MISS verdict against the ACTUAL truth instead
-        # of judging by rubric alone.
-        output["ground_truth"] = ground_truth
+        # of judging by rubric alone. Expected fields already live in the
+        # labeled input block, so do not duplicate them in the output.
+        output["ground_truth"] = {
+            key: value for key, value in ground_truth.items() if key != "expected_fields"
+        }
     with observation(
         "pipeline-result",
         as_type="generation",

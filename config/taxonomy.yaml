@@ -156,7 +156,10 @@ agents:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.2
-    max_tokens: 2048
+    max_tokens: 3072
+    # Reports are synthesis, not analysis; reserve the completion budget for
+    # visible output instead of hidden reasoning tokens.
+    reasoning_effort: none
 
   boss:
     provider: openrouter

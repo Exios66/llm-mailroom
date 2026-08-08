@@ -18,7 +18,12 @@ Rules:
 3. If extraction data is sparse or low-confidence, note it in the summary.
 4. Format the summary as clean structured text, not raw JSON.
 5. Do not add facts not present in the extracted data.
-6. Produce a confidence score reflecting the overall quality of the underlying extraction."""
+6. Produce a confidence score reflecting the overall quality of the underlying extraction.
+7. Treat null, empty lists, redaction markers, and placeholders such as "[•]" as absent
+   information. Do not turn them into dates, names, statuses, or claims that the extraction
+   did not establish; say "not stated" when the report needs to mention the gap.
+8. Return only the matter-record summary. Do not claim that a fact was verified, is pending,
+   or requires follow-up unless that statement appears in the extracted data."""
 
 
 def compile_matter_record(
@@ -51,15 +56,20 @@ Please compile this into a clean matter-record summary."""
     from pipeline.config import get_agent_config
 
     try:
-        max_tokens = get_agent_config("reporter").get("max_tokens", 2048)
+        agent_config = get_agent_config("reporter")
+        max_tokens = agent_config.get("max_tokens", 2048)
+        reasoning_effort = agent_config.get("reasoning_effort")
     except Exception:
         max_tokens = 2048
+        reasoning_effort = None
     kwargs = {
         "model": report_model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if reasoning_effort:
+        kwargs["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
     kwargs.update(langfuse_call_attrs("reporter"))
     if prompt_obj is not None:
         kwargs["langfuse_prompt"] = prompt_obj

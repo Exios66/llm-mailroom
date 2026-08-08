@@ -137,38 +137,36 @@ def _ingest(sample: dict, verdict: dict) -> None:
         logger.error("judge_trace_id_failed", filename=sample["filename"])
         return
     ensure_score_configs()
-    notes = []
     for dimension, scores in _DIMENSION_SCORES.items():
         if dimension not in verdict:
             continue
+        reasoning = verdict[dimension].get("reasoning")
         for score_name, key, data_type in scores:
             value = verdict[dimension].get(key)
             if value is None:
                 continue
-            create_trace_score(trace_id, score_name, value, data_type=data_type)
-        reasoning = verdict[dimension].get("reasoning")
-        if reasoning:
-            notes.append(f"[{dimension}] {reasoning}")
-    if notes:
-        create_trace_score(trace_id, "judge_notes", " | ".join(notes)[:500], data_type="TEXT")
+            # Keep each dimension's evidence attached to its own score. Do not
+            # combine notes into one shared score: independent judge runs must
+            # remain independently queryable and must never overwrite or blur
+            # another dimension's result.
+            create_trace_score(
+                trace_id,
+                score_name,
+                value,
+                data_type=data_type,
+                comment=reasoning,
+            )
     logger.info("judge_scores_ingested", filename=sample["filename"], trace_id=trace_id)
 
 
 def judge_one(sample: dict, mock_mode: bool, judges: list[str]) -> dict:
     extracted = sample.get("extracted_data") or {}
-    if not extracted:
-        return {"id": sample["id"], "status": "skipped", "reason": "no extracted_data"}
 
     doc_text = _raw_text_for(sample)
     if not doc_text.strip():
         return {"id": sample["id"], "status": "skipped", "reason": "no extractable source text"}
 
     from agents.judge import CompletenessJudge
-
-    judge = CompletenessJudge()
-    if mock_mode:
-        judge.client = _fake_judge_client()
-        judge.model = "mock-model"
 
     result = {
         "id": sample["id"],
@@ -177,12 +175,38 @@ def judge_one(sample: dict, mock_mode: bool, judges: list[str]) -> dict:
     }
     started = time.perf_counter()
     doc_type = sample.get("doc_type", "")
-    if "classification" in judges and doc_type:
-        result["classification"] = judge.judge_classification(doc_type, doc_text)
-    if "completeness" in judges:
-        result["completeness"] = judge.judge_completeness(doc_type, extracted, doc_text)
-    if "correctness" in judges:
-        result["correctness"] = judge.judge_extraction_correctness(doc_type, extracted, doc_text)
+
+    # Each dimension gets a fresh judge instance and its own failure boundary.
+    # A missing extraction is still useful input: classification can run, while
+    # completeness/correctness can honestly score the empty extraction.
+    errors: dict[str, str] = {}
+
+    def run_dimension(dimension: str) -> None:
+        if dimension not in judges:
+            return
+        logger.info("judge_dimension_started", sample_id=sample["id"], dimension=dimension)
+        try:
+            judge = CompletenessJudge()
+            if mock_mode:
+                judge.client = _fake_judge_client()
+                judge.model = "mock-model"
+            if dimension == "classification":
+                verdict = judge.judge_classification(doc_type, doc_text)
+            elif dimension == "completeness":
+                verdict = judge.judge_completeness(doc_type, extracted, doc_text)
+            else:
+                verdict = judge.judge_extraction_correctness(doc_type, extracted, doc_text)
+            result[dimension] = verdict
+            logger.info("judge_dimension_completed", sample_id=sample["id"], dimension=dimension)
+        except Exception as exc:
+            errors[dimension] = f"{type(exc).__name__}: {exc}"
+            logger.exception("judge_dimension_failed", sample_id=sample["id"], dimension=dimension)
+
+    run_dimension("classification")
+    run_dimension("completeness")
+    run_dimension("correctness")
+    if errors:
+        result["errors"] = errors
     result["judge_time_s"] = round(time.perf_counter() - started, 3)
     return result
 
@@ -275,13 +299,18 @@ def main() -> int:
     }
     print_summary(stats)
 
-    report.setdefault("evaluation", {})["run"] = {
+    evaluation_run = {
         "run_id": datetime.now(timezone.utc).isoformat(),
         "mode": "mock" if mock_mode else "real",
         "judges": judges,
         "summary": stats,
         "results": results,
     }
+    evaluation = report.setdefault("evaluation", {})
+    # Preserve every independent scoring iteration. `run` remains the latest
+    # result for existing readers; `runs` is the append-only history.
+    evaluation.setdefault("runs", []).append(evaluation_run)
+    evaluation["run"] = evaluation_run
     args.report.write_text(json.dumps(report, indent=2))
     print(f"\nEvaluation report written to {args.report}")
 

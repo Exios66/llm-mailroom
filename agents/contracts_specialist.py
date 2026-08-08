@@ -16,6 +16,11 @@ Extraction rules:
 4. For dates: use the format as written, or standardize to YYYY-MM-DD if unambiguous.
 5. For clauses: extract the actual operative language, not a paraphrase.
 6. Produce a confidence score reflecting how certain you are about the overall extraction quality.
+7. Always return one complete JSON object with every requested field; never stop mid-field,
+   emit commentary, or return an empty response. For long documents, keep clause values
+   concise enough to finish the schema while preserving the operative meaning.
+8. If the input ends with a truncation marker or a fact is unavailable, use null or an empty
+   list rather than guessing or leaving the JSON incomplete.
 
 Be precise to a fault. If you're unsure about a value, lower your confidence score accordingly."""
 
