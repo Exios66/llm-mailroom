@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Mailroom API",
     description="Multi-Agent Legal Document Processing Pipeline",
-    version="0.1.0",
+    version="0.2.2",
     lifespan=lifespan,
 )
 
