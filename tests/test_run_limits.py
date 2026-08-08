@@ -39,6 +39,38 @@ class TestLimitsUnit:
         record_usage(MagicMock(prompt_tokens=100, completion_tokens=500), model="qwen/qwen3.7-flash")
         check_token_budget()  # must not raise
 
+    def test_token_budget_ignores_large_prompt_tokens(self):
+        from pipeline.limits import check_token_budget, record_usage, reset_run_usage
+        reset_run_usage()
+        # A 112k-char contract costs ~30k input tokens per specialist call, but
+        # only a few thousand output tokens. The cap guards *generation* (stuck
+        # or overly verbose models), so large prompts must never trip it.
+        record_usage(
+            MagicMock(prompt_tokens=100_000, completion_tokens=2_000),
+            model="qwen/qwen3.7-flash",
+        )
+        check_token_budget()  # must not raise
+
+    def test_token_budget_raises_on_cumulative_output(self):
+        from pipeline.limits import (
+            RunBudgetExceeded,
+            check_token_budget,
+            get_max_total_output_tokens,
+            record_usage,
+            reset_run_usage,
+        )
+        reset_run_usage()
+        record_usage(
+            MagicMock(prompt_tokens=100, completion_tokens=12_000),
+            model="qwen/qwen3.7-flash",
+        )
+        record_usage(
+            MagicMock(prompt_tokens=100, completion_tokens=get_max_total_output_tokens() - 8_000),
+            model="qwen/qwen3.7-flash",
+        )
+        with pytest.raises(RunBudgetExceeded):
+            check_token_budget()
+
     def test_record_usage_ignores_mock_usage(self):
         from pipeline.limits import record_usage, reset_run_usage, usage_summary
         reset_run_usage()

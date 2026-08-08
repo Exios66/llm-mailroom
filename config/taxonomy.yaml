@@ -86,7 +86,10 @@ file_extensions:
 
 # === Agent → model mapping ===
 # Each agent list entry: provider, model, temperature, optional max_tokens
-# (caps output/reasoning-token generation — see agents/base.py).
+# (caps output/reasoning-token generation — see agents/base.py) and optional
+# max_input_chars (input-text budget per call; defaults to 25000). Large
+# documents need a bigger window or late-page fields (termination clauses,
+# obligations) get truncated away — see PILOT_AUDIT_REPORT.md fix #5.
 # To cut over locally: change provider to "ollama", model to e.g. "qwen3:7b"
 # Setting DEFAULT_PROVIDER env var overrides the provider globally.
 agents:
@@ -95,36 +98,42 @@ agents:
     model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 2048
+    max_input_chars: 12000
 
   contracts_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
-    max_tokens: 8192
+    max_tokens: 4096
+    max_input_chars: 100000
 
   corporate_records_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 4096
+    max_input_chars: 40000
 
   due_diligence_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 4096
+    max_input_chars: 40000
 
   correspondence_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 4096
+    max_input_chars: 40000
 
   compliance_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 4096
+    max_input_chars: 60000
 
   reporter:
     provider: openrouter

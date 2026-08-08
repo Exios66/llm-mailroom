@@ -25,4 +25,12 @@ class DocumentState(TypedDict, total=False):
     error_message: str | None
     run_deadline: float
     run_aborted: bool
+    # Transient provider-error retry (connection errors etc.): the node sets
+    # `transient_error` and `transient_retries` so routing can retry the SAME
+    # node (self-loop) instead of consuming the confidence-based retry budget.
+    transient_error: bool
+    transient_retries: int
+    # Attempt number of this pipeline run for a document (observability: trace
+    # tags/metadata + seed suffix beyond the first run).
+    run_attempt: int
     messages: Annotated[list, add_messages]

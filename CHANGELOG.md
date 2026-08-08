@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Live LLM-as-a-Judge evaluators in Langfuse now run on `deepseek/deepseek-v4-flash` (via OpenRouter), matching the offline judge; evaluator versions were reset to a single clean v1 each (stale version history from repeated `--force` syncs removed).
 - Langfuse project evaluator inventory cleaned: only the 3 project-scope mailroom evaluators (`mailroom-classification-judge`, `mailroom-extraction-completeness-judge`, `mailroom-extraction-correctness-judge`) and their 11 observation rules remain in use; the 22 Langfuse-managed template evaluators are platform-locked (`scope=managed`, API returns 403 on delete) and ignored.
+- `contracts_specialist` `max_tokens` raised 4096 → 8192 in `config/taxonomy.yaml` (large contracts were truncating extraction JSON mid-run).
+
+### Fixed
+
+- Run token budget enforced the wrong metric: `check_token_budget()` compared the `run_limits.max_total_output_tokens` cap against cumulative prompt+completion tokens, so large documents (e.g. a 52-page contract with ~28k input tokens per specialist call) tripped the 20k cap at the `compile-report` node boundary and aborted as failed. The cap now counts **completion tokens only**, matching its documented purpose (stuck/overly-verbose model guard); regression tests added in `tests/test_run_limits.py`.
+- SQLite schema drift: `ensure_schema()` only created missing tables, so pre-existing databases lacked newer columns (e.g. `documents.scores`), causing `catalog_write_error`/`scores_persist_error` on every run. `storage/db.py` now diffs every model column against the live schema and adds missing ones via `ALTER TABLE ADD COLUMN` (idempotent, cached per DB URL).
 
 ## [0.2.2] - 2026-08-08
 

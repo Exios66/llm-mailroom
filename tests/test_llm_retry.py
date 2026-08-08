@@ -44,20 +44,40 @@ class TestRetryChatCompletion:
         assert result is ok
         assert client.chat.completions.create.call_count == 3
 
-    def test_does_not_retry_4xx(self, monkeypatch):
+    def test_does_not_retry_generic_4xx(self, monkeypatch):
         monkeypatch.setattr(time, "sleep", lambda s: None)
         from llm.retry import retry_chat_completion
 
         client = MagicMock()
         err = BadRequestError(
-            "'messages' must contain the word 'json'",
+            "some other bad request",
             response=_http_response(400),
-            body={"message": "'messages' must contain the word 'json'"},
+            body={"message": "some other bad request"},
         )
         client.chat.completions.create.side_effect = err
         with pytest.raises(BadRequestError):
             retry_chat_completion(client, model="m", messages=[], max_attempts=3)
         assert client.chat.completions.create.call_count == 1
+
+    def test_retries_qwen_json_mode_400(self, monkeypatch):
+        # Alibaba/Qwen intermittently rejects the json_object request with a
+        # 400 "must contain the word 'json'" even though the exact same
+        # messages succeed on other OpenRouter routes; this specific 400 is a
+        # documented retryable exception (see llm/retry.py).
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        from llm.retry import retry_chat_completion
+
+        client = MagicMock()
+        ok = object()
+        err = BadRequestError(
+            "'messages' must contain the word 'json'",
+            response=_http_response(400),
+            body={"message": "'messages' must contain the word 'json'"},
+        )
+        client.chat.completions.create.side_effect = [err, ok]
+        result = retry_chat_completion(client, model="m", messages=[], max_attempts=3)
+        assert result is ok
+        assert client.chat.completions.create.call_count == 2
 
     def test_exhausts_attempts_then_raises(self, monkeypatch):
         monkeypatch.setattr(time, "sleep", lambda s: None)
