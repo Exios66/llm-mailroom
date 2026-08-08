@@ -9,7 +9,8 @@ re-runs upsert instead of duplicating. Each item carries:
 
 - `input`      — the document text (transcribed from the sample PDF via direct
                  parsing, no LLM) plus filename/matter id
-- `expectedOutput` — the ground truth from the manifest (doc class + stage)
+- `expectedOutput` — the ground truth from the manifest (doc class + stage +
+                 literal per-field `expected_fields` extraction values)
 - `metadata`   — the full manifest row (source, license, size tier, dataset, notes)
 
 This dataset is what experiments (prompt/model A/B runs) and judge calibration
@@ -27,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sys
 from pathlib import Path
@@ -50,6 +52,7 @@ from pipeline.logging import setup_logging  # noqa: E402
 setup_logging()
 
 from scripts.prepare_samples import prepare_samples  # noqa: E402
+from schemas.documents import get_extraction_schema  # noqa: E402
 
 DATASET_NAME = "mailroom-pilot"
 MANIFEST = REPO_ROOT / "examples" / "samples" / "manifest.csv"
@@ -112,6 +115,24 @@ def _doc_text(sample: dict, samples_dir: Path) -> str:
         return ""
 
 
+def _validate_ground_truth(rows: list[dict]) -> None:
+    errors = []
+    for row in rows:
+        raw = (row.get("expected_fields") or "").strip()
+        try:
+            fields = json.loads(raw)
+        except json.JSONDecodeError:
+            fields = None
+        schema = get_extraction_schema(row["expected_doc_class"])
+        unknown = sorted(set(fields or {}) - set(schema.model_fields)) if schema else []
+        if not isinstance(fields, dict):
+            errors.append(f"{row['id']}: expected_fields must be a JSON object")
+        elif unknown:
+            errors.append(f"{row['id']}: unknown expected_fields keys: {unknown}")
+    if errors:
+        raise SystemExit("Invalid pilot ground truth:\n" + "\n".join(errors))
+
+
 def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path, dataset_name: str) -> int:
     synced = 0
     for row in rows:
@@ -130,6 +151,12 @@ def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path, da
             "expected_doc_class": row["expected_doc_class"],
             "expected_stage": row["expected_stage"],
         }
+        raw_fields = (row.get("expected_fields") or "").strip()
+        if raw_fields:
+            try:
+                expected_output["expected_fields"] = json.loads(raw_fields)
+            except json.JSONDecodeError:
+                logger.warning("expected_fields_invalid", id=row["id"], filename=row["filename"])
         metadata = {
             "sample_id": row["id"],
             "subdir": row["subdir"],
@@ -187,6 +214,8 @@ def main() -> int:
         rows = [r for r in rows if (r.get("dataset") or "original") == args.dataset]
     if args.limit:
         rows = rows[: args.limit]
+
+    _validate_ground_truth(rows)
 
     # Group by source corpus; each gets its own Langfuse dataset.
     by_source: dict[str, list[dict]] = {}

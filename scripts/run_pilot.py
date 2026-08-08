@@ -56,6 +56,7 @@ os.environ.setdefault("OPENROUTER_API_KEY", "mock-key")
 # mock runs stay hermetic; --real leaves .env's auto resolution (-> langfuse).
 
 from scripts.prepare_samples import prepare_samples  # noqa: E402
+from schemas.documents import get_extraction_schema  # noqa: E402
 
 MANIFEST = REPO_ROOT / "examples" / "samples" / "manifest.csv"
 
@@ -323,6 +324,23 @@ def _parse_expected_fields(sample: dict) -> dict | None:
         return None
 
 
+def _validate_manifest_ground_truth(manifest: list[dict]) -> None:
+    """Require complete, schema-compatible field truth before a scored pilot."""
+    errors = []
+    for sample in manifest:
+        fields = _parse_expected_fields(sample)
+        if fields is None or not isinstance(fields, dict):
+            errors.append(f"{sample.get('id')}: expected_fields must be a JSON object")
+            continue
+        schema = get_extraction_schema(sample["expected_doc_class"])
+        valid_keys = set(schema.model_fields) if schema is not None else set()
+        unknown = sorted(set(fields) - valid_keys)
+        if unknown:
+            errors.append(f"{sample.get('id')}: unknown expected_fields keys: {unknown}")
+    if errors:
+        raise SystemExit("Invalid pilot ground truth:\n" + "\n".join(errors))
+
+
 def _ground_truth_scores(row: dict, expected_fields: dict | None = None) -> dict:
     """Ground-truth scores for one pilot sample (attached to its trace).
 
@@ -582,6 +600,8 @@ def main() -> int:
     if args.max_docs:
         manifest = manifest[: args.max_docs]
         logger.info("max_docs_limit", limit=args.max_docs, remaining=len(manifest))
+
+    _validate_manifest_ground_truth(manifest)
 
     rows = [run_sample(m, mock_mode, session_id=session_id, run_id=run_id) for m in manifest]
 
