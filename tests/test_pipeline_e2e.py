@@ -80,6 +80,49 @@ class TestPipelineE2E:
         result = graph.invoke(initial_state, config)
         assert result.get("stage") == "review"
 
+    def test_graph_routes_medium_confidence_to_review(
+        self, temp_base_dir, mock_openai_client
+    ):
+        # Classified but not clearly confident (low <= confidence < high):
+        # must route to human review instead of archiving (ambiguous_01 case).
+        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
+            '{"doc_type": "correspondence", "confidence": 0.90, "reasoning": "Multi-topic memo"}'
+        )
+        from graph.build_graph import build_graph
+        _ensure_dirs_relative(temp_base_dir)
+
+        inbox = temp_base_dir / "pipeline" / "inbox"
+        test_file = inbox / "multi_topic_memo.txt"
+        test_file.write_text("Memo spanning service agreements, filings, and a demand letter.")
+
+        graph = build_graph()
+        config = {"configurable": {"thread_id": "e2e-med-conf"}}
+
+        initial_state: DocumentState = {
+            "doc_id": "",
+            "matter_id": "TEST-MATTER",
+            "original_filename": "multi_topic_memo.txt",
+            "stage": "inbox",
+            "doc_type": None,
+            "classification_confidence": None,
+            "classification_attempts": 0,
+            "extracted_data": None,
+            "extraction_confidence": None,
+            "extraction_attempts": 0,
+            "trace_id": None,
+            "escalation_reason": None,
+            "review_decision": None,
+            "retry_count": 0,
+            "conflict_detected": False,
+            "file_path": str(test_file),
+            "doc_text": "",
+            "error_message": None,
+            "messages": [],
+        }
+
+        result = graph.invoke(initial_state, config)
+        assert result.get("stage") == "review"
+
     def test_ingest_node_creates_manifest(self, temp_base_dir):
         from graph.build_graph import ingest_node, _ensure_dirs
         _ensure_dirs()
@@ -117,7 +160,7 @@ class TestPipelineE2E:
 
     def test_pipeline_completes_with_mocked_llm(self, temp_base_dir, mock_openai_client):
         mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"doc_type": "correspondence", "confidence": 0.88, "reasoning": "Legal letter"}'
+            '{"doc_type": "correspondence", "confidence": 0.96, "reasoning": "Legal letter"}'
         )
         from graph.build_graph import build_graph
         _ensure_dirs_relative(temp_base_dir)

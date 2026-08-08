@@ -18,6 +18,7 @@ from graph.routing import (
 )
 from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
+from pipeline.config import get_confidence_thresholds
 from pipeline.bins import (
     inbox_dir,
     processing_dir,
@@ -342,7 +343,9 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         "classification_confidence": confidence,
         "classification_attempts": attempts,
         "stage": PipelineStage.CLASSIFIED.value,
-        "escalation_reason": reasoning if confidence < 0.7 else None,
+        "escalation_reason": reasoning
+        if confidence < get_confidence_thresholds().get("high", 0.95)
+        else None,
         "transient_error": False,
     }
 
@@ -391,7 +394,9 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         "classification_attempts": attempts,
         "retry_count": state.get("retry_count", 0) + 1,
         "stage": PipelineStage.CLASSIFIED.value,
-        "escalation_reason": reasoning if confidence < 0.7 else None,
+        "escalation_reason": reasoning
+        if confidence < get_confidence_thresholds().get("high", 0.95)
+        else None,
         "transient_error": False,
     }
 

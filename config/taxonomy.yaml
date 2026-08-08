@@ -46,7 +46,12 @@ cost_models:
     output_per_million: 0.87
 
 confidence:
-  high: 0.85       # confident enough to proceed without second-guessing
+  # high is the auto-continue gate for classification: confidence >= high → extract → archive.
+  # Recalibrated to 0.95 from observed sorter behavior (pilot, Aug 2026): every unambiguously
+  # classifiable document scored >= 0.95, while the deliberately multi-topic memo (ambiguous_01)
+  # scored 0.90 — which must route to human review, not archive. The band [low, high) is
+  # "classified but not clearly confident" → human review (see graph/routing.py:after_classify).
+  high: 0.95
   low: 0.70        # below this → retry; still below after retry → human review
   retry_max: 1     # max retries before routing to review
   conflict_threshold: 0.3  # extraction confidence gap below this → potential conflict

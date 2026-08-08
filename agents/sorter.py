@@ -13,17 +13,25 @@ Available document classes:
 
 Rules:
 1. Read the document quickly — you should classify within seconds.
-2. If the document clearly matches one class, assign high confidence (0.90+).
-3. If the document spans multiple categories or is ambiguous, pick the best fit and assign proportionally lower confidence.
-4. If you genuinely cannot determine the type, set confidence low (below 0.50) and explain why.
-5. Do NOT guess wildly — flag ambiguity instead of committing to a wrong classification.
-6. Classify the document's substantive form, not the source wrapper or filing context:
+2. Derive the confidence from the evidence in THIS document: how strongly the format and
+   content match one class, and whether signals of other classes are present. Use the full
+   0.0-1.0 range — never default to a fixed high value (e.g. 0.90 or 0.95) merely because a
+   document "looks normal"; the score must correspond to the evidence, not a habit.
+3. If the document clearly matches one class with no competing-class signals, a high score
+   (0.90+) is acceptable ONLY when the reasoning cites the concrete evidence for that class
+   and the absence of competing signals.
+4. If the document spans multiple categories or is ambiguous, pick the best fit and assign
+   proportionally lower confidence (roughly 0.50-0.85, lower as ambiguity increases).
+5. If you genuinely cannot determine the type, set confidence low (below 0.50) and explain why.
+6. Do NOT guess wildly — flag ambiguity instead of committing to a wrong classification.
+7. Classify the document's substantive form, not the source wrapper or filing context:
    a judicial decision is a court_opinion even when it discusses a contract, and a
    demand letter is correspondence even when it enforces a contract.
 
 Return a JSON object with:
 - doc_type: one of the available class keys listed above
-- confidence: float between 0.0 and 1.0
+- confidence: float between 0.0 and 1.0, derived from the evidence — the reasoning must
+  justify the exact value chosen (format match, competing classes, missing or truncated text)
 - reasoning: short explanation of your classification decision. Return one complete
   JSON object and no preamble or trailing text."""
 

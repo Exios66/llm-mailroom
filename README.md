@@ -70,11 +70,12 @@ flowchart TD
     START --> INGEST
     INGEST --> CLASSIFY
 
-    CLASSIFY -- "confidence >= 0.70" --> EXTRACT
-    CLASSIFY -- "low confidence, attempts <= retry_max" --> RETRY_CLASS
-    CLASSIFY -- "unknown type / low confidence after retries" --> REVIEW
-    RETRY_CLASS -- "confidence >= 0.70" --> EXTRACT
-    RETRY_CLASS -- "still low confidence" --> REVIEW
+    CLASSIFY -- "confidence >= 0.95" --> EXTRACT
+    CLASSIFY -- "0.70 <= confidence < 0.95" --> REVIEW
+    CLASSIFY -- "confidence < 0.70, attempts <= retry_max" --> RETRY_CLASS
+    CLASSIFY -- "unknown type / still low after retries" --> REVIEW
+    RETRY_CLASS -- "confidence >= 0.95" --> EXTRACT
+    RETRY_CLASS -- "medium or still low confidence" --> REVIEW
 
     EXTRACT -- "confidence >= 0.70" --> REPORT
     EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
@@ -186,9 +187,9 @@ doc_classes:
 
 # Adjust thresholds:
 confidence:
-  high: 0.85
-  low: 0.70       # below this → retry → still low → human review
-  retry_max: 1    # max retries before routing to review
+  high: 0.95       # classification >= this → auto-continue to extraction
+  low: 0.70        # below this → retry → still low → human review
+  retry_max: 1     # max retries before routing to review
 
 # Transient-failure LLM retries (connection errors, 429, 5xx):
 llm_retry:

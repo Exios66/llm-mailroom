@@ -50,6 +50,7 @@ def after_classify(state: dict) -> Literal["classify", "retry_classify", "extrac
     doc_type = state.get("doc_type")
     thresholds = get_confidence_thresholds()
     low = thresholds.get("low", 0.70)
+    high = thresholds.get("high", 0.95)
     retry_max = thresholds.get("retry_max", 1)
     valid_types = get_all_doc_types()
 
@@ -57,8 +58,21 @@ def after_classify(state: dict) -> Literal["classify", "retry_classify", "extrac
         logger.warning("unknown_doc_type", doc_type=doc_type)
         return "human_review"
 
-    if confidence is not None and confidence >= low:
+    # High confidence: clearly matches one class -> auto-continue to extraction.
+    if confidence is not None and confidence >= high:
         return "extract"
+
+    # Medium band (low <= confidence < high): classified, but the model is not
+    # clearly confident (e.g. multi-topic/ambiguous documents whose form still
+    # fits a class). Route to human review instead of silently archiving.
+    if confidence is not None and confidence >= low:
+        logger.info(
+            "medium_confidence_review",
+            confidence=confidence,
+            attempts=attempts,
+            doc_type=doc_type,
+        )
+        return "human_review"
 
     if attempts <= retry_max:
         logger.info("low_confidence_retry", confidence=confidence, attempts=attempts)

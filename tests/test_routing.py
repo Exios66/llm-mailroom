@@ -15,6 +15,26 @@ class TestRoutingLogic:
         }
         assert after_classify(state) == "extract"
 
+    def test_after_classify_medium_confidence_routes_to_review(self):
+        # Medium band (low <= confidence < high): classified but not clearly
+        # confident (e.g. multi-topic memo) -> human review, never auto-archive.
+        state = {
+            "classification_confidence": 0.90,
+            "classification_attempts": 1,
+            "doc_type": "correspondence",
+        }
+        assert after_classify(state) == "human_review"
+
+    def test_after_classify_medium_confidence_exhausts_no_retry_budget(self):
+        # The medium band routes straight to review; it must not be treated as
+        # a sub-low failure that burns the retry budget.
+        state = {
+            "classification_confidence": 0.80,
+            "classification_attempts": 0,
+            "doc_type": "contract",
+        }
+        assert after_classify(state) == "human_review"
+
     def test_after_classify_low_confidence_first_attempt_retry(self):
         state = {
             "classification_confidence": 0.50,
