@@ -1,4 +1,5 @@
 import csv
+import json
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,20 @@ def test_manifest_expected_classes_are_valid_taxonomy():
 def test_manifest_expected_stages_valid():
     for r in _rows():
         assert r["expected_stage"] in ("archived", "review", "failed"), r["id"]
+
+
+def test_manifest_has_schema_compatible_field_ground_truth():
+    from schemas.documents import get_extraction_schema
+
+    for row in _rows():
+        raw = row.get("expected_fields", "").strip()
+        assert raw, f"missing expected_fields: {row['id']}"
+        fields = json.loads(raw)
+        assert isinstance(fields, dict), row["id"]
+        schema = get_extraction_schema(row["expected_doc_class"])
+        assert schema is not None, row["id"]
+        unknown = set(fields) - set(schema.model_fields)
+        assert not unknown, f"unknown expected_fields for {row['id']}: {unknown}"
 
 
 def test_manifest_referenced_sources_exist():

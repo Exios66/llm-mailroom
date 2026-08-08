@@ -35,6 +35,7 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "classification_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "confidence_calibration_error", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "expected_field_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "completeness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {
         "name": "completeness_label",

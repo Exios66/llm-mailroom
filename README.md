@@ -238,7 +238,7 @@ The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse i
 
 ## Observability
 
-- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. One trace per document, one span per node, `session_id = matter_id`, deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
+- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. One trace per document, one span per node, `session_id = matter_id` (or a run-scoped session for pilot runs), deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
 - **Scores** — every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, confidence values); pilot runs add ground-truth scores (`class_correct`, `stage_correct`, calibration error). Score configs are auto-created by `observability/scores.py` (`ensure_score_configs()`).
 - **Run-log mirroring** — pull traces (with observations + scores) into the repo for offline analysis by subagents:
 
@@ -262,7 +262,7 @@ Mailroom evaluates its own work against the **task specification** (the taxonomy
 | `completeness` | Did the specialist capture every field the document actually states? | `completeness`, `completeness_label` |
 | `correctness` | Are extracted field values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
 
-The same rubrics are **configured as a single cumulative live LLM-as-a-Judge evaluator in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and one observation rule matches it — so every document costs exactly **one judge call** returning a **binary CORRECT/MISS verdict**. Pilot runs pass the manifest ground truth (`expected_doc_class` / `expected_stage`) through the generation, so the judge decides **strictly against the actual ground truth**; live runs without ground truth fall back to rubric judgment:
+The same rubrics are **configured as a single cumulative live LLM-as-a-Judge evaluator in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and one observation rule matches it — so every document costs exactly **one judge call** returning a **binary CORRECT/MISS verdict**. Pilot runs pass the manifest ground truth (`expected_doc_class` / `expected_stage` / `expected_fields`) through the generation, so the judge decides **strictly against the actual ground truth**; grounded runs (with `expected_fields`) skip the document text in the judge input — the input is the small extracted-vs-expected payload, cutting ~90% of judge tokens. Live runs without ground truth fall back to rubric judgment:
 
 ```bash
 python scripts/sync_evaluators.py        # create/update evaluator + rule (idempotent)
@@ -270,14 +270,14 @@ python scripts/sync_evaluators.py --dry-run
 python scripts/sync_evaluators.py --disable   # pause the rule
 ```
 
-`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so the judge can run. Deployed: one evaluator `mailroom-pipeline-judge` (binary CORRECT/MISS + reasoning) and one observation rule `mailroom-pipeline-rule` targeting the `pipeline-result` generation. Old per-agent evaluators/rules are pruned automatically. Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct` — binary 0/1 against the manifest) attached by `run_pilot.py --scores`.
+`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so the judge can run. Deployed: one evaluator `mailroom-pipeline-judge` (binary CORRECT/MISS + reasoning) and one observation rule `mailroom-pipeline-rule` targeting the `pipeline-result` generation. Old per-agent evaluators/rules are pruned automatically. Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct` — binary 0/1 against the manifest; `expected_field_presence` — fraction of required expected fields extracted non-empty) attached by `run_pilot.py --scores`.
 
 ### Evaluation dataset
 
-The pilot samples are mirrored into the **`mailroom-pilot` Langfuse dataset** (PDF text + ground truth + manifest metadata) for experiments and judge calibration:
+The pilot samples are mirrored into the **`mailroom-pilot` Langfuse dataset** (PDF text + ground truth incl. per-field `expected_fields` + manifest metadata) for experiments and judge calibration:
 
 ```bash
-python scripts/sync_dataset.py            # 12 items, deterministic ids (upsert-safe)
+python scripts/sync_dataset.py            # 30 items, deterministic ids (upsert-safe)
 python scripts/sync_dataset.py --include contract
 ```
 
