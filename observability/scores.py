@@ -66,6 +66,16 @@ SCORE_CONFIGS: list[dict] = [
             {"label": "inaccurate", "value": 0.0},
         ],
     },
+    # Core run metrics — computed for EVERY run (success, review, failed,
+    # aborted) and persisted to the catalog regardless of tracing backend, so
+    # runs can be compared against one another offline.
+    {"name": "run_aborted", "data_type": "BOOLEAN"},
+    {"name": "run_duration_seconds", "data_type": "NUMERIC", "min_value": 0.0},
+    {"name": "total_tokens", "data_type": "NUMERIC", "min_value": 0.0},
+    {"name": "estimated_cost_usd", "data_type": "NUMERIC", "min_value": 0.0},
+    {"name": "llm_call_count", "data_type": "NUMERIC", "min_value": 0.0},
+    {"name": "classification_attempts", "data_type": "NUMERIC", "min_value": 0.0},
+    {"name": "extraction_attempts", "data_type": "NUMERIC", "min_value": 0.0},
 ]
 
 
@@ -215,13 +225,40 @@ def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
     return parsed
 
 
-def emit_pipeline_scores(state: dict) -> dict:
-    """Attach self-evident production scores for a finished run (no ground
-    truth required). Called from `graph/build_graph.py:run_pipeline`. Returns
-    the computed scores so callers can persist them locally too."""
-    if not is_enabled():
-        return {}
+def compute_run_metrics(state: dict, started_at: float, ended_at: float) -> dict:
+    """Core per-run metrics, computed for EVERY finished run regardless of the
+    tracing backend. Consumed by `emit_pipeline_scores` (Langfuse attachment
+    stays backend-gated) and persisted to the catalog."""
+    from pipeline.limits import estimate_cost, usage_summary
 
+    usage = usage_summary()
+    return {
+        "run_aborted": int(bool(state.get("run_aborted"))),
+        "run_duration_seconds": round(max(0.0, ended_at - started_at), 1),
+        "total_tokens": int(usage["total"]),
+        "llm_call_count": int(usage["calls"]),
+        "estimated_cost_usd": float(estimate_cost()),
+        "classification_attempts": int(state.get("classification_attempts", 0)),
+        "extraction_attempts": int(state.get("extraction_attempts", 0)),
+    }
+
+
+def _score_data_type(name: str) -> str | None:
+    for spec in SCORE_CONFIGS:
+        if spec["name"] == name:
+            return spec["data_type"]
+    return None
+
+
+def emit_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
+    """Attach self-evident production scores for a finished run (no ground
+    truth required) plus the always-on core run metrics. Called from
+    `graph/build_graph.py:run_pipeline`. Returns the computed scores so
+    callers can persist them locally too.
+
+    Score computation is backend-agnostic and always runs; only the Langfuse
+    trace attachment is gated on the active backend (a no-op otherwise).
+    """
     stage = state.get("stage")
     extracted = state.get("extracted_data") or {}
     checks = validate_extraction(state.get("doc_type"), extracted)
@@ -232,17 +269,21 @@ def emit_pipeline_scores(state: dict) -> dict:
         "stage_completed": int(stage == "archived"),
         "guardrail_triggered": int(guardrail_fired),
     }
-    score_trace("parse_error", scores["parse_error"], data_type="BOOLEAN")
-    score_trace("schema_valid", scores["schema_valid"], data_type="BOOLEAN")
-    score_trace("stage_completed", scores["stage_completed"], data_type="BOOLEAN")
-    score_trace("guardrail_triggered", scores["guardrail_triggered"], data_type="BOOLEAN")
-
     cls_conf = state.get("classification_confidence")
     if isinstance(cls_conf, (int, float)) and not isinstance(cls_conf, bool):
         scores["classification_confidence"] = float(cls_conf)
-        score_trace("classification_confidence", float(cls_conf), data_type="NUMERIC")
     ext_conf = state.get("extraction_confidence")
     if isinstance(ext_conf, (int, float)) and not isinstance(ext_conf, bool):
         scores["extraction_confidence"] = float(ext_conf)
-        score_trace("extraction_confidence", float(ext_conf), data_type="NUMERIC")
+    if metrics:
+        for name, value in metrics.items():
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                scores[name] = int(value)
+            elif isinstance(value, (int, float)):
+                scores[name] = value
+    if is_enabled():
+        for name, value in scores.items():
+            score_trace(name, value, data_type=_score_data_type(name))
     return scores

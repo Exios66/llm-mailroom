@@ -52,25 +52,37 @@ def retry_chat_completion(
     base_delay: float | None = None,
     max_delay: float | None = None,
     jitter: float | None = None,
+    timeout: float | None = None,
+    run_deadline: float | None = None,
     **kwargs,
 ):
     """Call `client.chat.completions.create(**kwargs)`, retrying transient
     failures with exponential backoff + jitter.
 
-    Tunables default to the `llm_retry:` section of taxonomy.yaml.
+    Tunables default to the `llm_retry:` section of taxonomy.yaml. `timeout`
+    defaults to `run_limits.llm_call_timeout_seconds` and is passed to the SDK
+    so a hanging provider request is bounded. When `run_deadline` is set, the
+    wall-clock deadline is re-checked before every attempt, so a run whose time
+    is up stops burning credits instead of starting another retry.
     Returns the SDK response on success, re-raises the last exception when all
     attempts are exhausted.
     """
+    from pipeline.limits import check_run_deadline, get_call_timeout_seconds
+
     cfg = _retry_config()
     max_attempts = max_attempts if max_attempts is not None else int(cfg.get("max_attempts", 3))
     base_delay = base_delay if base_delay is not None else float(cfg.get("base_delay", 1.0))
     max_delay = max_delay if max_delay is not None else float(cfg.get("max_delay", 30.0))
     jitter = jitter if jitter is not None else float(cfg.get("jitter", 0.3))
+    if timeout is None:
+        timeout = float(get_call_timeout_seconds())
     attempt = 0
     while True:
         attempt += 1
+        if run_deadline is not None:
+            check_run_deadline(run_deadline)
         try:
-            return client.chat.completions.create(**kwargs)
+            return client.chat.completions.create(**kwargs, timeout=timeout)
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
             if not _is_retryable(exc) or attempt >= max_attempts:
                 raise

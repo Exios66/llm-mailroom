@@ -161,7 +161,11 @@ class PDFTranscriber(BaseAgent):
         kwargs.update(langfuse_call_attrs("pdf-transcriber"))
         if getattr(self, "_langfuse_prompt", None) is not None:
             kwargs["langfuse_prompt"] = self._langfuse_prompt
+        from pipeline.limits import get_run_deadline, record_usage
+
+        kwargs["run_deadline"] = get_run_deadline()
         response = retry_chat_completion(self.client, **kwargs)
+        record_usage(getattr(response, "usage", None), self.model)
         return response.choices[0].message.content or ""
 
 

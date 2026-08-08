@@ -43,7 +43,9 @@ class TestValidateExtraction:
 
 
 class TestEmitPipelineScores:
-    def test_noop_when_tracing_disabled(self):
+    def test_scores_computed_when_tracing_disabled(self):
+        # Scores are ALWAYS computed (persisted to the catalog even without a
+        # tracing backend); only trace attachment is backend-gated.
         os.environ["OBSERVABILITY_PROVIDER"] = "none"
         try:
             from observability.scores import emit_pipeline_scores
@@ -55,8 +57,24 @@ class TestEmitPipelineScores:
                     "doc_type": "contract",
                     "classification_confidence": 0.9,
                     "extracted_data": {"parties": ["A"]},
-                }
+                },
+                metrics={
+                    "run_aborted": 0,
+                    "run_duration_seconds": 1.5,
+                    "total_tokens": 42,
+                    "llm_call_count": 3,
+                    "estimated_cost_usd": 0.001,
+                    "classification_attempts": 1,
+                    "extraction_attempts": 1,
+                },
             )
-            assert scores == {}
+            assert scores["stage_completed"] == 1
+            assert scores["parse_error"] == 0
+            assert scores["schema_valid"] == 1
+            assert scores["classification_confidence"] == 0.9
+            assert scores["run_aborted"] == 0
+            assert scores["total_tokens"] == 42
+            assert scores["llm_call_count"] == 3
+            assert scores["estimated_cost_usd"] == 0.001
         finally:
             os.environ.pop("OBSERVABILITY_PROVIDER", None)

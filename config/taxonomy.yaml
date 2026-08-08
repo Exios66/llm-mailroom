@@ -22,6 +22,25 @@ llm_retry:
   max_delay: 30.0
   jitter: 0.3
 
+run_limits:
+  # Hard wall-clock cutoff per document run (abort past this).
+  deadline_seconds: 3600
+  # Per-LLM-call socket timeout — bounds a single hanging provider request.
+  llm_call_timeout_seconds: 120
+  # Per-run cumulative output-token cap — aborts stuck/excessively-verbose
+  # models that keep generating past the point of usefulness.
+  max_total_output_tokens: 20000
+
+# Approximate per-1M-token pricing used for estimated_cost_usd scoring.
+# Update from the OpenRouter model page; unknown models estimate cost as 0.
+cost_models:
+  qwen/qwen3.7-flash:
+    input_per_million: 0.03
+    output_per_million: 0.13
+  deepseek/deepseek-v4-flash:
+    input_per_million: 0.05
+    output_per_million: 0.25
+
 confidence:
   high: 0.85       # confident enough to proceed without second-guessing
   low: 0.70        # below this → retry; still below after retry → human review
@@ -81,7 +100,7 @@ agents:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
-    max_tokens: 4096
+    max_tokens: 8192
 
   corporate_records_specialist:
     provider: openrouter

@@ -63,7 +63,11 @@ Please compile this into a clean matter-record summary."""
     kwargs.update(langfuse_call_attrs("reporter"))
     if prompt_obj is not None:
         kwargs["langfuse_prompt"] = prompt_obj
+    from pipeline.limits import get_run_deadline, record_usage
+
+    kwargs["run_deadline"] = get_run_deadline()
     response = retry_chat_completion(report_llm, **kwargs)
+    record_usage(getattr(response, "usage", None), report_model)
     summary = response.choices[0].message.content or ""
     logger.info("report_compiled", doc_type=doc_type, length=len(summary))
 

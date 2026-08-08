@@ -23,4 +23,6 @@ class DocumentState(TypedDict, total=False):
     file_path: str
     doc_text: str
     error_message: str | None
+    run_deadline: float
+    run_aborted: bool
     messages: Annotated[list, add_messages]

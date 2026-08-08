@@ -90,6 +90,9 @@ def ensure_schema() -> bool:
     """Create all tables if they don't exist yet. Thread-safe, idempotent.
 
     Call before any read/write so a fresh install works with zero setup.
+    Also migrates pre-existing SQLite databases: tables created by an older
+    build are missing newer columns, so every known column is diffed against
+    the live schema and added via ALTER TABLE (SQLite supports ADD COLUMN).
     The idempotency cache is keyed by the resolved DB URL so a change of
     MAILROOM_BASE_DIR (e.g. per-test temp dirs) creates the schema in the
     right database.
@@ -108,6 +111,7 @@ def ensure_schema() -> bool:
             sync_url = url.replace("+aiosqlite", "")
             sync_engine = create_engine(sync_url)
             Base.metadata.create_all(sync_engine)  # checkfirst=True by default
+            _migrate_sqlite_columns(sync_engine)
             sync_engine.dispose()
         else:
             # Postgres: needs an async loop. Only safe outside a running loop.
@@ -118,6 +122,32 @@ def ensure_schema() -> bool:
     except Exception:
         logger.exception("schema_creation_failed")
         return False
+
+
+def _migrate_sqlite_columns(sync_engine) -> None:
+    """Add columns that newer code expects but pre-existing databases lack.
+
+    SQLite's ALTER TABLE ADD COLUMN only permits nullable columns (or columns
+    with a default), which every model column here is; JSON columns are stored
+    with JSON affinity, matching how create_all builds fresh tables.
+    """
+    from sqlalchemy import inspect, text
+    from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
+
+    inspector = inspect(sync_engine)
+    for table in Base.metadata.tables.values():
+        if not inspector.has_table(table.name):
+            continue
+        existing = {c["name"] for c in inspector.get_columns(table.name)}
+        missing = [c for c in table.columns if c.name not in existing]
+        if not missing:
+            continue
+        ddl_type = sqlite_dialect()
+        for col in missing:
+            stmt = f"ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(dialect=ddl_type)}"
+            with sync_engine.begin() as conn:
+                conn.execute(text(stmt))
+            logger.info("schema_column_added", table=table.name, column=col.name)
 
 
 async def init_db():
