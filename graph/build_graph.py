@@ -1005,9 +1005,9 @@ def _emit_pipeline_result(root, result: dict, state: dict) -> None:
     if ground_truth:
         # When the caller knows the expected outcome (pilot runs pass the
         # manifest ground truth), expose it here so the live evaluator can
-        # decide a binary CORRECT/MISS verdict against the ACTUAL truth instead
-        # of judging by rubric alone. Expected fields already live in the
-        # labeled input block, so do not duplicate them in the output.
+        # decide a CORRECT/PARTIAL/MISS verdict against the ACTUAL truth
+        # instead of judging by rubric alone. Expected fields already live in
+        # the labeled input block, so do not duplicate them in the output.
         output["ground_truth"] = {
             key: value for key, value in ground_truth.items() if key != "expected_fields"
         }
@@ -1066,7 +1066,7 @@ def _execute_run(
     if ground_truth:
         # Expected outcome for this document (pilot runs pass the manifest
         # ground truth). Carried into the `pipeline-result` generation so the
-        # live evaluator can render a binary CORRECT/MISS verdict.
+        # live evaluator can render a CORRECT/PARTIAL/MISS verdict.
         initial_state["ground_truth"] = ground_truth
 
     # Environment resolution: per-context override (OBSERVABILITY_ENVIRONMENT,

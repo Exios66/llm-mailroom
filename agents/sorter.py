@@ -17,11 +17,15 @@ Rules:
 3. If the document spans multiple categories or is ambiguous, pick the best fit and assign proportionally lower confidence.
 4. If you genuinely cannot determine the type, set confidence low (below 0.50) and explain why.
 5. Do NOT guess wildly — flag ambiguity instead of committing to a wrong classification.
+6. Classify the document's substantive form, not the source wrapper or filing context:
+   a judicial decision is a court_opinion even when it discusses a contract, and a
+   demand letter is correspondence even when it enforces a contract.
 
 Return a JSON object with:
 - doc_type: one of the available class keys listed above
 - confidence: float between 0.0 and 1.0
-- reasoning: short explanation of your classification decision"""
+- reasoning: short explanation of your classification decision. Return one complete
+  JSON object and no preamble or trailing text."""
 
 
 class SorterAgent(BaseAgent):

@@ -262,7 +262,7 @@ Mailroom evaluates its own work against the **task specification** (the taxonomy
 | `completeness` | Did the specialist capture every field the document actually states? | `completeness`, `completeness_label` |
 | `correctness` | Are extracted field values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
 
-The same rubrics are **configured as a single cumulative live LLM-as-a-Judge evaluator in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and one observation rule matches it — so every document costs exactly **one judge call** returning a **binary CORRECT/MISS verdict**. Pilot runs pass the manifest ground truth (`expected_doc_class` / `expected_stage` / `expected_fields`) through the generation, so the judge decides **strictly against the actual ground truth**; grounded runs (with `expected_fields`) skip the document text in the judge input — the input is the small extracted-vs-expected payload, cutting ~90% of judge tokens. Live runs without ground truth fall back to rubric judgment:
+The same rubrics are **configured as two independent live LLM-as-a-Judge evaluators in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and two observation rules independently evaluate it: `mailroom-pipeline-judge` returns a **CORRECT/PARTIAL/MISS** verdict, while `mailroom-pipeline-quality` returns a proportional **0.0-1.0 quality score**. A substantially correct extraction with limited material gaps earns `PARTIAL` instead of a hard `MISS`, and still receives a useful quality score; the numeric score never replaces or alters the run verdict. Grounded runs skip document text in the judge input — the input is a labeled, pretty-printed expected-fields block and the output is a cleaned schema-only extraction, cutting ~90% of judge tokens. Live runs without ground truth fall back to rubric judgment:
 
 ```bash
 python scripts/sync_evaluators.py        # create/update evaluator + rule (idempotent)
@@ -270,7 +270,7 @@ python scripts/sync_evaluators.py --dry-run
 python scripts/sync_evaluators.py --disable   # pause the rule
 ```
 
-`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so the judge can run. Deployed: one evaluator `mailroom-pipeline-judge` (binary CORRECT/MISS + reasoning) and one observation rule `mailroom-pipeline-rule` targeting the `pipeline-result` generation. Old per-agent evaluators/rules are pruned automatically. Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct` — binary 0/1 against the manifest; `expected_field_presence` — fraction of required expected fields extracted non-empty) attached by `run_pilot.py --scores`.
+`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so both evaluators can run. Deployed: `mailroom-pipeline-judge` + `mailroom-pipeline-rule` (CORRECT/PARTIAL/MISS verdict), and `mailroom-pipeline-quality` + `mailroom-pipeline-quality-rule` (proportional quality), all targeting `pipeline-result`. Old per-agent evaluators/rules are pruned automatically. Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct` — binary 0/1 against the manifest; `expected_field_presence` — fraction of required expected fields extracted non-empty) attached by `run_pilot.py --scores`.
 
 ### Evaluation dataset
 

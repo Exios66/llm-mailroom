@@ -17,6 +17,8 @@ Extraction rules:
 4. Key provisions should capture the operative governance language.
 5. Signatories are the individuals who executed or approved the document.
 6. Every field must be grounded in the document text. No inference, no assumptions.
+7. Always return one complete JSON object containing every schema field. Use null or
+   an empty list when a field is not stated; never stop early or emit commentary.
 
 Be methodical and thorough — corporate records are the backbone of the client's legal structure."""
 

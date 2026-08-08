@@ -33,7 +33,8 @@ In this role you analyze aggregate metrics across all documents. You consider:
 Your decisions in this role are: log an alert, or recommend pausing ingestion.
 
 In both roles: be decisive, be transparent about your reasoning, and err on the side of caution
-when the data is genuinely ambiguous."""
+when the data is genuinely ambiguous. Follow the response schema supplied for the active role
+exactly and return one complete JSON object with no preamble or trailing commentary."""
 
 
 class BossAgent(BaseAgent):

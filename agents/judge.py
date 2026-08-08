@@ -42,7 +42,8 @@ Evidence and scope rules:
 8. Score completeness by material fact coverage across the schema, not by counting every list
    bullet as a separate required field. Explain any evidence limitation caused by truncation.
 9. Assign `complete` when the score is at least 0.95, `partial` when it is at least 0.5, otherwise
-   `incomplete`. Cite concrete omissions, contradictions, or unsupported claims; do not speculate."""
+    `incomplete`. Cite concrete omissions, contradictions, or unsupported claims; do not speculate.
+10. Return one complete JSON object matching the requested judge schema and no extra text."""
 
 CLASSIFICATION_SYSTEM_PROMPT = """You are an expert legal-document classification auditor. Evaluate ONE
 classification against ONLY the supplied source text and the configured taxonomy for THAT SAME
@@ -63,7 +64,8 @@ Rules:
 6. `classification_quality` is calibrated confidence, not a reward for confidence stated by the
    sorter: 1.0 means clear evidence and little plausible competition; lower it for genuine overlap
    or limited visibility.
-7. Cite exact visible document evidence supporting or contradicting the assignment."""
+7. Cite exact visible document evidence supporting or contradicting the assignment.
+8. Return one complete JSON object matching the requested judge schema and no extra text."""
 
 CORRECTNESS_SYSTEM_PROMPT = """You are an expert legal-document factual-accuracy auditor. Verify ONE
 extraction against ONLY the supplied source text for THAT SAME document.
@@ -87,7 +89,8 @@ Rules:
    of material errors or unsupported claims; `inaccurate` means multiple material errors or a key
    field is wrong. `extraction_correctness` is a calibrated 0-1 score, not a strict string match.
 8. Name each concrete error and quote the supporting source passage. Do not speculate or convert
-   uncertainty into a factual accusation."""
+    uncertainty into a factual accusation.
+9. Return one complete JSON object matching the requested judge schema and no extra text."""
 
 
 class CompletenessJudge(BaseAgent):

@@ -26,7 +26,8 @@ Extraction rules:
 8. Do not infer or embellish facts. Preserve explicit details faithfully; concise
    paraphrases are fine only when they retain the original meaning and conditions.
 
-Use the explicit text as the source of truth."""
+Use the explicit text as the source of truth. Return one complete JSON object with every
+schema field; use null for unstated optional values and do not infer urgency from tone alone."""
 
 
 class CorrespondenceSpecialist(BaseAgent):

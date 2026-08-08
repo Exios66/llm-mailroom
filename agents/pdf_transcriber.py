@@ -29,7 +29,8 @@ Rules:
 5. Do not add, remove, or alter any facts — only format and structure.
 6. If the original text extraction garbled certain sections, note it as [corrupted text].
 7. Remove PDF artifact text (page numbers, headers/footers that are clearly metadata).
-8. Include a confidence score for the transcription quality."""
+8. Return only the cleaned markdown transcription. Do not add a confidence score,
+   commentary, or a summary; the pipeline records transcription confidence separately."""
 
 
 class PDFTranscriber(BaseAgent):

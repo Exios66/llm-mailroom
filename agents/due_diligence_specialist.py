@@ -18,6 +18,9 @@ Extraction rules:
 4. Be aggressive about flagging risks — it's better to over-flag than miss something.
 5. Confidence reflects how thoroughly you believe the document covers its subject matter.
 6. If the document is incomplete or the diligence appears superficial, note it and lower confidence.
+7. Separate facts stated in the document from risks or requests inferred from them; do not
+   label a possibility as an established finding. Always return one complete JSON object,
+   using null or an empty list for fields the document does not state.
 
 You are told to be skeptical for good reason — the client depends on finding problems before they become liabilities."""
 

@@ -20,7 +20,9 @@ Extraction rules:
 5. Legal issues: the questions of law presented; list each distinctly.
 6. Outcome: what the court decided — affirmed, reversed, remanded, denied, granted.
 7. Citations: reporter citations and docket numbers if present.
-8. Do not editorialize — report what the court held, not your own view of the law."""
+8. Do not editorialize — report what the court held, not your own view of the law.
+9. Return one complete JSON object with every schema field. Use null or an empty list
+   for facts not stated; never infer a case name, date, docket, author, or citation."""
 
 
 class CourtOpinionsSpecialist(BaseAgent):
