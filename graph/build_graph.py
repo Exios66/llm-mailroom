@@ -16,7 +16,7 @@ from graph.routing import (
     after_boss,
     after_human_review,
 )
-from observability.tracing import pipeline_trace, traced_node
+from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
 from pipeline.bins import (
     inbox_dir,
@@ -932,11 +932,53 @@ def _write_catalog_record(state: dict):
         asyncio.run(_write())
 
 
+# Cap for the judge-visible document text in the pipeline-result generation.
+# Long contracts (e.g. MAUD merger agreements, ~800KB) would blow up the single
+# cumulative judge call otherwise.
+PIPELINE_RESULT_TEXT_LIMIT = 100_000
+
+
+def _emit_pipeline_result(root, result: dict, state: dict) -> None:
+    """Emit the single `pipeline-result` generation observation per document.
+
+    This is the ONLY observation the live evaluation rule matches
+    (`scripts/sync_evaluators.py`, `mailroom-pipeline-rule`), so exactly one
+    cumulative LLM-as-a-Judge call scores each document — classification
+    correctness + extraction correctness + completeness in one pass. Input is
+    the (truncated) document text so the judge can verify grounding; output is
+    the curated pipeline result. No-ops when tracing is disabled (root None).
+    """
+    if root is None:
+        return
+    doc_text = result.get("doc_text") or state.get("doc_text") or ""
+    truncated = len(doc_text) > PIPELINE_RESULT_TEXT_LIMIT
+    output = {
+        "stage": result.get("stage"),
+        "doc_type": result.get("doc_type"),
+        "classification_confidence": result.get("classification_confidence"),
+        "extraction_confidence": result.get("extraction_confidence"),
+        "extracted_data": result.get("extracted_data"),
+        "escalation_reason": result.get("escalation_reason"),
+        "review_decision": result.get("review_decision"),
+        "run_aborted": bool(result.get("run_aborted")),
+        "error_message": result.get("error_message"),
+    }
+    with observation(
+        "pipeline-result",
+        as_type="generation",
+        input=doc_text[:PIPELINE_RESULT_TEXT_LIMIT],
+        metadata={"pipeline": "mailroom", "truncated": truncated},
+    ) as gen:
+        if gen is not None:
+            gen.update(output=output)
+
+
 def _execute_run(
     initial_state: DocumentState,
     seed: str,
     trace_input: dict,
     attempt: int = 0,
+    source: str | None = None,
 ) -> dict[str, Any]:
     """Shared execution scaffold: build graph, open the per-doc trace (one trace
     per document, deterministic id from `seed`), invoke, emit self-evident
@@ -971,9 +1013,6 @@ def _execute_run(
         "run_attempt": attempt,
     }
 
-    tags = ["mailroom"]
-    if attempt:
-        tags.append(f"run-{attempt}")
     # Environment resolution: per-context override (OBSERVABILITY_ENVIRONMENT,
     # set by entrypoints via pipeline.env.default_environment) wins; the
     # standard LANGFUSE_TRACING_ENVIRONMENT is the fallback; mock runs (no
@@ -988,12 +1027,26 @@ def _execute_run(
         else:
             environment = "live"
 
+    # Mandatory tag taxonomy (see AGENTS.md "Mandatory: classify and tag every
+    # logged run"): `mailroom` (always) + run-context tag matching the
+    # environment (`pilot`/`live`/`misc`/`mock`) + attempt tag for re-runs +
+    # source corpus tag for pilot/corpus runs.
+    tags = ["mailroom", environment]
+    if attempt:
+        tags.append(f"run-{attempt}")
+    if source:
+        tags.append(f"source-{source}")
+
+    trace_metadata = {"pipeline": "mailroom", "run_deadline": deadline, "attempt": attempt}
+    if source:
+        trace_metadata["source"] = source
+
     with tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc
         session_id=initial_state.get("matter_id") or "DEFAULT",  # groups documents of a matter
         name="document-pipeline",
         input=trace_input,
-        metadata={"pipeline": "mailroom", "run_deadline": deadline, "attempt": attempt},
+        metadata=trace_metadata,
         tags=tags,
         environment=environment,
     ) as root:
@@ -1015,6 +1068,7 @@ def _execute_run(
         score_values = pipeline_scores.emit_pipeline_scores(result, metrics)
         _persist_scores(result, score_values)
         if root is not None:
+            _emit_pipeline_result(root, result, initial_state)
             root.update(output={
                 "stage": result.get("stage"),
                 "doc_type": result.get("doc_type"),
@@ -1027,7 +1081,7 @@ def _execute_run(
     return result
 
 
-def run_pipeline(file_path: Path, matter_id: str = "DEFAULT", attempt: int = 0) -> dict[str, Any]:
+def run_pipeline(file_path: Path, matter_id: str = "DEFAULT", attempt: int = 0, source: str | None = None) -> dict[str, Any]:
     _ensure_dirs()
 
     initial_state: DocumentState = {
@@ -1065,6 +1119,7 @@ def run_pipeline(file_path: Path, matter_id: str = "DEFAULT", attempt: int = 0) 
         initial_state,
         seed=seed,
         attempt=attempt,
+        source=source,
         trace_input={"filename": file_path.name, "matter_id": matter_id, "attempt": attempt},
     )
 

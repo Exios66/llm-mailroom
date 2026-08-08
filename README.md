@@ -262,15 +262,15 @@ Mailroom evaluates its own work against the **task specification** (the taxonomy
 | `completeness` | Did the specialist capture every field the document actually states? | `completeness`, `completeness_label` |
 | `correctness` | Are extracted field values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
 
-The same rubrics are **configured as live LLM-as-a-Judge evaluators in the Langfuse project**, wired to the pipeline's LLM generations via observation rules — every new trace is scored automatically, no script needed:
+The same rubrics are **configured as a single cumulative live LLM-as-a-Judge evaluator in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and one observation rule matches it — so every document costs exactly **one judge call**, scoring classification correctness + extraction correctness + completeness in a single pass:
 
 ```bash
-python scripts/sync_evaluators.py        # create/update evaluators + rules (idempotent)
+python scripts/sync_evaluators.py        # create/update evaluator + rule (idempotent)
 python scripts/sync_evaluators.py --dry-run
-python scripts/sync_evaluators.py --disable   # pause rules
+python scripts/sync_evaluators.py --disable   # pause the rule
 ```
 
-`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so the judges can run. Evaluators: `mailroom-classification-judge`, `mailroom-extraction-completeness-judge`, `mailroom-extraction-correctness-judge`; 11 observation rules target the sorter and specialist generations (`mailroom-*-rule-*`).
+`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so the judge can run. Deployed: one evaluator `mailroom-pipeline-judge` (numeric 0-1 score + structured reasoning) and one observation rule `mailroom-pipeline-rule` targeting the `pipeline-result` generation. Old per-agent evaluators/rules are pruned automatically.
 
 ### Evaluation dataset
 
