@@ -13,13 +13,20 @@ settlement offers, engagement letters, cease-and-desist letters, opinion letters
 Extraction rules:
 1. Identify sender and recipient precisely — full names, titles if present, entities.
 2. Determine the communication type: letter, email, memo, notice, demand, etc.
-3. Key points: the substantive content — what is being communicated.
+3. Key points: preserve every distinct material fact, obligation, breach, demand,
+   deadline, remedy, and waiver stated in the communication. Do not compress
+   separate contractual terms into a summary that loses a condition or section
+   reference. For a demand letter, retain the payment terms, amount, cure
+   demand, consequences of nonpayment, and any interest, costs, or fees stated.
 4. Action items: what someone needs to DO as a result of this communication — deadlines included.
 5. Urgency: assess tone — is this routine, time-sensitive, or threatening?
 6. Dates are critical — correspondence is often date-sensitive.
 7. Track narrative: if this letter references prior communications, note the thread.
 
-Read between the lines — the explicit text is only part of the story."""
+8. Do not infer or embellish facts. Preserve explicit details faithfully; concise
+   paraphrases are fine only when they retain the original meaning and conditions.
+
+Use the explicit text as the source of truth."""
 
 
 class CorrespondenceSpecialist(BaseAgent):
