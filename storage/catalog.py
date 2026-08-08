@@ -1,9 +1,7 @@
 import structlog
 from datetime import datetime, timezone
-from sqlalchemy import String, Float, Integer, DateTime, JSON, Text, select
+from sqlalchemy import String, Float, DateTime, JSON, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID
-import uuid
 
 from .db import Base, async_session
 
@@ -68,21 +66,32 @@ async def write_matter_record(matter_data) -> MatterRecord:
 
 async def write_document_record(doc_data: dict) -> DocumentRecord:
     async with async_session() as session:
-        record = DocumentRecord(
-            doc_id=doc_data["doc_id"],
-            matter_id=doc_data["matter_id"],
-            original_filename=doc_data["original_filename"],
-            stage=doc_data.get("stage", "inbox"),
-            doc_type=doc_data.get("doc_type"),
-            classification_confidence=doc_data.get("classification_confidence"),
-            extraction_confidence=doc_data.get("extraction_confidence"),
-            extracted_data=doc_data.get("extracted_data"),
-            escalation_reason=doc_data.get("escalation_reason"),
-            trace_id=doc_data.get("trace_id"),
-        )
-        session.add(record)
+        existing = await session.get(DocumentRecord, doc_data["doc_id"])
+        if existing:
+            existing.stage = doc_data.get("stage", existing.stage)
+            existing.doc_type = doc_data.get("doc_type", existing.doc_type)
+            existing.classification_confidence = doc_data.get("classification_confidence", existing.classification_confidence)
+            existing.extraction_confidence = doc_data.get("extraction_confidence", existing.extraction_confidence)
+            existing.extracted_data = doc_data.get("extracted_data", existing.extracted_data)
+            existing.escalation_reason = doc_data.get("escalation_reason", existing.escalation_reason)
+            existing.trace_id = doc_data.get("trace_id", existing.trace_id)
+            existing.updated_at = datetime.now(timezone.utc)
+        else:
+            record = DocumentRecord(
+                doc_id=doc_data["doc_id"],
+                matter_id=doc_data["matter_id"],
+                original_filename=doc_data["original_filename"],
+                stage=doc_data.get("stage", "inbox"),
+                doc_type=doc_data.get("doc_type"),
+                classification_confidence=doc_data.get("classification_confidence"),
+                extraction_confidence=doc_data.get("extraction_confidence"),
+                extracted_data=doc_data.get("extracted_data"),
+                escalation_reason=doc_data.get("escalation_reason"),
+                trace_id=doc_data.get("trace_id"),
+            )
+            session.add(record)
         await session.commit()
-        return record
+        return existing if existing else record
 
 
 async def get_document(doc_id: str) -> DocumentRecord | None:

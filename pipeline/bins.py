@@ -78,7 +78,7 @@ def claim_file(file_path: Path, worker_id: str) -> Path:
     processing = processing_dir(worker_id)
     processing.mkdir(parents=True, exist_ok=True)
     dest = processing / file_path.name
-    os.rename(str(file_path), str(dest))
+    shutil.move(str(file_path), str(dest))
     return dest
 
 
@@ -150,7 +150,9 @@ def list_inbox_files() -> list[Path]:
     if not inbox.exists():
         return []
     cfg = _get_config()
-    extensions = cfg.get("file_extensions", [".txt", ".pdf", ".docx", ".md"])
+    extensions = cfg.get("file_extensions", None)
+    if extensions is None:
+        extensions = [".txt", ".pdf", ".docx", ".md"]
     return sorted(
         p for p in inbox.iterdir()
         if p.is_file() and p.suffix.lower() in extensions

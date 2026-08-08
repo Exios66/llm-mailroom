@@ -23,8 +23,6 @@ def compile_matter_record(
     report_model: str,
     temperature: float = 0.2,
 ) -> dict:
-    from openai import OpenAI
-
     doc_type = manifest_data.get("doc_type", "unknown")
     extracted = manifest_data.get("extracted_data", {})
     classification_confidence = manifest_data.get("classification_confidence")
@@ -60,7 +58,3 @@ Please compile this into a clean matter-record summary."""
         "classification_confidence": classification_confidence,
         "extraction_confidence": extraction_confidence,
     }
-
-
-def compile_report(manifest_data: dict) -> dict:
-    return compile_matter_record(manifest_data, None, "")

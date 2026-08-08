@@ -85,8 +85,6 @@ async def resolve_review(
 @app.get("/status/{doc_id}")
 async def get_document_status(doc_id: str):
     manifest = load_manifest(doc_id)
-    if not manifest:
-        pass
 
     try:
         from storage.catalog import get_document
@@ -126,7 +124,6 @@ async def get_document_status(doc_id: str):
 async def get_matter(matter_id: str):
     try:
         from storage.catalog import get_matter_documents
-        from storage.catalog import MatterRecord
     except ImportError:
         raise HTTPException(500, "Database not available")
 

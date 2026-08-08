@@ -1,6 +1,6 @@
 import structlog
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, JSON, Text, select, func
+from sqlalchemy import String, DateTime, JSON, Text, select, desc
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, async_session
@@ -44,9 +44,8 @@ async def write_audit_entry(entry) -> AuditLogRecord:
 
 async def get_audit_chain(doc_id: str) -> list[dict]:
     async with async_session() as session:
-        from sqlalchemy import select as sa_select
         result = await session.execute(
-            sa_select(AuditLogRecord)
+            select(AuditLogRecord)
             .where(AuditLogRecord.doc_id == doc_id)
             .order_by(AuditLogRecord.timestamp)
         )
@@ -67,9 +66,8 @@ async def get_audit_chain(doc_id: str) -> list[dict]:
 
 async def get_latest_audit_hash(doc_id: str) -> str:
     async with async_session() as session:
-        from sqlalchemy import select as sa_select, desc
         result = await session.execute(
-            sa_select(AuditLogRecord.entry_hash)
+            select(AuditLogRecord.entry_hash)
             .where(AuditLogRecord.doc_id == doc_id)
             .order_by(desc(AuditLogRecord.timestamp))
             .limit(1)

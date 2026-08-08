@@ -93,8 +93,12 @@ class Watcher:
 
     def _process_existing(self, path: Path):
         try:
+            if not path.exists():
+                logger.warning("existing_file_gone", file=str(path))
+                return
             claimed = claim_file(path, self.worker_id)
-            matter_id = "DEFAULT"
+            matter_id = self._infer_matter_id(path)
+            logger.info("existing_file_claimed", file=str(claimed), matter_id=matter_id)
             run_pipeline(claimed, matter_id)
         except Exception:
             logger.exception("existing_file_failed", file=str(path))

@@ -1,4 +1,3 @@
-import time
 import structlog
 import asyncio
 from pathlib import Path
@@ -25,12 +24,12 @@ class OpsMonitor:
         while self._running:
             try:
                 await self._sweep()
-            except Exception as e:
+            except Exception:
                 logger.exception("ops_monitor_sweep_error")
             await asyncio.sleep(self.sweep_interval)
 
     async def _sweep(self):
-        metrics = self._gather_metrics()
+        metrics = await self._gather_metrics()
         findings = await self._analyze_metrics(metrics)
         if findings.get("recommended_action") in ("alert", "pause_ingestion"):
             logger.warning(
@@ -40,10 +39,11 @@ class OpsMonitor:
                 findings=findings.get("findings", []),
             )
             if findings.get("recommended_action") == "pause_ingestion":
+                self._pause_file.parent.mkdir(parents=True, exist_ok=True)
                 self._pause_file.write_text("1")
                 logger.critical("ops_monitor_paused_ingestion")
 
-    def _gather_metrics(self) -> dict:
+    async def _gather_metrics(self) -> dict:
         metrics = {
             "stuck_documents": [],
             "error_rates": {},
@@ -52,14 +52,12 @@ class OpsMonitor:
         }
 
         try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                future = asyncio.ensure_future(self._query_catalog())
-            else:
-                return metrics
+            catalog_data = await self._query_catalog()
+            stuck_docs = catalog_data.get("stuck_documents", [])
+            metrics["stuck_documents"] = len(stuck_docs) if isinstance(stuck_docs, list) else 0
+            metrics["error_rates"] = catalog_data.get("error_rates", {})
         except Exception:
-            pass
+            logger.exception("catalog_query_failed")
 
         review = review_dir()
         if review.exists():
@@ -71,15 +69,17 @@ class OpsMonitor:
 
         return metrics
 
-    async def _query_catalog(self):
+    async def _query_catalog(self) -> dict:
         try:
             from storage.catalog import get_stuck_documents, get_error_rate_by_doc_type
+            stuck = await get_stuck_documents()
+            errors = await get_error_rate_by_doc_type()
             return {
-                "stuck_documents": await get_stuck_documents(),
-                "error_rates": await get_error_rate_by_doc_type(),
+                "stuck_documents": stuck,
+                "error_rates": errors,
             }
         except Exception:
-            return {}, {}
+            return {"stuck_documents": [], "error_rates": {}}
 
     async def _analyze_metrics(self, metrics: dict) -> dict:
         try:
@@ -91,7 +91,7 @@ class OpsMonitor:
             return {
                 "severity": "warning",
                 "recommended_action": "alert",
-                "findings": ["automated analysis failed — check logs"],
+                "findings": ["automated analysis failed"],
             }
 
     def stop(self):

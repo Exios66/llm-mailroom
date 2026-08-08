@@ -10,7 +10,7 @@ class DocumentState(TypedDict, total=False):
     doc_type: str | None
     classification_confidence: float | None
     classification_attempts: int
-    extracted_data: dict[Any, Any] | None
+    extracted_data: dict[str, Any] | None
     extraction_confidence: float | None
     extraction_attempts: int
     trace_id: str | None

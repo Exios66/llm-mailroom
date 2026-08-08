@@ -17,7 +17,6 @@ def after_classify(state: dict) -> Literal["retry_classify", "extract", "human_r
 
     if doc_type and doc_type not in valid_types:
         logger.warning("unknown_doc_type", doc_type=doc_type)
-        state["escalation_reason"] = f"Unknown doc_type: {doc_type}"
         return "human_review"
 
     if confidence is not None and confidence >= low:
@@ -28,7 +27,6 @@ def after_classify(state: dict) -> Literal["retry_classify", "extract", "human_r
         return "retry_classify"
 
     logger.info("low_confidence_review", confidence=confidence, attempts=attempts)
-    state["escalation_reason"] = f"Low classification confidence ({confidence}) after {attempts} attempts"
     return "human_review"
 
 
@@ -48,7 +46,6 @@ def after_extraction(state: dict) -> Literal[
 
     if conflict:
         logger.info("conflict_escalation", doc_id=state.get("doc_id"))
-        state["escalation_reason"] = "Data conflict with existing matter records"
         return "boss_escalation"
 
     if confidence is not None and confidence >= low:
@@ -59,7 +56,6 @@ def after_extraction(state: dict) -> Literal[
         return "retry_extract"
 
     logger.info("extraction_review", confidence=confidence, attempts=attempts)
-    state["escalation_reason"] = f"Low extraction confidence ({confidence}) after {attempts} attempts"
     return "human_review"
 
 

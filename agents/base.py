@@ -2,7 +2,7 @@ import json
 import structlog
 from abc import ABC, abstractmethod
 
-from llm.client import get_llm, get_llm_model
+from llm.client import get_llm
 
 logger = structlog.get_logger(__name__)
 

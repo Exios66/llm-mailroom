@@ -55,7 +55,6 @@ class ProviderConfig:
 
 
 def _build_providers() -> Dict[str, ProviderConfig]:
-    openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     return {
         "openrouter": ProviderConfig(
             name="openrouter",

@@ -15,21 +15,28 @@ from graph.routing import (
     after_human_review,
 )
 from schemas.manifest import DocumentManifest, PipelineStage
-from schemas.audit import build_audit_entry
 from pipeline.bins import (
     inbox_dir,
+    processing_dir,
+    classified_dir,
+    review_dir,
+    failed_dir,
+    archive_dir,
+    manifests_dir,
     ensure_dirs,
     claim_file,
-    move_to_classified,
     move_to_review,
     move_to_failed,
     move_to_archive,
     save_manifest,
     get_worker_id,
 )
-from pipeline.config import get_agent_config
 
 logger = structlog.get_logger(__name__)
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+PDF_EXTENSIONS = {".pdf"}
+SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | PDF_EXTENSIONS | {".txt", ".md", ".docx"}
 
 
 def _build_checkpointer():
@@ -50,12 +57,95 @@ def _build_checkpointer():
 def _ensure_dirs():
     ensure_dirs(
         inbox_dir(),
-        Path(str(inbox_dir()).replace("/pipeline/inbox", "/pipeline/processing")),
-        Path(str(inbox_dir()).replace("/pipeline/inbox", "/pipeline/classified")),
-        Path(str(inbox_dir()).replace("/pipeline/inbox", "/pipeline/review")),
-        Path(str(inbox_dir()).replace("/pipeline/inbox", "/pipeline/failed")),
-        Path(str(inbox_dir()).replace("/pipeline/inbox", "") + "/archive"),
+        processing_dir(),
+        classified_dir(),
+        review_dir(),
+        failed_dir(),
+        archive_dir(),
+        manifests_dir(),
     )
+
+
+def _read_file_text(file_path: Path) -> tuple[str, bool]:
+    ext = file_path.suffix.lower()
+    if ext in IMAGE_EXTENSIONS:
+        return _extract_text_from_image(file_path)
+    if ext in PDF_EXTENSIONS:
+        return _extract_text_from_pdf(file_path)
+    try:
+        text = file_path.read_text(errors="replace")
+        if not text.strip():
+            return ("", False)
+        return (text, True)
+    except Exception:
+        try:
+            text = file_path.read_bytes().decode("utf-8", errors="replace")
+            return (text, bool(text.strip()))
+        except Exception:
+            return (f"[Unreadable file: {file_path.name}]", False)
+
+
+def _extract_text_from_image(file_path: Path) -> tuple[str, bool]:
+    logger.info("image_detected", file=str(file_path))
+    try:
+        from agents.image_extractor import ImageExtractor
+        extractor = ImageExtractor()
+        result = extractor.extract(file_path)
+        text = result.get("text", "")
+        if text:
+            logger.info("image_extracted", file=file_path.name, chars=len(text))
+            return (text, True)
+    except Exception:
+        logger.exception("image_extraction_failed", file=str(file_path))
+    return (f"[Image file: {file_path.name} — text extraction failed]", False)
+
+
+def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
+    logger.info("pdf_detected", file=str(file_path))
+    try:
+        from agents.pdf_transcriber import PDFTranscriber
+        transcriber = PDFTranscriber()
+        result = transcriber.transcribe(file_path)
+        text = result.get("markdown", "") or result.get("text", "")
+        if text:
+            logger.info("pdf_transcribed", file=file_path.name, chars=len(text))
+            return (text, True)
+    except Exception:
+        logger.exception("pdf_transcription_failed", file=str(file_path))
+    try:
+        import subprocess, tempfile
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as tmp:
+            pass
+        subprocess.run(["pdftotext", str(file_path), tmp.name], capture_output=True, timeout=30)
+        text = Path(tmp.name).read_text(errors="replace")
+        Path(tmp.name).unlink(missing_ok=True)
+        if text.strip():
+            logger.info("pdf_fallback_text", chars=len(text))
+            return (text, True)
+    except Exception:
+        logger.exception("pdf_fallback_failed")
+    return (f"[PDF file: {file_path.name} — transcription failed]", False)
+
+
+def _build_specialist_dispatch():
+    from pipeline.config import load_config
+    cfg = load_config()
+    doc_classes = cfg.get("doc_classes", [])
+    dispatch = {}
+    for cls in doc_classes:
+        key = cls["key"]
+        spec_name = cls.get("specialist", "")
+        if spec_name == "contracts_specialist":
+            dispatch[key] = _extract_contracts
+        elif spec_name == "corporate_records_specialist":
+            dispatch[key] = _extract_corporate_records
+        elif spec_name == "due_diligence_specialist":
+            dispatch[key] = _extract_due_diligence
+        elif spec_name == "correspondence_specialist":
+            dispatch[key] = _extract_correspondence
+        elif spec_name == "compliance_specialist":
+            dispatch[key] = _extract_compliance
+    return dispatch
 
 
 def ingest_node(state: DocumentState) -> dict[str, Any]:
@@ -76,14 +166,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
     if str(inbox_dir()) in str(file_path):
         file_path = claim_file(file_path, worker_id)
 
-    doc_text = ""
-    try:
-        doc_text = file_path.read_text(errors="replace")
-    except Exception:
-        try:
-            doc_text = file_path.read_bytes().decode("utf-8", errors="replace")
-        except Exception:
-            doc_text = f"[Binary/unreadable file: {file_path.name}]"
+    doc_text, text_ok = _read_file_text(file_path)
 
     matter_id = state.get("matter_id", "DEFAULT")
     manifest = DocumentManifest(
@@ -94,7 +177,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
     manifest.touch()
     save_manifest(manifest)
 
-    logger.info("ingest", doc_id=manifest.doc_id, file=file_path.name, chars=len(doc_text))
+    logger.info("ingest", doc_id=manifest.doc_id, file=file_path.name, chars=len(doc_text), suffix=file_path.suffix)
     return {
         "doc_id": manifest.doc_id,
         "matter_id": matter_id,
@@ -106,15 +189,24 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         "extraction_attempts": 0,
         "retry_count": 0,
         "conflict_detected": False,
-        "error_message": None,
+        "error_message": None if text_ok else f"Could not extract text from {file_path.suffix} file",
     }
 
 
 def classify_node(state: DocumentState) -> dict[str, Any]:
-    from agents.sorter import SorterAgent
-
-    sorter = SorterAgent()
     doc_text = state.get("doc_text", "")
+    if not doc_text or not doc_text.strip():
+        logger.warning("empty_doc_text_classify", doc_id=state.get("doc_id"))
+        return {
+            "doc_type": "correspondence",
+            "classification_confidence": 0.1,
+            "classification_attempts": state.get("classification_attempts", 0) + 1,
+            "stage": PipelineStage.CLASSIFIED.value,
+            "escalation_reason": "Empty or unreadable document content",
+        }
+
+    from agents.sorter import SorterAgent
+    sorter = SorterAgent()
     doc_type, confidence, reasoning = sorter.classify(doc_text)
     attempts = state.get("classification_attempts", 0) + 1
 
@@ -135,11 +227,10 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
     doc_text = state.get("doc_text", "")
     attempts = state.get("classification_attempts", 0) + 1
 
-    # Alternate prompt: include existing classification for context
     prev_type = state.get("doc_type", "")
     prev_confidence = state.get("classification_confidence", 0)
     augmented_text = (
-        f"RE-EVALUATION REQUESTED — previous classification was '{prev_type}' with "
+        f"RE-EVALUATION REQUESTED - previous classification was '{prev_type}' with "
         f"confidence {prev_confidence:.2f}. Please re-examine this document independently:\n\n"
         f"{doc_text[:12000]}"
     )
@@ -160,15 +251,8 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     doc_type = state.get("doc_type", "")
     doc_text = state.get("doc_text", "")
 
-    specialists = {
-        "contract": _extract_contracts,
-        "corporate_record": _extract_corporate_records,
-        "due_diligence": _extract_due_diligence,
-        "correspondence": _extract_correspondence,
-        "compliance_filing": _extract_compliance,
-    }
-
-    extractor = specialists.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
+    dispatch = _build_specialist_dispatch()
+    extractor = dispatch.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
     result = extractor(doc_text)
     confidence = result.pop("confidence", None)
     attempts = state.get("extraction_attempts", 0) + 1
@@ -213,19 +297,13 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     attempts = state.get("extraction_attempts", 0) + 1
 
     augmented_text = (
-        f"RE-EXTRACTION REQUESTED — previous extraction was low-confidence. "
+        f"RE-EXTRACTION REQUESTED - previous extraction was low-confidence. "
         f"Please re-examine this document independently. Previous attempt found: {prev_extracted}\n\n"
         f"{doc_text[:25000]}"
     )
 
-    specialists = {
-        "contract": _extract_contracts,
-        "corporate_record": _extract_corporate_records,
-        "due_diligence": _extract_due_diligence,
-        "correspondence": _extract_correspondence,
-        "compliance_filing": _extract_compliance,
-    }
-    extractor = specialists.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
+    dispatch = _build_specialist_dispatch()
+    extractor = dispatch.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
     result = extractor(augmented_text)
     confidence = result.pop("confidence", None)
 
@@ -241,13 +319,13 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
 def human_review_node(state: DocumentState) -> dict[str, Any]:
     file_path_str = state.get("file_path", "")
     esc_reason = state.get("escalation_reason", "Unknown reason")
+    doc_id = state.get("doc_id", "")
 
-    logger.info("human_review_required", doc_id=state.get("doc_id"), reason=esc_reason)
+    logger.info("human_review_required", doc_id=doc_id, reason=esc_reason)
 
     if file_path_str:
-        from schemas.manifest import DocumentManifest
         manifest = DocumentManifest(
-            doc_id=state.get("doc_id", ""),
+            doc_id=doc_id,
             matter_id=state.get("matter_id", "DEFAULT"),
             original_filename=state.get("original_filename", ""),
             stage=PipelineStage.REVIEW,
@@ -256,12 +334,16 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             extracted_data=state.get("extracted_data"),
             extraction_confidence=state.get("extraction_confidence"),
             escalation_reason=esc_reason,
+            trace_id=state.get("trace_id"),
+            classification_attempts=state.get("classification_attempts", 0),
+            extraction_attempts=state.get("extraction_attempts", 0),
         )
         move_to_review(Path(file_path_str), manifest)
 
     return {
         "stage": PipelineStage.REVIEW.value,
         "escalation_reason": esc_reason,
+        "review_decision": "rejected",
     }
 
 
@@ -290,7 +372,7 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
 
 
 def compile_report_node(state: DocumentState) -> dict[str, Any]:
-    from llm.client import get_llm, get_llm_model
+    from llm.client import get_llm
 
     manifest_data = {
         "doc_id": state.get("doc_id"),
@@ -315,16 +397,56 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
 
 
 def catalog_write_node(state: DocumentState) -> dict[str, Any]:
-    logger.info("catalog_write", doc_id=state.get("doc_id"))
+    doc_id = state.get("doc_id", "")
+    logger.info("catalog_write", doc_id=doc_id)
+    try:
+        import asyncio
+        from schemas.matter import Matter
+        from storage.catalog import write_document_record as _write_doc, write_matter_record as _write_matter
+
+        matter = Matter(
+            matter_id=state.get("matter_id", ""),
+            name=state.get("matter_id", "DEFAULT"),
+            client_name="auto-created",
+            practice_area="transactional",
+        )
+
+        doc_record = {
+            "doc_id": state["doc_id"],
+            "matter_id": state["matter_id"],
+            "original_filename": state["original_filename"],
+            "doc_type": state.get("doc_type", "unknown"),
+            "stage": state.get("stage", "cataloged"),
+            "classification_confidence": state.get("classification_confidence"),
+            "extraction_confidence": state.get("extraction_confidence"),
+            "extracted_data": state.get("extracted_data"),
+            "escalation_reason": state.get("escalation_reason"),
+            "trace_id": state.get("trace_id"),
+        }
+
+        def _sync_write():
+            async def _runner():
+                await _write_matter(matter)
+                await _write_doc(doc_record)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    future = asyncio.run_coroutine_threadsafe(_runner(), loop)
+                    future.result(timeout=5)
+                else:
+                    asyncio.run(_runner())
+            except RuntimeError:
+                asyncio.run(_runner())
+
+        _sync_write()
+        logger.info("catalog_written", doc_id=doc_id)
+    except Exception:
+        logger.exception("catalog_write_error")
     return {}
 
 
 def archive_node(state: DocumentState) -> dict[str, Any]:
-    from schemas.manifest import DocumentManifest
-    from agents.archivist import archive_document
-    from pipeline.bins import save_manifest as bins_save_manifest
-    from schemas.audit import build_audit_entry
-
     manifest = DocumentManifest(
         doc_id=state.get("doc_id", ""),
         matter_id=state.get("matter_id", "DEFAULT"),
@@ -336,36 +458,55 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         extraction_confidence=state.get("extraction_confidence"),
         trace_id=state.get("trace_id"),
         escalation_reason=state.get("escalation_reason"),
+        classification_attempts=state.get("classification_attempts", 0),
+        extraction_attempts=state.get("extraction_attempts", 0),
     )
 
-    file_path = Path(state.get("file_path", ""))
+    file_path_str = state.get("file_path", "")
+    if not file_path_str:
+        logger.error("archive_no_file_path", doc_id=manifest.doc_id)
+        return {"stage": PipelineStage.FAILED.value, "error_message": "No file path in state"}
+
+    file_path = Path(file_path_str)
     if not file_path.exists():
-        processing_root = Path(str(inbox_dir()).replace("/pipeline/inbox", "/pipeline/processing"))
+        processing_root = processing_dir()
         candidates = list(processing_root.rglob(state.get("original_filename", "*.txt")))
         if candidates:
             file_path = candidates[0]
+        else:
+            logger.error("archive_file_not_found", doc_id=manifest.doc_id, path=file_path_str)
+            return {"stage": PipelineStage.FAILED.value, "error_message": f"File not found: {file_path_str}"}
 
+    from agents.archivist import archive_document
     archive_path, audit_entry = archive_document(manifest, file_path)
 
-    try:
-        from storage.audit_log import write_audit_entry
-        write_audit_entry_sync(audit_entry)
-    except Exception:
-        logger.exception("audit_log_write_error")
+    _write_audit_log(audit_entry)
 
     logger.info("pipeline_complete", doc_id=manifest.doc_id, archive=str(archive_path))
-    return {
-        "stage": PipelineStage.ARCHIVED.value,
-    }
+    return {"stage": PipelineStage.ARCHIVED.value}
 
 
-def write_audit_entry_sync(entry):
+def _write_audit_log(entry):
     try:
-        from storage.audit_log import write_audit_entry
         import asyncio
-        asyncio.get_event_loop().create_task(write_audit_entry(entry))
+        from storage.audit_log import write_audit_entry
+
+        async def _write():
+            await write_audit_entry(entry)
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(_write(), loop)
+                future.result(timeout=5)
+            else:
+                asyncio.run(_write())
+        except RuntimeError:
+            asyncio.run(_write())
+        logger.info("audit_entry_written", entry_id=entry.entry_id, event=entry.event)
     except Exception:
-        pass
+        logger.exception("audit_log_write_error")
 
 
 def build_graph(checkpointer=None):
