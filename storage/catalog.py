@@ -1,0 +1,138 @@
+import structlog
+from datetime import datetime, timezone
+from sqlalchemy import String, Float, Integer, DateTime, JSON, Text, select
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
+
+from .db import Base, async_session
+
+logger = structlog.get_logger(__name__)
+
+
+class MatterRecord(Base):
+    __tablename__ = "matters"
+
+    matter_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    client_name: Mapped[str] = mapped_column(String(256), default="")
+    practice_area: Mapped[str] = mapped_column(String(128), default="transactional")
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class DocumentRecord(Base):
+    __tablename__ = "documents"
+
+    doc_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    matter_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    stage: Mapped[str] = mapped_column(String(64), default="inbox")
+    doc_type: Mapped[str] = mapped_column(String(64), nullable=True)
+    classification_confidence: Mapped[float] = mapped_column(Float, nullable=True)
+    extraction_confidence: Mapped[float] = mapped_column(Float, nullable=True)
+    extracted_data: Mapped[dict] = mapped_column(JSON, nullable=True)
+    escalation_reason: Mapped[str] = mapped_column(Text, nullable=True)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+async def write_matter_record(matter_data) -> MatterRecord:
+    async with async_session() as session:
+        existing = await session.get(MatterRecord, matter_data.matter_id)
+        if existing:
+            existing.name = matter_data.name or existing.name
+            existing.client_name = matter_data.client_name or existing.client_name
+            existing.updated_at = datetime.now(timezone.utc)
+        else:
+            existing = MatterRecord(
+                matter_id=matter_data.matter_id,
+                name=matter_data.name,
+                client_name=matter_data.client_name,
+                practice_area=matter_data.practice_area,
+                opened_at=matter_data.opened_at,
+            )
+            session.add(existing)
+        await session.commit()
+        return existing
+
+
+async def write_document_record(doc_data: dict) -> DocumentRecord:
+    async with async_session() as session:
+        record = DocumentRecord(
+            doc_id=doc_data["doc_id"],
+            matter_id=doc_data["matter_id"],
+            original_filename=doc_data["original_filename"],
+            stage=doc_data.get("stage", "inbox"),
+            doc_type=doc_data.get("doc_type"),
+            classification_confidence=doc_data.get("classification_confidence"),
+            extraction_confidence=doc_data.get("extraction_confidence"),
+            extracted_data=doc_data.get("extracted_data"),
+            escalation_reason=doc_data.get("escalation_reason"),
+            trace_id=doc_data.get("trace_id"),
+        )
+        session.add(record)
+        await session.commit()
+        return record
+
+
+async def get_document(doc_id: str) -> DocumentRecord | None:
+    async with async_session() as session:
+        return await session.get(DocumentRecord, doc_id)
+
+
+async def get_matter_documents(matter_id: str) -> list[DocumentRecord]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(DocumentRecord).where(DocumentRecord.matter_id == matter_id)
+        )
+        return list(result.scalars().all())
+
+
+async def get_stuck_documents(stale_minutes: int = 15) -> list[DocumentRecord]:
+    cutoff = datetime.now(timezone.utc)
+    from datetime import timedelta
+    cutoff = cutoff - timedelta(minutes=stale_minutes)
+    async with async_session() as session:
+        result = await session.execute(
+            select(DocumentRecord).where(
+                DocumentRecord.stage.in_(["processing", "inbox"]),
+                DocumentRecord.updated_at < cutoff,
+            )
+        )
+        return list(result.scalars().all())
+
+
+async def get_documents_by_stage(stage: str) -> list[DocumentRecord]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(DocumentRecord).where(DocumentRecord.stage == stage)
+        )
+        return list(result.scalars().all())
+
+
+async def get_error_rate_by_doc_type() -> dict[str, dict]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(DocumentRecord.doc_type, DocumentRecord.stage)
+        )
+        rows = result.all()
+        stats: dict[str, dict] = {}
+        for doc_type, stage in rows:
+            if doc_type not in stats:
+                stats[doc_type] = {"total": 0, "failed": 0, "review": 0}
+            stats[doc_type]["total"] += 1
+            if stage == "failed":
+                stats[doc_type]["failed"] += 1
+            elif stage == "review":
+                stats[doc_type]["review"] += 1
+        return stats

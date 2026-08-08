@@ -1,0 +1,26 @@
+NON-DISCLOSURE AGREEMENT
+
+This Non-Disclosure Agreement (the "Agreement") is made as of March 3, 2024, between:
+
+DISCLOSING PARTY: Quantum Dynamics Inc., a Nevada corporation
+RECEIVING PARTY: Stellar Advisors LLC, a New York limited liability company
+
+The parties wish to explore a potential business relationship. In connection therewith, Disclosing Party may disclose certain confidential information to Receiving Party.
+
+1. Definition of Confidential Information. "Confidential Information" means any information disclosed by Disclosing Party to Receiving Party, either directly or indirectly, in writing, orally or by inspection of tangible objects.
+
+2. Obligations. Receiving Party shall hold all Confidential Information in strict confidence and shall not disclose any Confidential Information to any third party without the prior written consent of Disclosing Party.
+
+3. Term. The obligations under this Agreement shall survive for a period of five (5) years from the date of disclosure of the applicable Confidential Information.
+
+4. Governing Law. This Agreement shall be governed by the laws of the State of New York.
+
+Signed:
+
+/s/ Alan Turing
+Alan Turing
+Chief Scientific Officer, Quantum Dynamics Inc.
+
+/s/ Grace Hopper
+Grace Hopper
+Managing Partner, Stellar Advisors LLC

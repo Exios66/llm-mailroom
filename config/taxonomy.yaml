@@ -1,0 +1,101 @@
+# Mailroom Document Taxonomy
+# Adding a new doc class: add an entry below + a matching schema in schemas/documents.py
+# Adjusting thresholds: edit the numbers below — no code changes needed.
+
+pipeline:
+  bins:
+    inbox: "{base_dir}/pipeline/inbox"
+    processing: "{base_dir}/pipeline/processing"
+    classified: "{base_dir}/pipeline/classified"
+    review: "{base_dir}/pipeline/review"
+    failed: "{base_dir}/pipeline/failed"
+    archive: "{base_dir}/archive"
+    manifests: "{base_dir}/manifests"
+
+confidence:
+  high: 0.85       # confident enough to proceed without second-guessing
+  low: 0.70        # below this → retry; still below after retry → human review
+  retry_max: 1     # max retries before routing to review
+  conflict_threshold: 0.3  # extraction confidence gap below this → potential conflict
+
+doc_classes:
+  - key: contract
+    label: "Contract / Agreement"
+    schema: ContractExtraction
+    specialist: contracts_specialist
+    description: "Formal agreements between parties: M&A, vendor, employment, NDAs, etc."
+
+  - key: corporate_record
+    label: "Corporate Record"
+    schema: CorporateRecordExtraction
+    specialist: corporate_records_specialist
+    description: "Bylaws, resolutions, board minutes, cap table entries, incorporation docs"
+
+  - key: due_diligence
+    label: "Due Diligence"
+    schema: DueDiligenceExtraction
+    specialist: due_diligence_specialist
+    description: "Checklists, disclosure schedules, diligence memos, risk assessments"
+
+  - key: correspondence
+    label: "Correspondence"
+    schema: CorrespondenceExtraction
+    specialist: correspondence_specialist
+    description: "Letters, emails, memos, notices between parties or with regulators"
+
+  - key: compliance_filing
+    label: "Compliance Filing"
+    schema: ComplianceFilingExtraction
+    specialist: compliance_specialist
+    description: "SEC filings, state registrations, regulatory submissions, annual reports"
+
+file_extensions:
+  - .txt
+  - .pdf
+  - .docx
+  - .md
+
+# === Agent → model mapping ===
+# Each agent list entry: provider, model, temperature
+# To cut over locally: change provider to "ollama", model to e.g. "qwen3:7b"
+# Setting DEFAULT_PROVIDER env var overrides the provider globally.
+agents:
+  sorter:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.1
+
+  contracts_specialist:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.1
+
+  corporate_records_specialist:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.1
+
+  due_diligence_specialist:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.1
+
+  correspondence_specialist:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.1
+
+  compliance_specialist:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.1
+
+  reporter:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.2
+
+  boss:
+    provider: openrouter
+    model: openai/gpt-4o
+    temperature: 0.1

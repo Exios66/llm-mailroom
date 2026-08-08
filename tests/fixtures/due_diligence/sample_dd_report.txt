@@ -1,0 +1,33 @@
+DUE DILIGENCE REPORT
+
+CONFIDENTIAL — ATTORNEY WORK PRODUCT
+
+TARGET: NovaTech Solutions, Inc.
+DATE OF REPORT: May 22, 2024
+PREPARED BY: Morrison & Chase LLP
+DILIGENCE TYPE: Legal and Regulatory
+
+MATERIAL FINDINGS:
+
+1. Corporate Structure. NovaTech Solutions, Inc. is a Delaware corporation formed in 2019. The company maintains a standard corporate structure with three subsidiaries, all wholly owned.
+
+2. Intellectual Property. NovaTech holds 12 issued patents and 8 pending patent applications in the semiconductor space. All issued patents appear to be properly maintained and no material IP disputes were identified.
+
+3. Material Contracts. Review of top 15 customer and vendor contracts revealed no change-of-control provisions that would impact the proposed acquisition.
+
+4. Litigation. NovaTech is currently a defendant in a patent infringement lawsuit filed by Orion Semiconductor in the Eastern District of Texas (Case No. 4:24-cv-00123). NovaTech's outside counsel represents that the claim is without merit. Potential exposure estimated at $5-10 million.
+
+RISK FLAGS:
+
+- RISK: The Orion Semiconductor patent litigation, while characterized as meritless, creates uncertainty and potential cost exposure. Discovery is ongoing and no summary judgment motion has been filed.
+- RISK: NovaTech's largest customer (representing 35% of revenue) has a contract expiring in Q3 2024 with no renewal signed. The customer has right of first refusal on NovaTech's next-generation products.
+- RISK: Employee retention in the engineering team has declined. 3 of 12 senior engineers have departed in the past 6 months, reportedly due to compensation concerns.
+
+OUTSTANDING ITEMS:
+
+- [ ] Obtain litigation hold documentation from NovaTech's outside IP counsel
+- [ ] Review customer contract expiration pipeline for any other near-term renewals
+- [ ] Conduct interviews with remaining senior engineering team members
+- [ ] Verify NovaTech's representations regarding regulatory compliance with export controls on semiconductor technology
+
+OVERALL ASSESSMENT: Moderate risk. The patent litigation and customer concentration warrant further investigation before closing, but neither appears to be a deal-breaker at this stage.

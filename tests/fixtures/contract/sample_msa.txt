@@ -1,0 +1,49 @@
+CONFIDENTIAL
+
+MASTER SERVICES AGREEMENT
+
+This Master Services Agreement (this "Agreement") is entered into as of January 15, 2024 (the "Effective Date") by and between:
+
+ACME CORPORATION, a Delaware corporation with its principal place of business at 100 Innovation Drive, Palo Alto, CA 94301 ("Client"),
+
+and
+
+ZENITH TECHNOLOGIES LLC, a California limited liability company with its principal place of business at 500 Market Street, San Francisco, CA 94105 ("Provider").
+
+1. SERVICES. Provider shall provide Client with the software development and cloud infrastructure services described in Exhibit A attached hereto (the "Services").
+
+2. TERM. This Agreement shall commence on the Effective Date and continue for a period of three (3) years (the "Initial Term"), unless earlier terminated in accordance with Section 8.
+
+3. FEES AND PAYMENT. Client shall pay Provider the fees set forth in Exhibit B. Invoices shall be paid within thirty (30) days of receipt. The total contract value shall not exceed $2,500,000 over the Initial Term.
+
+4. KEY OBLIGATIONS.
+
+(a) Provider shall deliver monthly status reports and maintain 99.9% uptime for all production systems.
+
+(b) Client shall provide reasonable access to its systems and personnel necessary for Provider to perform the Services.
+
+(c) Provider shall maintain professional liability insurance with coverage of at least $5,000,000 per occurrence.
+
+5. TERMINATION.
+
+(a) Either party may terminate this Agreement upon thirty (30) days' written notice if the other party materially breaches this Agreement and fails to cure such breach within such notice period.
+
+(b) Client may terminate for convenience upon sixty (60) days' written notice, subject to payment for all Services performed through the termination date.
+
+(c) This Agreement shall automatically terminate upon the insolvency or bankruptcy of either party.
+
+6. GOVERNING LAW. This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware, without regard to its conflict of laws principles.
+
+7. RENEWAL. This Agreement shall automatically renew for successive one-year terms unless either party provides written notice of non-renewal at least ninety (90) days prior to the end of the then-current term.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of the Effective Date.
+
+ACME CORPORATION
+By: /s/ John Smith
+Name: John Smith
+Title: Chief Technology Officer
+
+ZENITH TECHNOLOGIES LLC
+By: /s/ Jane Doe
+Name: Jane Doe
+Title: Chief Executive Officer

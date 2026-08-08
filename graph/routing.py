@@ -1,0 +1,81 @@
+import structlog
+from typing import Literal
+
+from pipeline.config import get_confidence_thresholds, get_all_doc_types
+
+logger = structlog.get_logger(__name__)
+
+
+def after_classify(state: dict) -> Literal["retry_classify", "extract", "human_review"]:
+    confidence = state.get("classification_confidence")
+    attempts = state.get("classification_attempts", 0)
+    doc_type = state.get("doc_type")
+    thresholds = get_confidence_thresholds()
+    low = thresholds.get("low", 0.70)
+    retry_max = thresholds.get("retry_max", 1)
+    valid_types = get_all_doc_types()
+
+    if doc_type and doc_type not in valid_types:
+        logger.warning("unknown_doc_type", doc_type=doc_type)
+        state["escalation_reason"] = f"Unknown doc_type: {doc_type}"
+        return "human_review"
+
+    if confidence is not None and confidence >= low:
+        return "extract"
+
+    if attempts <= retry_max:
+        logger.info("low_confidence_retry", confidence=confidence, attempts=attempts)
+        return "retry_classify"
+
+    logger.info("low_confidence_review", confidence=confidence, attempts=attempts)
+    state["escalation_reason"] = f"Low classification confidence ({confidence}) after {attempts} attempts"
+    return "human_review"
+
+
+def after_retry_classify(state: dict) -> Literal["extract", "human_review"]:
+    return after_classify(state)
+
+
+def after_extraction(state: dict) -> Literal[
+    "retry_extract", "compile_report", "human_review", "boss_escalation"
+]:
+    confidence = state.get("extraction_confidence")
+    attempts = state.get("extraction_attempts", 0)
+    thresholds = get_confidence_thresholds()
+    low = thresholds.get("low", 0.70)
+    retry_max = thresholds.get("retry_max", 1)
+    conflict = state.get("conflict_detected", False)
+
+    if conflict:
+        logger.info("conflict_escalation", doc_id=state.get("doc_id"))
+        state["escalation_reason"] = "Data conflict with existing matter records"
+        return "boss_escalation"
+
+    if confidence is not None and confidence >= low:
+        return "compile_report"
+
+    if attempts <= retry_max:
+        logger.info("extraction_retry", confidence=confidence, attempts=attempts)
+        return "retry_extract"
+
+    logger.info("extraction_review", confidence=confidence, attempts=attempts)
+    state["escalation_reason"] = f"Low extraction confidence ({confidence}) after {attempts} attempts"
+    return "human_review"
+
+
+def after_retry_extraction(state: dict) -> Literal["compile_report", "human_review", "boss_escalation"]:
+    return after_extraction(state)
+
+
+def after_boss(state: dict) -> Literal["compile_report", "human_review"]:
+    decision = state.get("review_decision")
+    if decision == "approved":
+        return "compile_report"
+    return "human_review"
+
+
+def after_human_review(state: dict) -> Literal["compile_report", "failed"]:
+    decision = state.get("review_decision")
+    if decision == "approved":
+        return "compile_report"
+    return "failed"
