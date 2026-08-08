@@ -19,6 +19,7 @@ Usage:
     python scripts/run_pilot.py --real
     python scripts/run_pilot.py --mock --baseline data/pilot_report_baseline.json
     python scripts/run_pilot.py --mock --include contract
+    python scripts/run_pilot.py --mock --source pileoflaw
 """
 
 from __future__ import annotations
@@ -41,9 +42,10 @@ logger = structlog.get_logger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pipeline.env import load_env  # noqa: E402
+from pipeline.env import default_environment, load_env  # noqa: E402
 
 load_env()
+default_environment("pilot")
 
 from pipeline.logging import setup_logging  # noqa: E402
 
@@ -481,6 +483,10 @@ def main() -> int:
     parser.add_argument("--mock", action="store_true", help="Use a deterministic fake LLM (no API key).")
     parser.add_argument("--real", action="store_true", help="Use the real LLM (needs OPENROUTER_API_KEY).")
     parser.add_argument("--include", help="Only run samples of this expected doc class (e.g. contract).")
+    parser.add_argument(
+        "--source",
+        help="Only run samples from this source corpus (e.g. legalbench, atticus, pileoflaw).",
+    )
     parser.add_argument("--max-docs", type=int, default=None, help="Limit the run to the first N samples.")
     parser.add_argument("--baseline", help="Path to a previous pilot report JSON to diff against.")
     parser.add_argument(
@@ -509,6 +515,9 @@ def main() -> int:
         manifest = list(csv.DictReader(fh))
     if args.include:
         manifest = [m for m in manifest if m["expected_doc_class"] == args.include]
+    if args.source:
+        manifest = [m for m in manifest if (m.get("dataset") or "original") == args.source]
+        logger.info("source_filter", source=args.source, remaining=len(manifest))
     if args.max_docs:
         manifest = manifest[: args.max_docs]
         logger.info("max_docs_limit", limit=args.max_docs, remaining=len(manifest))

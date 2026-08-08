@@ -5,6 +5,9 @@ from pathlib import Path
 from pipeline.env import load_env
 
 load_env()
+from pipeline.env import default_environment
+
+default_environment("live")
 
 from pipeline.logging import setup_logging
 

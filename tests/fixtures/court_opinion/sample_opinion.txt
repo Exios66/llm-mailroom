@@ -1,0 +1,39 @@
+STATE OF NEW YORK
+SUPREME COURT : COUNTY OF KINGS
+
+THE PEOPLE OF THE STATE OF NEW YORK,
+                 Respondent,
+      -against-                              Docket No. 2024-1847
+JOHN D. CARTER,
+                 Appellant.
+
+APPELLATE DIVISION OPINION
+
+Appeal by the defendant from a judgment of the Supreme Court, Kings County,
+rendered November 15, 2023, convicting him of grand larceny in the second
+degree (Penal Law § 155.40) upon a jury verdict and imposing sentence.
+
+PER CURIAM:
+
+The judgment appealed from should be affirmed.
+
+The defendant's principal contention is that the trial court erred in denying
+his motion to suppress evidence obtained from a warrantless search of a
+briefcase recovered from his vehicle. The People maintain the search was
+justified under the automobile exception to the warrant requirement.
+
+We agree with the People. An officer who has probable cause to believe a
+vehicle contains contraband may search the vehicle and any containers therein
+that might conceal the contraband, including a briefcase, without a warrant.
+See United States v. Ross, 456 U.S. 798 (1982); People v. Blasich, 73 N.Y.2d
+673 (1989).
+
+The defendant further contends that the verdict was against the weight of the
+evidence. The People's witnesses testified that the defendant was observed
+removing equipment from the complainant's warehouse, and video surveillance
+corroborated the identification. The jury credited that testimony, and we find
+no reason to disturb its determination.
+
+Accordingly, the judgment of conviction is affirmed.
+
+Ordered that the judgment is affirmed.

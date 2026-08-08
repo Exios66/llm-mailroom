@@ -167,7 +167,34 @@ The Sorter is the first LLM call in the pipeline. It reads the document text and
 
 ---
 
-### 7. Reporter (`agents/reporter.py`)
+### 7. Court Opinions Specialist (`agents/court_opinions_specialist.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | `extract`, `retry_extract` |
+| **Trigger** | `doc_type == court_opinion` |
+| **Input** | Document text + `CourtOpinionExtraction` schema |
+| **Output** | Structured extraction + confidence |
+| **Personality** | Meticulous, reports holdings without editorializing |
+
+**Output schema fields:**
+| Field | Type | Description |
+|---|---|---|
+| `case_name` | `str` | Style of the case (e.g. Smith v. Jones) |
+| `court` | `str` | Issuing court |
+| `date_decided` | `str \| None` | Decision date |
+| `docket_number` | `str \| None` | Case/docket number |
+| `opinion_type` | `str` | published, memorandum, per curiam, order, etc. |
+| `parties` | `list[str]` | Named parties from the caption |
+| `holding` | `str` | The rule of law established |
+| `legal_issues` | `list[str]` | Questions of law presented and decided |
+| `outcome` | `str` | affirmed, reversed, remanded, denied, granted |
+| `citations` | `list[str]` | Reporter citations and docket numbers |
+| `authored_by` | `str \| None` | Authoring judge |
+
+---
+
+### 8. Reporter (`agents/reporter.py`)
 
 | Attribute | Value |
 |---|---|
@@ -181,7 +208,7 @@ The Reporter does NOT extract new data — it compiles and refines what the spec
 
 ---
 
-### 8. Archivist (`agents/archivist.py`)
+### 9. Archivist (`agents/archivist.py`)
 
 | Attribute | Value |
 |---|---|
@@ -198,7 +225,7 @@ The Archivist is NOT an LLM agent — it's a procedural function that:
 
 ---
 
-### 9. Boss (`agents/boss.py`)
+### 10. Boss (`agents/boss.py`)
 
 | Attribute | Value |
 |---|---|
@@ -217,7 +244,7 @@ Both share the same system prompt voice — consistent persona across both invoc
 
 ---
 
-### 10. PDF Transcriber (`agents/pdf_transcriber.py`)
+### 11. PDF Transcriber (`agents/pdf_transcriber.py`)
 
 | Attribute | Value |
 |---|---|
@@ -231,7 +258,7 @@ A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`
 
 ---
 
-### 11. Judge (`agents/judge.py`)
+### 12. Judge (`agents/judge.py`)
 
 | Attribute | Value |
 |---|---|

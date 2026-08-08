@@ -8,6 +8,9 @@ ready to drop into the pipeline inbox:
   (examples/samples/contract/...) are copied verbatim.
 - Rows whose `source` points at a committed .txt under examples/sources/ are
   rendered to PDF with ReportLab.
+- Rows whose `source` points at `external/...` (fetched by
+  scripts/fetch_external_samples.py from LegalBench / Pile of Law) are also
+  rendered to PDF with ReportLab.
 
 The manifest is the source of truth: filenames, subdirectories, and ground-truth
 expectations all live there.
@@ -31,6 +34,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCES_DIR = REPO_ROOT / "examples" / "sources"
 REAL_CONTRACTS_DIR = REPO_ROOT / "examples" / "samples" / "contract"
+EXTERNAL_DIR = REPO_ROOT / "examples" / "external"
 MANIFEST = REPO_ROOT / "examples" / "samples" / "manifest.csv"
 
 
@@ -87,10 +91,19 @@ def prepare_samples(base_dir: Path | None = None) -> Path:
 
         source = row["source"]
         if source.startswith("CUAD"):
+            # Real CUAD/Atticus PDFs committed under examples/samples/contract/
+            # (the original 3 + the 6 fetched by fetch_external_samples.py).
             src = REAL_CONTRACTS_DIR / row["filename"]
             if not src.exists():
                 raise SystemExit(f"Missing CUAD PDF: {src}")
             shutil.copyfile(src, dest)
+        elif source.startswith("external/"):
+            # Fetched dataset samples (LegalBench MAUD, Pile of Law): committed
+            # .txt under examples/external/, rendered to PDF here.
+            txt = EXTERNAL_DIR / source.removeprefix("external/")
+            if not txt.exists():
+                raise SystemExit(f"Missing external source text: {txt}")
+            generate_pdf_from_text(txt, dest)
         else:
             txt = SOURCES_DIR / source
             if not txt.exists():

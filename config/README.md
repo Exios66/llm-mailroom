@@ -4,7 +4,7 @@
 
 Just one file: `taxonomy.yaml`. It is the **control panel** for the whole pipeline. Almost everything you might want to tweak lives here, and nothing in the code hardcodes these values:
 
-- **What kinds of documents** the pipeline recognizes (`doc_classes`) — contracts, corporate records, due diligence, correspondence, compliance filings.
+- **What kinds of documents** the pipeline recognizes (`doc_classes`) — contracts, corporate records, due diligence, correspondence, compliance filings, court opinions.
 - **Confidence thresholds** (`confidence:`) — how sure the LLM must be before the pipeline proceeds vs. retries vs. sends to a human.
 - **Which LLM model each agent uses** (`agents:`) — e.g. `sorter` → OpenRouter `openai/gpt-4o`, or a local Ollama model.
 - **Accepted file extensions** (`file_extensions:`).
