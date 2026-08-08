@@ -22,7 +22,11 @@ Extraction rules:
 7. Citations: reporter citations and docket numbers if present.
 8. Do not editorialize — report what the court held, not your own view of the law.
 9. Return one complete JSON object with every schema field. Use null or an empty list
-   for facts not stated; never infer a case name, date, docket, author, or citation."""
+   for facts not stated; never infer a case name, date, docket, author, or citation.
+10. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+    start from the share of schema fields actually found (fields left null lower it), and lower
+    it further for uncertain values or truncated input. Never default to a fixed high value
+    (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports."""
 
 
 class CourtOpinionsSpecialist(BaseAgent):

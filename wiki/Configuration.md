@@ -37,14 +37,14 @@ Controls the branching logic in `graph/routing.py`. Tunable without code changes
 
 | Key | Default | Description |
 |---|---|---|
-| `high` | 0.85 | Above this: confident enough to proceed without second-guessing |
+| `high` | 0.95 | Classification confidence ≥ this auto-continues to extraction; the band `[low, high)` is "classified but not clearly confident" → human review |
 | `low` | 0.70 | Below this: retry once; still below after retry → human review |
 | `retry_max` | 1 | Maximum retries before escalating to human review |
 | `conflict_threshold` | 0.3 | Extraction confidence gap below this → potential conflict → Boss |
 
 ```yaml
 confidence:
-  high: 0.85
+  high: 0.95
   low: 0.70
   retry_max: 1
   conflict_threshold: 0.3

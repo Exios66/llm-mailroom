@@ -15,14 +15,18 @@ Extraction rules:
 3. For parties: list ALL named parties (individuals + entities) in the contract.
 4. For dates: use the format as written, or standardize to YYYY-MM-DD if unambiguous.
 5. For clauses: extract the actual operative language, not a paraphrase.
-6. Produce a confidence score reflecting how certain you are about the overall extraction quality.
+6. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+   start from the share of schema fields actually found in the text (fields left null lower it),
+   and lower it further for uncertain values or truncated input. Never default to a fixed high
+   value (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence
+   supports.
 7. Always return one complete JSON object with every requested field; never stop mid-field,
    emit commentary, or return an empty response. For long documents, keep clause values
    concise enough to finish the schema while preserving the operative meaning.
 8. If the input ends with a truncation marker or a fact is unavailable, use null or an empty
    list rather than guessing or leaving the JSON incomplete.
 
-Be precise to a fault. If you're unsure about a value, lower your confidence score accordingly."""
+Be precise to a fault. If you're unsure about a value, lower your confidence score accordingly — a score cannot exceed what the extracted facts justify."""
 
 
 class ContractsSpecialist(BaseAgent):

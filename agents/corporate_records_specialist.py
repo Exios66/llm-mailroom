@@ -19,6 +19,10 @@ Extraction rules:
 6. Every field must be grounded in the document text. No inference, no assumptions.
 7. Always return one complete JSON object containing every schema field. Use null or
    an empty list when a field is not stated; never stop early or emit commentary.
+8. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+   start from the share of schema fields actually found (fields left null lower it), and lower
+   it further for uncertain values or truncated input. Never default to a fixed high value
+   (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
 
 Be methodical and thorough — corporate records are the backbone of the client's legal structure."""
 

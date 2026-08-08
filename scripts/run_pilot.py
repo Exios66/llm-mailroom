@@ -51,9 +51,10 @@ from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
 
-os.environ.setdefault("OPENROUTER_API_KEY", "mock-key")
-# Tracing mode is set in main() from the CLI flag: --mock forces it off so
-# mock runs stay hermetic; --real leaves .env's auto resolution (-> langfuse).
+# NOTE: no `OPENROUTER_API_KEY` placeholder is ever set here. Mock runs patch
+# get_llm entirely (no key needed); real runs must resolve a REAL key from the
+# environment — llm/providers.py rejects the historical "mock-key" placeholder,
+# so a live run can never silently execute against fake credentials.
 
 from scripts.prepare_samples import prepare_samples  # noqa: E402
 from schemas.documents import get_extraction_schema  # noqa: E402
@@ -242,7 +243,13 @@ def run_sample(
 
     expect = {
         "doc_type": sample["expected_doc_class"],
-        "conf": 0.40 if sample["id"] == "ambiguous_01" else 0.95,
+        # Deterministic per-sample confidence (0.95-0.99) so the mock never
+        # reports a flat 0.95 for every document; 0.40 simulates the genuinely
+        # ambiguous sample. All values stay >= confidence.high so routing
+        # remains deterministic (archived docs stay archived).
+        "conf": 0.40
+        if sample["id"] == "ambiguous_01"
+        else 0.95 + (sum(sample["id"].encode()) % 5) / 100,
     }
 
     _LLM_METRICS["calls"] = 0
@@ -571,7 +578,12 @@ def main() -> int:
 
     if args.mock and args.real:
         parser.error("choose --mock OR --real")
-    mock_mode = not args.real
+    if not args.mock and not args.real:
+        parser.error(
+            "choose --mock (deterministic fake LLM) or --real (real LLM). "
+            "The mode is explicit so a run can never silently execute against fake LLM results."
+        )
+    mock_mode = args.mock
     if mock_mode:
         # Mock runs must never send traces (fake LLM, no real data). Tag the
         # environment as "mock" as belt-and-suspenders so any trace that leaks
@@ -579,6 +591,15 @@ def main() -> int:
         # runs polluted production traces with "OpenAI-generation" spans).
         os.environ["OBSERVABILITY_PROVIDER"] = "none"
         os.environ["OBSERVABILITY_ENVIRONMENT"] = "mock"
+    else:
+        # Real mode: fail fast before any document is processed if the
+        # OpenRouter key is missing or is the mock placeholder. llm/providers.py
+        # enforces the same check at every get_llm call.
+        real_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        if not real_key or real_key == "mock-key":
+            parser.error(
+                "OPENROUTER_API_KEY is not set to a real key — refusing to run in --real mode."
+            )
     scores_enabled = args.scores if args.scores is not None else (not mock_mode)
 
     prepare_samples()

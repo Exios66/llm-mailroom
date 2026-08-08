@@ -28,11 +28,12 @@ flowchart TD
     START --> INGEST
     INGEST --> CLASSIFY
 
-    CLASSIFY -- "confidence >= low" --> EXTRACT
-    CLASSIFY -- "low confidence, attempts <= retry_max" --> RETRY_CLASS
-    CLASSIFY -- "unknown type / low confidence after retries" --> REVIEW
-    RETRY_CLASS -- "confidence >= low" --> EXTRACT
-    RETRY_CLASS -- "still low confidence" --> REVIEW
+    CLASSIFY -- "confidence >= high" --> EXTRACT
+    CLASSIFY -- "low <= confidence < high" --> REVIEW
+    CLASSIFY -- "confidence < low, attempts <= retry_max" --> RETRY_CLASS
+    CLASSIFY -- "unknown type / still low after retries" --> REVIEW
+    RETRY_CLASS -- "confidence >= high" --> EXTRACT
+    RETRY_CLASS -- "medium or still low confidence" --> REVIEW
 
     EXTRACT -- "confidence >= low, no conflict" --> REPORT
     EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
@@ -154,7 +155,8 @@ LLM call: reads document text, determines `doc_type` (contract, corporate_record
 
 ### 3. Confidence Check
 Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
-- **Confidence >= `low` (0.70)**: straight to extraction
+- **Confidence >= `high` (0.95)**: clearly matches one class → straight to extraction
+- **`low` (0.70) <= Confidence < `high` (0.95)**: classified but not clearly confident (e.g. multi-topic/ambiguous documents whose form still fits a class) → route to `/review/` (human) instead of silently archiving
 - **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`
 - **Still low after retry / unknown doc type**: route to `/review/` (human)
 

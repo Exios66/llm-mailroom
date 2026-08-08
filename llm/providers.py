@@ -104,16 +104,24 @@ def get_provider(name: str) -> ProviderConfig:
     return providers[name]
 
 
+# The mock-pilot harness historically used this literal placeholder; it must
+# never authenticate a real run. Every entrypoint (watcher, API, ops monitor,
+# --real pilot runs) resolves LLM clients through resolve_provider, so rejecting
+# it here guarantees a live run can never silently run against the placeholder.
+_MOCK_PLACEHOLDER_KEYS = {"mock-key"}
+
+
 def resolve_provider(agent_config: dict) -> tuple[ProviderConfig, str]:
     provider_name = os.environ.get("DEFAULT_PROVIDER") or agent_config.get("provider", "openrouter")
     model = agent_config.get("model", "openai/gpt-4o")
     provider = get_provider(provider_name)
 
     if provider_name == "openrouter" and provider.api_key_env:
-        key = os.environ.get(provider.api_key_env, "")
-        if not key:
+        key = os.environ.get(provider.api_key_env, "").strip()
+        if not key or key in _MOCK_PLACEHOLDER_KEYS:
             raise ValueError(
-                f"OpenRouter API key not set. Set {provider.api_key_env} env var."
+                f"OpenRouter API key not set (or is the mock placeholder). "
+                f"Set {provider.api_key_env} env var to a real key."
             )
 
     if not provider.base_url:

@@ -25,6 +25,10 @@ Extraction rules:
 
 8. Do not infer or embellish facts. Preserve explicit details faithfully; concise
    paraphrases are fine only when they retain the original meaning and conditions.
+9. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+   start from the share of schema fields actually found (fields left null lower it), and lower
+   it further for uncertain values or truncated input. Never default to a fixed high value
+   (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
 
 Use the explicit text as the source of truth. Return one complete JSON object with every
 schema field; use null for unstated optional values and do not infer urgency from tone alone."""

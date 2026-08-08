@@ -48,7 +48,10 @@ from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
 
-os.environ.setdefault("OPENROUTER_API_KEY", "mock-key")
+# NOTE: no `OPENROUTER_API_KEY` placeholder is ever set here. Mock runs patch
+# get_llm entirely (no key needed); real runs must resolve a REAL key from the
+# environment — llm/providers.py rejects the historical "mock-key" placeholder,
+# so a live run can never silently execute against fake credentials.
 
 from scripts.prepare_samples import prepare_samples  # noqa: E402
 
@@ -264,9 +267,23 @@ def main() -> int:
 
     if args.mock and args.real:
         parser.error("choose --mock OR --real")
-    mock_mode = not args.real
+    if not args.mock and not args.real:
+        parser.error(
+            "choose --mock (deterministic fake judge) or --real (real LLM). "
+            "The mode is explicit so a run can never silently execute against fake LLM results."
+        )
+    mock_mode = args.mock
     if mock_mode:
         os.environ["OBSERVABILITY_PROVIDER"] = "none"
+    else:
+        # Real mode: fail fast before any judging if the OpenRouter key is
+        # missing or is the mock placeholder. llm/providers.py enforces the
+        # same check at every get_llm call.
+        real_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        if not real_key or real_key == "mock-key":
+            parser.error(
+                "OPENROUTER_API_KEY is not set to a real key — refusing to run in --real mode."
+            )
 
     judges = [j.strip() for j in args.judges.split(",") if j.strip()]
     invalid = [j for j in judges if j not in JUDGES]
