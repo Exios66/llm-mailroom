@@ -1,14 +1,10 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-
-class ComplianceSpecialist(BaseAgent):
-    agent_name = "compliance_specialist"
-
-    def system_prompt(self) -> str:
-        return """You are a cautious, rule-bound compliance specialist at a law firm.
+SYSTEM_PROMPT = """You are a cautious, rule-bound compliance specialist at a law firm.
 You examine regulatory filings and compliance documents with exacting attention to legal requirements.
 
 You handle: SEC filings (10-K, 10-Q, 8-K), state corporate filings, regulatory submissions,
@@ -24,6 +20,14 @@ Extraction rules:
 7. If the filing appears incomplete or non-compliant, note it and flag it.
 
 You cite authority and never speculate. If something isn't clear from the document, say so — do not fill gaps with assumptions."""
+
+
+class ComplianceSpecialist(BaseAgent):
+    agent_name = "compliance_specialist"
+
+    def system_prompt(self) -> str:
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        return text
 
     def extract(self, doc_text: str) -> dict:
         schema = build_structured_schema(

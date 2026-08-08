@@ -1,17 +1,17 @@
 # Mailroom — Multi-Agent Legal Document Processing Pipeline
 
-Mailroom is a multi-agent pipeline that ingests high-volume legal documents for a transactional/corporate practice, classifies them, routes them to specialist agents for extraction, compiles the results into a matter record, and archives everything with a full audit trail.
+Mailroom is a multi-agent pipeline that ingests high-volume legal documents for a transactional/corporate practice, classifies them, routes them to specialist agents for extraction, compiles the results into a matter record, and archives everything with a full audit trail. Every step is traced to Langfuse, scored against task-spec evaluators, and auditable end-to-end.
 
 ---
 
 ## Quick Start
 
-> **No database server needed.** Mailroom now stores everything (catalog + audit log + crash-resume checkpoints) in a plain **SQLite file** inside your data folder. If you don't already use Docker, you can ignore it entirely.
+> **No database server needed.** Mailroom stores everything (catalog + audit log + crash-resume checkpoints) in a plain **SQLite file** inside your data folder. If you don't already use Docker, you can ignore it entirely.
 
 ```bash
 # 1. Configure
 cp .env.example .env
-# Edit .env — add your OPENROUTER_API_KEY
+# Edit .env — add your OPENROUTER_API_KEY (and LANGFUSE_* keys for tracing)
 
 # 2. Install
 pip install -e ".[dev]"
@@ -19,21 +19,24 @@ pip install -e ".[dev]"
 # 3. (Optional) Start Langfuse for trace viewing — needs Docker
 docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
-# 4. Run the watcher (starts processing documents from inbox)
+# 4. (Optional) Sync the agent prompts into Langfuse prompt management
+python scripts/sync_prompts.py
+
+# 5. Run the watcher (starts processing documents from inbox)
 python pipeline/watcher.py
 
-# 5. In another terminal, start the API
+# 6. In another terminal, start the API
 python api/main.py
 
-# 6. Upload a document
+# 7. Upload a document
 curl -X POST http://localhost:8000/upload \
   -F "file=@tests/fixtures/contract/sample_msa.txt" \
   -F "matter_id=MATTER-001"
 
-# 7. Check pipeline status
+# 8. Check pipeline status
 curl http://localhost:8000/status/{doc_id}
 
-# 8. View full audit trail
+# 9. View full audit trail
 curl http://localhost:8000/audit/{doc_id}
 ```
 
@@ -43,39 +46,129 @@ When a document is processed, you'll get two files under `data/`:
 
 ## Architecture
 
-```
-Upload/Drop → /pipeline/inbox/ → [Watcher] → LangGraph run per document
-                                                  │
-                    Sorter → Specialist → Reporter → Catalog → Archivist
-                                                  │
-                    Boss (escalation)    Human Review    Audit Log
+One **LangGraph state machine run per document** — 11 nodes, SQLite-checkpointed and crash-resumable. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in Langfuse.
+
+### LangGraph state machine
+
+```mermaid
+flowchart TD
+    START([START]) --> INGEST
+
+    INGEST["ingest-document<br/>claim file, read text, create manifest"]
+    CLASSIFY["classify-document<br/>SorterAgent"]
+    RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
+    EXTRACT["extract-fields<br/>specialist dispatch"]
+    RETRY_EXTRACT["extract-fields (retry)<br/>specialist re-extraction"]
+    BOSS["adjudicate-conflict<br/>BossAgent"]
+    REVIEW["route-for-review<br/>review bin (human)"]
+    REPORT["compile-report<br/>ReporterAgent"]
+    CATALOG["write-catalog<br/>SQLite documents + matters"]
+    ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
+    FAILED["FAILED"]
+    ENDX([END])
+
+    START --> INGEST
+    INGEST --> CLASSIFY
+
+    CLASSIFY -- "confidence >= 0.70" --> EXTRACT
+    CLASSIFY -- "low confidence, attempts <= retry_max" --> RETRY_CLASS
+    CLASSIFY -- "unknown type / low confidence after retries" --> REVIEW
+    RETRY_CLASS -- "confidence >= 0.70" --> EXTRACT
+    RETRY_CLASS -- "still low confidence" --> REVIEW
+
+    EXTRACT -- "confidence >= 0.70" --> REPORT
+    EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
+    EXTRACT -- "conflict detected" --> BOSS
+    EXTRACT -- "still low confidence" --> REVIEW
+    RETRY_EXTRACT -- "confidence >= 0.70" --> REPORT
+    RETRY_EXTRACT -- "still low confidence" --> REVIEW
+
+    BOSS -- "approved" --> REPORT
+    BOSS -- "review" --> REVIEW
+    REVIEW -- "approved" --> REPORT
+    REVIEW -- "rejected" --> FAILED --> ENDX
+
+    REPORT --> CATALOG --> ARCHIVE --> ENDX
 ```
 
-**11 LangGraph nodes** in an SQLite-checkpointed state machine. One graph execution per document, resumable across crashes/restarts.
+Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
+
+### Hierarchical organization
+
+```mermaid
+flowchart LR
+    subgraph IN["Input layer"]
+        INBOX["inbox bin<br/>(watcher / API upload)"]
+    end
+
+    subgraph ORCH["Orchestration — LangGraph state machine (graph/)"]
+        direction TB
+        NODES["ingest → classify → extract →<br/>report → catalog → archive<br/>retries, boss, human review"]
+        ROUTING["conditional routing<br/>graph/routing.py"]
+    end
+
+    subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
+        SORTER["SorterAgent"]
+        SPEC["5 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence, compliance"]
+        BOSS["BossAgent"]
+        REPORTER["ReporterAgent"]
+        PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
+        JUDGE["JudgeAgent<br/>(offline evaluators)"]
+    end
+
+    subgraph LLM["LLM layer (llm/)"]
+        CLI["get_llm() — provider-agnostic client"]
+        RETRY["retry + max_tokens caps"]
+        PROMPTS["Langfuse-managed prompts<br/>mailroom-* (with local fallback)"]
+        P["OpenRouter / Ollama / vLLM / generic"]
+    end
+
+    subgraph PERSIST["Persistence"]
+        BINS["filesystem bins"]
+        SQLITE["SQLite catalog + audit log"]
+        ARCHIVE2["archive/ + manifests/"]
+    end
+
+    subgraph OBS["Observability — Langfuse (observability/)"]
+        TRACES["one trace per document<br/>spans per node, session per matter"]
+        SCORES["task-spec scores<br/>schema_valid, completeness, correctness…"]
+    end
+
+    INBOX --> NODES
+    NODES --> SORTER & SPEC & BOSS & REPORTER & PDF
+    SORTER & SPEC & BOSS & REPORTER --> CLI
+    CLI --> RETRY --> PROMPTS --> P
+    NODES --> BINS --> SQLITE --> ARCHIVE2
+    NODES -.-> TRACES
+    TRACES --> SCORES
+    JUDGE -.-> SCORES
+```
 
 ## Design Principles
 
-1. **Auditability over cleverness.** Every classification, extraction, and routing decision is traceable.
+1. **Auditability over cleverness.** Every classification, extraction, and routing decision is traceable (Langfuse trace per document, hash-chained audit log per archive).
 2. **Explicit over emergent.** Orchestration is a defined state machine — agents don't freely negotiate.
 3. **Human-legible state.** Filesystem bins let anyone `ls` a folder and understand where a document is.
 4. **Provider-agnostic LLM layer.** OpenRouter today, local models later — one config change.
 5. **Redundant record-keeping.** Audit trail doesn't depend on any single tool staying alive.
+6. **Config over code.** Taxonomy, thresholds, model mappings, retry tuning, and per-agent token caps all live in `config/taxonomy.yaml`.
 
 ## Project Structure
 
 ```
 mailroom/
-├── agents/          # Specialist agents (Sorter, Contract, Corp Records, etc.)
+├── agents/          # Specialist agents (Sorter, Contract, Corp Records, Judge, …)
 ├── graph/           # LangGraph state machine: nodes, routing, state
-├── llm/             # Provider-agnostic LLM client (OpenRouter, Ollama, vLLM)
+├── llm/             # Provider-agnostic LLM client, retry, Langfuse-managed prompts
 ├── schemas/         # Pydantic models: manifest, matter, documents, audit
 ├── pipeline/        # Watcher, filesystem bins, ops monitor
 ├── storage/         # SQLite/Postgres: catalog CRUD, audit log
 ├── api/             # FastAPI: upload, review, status, audit
-├── observability/   # Langfuse callback handlers
+├── observability/   # Langfuse tracing + task-spec scores (backend-agnostic)
 ├── config/          # taxonomy.yaml — doc classes, thresholds, model mappings
+├── scripts/         # prepare_samples, run_pilot, run_quality_judges, sync_prompts, sync_langfuse_logs
 ├── docker/          # docker-compose: Langfuse, Ollama (Postgres optional)
-├── tests/           # pytest: unit, routing, e2e, fixtures
+├── tests/           # pytest: unit, routing, e2e, judge, fixtures
 └── docs/            # Detailed documentation
 ```
 
@@ -97,11 +190,24 @@ confidence:
   low: 0.70       # below this → retry → still low → human review
   retry_max: 1    # max retries before routing to review
 
-# Per-agent model mapping (cut over agent-by-agent):
+# Transient-failure LLM retries (connection errors, 429, 5xx):
+llm_retry:
+  max_attempts: 3
+  base_delay: 1.0
+  max_delay: 30.0
+
+# PDF transcription: skip the LLM reformat pass for text-based PDFs whose
+# extraction yields at least this many chars/page (scanned PDFs still go to LLM):
+pipeline:
+  pdf_direct_chars_per_page: 800
+
+# Per-agent model mapping + output token caps (caps runaway reasoning output):
 agents:
   sorter:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 2048
 ```
 
 ## LLM Providers
@@ -115,7 +221,58 @@ agents:
 
 Global override: set `DEFAULT_PROVIDER=ollama` in `.env`.
 
-## Local Model Cutover (Phase 10)
+All LLM calls go through `retry_chat_completion` (`llm/retry.py`): transient failures (`APIConnectionError`, timeouts, rate limits, 5xx) are retried with exponential backoff + jitter; 4xx client errors (e.g. malformed requests) are never retried.
+
+## Prompt Management
+
+Every agent's system prompt is a **Langfuse-managed prompt** (`mailroom-<agent_name>`, type `text`, `production` label) — versioned, editable without a deploy, and linked to every generation in the trace UI.
+
+```bash
+# Push the local prompt templates to Langfuse (idempotent: only new versions on change)
+python scripts/sync_prompts.py
+python scripts/sync_prompts.py --dry-run   # preview
+python scripts/sync_prompts.py --agent sorter
+```
+
+The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
+
+## Observability
+
+- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. One trace per document, one span per node, `session_id = matter_id`, deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
+- **Scores** — every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, confidence values); pilot runs add ground-truth scores (`class_correct`, `stage_correct`, calibration error). Score configs are auto-created by `observability/scores.py` (`ensure_score_configs()`).
+- **Run-log mirroring** — pull traces (with observations + scores) into the repo for offline analysis by subagents:
+
+```bash
+python scripts/sync_langfuse_logs.py                    # last 24h
+python scripts/sync_langfuse_logs.py --since 7d --limit 100
+python scripts/sync_langfuse_logs.py --trace-id <id>
+# → data/langfuse_logs/<run>/<trace_id>.json + index.json
+```
+
+- **Audit log** — append-only, SHA-256 hash-chained entries in SQLite (tamper-evident)
+- **Manifest sidecar** — JSON file archived alongside every document (self-contained record)
+
+## Evaluators & Quality
+
+Mailroom evaluates its own work against the **task specification** (the taxonomy doc classes + extraction schemas) using a dedicated `judge` agent. Judge dimensions:
+
+| Judge | What it measures | Scores |
+|---|---|---|
+| `classification` | Is the sorter's assigned class correct for the document (audited against the taxonomy spec)? | `classification_correct`, `classification_quality` |
+| `completeness` | Did the specialist capture every field the document actually states? | `completeness`, `completeness_label` |
+| `correctness` | Are extracted field values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
+
+```bash
+# Pilot the pipeline, then run the judges over the results:
+python scripts/run_pilot.py --real --scores        # needs OPENROUTER_API_KEY
+python scripts/run_quality_judges.py --real        # LLM-as-a-judge on every sample
+python scripts/run_quality_judges.py --mock        # deterministic fake judge
+python scripts/run_quality_judges.py --judges classification,completeness
+```
+
+Judges attach scores to each sample's trace (configs auto-created), print a per-class calibration summary, and append an `evaluation` section to the pilot report. For production traces with no ground truth, run the classification judge on live logs.
+
+## Local Model Cutover
 
 ```bash
 # See current agent→model assignments
@@ -178,6 +335,7 @@ data/
     <doc_id>.json        # Mirror of DocumentManifest
   mailroom.db            # SQLite: matters, documents, audit_log
   checkpoints.db         # LangGraph crash-resume state
+  langfuse_logs/         # Mirrored run logs (scripts/sync_langfuse_logs.py)
 ```
 
 ## Testing
@@ -196,13 +354,11 @@ pytest tests/test_pipeline_e2e.py -v
 pytest tests/ --cov=. --cov-report=html
 ```
 
+Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mocked (see `tests/conftest.py`).
+
 ## Pilot Testing & Evaluation
 
-A ready-made set of 12 legal PDFs lives in `examples/samples/` (real SEC-exhibit
-contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad)
-dataset plus original text for the other doc classes). Use them to pilot the
-pipeline and **measure the effect of procedural changes** on accuracy and
-efficiency:
+A ready-made set of 12 legal PDFs lives in `examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset plus original text for the other doc classes). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
 
 ```bash
 # Build the sample PDFs into data/samples/ (gitignored)
@@ -212,15 +368,16 @@ python scripts/prepare_samples.py
 python scripts/run_pilot.py --mock
 
 # Real run (needs OPENROUTER_API_KEY in .env) — measures LLM accuracy too
-python scripts/run_pilot.py --real
+python scripts/run_pilot.py --real --scores
 
 # Diff two runs, e.g. after a routing/threshold change
 python scripts/run_pilot.py --mock --baseline data/pilot_report.json
+
+# LLM-as-a-judge over the run: classification, completeness, correctness
+python scripts/run_quality_judges.py --real
 ```
 
-The report records per-document stage, doc type, confidence, retries, LLM call
-count, and wall time, and scores each against the ground truth in
-`examples/samples/manifest.csv`. See `examples/samples/README.md`.
+The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `examples/samples/manifest.csv`. See `examples/samples/README.md`.
 
 ## Deployment
 
@@ -232,21 +389,21 @@ docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-s
 export OPENROUTER_API_KEY=sk-or-v1-...
 # MAILROOM_BASE_DIR defaults to ./data; mailroom.db + checkpoints.db are created there automatically
 
-# 3. Run the pipeline watcher
+# 3. Sync prompts into Langfuse (once, and after prompt edits)
+python scripts/sync_prompts.py
+
+# 4. Run the pipeline watcher
 python pipeline/watcher.py &
 
-# 4. Run the API server
+# 5. Run the API server
 python api/main.py &
 
-# 5. (Optional) Run the ops monitor
+# 6. (Optional) Run the ops monitor
 python pipeline/ops_monitor.py &
+
+# 7. (Optional) Mirror run logs for analysis
+python scripts/sync_langfuse_logs.py --since 24h
 ```
-
-## Observability
-
-- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud `us.cloud.langfuse.com` or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. Optional — the pipeline runs fine with tracing disabled.
-- **Audit log** — append-only, SHA-256 hash-chained entries in SQLite (tamper-evident)
-- **Manifest sidecar** — JSON file archived alongside every document (self-contained record)
 
 ## Security
 

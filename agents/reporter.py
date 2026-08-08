@@ -1,12 +1,13 @@
 import structlog
 
+from llm.prompts import get_managed_prompt
 from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
 
 
-_COMPILE_SYSTEM_PROMPT = """You are a big-picture legal report synthesizer at a transactional law firm.
+COMPILE_SYSTEM_PROMPT = """You are a big-picture legal report synthesizer at a transactional law firm.
 Your job is to take the extracted data from a document and produce a clean, structured summary
 suitable for inclusion in a matter record. You do not extract new data — you compile and refine
 what was already extracted by the specialist agents.
@@ -42,8 +43,9 @@ Extracted data:
 
 Please compile this into a clean matter-record summary."""
 
+    prompt_text, prompt_obj = get_managed_prompt("reporter", COMPILE_SYSTEM_PROMPT)
     messages = [
-        {"role": "system", "content": _COMPILE_SYSTEM_PROMPT},
+        {"role": "system", "content": prompt_text},
         {"role": "user", "content": user_message},
     ]
     from pipeline.config import get_agent_config
@@ -52,14 +54,16 @@ Please compile this into a clean matter-record summary."""
         max_tokens = get_agent_config("reporter").get("max_tokens", 2048)
     except Exception:
         max_tokens = 2048
-    response = retry_chat_completion(
-        report_llm,
-        model=report_model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        **langfuse_call_attrs("reporter"),
-    )
+    kwargs = {
+        "model": report_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    kwargs.update(langfuse_call_attrs("reporter"))
+    if prompt_obj is not None:
+        kwargs["langfuse_prompt"] = prompt_obj
+    response = retry_chat_completion(report_llm, **kwargs)
     summary = response.choices[0].message.content or ""
     logger.info("report_compiled", doc_type=doc_type, length=len(summary))
 

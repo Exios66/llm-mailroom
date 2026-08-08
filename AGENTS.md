@@ -14,6 +14,10 @@ python cutover.py --list       # show agent→provider/model; also --recommend, 
 python scripts/prepare_samples.py          # build the pilot PDF set into data/samples/
 python scripts/run_pilot.py --mock         # pilot-test pipeline machinery (fake LLM)
 python scripts/run_pilot.py --real         # pilot-test with real LLM (needs OPENROUTER_API_KEY)
+python scripts/run_pilot.py --real --scores  # also ingest ground-truth scores to Langfuse
+python scripts/run_quality_judges.py --real  # LLM-as-a-judge: classification/completeness/correctness (also --mock)
+python scripts/sync_prompts.py             # push agent prompts into Langfuse prompt management (idempotent)
+python scripts/sync_langfuse_logs.py       # mirror Langfuse traces (obs+scores) into data/langfuse_logs/ (--since 7d, --trace-id)
 ```
 
 - Tests: `pytest tests/ -v` (whole suite), `pytest tests/test_agents/ -v`, `pytest tests/test_routing.py`, `-k "sorter"` for single-agent. Coverage via `--cov=. --cov-report=html`.
@@ -23,9 +27,11 @@ python scripts/run_pilot.py --real         # pilot-test with real LLM (needs OPE
 ## Architecture (not obvious from filenames)
 
 - One LangGraph run per document, 11 nodes wired in `graph/build_graph.py`. Node contract: `node(state: DocumentState) -> dict[str, Any]` returning partial state updates. Conditional edges live in `graph/routing.py`.
-- LLM access ONLY via `get_llm(agent_name)` (`llm/client.py`) → `llm/providers.py`. `agent_name` must match a key under `agents:` in `taxonomy.yaml`. No agent code names a provider/model; `DEFAULT_PROVIDER` env overrides provider globally.
+- LLM access ONLY via `get_llm(agent_name)` (`llm/client.py`) → `llm/providers.py`. `agent_name` must match a key under `agents:` in `taxonomy.yaml`. No agent code names a provider/model; `DEFAULT_PROVIDER` env overrides provider globally. ALL chat completions go through `llm/retry.py:retry_chat_completion` (transient-failure retry: connection errors/timeouts/429/5xx only; 4xx never) and per-agent `max_tokens` caps from `taxonomy.yaml`.
+- Agent system prompts are Langfuse-managed via `llm/prompts.py:get_managed_prompt` (name `mailroom-<agent_name>`, `production` label) with the identical template in code as fallback when Langfuse is off; the sync script is `scripts/sync_prompts.py`. New/changed agent prompts must be registered in `llm/prompts.py:prompt_templates()` and synced. The `json_object` boilerplate in `agents/base.py:_call_structured` is deliberately hardcoded — it guarantees the literal token `json` in messages (Qwen/Alibaba rejects requests without it) and embeds the schema in the prompt.
 - Tracing is backend-agnostic via `observability/tracing.py` (`OBSERVABILITY_PROVIDER=auto|langfuse|braintrust|none`). `get_llm` passes every OpenAI client through `instrument_client` → langfuse 4.x monkeypatches `openai` `Completions.create` at import (`langfuse.openai`), so ALL LLM calls are auto-traced with no agent changes. `pipeline/env.py:load_env()` loads `.env`; it's called in `pipeline/watcher.py`, `api/main.py`, `pipeline/ops_monitor.py`, and `llm/client.py`.
 - Langfuse tracing is also structured per document (best practices): `graph/build_graph.py` wraps `run_pipeline` in `pipeline_trace` (one trace per doc, deterministic trace id from filename, `session_id=matter_id`, curated input/output) and wraps every node via `traced_node` (verb-first spans: `classify-document`, `extract-fields`, ...). The `langfuse` skill lives in `.opencode/skills/langfuse/` (from github.com/langfuse/skills) for Langfuse-specific work.
+- Quality scores: `observability/scores.py` emits task-spec scores — self-evident per run (`parse_error`, `schema_valid`, `stage_completed`, confidence values) and ground-truth for pilot runs (`class_correct`, `stage_correct`, `confidence_calibration_error`); score configs are auto-created via `ensure_score_configs()`. Offline LLM-as-a-judge (`agents/judge.py`, `scripts/run_quality_judges.py`) audits classification/completeness/correctness against the taxonomy + extraction-schema task specs. `scripts/sync_langfuse_logs.py` mirrors traces (with observations + scores) into `data/langfuse_logs/<run>/` for offline subagent analysis.
 - `config/taxonomy.yaml` is the single source of truth: `doc_classes`, `confidence:` thresholds, per-agent model mapping, `file_extensions`. Nothing is hardcoded in code.
 - Files only move through `pipeline/bins.py` helpers (`claim_file`, `move_to_*`, `save_manifest`) — never direct `os.rename`/`shutil.move` in node/agent code. Flow: inbox → `processing/<worker_id>/` → archive or review/failed.
 - `agents/boss.py` is used in two places: in-graph `boss_escalation` node AND `pipeline/ops_monitor.py`. Archivist, image_extractor, pdf_transcriber are procedural, not LLM agents.

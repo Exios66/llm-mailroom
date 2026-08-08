@@ -14,14 +14,19 @@ class BaseAgent(ABC):
     @abstractmethod
     def system_prompt(self) -> str: ...
 
-    def _call_llm(self, user_message, response_format=None, temperature=None) -> str: ...
+    def _call_llm(self, user_message, response_format=None, temperature=None,
+                  max_tokens=None, system_prompt=None) -> str: ...
 
-    def _call_structured(self, user_message, json_schema, temperature=0.1) -> dict: ...
+    def _call_structured(self, user_message, json_schema, temperature=0.1,
+                         system_prompt=None) -> dict: ...
 ```
 
 Key design points:
 - `self.client` and `self.model` are resolved from `config/taxonomy.yaml` → `llm/providers.py` → `llm/client.py`
-- `_call_structured()` uses OpenAI's JSON schema mode for reliable structured output
+- `system_prompt()` fetches the **Langfuse-managed prompt** (`mailroom-<agent_name>`, production label) via `llm/prompts.py:get_managed_prompt`, falling back to the identical template shipped in code when Langfuse is unavailable — behavior never depends on the observability backend being up. Sync templates with `scripts/sync_prompts.py`.
+- `_call_structured()` uses `response_format={"type": "json_object"}` and appends boilerplate that guarantees the literal token `json` in the messages (some providers reject requests without it) and embeds the JSON schema in the prompt.
+- Every LLM call goes through `llm/retry.py:retry_chat_completion` (transient failures only: connection errors, timeouts, 429, 5xx) and a `max_tokens` cap from the agent's `taxonomy.yaml` entry.
+- When a managed prompt is active, it's passed to the OpenAI call as `langfuse_prompt=`, linking each generation to its exact prompt version in the trace UI.
 - Every agent has a distinct system prompt ("personality") aligned with its role
 
 ---
@@ -212,6 +217,42 @@ Both share the same system prompt voice — consistent persona across both invoc
 
 ---
 
+### 10. PDF Transcriber (`agents/pdf_transcriber.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | `ingest` (via `_read_file_text`) |
+| **Trigger** | PDF with < `pdf_direct_chars_per_page` chars/page (scanned/garbled) |
+| **Input** | PDF file |
+| **Output** | Markdown text + confidence + method (`direct` / `llm`) |
+| **Personality** | Faithful transcription only — no fact changes |
+
+A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`pypdf` extraction (no LLM, seconds), while scanned or garbled PDFs get an LLM markdown reformat pass. The threshold is `pipeline.pdf_direct_chars_per_page` in `taxonomy.yaml`.
+
+---
+
+### 11. Judge (`agents/judge.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | None — offline evaluator (`scripts/run_quality_judges.py`) |
+| **Trigger** | Pilot run complete |
+| **Input** | Document text + extracted data (+ sorter reasoning) |
+| **Output** | Task-spec scores: completeness, classification, correctness |
+| **Personality** | Expert legal reviewer; rubric-driven, evidence-citing |
+
+The Judge is not part of the document graph. It audits pipeline output against the **task specification** (taxonomy doc classes + extraction schemas):
+
+| Method | Measures |
+|---|---|
+| `judge_completeness` | Did the specialist capture every field the document states? |
+| `judge_classification` | Is the sorter's assigned class correct for the document? |
+| `judge_extraction_correctness` | Are extracted values factually accurate (no fabrication)? |
+
+Each dimension returns a score + label + reasoning, ingested as Langfuse scores on the document's trace. Run with `python scripts/run_quality_judges.py --real` (or `--mock`).
+
+---
+
 ## Adding a New Agent
 
 1. Define the extraction schema in `schemas/documents.py`:
@@ -223,14 +264,20 @@ Both share the same system prompt voice — consistent persona across both invoc
 
 2. Register the schema in `EXTRACTION_SCHEMAS` dict.
 
-3. Create the agent in `agents/`:
+3. Create the agent in `agents/` with its prompt as a module-level template constant:
    ```python
+   SYSTEM_PROMPT = """..."""
    class NewDocTypeSpecialist(BaseAgent):
        agent_name = "new_specialist"
-       def system_prompt(self) -> str: ...
+       def system_prompt(self) -> str:
+           text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+           return text
        def extract(self, doc_text: str) -> dict: ...
    ```
 
 4. Add a dispatch entry in `graph/build_graph.py` under `extract_node` and `retry_extract_node`.
 
-5. Add the agent config in `config/taxonomy.yaml` under both `doc_classes` and `agents`.
+5. Add the agent config in `config/taxonomy.yaml` under both `doc_classes` and `agents` (with `max_tokens`).
+
+6. Register the template in `llm/prompts.py:prompt_templates()` and sync:
+   `python scripts/sync_prompts.py`

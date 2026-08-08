@@ -1,14 +1,10 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-
-class ContractsSpecialist(BaseAgent):
-    agent_name = "contracts_specialist"
-
-    def system_prompt(self) -> str:
-        return """You are a meticulous, formal legal contracts specialist at a transactional law firm.
+SYSTEM_PROMPT = """You are a meticulous, formal legal contracts specialist at a transactional law firm.
 Your job is to extract structured data from contracts and agreements with precision.
 
 You handle: M&A agreements, vendor contracts, employment agreements, NDAs, service agreements, lease agreements, licensing deals, and any other formal legal agreement between two or more parties.
@@ -22,6 +18,14 @@ Extraction rules:
 6. Produce a confidence score reflecting how certain you are about the overall extraction quality.
 
 Be precise to a fault. If you're unsure about a value, lower your confidence score accordingly."""
+
+
+class ContractsSpecialist(BaseAgent):
+    agent_name = "contracts_specialist"
+
+    def system_prompt(self) -> str:
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        return text
 
     def extract(self, doc_text: str) -> dict:
         schema = build_structured_schema(

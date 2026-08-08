@@ -6,35 +6,98 @@ Mailroom is a multi-agent legal document processing pipeline built on LangGraph.
 
 ## Architectural Diagram
 
-```
-Upload/Drop ──▶ /pipeline/inbox/ ──▶ [Watcher] ──▶ LangGraph run per document
-                                                        │
-                                    ┌───────────────────┼────────────────────┐
-                                    ▼                    ▼                    ▼
-                              Sorter (classify)   Confidence check     Boss (escalation)
-                                    │                    │
-                                    ▼                    ▼
-                        /pipeline/classified/<type>/   /pipeline/review/ (human-in-the-loop)
-                                    │
-                                    ▼
-                         Specialist Agent (extract per doc-type schema)
-                                    │
-                                    ▼
-                              Reporter (compile matter record)
-                                    │
-                                    ▼
-                              Catalog write (database)
-                                    │
-                                    ▼
-                              Archivist (log + finalize)
-                                    │
-                                    ▼
-                       /archive/<matter_id>/<doc_type>/
+### LangGraph state machine
 
-Parallel/independent:
-  Boss (ops-monitor) ── sweeps the database + Langfuse periodically for stuck docs / error spikes
-  Langfuse ── every LangGraph node emits a trace span (live deliberation viewer)
-  Audit log ── every state transition writes a hash-chained entry, independent of Langfuse
+```mermaid
+flowchart TD
+    START([START]) --> INGEST
+
+    INGEST["ingest-document<br/>claim file, read text, create manifest"]
+    CLASSIFY["classify-document<br/>SorterAgent"]
+    RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
+    EXTRACT["extract-fields<br/>specialist dispatch"]
+    RETRY_EXTRACT["extract-fields (retry)<br/>specialist re-extraction"]
+    BOSS["adjudicate-conflict<br/>BossAgent"]
+    REVIEW["route-for-review<br/>review bin (human)"]
+    REPORT["compile-report<br/>ReporterAgent"]
+    CATALOG["write-catalog<br/>SQLite documents + matters"]
+    ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
+    FAILED["FAILED"]
+    ENDX([END])
+
+    START --> INGEST
+    INGEST --> CLASSIFY
+
+    CLASSIFY -- "confidence >= low" --> EXTRACT
+    CLASSIFY -- "low confidence, attempts <= retry_max" --> RETRY_CLASS
+    CLASSIFY -- "unknown type / low confidence after retries" --> REVIEW
+    RETRY_CLASS -- "confidence >= low" --> EXTRACT
+    RETRY_CLASS -- "still low confidence" --> REVIEW
+
+    EXTRACT -- "confidence >= low, no conflict" --> REPORT
+    EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
+    EXTRACT -- "conflict detected" --> BOSS
+    EXTRACT -- "still low confidence" --> REVIEW
+    RETRY_EXTRACT -- "confidence >= low" --> REPORT
+    RETRY_EXTRACT -- "still low confidence" --> REVIEW
+
+    BOSS -- "approved" --> REPORT
+    BOSS -- "review" --> REVIEW
+    REVIEW -- "approved" --> REPORT
+    REVIEW -- "rejected" --> FAILED --> ENDX
+
+    REPORT --> CATALOG --> ARCHIVE --> ENDX
+```
+
+### Hierarchical organization
+
+```mermaid
+flowchart LR
+    subgraph IN["Input layer"]
+        INBOX["inbox bin<br/>(watcher / API upload)"]
+    end
+
+    subgraph ORCH["Orchestration — LangGraph state machine (graph/)"]
+        direction TB
+        NODES["ingest → classify → extract →<br/>report → catalog → archive<br/>retries, boss, human review"]
+        ROUTING["conditional routing<br/>graph/routing.py"]
+    end
+
+    subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
+        SORTER["SorterAgent"]
+        SPEC["5 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence, compliance"]
+        BOSS["BossAgent"]
+        REPORTER["ReporterAgent"]
+        PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
+        JUDGE["JudgeAgent<br/>(offline evaluators)"]
+    end
+
+    subgraph LLM["LLM layer (llm/)"]
+        CLI["get_llm() — provider-agnostic client"]
+        RETRY["retry + max_tokens caps"]
+        PROMPTS["Langfuse-managed prompts<br/>mailroom-* (with local fallback)"]
+        P["OpenRouter / Ollama / vLLM / generic"]
+    end
+
+    subgraph PERSIST["Persistence"]
+        BINS["filesystem bins"]
+        SQLITE["SQLite catalog + audit log"]
+        ARCHIVE2["archive/ + manifests/"]
+    end
+
+    subgraph OBS["Observability — Langfuse (observability/)"]
+        TRACES["one trace per document<br/>spans per node, session per matter"]
+        SCORES["task-spec scores<br/>schema_valid, completeness, correctness…"]
+    end
+
+    INBOX --> NODES
+    NODES --> SORTER & SPEC & BOSS & REPORTER & PDF
+    SORTER & SPEC & BOSS & REPORTER --> CLI
+    CLI --> RETRY --> PROMPTS --> P
+    NODES --> BINS --> SQLITE --> ARCHIVE2
+    NODES -.-> TRACES
+    TRACES --> SCORES
+    JUDGE -.-> SCORES
 ```
 
 ## Core Components
@@ -51,22 +114,29 @@ Parallel/independent:
 - SQLite-checkpointed for crash/resume
 - Falls back to in-memory checkpointing when SQLite is unavailable
 
-### LLM Client (`llm/client.py`, `llm/providers.py`)
+### LLM Client (`llm/client.py`, `llm/providers.py`, `llm/retry.py`, `llm/prompts.py`)
 - Thin OpenAI-compatible wrapper
 - Provider-agnostic: OpenRouter, Ollama, vLLM, or any OpenAI-compatible endpoint
 - Per-agent model selection from `config/taxonomy.yaml`
 - Global provider override via `DEFAULT_PROVIDER` env var
+- Every chat completion goes through `retry_chat_completion` (`llm/retry.py`): transient failures (connection errors, timeouts, 429, 5xx) are retried with exponential backoff + jitter from the `llm_retry:` config; 4xx client errors are never retried
+- Output generation is capped per agent by `max_tokens` in `taxonomy.yaml` (bounds runaway reasoning-token output)
+- Agent system prompts are **Langfuse-managed** (`llm/prompts.py`, `mailroom-<agent_name>`), fetched at runtime with the identical template shipped in code as fallback; `scripts/sync_prompts.py` pushes templates up
+- Structured calls (`_call_structured`) always send `response_format={"type": "json_object"}` and guarantee the literal token `json` in the messages — some providers (Qwen via Alibaba) reject requests without it
 
 ### SQLite (`storage/db.py`, `storage/catalog.py`, `storage/audit_log.py`)
 - SQLite (via SQLAlchemy 2.0 async + aiosqlite) by default — a single file, no server required
 - Shared by the document/matter catalog and the audit log
-- Three tables: `matters`, `documents`, `audit_log`
+- Three tables: `matters`, `documents`, `audit_log` (`documents` carries extracted data, trace id, and a `scores` JSON column)
 - `DATABASE_URL` env var can switch to Postgres
 
 ### Observability (`observability/`)
 - Two interchangeable tracing backends: **Langfuse** (cloud or self-hosted, default) and **Braintrust**
 - Selected via `OBSERVABILITY_PROVIDER` env (`auto` | `langfuse` | `braintrust` | `none`)
 - Every LLM call is auto-traced: `llm/client.py:get_llm` wraps the OpenAI client (`langfuse.openai` patch or `braintrust.wrap_openai`), capturing prompt, response, tokens, latency
+- One trace per document (`pipeline_trace`), one span per node (`traced_node`), `session_id = matter_id`, deterministic trace ids seeded from filenames
+- **Scores** (`observability/scores.py`): every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, confidences); pilot runs add ground-truth scores (class/stage correctness, calibration error); score configs auto-created via `ensure_score_configs()`
+- **Run-log mirroring** (`scripts/sync_langfuse_logs.py`): fetch traces (with observations + scores) into `data/langfuse_logs/<run>/` for offline analysis
 - Graceful noop fallback when no backend/keys are configured — pipeline runs unchanged
 
 ### Filesystem Bins (`pipeline/bins.py`)
@@ -77,16 +147,16 @@ Parallel/independent:
 ## Data Flow
 
 ### 1. Ingest
-Document lands in `/pipeline/inbox/`. Watcher detects it, claims it atomically to `/pipeline/processing/<worker_id>/`. Manifest is created with `PipelineStage.PROCESSING`.
+Document lands in `/pipeline/inbox/`. Watcher detects it, claims it atomically to `/pipeline/processing/<worker_id>/`. Manifest is created with `PipelineStage.PROCESSING`. PDFs are transcribed by `PDFTranscriber` — text-based PDFs directly (no LLM), scanned/garbled PDFs via an LLM markdown pass (`pipeline.pdf_direct_chars_per_page` controls the threshold).
 
 ### 2. Classify (Sorter)
 LLM call: reads document text, determines `doc_type` (contract, corporate_record, due_diligence, correspondence, compliance_filing) and confidence score.
 
 ### 3. Confidence Check
-Conditional edge routing:
-- **Confidence >= 0.85**: straight to extraction
-- **Confidence < 0.70**: retry with alternate prompt
-- **Still low after retry**: route to `/review/` (human)
+Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
+- **Confidence >= `low` (0.70)**: straight to extraction
+- **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`
+- **Still low after retry / unknown doc type**: route to `/review/` (human)
 
 ### 4. Extract (Specialist)
 Dynamic dispatch to the matching specialist agent based on `doc_type`. Each specialist:
@@ -161,6 +231,18 @@ Every state transition writes an `AuditLogEntry` to the database. Each entry:
 - Forms a tamper-evident chain — modifying any entry breaks all subsequent hashes
 - Is independent of Langfuse (the audit log is the compliance record)
 - Can be verified via the `/audit/{doc_id}` API endpoint or `schemas/audit.py:verify_chain()`
+
+## Evaluators & Quality
+
+The `judge` agent (`agents/judge.py`, offline — not in the document graph) audits pipeline output against the task specification. `scripts/run_quality_judges.py` runs it over a pilot report and attaches scores to each sample's trace:
+
+| Judge | Measures | Scores |
+|---|---|---|
+| `classification` | Is the sorter's assigned class correct for the document (audited against the taxonomy spec)? | `classification_correct`, `classification_quality` |
+| `completeness` | Did the specialist capture every field the document states? | `completeness`, `completeness_label` |
+| `correctness` | Are extracted values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
+
+Production runs additionally emit self-evident scores with no ground truth (`parse_error`, `schema_valid`, `stage_completed`, confidence values) from `observability/scores.py`, and pilot runs add ground-truth scores (`class_correct`, `stage_correct`, `confidence_calibration_error`). All score configs are auto-created in Langfuse by `ensure_score_configs()`.
 
 ## Boss Agent — Dual Role
 

@@ -1,25 +1,15 @@
 import json
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompts import get_managed_prompt
 from pipeline.config import get_all_doc_types, load_config
 
 logger = structlog.get_logger(__name__)
 
-
-class SorterAgent(BaseAgent):
-    agent_name = "sorter"
-
-    def system_prompt(self) -> str:
-        cfg = load_config()
-        doc_types = cfg.get("doc_classes", [])
-        type_descriptions = "\n".join(
-            f"  - {d['key']}: {d.get('label', d['key'])} — {d.get('description', '')}"
-            for d in doc_types
-        )
-        return f"""You are a fast, decisive legal document classifier operating in a transactional/corporate law firm's mailroom. Your job is to rapidly identify what kind of legal document you're looking at.
+SYSTEM_PROMPT = """You are a fast, decisive legal document classifier operating in a transactional/corporate law firm's mailroom. Your job is to rapidly identify what kind of legal document you're looking at.
 
 Available document classes:
-{type_descriptions}
+{{doc_type_descriptions}}
 
 Rules:
 1. Read the document quickly — you should classify within seconds.
@@ -32,6 +22,24 @@ Return a JSON object with:
 - doc_type: one of the available class keys listed above
 - confidence: float between 0.0 and 1.0
 - reasoning: short explanation of your classification decision"""
+
+
+class SorterAgent(BaseAgent):
+    agent_name = "sorter"
+
+    def system_prompt(self) -> str:
+        cfg = load_config()
+        doc_types = cfg.get("doc_classes", [])
+        type_descriptions = "\n".join(
+            f"  - {d['key']}: {d.get('label', d['key'])} — {d.get('description', '')}"
+            for d in doc_types
+        )
+        text, self._langfuse_prompt = get_managed_prompt(
+            self.agent_name,
+            SYSTEM_PROMPT,
+            {"doc_type_descriptions": type_descriptions},
+        )
+        return text
 
     def classify(self, doc_text: str) -> tuple[str, float, str]:
         schema = build_structured_schema(

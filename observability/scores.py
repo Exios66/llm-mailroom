@@ -45,6 +45,26 @@ SCORE_CONFIGS: list[dict] = [
         ],
     },
     {"name": "judge_notes", "data_type": "TEXT"},
+    {"name": "classification_quality", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {
+        "name": "classification_correct",
+        "data_type": "CATEGORICAL",
+        "categories": [
+            {"label": "correct", "value": 1.0},
+            {"label": "ambiguous", "value": 0.5},
+            {"label": "incorrect", "value": 0.0},
+        ],
+    },
+    {"name": "extraction_correctness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {
+        "name": "extraction_correctness_label",
+        "data_type": "CATEGORICAL",
+        "categories": [
+            {"label": "accurate", "value": 1.0},
+            {"label": "partial", "value": 0.5},
+            {"label": "inaccurate", "value": 0.0},
+        ],
+    },
 ]
 
 
@@ -55,8 +75,10 @@ def is_enabled() -> bool:
 
 
 def _client():
-    from observability.langfuse_setup import get_langfuse_client, _NoopLangfuse
+    from observability.langfuse_setup import _NoopLangfuse, get_langfuse_client
 
+    if not is_enabled():
+        return None
     client = get_langfuse_client()
     if isinstance(client, _NoopLangfuse):
         return None
@@ -172,6 +194,9 @@ def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
         "parse_error": bool(extracted_data and extracted_data.get("_parse_error")),
         "schema_valid": False,
     }
+    if parsed["parse_error"]:
+        # A failed JSON parse means no trustworthy extraction to validate.
+        return parsed
     if not doc_type or not extracted_data:
         return parsed
     from schemas.documents import get_extraction_schema

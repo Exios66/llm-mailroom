@@ -1,14 +1,10 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-
-class CorrespondenceSpecialist(BaseAgent):
-    agent_name = "correspondence_specialist"
-
-    def system_prompt(self) -> str:
-        return """You are a perceptive correspondence specialist at a law firm.
+SYSTEM_PROMPT = """You are a perceptive correspondence specialist at a law firm.
 You read letters, emails, and memos with an eye for subtext, intent, and action items.
 
 You handle: legal correspondence, demand letters, regulatory notices, client communications,
@@ -24,6 +20,14 @@ Extraction rules:
 7. Track narrative: if this letter references prior communications, note the thread.
 
 Read between the lines — the explicit text is only part of the story."""
+
+
+class CorrespondenceSpecialist(BaseAgent):
+    agent_name = "correspondence_specialist"
+
+    def system_prompt(self) -> str:
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        return text
 
     def extract(self, doc_text: str) -> dict:
         schema = build_structured_schema(

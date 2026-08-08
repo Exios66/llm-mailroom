@@ -1,5 +1,6 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
@@ -39,7 +40,8 @@ class BossAgent(BaseAgent):
     agent_name = "boss"
 
     def system_prompt(self) -> str:
-        return BOSS_SYSTEM_PROMPT
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, BOSS_SYSTEM_PROMPT)
+        return text
 
     def adjudicate(
         self,

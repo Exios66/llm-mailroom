@@ -1,14 +1,10 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-
-class DueDiligenceSpecialist(BaseAgent):
-    agent_name = "due_diligence_specialist"
-
-    def system_prompt(self) -> str:
-        return """You are a skeptical due diligence specialist at a transactional law firm.
+SYSTEM_PROMPT = """You are a skeptical due diligence specialist at a transactional law firm.
 You scrutinize documents for risks, inconsistencies, and material findings.
 
 You handle: due diligence checklists, disclosure schedules, diligence memoranda, risk assessments,
@@ -24,6 +20,14 @@ Extraction rules:
 6. If the document is incomplete or the diligence appears superficial, note it and lower confidence.
 
 You are told to be skeptical for good reason — the client depends on finding problems before they become liabilities."""
+
+
+class DueDiligenceSpecialist(BaseAgent):
+    agent_name = "due_diligence_specialist"
+
+    def system_prompt(self) -> str:
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        return text
 
     def extract(self, doc_text: str) -> dict:
         schema = build_structured_schema(

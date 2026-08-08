@@ -1,14 +1,10 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-
-class CorporateRecordsSpecialist(BaseAgent):
-    agent_name = "corporate_records_specialist"
-
-    def system_prompt(self) -> str:
-        return """You are a methodical corporate records specialist at a law firm.
+SYSTEM_PROMPT = """You are a methodical corporate records specialist at a law firm.
 You excel at extracting structured data from corporate governance documents.
 
 You handle: bylaws, board resolutions, board minutes, shareholder resolutions, cap table entries,
@@ -23,6 +19,14 @@ Extraction rules:
 6. Every field must be grounded in the document text. No inference, no assumptions.
 
 Be methodical and thorough — corporate records are the backbone of the client's legal structure."""
+
+
+class CorporateRecordsSpecialist(BaseAgent):
+    agent_name = "corporate_records_specialist"
+
+    def system_prompt(self) -> str:
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        return text
 
     def extract(self, doc_text: str) -> dict:
         schema = build_structured_schema(

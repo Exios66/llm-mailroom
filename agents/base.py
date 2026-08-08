@@ -19,6 +19,10 @@ class BaseAgent(ABC):
 
     def __init__(self):
         self.client, self.model = get_llm(self.agent_name)
+        # Set by system_prompt() when a Langfuse-managed prompt is active;
+        # passed to the LLM call as `langfuse_prompt=` so generations link to
+        # the exact prompt version used.
+        self._langfuse_prompt = None
 
     @abstractmethod
     def system_prompt(self) -> str:
@@ -38,9 +42,10 @@ class BaseAgent(ABC):
         response_format: dict | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        system_prompt: str | None = None,
     ) -> str:
         messages = [
-            {"role": "system", "content": self.system_prompt()},
+            {"role": "system", "content": system_prompt or self.system_prompt()},
             {"role": "user", "content": user_message},
         ]
         kwargs = {"model": self.model, "messages": messages}
@@ -53,6 +58,9 @@ class BaseAgent(ABC):
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
         kwargs.update(langfuse_call_attrs(self.agent_name))
+        langfuse_prompt = getattr(self, "_langfuse_prompt", None)
+        if langfuse_prompt is not None:
+            kwargs["langfuse_prompt"] = langfuse_prompt
 
         logger.info("llm_call", agent=self.agent_name, model=self.model, max_tokens=max_tokens)
         response = retry_chat_completion(self.client, **kwargs)
@@ -65,6 +73,7 @@ class BaseAgent(ABC):
         user_message: str,
         json_schema: dict,
         temperature: float = 0.1,
+        system_prompt: str | None = None,
     ) -> dict:
         # `json_object` response format is broadly supported across OpenRouter
         # providers (OpenAI `json_schema` strict mode is not). The schema is
@@ -83,6 +92,7 @@ class BaseAgent(ABC):
             user_message,
             response_format={"type": "json_object"},
             temperature=temperature,
+            system_prompt=system_prompt,
         )
         try:
             return json.loads(raw)

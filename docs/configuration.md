@@ -122,6 +122,7 @@ Per-agent model and provider configuration. This is where agent-by-agent local m
 | `provider` | LLM provider: `openrouter`, `ollama`, `vllm`, or `generic` |
 | `model` | Model name (provider-specific) |
 | `temperature` | LLM temperature (0.0–2.0) |
+| `max_tokens` | Output token cap for the agent (bounds runaway reasoning-token generation) |
 
 ```yaml
 agents:
@@ -129,14 +130,31 @@ agents:
     provider: openrouter
     model: openai/gpt-4o
     temperature: 0.1
+    max_tokens: 2048
 
   contracts_specialist:
     provider: openrouter
     model: openai/gpt-4o
     temperature: 0.1
+    max_tokens: 4096
 
-  # ... (one entry per agent)
+  # ... (one entry per agent; includes pdf_transcriber and judge)
 ```
+
+### `llm_retry`
+
+Transient-failure retry for LLM calls (`llm/retry.py`). Retries only connection errors, timeouts, rate limits (429), and 5xx — never 4xx client errors.
+
+| Field | Default | Description |
+|---|---|---|
+| `max_attempts` | 3 | Max attempts including the first |
+| `base_delay` | 1.0 | Initial backoff seconds (doubles per attempt) |
+| `max_delay` | 30.0 | Backoff ceiling in seconds |
+| `jitter` | 0.3 | Random jitter fraction applied to each delay |
+
+### `pipeline.pdf_direct_chars_per_page`
+
+PDF transcription threshold. Text-based PDFs whose extraction yields at least this many chars/page are transcribed directly without an LLM pass (the dominant latency win); scanned/garbled PDFs still get the LLM reformat.
 
 ## Environment Variables
 

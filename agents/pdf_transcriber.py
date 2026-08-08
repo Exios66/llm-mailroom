@@ -8,6 +8,7 @@ Uses multiple strategies in priority order:
 import structlog
 from pathlib import Path
 from agents.base import BaseAgent
+from llm.prompts import get_managed_prompt
 from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
@@ -16,12 +17,7 @@ logger = structlog.get_logger(__name__)
 # Below this many chars, just return the raw text — no need for an LLM pass.
 _DIRECT_MIN_CHARS = 500
 
-
-class PDFTranscriber(BaseAgent):
-    agent_name = "pdf_transcriber"
-
-    def system_prompt(self) -> str:
-        return """You are a legal document transcriber. Your job is to convert the raw text
+SYSTEM_PROMPT = """You are a legal document transcriber. Your job is to convert the raw text
 extracted from a PDF into clean, well-structured markdown suitable for downstream legal
 document analysis agents.
 
@@ -34,6 +30,14 @@ Rules:
 6. If the original text extraction garbled certain sections, note it as [corrupted text].
 7. Remove PDF artifact text (page numbers, headers/footers that are clearly metadata).
 8. Include a confidence score for the transcription quality."""
+
+
+class PDFTranscriber(BaseAgent):
+    agent_name = "pdf_transcriber"
+
+    def system_prompt(self) -> str:
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        return text
 
     def transcribe(self, file_path: Path) -> dict:
         raw_text, pages = self._extract_raw_text(file_path)
@@ -145,17 +149,19 @@ Rules:
             f"--- RAW TEXT ---\n{truncated}\n--- END RAW TEXT ---"
         )
 
-        response = retry_chat_completion(
-            self.client,
-            model=self.model,
-            messages=[
+        kwargs = {
+            "model": self.model,
+            "messages": [
                 {"role": "system", "content": self.system_prompt()},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=self._configured_max_tokens(),
-            temperature=0.1,
-            **langfuse_call_attrs("pdf-transcriber"),
-        )
+            "max_tokens": self._configured_max_tokens(),
+            "temperature": 0.1,
+        }
+        kwargs.update(langfuse_call_attrs("pdf-transcriber"))
+        if getattr(self, "_langfuse_prompt", None) is not None:
+            kwargs["langfuse_prompt"] = self._langfuse_prompt
+        response = retry_chat_completion(self.client, **kwargs)
         return response.choices[0].message.content or ""
 
 

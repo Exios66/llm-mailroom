@@ -1,164 +1,252 @@
 # Architecture
 
-## System Diagram
+## Overview
 
+Mailroom is a multi-agent legal document processing pipeline built on LangGraph. It ingests legal documents, classifies them, routes them to specialist agents for structured extraction, compiles matter records, and archives everything with a full audit trail.
+
+## Architectural Diagram
+
+### LangGraph state machine
+
+```mermaid
+flowchart TD
+    START([START]) --> INGEST
+
+    INGEST["ingest-document<br/>claim file, read text, create manifest"]
+    CLASSIFY["classify-document<br/>SorterAgent"]
+    RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
+    EXTRACT["extract-fields<br/>specialist dispatch"]
+    RETRY_EXTRACT["extract-fields (retry)<br/>specialist re-extraction"]
+    BOSS["adjudicate-conflict<br/>BossAgent"]
+    REVIEW["route-for-review<br/>review bin (human)"]
+    REPORT["compile-report<br/>ReporterAgent"]
+    CATALOG["write-catalog<br/>SQLite documents + matters"]
+    ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
+    FAILED["FAILED"]
+    ENDX([END])
+
+    START --> INGEST
+    INGEST --> CLASSIFY
+
+    CLASSIFY -- "confidence >= low" --> EXTRACT
+    CLASSIFY -- "low confidence, attempts <= retry_max" --> RETRY_CLASS
+    CLASSIFY -- "unknown type / low confidence after retries" --> REVIEW
+    RETRY_CLASS -- "confidence >= low" --> EXTRACT
+    RETRY_CLASS -- "still low confidence" --> REVIEW
+
+    EXTRACT -- "confidence >= low, no conflict" --> REPORT
+    EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
+    EXTRACT -- "conflict detected" --> BOSS
+    EXTRACT -- "still low confidence" --> REVIEW
+    RETRY_EXTRACT -- "confidence >= low" --> REPORT
+    RETRY_EXTRACT -- "still low confidence" --> REVIEW
+
+    BOSS -- "approved" --> REPORT
+    BOSS -- "review" --> REVIEW
+    REVIEW -- "approved" --> REPORT
+    REVIEW -- "rejected" --> FAILED --> ENDX
+
+    REPORT --> CATALOG --> ARCHIVE --> ENDX
 ```
-Upload/Drop --> /pipeline/inbox/ --> [Watcher] --> LangGraph run per document
-                                                        |
-                                    +-------------------+-------------------+
-                                    |                   |                   |
-                               Sorter (classify)  Confidence check   Boss (escalation)
-                                    |                   |
-                                    |                   v
-                                    |         /pipeline/review/ (human-in-the-loop)
-                                    v
-                        /pipeline/classified/<type>/
-                                    |
-                                    v
-                         Specialist Agent (extract per doc-type schema)
-                                    |
-                                    v
-                              Reporter (compile matter record)
-                                    |
-                                    v
-                              Catalog write (database)
-                                    |
-                                    v
-                              Archivist (log + finalize)
-                                    |
-                                    v
-                       /archive/<matter_id>/<doc_type>/
 
-Parallel/independent:
-  Boss (ops-monitor) — sweeps the database + Langfuse periodically
-  Observability — every LLM call auto-traced (Langfuse/Braintrust)
-  Audit log — every state transition writes a hash-chained entry
+### Hierarchical organization
+
+```mermaid
+flowchart LR
+    subgraph IN["Input layer"]
+        INBOX["inbox bin<br/>(watcher / API upload)"]
+    end
+
+    subgraph ORCH["Orchestration — LangGraph state machine (graph/)"]
+        direction TB
+        NODES["ingest → classify → extract →<br/>report → catalog → archive<br/>retries, boss, human review"]
+        ROUTING["conditional routing<br/>graph/routing.py"]
+    end
+
+    subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
+        SORTER["SorterAgent"]
+        SPEC["5 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence, compliance"]
+        BOSS["BossAgent"]
+        REPORTER["ReporterAgent"]
+        PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
+        JUDGE["JudgeAgent<br/>(offline evaluators)"]
+    end
+
+    subgraph LLM["LLM layer (llm/)"]
+        CLI["get_llm() — provider-agnostic client"]
+        RETRY["retry + max_tokens caps"]
+        PROMPTS["Langfuse-managed prompts<br/>mailroom-* (with local fallback)"]
+        P["OpenRouter / Ollama / vLLM / generic"]
+    end
+
+    subgraph PERSIST["Persistence"]
+        BINS["filesystem bins"]
+        SQLITE["SQLite catalog + audit log"]
+        ARCHIVE2["archive/ + manifests/"]
+    end
+
+    subgraph OBS["Observability — Langfuse (observability/)"]
+        TRACES["one trace per document<br/>spans per node, session per matter"]
+        SCORES["task-spec scores<br/>schema_valid, completeness, correctness…"]
+    end
+
+    INBOX --> NODES
+    NODES --> SORTER & SPEC & BOSS & REPORTER & PDF
+    SORTER & SPEC & BOSS & REPORTER --> CLI
+    CLI --> RETRY --> PROMPTS --> P
+    NODES --> BINS --> SQLITE --> ARCHIVE2
+    NODES -.-> TRACES
+    TRACES --> SCORES
+    JUDGE -.-> SCORES
 ```
 
 ## Core Components
 
 ### Watcher (`pipeline/watcher.py`)
-- **watchdog**-based filesystem monitor on `/pipeline/inbox/`
+- Uses `watchdog` to monitor `/pipeline/inbox/` for new files
 - Debounces file events to avoid double-processing
 - Claims files via atomic `os.rename` into `/pipeline/processing/<worker_id>/`
 - Spawns a LangGraph run per document in a daemon thread
 
 ### LangGraph Engine (`graph/build_graph.py`)
-- **11 nodes** forming a directed state machine
-- One graph execution per document — each document is independent
-- **SQLite-checkpointed** for crash/resume (falls back to MemorySaver)
-- All routing logic in `graph/routing.py` — conditional edges driven by confidence thresholds from `config/taxonomy.yaml`
+- One graph execution per document
+- 11 nodes forming a directed state machine
+- SQLite-checkpointed for crash/resume
+- Falls back to in-memory checkpointing when SQLite is unavailable
 
-### LLM Client (`llm/client.py`, `llm/providers.py`)
-- Thin **OpenAI-compatible** wrapper
+### LLM Client (`llm/client.py`, `llm/providers.py`, `llm/retry.py`, `llm/prompts.py`)
+- Thin OpenAI-compatible wrapper
 - Provider-agnostic: OpenRouter, Ollama, vLLM, or any OpenAI-compatible endpoint
 - Per-agent model selection from `config/taxonomy.yaml`
-- Global override via `DEFAULT_PROVIDER` env var
+- Global provider override via `DEFAULT_PROVIDER` env var
+- Every chat completion goes through `retry_chat_completion` (`llm/retry.py`): transient failures (connection errors, timeouts, 429, 5xx) are retried with exponential backoff + jitter from the `llm_retry:` config; 4xx client errors are never retried
+- Output generation is capped per agent by `max_tokens` in `taxonomy.yaml` (bounds runaway reasoning-token output)
+- Agent system prompts are **Langfuse-managed** (`llm/prompts.py`, `mailroom-<agent_name>`), fetched at runtime with the identical template shipped in code as fallback; `scripts/sync_prompts.py` pushes templates up
+- Structured calls (`_call_structured`) always send `response_format={"type": "json_object"}` and guarantee the literal token `json` in the messages — some providers (Qwen via Alibaba) reject requests without it
 
-### SQLite (`storage/`)
-- Default storage: SQLite file at `data/mailroom.db` (no server required)
-- Shared by: document/matter **catalog** and **audit log**
-- SQLAlchemy 2.0 async with aiosqlite (`DATABASE_URL` can switch to Postgres)
-- Three tables: `matters`, `documents`, `audit_log`
+### SQLite (`storage/db.py`, `storage/catalog.py`, `storage/audit_log.py`)
+- SQLite (via SQLAlchemy 2.0 async + aiosqlite) by default — a single file, no server required
+- Shared by the document/matter catalog and the audit log
+- Three tables: `matters`, `documents`, `audit_log` (`documents` carries extracted data, trace id, and a `scores` JSON column)
+- `DATABASE_URL` env var can switch to Postgres
 
-### Observability
-- Two interchangeable tracing backends: **Langfuse** (cloud or self-hosted) and **Braintrust**
+### Observability (`observability/`)
+- Two interchangeable tracing backends: **Langfuse** (cloud or self-hosted, default) and **Braintrust**
 - Selected via `OBSERVABILITY_PROVIDER` env (`auto` | `langfuse` | `braintrust` | `none`)
-- Every LLM call auto-traced via `llm/client.py:get_llm` (langfuse patch / `braintrust.wrap_openai`) — prompt, response, tokens, latency
-- Graceful noop fallback when unconfigured — pipeline runs unchanged
+- Every LLM call is auto-traced: `llm/client.py:get_llm` wraps the OpenAI client (`langfuse.openai` patch or `braintrust.wrap_openai`), capturing prompt, response, tokens, latency
+- One trace per document (`pipeline_trace`), one span per node (`traced_node`), `session_id = matter_id`, deterministic trace ids seeded from filenames
+- **Scores** (`observability/scores.py`): every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, confidences); pilot runs add ground-truth scores (class/stage correctness, calibration error); score configs auto-created via `ensure_score_configs()`
+- **Run-log mirroring** (`scripts/sync_langfuse_logs.py`): fetch traces (with observations + scores) into `data/langfuse_logs/<run>/` for offline analysis
+- Graceful noop fallback when no backend/keys are configured — pipeline runs unchanged
 
-### Filesystem Bins
-- Human-legible pipeline state — `ls` any directory to see status
-- Atomic rename for claim safety — no external locking needed
-- Archive organized by `matter_id/doc_type/` for easy browsing
-
-## State Machine
-
-### Nodes
-
-| # | Node | Agent | Purpose |
-|---|---|---|---|
-| 1 | `ingest` | — | Read file, create manifest, move to processing |
-| 2 | `classify` | Sorter | Determine doc_type + confidence |
-| 3 | `retry_classify` | Sorter | Re-classify with alternate prompt |
-| 4 | `extract` | Specialist | Extract structured data per doc-type |
-| 5 | `retry_extract` | Specialist | Re-extract with prior attempt context |
-| 6 | `human_review` | — | Pause for human decision (LangGraph interrupt) |
-| 7 | `boss_escalation` | Boss | Adjudicate data conflicts |
-| 8 | `compile_report` | Reporter | Synthesize matter-record entry |
-| 9 | `catalog_write` | — | Write to database catalog |
-| 10 | `archive` | Archivist | Move to archive, write audit entry |
-
-### Conditional Edges
-
-```
-classify --+-- confidence >= low ------------ extract
-           +-- attempts <= retry_max -------- retry_classify
-           +-- otherwise ------------------- human_review
-
-extract ---+-- confidence >= low, no conflict -- compile_report
-           +-- conflict detected -------------- boss_escalation
-           +-- attempts <= retry_max ---------- retry_extract
-           +-- otherwise ---------------------- human_review
-
-boss_escalation --+-- approved -- compile_report
-                  +-- review --- human_review
-
-human_review --+-- approved -- compile_report
-               +-- rejected -- END (failed)
-```
+### Filesystem Bins (`pipeline/bins.py`)
+- Human-legible pipeline state: `ls` any directory to see what's happening
+- Atomic rename for claim safety (no external locking needed)
+- Archive organized by `matter_id/doc_type/`
 
 ## Data Flow
 
-1. **Ingest**: File lands in inbox → claimed atomically to processing → manifest created
-2. **Classify**: LLM reads text → determines doc_type + confidence
-3. **Confidence Check**: High → extract; Low → retry; Still low → human review
-4. **Extract**: Dynamic dispatch to matching specialist → structured JSON output
-5. **Extraction Check**: Same three-way + conflict detection → Boss escalation
-6. **Compile Report**: LLM synthesizes all extracted data into matter-record summary
-7. **Catalog Write**: database `documents` and `matters` tables (best-effort)
-8. **Archive**: Move file to `/archive/<matter_id>/<doc_type>/` + manifest sidecar + audit entry
+### 1. Ingest
+Document lands in `/pipeline/inbox/`. Watcher detects it, claims it atomically to `/pipeline/processing/<worker_id>/`. Manifest is created with `PipelineStage.PROCESSING`. PDFs are transcribed by `PDFTranscriber` — text-based PDFs directly (no LLM), scanned/garbled PDFs via an LLM markdown pass (`pipeline.pdf_direct_chars_per_page` controls the threshold).
 
-## Filesystem Layout
+### 2. Classify (Sorter)
+LLM call: reads document text, determines `doc_type` (contract, corporate_record, due_diligence, correspondence, compliance_filing) and confidence score.
+
+### 3. Confidence Check
+Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
+- **Confidence >= `low` (0.70)**: straight to extraction
+- **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`
+- **Still low after retry / unknown doc type**: route to `/review/` (human)
+
+### 4. Extract (Specialist)
+Dynamic dispatch to the matching specialist agent based on `doc_type`. Each specialist:
+- Has its own system prompt/personality
+- Uses structured JSON output against a Pydantic schema
+- Returns extraction data + confidence score
+
+### 5. Extraction Confidence Check
+Same three-way branch as classification, plus a fourth path:
+- **Conflict with existing matter data**: route to Boss escalation
+- **Low confidence**: retry → still low → human review
+- **High confidence**: proceed to report compilation
+
+### 6. Compile Report (Reporter)
+LLM call: compiles all extracted data into a clean matter-record summary.
+
+### 7. Catalog Write
+Writes document and matter records to the database (best-effort — pipeline continues on failure).
+
+### 8. Archive (Archivist)
+- Moves file to `/archive/<matter_id>/<doc_type>/`
+- Writes manifest sidecar JSON
+- Writes hash-chained audit log entry
+- Marks manifest `PipelineStage.ARCHIVED`
+
+## State Machine Nodes
+
+| Node | Agent | Purpose |
+|---|---|---|
+| `ingest` | — | Read file, create manifest, move to processing |
+| `classify` | Sorter | Determine doc_type + confidence |
+| `retry_classify` | Sorter | Re-classify with alternate prompt |
+| `extract` | Specialist | Extract structured data per doc-type |
+| `retry_extract` | Specialist | Re-extract with context from prior attempt |
+| `human_review` | — | Pause for human decision |
+| `boss_escalation` | Boss (in-graph) | Adjudicate conflicts |
+| `compile_report` | Reporter | Synthesize matter-record entry |
+| `catalog_write` | — | Write to database catalog |
+| `archive` | Archivist | Move to archive, write audit log |
+
+## Conditional Edges
 
 ```
-data/
-  pipeline/
-    inbox/              # New uploads
-    processing/<id>/    # Claimed by worker
-    classified/<type>/  # Sorted, awaiting specialist
-    review/             # Human review required
-    failed/             # Unrecoverable errors
-  archive/
-    <matter_id>/<type>/ # Final durable home
-  manifests/
-    <doc_id>.json       # Self-contained DocumentManifest
+classify ─┬─ confidence >= low ──▶ extract
+          ├─ attempts <= retry_max ──▶ retry_classify
+          └─ otherwise ──▶ human_review
+
+extract ─┬─ confidence >= low + no conflict ──▶ compile_report
+         ├─ conflict detected ──▶ boss_escalation
+         ├─ attempts <= retry_max ──▶ retry_extract
+         └─ otherwise ──▶ human_review
+
+boss_escalation ─┬─ approved ──▶ compile_report
+                 └─ review ──▶ human_review
+
+human_review ─┬─ approved ──▶ compile_report
+              └─ rejected ──▶ END (failed)
 ```
 
-## Audit Trail Design
+## Checkpointing
 
-Every state transition writes an `AuditLogEntry` to the database (SQLite `audit_log` table):
+LangGraph checkpoints the full state after each node. On crash or restart:
+- Any in-flight run resumes from the last completed node
+- No document is lost and no document is processed twice
+- SQLite-backed checkpointing (`data/checkpoints.db`) is the default; MemorySaver is the fallback if SQLite is unavailable
 
-```
-entry_1 (prev_hash: "")         -- classified by sorter
-    |
-    v
-entry_2 (prev_hash: hash_1)     -- extracted by contracts_specialist
-    |
-    v
-entry_3 (prev_hash: hash_2)     -- archived by archivist
-```
+## Audit Trail
 
-- Each entry is SHA-256 hashed with its predecessor's hash
-- Tampering with any entry breaks all subsequent hashes
-- The chain can be verified via `GET /audit/{doc_id}` or `verify_chain()`
-- Independent of Langfuse — this is the actual compliance record
+Every state transition writes an `AuditLogEntry` to the database. Each entry:
+- Contains `prev_hash` (SHA-256 of the prior entry)
+- Contains `entry_hash` (SHA-256 of `prev_hash` + entry content)
+- Forms a tamper-evident chain — modifying any entry breaks all subsequent hashes
+- Is independent of Langfuse (the audit log is the compliance record)
+- Can be verified via the `/audit/{doc_id}` API endpoint or `schemas/audit.py:verify_chain()`
+
+## Evaluators & Quality
+
+The `judge` agent (`agents/judge.py`, offline — not in the document graph) audits pipeline output against the task specification. `scripts/run_quality_judges.py` runs it over a pilot report and attaches scores to each sample's trace:
+
+| Judge | Measures | Scores |
+|---|---|---|
+| `classification` | Is the sorter's assigned class correct for the document (audited against the taxonomy spec)? | `classification_correct`, `classification_quality` |
+| `completeness` | Did the specialist capture every field the document states? | `completeness`, `completeness_label` |
+| `correctness` | Are extracted values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
+
+Production runs additionally emit self-evident scores with no ground truth (`parse_error`, `schema_valid`, `stage_completed`, confidence values) from `observability/scores.py`, and pilot runs add ground-truth scores (`class_correct`, `stage_correct`, `confidence_calibration_error`). All score configs are auto-created in Langfuse by `ensure_score_configs()`.
 
 ## Boss Agent — Dual Role
 
-The Boss has **two separate invocation paths** sharing one persona:
+The Boss agent has two separate invocation paths sharing one persona:
 
-1. **In-graph** (`boss_escalation` node): synchronously adjudicates conflicts within a document's pipeline run
-2. **Ops-monitor** (`pipeline/ops_monitor.py`): separate scheduled process sweeping the catalog for systemic issues
-
-Both share the same system prompt voice — consistent persona, different scopes of data.
+1. **In-graph (`boss_escalation` node)**: synchronously adjudicates conflicts within a single document's run.
+2. **Ops-monitor (`pipeline/ops_monitor.py`)**: separate scheduled process (default every 5 minutes) that queries the catalog for systemic issues: stuck documents, error-rate spikes, review backlogs.
