@@ -41,6 +41,18 @@ SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | PDF_EXTENSIONS | {".txt", ".md", ".doc
 
 
 def _build_checkpointer():
+    """MemorySaver by default (stateless design: review resume re-invokes the
+    graph from the manifest, so no checkpoint persistence is needed — this also
+    kills the unbounded per-doc checkpoint growth of SqliteSaver).
+
+    Set MAILROOM_CHECKPOINTER=sqlite to opt back into the on-disk checkpointer
+    (debugging/resume-across-restart experiments only).
+    """
+    import os
+
+    if os.environ.get("MAILROOM_CHECKPOINTER", "memory") != "sqlite":
+        logger.info("checkpointer_initialized", backend="memory")
+        return MemorySaver()
     try:
         import sqlite3
         from langgraph.checkpoint.sqlite import SqliteSaver
@@ -79,6 +91,8 @@ def _read_file_text(file_path: Path) -> tuple[str, bool]:
         return _extract_text_from_image(file_path)
     if ext in PDF_EXTENSIONS:
         return _extract_text_from_pdf(file_path)
+    if ext == ".docx":
+        return _extract_text_from_docx(file_path)
     try:
         text = file_path.read_text(errors="replace")
         if not text.strip():
@@ -90,6 +104,37 @@ def _read_file_text(file_path: Path) -> tuple[str, bool]:
             return (text, bool(text.strip()))
         except Exception:
             return (f"[Unreadable file: {file_path.name}]", False)
+
+
+def _extract_text_from_docx(file_path: Path) -> tuple[str, bool]:
+    """Extract text from .docx (paragraphs + tables) via python-docx.
+
+    Previously .docx files fell through to the generic reader and were decoded
+    as UTF-8 — i.e. zip binary garbage — which the classifier then tried to
+    label. Unreadable files return the standard unreadable marker with
+    ok=False so the pipeline routes them to review instead of misclassifying.
+    """
+    try:
+        from docx import Document
+
+        doc = Document(str(file_path))
+        parts = [p.text.strip() for p in doc.paragraphs if p.text and p.text.strip()]
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text and c.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+        text = "\n".join(parts)
+        if text.strip():
+            logger.info("docx_text_extracted", file=file_path.name, chars=len(text))
+            return (text, True)
+        return ("", False)
+    except ImportError:
+        logger.warning("python_docx_missing", file=str(file_path))
+        return (f"[Unreadable file: {file_path.name} — .docx support requires python-docx]", False)
+    except Exception:
+        logger.exception("docx_extraction_failed", file=str(file_path))
+        return (f"[Unreadable file: {file_path.name} — not a valid .docx]", False)
 
 
 def _extract_text_from_image(file_path: Path) -> tuple[str, bool]:
@@ -132,6 +177,15 @@ def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
     except Exception:
         logger.exception("pdf_fallback_failed")
     return (f"[PDF file: {file_path.name} — transcription failed]", False)
+
+
+def entry_route(state: dict) -> str:
+    """Entry router: a review-resume re-invocation starts at fresh extraction
+    (doc_type already known from the manifest); everything else goes through
+    normal ingest → classify."""
+    if state.get("resume_extraction") and state.get("doc_type"):
+        return "extract"
+    return "ingest"
 
 
 def _build_specialist_dispatch():
@@ -213,9 +267,18 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         }
 
     from agents.sorter import SorterAgent
+    from pipeline.guards import guard_classification
+
     sorter = SorterAgent()
     doc_type, confidence, reasoning = sorter.classify(doc_text)
     attempts = state.get("classification_attempts", 0) + 1
+
+    guard = guard_classification({"doc_type": doc_type, "classification_confidence": confidence})
+    if not guard["ok"]:
+        # Never trust out-of-range confidence; leave doc_type untouched so
+        # routing's unknown-type check sends it to human review.
+        logger.warning("classification_guardrail_triggered", doc_id=state.get("doc_id"), issues=guard["issues"])
+        confidence = guard.get("confidence", 0.1)
 
     logger.info("classified", doc_type=doc_type, confidence=confidence, attempts=attempts)
     return {
@@ -264,11 +327,16 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     confidence = result.pop("confidence", None)
     attempts = state.get("extraction_attempts", 0) + 1
 
+    from pipeline.guards import apply_extraction_guard
+
+    guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
+
     logger.info("extracted", doc_type=doc_type, confidence=confidence, attempts=attempts)
     return {
         "extracted_data": result,
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
+        "extraction_guardrail": guard["issues"],
     }
 
 
@@ -314,12 +382,17 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     result = extractor(augmented_text)
     confidence = result.pop("confidence", None)
 
+    from pipeline.guards import apply_extraction_guard
+
+    guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
+
     logger.info("retry_extracted", doc_type=doc_type, confidence=confidence, attempts=attempts)
     return {
         "extracted_data": result,
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
         "retry_count": state.get("retry_count", 0) + 1,
+        "extraction_guardrail": guard["issues"],
     }
 
 
@@ -465,6 +538,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         extraction_confidence=state.get("extraction_confidence"),
         trace_id=state.get("trace_id"),
         escalation_reason=state.get("escalation_reason"),
+        review_decision=state.get("review_decision"),
         classification_attempts=state.get("classification_attempts", 0),
         extraction_attempts=state.get("extraction_attempts", 0),
     )
@@ -558,7 +632,10 @@ def build_graph(checkpointer=None):
     workflow.add_node("catalog_write", traced_node("write-catalog")(catalog_write_node))
     workflow.add_node("archive", traced_node("archive-document")(archive_node))
 
-    workflow.add_edge(START, "ingest")
+    workflow.add_conditional_edges(START, entry_route, {
+        "ingest": "ingest",
+        "extract": "extract",
+    })
     workflow.add_edge("ingest", "classify")
 
     workflow.add_conditional_edges("classify", after_classify, {
@@ -602,10 +679,50 @@ def build_graph(checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
+def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> dict[str, Any]:
+    """Shared execution scaffold: build graph, open the per-doc trace (one trace
+    per document, deterministic id from `seed`), invoke, emit self-evident
+    scores, persist them. Used by both `run_pipeline` and `resume_from_review`."""
+    import os
+    from observability import tracing
+
+    from observability import scores as pipeline_scores
+
+    graph = build_graph()
+    config = {"configurable": {"thread_id": seed}}
+
+    pipeline_scores.ensure_score_configs()
+
+    with tracing.pipeline_trace(
+        seed=seed,  # deterministic trace id -> correlates with our doc
+        session_id=initial_state.get("matter_id"),  # groups documents of a matter
+        name="document-pipeline",
+        input=trace_input,
+        metadata={"pipeline": "mailroom"},
+        tags=["mailroom"],
+        environment=os.environ.get("OBSERVABILITY_ENVIRONMENT") or None,
+    ) as root:
+        try:
+            result = graph.invoke(initial_state, config)
+        except Exception:
+            if root is not None:
+                root.update(output={"stage": "failed", "error": True})
+            raise
+        score_values = pipeline_scores.emit_pipeline_scores(result)
+        _persist_scores(result, score_values)
+        if root is not None:
+            root.update(output={
+                "stage": result.get("stage"),
+                "doc_type": result.get("doc_type"),
+                "classification_confidence": result.get("classification_confidence"),
+                "extraction_confidence": result.get("extraction_confidence"),
+            })
+    tracing.flush()
+    return result
+
+
 def run_pipeline(file_path: Path, matter_id: str = "DEFAULT") -> dict[str, Any]:
     _ensure_dirs()
-    graph = build_graph()
-    config = {"configurable": {"thread_id": file_path.stem}}
 
     initial_state: DocumentState = {
         "doc_id": "",
@@ -629,36 +746,59 @@ def run_pipeline(file_path: Path, matter_id: str = "DEFAULT") -> dict[str, Any]:
         "messages": [],
     }
 
-    import os
-    from observability import tracing
+    return _execute_run(
+        initial_state,
+        seed=file_path.stem,
+        trace_input={"filename": file_path.name, "matter_id": matter_id},
+    )
 
-    from observability import scores as pipeline_scores
 
-    pipeline_scores.ensure_score_configs()
+def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
+    """Resume a human-approved review document with a FRESH extraction.
 
-    with tracing.pipeline_trace(
-        seed=file_path.stem,  # deterministic trace id -> correlates with our doc
-        session_id=matter_id,  # groups every document of a matter into one session
-        name="document-pipeline",
-        input={"filename": file_path.name, "matter_id": matter_id},
-        metadata={"pipeline": "mailroom"},
-        tags=["mailroom"],
-        environment=os.environ.get("OBSERVABILITY_ENVIRONMENT") or None,
-    ) as root:
-        try:
-            result = graph.invoke(initial_state, config)
-        except Exception:
-            if root is not None:
-                root.update(output={"stage": "failed", "error": True})
-            raise
-        score_values = pipeline_scores.emit_pipeline_scores(result)
-        _persist_scores(result, score_values)
-        if root is not None:
-            root.update(output={
-                "stage": result.get("stage"),
-                "doc_type": result.get("doc_type"),
-                "classification_confidence": result.get("classification_confidence"),
-                "extraction_confidence": result.get("extraction_confidence"),
-            })
-    tracing.flush()
-    return result
+    Stateless resume: the file is requeued from the review bin into
+    processing/<worker>/, re-read, and the graph is re-invoked starting at the
+    extraction stage (skipping classification — the manifest's doc_type is
+    trusted from the reviewed run). The ORIGINAL doc_id is preserved so the
+    manifest, catalog record, audit chain, and Langfuse trace stay intact.
+    """
+    from pipeline.bins import requeue_from_review, get_worker_id
+
+    if not manifest.doc_type:
+        raise ValueError(
+            "Cannot resume: manifest has no classification; re-submit the document instead."
+        )
+
+    _ensure_dirs()
+    worker_id = get_worker_id()
+    queued = requeue_from_review(review_file, worker_id)
+    doc_text, text_ok = _read_file_text(queued)
+
+    initial_state: DocumentState = {
+        "doc_id": manifest.doc_id,
+        "matter_id": manifest.matter_id,
+        "original_filename": manifest.original_filename,
+        "stage": PipelineStage.CLASSIFIED.value,
+        "doc_type": manifest.doc_type,
+        "classification_confidence": manifest.classification_confidence,
+        "classification_attempts": manifest.classification_attempts,
+        "extracted_data": None,  # fresh extraction — never reuse the reviewed data
+        "extraction_confidence": None,
+        "extraction_attempts": 0,
+        "trace_id": None,
+        "escalation_reason": None,
+        "review_decision": "approved",
+        "retry_count": 0,
+        "conflict_detected": False,
+        "file_path": str(queued),
+        "doc_text": doc_text,
+        "error_message": None if text_ok else f"Could not extract text from {queued.suffix} file",
+        "messages": [],
+        "resume_extraction": True,
+    }
+
+    return _execute_run(
+        initial_state,
+        seed=queued.stem,
+        trace_input={"filename": queued.name, "matter_id": manifest.matter_id, "resumed": True},
+    )

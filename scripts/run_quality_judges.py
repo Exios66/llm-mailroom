@@ -43,6 +43,10 @@ from pipeline.env import load_env  # noqa: E402
 
 load_env()
 
+from pipeline.logging import setup_logging  # noqa: E402
+
+setup_logging()
+
 os.environ.setdefault("OPENROUTER_API_KEY", "mock-key")
 
 from scripts.prepare_samples import prepare_samples  # noqa: E402

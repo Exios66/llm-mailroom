@@ -9,6 +9,10 @@ from .env import load_env
 
 load_env()
 
+from .logging import setup_logging
+
+setup_logging()
+
 from .bins import (
     inbox_dir,
     ensure_dirs,

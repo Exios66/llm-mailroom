@@ -6,6 +6,10 @@ from pipeline.env import load_env
 
 load_env()
 
+from pipeline.logging import setup_logging
+
+setup_logging()
+
 from pipeline.bins import review_dir, failed_dir, get_base_dir
 
 logger = structlog.get_logger(__name__)

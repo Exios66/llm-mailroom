@@ -242,7 +242,19 @@ The `judge` agent (`agents/judge.py`, offline — not in the document graph) aud
 | `completeness` | Did the specialist capture every field the document states? | `completeness`, `completeness_label` |
 | `correctness` | Are extracted values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
 
-Production runs additionally emit self-evident scores with no ground truth (`parse_error`, `schema_valid`, `stage_completed`, confidence values) from `observability/scores.py`, and pilot runs add ground-truth scores (`class_correct`, `stage_correct`, `confidence_calibration_error`). All score configs are auto-created in Langfuse by `ensure_score_configs()`.
+The same rubrics are configured as **live LLM-as-a-Judge evaluators in the Langfuse project** (`scripts/sync_evaluators.py`): three evaluators (`mailroom-classification-judge`, `mailroom-extraction-completeness-judge`, `mailroom-extraction-correctness-judge`) plus 11 observation rules that score the sorter/specialist LLM generations on every ingested trace. The script also ensures an LLM connection for the judge provider exists (OpenRouter key from `.env`).
+
+The pilot samples are mirrored into the `mailroom-pilot` Langfuse dataset (`scripts/sync_dataset.py`) — one item per sample with document text, ground truth (`expected_doc_class`, `expected_stage`) and manifest metadata — for experiments and judge calibration.
+
+Production runs additionally emit self-evident scores with no ground truth (`parse_error`, `schema_valid`, `stage_completed`, `guardrail_triggered`, confidence values) from `observability/scores.py`, and pilot runs add ground-truth scores (`class_correct`, `stage_correct`, `confidence_calibration_error`). All score configs are auto-created in Langfuse by `ensure_score_configs()`.
+
+## Guardrails
+
+`pipeline/guards.py` validates agent output deterministically before routing: classification must be a taxonomy enum with a `[0,1]` confidence; extractions must JSON-parse and validate against their Pydantic schema. Violations clamp confidence below the `confidence.low` routing threshold so bad output goes to retry/review, are logged, recorded on state (`extraction_guardrail`), and scored (`guardrail_triggered`).
+
+## Logging
+
+`pipeline/logging.py:setup_logging()` configures structlog in every entrypoint and script: level `LOG_LEVEL` (default INFO), renderer `LOG_FORMAT` (`pretty`|`json`); noisy third-party loggers silenced to WARNING.
 
 ## Boss Agent — Dual Role
 

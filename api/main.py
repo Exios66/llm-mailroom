@@ -8,6 +8,10 @@ from pipeline.env import load_env
 
 load_env()
 
+from pipeline.logging import setup_logging
+
+setup_logging()
+
 from graph.build_graph import build_graph, _ensure_dirs
 from graph.state import DocumentState
 from pipeline.bins import inbox_dir, save_manifest, load_manifest
@@ -76,14 +80,51 @@ async def resolve_review(
     if manifest.stage != PipelineStage.REVIEW:
         raise HTTPException(400, f"Document is not in review (current stage: {manifest.stage})")
 
-    manifest.review_decision = decision
-    manifest.stage = PipelineStage.PROCESSING if decision == "approved" else PipelineStage.FAILED
-    manifest.touch()
-    save_manifest(manifest)
+    if decision == "rejected":
+        manifest.review_decision = "rejected"
+        manifest.stage = PipelineStage.FAILED
+        manifest.touch()
+        save_manifest(manifest)
+        logger.info("review_rejected", doc_id=doc_id)
+        return {"status": "ok", "doc_id": doc_id, "decision": decision, "notes": notes}
 
-    logger.info("review_resolved", doc_id=doc_id, decision=decision)
+    # Approved → resume the pipeline with a FRESH extraction (never reuse the
+    # reviewed extraction data). Stateless: re-invoke the graph from the
+    # manifest, starting at the extraction stage, then compile → catalog →
+    # archive under the original doc_id.
+    if not manifest.doc_type:
+        raise HTTPException(
+            409,
+            "Document has no classification to resume; re-submit it to the inbox instead.",
+        )
 
-    return {"status": "ok", "doc_id": doc_id, "decision": decision, "notes": notes}
+    import asyncio
+    from pipeline.bins import review_dir
+    from graph.build_graph import resume_from_review
+
+    review_file = review_dir() / manifest.original_filename
+    if not review_file.exists():
+        raise HTTPException(404, f"File not found in review bin: {review_file}")
+
+    try:
+        result = await asyncio.to_thread(resume_from_review, manifest, review_file)
+    except Exception as exc:
+        logger.exception("review_resume_failed", doc_id=doc_id)
+        raise HTTPException(500, f"Resume failed: {exc}")
+
+    logger.info("review_approved_resumed", doc_id=doc_id, stage=result.get("stage"))
+    return {
+        "status": "ok",
+        "doc_id": doc_id,
+        "decision": decision,
+        "notes": notes,
+        "resume": {
+            "stage": result.get("stage"),
+            "doc_type": result.get("doc_type"),
+            "extraction_confidence": result.get("extraction_confidence"),
+            "extraction_attempts": result.get("extraction_attempts"),
+        },
+    }
 
 
 @app.get("/status/{doc_id}")

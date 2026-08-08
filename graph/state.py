@@ -18,6 +18,8 @@ class DocumentState(TypedDict, total=False):
     review_decision: str | None
     retry_count: int
     conflict_detected: bool
+    extraction_guardrail: list[str]
+    classification_guardrail: list[str]
     file_path: str
     doc_text: str
     error_message: str | None

@@ -2,6 +2,7 @@ import structlog
 from typing import Literal
 
 from pipeline.config import get_confidence_thresholds, get_all_doc_types
+from observability.scores import validate_extraction
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +48,29 @@ def after_extraction(state: dict) -> Literal[
     if conflict:
         logger.info("conflict_escalation", doc_id=state.get("doc_id"))
         return "boss_escalation"
+
+    # Schema gate: an extraction that fails the doc type's pydantic schema
+    # (parse error, wrong types, fabricated shape) must never archive — retry
+    # once, then human review, regardless of the model's stated confidence.
+    # Only enforced when there is extraction data to validate (a None/empty
+    # extraction is caught by the confidence path below).
+    extracted = state.get("extracted_data")
+    if extracted:
+        checks = validate_extraction(state.get("doc_type"), extracted)
+        if checks.get("schema_valid") is False:
+            if attempts <= retry_max:
+                logger.info(
+                    "extraction_schema_invalid_retry",
+                    doc_id=state.get("doc_id"),
+                    attempts=attempts,
+                )
+                return "retry_extract"
+            logger.info(
+                "extraction_schema_invalid_review",
+                doc_id=state.get("doc_id"),
+                attempts=attempts,
+            )
+            return "human_review"
 
     if confidence is not None and confidence >= low:
         return "compile_report"

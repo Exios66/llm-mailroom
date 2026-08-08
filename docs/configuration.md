@@ -172,6 +172,8 @@ See `.env.example` for the complete list:
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` | Async database URL. SQLite by default; set a Postgres URL to switch |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `none` |
+| `LOG_LEVEL` | No | `INFO` | Structured log level (`DEBUG`, `INFO`, `WARNING`, ...) |
+| `LOG_FORMAT` | No | `pretty` | Log renderer: `pretty` (console) or `json` (machine-readable) |
 | `LANGFUSE_PUBLIC_KEY` | No | `pk-lf-local` | Langfuse public key |
 | `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key (present ⇒ `auto` picks Langfuse) |
 | `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server URL (`LANGFUSE_BASE_URL` accepted as alias) |
