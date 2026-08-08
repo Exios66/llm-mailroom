@@ -5,9 +5,12 @@ The pipeline emits exactly one cumulative `pipeline-result` generation per
 document trace (see `graph/build_graph.py:_emit_pipeline_result`), and this
 script deploys the single evaluator + single observation rule that score it:
 
-  - `mailroom-pipeline-judge` → one judge call per document, scoring
-    classification correctness, extraction correctness, and extraction
-    completeness cumulatively in a single pass (numeric 0-1 score + reasoning).
+  - `mailroom-pipeline-judge` → one judge call per document returning a binary
+    CORRECT/MISS verdict. When ground truth is available (pilot runs pass the
+    manifest's `expected_doc_class`/`expected_stage` through the generation
+    output), the judge decides STRICTLY against the ACTUAL truth; otherwise
+    (live runs) it falls back to rubric judgment against the taxonomy spec and
+    the document text.
   - `mailroom-pipeline-rule` → observation rule matching the `pipeline-result`
     generation name, so each document costs exactly ONE judge call.
 
@@ -17,7 +20,8 @@ The offline judges (`agents/judge.py`, `scripts/run_quality_judges.py`) still
 provide per-dimension deep audits for pilot runs.
 
 The rule maps the evaluator prompt's `{{input}}`/`{{output}}` variables to the
-generation's input (document text) and output (curated pipeline result).
+generation's input (document text) and output (curated pipeline result, which
+also carries `ground_truth` when the caller knows the expected outcome).
 
 The judge model defaults to the taxonomy's `judge` agent mapping; override with
 --provider/--model. Requires the project's LLM connections (or an explicit
@@ -88,12 +92,12 @@ _TAXONOMY_SPEC = """\
 - compliance_filing (Compliance Filing): SEC filings, state registrations, regulatory submissions, annual reports
 - court_opinion (Court Opinion): Judicial opinions, orders, and decisions issued by courts"""
 
-# One cumulative judge call per document: classification correctness +
-# extraction correctness + extraction completeness judged in a single pass.
-# The judge needs to know the full extraction schema per class to assess
-# completeness; the taxonomy + output's extracted_data suffice for the
-# cumulative verdict, and the offline judges provide the deep per-class audit.
-PIPELINE_PROMPT = f"""You are an expert legal reviewer auditing an automated legal-document mailroom pipeline.
+# One cumulative judge call per document returning a binary CORRECT/MISS
+# verdict. With ground truth (pilot runs embed `expected_doc_class` /
+# `expected_stage` in the generation output) the judge decides strictly
+# against the ACTUAL truth; without it (live runs) it falls back to rubric
+# judgment against the taxonomy + document text.
+PIPELINE_PROMPT = f"""You are an expert legal reviewer auditing an automated legal-document mailroom pipeline against its ground truth.
 
 Task specification — the pipeline must assign every incoming document exactly one of these classes:
 {_TAXONOMY_SPEC}
@@ -102,26 +106,27 @@ The source document text is in {{{{input}}}}. The complete pipeline result is in
 - `doc_type` + `classification_confidence`: the assigned class and its confidence
 - `extracted_data`: the structured fields extracted for that class (empty/absent for failed runs)
 - `stage`, `escalation_reason`, `review_decision`, `error_message`: how the run ended
+- `ground_truth` (when available): the EXPECTED outcome — `expected_doc_class` and `expected_stage` from the ground-truth manifest
 
-Evaluate the run in a single pass:
-1. CLASSIFICATION: is the assigned class the best fit for the document? (A different class only if it clearly fits better; genuinely multi-class documents are acceptable for either.)
-2. EXTRACTION CORRECTNESS: is every populated field grounded in the document text — no fabrication, no paraphrase that changes meaning? Empty fields are neutral (absence of wrong data is not an error).
-3. EXTRACTION COMPLETENESS: of the fields the document actually states and the schema calls for, how many did the extraction capture? Information the document does not contain is not a gap.
+Decide a single binary verdict:
 
-Return a `score` as a 0-1 float rating the overall run: classification verdict AND extraction accuracy AND completeness, weighted so factual errors (wrong/fabricated values) count more heavily than omissions. A run that failed entirely (no classification, extraction error) must score near 0.
+1. If `ground_truth` is provided (pilot/evaluation runs), judge STRICTLY against the actual truth:
+   - CORRECT only if ALL of these hold: the assigned `doc_type` equals `expected_doc_class`; the run reached the expected stage; and every field the document states (for that class's extraction schema) was captured completely and accurately — no fabrication, no paraphrase that changes meaning.
+   - MISS otherwise: wrong class, failed/aborted run, fabricated or wrong extracted values, or a materially missing field the document states.
 
-Return `reasoning` structured in exactly three labeled sections:
-- CLASSIFICATION: the verdict with evidence
-- CORRECTNESS: any fabricated or wrong values found (or none)
-- COMPLETENESS: the specific gaps found (or none)"""
+2. If no `ground_truth` is provided (live production runs), judge by rubric:
+   - CORRECT: the assigned class is clearly the best fit for the document AND the extraction is complete and accurate (no fabrication, no materially missing stated fields).
+   - MISS: a different available class clearly fits better, or the extraction contains fabrication/wrong values, or the run failed/aborted.
+
+Return exactly one label — CORRECT or MISS. In the reasoning, cite the specific evidence: the classification verdict, any fabricated or wrong values, and any missing fields."""
 
 EVALUATORS = [
     {
         "name": EVALUATOR_NAME,
         "prompt": PIPELINE_PROMPT,
-        "output": ("NUMERIC", None),
-        "reasoning": "Structured CLASSIFICATION / CORRECTNESS / COMPLETENESS audit of the run.",
-        "score_description": "Cumulative quality of one document run (0-1): classification correctness, extraction correctness, extraction completeness.",
+        "output": ("CATEGORICAL", ["CORRECT", "MISS"]),
+        "reasoning": "Evidence for the verdict: classification match, fabricated/wrong values, missing fields.",
+        "score_description": "Binary run verdict (CORRECT/MISS): pipeline result matches the ground-truth class and contents (or, live, the task spec).",
     },
 ]
 

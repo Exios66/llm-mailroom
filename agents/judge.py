@@ -197,11 +197,14 @@ Document text:
 {self._truncate(doc_text)}
 --- END TEXT ---"""
 
+        variant_prompt, self._langfuse_prompt = get_managed_prompt(
+            "judge-classification", CLASSIFICATION_SYSTEM_PROMPT
+        )
         result = self._call_structured(
             user_message,
             json_schema=schema,
             temperature=0.0,
-            system_prompt=CLASSIFICATION_SYSTEM_PROMPT,
+            system_prompt=variant_prompt,
         )
         if result.get("_parse_error"):
             logger.error("judge_classification_parse_error", doc_type=doc_type)
@@ -262,11 +265,14 @@ Source document text:
 {self._truncate(doc_text)}
 --- END TEXT ---"""
 
+        variant_prompt, self._langfuse_prompt = get_managed_prompt(
+            "judge-correctness", CORRECTNESS_SYSTEM_PROMPT
+        )
         result = self._call_structured(
             user_message,
             json_schema=schema,
             temperature=0.0,
-            system_prompt=CORRECTNESS_SYSTEM_PROMPT,
+            system_prompt=variant_prompt,
         )
         if result.get("_parse_error"):
             logger.error("judge_correctness_parse_error", doc_type=doc_type)

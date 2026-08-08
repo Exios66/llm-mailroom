@@ -117,4 +117,6 @@ def prompt_templates() -> dict[str, str]:
         "reporter": reporter.COMPILE_SYSTEM_PROMPT,
         "pdf_transcriber": pdf_transcriber.SYSTEM_PROMPT,
         "judge": judge.SYSTEM_PROMPT,
+        "judge-classification": judge.CLASSIFICATION_SYSTEM_PROMPT,
+        "judge-correctness": judge.CORRECTNESS_SYSTEM_PROMPT,
     }

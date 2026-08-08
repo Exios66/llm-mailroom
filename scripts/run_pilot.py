@@ -225,7 +225,9 @@ def _fake_client(expect: dict) -> MagicMock:
     return client
 
 
-def run_sample(sample: dict, mock_mode: bool) -> dict:
+def run_sample(
+    sample: dict, mock_mode: bool, session_id: str | None = None, run_id: str | None = None
+) -> dict:
     from pipeline.bins import inbox_dir
     from graph.build_graph import run_pipeline
 
@@ -250,16 +252,33 @@ def run_sample(sample: dict, mock_mode: bool) -> dict:
     def _mock_get_llm(agent_name):
         return _fake_client(expect), "mock-model"
 
+    ground_truth = {
+        "expected_doc_class": sample["expected_doc_class"],
+        "expected_stage": sample["expected_stage"],
+    }
+    expected_fields = _parse_expected_fields(sample)
+    if expected_fields:
+        # Literal per-field expected extraction values from the manifest. When
+        # present, the judge input skips the document text entirely and the
+        # verdict is a field-by-field comparison (see _emit_pipeline_result).
+        ground_truth["expected_fields"] = expected_fields
+
     started = time.perf_counter()
     if mock_mode:
         with patch("llm.client.get_llm", side_effect=_mock_get_llm), \
              patch("agents.base.get_llm", side_effect=_mock_get_llm):
-            result = run_pipeline(queued, matter_id, source=sample.get("dataset"))
+            result = run_pipeline(
+                queued, matter_id, source=sample.get("dataset"), ground_truth=ground_truth,
+                session_id=session_id, run_id=run_id,
+            )
     else:
         # Real mode: instrument every client with usage/latency/cost capture.
         with patch("llm.client.get_llm", side_effect=_real_get_llm), \
              patch("agents.base.get_llm", side_effect=_real_get_llm):
-            result = run_pipeline(queued, matter_id, source=sample.get("dataset"))
+            result = run_pipeline(
+                queued, matter_id, source=sample.get("dataset"), ground_truth=ground_truth,
+                session_id=session_id, run_id=run_id,
+            )
     wall = time.perf_counter() - started
 
     total_tokens = sum(u["prompt_tokens"] + u["completion_tokens"] for u in _LLM_METRICS["usage"])
@@ -291,12 +310,46 @@ def run_sample(sample: dict, mock_mode: bool) -> dict:
     }
 
 
-def _ground_truth_scores(row: dict) -> dict:
-    """Ground-truth scores for one pilot sample (attached to its trace)."""
+def _parse_expected_fields(sample: dict) -> dict | None:
+    """Parse the manifest `expected_fields` JSON column (literal per-field
+    expected extraction values) into a dict, or None when absent."""
+    raw = (sample.get("expected_fields") or "").strip()
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error("expected_fields_invalid", filename=sample.get("filename"))
+        return None
+
+
+def _ground_truth_scores(row: dict, expected_fields: dict | None = None) -> dict:
+    """Ground-truth scores for one pilot sample (attached to its trace).
+
+    `expected_field_presence` is the fraction of required (non-empty) expected
+    fields that the extractor surfaced with a non-empty value — a cheap
+    deterministic field-coverage signal. Value-level correctness is left to
+    the LLM-as-a-Judge verdict.
+    """
     scores = {
         "class_correct": int(row["class_match"]),
         "stage_correct": int(row["stage_expected"]),
     }
+    if expected_fields:
+        extracted = row.get("extracted_data") or {}
+        required = {
+            key: value for key, value in expected_fields.items() if value not in (None, "")
+        }
+        if required:
+            present = 0
+            for key, expected_value in required.items():
+                value = extracted.get(key)
+                if isinstance(value, list):
+                    ok = len(value) > 0
+                else:
+                    ok = bool(value)
+                present += int(ok)
+            scores["expected_field_presence"] = round(present / len(required), 3)
     conf = row.get("classification_confidence")
     if isinstance(conf, (int, float)) and not isinstance(conf, bool):
         conf = float(conf)
@@ -329,7 +382,8 @@ def _ingest_scores(sample: dict, row: dict) -> None:
         return
 
     ensure_score_configs()
-    for name, value in _ground_truth_scores(row).items():
+    expected_fields = _parse_expected_fields(sample)
+    for name, value in _ground_truth_scores(row, expected_fields).items():
         data_type = "BOOLEAN" if name in ("class_correct", "stage_correct") else "NUMERIC"
         create_trace_score(trace_id, name, value, data_type=data_type)
     logger.info("pilot_scores_ingested", filename=sample["filename"], trace_id=trace_id)
@@ -511,6 +565,13 @@ def main() -> int:
 
     prepare_samples()
 
+    # One Langfuse session per pilot RUN (not per sample): every document trace
+    # of this run lands in `pilot-<mode>-<timestamp>` in the Sessions view.
+    # Trace ids stay deterministic per filename, so re-runs of already-traced
+    # samples keep their FIRST run's session (immutable — same as tags/env).
+    run_id = datetime.now(timezone.utc).isoformat()
+    session_id = f"pilot-{'real' if not mock_mode else 'mock'}-{run_id}"
+
     with MANIFEST.open() as fh:
         manifest = list(csv.DictReader(fh))
     if args.include:
@@ -522,7 +583,7 @@ def main() -> int:
         manifest = manifest[: args.max_docs]
         logger.info("max_docs_limit", limit=args.max_docs, remaining=len(manifest))
 
-    rows = [run_sample(m, mock_mode) for m in manifest]
+    rows = [run_sample(m, mock_mode, session_id=session_id, run_id=run_id) for m in manifest]
 
     if scores_enabled:
         for m, r in zip(manifest, rows):
@@ -536,7 +597,8 @@ def main() -> int:
     print_summary(summary)
 
     report = {
-        "run_id": datetime.now(timezone.utc).isoformat(),
+        "run_id": run_id,
+        "session_id": session_id,
         "mode": "mock" if mock_mode else "real",
         "scores_enabled": scores_enabled,
         "prices": {"source": "openrouter_live" if _prices else "fallback_estimates"},
@@ -546,7 +608,13 @@ def main() -> int:
     }
     if scores_enabled:
         report["scores"] = {
-            "samples": [{"id": m["id"], "scores": _ground_truth_scores(r)} for m, r in zip(manifest, rows)]
+            "samples": [
+                {
+                    "id": m["id"],
+                    "scores": _ground_truth_scores(r, expected_fields=_parse_expected_fields(m)),
+                }
+                for m, r in zip(manifest, rows)
+            ]
         }
     out_path = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "pilot_report.json"
     out_path.write_text(json.dumps(report, indent=2))

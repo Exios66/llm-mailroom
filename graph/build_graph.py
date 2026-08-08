@@ -944,14 +944,23 @@ def _emit_pipeline_result(root, result: dict, state: dict) -> None:
     This is the ONLY observation the live evaluation rule matches
     (`scripts/sync_evaluators.py`, `mailroom-pipeline-rule`), so exactly one
     cumulative LLM-as-a-Judge call scores each document — classification
-    correctness + extraction correctness + completeness in one pass. Input is
-    the (truncated) document text so the judge can verify grounding; output is
-    the curated pipeline result. No-ops when tracing is disabled (root None).
+    correctness + extraction correctness + completeness in one pass. Output is
+    the curated pipeline result. The input depends on the run mode:
+
+    - Grounded runs (ground_truth carries `expected_fields`, i.e. pilot runs):
+      the judge gets the small extracted-vs-expected payload ONLY — the full
+      document text is NOT sent, which cuts the per-doc judge input from up to
+      100k chars (~25k tokens) to ~1-3k chars. The expected values ARE the
+      ground truth, so the document text adds no verification power.
+    - Live runs (no ground truth): the judge gets the (truncated) document
+      text so it can verify grounding by rubric alone.
+
+    No-ops when tracing is disabled (root None).
     """
     if root is None:
         return
-    doc_text = result.get("doc_text") or state.get("doc_text") or ""
-    truncated = len(doc_text) > PIPELINE_RESULT_TEXT_LIMIT
+    ground_truth = state.get("ground_truth")
+    grounded = bool(ground_truth and ground_truth.get("expected_fields"))
     output = {
         "stage": result.get("stage"),
         "doc_type": result.get("doc_type"),
@@ -963,11 +972,32 @@ def _emit_pipeline_result(root, result: dict, state: dict) -> None:
         "run_aborted": bool(result.get("run_aborted")),
         "error_message": result.get("error_message"),
     }
+    if grounded:
+        # Skip the document text entirely: the judge compares extracted_data
+        # against the literal expected field values.
+        gen_input = {
+            "expected_fields": ground_truth["expected_fields"],
+            "extracted_data": result.get("extracted_data"),
+        }
+        metadata = {"pipeline": "mailroom", "grounded": True}
+    else:
+        doc_text = result.get("doc_text") or state.get("doc_text") or ""
+        gen_input = doc_text[:PIPELINE_RESULT_TEXT_LIMIT]
+        metadata = {
+            "pipeline": "mailroom",
+            "truncated": len(doc_text) > PIPELINE_RESULT_TEXT_LIMIT,
+        }
+    if ground_truth:
+        # When the caller knows the expected outcome (pilot runs pass the
+        # manifest ground truth), expose it here so the live evaluator can
+        # decide a binary CORRECT/MISS verdict against the ACTUAL truth instead
+        # of judging by rubric alone.
+        output["ground_truth"] = ground_truth
     with observation(
         "pipeline-result",
         as_type="generation",
-        input=doc_text[:PIPELINE_RESULT_TEXT_LIMIT],
-        metadata={"pipeline": "mailroom", "truncated": truncated},
+        input=gen_input,
+        metadata=metadata,
     ) as gen:
         if gen is not None:
             gen.update(output=output)
@@ -979,6 +1009,9 @@ def _execute_run(
     trace_input: dict,
     attempt: int = 0,
     source: str | None = None,
+    ground_truth: dict | None = None,
+    session_id: str | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Shared execution scaffold: build graph, open the per-doc trace (one trace
     per document, deterministic id from `seed`), invoke, emit self-evident
@@ -1012,6 +1045,11 @@ def _execute_run(
         "run_deadline": deadline,
         "run_attempt": attempt,
     }
+    if ground_truth:
+        # Expected outcome for this document (pilot runs pass the manifest
+        # ground truth). Carried into the `pipeline-result` generation so the
+        # live evaluator can render a binary CORRECT/MISS verdict.
+        initial_state["ground_truth"] = ground_truth
 
     # Environment resolution: per-context override (OBSERVABILITY_ENVIRONMENT,
     # set by entrypoints via pipeline.env.default_environment) wins; the
@@ -1040,10 +1078,12 @@ def _execute_run(
     trace_metadata = {"pipeline": "mailroom", "run_deadline": deadline, "attempt": attempt}
     if source:
         trace_metadata["source"] = source
+    if run_id:
+        trace_metadata["run_id"] = run_id
 
     with tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc
-        session_id=initial_state.get("matter_id") or "DEFAULT",  # groups documents of a matter
+        session_id=session_id or initial_state.get("matter_id") or "DEFAULT",  # groups documents of a matter/run
         name="document-pipeline",
         input=trace_input,
         metadata=trace_metadata,
@@ -1081,7 +1121,15 @@ def _execute_run(
     return result
 
 
-def run_pipeline(file_path: Path, matter_id: str = "DEFAULT", attempt: int = 0, source: str | None = None) -> dict[str, Any]:
+def run_pipeline(
+    file_path: Path,
+    matter_id: str = "DEFAULT",
+    attempt: int = 0,
+    source: str | None = None,
+    ground_truth: dict | None = None,
+    session_id: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
     _ensure_dirs()
 
     initial_state: DocumentState = {
@@ -1120,6 +1168,9 @@ def run_pipeline(file_path: Path, matter_id: str = "DEFAULT", attempt: int = 0, 
         seed=seed,
         attempt=attempt,
         source=source,
+        ground_truth=ground_truth,
+        session_id=session_id,
+        run_id=run_id,
         trace_input={"filename": file_path.name, "matter_id": matter_id, "attempt": attempt},
     )
 
