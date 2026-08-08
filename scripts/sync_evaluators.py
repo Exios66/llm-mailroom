@@ -1,29 +1,33 @@
 #!/usr/bin/env python3
 """Configure the LLM-as-a-Judge evaluators in the connected Langfuse project.
 
-Creates (or updates, when the prompt changed) the evaluator family for each of
-the three task-spec judges and the live-observation evaluation rules that wire
-them to the pipeline's LLM generations:
+The pipeline emits exactly one cumulative `pipeline-result` generation per
+document trace (see `graph/build_graph.py:_emit_pipeline_result`), and this
+script deploys the single evaluator + single observation rule that score it:
 
-  - `mailroom-classification-judge`       → scores the `sorter` generation
-  - `mailroom-extraction-completeness-judge`  → scores specialist generations
-  - `mailroom-extraction-correctness-judge`   → scores specialist generations
+  - `mailroom-pipeline-judge` → one judge call per document, scoring
+    classification correctness, extraction correctness, and extraction
+    completeness cumulatively in a single pass (numeric 0-1 score + reasoning).
+  - `mailroom-pipeline-rule` → observation rule matching the `pipeline-result`
+    generation name, so each document costs exactly ONE judge call.
 
-The rules target observation-level generations (the LLM calls, named after
-their agent), mapping the evaluator prompt's `{{input}}`/`{{output}}` variables
-to the generation's input/output, and attach the resulting score to that
-generation in the trace. Score names follow the configs in
-`observability/scores.py`.
+No per-agent judges exist: scoring every specialist/sorter generation
+separately tripled judge cost per document and multiplied rule maintenance.
+The offline judges (`agents/judge.py`, `scripts/run_quality_judges.py`) still
+provide per-dimension deep audits for pilot runs.
+
+The rule maps the evaluator prompt's `{{input}}`/`{{output}}` variables to the
+generation's input (document text) and output (curated pipeline result).
 
 The judge model defaults to the taxonomy's `judge` agent mapping; override with
 --provider/--model. Requires the project's LLM connections (or an explicit
 modelConfig) to run the judge — see the API reference for LLM Connections.
 
 Usage:
-    python scripts/sync_evaluators.py               # create/update evaluators + rules
+    python scripts/sync_evaluators.py               # create/update evaluator + rule
     python scripts/sync_evaluators.py --dry-run     # preview
     python scripts/sync_evaluators.py --force       # always create new versions
-    python scripts/sync_evaluators.py --disable     # disable rules instead of enabling
+    python scripts/sync_evaluators.py --disable     # disable rule instead of enabling
 """
 
 from __future__ import annotations
@@ -56,8 +60,6 @@ def _post_or_report(action: str, fn, *args, **kwargs):
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
-from pipeline.env import load_env  # noqa: E402
-
 from pipeline.env import default_environment, load_env  # noqa: E402
 
 load_env()
@@ -67,13 +69,12 @@ from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
 
-SPECIALIST_NAMES = [
-    "contracts_specialist",
-    "corporate_records_specialist",
-    "due_diligence_specialist",
-    "correspondence_specialist",
-    "compliance_specialist",
-]
+# The generation observation the single rule matches — one per document trace.
+PIPELINE_RESULT_GENERATION = "pipeline-result"
+
+# The evaluator name is used verbatim as the attached score name.
+EVALUATOR_NAME = "mailroom-pipeline-judge"
+RULE_NAME = "mailroom-pipeline-rule"
 
 # Evaluator creation triggers a server-side preflight that calls the judge
 # model (which can be slow) — give the API generous timeouts.
@@ -84,66 +85,43 @@ _TAXONOMY_SPEC = """\
 - corporate_record (Corporate Record): Bylaws, resolutions, board minutes, cap table entries, incorporation docs
 - due_diligence (Due Diligence): Checklists, disclosure schedules, diligence memos, risk assessments
 - correspondence (Correspondence): Letters, emails, memos, notices between parties or with regulators
-- compliance_filing (Compliance Filing): SEC filings, state registrations, regulatory submissions, annual reports"""
+- compliance_filing (Compliance Filing): SEC filings, state registrations, regulatory submissions, annual reports
+- court_opinion (Court Opinion): Judicial opinions, orders, and decisions issued by courts"""
 
-CLASSIFICATION_PROMPT = f"""You are an expert legal reviewer auditing an automated document-classification pipeline.
+# One cumulative judge call per document: classification correctness +
+# extraction correctness + extraction completeness judged in a single pass.
+# The judge needs to know the full extraction schema per class to assess
+# completeness; the taxonomy + output's extracted_data suffice for the
+# cumulative verdict, and the offline judges provide the deep per-class audit.
+PIPELINE_PROMPT = f"""You are an expert legal reviewer auditing an automated legal-document mailroom pipeline.
 
 Task specification — the pipeline must assign every incoming document exactly one of these classes:
 {_TAXONOMY_SPEC}
 
-The document is provided in {{{{input}}}}. The pipeline's classification output is in {{{{output}}}}.
+The source document text is in {{{{input}}}}. The complete pipeline result is in {{{{output}}}}, containing:
+- `doc_type` + `classification_confidence`: the assigned class and its confidence
+- `extracted_data`: the structured fields extracted for that class (empty/absent for failed runs)
+- `stage`, `escalation_reason`, `review_decision`, `error_message`: how the run ended
 
-Judge whether the assigned class is correct for the document:
-1. CORRECT if the assigned class clearly fits best, even if another class also plausibly fits.
-2. INCORRECT if a different available class fits the document better.
-3. AMBIGUOUS only for documents that genuinely span multiple classes with no clear best fit.
+Evaluate the run in a single pass:
+1. CLASSIFICATION: is the assigned class the best fit for the document? (A different class only if it clearly fits better; genuinely multi-class documents are acceptable for either.)
+2. EXTRACTION CORRECTNESS: is every populated field grounded in the document text — no fabrication, no paraphrase that changes meaning? Empty fields are neutral (absence of wrong data is not an error).
+3. EXTRACTION COMPLETENESS: of the fields the document actually states and the schema calls for, how many did the extraction capture? Information the document does not contain is not a gap.
 
-Return the classification label and short evidence-based reasoning."""
+Return a `score` as a 0-1 float rating the overall run: classification verdict AND extraction accuracy AND completeness, weighted so factual errors (wrong/fabricated values) count more heavily than omissions. A run that failed entirely (no classification, extraction error) must score near 0.
 
-COMPLETENESS_PROMPT = """You are an expert legal reviewer evaluating extraction completeness.
-The source document text is in {{input}}; the extraction output is in {{output}}.
-
-Compare what was extracted against what the document actually states:
-1. A field is COMPLETE if the document states the information and the extraction captured it.
-2. A field is MISSING if the document states the information but the extraction left it empty.
-3. A field is FABRICATED if the extraction reports information the document does not contain.
-4. Judge only fields the extraction schema asks for; empty values for genuinely absent info are fine.
-
-Score completeness as the fraction of expected fields that were correctly captured (0-1).
-Return the score and a list of the specific gaps or fabrications."""
-
-CORRECTNESS_PROMPT = """You are an expert legal reviewer auditing the factual accuracy of an automated
-document-extraction run. The source document text is in {{input}}; the extraction output is in {{output}}.
-
-Verify that every extracted field value is grounded in the document text — no fabrication, no
-paraphrase that changes meaning, no values pulled from thin air.
-1. ACCURATE means every populated field is supported by the document text and correct.
-2. Empty fields are not errors by themselves — absence of wrong data is neutral.
-
-Score factual accuracy as a 0-1 float (1.0 = fully accurate). Return the score and name the
-specific fabricated or wrong values you found."""
+Return `reasoning` structured in exactly three labeled sections:
+- CLASSIFICATION: the verdict with evidence
+- CORRECTNESS: any fabricated or wrong values found (or none)
+- COMPLETENESS: the specific gaps found (or none)"""
 
 EVALUATORS = [
     {
-        "name": "mailroom-classification-judge",
-        "prompt": CLASSIFICATION_PROMPT,
-        "output": ("CATEGORICAL", ["correct", "incorrect", "ambiguous"]),
-        "reasoning": "Short evidence-based explanation of the classification verdict.",
-        "score_description": "Whether the assigned document class matches the task specification.",
-    },
-    {
-        "name": "mailroom-extraction-completeness-judge",
-        "prompt": COMPLETENESS_PROMPT,
+        "name": EVALUATOR_NAME,
+        "prompt": PIPELINE_PROMPT,
         "output": ("NUMERIC", None),
-        "reasoning": "Specific gaps or fabrications found in the extraction.",
-        "score_description": "Fraction of expected extraction fields correctly captured.",
-    },
-    {
-        "name": "mailroom-extraction-correctness-judge",
-        "prompt": CORRECTNESS_PROMPT,
-        "output": ("NUMERIC", None),
-        "reasoning": "Specific fabricated or wrong values found in the extraction.",
-        "score_description": "Factual accuracy of the extracted values (1.0 = fully accurate).",
+        "reasoning": "Structured CLASSIFICATION / CORRECTNESS / COMPLETENESS audit of the run.",
+        "score_description": "Cumulative quality of one document run (0-1): classification correctness, extraction correctness, extraction completeness.",
     },
 ]
 
@@ -284,7 +262,7 @@ def sync_evaluators(client, *, provider: str, model: str, force: bool, dry_run: 
     return changed
 
 
-def _build_rule_request(rule_name: str, evaluator_name: str, generation_name: str, enabled: bool = True):
+def _build_rule_request(evaluator_name: str, generation_name: str, enabled: bool = True):
     from langfuse.api.unstable.commons.types.evaluation_rule_filter import (
         EvaluationRuleFilter_StringOptions,
     )
@@ -308,9 +286,8 @@ def _build_rule_request(rule_name: str, evaluator_name: str, generation_name: st
         LlmAsJudgeEvaluationRuleEvaluatorReference,
     )
 
-    names = [generation_name] if generation_name == "sorter" else SPECIALIST_NAMES
     return CreateLlmAsJudgeEvaluationRuleRequest(
-        name=rule_name,
+        name=RULE_NAME,
         evaluator=LlmAsJudgeEvaluationRuleEvaluatorReference(
             name=evaluator_name,
             scope=EvaluatorScope.PROJECT,
@@ -323,7 +300,7 @@ def _build_rule_request(rule_name: str, evaluator_name: str, generation_name: st
                 type="stringOptions",
                 column="name",
                 operator=EvaluationRuleOptionsFilterOperator.ANY_OF,
-                value=names,
+                value=[generation_name],
             ),
             EvaluationRuleFilter_StringOptions(
                 type="stringOptions",
@@ -352,33 +329,21 @@ def _existing_rule_ids(client, rule_names: set[str]) -> dict[str, str]:
 
 
 def sync_rules(client, *, enabled: bool, force: bool, dry_run: bool) -> int:
-    rule_specs = []
-    # Classification judge → the sorter's generation.
-    rule_specs.append(("mailroom-classification-rule", "mailroom-classification-judge", "sorter"))
-    # Completeness/correctness judges → specialist extraction generations only.
-    for gen in SPECIALIST_NAMES:
-        for judge, suffix in (
-            ("mailroom-extraction-completeness-judge", "completeness"),
-            ("mailroom-extraction-correctness-judge", "correctness"),
-        ):
-            rule_specs.append((f"mailroom-{suffix}-rule-{gen}", judge, gen))
-
-    existing = _existing_rule_ids(client, {name for name, _, _ in rule_specs})
+    """Ensure the single cumulative rule exists; prune all other mailroom rules."""
+    existing = _existing_rule_ids(client, {RULE_NAME})
     changed = 0
-    for rule_name, evaluator_name, gen in rule_specs:
-        if rule_name in existing and not force:
-            print(f"rule exists {rule_name}")
-            continue
-        if dry_run:
-            print(f"would sync {rule_name}")
-            changed += 1
-            continue
-        request = _build_rule_request(rule_name, evaluator_name, gen, enabled=enabled)
-        if rule_name in existing:
+    if RULE_NAME in existing and not force:
+        print(f"rule exists {RULE_NAME}")
+    elif dry_run:
+        print(f"would sync {RULE_NAME}")
+        changed += 1
+    else:
+        request = _build_rule_request(EVALUATOR_NAME, PIPELINE_RESULT_GENERATION, enabled=enabled)
+        if RULE_NAME in existing:
             ok = _post_or_report(
-                f"update rule {rule_name}",
+                f"update rule {RULE_NAME}",
                 client.api.unstable.evaluation_rules.update,
-                existing[rule_name],
+                existing[RULE_NAME],
                 name=request.name,
                 evaluator=request.evaluator,
                 target=request.target,
@@ -388,24 +353,26 @@ def sync_rules(client, *, enabled: bool, force: bool, dry_run: bool) -> int:
                 mapping=request.mapping,
                 request_options=_REQUEST_OPTS,
             )
-            print(f"updated    {rule_name}" + ("" if ok else " (submitted, verify below)"))
+            print(f"updated    {RULE_NAME}" + ("" if ok else " (submitted, verify below)"))
         else:
             ok = _post_or_report(
-                f"create rule {rule_name}",
+                f"create rule {RULE_NAME}",
                 client.api.unstable.evaluation_rules.create,
                 request=request,
                 request_options=_REQUEST_OPTS,
             )
-            print(f"created    {rule_name}" + ("" if ok else " (submitted, verify below)"))
+            print(f"created    {RULE_NAME}" + ("" if ok else " (submitted, verify below)"))
         changed += 1
 
     if not dry_run:
-        _prune_stale_rules(client, {name for name, _, _ in rule_specs})
+        _prune_stale_rules(client, {RULE_NAME})
+        _prune_stale_evaluators(client, {s["name"] for s in EVALUATORS})
     return changed
 
 
 def _prune_stale_rules(client, wanted_names: set[str]) -> None:
-    """Delete mailroom rules that are no longer in the spec (e.g. retargeted)."""
+    """Delete mailroom rules that are no longer in the spec (e.g. old
+    per-agent classification/completeness/correctness rules)."""
     try:
         page = client.api.unstable.evaluation_rules.list(limit=100, request_options=_REQUEST_OPTS)
         stale = [r for r in (page.data or []) if r.name.startswith("mailroom-") and r.name not in wanted_names]
@@ -419,6 +386,28 @@ def _prune_stale_rules(client, wanted_names: set[str]) -> None:
             print(f"pruned     {rule.name}")
     except Exception:
         logger.warning("rule_prune_failed", exc_info=True)
+
+
+def _prune_stale_evaluators(client, wanted_names: set[str]) -> None:
+    """Delete project-scope mailroom evaluators that are no longer deployed
+    (the old per-dimension judges). Managed/template evaluators are left alone
+    (platform-locked, API returns 403)."""
+    try:
+        page = client.api.unstable.evaluators.list(limit=100, request_options=_REQUEST_OPTS)
+        stale = [
+            ev for ev in (page.data or [])
+            if ev.name.startswith("mailroom-") and ev.name not in wanted_names
+        ]
+        for ev in stale:
+            _post_or_report(
+                f"delete evaluator {ev.name}",
+                client.api.unstable.evaluators.delete,
+                ev.id,
+                request_options=_REQUEST_OPTS,
+            )
+            print(f"pruned     evaluator {ev.name}")
+    except Exception:
+        logger.warning("evaluator_prune_failed", exc_info=True)
 
 
 def verify(client) -> None:

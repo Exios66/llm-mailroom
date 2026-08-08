@@ -254,12 +254,12 @@ def run_sample(sample: dict, mock_mode: bool) -> dict:
     if mock_mode:
         with patch("llm.client.get_llm", side_effect=_mock_get_llm), \
              patch("agents.base.get_llm", side_effect=_mock_get_llm):
-            result = run_pipeline(queued, matter_id)
+            result = run_pipeline(queued, matter_id, source=sample.get("dataset"))
     else:
         # Real mode: instrument every client with usage/latency/cost capture.
         with patch("llm.client.get_llm", side_effect=_real_get_llm), \
              patch("agents.base.get_llm", side_effect=_real_get_llm):
-            result = run_pipeline(queued, matter_id)
+            result = run_pipeline(queued, matter_id, source=sample.get("dataset"))
     wall = time.perf_counter() - started
 
     total_tokens = sum(u["prompt_tokens"] + u["completion_tokens"] for u in _LLM_METRICS["usage"])
