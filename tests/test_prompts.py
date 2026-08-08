@@ -28,7 +28,7 @@ class TestPromptTemplates:
         from llm.prompts import prompt_templates
 
         templates = prompt_templates()
-        assert len(templates) == 11
+        assert len(templates) == 13
         for agent in (
             "sorter",
             "contracts_specialist",
@@ -41,6 +41,8 @@ class TestPromptTemplates:
             "reporter",
             "pdf_transcriber",
             "judge",
+            "judge-classification",
+            "judge-correctness",
         ):
             assert agent in templates
             assert templates[agent].strip()
