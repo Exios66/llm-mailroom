@@ -54,12 +54,27 @@ class ComplianceFilingExtraction(BaseModel):
     reference_number: str | None = None
 
 
+class CourtOpinionExtraction(BaseModel):
+    case_name: str = ""
+    court: str = ""
+    date_decided: str | None = None
+    docket_number: str | None = None
+    opinion_type: str = ""
+    parties: list[str] = Field(default_factory=list)
+    holding: str = ""
+    legal_issues: list[str] = Field(default_factory=list)
+    outcome: str = ""
+    citations: list[str] = Field(default_factory=list)
+    authored_by: str | None = None
+
+
 EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
     "contract": ContractExtraction,
     "corporate_record": CorporateRecordExtraction,
     "due_diligence": DueDiligenceExtraction,
     "correspondence": CorrespondenceExtraction,
     "compliance_filing": ComplianceFilingExtraction,
+    "court_opinion": CourtOpinionExtraction,
 }
 
 

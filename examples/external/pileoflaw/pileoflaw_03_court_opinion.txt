@@ -1,0 +1,243 @@
+Case: In the United States Court of Federal Claims
+Source: https://www.courtlistener.com/api/rest/v3/opinions/4534478/
+
+In the United States Court of Federal Claims
+                                OFFICE OF SPECIAL MASTERS
+                                     Filed: April 21, 2020
+
+* * * * * * * * * * * * *  *                               UNPUBLISHED
+FREDERICK W. HAYNES, as the*
+Executor of the ESTATE OF  *
+IMOGENE HAYNES-BLEAU,      *                               No. 17-356V
+                           *                               Special Master Sanders
+     Petitioner,           *
+                           *
+v.                         *
+                           *
+SECRETARY OF HEALTH        *                               Attorneys’ Fees and Costs
+AND HUMAN SERVICES,        *
+                           *
+            Respondent.    *
+* * * * * * * * * * * * * *
+Shahid Manzoor, Manzoor Law Firm, Inc., Roseville, CA, for Petitioner.
+Heather L. Pearlman, United States Department of Justice, Washington, D.C., for Respondent.
+
+                       DECISION ON ATTORNEYS’ FEES AND COSTS1
+
+         On March 15, 2017, Imogene Haynes-Bleau filed a petition for compensation pursuant to
+the National Vaccine Injury Compensation Program.2 42 U.S.C. §§ 300aa-10 to 34 (2012). Upon
+Ms. Haynes-Bleau’s death, Frederick Haynes (“Petitioner”) was substituted as the petitioner in
+this matter. The petition alleged that the pneumococcal conjugate (“Prevnar”) vaccine Ms. Haynes-
+Bleau received on January 14, 2015, caused her to suffer from a flare of rheumatoid arthritis,
+interstitial lung disease, and/or pulmonary fibrosis. Petitioner further alleged that Ms. Haynes-
+Bleau’s death was the sequela of her claimed vaccine-induced injury. On August 30, 2019, the
+
+1
+  The undersigned intends to post this Ruling on the United States Court of Federal Claims’ website. This
+means the Ruling will be available to anyone with access to the Internet. In accordance with Vaccine
+Rule 18(b), petitioner has 14 days to identify and move to redact medical or other information, the
+disclosure of which would constitute an unwarranted invasion of privacy. If, upon review, the undersigned
+agrees that the identified material fits within this definition, the undersigned will redact such material from
+public access. Because this unpublished ruling contains a reasoned explanation for the action in this case,
+the undersigned is required to post it on the United States Court of Federal Claims’ website in accordance
+with the E-Government Act of 2002. 44 U.S.C. § 3501 note (2012) (Federal Management and Promotion
+of Electronic Government Services).
+2
+ National Childhood Vaccine Injury Act of 1986, Pub L. No. 99-660, 100 Stat. 3755. Hereinafter, for ease
+of citation, all “§” references to the Vaccine Act will be to the pertinent subparagraph of 42 U.S.C. § 300aa
+(2012).
+parties filed a stipulation, which the undersigned adopted as her decision awarding compensation
+on September 5, 2019. ECF No. 54.
+
+        On November 5, 2019, Petitioner filed an application for attorneys’ fees and costs. ECF
+No. 61 (“Fees App.”). Petitioner requests total attorneys’ fees and costs in the amount of
+$33,383.85 (representing $25,900.50 in fees and $7,483.35 in costs). Fees App. at 1. Pursuant to
+General Order No. 9, Petitioner warrants that he has not personally incurred any costs related to
+the prosecution of the petition. ECF No. 65. Respondent responded to the motion on November
+19, 2019, indicating that he “is satisfied the statutory requirements for an award of attorneys’ fees
+and costs are met in this case” and requesting that the undersigned “exercise her discretion and
+determine a reasonable award for attorneys’ fees and costs.” Resp’t’s Resp. at 2–3 (ECF No. 62).
+Petitioner did not file a reply thereafter.
+
+       This matter is now ripe for consideration.
+
+I.     Reasonable Attorneys’ Fees and Costs
+
+         The Vaccine Act permits an award of reasonable attorneys’ fees and costs. § 15(e). The
+Federal Circuit has approved the lodestar approach to determine reasonable attorneys’ fees and
+costs under the Vaccine Act. Avera v. Sec’y of Health & Human Servs., 515 F.3d 1343, 1348 (Fed.
+Cir. 2008). This is a two-step process. Id. First, a court determines an “initial estimate . . . by
+‘multiplying the number of hours reasonably expended on the litigation times a reasonable hourly
+rate.’” Id. at 1347–48 (quoting Blum v. Stenson, 465 U.S. 886, 888 (1984)). Second, the court may
+make an upward or downward departure from the initial calculation of the fee award based on
+specific findings. Id. at 1348.
+
+        It is “well within the special master’s discretion” to determine the reasonableness of fees.
+Saxton v. Sec’y of Health & Human Servs., 3 F.3d 1517, 1521–22 (Fed. Cir. 1993); see also Hines
+v. Sec’y of Health & Human Servs., 22 Cl. Ct. 750, 753 (1991). (“[T]he reviewing court must grant
+the special master wide latitude in determining the reasonableness of both attorneys’ fees and
+costs.”). Applications for attorneys’ fees must include contemporaneous and specific billing
+records that indicate the work performed and the number of hours spent on said work. See Savin
+v. Sec’y of Health & Human Servs., 85 Fed. Cl. 313, 316–18 (2008). Such applications, however,
+should not include hours that are “‘excessive, redundant, or otherwise unnecessary.’” Saxton, 3
+F.3d at 1521 (quoting Hensley v. Eckerhart, 461 U.S. 424, 434 (1983)).
+
+        Reasonable hourly rates are determined by looking at the “prevailing market rate” in the
+relevant community. See Blum, 465 U.S. at 895. The “prevailing market rate” is akin to the rate
+“in the community for similar services by lawyers of reasonably comparable skill, experience and
+reputation.” Id. at 895, n.11. Petitioners bear the burden of providing adequate evidence to prove
+that the requested hourly rate is reasonable. Id.
+
+        Special masters can reduce a fee request sua sponte, without providing petitioners notice
+and opportunity to respond. See Sabella v. Sec’y of Health & Human Servs., 86 Fed. Cl. 201, 209
+(Fed. Cl. 2009). When determining the relevant fee reduction, special masters need not engage in
+a line-by-line analysis of petitioners’ fee application. Broekelschen v. Sec’y of Health & Human
+
+
+                                                 2
+Servs., 102 Fed. Cl. 719, 729 (Fed. Cl. 2011). Instead, they may rely on their experience with the
+Vaccine Program to determine the reasonable number of hours expended. Wasson v. Sec’y of Dep’t
+of Health & Human Servs., 24 Cl. Ct. 482, 484 (1991), rev’d on other grounds and aff’d in relevant
+part, 988 F.2d 131 (Fed. Cir. 1993). Just as “[t]rial courts routinely use their prior experience to
+reduce hourly rates and the number of hours claimed in attorney fee requests . . . Vaccine program
+special masters are also entitled to use their prior experience in reviewing fee applications.” Saxton,
+3 F.3d at 1521.
+
+        a. Hourly Rates
+
+        The decision in McCulloch provides a framework for consideration of appropriate ranges
+for attorneys’ fees based upon the experience of the practicing attorney. McCulloch v. Sec’y of
+Health & Human Servs., No. 09-293V, 2015 WL 5634323, at *19 (Fed. Cl. Spec. Mstr. Sept. 1,
+2015), motion for recons. denied, 2015 WL 6181910 (Fed. Cl. Spec. Mstr. Sept. 21, 2015). The
+Court has since updated the McCulloch rates, and the Attorneys’ Forum Hourly Rate Fee
+Schedules for 2015–2016, 2017, 2018, and 2019 can be accessed online.3
+
+        Petitioner requests that his attorney, Mr. Shahid Manzoor, be compensated at $250.00 per
+hour for all work in this case (from 2016-2019). Mr. Manzoor practices law in Roseville,
+California, a suburb of Sacramento. Previously, attorneys in the Sacramento area have been found
+to qualify for forum rates. See Miltenberger v. Sec’y of Health & Human Servs., No. 17-1491V,
+2019 WL 7557794 (Fed. Cl. Spec. Mstr. Dec. 19, 2019) (finding an attorney in Davis, California
+in the Sacramento region to be entitled to forum rates).4 Thus, the only remaining issue is to
+determine a reasonable hourly rate for Mr. Manzoor.
+
+        Mr. Manzoor has been licensed to practice law in California since 2014, giving him
+approximately two years of experience in 2016 when he began work in this case and placing him
+in the lowest range on the OSM Fee Schedules. Accordingly, Mr. Manzoor’s requested rate is
+excessive, because it exceeds the highest prescribed rate for attorneys with fewer than four years
+of experience. It is also worth noting that although Mr. Manzoor has a fair deal of experience in
+local state and federal courts, this is his first Vaccine Program case. Based upon all these factors,
+
+3
+ The 2015–2016 Fee Schedule can be accessed at:
+http://www.cofc.uscourts.gov/sites/default/files/Attorneys-Forum-Rate-Fee-Schedule2015-2016.pdf. The
+2017 Fee Schedule can be accessed at: http://www.cofc.uscourts.gov/sites/default/files/Attorneys-Forum-
+Rate-Fee-Schedule-2017.pdf. The 2018 Fee Schedule can be accessed at:
+http://www.cofc.uscourts.gov/sites/default/files/Attorneys%27%20Forum%20Rate%20Fee%20Schedule
+%202018.pdf. The 2019 Fee Schedule can be accessed at:
+http://www.cofc.uscourts.gov/sites/default/files/Attorneys%27%20Forum%20Rate%20Fee%20Schedule
+%202019.pdf. The hourly rates contained within the schedules are updated from the decision in
+McCulloch, 2015 WL 5634323.
+4
+  The undersigned notes that although Davis, California and Roseville, California are different locales,
+they share a “local” federal court, in this case the District Court for the Eastern District of California,
+Sacramento Division. Thus, the cases discussed in Miltenberger would be relevant data points in
+determining whether an attorney in Roseville would be eligible to receive forum rates. The parties have
+not provided any information to suggest that a contrary determination on forum rates should be reached
+here.
+
+                                                      3
+the undersigned finds the following hourly rates to be reasonable for Mr. Manzoor in the instant
+case: $200.00 per hour for work performed in 2016, $215.00 per hour for work performed in 2017,
+$240.00 per hour for work performed in 2018, and $250.00 per hour for work performed in 2019.
+Application of these rates results in a total reduction of $2,682.50.5
+
+       b. Hours Expended
+
+         Attorneys’ fees are awarded for the “number of hours reasonably expended on the
+litigation.” Avera, 515 F.3d at 1348. Counsel should not include in their fee requests hours that are
+“excessive, redundant, or otherwise unnecessary.” Saxton, 3 F.3d at 1521. “[I]t is inappropriate for
+counsel to bill time for educating themselves about basic aspects of the Vaccine Program.”
+Matthews v. Sec’y of Health & Human Servs., No. 14-1111V, 2016 WL 2853910, at *2 (Fed. Cl.
+Spec. Mstr. Apr. 18, 2016). “An inexperienced attorney may not ethically bill his client to learn
+about an area of law in which he is unfamiliar. If an attorney may not bill his client for this task,
+the attorney may also not bill the Program for this task.” Carter v. Sec’y of Health & Human
+Servs., No. 04-1500V, 2007 WL 2241877, at *5 (Fed. Cl. Spec. Mstr. July 13, 2007).
+
+        Upon review, the undersigned finds the billed hours require a minor reduction. Mr.
+Manzoor billed a small amount of time to educate himself on the requirements of the Vaccine
+Program (e.g., 0.3 hours on 1/21/16 for “Research on VICP filing requirements”, 1.0 hours on
+3/8/16 on “researched requirements to include in the vaccine petition”, 0.8 hours on 4/8/16 on
+“Met with Professor John Simms regarding sponsorship of my application to the Court of Federal
+Claims”, etc.). The undersigned also notes that review of routine court scheduling orders and
+preparation of pro forma filings took an excessive amount of time. One example is that review of
+orders routinely took 0.3 hours, when in the undersigned’s experience they should take 0.1 hours.
+Another example is Mr. Manzoor billing 1.0 hours for the preparation of the Joint Notice Not To
+Seek Review, a filing containing three sentences. Mr. Manzoor’s paralegal also billed time for
+administrative/clerical tasks, such as scanning documents.
+
+       To account for these minor issues, the undersigned shall reduce the final award of
+attorneys’ fees by $1,000.00 in order to achieve “rough justice.” See Florence v. Sec’y of Health
+& Human Servs., No. 15-255V, 2016 WL 6459592, at *5 (Fed. Cl. Spec. Mstr. Oct. 6, 2016) (citing
+Fox v. Vice, 563 U.S. 826, 838 (2011). Accordingly, Petitioner is awarded final attorneys’ fees of
+$22,218.00.
+
+       c. Attorneys’ Costs
+
+        Like attorneys’ fees, a request for reimbursement of attorneys’ costs must be reasonable.
+Perreira v. Sec’y of Health & Human Servs., 27 Fed. Cl. 29, 34 (Fed. Cl. 1992). Petitioner requests
+a total of $7,483.35 in attorneys’ costs. This amount is comprised of acquiring medical records,
+postage, copies, the Court’s filing fee, and work done by Petitioner’s expert. ECF No. 61.
+Petitioner has provided adequate documentation to support these costs and in the undersigned’s
+experience, they are largely reasonable. The only reduction is for photocopies, which counsel
+
+5
+ 2016: ($250.00 per hour requested - $200.00 per hour awarded) * 30.6 hours billed = $1,530.00.
+2017: ($250.00 per hour requested - $215.00 per hour awarded) * 23.5 hours billed = $822.50.
+2018: ($250.00 per hour requested - $240.00 per hour awarded) * 27.6 hours billed = $276.00.
+
+                                                   4
+billed at $0.50 per copy, a rate which the undersigned finds to be excessive. The Vaccine Program
+has previously awarded in-house copies at a rate of $0.20 per page. Fragoso v. Sec’y of Health &
+Human Servs., No. 08-0236V, 2011 WL 300139 (Fed. Cl. Spec. Mstr. Jan. 6, 2011). Application
+of a $0.20/per page rate results in a reduction of $63.90. Petitioner is therefore awarded final costs
+of $7,419.45.
+
+II.      Conclusion
+
+       Based on all the above, the undersigned finds that Petitioner is entitled to the following
+award of reasonable attorneys’ fees and costs:
+
+    Attorneys’ Fees Requested                                             $25,900.50
+    (Reduction to Fees)                                                  - ($3,682.50)
+    Total Attorneys’ Fees Awarded                                         $22,218.00
+
+    Attorneys’ Costs Requested                                             $7,483.35
+    (Reduction of Costs)                                                   - ($63.90)
+    Total Attorneys’ Costs Awarded                                         $7,419.45
+
+    Total Attorneys’ Fees and Costs                                       $29,637.45
+
+        In accordance with the Vaccine Act, 42 U.S.C. § 300aa-15(e) (2012), the undersigned has
+reviewed the billing records and costs in this case and finds that Petitioner’s request for fees and
+costs, other than the reductions delineated above, is reasonable. Accordingly, the undersigned
+awards a lump sum in the amount of $29,637.45, representing reimbursement for
+Petitioner’s attorneys’ fees and costs, in the form of a check payable to Petitioner and his
+attorney, Mr. Shahid Manzoor.
+
+       In the absence of a motion for review filed pursuant to RCFC Appendix B, the Clerk of the
+Court shall enter judgment in accordance herewith.6
+
+         IT IS SO ORDERED.
+
+                                                 s/Herbrina D. Sanders
+                                                 Herbrina D. Sanders
+                                                 Special Master
+
+
+
+
+6
+  Entry of judgment can be expedited by each party’s filing of a notice renouncing the right to seek
+review. Vaccine Rule 11(a).
+
+                                                     5

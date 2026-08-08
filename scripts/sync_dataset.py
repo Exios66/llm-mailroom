@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
-"""Build the Mailroom evaluation dataset in the connected Langfuse project.
+"""Build the Mailroom evaluation datasets in the connected Langfuse project.
 
-Creates (or updates) the `mailroom-pilot` Langfuse dataset from
-`examples/samples/manifest.csv`: one item per pilot sample, keyed by a
-deterministic id (`mailroom-pilot-<sample_id>`) so re-runs upsert instead of
-duplicating. Each item carries:
+Creates (or updates) a Langfuse dataset per source corpus from
+`examples/samples/manifest.csv` — `mailroom-pilot` (original samples),
+`mailroom-pilot-legalbench`, `mailroom-pilot-atticus`, `mailroom-pilot-pileoflaw`
+— one item per sample, keyed by a deterministic id (`<dataset>-<sample_id>`) so
+re-runs upsert instead of duplicating. Each item carries:
 
 - `input`      — the document text (transcribed from the sample PDF via direct
                  parsing, no LLM) plus filename/matter id
 - `expectedOutput` — the ground truth from the manifest (doc class + stage)
-- `metadata`   — the full manifest row (source, license, size tier, notes)
+- `metadata`   — the full manifest row (source, license, size tier, dataset, notes)
 
 This dataset is what experiments (prompt/model A/B runs) and judge calibration
 run against. See docs/architecture.md (Evaluators & Quality).
 
 Usage:
-    python scripts/sync_dataset.py              # sync all samples
+    python scripts/sync_dataset.py              # sync all sources (default)
     python scripts/sync_dataset.py --dry-run    # preview without writing
     python scripts/sync_dataset.py --limit 5    # subset
     python scripts/sync_dataset.py --include contract
+    python scripts/sync_dataset.py --dataset pileoflaw
 """
 
 from __future__ import annotations
@@ -38,7 +40,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from pipeline.env import load_env  # noqa: E402
 
+from pipeline.env import default_environment, load_env  # noqa: E402
+
 load_env()
+default_environment("misc")
 
 from pipeline.logging import setup_logging  # noqa: E402
 
@@ -48,6 +53,25 @@ from scripts.prepare_samples import prepare_samples  # noqa: E402
 
 DATASET_NAME = "mailroom-pilot"
 MANIFEST = REPO_ROOT / "examples" / "samples" / "manifest.csv"
+
+# Per-source Langfuse datasets: each external corpus gets its own dataset so
+# pilot results can be compared per source. `original` keeps the legacy name.
+SOURCE_DATASETS = {
+    "original": "mailroom-pilot",
+    "legalbench": "mailroom-pilot-legalbench",
+    "atticus": "mailroom-pilot-atticus",
+    "pileoflaw": "mailroom-pilot-pileoflaw",
+}
+SOURCE_DESCRIPTIONS = {
+    "original": "Pilot evaluation set: 12 legal documents with ground-truth "
+                "doc class + stage from examples/samples/manifest.csv.",
+    "legalbench": "LegalBench samples: 6 MAUD v1 merger agreements (the full "
+                  "contract texts behind the maud_* tasks) — CC BY 4.0.",
+    "atticus": "The Atticus Project samples: 6 CUAD v1 contract PDFs (SEC "
+               "filing exhibits) — CC BY 4.0.",
+    "pileoflaw": "Pile of Law samples: 6 U.S. court opinions (public-domain "
+                 "subsets only) — court_opinion class.",
+}
 
 
 def _client():
@@ -60,18 +84,17 @@ def _client():
     return client
 
 
-def _ensure_dataset(client) -> None:
+def _ensure_dataset(client, dataset_name: str, source: str) -> None:
     try:
         client.api.datasets.create(
-            name=DATASET_NAME,
-            description="Pilot evaluation set: 12 legal documents with ground-truth "
-                        "doc class + stage from examples/samples/manifest.csv.",
+            name=dataset_name,
+            description=SOURCE_DESCRIPTIONS.get(source, SOURCE_DESCRIPTIONS["original"]),
             metadata={"source": "examples/samples/manifest.csv", "pipeline": "mailroom"},
         )
-        print(f"Created dataset '{DATASET_NAME}'.")
+        print(f"Created dataset '{dataset_name}'.")
     except Exception:
-        existing = client.api.datasets.get(DATASET_NAME)
-        print(f"Dataset '{DATASET_NAME}' already exists (id={existing.id}).")
+        existing = client.api.datasets.get(dataset_name)
+        print(f"Dataset '{dataset_name}' already exists (id={existing.id}).")
 
 
 def _doc_text(sample: dict, samples_dir: Path) -> str:
@@ -89,10 +112,10 @@ def _doc_text(sample: dict, samples_dir: Path) -> str:
         return ""
 
 
-def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path) -> int:
+def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path, dataset_name: str) -> int:
     synced = 0
     for row in rows:
-        item_id = f"{DATASET_NAME}-{row['id']}"
+        item_id = f"{dataset_name}-{row['id']}"
         doc_text = _doc_text(row, samples_dir)
         if not doc_text.strip():
             logger.warning("skipping_empty_document", id=row["id"], filename=row["filename"])
@@ -115,6 +138,7 @@ def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path) ->
             "source": row["source"],
             "license": row["license"],
             "notes": row["notes"],
+            "dataset": row.get("dataset", ""),
         }
 
         if dry_run:
@@ -123,7 +147,7 @@ def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path) ->
             continue
 
         client.api.dataset_items.create(
-            dataset_name=DATASET_NAME,
+            dataset_name=dataset_name,
             id=item_id,
             input=item_input,
             expected_output=expected_output,
@@ -135,10 +159,17 @@ def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path) ->
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Sync the pilot evaluation dataset to Langfuse.")
+    parser = argparse.ArgumentParser(description="Sync the pilot evaluation dataset(s) to Langfuse.")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing anything.")
     parser.add_argument("--limit", type=int, default=0, help="Only sync the first N samples (0 = all).")
     parser.add_argument("--include", help="Only sync samples of this expected doc class (e.g. contract).")
+    parser.add_argument(
+        "--dataset",
+        choices=sorted(SOURCE_DATASETS),
+        default=None,
+        help="Only sync samples from this source corpus (default: all — every "
+        "sample goes to its per-source dataset).",
+    )
     args = parser.parse_args()
 
     client = _client()
@@ -152,18 +183,37 @@ def main() -> int:
         rows = list(csv.DictReader(fh))
     if args.include:
         rows = [r for r in rows if r["expected_doc_class"] == args.include]
+    if args.dataset:
+        rows = [r for r in rows if (r.get("dataset") or "original") == args.dataset]
     if args.limit:
         rows = rows[: args.limit]
 
-    if not args.dry_run:
-        _ensure_dataset(client)
-    synced = sync_items(client, rows, dry_run=args.dry_run, samples_dir=samples_dir)
+    # Group by source corpus; each gets its own Langfuse dataset.
+    by_source: dict[str, list[dict]] = {}
+    for r in rows:
+        by_source.setdefault(r.get("dataset") or "original", []).append(r)
+
+    total_synced = 0
+    for source, source_rows in sorted(by_source.items()):
+        dataset_name = SOURCE_DATASETS[source]
+        if not args.dry_run:
+            _ensure_dataset(client, dataset_name, source)
+        total_synced += sync_items(
+            client,
+            source_rows,
+            dry_run=args.dry_run,
+            samples_dir=samples_dir,
+            dataset_name=dataset_name,
+        )
 
     if not args.dry_run:
         from langfuse import get_client
 
         get_client().flush()
-    print(f"\n{len(rows)} sample(s) checked, {synced} {'would be' if args.dry_run else ''} synced to dataset '{DATASET_NAME}'.")
+    print(
+        f"\n{len(rows)} sample(s) checked, {total_synced} {'would be' if args.dry_run else ''} synced "
+        f"to dataset(s): {', '.join(sorted(SOURCE_DATASETS[s] for s in by_source))}."
+    )
     return 0
 
 

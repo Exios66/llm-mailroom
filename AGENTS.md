@@ -39,14 +39,14 @@ python scripts/sync_langfuse_logs.py       # mirror Langfuse traces (obs+scores)
 - Files only move through `pipeline/bins.py` helpers (`claim_file`, `move_to_*`, `save_manifest`) — never direct `os.rename`/`shutil.move` in node/agent code. Flow: inbox → `processing/<worker_id>/` → archive or review/failed.
 - `agents/boss.py` is used in two places: in-graph `boss_escalation` node AND `pipeline/ops_monitor.py`. Archivist, image_extractor, pdf_transcriber are procedural, not LLM agents.
 - PDFs/images are transcribed in `graph/build_graph.py:_read_file_text` via `agents/pdf_transcriber.py` / `agents/image_extractor.py`. Requires `pypdf`/`pdfplumber` (declared deps); `pdftotext` (poppler) is an optional CLI fallback. PDF transcription may invoke the LLM for long texts.
-- Pilot samples: `examples/samples/` (12 PDFs, manifest.csv = ground truth) + `scripts/run_pilot.py` (mock/real, baseline diff) + `scripts/prepare_samples.py` (generates `data/samples/`). `examples/samples/ATTRIBUTION.md` documents licenses (CUAD contracts are CC-BY-4.0; the rest is original).
+- Pilot samples: `examples/samples/` (30 PDFs + external text, manifest.csv = ground truth, `dataset` column tags source corpus) + `scripts/fetch_external_samples.py` (downloads LegalBench MAUD / Atticus CUAD / Pile of Law public-domain samples; idempotent) + `scripts/run_pilot.py` (mock/real, baseline diff, `--source`) + `scripts/prepare_samples.py` (generates `data/samples/`). `examples/samples/ATTRIBUTION.md` documents licenses (CUAD + MAUD are CC-BY-4.0; Pile of Law samples are public-domain US government works — the NC-SA compilation is never committed).
 - Storage is **SQLite by default** (no server): `data/mailroom.db` (tables `matters`, `documents`, `audit_log`) + `data/checkpoints.db` (LangGraph checkpointer via `langgraph.checkpoint.sqlite.SqliteSaver`, requires `langgraph-checkpoint-sqlite`). `storage/db.py:ensure_schema()` auto-creates tables on first use (idempotent, thread-safe). Setting `DATABASE_URL` to a Postgres URL switches the storage engine; the checkpointer always falls back to `MemorySaver` if SQLite is unavailable.
 - `storage/db.py` uses `NullPool` for SQLite because aiosqlite connections are event-loop-bound and the graph spawns loops from sync threads.
 
 ## Config gotchas
 
 - `pipeline/config.py:load_config` is `lru_cache`d and `pipeline/bins.py` caches config at module level. Editing `taxonomy.yaml` requires restarting the watcher/API — it will not be picked up live.
-- Adding a doc class touches ~5 places, all required: `taxonomy.yaml` (`doc_classes` + `agents:`), schema + `EXTRACTION_SCHEMAS` in `schemas/documents.py`, a `BaseAgent` subclass in `agents/`, a dispatch entry in `graph/build_graph.py:_build_specialist_dispatch` (the specialist-name→function map is hardcoded to 5 names), and test fixtures/tests.
+- Adding a doc class touches ~5 places, all required: `taxonomy.yaml` (`doc_classes` + `agents:`), schema + `EXTRACTION_SCHEMAS` in `schemas/documents.py`, a `BaseAgent` subclass in `agents/`, a dispatch entry in `graph/build_graph.py:_build_specialist_dispatch` (the specialist-name→function map is hardcoded to 6 names), a prompt template entry in `llm/prompts.py:prompt_templates()`, and test fixtures/tests.
 - Ollama runs as a profile-gated service in docker-compose: `--profile local-llm up`.
 
 ## Testing quirks

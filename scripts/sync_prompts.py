@@ -29,7 +29,10 @@ sys.path.insert(0, REPO_ROOT)
 
 from pipeline.env import load_env  # noqa: E402
 
+from pipeline.env import default_environment, load_env  # noqa: E402
+
 load_env()
+default_environment("misc")
 
 from pipeline.logging import setup_logging  # noqa: E402
 

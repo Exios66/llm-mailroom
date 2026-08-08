@@ -235,6 +235,8 @@ def _build_specialist_dispatch():
             dispatch[key] = _extract_correspondence
         elif spec_name == "compliance_specialist":
             dispatch[key] = _extract_compliance
+        elif spec_name == "court_opinions_specialist":
+            dispatch[key] = _extract_court_opinions
     return dispatch
 
 
@@ -476,6 +478,11 @@ def _extract_correspondence(doc_text: str) -> dict:
 def _extract_compliance(doc_text: str) -> dict:
     from agents.compliance_specialist import ComplianceSpecialist
     return ComplianceSpecialist().extract(doc_text)
+
+
+def _extract_court_opinions(doc_text: str) -> dict:
+    from agents.court_opinions_specialist import CourtOpinionsSpecialist
+    return CourtOpinionsSpecialist().extract(doc_text)
 
 
 def retry_extract_node(state: DocumentState) -> dict[str, Any]:
@@ -967,9 +974,19 @@ def _execute_run(
     tags = ["mailroom"]
     if attempt:
         tags.append(f"run-{attempt}")
-    environment = os.environ.get("OBSERVABILITY_ENVIRONMENT")
-    if not environment and os.environ.get("OBSERVABILITY_PROVIDER", "auto") == "none":
-        environment = "mock"
+    # Environment resolution: per-context override (OBSERVABILITY_ENVIRONMENT,
+    # set by entrypoints via pipeline.env.default_environment) wins; the
+    # standard LANGFUSE_TRACING_ENVIRONMENT is the fallback; mock runs (no
+    # observability) are labeled "mock"; everything else defaults to "live".
+    environment = (
+        os.environ.get("OBSERVABILITY_ENVIRONMENT")
+        or os.environ.get("LANGFUSE_TRACING_ENVIRONMENT")
+    )
+    if not environment:
+        if os.environ.get("OBSERVABILITY_PROVIDER", "auto") == "none":
+            environment = "mock"
+        else:
+            environment = "live"
 
     with tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc

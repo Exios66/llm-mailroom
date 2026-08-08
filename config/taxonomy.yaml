@@ -31,7 +31,8 @@ run_limits:
   # models that keep generating past the point of usefulness.
   max_total_output_tokens: 20000
 
-# Approximate per-1M-token pricing used for estimated_cost_usd scoring.
+# Approximate per-1M-token pricing used for estimated_cost_usd scoring and
+# synced to the Langfuse model registry via scripts/sync_models.py.
 # Update from the OpenRouter model page; unknown models estimate cost as 0.
 cost_models:
   qwen/qwen3.7-flash:
@@ -40,6 +41,9 @@ cost_models:
   deepseek/deepseek-v4-flash:
     input_per_million: 0.05
     output_per_million: 0.25
+  deepseek/deepseek-v4-pro:
+    input_per_million: 0.435
+    output_per_million: 0.87
 
 confidence:
   high: 0.85       # confident enough to proceed without second-guessing
@@ -77,6 +81,12 @@ doc_classes:
     schema: ComplianceFilingExtraction
     specialist: compliance_specialist
     description: "SEC filings, state registrations, regulatory submissions, annual reports"
+
+  - key: court_opinion
+    label: "Court Opinion"
+    schema: CourtOpinionExtraction
+    specialist: court_opinions_specialist
+    description: "Judicial opinions and orders: published decisions, memorandum opinions, rulings by federal and state courts"
 
 file_extensions:
   - .txt
@@ -129,6 +139,13 @@ agents:
     max_input_chars: 40000
 
   compliance_specialist:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 4096
+    max_input_chars: 60000
+
+  court_opinions_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1

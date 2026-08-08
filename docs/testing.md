@@ -101,11 +101,14 @@ These tests spin up a complete LangGraph graph with all 11 nodes and mock the LL
 
 ### Pilot sample set
 
-For live end-to-end pilots (not the unit suite), see `examples/samples/`: 12 legal
-PDFs (real CC-BY-4.0 CUAD contracts + original text) with a ground-truth
-`manifest.csv`, built by `scripts/prepare_samples.py` and evaluated by
+For live end-to-end pilots (not the unit suite), see `examples/samples/`: 30 legal
+PDFs (real CC-BY-4.0 CUAD contracts + LegalBench MAUD merger agreements +
+public-domain Pile of Law court opinions + original text) with a ground-truth
+`manifest.csv`, built by `scripts/prepare_samples.py` (and
+`scripts/fetch_external_samples.py` for the external corpus) and evaluated by
 `scripts/run_pilot.py` (`--mock` for a deterministic run, `--real` for actual
-LLM accuracy, `--baseline` to diff two runs). See `examples/samples/README.md`.
+LLM accuracy, `--baseline` to diff two runs, `--source <corpus>` to run one
+dataset). See `examples/samples/README.md`.
 
 ### Shared Fixtures (`conftest.py`)
 
@@ -132,6 +135,7 @@ LLM accuracy, `--baseline` to diff two runs). See `examples/samples/README.md`.
 | `ambiguous_memo.txt` | Correspondence | Interoffice memo mixing multiple doc types |
 | `sample_10k.txt` | Compliance Filing | SEC 10-K filing |
 | `sample_state_filing.txt` | Compliance Filing | State annual report |
+| `sample_opinion.txt` | Court Opinion | Appellate opinion — exercises suppression + weight-of-evidence issues |
 
 ---
 

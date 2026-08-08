@@ -109,6 +109,12 @@ def sample_ambiguous_text():
     return fixture.read_text()
 
 
+@pytest.fixture
+def sample_court_opinion_text():
+    fixture = Path(__file__).parent / "fixtures" / "court_opinion" / "sample_opinion.txt"
+    return fixture.read_text()
+
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 

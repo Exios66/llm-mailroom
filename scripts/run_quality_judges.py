@@ -39,9 +39,10 @@ logger = structlog.get_logger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from pipeline.env import load_env  # noqa: E402
+from pipeline.env import default_environment, load_env  # noqa: E402
 
 load_env()
+default_environment("misc")
 
 from pipeline.logging import setup_logging  # noqa: E402
 
