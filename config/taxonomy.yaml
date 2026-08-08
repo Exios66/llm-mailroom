@@ -115,9 +115,12 @@ agents:
 
   boss:
     provider: openrouter
-    model: deepseek/deepseek-v4-pro
+    model: qwen/qwen3.7-flash
     temperature: 0.1
-    max_tokens: 2048
+    max_tokens: 8192
+    # OpenRouter reasoning effort; "max" maps to ~95% of max_tokens as the
+    # thinking budget for Qwen thinking models.
+    reasoning_effort: max
 
   pdf_transcriber:
     provider: openrouter

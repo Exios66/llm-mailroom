@@ -36,6 +36,14 @@ class BaseAgent(ABC):
         except Exception:
             return _DEFAULT_MAX_TOKENS
 
+    def _configured_reasoning_effort(self) -> str | None:
+        from pipeline.config import get_agent_config
+
+        try:
+            return get_agent_config(self.agent_name).get("reasoning_effort")
+        except Exception:
+            return None
+
     def _call_llm(
         self,
         user_message: str,
@@ -57,6 +65,9 @@ class BaseAgent(ABC):
             max_tokens = self._configured_max_tokens()
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
+        reasoning_effort = self._configured_reasoning_effort()
+        if reasoning_effort:
+            kwargs["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
         kwargs.update(langfuse_call_attrs(self.agent_name))
         langfuse_prompt = getattr(self, "_langfuse_prompt", None)
         if langfuse_prompt is not None:
