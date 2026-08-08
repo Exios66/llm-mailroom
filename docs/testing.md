@@ -99,6 +99,14 @@ These tests spin up a complete LangGraph graph with all 11 nodes and mock the LL
 
 ## Test Fixtures
 
+### Pilot sample set
+
+For live end-to-end pilots (not the unit suite), see `examples/samples/`: 12 legal
+PDFs (real CC-BY-4.0 CUAD contracts + original text) with a ground-truth
+`manifest.csv`, built by `scripts/prepare_samples.py` and evaluated by
+`scripts/run_pilot.py` (`--mock` for a deterministic run, `--real` for actual
+LLM accuracy, `--baseline` to diff two runs). See `examples/samples/README.md`.
+
 ### Shared Fixtures (`conftest.py`)
 
 | Fixture | Description |

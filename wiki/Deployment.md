@@ -3,27 +3,17 @@
 ## Prerequisites
 
 - Python 3.11+
-- Docker and Docker Compose
 - OpenRouter API key (or local LLM)
+- Docker (optional — only for Langfuse tracing and/or local LLMs)
 - 8GB+ RAM (16GB+ for local models)
 
 ---
 
-## 1. Infrastructure
+## 1. Install
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+pip install -e ".[dev]"
 ```
-
-Services:
-| Service | Port | Purpose |
-|---|---|---|
-| Postgres 16 | 5432 | Catalog, checkpointer, audit log |
-| ClickHouse | 8123/9000 | Langfuse analytics |
-| Langfuse | 3000 | Trace viewer UI |
-| Ollama (profile) | 11434 | Local LLM (Phase 10) |
-
----
 
 ## 2. Configuration
 
@@ -34,17 +24,17 @@ cp .env.example .env
 Critical variables:
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...
-DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@localhost:5432/mailroom
-DATABASE_URL_SYNC=postgresql+psycopg://mailroom:mailroom@localhost:5432/mailroom
+# Database is SQLite by default (data/mailroom.db) — no server needed.
+# To use Postgres, set: DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@localhost:5432/mailroom
 ```
 
 ---
 
-## 3. Install
+## 3. Database
 
-```bash
-pip install -e ".[dev]"
-```
+**Nothing to do** — SQLite tables auto-create on first use (`data/mailroom.db`,
+`data/checkpoints.db`). For Postgres: `docker compose -f docker/docker-compose.yml up -d postgres`
+then `python -c "import asyncio; from storage.db import init_db; asyncio.run(init_db())"`.
 
 ---
 
@@ -78,15 +68,14 @@ curl http://localhost:8000/ops/status
 Use systemd, supervisord, or Docker for the three processes.
 
 ### Database
-- Use managed Postgres or ensure proper backups
-- Audit log is append-only — partition by date for long retention
+- **Default:** local SQLite file (`data/mailroom.db`). Back it up with `data/checkpoints.db` and `/archive`.
+- Audit log is append-only — partition by date for long retention (Postgres)
 
 ### Security
-- Encrypt `/archive` at rest
-- Enable Postgres encryption at rest
+- Encrypt `/archive` at rest and the SQLite files at rest
 - Access-control FastAPI endpoints (API keys, OAuth, network)
 - Access-control Langfuse UI (exposes full document content in traces)
-- Never expose Postgres/ClickHouse ports publicly
+- Never expose Postgres/ClickHouse ports publicly (if run for Langfuse)
 - Back up `/archive` and audit log table independently
 
 ### Scaling (Pilot Scale)
@@ -112,12 +101,9 @@ services:
     ports: ["8000:8000"]
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@postgres:5432/mailroom
+      - MAILROOM_BASE_DIR=/data
     volumes:
       - mailroom_data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
 ```
 
 ---
@@ -125,8 +111,8 @@ services:
 ## Troubleshooting
 
 | Issue | Fix |
-|---|---|
+|---|---|---|
 | Watcher not picking up files | Check `MAILROOM_BASE_DIR`, file extensions, watcher logs |
-| Postgres connection errors | Verify `DATABASE_URL`, check Postgres is running |
-| Langfuse no traces | Verify host, API keys, check container health |
+| Database errors | SQLite: check `data/` is writable. Postgres: verify `DATABASE_URL` and that the service is running |
+| Langfuse/Braintrust no traces | Verify `OBSERVABILITY_PROVIDER` + keys/host, check dashboard |
 | LLM provider errors | Check API key, credits, network connectivity |

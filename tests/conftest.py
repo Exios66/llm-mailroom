@@ -12,6 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 def _set_test_env():
     os.environ.setdefault("OPENROUTER_API_KEY", "test-key-not-real")
     os.environ.setdefault("MAILROOM_BASE_DIR", os.environ.get("MAILROOM_BASE_DIR", "/tmp/mailroom-test"))
+    # Keep tests hermetic: never pick up the real .env Langfuse/Braintrust keys
+    # (llm/client.py now loads .env at import time).
+    os.environ["OBSERVABILITY_PROVIDER"] = "none"
+    for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
+              "LANGFUSE_BASE_URL", "BRAINTRUST_API_KEY"):
+        os.environ.pop(k, None)
 
 
 @pytest.fixture

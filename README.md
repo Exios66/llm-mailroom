@@ -6,16 +6,18 @@ Mailroom is a multi-agent pipeline that ingests high-volume legal documents for 
 
 ## Quick Start
 
-```bash
-# 1. Start infrastructure
-docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
+> **No database server needed.** Mailroom now stores everything (catalog + audit log + crash-resume checkpoints) in a plain **SQLite file** inside your data folder. If you don't already use Docker, you can ignore it entirely.
 
-# 2. Configure
+```bash
+# 1. Configure
 cp .env.example .env
 # Edit .env — add your OPENROUTER_API_KEY
 
-# 3. Install
+# 2. Install
 pip install -e ".[dev]"
+
+# 3. (Optional) Start Langfuse for trace viewing — needs Docker
+docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
 # 4. Run the watcher (starts processing documents from inbox)
 python pipeline/watcher.py
@@ -35,6 +37,10 @@ curl http://localhost:8000/status/{doc_id}
 curl http://localhost:8000/audit/{doc_id}
 ```
 
+When a document is processed, you'll get two files under `data/`:
+- `data/mailroom.db` — the SQLite database (matters, documents, audit_log tables)
+- `data/checkpoints.db` — LangGraph crash-resume state
+
 ## Architecture
 
 ```
@@ -45,7 +51,7 @@ Upload/Drop → /pipeline/inbox/ → [Watcher] → LangGraph run per document
                     Boss (escalation)    Human Review    Audit Log
 ```
 
-**11 LangGraph nodes** in a Postgres-checkpointed state machine. One graph execution per document, resumable across crashes/restarts.
+**11 LangGraph nodes** in an SQLite-checkpointed state machine. One graph execution per document, resumable across crashes/restarts.
 
 ## Design Principles
 
@@ -64,11 +70,11 @@ mailroom/
 ├── llm/             # Provider-agnostic LLM client (OpenRouter, Ollama, vLLM)
 ├── schemas/         # Pydantic models: manifest, matter, documents, audit
 ├── pipeline/        # Watcher, filesystem bins, ops monitor
-├── storage/         # Postgres: catalog CRUD, audit log
+├── storage/         # SQLite/Postgres: catalog CRUD, audit log
 ├── api/             # FastAPI: upload, review, status, audit
 ├── observability/   # Langfuse callback handlers
 ├── config/          # taxonomy.yaml — doc classes, thresholds, model mappings
-├── docker/          # docker-compose: Postgres, ClickHouse, Langfuse, Ollama
+├── docker/          # docker-compose: Langfuse, Ollama (Postgres optional)
 ├── tests/           # pytest: unit, routing, e2e, fixtures
 └── docs/            # Detailed documentation
 ```
@@ -170,6 +176,8 @@ data/
     <matter_id>/<type>/  # Final durable home
   manifests/
     <doc_id>.json        # Mirror of DocumentManifest
+  mailroom.db            # SQLite: matters, documents, audit_log
+  checkpoints.db         # LangGraph crash-resume state
 ```
 
 ## Testing
@@ -188,18 +196,41 @@ pytest tests/test_pipeline_e2e.py -v
 pytest tests/ --cov=. --cov-report=html
 ```
 
+## Pilot Testing & Evaluation
+
+A ready-made set of 12 legal PDFs lives in `examples/samples/` (real SEC-exhibit
+contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad)
+dataset plus original text for the other doc classes). Use them to pilot the
+pipeline and **measure the effect of procedural changes** on accuracy and
+efficiency:
+
+```bash
+# Build the sample PDFs into data/samples/ (gitignored)
+python scripts/prepare_samples.py
+
+# Deterministic run (fake LLM, no API key) — tests the machinery
+python scripts/run_pilot.py --mock
+
+# Real run (needs OPENROUTER_API_KEY in .env) — measures LLM accuracy too
+python scripts/run_pilot.py --real
+
+# Diff two runs, e.g. after a routing/threshold change
+python scripts/run_pilot.py --mock --baseline data/pilot_report.json
+```
+
+The report records per-document stage, doc type, confidence, retries, LLM call
+count, and wall time, and scores each against the ground truth in
+`examples/samples/manifest.csv`. See `examples/samples/README.md`.
+
 ## Deployment
 
 ```bash
-# 1. Start infrastructure
-docker compose -f docker/docker-compose.yml up -d
+# 1. (Optional) Start Langfuse for trace viewing
+docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
 # 2. Set environment
 export OPENROUTER_API_KEY=sk-or-v1-...
-export DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@localhost:5432/mailroom
-export LANGFUSE_PUBLIC_KEY=pk-lf-local
-export LANGFUSE_SECRET_KEY=sk-lf-local
-export LANGFUSE_HOST=http://localhost:3000
+# MAILROOM_BASE_DIR defaults to ./data; mailroom.db + checkpoints.db are created there automatically
 
 # 3. Run the pipeline watcher
 python pipeline/watcher.py &
@@ -213,15 +244,15 @@ python pipeline/ops_monitor.py &
 
 ## Observability
 
-- **Langfuse UI** — `http://localhost:3000` — live trace/deliberation viewer for every node invocation
-- **Audit log** — append-only, SHA-256 hash-chained entries in Postgres (tamper-evident)
+- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud `us.cloud.langfuse.com` or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. Optional — the pipeline runs fine with tracing disabled.
+- **Audit log** — append-only, SHA-256 hash-chained entries in SQLite (tamper-evident)
 - **Manifest sidecar** — JSON file archived alongside every document (self-contained record)
 
 ## Security
 
-- Encrypt `/archive` at rest and enable Postgres encryption at rest
+- Encrypt `/archive` at rest and the SQLite files (`mailroom.db`, `checkpoints.db`) at rest
 - Access-control the FastAPI endpoints and the Langfuse UI
-- Back up `/archive` and audit log table independently
+- Back up `/archive` and the audit log table independently
 - Treat retention policy as an open decision — not assumed by this system
 
 ## Further Documentation

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, Float, DateTime, JSON, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .db import Base, async_session
+from .db import Base, async_session, ensure_schema
 
 logger = structlog.get_logger(__name__)
 
@@ -45,6 +45,7 @@ class DocumentRecord(Base):
 
 
 async def write_matter_record(matter_data) -> MatterRecord:
+    ensure_schema()
     async with async_session() as session:
         existing = await session.get(MatterRecord, matter_data.matter_id)
         if existing:
@@ -65,6 +66,7 @@ async def write_matter_record(matter_data) -> MatterRecord:
 
 
 async def write_document_record(doc_data: dict) -> DocumentRecord:
+    ensure_schema()
     async with async_session() as session:
         existing = await session.get(DocumentRecord, doc_data["doc_id"])
         if existing:
@@ -95,11 +97,13 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
 
 
 async def get_document(doc_id: str) -> DocumentRecord | None:
+    ensure_schema()
     async with async_session() as session:
         return await session.get(DocumentRecord, doc_id)
 
 
 async def get_matter_documents(matter_id: str) -> list[DocumentRecord]:
+    ensure_schema()
     async with async_session() as session:
         result = await session.execute(
             select(DocumentRecord).where(DocumentRecord.matter_id == matter_id)
@@ -108,6 +112,7 @@ async def get_matter_documents(matter_id: str) -> list[DocumentRecord]:
 
 
 async def get_stuck_documents(stale_minutes: int = 15) -> list[DocumentRecord]:
+    ensure_schema()
     cutoff = datetime.now(timezone.utc)
     from datetime import timedelta
     cutoff = cutoff - timedelta(minutes=stale_minutes)
@@ -122,6 +127,7 @@ async def get_stuck_documents(stale_minutes: int = 15) -> list[DocumentRecord]:
 
 
 async def get_documents_by_stage(stage: str) -> list[DocumentRecord]:
+    ensure_schema()
     async with async_session() as session:
         result = await session.execute(
             select(DocumentRecord).where(DocumentRecord.stage == stage)
@@ -130,6 +136,7 @@ async def get_documents_by_stage(stage: str) -> list[DocumentRecord]:
 
 
 async def get_error_rate_by_doc_type() -> dict[str, dict]:
+    ensure_schema()
     async with async_session() as session:
         result = await session.execute(
             select(DocumentRecord.doc_type, DocumentRecord.stage)

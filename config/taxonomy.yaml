@@ -62,40 +62,40 @@ file_extensions:
 agents:
   sorter:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
 
   contracts_specialist:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
 
   corporate_records_specialist:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
 
   due_diligence_specialist:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
 
   correspondence_specialist:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
 
   compliance_specialist:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
 
   reporter:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.2
 
   boss:
     provider: openrouter
-    model: openai/gpt-4o
+    model: deepseek/deepseek-v4-pro
     temperature: 0.1

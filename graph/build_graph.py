@@ -14,6 +14,7 @@ from graph.routing import (
     after_boss,
     after_human_review,
 )
+from observability.tracing import pipeline_trace, traced_node
 from schemas.manifest import DocumentManifest, PipelineStage
 from pipeline.bins import (
     inbox_dir,
@@ -41,16 +42,22 @@ SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | PDF_EXTENSIONS | {".txt", ".md", ".doc
 
 def _build_checkpointer():
     try:
-        from langgraph.checkpoint.postgres import PostgresSaver
-        import os
-        db_url = os.environ.get("DATABASE_URL_SYNC", os.environ.get("DATABASE_URL", ""))
-        if db_url:
-            checkpointer = PostgresSaver.from_conn_string(db_url)
+        import sqlite3
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        from pipeline.bins import get_base_dir
+
+        db_path = get_base_dir() / "checkpoints.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        checkpointer = SqliteSaver(conn)
+        try:
             checkpointer.setup()
-            logger.info("checkpointer_initialized", backend="postgres")
-            return checkpointer
+        except Exception:
+            pass
+        logger.info("checkpointer_initialized", backend="sqlite", path=str(db_path))
+        return checkpointer
     except Exception:
-        logger.warning("postgres_checkpointer_unavailable", fallback="memory")
+        logger.warning("sqlite_checkpointer_unavailable", fallback="memory")
     return MemorySaver()
 
 
@@ -504,7 +511,7 @@ def _write_audit_log(entry):
                 asyncio.run(_write())
         except RuntimeError:
             asyncio.run(_write())
-        logger.info("audit_entry_written", entry_id=entry.entry_id, event=entry.event)
+        logger.info("audit_entry_written", entry_id=entry.entry_id, event_name=entry.event)
     except Exception:
         logger.exception("audit_log_write_error")
 
@@ -515,16 +522,17 @@ def build_graph(checkpointer=None):
 
     workflow = StateGraph(DocumentState)
 
-    workflow.add_node("ingest", ingest_node)
-    workflow.add_node("classify", classify_node)
-    workflow.add_node("retry_classify", retry_classify_node)
-    workflow.add_node("extract", extract_node)
-    workflow.add_node("retry_extract", retry_extract_node)
-    workflow.add_node("human_review", human_review_node)
-    workflow.add_node("boss_escalation", boss_escalation_node)
-    workflow.add_node("compile_report", compile_report_node)
-    workflow.add_node("catalog_write", catalog_write_node)
-    workflow.add_node("archive", archive_node)
+    # Node names stay stable (best practice); per-run values go in metadata.
+    workflow.add_node("ingest", traced_node("ingest-document")(ingest_node))
+    workflow.add_node("classify", traced_node("classify-document")(classify_node))
+    workflow.add_node("retry_classify", traced_node("classify-document")(retry_classify_node))
+    workflow.add_node("extract", traced_node("extract-fields")(extract_node))
+    workflow.add_node("retry_extract", traced_node("extract-fields")(retry_extract_node))
+    workflow.add_node("human_review", traced_node("route-for-review")(human_review_node))
+    workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(boss_escalation_node))
+    workflow.add_node("compile_report", traced_node("compile-report")(compile_report_node))
+    workflow.add_node("catalog_write", traced_node("write-catalog")(catalog_write_node))
+    workflow.add_node("archive", traced_node("archive-document")(archive_node))
 
     workflow.add_edge(START, "ingest")
     workflow.add_edge("ingest", "classify")
@@ -597,5 +605,30 @@ def run_pipeline(file_path: Path, matter_id: str = "DEFAULT") -> dict[str, Any]:
         "messages": [],
     }
 
-    result = graph.invoke(initial_state, config)
+    import os
+    from observability import tracing
+
+    with tracing.pipeline_trace(
+        seed=file_path.stem,  # deterministic trace id -> correlates with our doc
+        session_id=matter_id,  # groups every document of a matter into one session
+        name="document-pipeline",
+        input={"filename": file_path.name, "matter_id": matter_id},
+        metadata={"pipeline": "mailroom"},
+        tags=["mailroom"],
+        environment=os.environ.get("OBSERVABILITY_ENVIRONMENT") or None,
+    ) as root:
+        try:
+            result = graph.invoke(initial_state, config)
+        except Exception:
+            if root is not None:
+                root.update(output={"stage": "failed", "error": True})
+            raise
+        if root is not None:
+            root.update(output={
+                "stage": result.get("stage"),
+                "doc_type": result.get("doc_type"),
+                "classification_confidence": result.get("classification_confidence"),
+                "extraction_confidence": result.get("extraction_confidence"),
+            })
+    tracing.flush()
     return result

@@ -1,6 +1,9 @@
 from openai import OpenAI
 from .providers import resolve_provider
 from pipeline.config import get_agent_config
+from pipeline.env import load_env
+
+load_env()
 
 
 def get_llm(agent_name: str) -> tuple[OpenAI, str]:
@@ -13,7 +16,20 @@ def get_llm(agent_name: str) -> tuple[OpenAI, str]:
         if key:
             kwargs["api_key"] = key
     client = OpenAI(**kwargs)
+    client = instrument_client(client)
     return client, model
+
+
+def instrument_client(client) -> OpenAI:
+    """Wrap the OpenAI client with the active tracing backend.
+
+    Both Langfuse (instrumented OpenAI client) and Braintrust (wrap_openai)
+    preserve the exact same `client.chat.completions.create(...)` interface, so
+    agents never change. When observability is disabled, returns client as-is.
+    """
+    from observability.tracing import instrument_openai_client
+
+    return instrument_openai_client(client)
 
 
 def get_llm_client(agent_name: str) -> OpenAI:

@@ -1,0 +1,13 @@
+id,subdir,filename,expected_doc_class,expected_stage,size_tier,source,license,notes
+contract_01,contract,contract_01_affiliate_agreement.pdf,contract,archived,small,CUAD full_contract_pdf/Part_I/Affiliate_Agreements (CreditcardscomInc S-1 EX-10.33),CC-BY-4.0,Real SEC-exhibit affiliate agreement; 12 pages; text-based
+contract_02,contract,contract_02_consulting_agreement.pdf,contract,archived,medium,CUAD full_contract_pdf/Part_II-A/Consulting Agreements (Global Technologies Ltd EX-10.16),CC-BY-4.0,Real consulting agreement; 7 pages
+contract_03,contract,contract_03_service_agreement.pdf,contract,archived,large,CUAD full_contract_pdf/Part_I/Service (ReynoldsConsumerProducts S-1A EX-10.22),CC-BY-4.0,Real transition services agreement; 52 pages; large-token efficiency case
+compliance_01,compliance_filing,compliance_01_10k_excerpt.pdf,compliance_filing,archived,large,compliance/10k_excerpt.txt,original (styled after a 10-K),Synthetic 10-K excerpt incl. risk factors + financial statements; exceeds classify truncation
+compliance_02,compliance_filing,compliance_02_state_filing.pdf,compliance_filing,archived,small,compliance/state_filing.txt,original,State annual report filing
+corporate_01,corporate_record,corporate_01_bylaws.pdf,corporate_record,archived,medium,corporate/bylaws.txt,original,Amended and restated bylaws
+corporate_02,corporate_record,corporate_02_resolution.pdf,corporate_record,archived,small,corporate/resolution.txt,original,Unanimous written consent / board resolutions
+correspondence_01,correspondence,correspondence_01_demand_letter.pdf,correspondence,archived,small,correspondence/demand_letter.txt,original,Notice of breach and demand for payment
+correspondence_02,correspondence,correspondence_02_internal_memo.pdf,correspondence,archived,small,correspondence/internal_memo.txt,original,Internal legal memo re remedies analysis
+due_diligence_01,due_diligence,due_diligence_01_dd_report.pdf,due_diligence,archived,medium,due_diligence/dd_report.txt,original,DD report with risk flags
+due_diligence_02,due_diligence,due_diligence_02_checklist.pdf,due_diligence,archived,small,due_diligence/checklist.txt,original,DD checklist
+ambiguous_01,ambiguous,ambiguous_01_mixed_memo.pdf,correspondence,review,small,ambiguous/mixed_memo.txt,original,Multi-topic memo; expects low confidence -> retry -> human review

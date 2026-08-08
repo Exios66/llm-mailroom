@@ -1,5 +1,7 @@
 import structlog
 
+from observability.tracing import langfuse_call_attrs
+
 logger = structlog.get_logger(__name__)
 
 
@@ -47,6 +49,7 @@ Please compile this into a clean matter-record summary."""
         model=report_model,
         messages=messages,
         temperature=temperature,
+        **langfuse_call_attrs("reporter"),
     )
     summary = response.choices[0].message.content or ""
     logger.info("report_compiled", doc_type=doc_type, length=len(summary))

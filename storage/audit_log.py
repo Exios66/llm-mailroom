@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, JSON, Text, select, desc
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .db import Base, async_session
+from .db import Base, async_session, ensure_schema
 
 logger = structlog.get_logger(__name__)
 
@@ -23,6 +23,7 @@ class AuditLogRecord(Base):
 
 
 async def write_audit_entry(entry) -> AuditLogRecord:
+    ensure_schema()
     from schemas.audit import AuditLogEntry
     async with async_session() as session:
         record = AuditLogRecord(
@@ -38,11 +39,12 @@ async def write_audit_entry(entry) -> AuditLogRecord:
         )
         session.add(record)
         await session.commit()
-        logger.info("audit_entry_written", entry_id=entry.entry_id, event=entry.event)
+        logger.info("audit_entry_written", entry_id=entry.entry_id, event_name=entry.event)
         return record
 
 
 async def get_audit_chain(doc_id: str) -> list[dict]:
+    ensure_schema()
     async with async_session() as session:
         result = await session.execute(
             select(AuditLogRecord)
@@ -65,6 +67,7 @@ async def get_audit_chain(doc_id: str) -> list[dict]:
 
 
 async def get_latest_audit_hash(doc_id: str) -> str:
+    ensure_schema()
     async with async_session() as session:
         result = await session.execute(
             select(AuditLogRecord.entry_hash)

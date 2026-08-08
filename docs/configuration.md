@@ -151,12 +151,15 @@ See `.env.example` for the complete list:
 | `VLLM_BASE_URL` | No | `http://localhost:8000/v1` | vLLM base URL |
 | `GENERIC_API_KEY` | No | — | Generic provider API key |
 | `GENERIC_BASE_URL` | No | — | Generic provider base URL |
-| `DATABASE_URL` | No | `postgresql+asyncpg://...` | Async Postgres connection string |
-| `DATABASE_URL_SYNC` | No | — | Sync Postgres connection (for checkpointer) |
+| `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` | Async database URL. SQLite by default; set a Postgres URL to switch |
+| `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
+| `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `none` |
 | `LANGFUSE_PUBLIC_KEY` | No | `pk-lf-local` | Langfuse public key |
-| `LANGFUSE_SECRET_KEY` | No | `sk-lf-local` | Langfuse secret key |
-| `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server URL |
-| `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root |
+| `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key (present ⇒ `auto` picks Langfuse) |
+| `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server URL (`LANGFUSE_BASE_URL` accepted as alias) |
+| `BRAINTRUST_API_KEY` | No | — | Braintrust API key (present ⇒ `auto` picks Braintrust) |
+| `BRAINTRUST_PROJECT` | No | `mailroom` | Braintrust project name |
+| `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `2` | Watcher poll interval |
 | `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |
 

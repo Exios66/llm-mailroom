@@ -21,7 +21,7 @@ Upload/Drop --> /pipeline/inbox/ --> [Watcher] --> LangGraph run per document
                               Reporter (compile matter record)
                                     |
                                     v
-                              Catalog write (Postgres)
+                              Catalog write (database)
                                     |
                                     v
                               Archivist (log + finalize)
@@ -30,8 +30,8 @@ Upload/Drop --> /pipeline/inbox/ --> [Watcher] --> LangGraph run per document
                        /archive/<matter_id>/<doc_type>/
 
 Parallel/independent:
-  Boss (ops-monitor) — sweeps Postgres + Langfuse periodically
-  Langfuse — every LangGraph node emits a trace span
+  Boss (ops-monitor) — sweeps the database + Langfuse periodically
+  Observability — every LLM call auto-traced (Langfuse/Braintrust)
   Audit log — every state transition writes a hash-chained entry
 ```
 
@@ -46,7 +46,7 @@ Parallel/independent:
 ### LangGraph Engine (`graph/build_graph.py`)
 - **11 nodes** forming a directed state machine
 - One graph execution per document — each document is independent
-- **Postgres-checkpointed** for crash/resume (falls back to MemorySaver)
+- **SQLite-checkpointed** for crash/resume (falls back to MemorySaver)
 - All routing logic in `graph/routing.py` — conditional edges driven by confidence thresholds from `config/taxonomy.yaml`
 
 ### LLM Client (`llm/client.py`, `llm/providers.py`)
@@ -55,15 +55,17 @@ Parallel/independent:
 - Per-agent model selection from `config/taxonomy.yaml`
 - Global override via `DEFAULT_PROVIDER` env var
 
-### Postgres
-- Shared by: LangGraph **checkpointer**, document/matter **catalog**, and **audit log**
-- SQLAlchemy 2.0 async with psycopg
+### SQLite (`storage/`)
+- Default storage: SQLite file at `data/mailroom.db` (no server required)
+- Shared by: document/matter **catalog** and **audit log**
+- SQLAlchemy 2.0 async with aiosqlite (`DATABASE_URL` can switch to Postgres)
 - Three tables: `matters`, `documents`, `audit_log`
 
-### Langfuse
-- Self-hosted in Docker Compose (on-prem — sensitive data stays internal)
-- Every LangGraph node wrapped with trace spans
-- Graceful noop fallback when unavailable — pipeline runs without it
+### Observability
+- Two interchangeable tracing backends: **Langfuse** (cloud or self-hosted) and **Braintrust**
+- Selected via `OBSERVABILITY_PROVIDER` env (`auto` | `langfuse` | `braintrust` | `none`)
+- Every LLM call auto-traced via `llm/client.py:get_llm` (langfuse patch / `braintrust.wrap_openai`) — prompt, response, tokens, latency
+- Graceful noop fallback when unconfigured — pipeline runs unchanged
 
 ### Filesystem Bins
 - Human-legible pipeline state — `ls` any directory to see status
@@ -84,7 +86,7 @@ Parallel/independent:
 | 6 | `human_review` | — | Pause for human decision (LangGraph interrupt) |
 | 7 | `boss_escalation` | Boss | Adjudicate data conflicts |
 | 8 | `compile_report` | Reporter | Synthesize matter-record entry |
-| 9 | `catalog_write` | — | Write to Postgres catalog |
+| 9 | `catalog_write` | — | Write to database catalog |
 | 10 | `archive` | Archivist | Move to archive, write audit entry |
 
 ### Conditional Edges
@@ -114,7 +116,7 @@ human_review --+-- approved -- compile_report
 4. **Extract**: Dynamic dispatch to matching specialist → structured JSON output
 5. **Extraction Check**: Same three-way + conflict detection → Boss escalation
 6. **Compile Report**: LLM synthesizes all extracted data into matter-record summary
-7. **Catalog Write**: Postgres `documents` and `matters` tables (best-effort)
+7. **Catalog Write**: database `documents` and `matters` tables (best-effort)
 8. **Archive**: Move file to `/archive/<matter_id>/<doc_type>/` + manifest sidecar + audit entry
 
 ## Filesystem Layout
@@ -135,7 +137,7 @@ data/
 
 ## Audit Trail Design
 
-Every state transition writes an `AuditLogEntry` to Postgres:
+Every state transition writes an `AuditLogEntry` to the database (SQLite `audit_log` table):
 
 ```
 entry_1 (prev_hash: "")         -- classified by sorter

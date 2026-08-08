@@ -45,15 +45,16 @@ Upload/Drop --> /pipeline/inbox/ --> [Watcher] --> LangGraph run per document
                                     Boss (escalation)    Human Review    Audit Log
 ```
 
-**11 LangGraph nodes** in a Postgres-checkpointed state machine. One graph per document, resumable across crashes.
+**11 LangGraph nodes** in an SQLite-checkpointed state machine. One graph per document, resumable across crashes.
 
 ## Quick Start
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 cp .env.example .env
 pip install -e ".[dev]"
 python pipeline/watcher.py &
 python api/main.py &
 curl -X POST http://localhost:8000/upload -F "file=@tests/fixtures/contract/sample_msa.txt" -F "matter_id=MATTER-001"
 ```
+
+No database server needed — SQLite files (`data/mailroom.db`, `data/checkpoints.db`) are created automatically. Docker is only required for the optional Langfuse trace viewer (`docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server`).

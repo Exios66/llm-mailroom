@@ -1,0 +1,42 @@
+# `graph/` — The state machine that runs each document
+
+## What this folder is (plain English)
+
+This is the **engine room**. Mailroom is built on **LangGraph**: for every document, it runs a fixed "assembly line" of steps (called *nodes*). Each node takes the document's current state, does one thing, and hands the result to the next node. The file `build_graph.py` wires all the nodes together.
+
+The journey of a document:
+
+```
+ingest → classify → (extract | retry_classify | human_review) → extract → compile_report
+      → catalog_write → archive
+```
+
+At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **confidence score** and decides what happens next: proceed, retry with a stronger prompt, send to the Boss, or route to a human.
+
+## The 11 nodes (in `build_graph.py`)
+
+| Node | What it does |
+|---|---|
+| `ingest` | Reads the file, creates the manifest, moves file to `processing/` |
+| `classify` | Sorter LLM decides `doc_type` + confidence |
+| `retry_classify` | Re-classify with a "re-evaluate" prompt when confidence was low |
+| `extract` | Routes to the right specialist LLM, stores `extracted_data` |
+| `retry_extract` | Re-extract with the previous attempt included as context |
+| `human_review` | Moves the file to `review/` for a person |
+| `boss_escalation` | Boss LLM adjudicates conflicts / repeated failures |
+| `compile_report` | Reporter LLM writes the matter-record summary |
+| `catalog_write` | Writes the document + matter to the database (best-effort) |
+| `archive` | Moves file to `archive/<matter_id>/<type>/`, writes audit entry |
+
+## Technical reference
+
+- **Node contract:** `def node(state: DocumentState) -> dict[str, Any]` — returns only the fields it changed; LangGraph merges them into state.
+- `state.py` — `DocumentState`, a `TypedDict` with all pipeline fields (`doc_type`, `classification_confidence`, `extracted_data`, `stage`, …).
+- `routing.py` — pure functions returning the name of the next node: `after_classify`, `after_retry_classify`, `after_extraction`, `after_retry_extraction`, `after_boss`, `after_human_review`. Thresholds come from `config/taxonomy.yaml` → `get_confidence_thresholds()`, never hardcoded.
+- `build_graph.py` also handles:
+  - Text extraction for images/PDFs (`_read_file_text` → `agents/image_extractor.py`, `agents/pdf_transcriber.py`).
+  - Specialist dispatch via `_build_specialist_dispatch()` — a hardcoded 5-name map (`contracts_specialist`, `corporate_records_specialist`, `due_diligence_specialist`, `correspondence_specialist`, `compliance_specialist`). Adding an agent means adding an entry here too.
+  - The **checkpointer** (`_build_checkpointer`): SQLite-backed (`data/checkpoints.db`, via `langgraph.checkpoint.sqlite.SqliteSaver`) for crash-resume, with a `MemorySaver` fallback if anything fails.
+  - `run_pipeline(file_path, matter_id)` — convenience entrypoint that builds the graph and runs one document.
+- Conditionals are wired with `add_conditional_edges("classify", after_classify, {...})`; `after_classify` can return `"retry_classify"`, `"extract"`, or `"human_review"`.
+- Architecture doc: `docs/architecture.md` (mirrors `wiki/Architecture.md`).

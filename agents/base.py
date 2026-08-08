@@ -3,6 +3,7 @@ import structlog
 from abc import ABC, abstractmethod
 
 from llm.client import get_llm
+from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
 
@@ -32,6 +33,7 @@ class BaseAgent(ABC):
             kwargs["temperature"] = temperature
         if response_format:
             kwargs["response_format"] = response_format
+        kwargs.update(langfuse_call_attrs(self.agent_name))
 
         logger.info("llm_call", agent=self.agent_name, model=self.model)
         response = self.client.chat.completions.create(**kwargs)
@@ -45,16 +47,20 @@ class BaseAgent(ABC):
         json_schema: dict,
         temperature: float = 0.1,
     ) -> dict:
+        # `json_object` response format is broadly supported across OpenRouter
+        # providers (OpenAI `json_schema` strict mode is not). The schema is
+        # embedded in the prompt, and the "JSON" wording satisfies providers
+        # that require it in the message.
+        schema_text = json.dumps(json_schema)
+        user_message = (
+            f"{user_message}\n\n"
+            "Return ONLY a valid JSON object that conforms to the schema below. "
+            "Do not include any text outside the JSON object.\n\n"
+            f"JSON schema:\n{schema_text}"
+        )
         raw = self._call_llm(
             user_message,
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": f"{self.agent_name}_output",
-                    "strict": True,
-                    "schema": json_schema,
-                },
-            },
+            response_format={"type": "json_object"},
             temperature=temperature,
         )
         try:

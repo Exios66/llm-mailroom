@@ -4,6 +4,10 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
+from pipeline.env import load_env
+
+load_env()
+
 from graph.build_graph import build_graph, _ensure_dirs
 from graph.state import DocumentState
 from pipeline.bins import inbox_dir, save_manifest, load_manifest

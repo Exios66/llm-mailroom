@@ -19,7 +19,7 @@ Adding a new type takes 5 steps — see [Development](Development).
 
 LangGraph provides:
 - A defined, explicit state machine — agents don't freely negotiate what happens next
-- Postgres-backed checkpointing for crash/resume
+- SQLite-backed checkpointing for crash/resume
 - Conditional edges for confidence-based routing
 - Human-in-the-loop via `interrupt()` for review scenarios
 
@@ -27,7 +27,7 @@ LangGraph provides:
 
 Yes. Set `DEFAULT_PROVIDER=ollama` in `.env`, or configure per-agent in `config/taxonomy.yaml`. See [Local Model Cutover](Local-Model-Cutover).
 
-## What happens if Postgres is unavailable?
+## What happens if the database is unavailable?
 
 The pipeline degrades gracefully:
 - LangGraph checkpointer falls back to MemorySaver
@@ -61,7 +61,7 @@ Matters are auto-created when you upload a document with a new `matter_id`. You 
 
 ## Does this support PDFs and DOCX?
 
-The `file_extensions` in `config/taxonomy.yaml` include `.pdf` and `.docx`. The current pipeline reads text via `file_path.read_text()`. For production PDF/DOCX support, you'd add a text extraction step (e.g., `pypdf`, `python-docx`) in the `ingest_node` before classification.
+The `file_extensions` in `config/taxonomy.yaml` include `.pdf` and `.docx`. PDFs are transcribed by `agents/pdf_transcriber.py` and images by `agents/image_extractor.py`. DOCX is read as raw text via `read_text` in `ingest_node` (for production-grade DOCX support you'd add a `python-docx` extraction step).
 
 ## What's the scale target?
 

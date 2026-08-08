@@ -9,7 +9,7 @@ mailroom/
   llm/             # Provider-agnostic client
   schemas/         # Pydantic models
   pipeline/        # Watcher, bins, ops monitor
-  storage/         # Postgres: catalog, audit log
+  storage/         # SQLite/Postgres: catalog, audit log
   api/             # FastAPI
   observability/   # Langfuse callbacks
   config/          # taxonomy.yaml
@@ -25,8 +25,9 @@ mailroom/
 
 ```bash
 pip install -e ".[dev]"
-docker compose -f docker/docker-compose.yml up -d postgres
 ```
+
+No database server needed — SQLite files are created automatically under `data/` on first use.
 
 ## Running Tests
 
@@ -45,6 +46,14 @@ pytest tests/ --cov=. --cov-report=html   # Coverage
 - **Routing tests**: 12 conditional edge tests
 - **Audit tests**: 9 hash chain integrity tests
 - **E2E tests**: 4 full pipeline tests with mocked LLM
+
+## Pilot Testing
+
+`examples/samples/` holds a 12-PDF pilot set (ground truth in `manifest.csv`).
+Build it with `python scripts/prepare_samples.py`, then evaluate with
+`python scripts/run_pilot.py --mock` (deterministic) or `--real` (needs
+`OPENROUTER_API_KEY`), and diff two runs with `--baseline <report.json>` to
+measure the impact of procedural changes. See `examples/samples/README.md`.
 
 ## Adding a New Document Type
 

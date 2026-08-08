@@ -3,8 +3,8 @@
 ## Prerequisites
 
 - Python 3.11+
-- Docker and Docker Compose
 - OpenRouter API key (or a local LLM)
+- Docker (optional — only needed for Langfuse tracing and/or local LLMs)
 - 8GB+ RAM (16GB+ recommended for local model inference)
 
 ---
@@ -23,14 +23,18 @@ Edit `.env` with your values:
 # Required for OpenRouter (primary provider)
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 
-# Database
-DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@localhost:5432/mailroom
-DATABASE_URL_SYNC=postgresql+psycopg://mailroom:mailroom@localhost:5432/mailroom
+# Database — SQLite by default (no server needed).
+# The file is created automatically at {MAILROOM_BASE_DIR}/mailroom.db.
+# To use Postgres instead, uncomment:
+# DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@localhost:5432/mailroom
 
-# Langfuse (self-hosted)
-LANGFUSE_PUBLIC_KEY=pk-lf-local
-LANGFUSE_SECRET_KEY=sk-lf-local
-LANGFUSE_HOST=http://localhost:3000
+# Observability (optional) — Langfuse cloud, Langfuse self-hosted, or Braintrust.
+# OBSERVABILITY_PROVIDER=auto picks Langfuse when a secret key is set.
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+# Cloud: LANGFUSE_HOST=https://us.cloud.langfuse.com
+# Self-hosted: LANGFUSE_HOST=http://localhost:3000 (LANGFUSE_BASE_URL is an alias)
+# Alternative backend: set OBSERVABILITY_PROVIDER=braintrust + BRAINTRUST_API_KEY
 
 # Pipeline
 MAILROOM_BASE_DIR=./data
@@ -38,26 +42,7 @@ MAILROOM_BASE_DIR=./data
 
 ---
 
-## 2. Start Infrastructure
-
-```bash
-docker compose -f docker/docker-compose.yml up -d
-```
-
-This starts:
-- **Postgres 16** — `localhost:5432`
-- **ClickHouse** — `localhost:8123` (for Langfuse)
-- **Langfuse Server** — `http://localhost:3000`
-
-Wait for all services to be healthy:
-
-```bash
-docker compose -f docker/docker-compose.yml ps
-```
-
----
-
-## 3. Install Application
+## 2. Install Application
 
 ```bash
 pip install -e ".[dev]"
@@ -65,17 +50,22 @@ pip install -e ".[dev]"
 
 ---
 
-## 4. Initialize Database
+## 3. Database
 
-The database tables are auto-created on first use. To initialize manually:
+**Nothing to do** — SQLite tables are auto-created on first use. You'll see
+`data/mailroom.db` (catalog + audit log) and `data/checkpoints.db` (crash-resume
+state) appear after the first document is processed.
+
+If you opted for Postgres, start it and initialize:
 
 ```bash
+docker compose -f docker/docker-compose.yml up -d postgres
 python -c "import asyncio; from storage.db import init_db; asyncio.run(init_db())"
 ```
 
 ---
 
-## 5. Run Services
+## 4. Run Services
 
 Start all services (each in its own terminal or use a process manager):
 
@@ -92,7 +82,7 @@ python pipeline/ops_monitor.py
 
 ---
 
-## 6. Verify Pipeline
+## 5. Verify Pipeline
 
 ```bash
 # Upload a test document
@@ -112,11 +102,15 @@ curl http://localhost:8000/ops/status
 
 ---
 
-## 7. Verify Langfuse
+## 6. Verify Observability (optional)
 
-Open `http://localhost:3000` in your browser. Set up your first user account. You'll see traces for every LLM call flowing through the pipeline.
+**Langfuse cloud:** open your project dashboard at `us.cloud.langfuse.com` and confirm traces appear as documents flow through the pipeline.
 
-> **Note:** For first-time Langfuse setup, create an account at `http://localhost:3000` and generate API keys. Update your `.env` with the generated public/secret keys.
+**Langfuse self-hosted:** open `http://localhost:3000` in your browser. Set up your first user account, generate API keys, and put them in `.env` (`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`).
+
+**Braintrust:** set `OBSERVABILITY_PROVIDER=braintrust` + `BRAINTRUST_API_KEY` and check your Braintrust project's logs.
+
+Every LLM call (classification, extraction, reports, Boss) is auto-traced; no per-node wiring is needed.
 
 ---
 
@@ -134,24 +128,23 @@ Use `systemd`, `supervisord`, or Docker to manage the three processes:
 
 ### Database
 
-- Use a managed Postgres instance or ensure proper backups
-- The audit log is append-only — size will grow over time
-- Consider partitioning `audit_log` by date for long-term retention
+- **Default:** a local SQLite file (`data/mailroom.db`). Back it up along with `data/checkpoints.db` and `/archive`.
+- The audit log is append-only — size will grow over time.
+- For higher volume or multi-process setups, switch to Postgres via `DATABASE_URL` and consider partitioning `audit_log` by date for long-term retention.
 
 ### Security
 
-- Encrypt `/archive` at rest (filesystem encryption, cloud KMS, etc.)
-- Enable Postgres encryption at rest (TDE or equivalent)
+- Encrypt `/archive` at rest and the SQLite files at rest (filesystem encryption, cloud KMS, etc.)
 - Access-control the FastAPI endpoints (API keys, OAuth, or network-level)
 - Access-control the Langfuse UI (it exposes full document content in traces)
-- Do not expose Postgres or ClickHouse ports publicly
+- Do not expose Postgres or ClickHouse ports publicly (if you run them for Langfuse)
 - Back up `/archive` and the audit log table independently
 
 ### Scaling
 
 For pilot scale (dozens of documents/day):
 - The current architecture (threaded watcher, single process) is sufficient
-- Postgres handles the concurrency comfortably
+- SQLite handles the concurrency comfortably at this scale
 
 For higher volumes:
 - Consider Redis-based queuing (deferred per the roadmap)
@@ -181,13 +174,10 @@ services:
       - "8000:8000"
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@postgres:5432/mailroom
+      # SQLite by default — data lives in the volume below.
       - MAILROOM_BASE_DIR=/data
     volumes:
       - mailroom_data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
 ```
 
 ---
@@ -200,18 +190,22 @@ services:
 - Verify file extension is in the accepted list (`config/taxonomy.yaml` → `file_extensions`)
 - Check watcher logs for errors
 
-### Postgres connection errors
+### Database errors
 
-- Verify `DATABASE_URL` in `.env`
-- Check Postgres is running: `docker compose -f docker/docker-compose.yml ps`
-- Try the sync URL: `DATABASE_URL_SYNC=postgresql+psycopg://mailroom:mailroom@localhost:5432/mailroom`
+- **SQLite:** verify the `data/` directory is writable; the DB files are created automatically. If the DB was created by a different `MAILROOM_BASE_DIR`, point it back or delete the old files.
+- **Postgres:** verify `DATABASE_URL` in `.env` and that Postgres is running: `docker compose -f docker/docker-compose.yml ps`
 
 ### Langfuse not showing traces
 
-- Check `LANGFUSE_HOST` is correct
-- Verify Langfuse container is healthy
-- Check Langfuse API keys match between `.env` and the Langfuse UI project settings
+- Check `OBSERVABILITY_PROVIDER` — must be `auto` or `langfuse`
+- Check `LANGFUSE_HOST` is correct (cloud: `https://us.cloud.langfuse.com`)
+- For self-hosted: verify the Langfuse container is healthy and API keys in `.env` match the Langfuse UI project settings
 - The pipeline runs without Langfuse — it degrades gracefully
+
+### Braintrust not showing traces
+
+- Check `OBSERVABILITY_PROVIDER=braintrust` and `BRAINTRUST_API_KEY`/`BRAINTRUST_PROJECT` are set
+- Braintrust is a no-op until the API key is present
 
 ### LLM provider errors
 

@@ -5,6 +5,10 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from .env import load_env
+
+load_env()
+
 from .bins import (
     inbox_dir,
     ensure_dirs,

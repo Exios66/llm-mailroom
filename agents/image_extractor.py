@@ -8,6 +8,7 @@ import structlog
 from pathlib import Path
 from agents.base import BaseAgent, build_structured_schema
 from llm.client import get_llm
+from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
 
@@ -67,6 +68,7 @@ Rules:
                     },
                 ],
                 max_tokens=4096,
+                **langfuse_call_attrs("image-extractor"),
             )
             text = response.choices[0].message.content or ""
             logger.info("vision_extraction_complete", filename=filename, chars=len(text))

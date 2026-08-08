@@ -133,12 +133,14 @@ agents:
 |---|---|---|---|
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `DEFAULT_PROVIDER` | No | `openrouter` | Global provider override |
-| `DATABASE_URL` | No | `postgresql+asyncpg://...` | Async Postgres URL |
-| `DATABASE_URL_SYNC` | No | — | Sync Postgres URL (checkpointer) |
+| `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` | Async database URL. SQLite by default; set a Postgres URL to switch |
+| `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `none` |
 | `LANGFUSE_PUBLIC_KEY` | No | `pk-lf-local` | Langfuse public key |
-| `LANGFUSE_SECRET_KEY` | No | `sk-lf-local` | Langfuse secret key |
-| `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server |
-| `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root |
+| `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key (present ⇒ `auto` picks Langfuse) |
+| `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server (`LANGFUSE_BASE_URL` accepted as alias) |
+| `BRAINTRUST_API_KEY` | No | — | Braintrust API key (present ⇒ `auto` picks Braintrust) |
+| `BRAINTRUST_PROJECT` | No | `mailroom` | Braintrust project name |
+| `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Ollama server |
 | `VLLM_BASE_URL` | No | `http://localhost:8000/v1` | vLLM server |
 | `GENERIC_API_KEY` | No | — | Generic provider key |

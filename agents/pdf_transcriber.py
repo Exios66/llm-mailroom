@@ -8,6 +8,7 @@ Uses multiple strategies in priority order:
 import structlog
 from pathlib import Path
 from agents.base import BaseAgent
+from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
 
@@ -125,6 +126,7 @@ Rules:
             ],
             max_tokens=8192,
             temperature=0.1,
+            **langfuse_call_attrs("pdf-transcriber"),
         )
         return response.choices[0].message.content or ""
 

@@ -23,7 +23,7 @@ Upload/Drop ──▶ /pipeline/inbox/ ──▶ [Watcher] ──▶ LangGraph r
                               Reporter (compile matter record)
                                     │
                                     ▼
-                              Catalog write (Postgres)
+                              Catalog write (database)
                                     │
                                     ▼
                               Archivist (log + finalize)
@@ -32,7 +32,7 @@ Upload/Drop ──▶ /pipeline/inbox/ ──▶ [Watcher] ──▶ LangGraph r
                        /archive/<matter_id>/<doc_type>/
 
 Parallel/independent:
-  Boss (ops-monitor) ── sweeps Postgres + Langfuse periodically for stuck docs / error spikes
+  Boss (ops-monitor) ── sweeps the database + Langfuse periodically for stuck docs / error spikes
   Langfuse ── every LangGraph node emits a trace span (live deliberation viewer)
   Audit log ── every state transition writes a hash-chained entry, independent of Langfuse
 ```
@@ -48,8 +48,8 @@ Parallel/independent:
 ### LangGraph Engine (`graph/build_graph.py`)
 - One graph execution per document
 - 11 nodes forming a directed state machine
-- Postgres-checkpointed for crash/resume
-- Falls back to in-memory checkpointing when Postgres unavailable
+- SQLite-checkpointed for crash/resume
+- Falls back to in-memory checkpointing when SQLite is unavailable
 
 ### LLM Client (`llm/client.py`, `llm/providers.py`)
 - Thin OpenAI-compatible wrapper
@@ -57,15 +57,17 @@ Parallel/independent:
 - Per-agent model selection from `config/taxonomy.yaml`
 - Global provider override via `DEFAULT_PROVIDER` env var
 
-### Postgres (`storage/db.py`, `storage/catalog.py`, `storage/audit_log.py`)
-- Shared by LangGraph checkpointer, document/matter catalog, and audit log
-- SQLAlchemy 2.0 async with psycopg
+### SQLite (`storage/db.py`, `storage/catalog.py`, `storage/audit_log.py`)
+- SQLite (via SQLAlchemy 2.0 async + aiosqlite) by default — a single file, no server required
+- Shared by the document/matter catalog and the audit log
 - Three tables: `matters`, `documents`, `audit_log`
+- `DATABASE_URL` env var can switch to Postgres
 
-### Langfuse (`observability/langfuse_setup.py`)
-- Self-hosted in Docker Compose
-- Every LangGraph node wrapped with trace spans
-- Graceful noop fallback when Langfuse is unavailable
+### Observability (`observability/`)
+- Two interchangeable tracing backends: **Langfuse** (cloud or self-hosted, default) and **Braintrust**
+- Selected via `OBSERVABILITY_PROVIDER` env (`auto` | `langfuse` | `braintrust` | `none`)
+- Every LLM call is auto-traced: `llm/client.py:get_llm` wraps the OpenAI client (`langfuse.openai` patch or `braintrust.wrap_openai`), capturing prompt, response, tokens, latency
+- Graceful noop fallback when no backend/keys are configured — pipeline runs unchanged
 
 ### Filesystem Bins (`pipeline/bins.py`)
 - Human-legible pipeline state: `ls` any directory to see what's happening
@@ -102,7 +104,7 @@ Same three-way branch as classification, plus a fourth path:
 LLM call: compiles all extracted data into a clean matter-record summary.
 
 ### 7. Catalog Write
-Writes document and matter records to Postgres (best-effort — pipeline continues on failure).
+Writes document and matter records to the database (best-effort — pipeline continues on failure).
 
 ### 8. Archive (Archivist)
 - Moves file to `/archive/<matter_id>/<doc_type>/`
@@ -122,7 +124,7 @@ Writes document and matter records to Postgres (best-effort — pipeline continu
 | `human_review` | — | Pause for human decision |
 | `boss_escalation` | Boss (in-graph) | Adjudicate conflicts |
 | `compile_report` | Reporter | Synthesize matter-record entry |
-| `catalog_write` | — | Write to Postgres catalog |
+| `catalog_write` | — | Write to database catalog |
 | `archive` | Archivist | Move to archive, write audit log |
 
 ## Conditional Edges
@@ -149,11 +151,11 @@ human_review ─┬─ approved ──▶ compile_report
 LangGraph checkpoints the full state after each node. On crash or restart:
 - Any in-flight run resumes from the last completed node
 - No document is lost and no document is processed twice
-- Postgres-backed checkpointing is the production path; MemorySaver is the fallback
+- SQLite-backed checkpointing (`data/checkpoints.db`) is the default; MemorySaver is the fallback if SQLite is unavailable
 
 ## Audit Trail
 
-Every state transition writes an `AuditLogEntry` to Postgres. Each entry:
+Every state transition writes an `AuditLogEntry` to the database. Each entry:
 - Contains `prev_hash` (SHA-256 of the prior entry)
 - Contains `entry_hash` (SHA-256 of `prev_hash` + entry content)
 - Forms a tamper-evident chain — modifying any entry breaks all subsequent hashes

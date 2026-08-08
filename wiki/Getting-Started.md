@@ -3,8 +3,8 @@
 ## Prerequisites
 
 - Python 3.11+
-- Docker and Docker Compose
 - OpenRouter API key ([get one here](https://openrouter.ai/keys))
+- Docker (optional — only for Langfuse tracing and local LLMs)
 - 8GB+ RAM
 
 ## Step 1: Clone and Configure
@@ -21,27 +21,16 @@ Edit `.env` with your OpenRouter key:
 OPENROUTER_API_KEY=sk-or-v1-your-key-here
 ```
 
-## Step 2: Start Infrastructure
-
-```bash
-docker compose -f docker/docker-compose.yml up -d
-```
-
-This starts Postgres, ClickHouse, and Langfuse. Verify:
-
-```bash
-docker compose -f docker/docker-compose.yml ps
-```
-
-All services should show `healthy` or `running`.
-
-## Step 3: Install the Application
+## Step 2: Install the Application
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-## Step 4: Run Services
+No database setup needed — SQLite files are created automatically under `data/`
+(`mailroom.db` for catalog + audit log, `checkpoints.db` for crash-resume).
+
+## Step 3: Run Services
 
 Open three terminals:
 
@@ -60,7 +49,7 @@ python api/main.py
 python pipeline/ops_monitor.py
 ```
 
-## Step 5: Process a Document
+## Step 4: Process a Document
 
 ```bash
 curl -X POST http://localhost:8000/upload \
@@ -71,7 +60,7 @@ curl -X POST http://localhost:8000/upload \
 Watch the watcher terminal — you'll see the pipeline log each stage. The document moves through:
 1. `inbox` → `processing` → `classified` → extracted → `archived`
 
-## Step 6: Check Results
+## Step 5: Check Results
 
 ```bash
 # Get document status (use the doc_id from the watcher output)
@@ -84,7 +73,7 @@ curl http://localhost:8000/audit/<doc_id>
 curl http://localhost:8000/ops/status
 ```
 
-## Step 7: Browse the Archive
+## Step 6: Browse the Archive
 
 ```bash
 ls -R data/archive/MATTER-001/
@@ -92,11 +81,9 @@ ls -R data/archive/MATTER-001/
 
 The document is now in its final home: `data/archive/MATTER-001/contract/sample_msa.txt`
 
-## Step 8: View Langfuse Traces
+## Step 7: View LLM Traces (optional)
 
-Open `http://localhost:3000` in your browser. Set up your first user account.
-
-You'll see traces for every LLM call: classification, extraction, reporting — with full input/output, latency, and token usage.
+If you configured observability (Langfuse or Braintrust), every LLM call is auto-traced — open your Langfuse dashboard (`us.cloud.langfuse.com` or your self-hosted instance) or Braintrust project to see prompts, responses, latency, and token usage. The pipeline runs fine without any tracing.
 
 ---
 
@@ -105,7 +92,8 @@ You'll see traces for every LLM call: classification, extraction, reporting — 
 | Variable | Required | Default |
 |---|---|---|
 | `OPENROUTER_API_KEY` | Yes | — |
-| `DATABASE_URL` | No | `postgresql+asyncpg://mailroom:mailroom@localhost:5432/mailroom` |
+| `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` |
+| `OBSERVABILITY_PROVIDER` | No | `auto` |
 | `LANGFUSE_HOST` | No | `http://localhost:3000` |
 | `MAILROOM_BASE_DIR` | No | `./data` |
 | `DEFAULT_PROVIDER` | No | `openrouter` |
