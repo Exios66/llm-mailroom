@@ -103,6 +103,16 @@ async def get_document(doc_id: str) -> DocumentRecord | None:
         return await session.get(DocumentRecord, doc_id)
 
 
+async def list_documents(limit: int | None = None) -> list[DocumentRecord]:
+    ensure_schema()
+    async with async_session() as session:
+        query = select(DocumentRecord).order_by(DocumentRecord.updated_at.desc())
+        if limit:
+            query = query.limit(limit)
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+
 async def update_document_scores(doc_id: str, scores: dict) -> None:
     ensure_schema()
     async with async_session() as session:

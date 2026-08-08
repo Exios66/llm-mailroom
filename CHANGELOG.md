@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Live LLM-as-a-Judge evaluators in Langfuse now run on `deepseek/deepseek-v4-flash` (via OpenRouter), matching the offline judge; evaluator versions were reset to a single clean v1 each (stale version history from repeated `--force` syncs removed).
+- Langfuse project evaluator inventory cleaned: only the 3 project-scope mailroom evaluators (`mailroom-classification-judge`, `mailroom-extraction-completeness-judge`, `mailroom-extraction-correctness-judge`) and their 11 observation rules remain in use; the 22 Langfuse-managed template evaluators are platform-locked (`scope=managed`, API returns 403 on delete) and ignored.
+
 ## [0.2.2] - 2026-08-08
 
 ### Added

@@ -1,4 +1,6 @@
+import functools
 import structlog
+import time
 from pathlib import Path
 from typing import Any
 
@@ -614,6 +616,22 @@ def _persist_scores(state: dict, scores: dict):
         logger.exception("scores_persist_error")
 
 
+def _bounded(fn):
+    """Node wrapper enforcing the per-run hard cutoff: wall-clock deadline and
+    cumulative output-token budget. Raises RunDeadlineExceeded /
+    RunBudgetExceeded, which `_execute_run` catches and finalizes as an
+    aborted run (failed bin + scores)."""
+    from pipeline.limits import check_run_deadline, check_token_budget
+
+    @functools.wraps(fn)
+    def wrapper(state):
+        check_run_deadline(state.get("run_deadline"))
+        check_token_budget()
+        return fn(state)
+
+    return wrapper
+
+
 def build_graph(checkpointer=None):
     if checkpointer is None:
         checkpointer = _build_checkpointer()
@@ -621,16 +639,18 @@ def build_graph(checkpointer=None):
     workflow = StateGraph(DocumentState)
 
     # Node names stay stable (best practice); per-run values go in metadata.
-    workflow.add_node("ingest", traced_node("ingest-document")(ingest_node))
-    workflow.add_node("classify", traced_node("classify-document")(classify_node))
-    workflow.add_node("retry_classify", traced_node("classify-document")(retry_classify_node))
-    workflow.add_node("extract", traced_node("extract-fields")(extract_node))
-    workflow.add_node("retry_extract", traced_node("extract-fields")(retry_extract_node))
-    workflow.add_node("human_review", traced_node("route-for-review")(human_review_node))
-    workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(boss_escalation_node))
-    workflow.add_node("compile_report", traced_node("compile-report")(compile_report_node))
-    workflow.add_node("catalog_write", traced_node("write-catalog")(catalog_write_node))
-    workflow.add_node("archive", traced_node("archive-document")(archive_node))
+    # Every node is bounded: the run deadline and token budget are enforced at
+    # each boundary so a stuck run is cut off as soon as its budget is spent.
+    workflow.add_node("ingest", traced_node("ingest-document")(_bounded(ingest_node)))
+    workflow.add_node("classify", traced_node("classify-document")(_bounded(classify_node)))
+    workflow.add_node("retry_classify", traced_node("classify-document")(_bounded(retry_classify_node)))
+    workflow.add_node("extract", traced_node("extract-fields")(_bounded(extract_node)))
+    workflow.add_node("retry_extract", traced_node("extract-fields")(_bounded(retry_extract_node)))
+    workflow.add_node("human_review", traced_node("route-for-review")(_bounded(human_review_node)))
+    workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(boss_escalation_node)))
+    workflow.add_node("compile_report", traced_node("compile-report")(_bounded(compile_report_node)))
+    workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
+    workflow.add_node("archive", traced_node("archive-document")(_bounded(archive_node)))
 
     workflow.add_conditional_edges(START, entry_route, {
         "ingest": "ingest",
@@ -679,11 +699,98 @@ def build_graph(checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
+def _finalize_aborted(initial_state: dict, reason: str) -> dict:
+    """Turn a run that hit a hard limit (or crashed) into a failed result.
+
+    Moves the file to the failed bin with a manifest noting the abort, and
+    returns a result dict that still carries doc/attempt fields so the run is
+    scored (run_aborted=1) and visible in the catalog instead of stranding in
+    processing/.
+    """
+    from pipeline.bins import move_to_failed, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    state = dict(initial_state)
+    manifest = DocumentManifest(
+        matter_id=state.get("matter_id", "DEFAULT"),
+        original_filename=state.get("original_filename", ""),
+        stage=PipelineStage.FAILED,
+        doc_type=state.get("doc_type"),
+        classification_confidence=state.get("classification_confidence"),
+        classification_attempts=state.get("classification_attempts", 0),
+        extracted_data=state.get("extracted_data"),
+        extraction_confidence=state.get("extraction_confidence"),
+        extraction_attempts=state.get("extraction_attempts", 0),
+        escalation_reason=f"run aborted: {reason}",
+    )
+    state["doc_id"] = manifest.doc_id
+    state["stage"] = PipelineStage.FAILED.value
+    state["run_aborted"] = True
+    state["error_message"] = f"run aborted: {reason}"
+
+    file_path_str = state.get("file_path") or ""
+    if file_path_str:
+        try:
+            move_to_failed(Path(file_path_str))
+        except Exception:
+            logger.exception("abort_move_to_failed_error", file=file_path_str)
+    try:
+        save_manifest(manifest)
+    except Exception:
+        logger.exception("abort_manifest_save_error", doc_id=manifest.doc_id)
+    try:
+        _write_catalog_record(state)
+    except Exception:
+        logger.exception("abort_catalog_write_error", doc_id=manifest.doc_id)
+    return state
+
+
+def _write_catalog_record(state: dict):
+    """Persist a minimal catalog record (used for aborted runs that never
+    reach the catalog_write node, so they show up in compare_runs)."""
+    import asyncio
+    from storage.catalog import write_document_record
+
+    doc_record = {
+        "doc_id": state.get("doc_id", ""),
+        "matter_id": state.get("matter_id", "DEFAULT"),
+        "original_filename": state.get("original_filename", ""),
+        "doc_type": state.get("doc_type", "unknown"),
+        "stage": state.get("stage", "failed"),
+        "classification_confidence": state.get("classification_confidence"),
+        "extraction_confidence": state.get("extraction_confidence"),
+        "extracted_data": state.get("extracted_data"),
+        "escalation_reason": state.get("escalation_reason") or state.get("error_message"),
+        "trace_id": state.get("trace_id"),
+    }
+
+    async def _write():
+        await write_document_record(doc_record)
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            future = asyncio.run_coroutine_threadsafe(_write(), loop)
+            future.result(timeout=5)
+        else:
+            asyncio.run(_write())
+    except RuntimeError:
+        asyncio.run(_write())
+
+
 def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> dict[str, Any]:
     """Shared execution scaffold: build graph, open the per-doc trace (one trace
     per document, deterministic id from `seed`), invoke, emit self-evident
-    scores, persist them. Used by both `run_pipeline` and `resume_from_review`."""
+    scores, persist them. Used by both `run_pipeline` and `resume_from_review`.
+
+    Enforces the hard run cutoff: a wall-clock deadline and a cumulative
+    output-token budget (see pipeline/limits.py). Aborted runs are finalized to
+    the failed bin and still scored + persisted, so every run produces core
+    metrics (duration, tokens, cost, call count) for cross-run evaluation.
+    """
     import os
+    from pipeline import limits
     from observability import tracing
 
     from observability import scores as pipeline_scores
@@ -693,22 +800,37 @@ def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> 
 
     pipeline_scores.ensure_score_configs()
 
+    started_at = time.time()
+    deadline = started_at + float(limits.get_deadline_seconds())
+    limits.reset_run_usage()
+    limits.set_run_deadline(deadline)
+    initial_state = {**initial_state, "run_deadline": deadline}
+
     with tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc
         session_id=initial_state.get("matter_id"),  # groups documents of a matter
         name="document-pipeline",
         input=trace_input,
-        metadata={"pipeline": "mailroom"},
+        metadata={"pipeline": "mailroom", "run_deadline": deadline},
         tags=["mailroom"],
         environment=os.environ.get("OBSERVABILITY_ENVIRONMENT") or None,
     ) as root:
         try:
             result = graph.invoke(initial_state, config)
+        except (limits.RunDeadlineExceeded, limits.RunBudgetExceeded) as exc:
+            logger.warning(
+                "run_aborted",
+                doc_id=initial_state.get("doc_id"),
+                reason=type(exc).__name__,
+                detail=str(exc),
+            )
+            result = _finalize_aborted(initial_state, f"{type(exc).__name__}: {exc}")
         except Exception:
-            if root is not None:
-                root.update(output={"stage": "failed", "error": True})
-            raise
-        score_values = pipeline_scores.emit_pipeline_scores(result)
+            logger.exception("run_crashed", doc_id=initial_state.get("doc_id"))
+            result = _finalize_aborted(initial_state, "unexpected error")
+
+        metrics = pipeline_scores.compute_run_metrics(result, started_at, time.time())
+        score_values = pipeline_scores.emit_pipeline_scores(result, metrics)
         _persist_scores(result, score_values)
         if root is not None:
             root.update(output={
@@ -716,6 +838,8 @@ def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> 
                 "doc_type": result.get("doc_type"),
                 "classification_confidence": result.get("classification_confidence"),
                 "extraction_confidence": result.get("extraction_confidence"),
+                "run_aborted": bool(result.get("run_aborted")),
+                "error_message": result.get("error_message"),
             })
     tracing.flush()
     return result

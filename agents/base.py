@@ -51,7 +51,10 @@ class BaseAgent(ABC):
         temperature: float | None = None,
         max_tokens: int | None = None,
         system_prompt: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> str:
+        from pipeline.limits import get_run_deadline, record_usage
+
         messages = [
             {"role": "system", "content": system_prompt or self.system_prompt()},
             {"role": "user", "content": user_message},
@@ -65,16 +68,19 @@ class BaseAgent(ABC):
             max_tokens = self._configured_max_tokens()
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
-        reasoning_effort = self._configured_reasoning_effort()
+        if reasoning_effort is None:
+            reasoning_effort = self._configured_reasoning_effort()
         if reasoning_effort:
             kwargs["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
         kwargs.update(langfuse_call_attrs(self.agent_name))
         langfuse_prompt = getattr(self, "_langfuse_prompt", None)
         if langfuse_prompt is not None:
             kwargs["langfuse_prompt"] = langfuse_prompt
+        kwargs["run_deadline"] = get_run_deadline()
 
         logger.info("llm_call", agent=self.agent_name, model=self.model, max_tokens=max_tokens)
         response = retry_chat_completion(self.client, **kwargs)
+        record_usage(getattr(response, "usage", None), self.model)
         content = response.choices[0].message.content or ""
         logger.info("llm_response", agent=self.agent_name, length=len(content))
         return content
@@ -85,6 +91,8 @@ class BaseAgent(ABC):
         json_schema: dict,
         temperature: float = 0.1,
         system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
     ) -> dict:
         # `json_object` response format is broadly supported across OpenRouter
         # providers (OpenAI `json_schema` strict mode is not). The schema is
@@ -104,6 +112,8 @@ class BaseAgent(ABC):
             response_format={"type": "json_object"},
             temperature=temperature,
             system_prompt=system_prompt,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
         )
         try:
             return json.loads(raw)

@@ -110,7 +110,16 @@ Analyze these pipeline-wide metrics. Identify:
                 },
             }
         )
-        result = self._call_structured(user_message, json_schema=schema, temperature=0.2)
+        # System-wide sweeps run every few minutes: keep them cheap — tiny
+        # token budget, no reasoning. (In-graph adjudication keeps the full
+        # max-reasoning config from taxonomy.yaml.)
+        result = self._call_structured(
+            user_message,
+            json_schema=schema,
+            temperature=0.2,
+            max_tokens=512,
+            reasoning_effort="none",
+        )
         if result.get("_parse_error"):
             return {"severity": "warning", "recommended_action": "alert", "findings": ["metrics analysis failed"]}
         return result
