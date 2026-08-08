@@ -49,7 +49,7 @@ class SorterAgent(BaseAgent):
                 "reasoning": {"type": "string"},
             }
         )
-        max_chars = 12000
+        max_chars = self._configured_max_input_chars()
         truncated = doc_text[:max_chars]
         if len(doc_text) > max_chars:
             truncated += f"\n\n[... document truncated, {len(doc_text)} total chars ...]"

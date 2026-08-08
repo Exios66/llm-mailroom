@@ -72,6 +72,7 @@ _COST_ABORT_USD = 0.20
 # qwen3.7-flash) and against Langfuse totalCost on prior real pilot traces.
 _FALLBACK_PRICES = {
     "qwen/qwen3.7-flash": (0.03, 0.13),
+    "deepseek/deepseek-v4-flash": (0.05, 0.25),  # judge — matches taxonomy.yaml cost_models
     "deepseek/deepseek-v4-pro": (0.435, 0.87),
 }
 _DEFAULT_PRICE = (0.03, 0.13)
@@ -494,8 +495,12 @@ def main() -> int:
         parser.error("choose --mock OR --real")
     mock_mode = not args.real
     if mock_mode:
-        # Mock runs must never send traces (fake LLM, no real data).
+        # Mock runs must never send traces (fake LLM, no real data). Tag the
+        # environment as "mock" as belt-and-suspenders so any trace that leaks
+        # through is clearly identifiable and filterable (pilot: development
+        # runs polluted production traces with "OpenAI-generation" spans).
         os.environ["OBSERVABILITY_PROVIDER"] = "none"
+        os.environ["OBSERVABILITY_ENVIRONMENT"] = "mock"
     scores_enabled = args.scores if args.scores is not None else (not mock_mode)
 
     prepare_samples()

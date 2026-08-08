@@ -116,8 +116,14 @@ def check_run_deadline(deadline: float | None) -> None:
 
 
 def check_token_budget() -> None:
-    """Raise `RunBudgetExceeded` if cumulative output tokens pass the cap."""
-    used = usage_summary()["total"]
+    """Raise `RunBudgetExceeded` if cumulative *output* tokens pass the cap.
+
+    Only completion tokens count (the cap's documented purpose is to abort
+    stuck/excessively-verbose models that keep generating). Prompt tokens are
+    excluded: large documents legitimately consume tens of thousands of input
+    tokens per call, so counting them would false-positive on real work.
+    """
+    used = usage_summary()["completion_tokens"]
     cap = get_max_total_output_tokens()
     if used >= cap:
         raise RunBudgetExceeded(used, cap)

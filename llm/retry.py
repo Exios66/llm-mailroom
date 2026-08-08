@@ -9,8 +9,15 @@ semantics. Only errors that are safe to retry are retried:
   - `openai.RateLimitError`
   - `openai.APIStatusError` with `status >= 500` (server-side errors)
 
-Client errors (4xx, including the JSON-mode 400) and auth errors are never
-retried. The OpenAI SDK's own internal retries (max_retries) still apply first;
+Client errors (4xx) and auth errors are never retried — with one narrow,
+documented exception: Alibaba/Qwen's `json_object` gate. OpenRouter routes
+`qwen/qwen3.7-flash` across multiple upstream providers; the Alibaba route
+intermittently rejects requests that pass every other route with a 400
+"messages must contain the word 'json'". Because the exact same messages
+succeed on retry (proven in pilot traces), this specific 400 is treated as
+retryable, bounded by `max_attempts`.
+
+The OpenAI SDK's own internal retries (max_retries) still apply first;
 this is an additional, visible, backoff layer with logging.
 
 The Langfuse instrumentation intercepts `Completions.create`, so every attempt
@@ -20,11 +27,26 @@ is traced as its own generation.
 import time
 import random
 import structlog
-from openai import APIConnectionError, APITimeoutError, RateLimitError, APIStatusError
+from openai import APIConnectionError, APITimeoutError, RateLimitError, APIStatusError, BadRequestError
 
 logger = structlog.get_logger(__name__)
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+# Alibaba/Qwen json_object gate: the raw provider error (via OpenRouter) is a
+# 400 whose message always contains this phrase. Bounded retry only for this
+# exact quirk — never a blanket 4xx retry.
+_JSON_MODE_400_MARKERS = ("must contain the word 'json'",)
+
+
+def _is_json_mode_400(exc: Exception) -> bool:
+    if not isinstance(exc, BadRequestError):
+        return False
+    try:
+        text = str(exc)
+    except Exception:
+        return False
+    return any(marker in text for marker in _JSON_MODE_400_MARKERS)
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -33,8 +55,20 @@ def _is_retryable(exc: Exception) -> bool:
     if isinstance(exc, RateLimitError):
         return True
     if isinstance(exc, APIStatusError):
-        return exc.status_code in _RETRYABLE_STATUS
+        if exc.status_code in _RETRYABLE_STATUS:
+            return True
+        if exc.status_code == 400 and _is_json_mode_400(exc):
+            return True
     return False
+
+
+def is_transient_error(exc: Exception) -> bool:
+    """Public predicate: should the caller retry this exception?
+
+    Used by graph nodes to distinguish provider-side transient failures
+    (retry the same node) from hard failures (crash or route to review).
+    """
+    return _is_retryable(exc)
 
 
 def _retry_config() -> dict:

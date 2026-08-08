@@ -143,8 +143,13 @@ def _extract_text_from_image(file_path: Path) -> tuple[str, bool]:
     logger.info("image_detected", file=str(file_path))
     try:
         from agents.image_extractor import ImageExtractor
+        from observability.tracing import observation
+
         extractor = ImageExtractor()
-        result = extractor.extract(file_path)
+        with observation("extract-image-text", input={"file": file_path.name}) as span:
+            result = extractor.extract(file_path)
+            if span is not None:
+                span.update(output={"chars": len(result.get("text", ""))})
         text = result.get("text", "")
         if text:
             logger.info("image_extracted", file=file_path.name, chars=len(text))
@@ -158,8 +163,19 @@ def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
     logger.info("pdf_detected", file=str(file_path))
     try:
         from agents.pdf_transcriber import PDFTranscriber
+        from observability.tracing import observation
+
         transcriber = PDFTranscriber()
-        result = transcriber.transcribe(file_path)
+        with observation("transcribe-pdf", input={"file": file_path.name}) as span:
+            result = transcriber.transcribe(file_path)
+            if span is not None:
+                span.update(
+                    output={
+                        "chars": len(result.get("markdown", "") or result.get("text", "")),
+                        "method": result.get("method"),
+                        "confidence": result.get("confidence"),
+                    }
+                )
         text = result.get("markdown", "") or result.get("text", "")
         if text:
             logger.info("pdf_transcribed", file=file_path.name, chars=len(text))
@@ -184,8 +200,19 @@ def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
 def entry_route(state: dict) -> str:
     """Entry router: a review-resume re-invocation starts at fresh extraction
     (doc_type already known from the manifest); everything else goes through
-    normal ingest → classify."""
-    if state.get("resume_extraction") and state.get("doc_type"):
+    normal ingest → classify.
+
+    The `review_decision == "approved"` guard is deliberate: only the
+    resume-from-review path sets it, so a crashed/partial run can never be
+    mistaken for a resume and skip classification (pilot: correspondence_01
+    ended with output=null when a degraded second run took the extract branch
+    without a real classification).
+    """
+    if (
+        state.get("resume_extraction")
+        and state.get("review_decision") == "approved"
+        and state.get("doc_type")
+    ):
         return "extract"
     return "ingest"
 
@@ -266,14 +293,39 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
             "classification_attempts": state.get("classification_attempts", 0) + 1,
             "stage": PipelineStage.CLASSIFIED.value,
             "escalation_reason": "Empty or unreadable document content",
+            "transient_error": False,
         }
 
     from agents.sorter import SorterAgent
+    from llm.retry import is_transient_error
     from pipeline.guards import guard_classification
 
     sorter = SorterAgent()
-    doc_type, confidence, reasoning = sorter.classify(doc_text)
-    attempts = state.get("classification_attempts", 0) + 1
+    attempts = state.get("classification_attempts", 0)
+    try:
+        doc_type, confidence, reasoning = sorter.classify(doc_text)
+    except Exception as exc:
+        if is_transient_error(exc):
+            # Provider-side transient failure (connection/timeout/rate-limit/
+            # 5xx). Do NOT increment the confidence retry budget; routing
+            # retries this same node via the `classify` self-loop.
+            transient = state.get("transient_retries", 0) + 1
+            logger.warning(
+                "classify_transient_error",
+                doc_id=state.get("doc_id"),
+                error=str(exc)[:300],
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries": transient,
+                "classification_attempts": attempts,
+                "stage": PipelineStage.CLASSIFIED.value,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+                "escalation_reason": "transient provider error during classification",
+            }
+        raise
+    attempts = attempts + 1
 
     guard = guard_classification({"doc_type": doc_type, "classification_confidence": confidence})
     if not guard["ok"]:
@@ -289,15 +341,17 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         "classification_attempts": attempts,
         "stage": PipelineStage.CLASSIFIED.value,
         "escalation_reason": reasoning if confidence < 0.7 else None,
+        "transient_error": False,
     }
 
 
 def retry_classify_node(state: DocumentState) -> dict[str, Any]:
     from agents.sorter import SorterAgent
+    from llm.retry import is_transient_error
 
     sorter = SorterAgent()
     doc_text = state.get("doc_text", "")
-    attempts = state.get("classification_attempts", 0) + 1
+    attempts = state.get("classification_attempts", 0)
 
     prev_type = state.get("doc_type", "")
     prev_confidence = state.get("classification_confidence", 0)
@@ -306,7 +360,27 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         f"confidence {prev_confidence:.2f}. Please re-examine this document independently:\n\n"
         f"{doc_text[:12000]}"
     )
-    doc_type, confidence, reasoning = sorter.classify(augmented_text)
+    try:
+        doc_type, confidence, reasoning = sorter.classify(augmented_text)
+    except Exception as exc:
+        if is_transient_error(exc):
+            transient = state.get("transient_retries", 0) + 1
+            logger.warning(
+                "retry_classify_transient_error",
+                doc_id=state.get("doc_id"),
+                error=str(exc)[:300],
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries": transient,
+                "classification_attempts": attempts,
+                "stage": PipelineStage.CLASSIFIED.value,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+                "escalation_reason": "transient provider error during re-classification",
+            }
+        raise
+    attempts = attempts + 1
 
     logger.info("retry_classified", doc_type=doc_type, confidence=confidence, attempts=attempts)
     return {
@@ -316,6 +390,7 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         "retry_count": state.get("retry_count", 0) + 1,
         "stage": PipelineStage.CLASSIFIED.value,
         "escalation_reason": reasoning if confidence < 0.7 else None,
+        "transient_error": False,
     }
 
 
@@ -325,9 +400,44 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
 
     dispatch = _build_specialist_dispatch()
     extractor = dispatch.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
-    result = extractor(doc_text)
+    attempts = state.get("extraction_attempts", 0)
+    try:
+        result = extractor(doc_text)
+    except Exception as exc:
+        from llm.retry import is_transient_error
+
+        if is_transient_error(exc):
+            # Transient provider failure: retry the same node without burning
+            # the extraction retry budget (routed via the `extract` self-loop).
+            transient = state.get("transient_retries", 0) + 1
+            logger.warning(
+                "extract_transient_error",
+                doc_id=state.get("doc_id"),
+                error=str(exc)[:300],
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries": transient,
+                "extraction_attempts": attempts,
+                "extraction_confidence": 0.0,
+                "extracted_data": None,
+                "stage": PipelineStage.CLASSIFIED.value,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+                "escalation_reason": "transient provider error during extraction",
+            }
+        # Non-transient exception: convert it into a parse-level failure so the
+        # deterministic guardrail clamps confidence and routing sends the doc
+        # to retry → review instead of crashing the run silently.
+        logger.exception(
+            "extraction_exception",
+            doc_id=state.get("doc_id"),
+            doc_type=doc_type,
+            error=str(exc)[:300],
+        )
+        result = {"_parse_error": True, "_exception": str(exc), "confidence": 0.0}
     confidence = result.pop("confidence", None)
-    attempts = state.get("extraction_attempts", 0) + 1
+    attempts = attempts + 1
 
     from pipeline.guards import apply_extraction_guard
 
@@ -339,6 +449,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
         "extraction_guardrail": guard["issues"],
+        "transient_error": False,
     }
 
 
@@ -371,7 +482,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     doc_type = state.get("doc_type", "")
     doc_text = state.get("doc_text", "")
     prev_extracted = state.get("extracted_data", {})
-    attempts = state.get("extraction_attempts", 0) + 1
+    attempts = state.get("extraction_attempts", 0)
 
     augmented_text = (
         f"RE-EXTRACTION REQUESTED - previous extraction was low-confidence. "
@@ -381,8 +492,38 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
 
     dispatch = _build_specialist_dispatch()
     extractor = dispatch.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
-    result = extractor(augmented_text)
+    try:
+        result = extractor(augmented_text)
+    except Exception as exc:
+        from llm.retry import is_transient_error
+
+        if is_transient_error(exc):
+            transient = state.get("transient_retries", 0) + 1
+            logger.warning(
+                "retry_extract_transient_error",
+                doc_id=state.get("doc_id"),
+                error=str(exc)[:300],
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries": transient,
+                "extraction_attempts": attempts,
+                "extraction_confidence": 0.0,
+                "extracted_data": None,
+                "stage": PipelineStage.CLASSIFIED.value,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+                "escalation_reason": "transient provider error during re-extraction",
+            }
+        logger.exception(
+            "retry_extraction_exception",
+            doc_id=state.get("doc_id"),
+            doc_type=doc_type,
+            error=str(exc)[:300],
+        )
+        result = {"_parse_error": True, "_exception": str(exc), "confidence": 0.0}
     confidence = result.pop("confidence", None)
+    attempts = attempts + 1
 
     from pipeline.guards import apply_extraction_guard
 
@@ -395,6 +536,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         "extraction_attempts": attempts,
         "retry_count": state.get("retry_count", 0) + 1,
         "extraction_guardrail": guard["issues"],
+        "transient_error": False,
     }
 
 
@@ -659,17 +801,20 @@ def build_graph(checkpointer=None):
     workflow.add_edge("ingest", "classify")
 
     workflow.add_conditional_edges("classify", after_classify, {
+        "classify": "classify",  # transient-error self-loop (same node, LLM-level retry)
         "retry_classify": "retry_classify",
         "extract": "extract",
         "human_review": "human_review",
     })
 
     workflow.add_conditional_edges("retry_classify", after_retry_classify, {
+        "classify": "classify",
         "extract": "extract",
         "human_review": "human_review",
     })
 
     workflow.add_conditional_edges("extract", after_extraction, {
+        "extract": "extract",  # transient-error self-loop (same node, LLM-level retry)
         "retry_extract": "retry_extract",
         "compile_report": "compile_report",
         "human_review": "human_review",
@@ -677,6 +822,7 @@ def build_graph(checkpointer=None):
     })
 
     workflow.add_conditional_edges("retry_extract", after_retry_extraction, {
+        "extract": "extract",
         "compile_report": "compile_report",
         "human_review": "human_review",
         "boss_escalation": "boss_escalation",
@@ -779,7 +925,12 @@ def _write_catalog_record(state: dict):
         asyncio.run(_write())
 
 
-def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> dict[str, Any]:
+def _execute_run(
+    initial_state: DocumentState,
+    seed: str,
+    trace_input: dict,
+    attempt: int = 0,
+) -> dict[str, Any]:
     """Shared execution scaffold: build graph, open the per-doc trace (one trace
     per document, deterministic id from `seed`), invoke, emit self-evident
     scores, persist them. Used by both `run_pipeline` and `resume_from_review`.
@@ -796,7 +947,10 @@ def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> 
     from observability import scores as pipeline_scores
 
     graph = build_graph()
-    config = {"configurable": {"thread_id": seed}}
+    # Attempt-scoped thread: a re-run of the same document must not resume the
+    # previous run's checkpointed state (pilot: correspondence_01's degraded
+    # second run inherited stale state, producing output=null).
+    config = {"configurable": {"thread_id": f"{seed}-run{attempt}"}}
 
     pipeline_scores.ensure_score_configs()
 
@@ -804,16 +958,27 @@ def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> 
     deadline = started_at + float(limits.get_deadline_seconds())
     limits.reset_run_usage()
     limits.set_run_deadline(deadline)
-    initial_state = {**initial_state, "run_deadline": deadline}
+    initial_state = {
+        **initial_state,
+        "run_deadline": deadline,
+        "run_attempt": attempt,
+    }
+
+    tags = ["mailroom"]
+    if attempt:
+        tags.append(f"run-{attempt}")
+    environment = os.environ.get("OBSERVABILITY_ENVIRONMENT")
+    if not environment and os.environ.get("OBSERVABILITY_PROVIDER", "auto") == "none":
+        environment = "mock"
 
     with tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc
-        session_id=initial_state.get("matter_id"),  # groups documents of a matter
+        session_id=initial_state.get("matter_id") or "DEFAULT",  # groups documents of a matter
         name="document-pipeline",
         input=trace_input,
-        metadata={"pipeline": "mailroom", "run_deadline": deadline},
-        tags=["mailroom"],
-        environment=os.environ.get("OBSERVABILITY_ENVIRONMENT") or None,
+        metadata={"pipeline": "mailroom", "run_deadline": deadline, "attempt": attempt},
+        tags=tags,
+        environment=environment,
     ) as root:
         try:
             result = graph.invoke(initial_state, config)
@@ -845,7 +1010,7 @@ def _execute_run(initial_state: DocumentState, seed: str, trace_input: dict) -> 
     return result
 
 
-def run_pipeline(file_path: Path, matter_id: str = "DEFAULT") -> dict[str, Any]:
+def run_pipeline(file_path: Path, matter_id: str = "DEFAULT", attempt: int = 0) -> dict[str, Any]:
     _ensure_dirs()
 
     initial_state: DocumentState = {
@@ -868,12 +1033,22 @@ def run_pipeline(file_path: Path, matter_id: str = "DEFAULT") -> dict[str, Any]:
         "doc_text": "",
         "error_message": None,
         "messages": [],
+        "transient_error": False,
+        "transient_retries": 0,
+        "run_attempt": attempt,
     }
+
+    # Attempt 0 keeps the bare filename stem as the deterministic trace seed
+    # (backwards-compatible with ground-truth score ingestion in run_pilot.py);
+    # subsequent attempts (e.g. scheduled re-processing) get a suffixed seed so
+    # each run gets its own trace instead of merging into one misleading span.
+    seed = file_path.stem if attempt <= 0 else f"{file_path.stem}-run{attempt}"
 
     return _execute_run(
         initial_state,
-        seed=file_path.stem,
-        trace_input={"filename": file_path.name, "matter_id": matter_id},
+        seed=seed,
+        attempt=attempt,
+        trace_input={"filename": file_path.name, "matter_id": matter_id, "attempt": attempt},
     )
 
 
@@ -919,10 +1094,14 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "error_message": None if text_ok else f"Could not extract text from {queued.suffix} file",
         "messages": [],
         "resume_extraction": True,
+        "transient_error": False,
+        "transient_retries": 0,
+        "run_attempt": 0,
     }
 
     return _execute_run(
         initial_state,
         seed=queued.stem,
+        attempt=0,
         trace_input={"filename": queued.name, "matter_id": manifest.matter_id, "resumed": True},
     )

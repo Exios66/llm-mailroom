@@ -96,7 +96,39 @@ def _trace_stage(trace: dict) -> str | None:
     return None
 
 
-def sync_logs(client, output_dir: Path, *, since: datetime, limit: int, only_trace: str | None) -> int:
+def _wait_for_scores(client, trace_id: str, timeout_s: float) -> None:
+    """Poll a trace's scores until they arrive or the timeout elapses.
+
+    LLM-as-a-judge evaluators run asynchronously in Langfuse; a sync run that
+    starts right after a pilot run may otherwise mirror traces with empty
+    score arrays (pilot audit issue #9). Polls the scores API and prints a
+    note when it gives up.
+    """
+    import time as _time
+
+    deadline = _time.time() + timeout_s
+    seen = 0
+    while _time.time() < deadline:
+        try:
+            page = client.api.scores.get_many(trace_id=trace_id, limit=100)
+            seen = len(page.data or [])
+            if seen > 0:
+                return
+        except Exception:
+            pass
+        _time.sleep(5)
+    logger.warning("scores_not_ready", trace_id=trace_id, waited_s=timeout_s, scores=seen)
+
+
+def sync_logs(
+    client,
+    output_dir: Path,
+    *,
+    since: datetime,
+    limit: int,
+    only_trace: str | None,
+    wait_scores_s: float = 0.0,
+) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     run_dir = output_dir / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -124,6 +156,8 @@ def sync_logs(client, output_dir: Path, *, since: datetime, limit: int, only_tra
     index = []
     for trace in traces:
         trace_id = trace.id
+        if wait_scores_s > 0:
+            _wait_for_scores(client, trace_id, wait_scores_s)
         dump = trace.model_dump(mode="json")
         # `trace.get` only returns observation *ids*; expand the details and
         # scores so the mirrored logs are directly analyzable.
@@ -164,6 +198,14 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=100, help="Max traces to fetch (default 100).")
     parser.add_argument("--trace-id", default=None, help="Fetch a single trace by id.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="Output directory.")
+    parser.add_argument(
+        "--wait-scores",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="Before writing each trace, poll for its scores for up to SECONDS "
+        "(LLM-as-a-judge scores arrive asynchronously; 0 disables waiting).",
+    )
     args = parser.parse_args()
 
     since = _parse_since(args.since)
@@ -176,6 +218,7 @@ def main() -> int:
         since=since,
         limit=args.limit,
         only_trace=args.trace_id,
+        wait_scores_s=args.wait_scores,
     )
 
 
