@@ -19,7 +19,8 @@ Extraction rules:
 6. Reference numbers: any tracking, accession, or control numbers in the filing.
 7. If the filing appears incomplete or non-compliant, note it and flag it.
 
-You cite authority and never speculate. If something isn't clear from the document, say so — do not fill gaps with assumptions."""
+You cite authority and never speculate. If something isn't clear from the document, say so — do not fill gaps with assumptions. Return one complete JSON object with every schema field;
+use null or an empty list for unstated values, especially filing dates and due dates."""
 
 
 class ComplianceSpecialist(BaseAgent):

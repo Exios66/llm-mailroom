@@ -130,6 +130,7 @@ agents:
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 40000
+    reasoning_effort: none
 
   correspondence_specialist:
     provider: openrouter
@@ -181,4 +182,5 @@ agents:
     provider: openrouter
     model: deepseek/deepseek-v4-flash
     temperature: 0.1
-    max_tokens: 1024
+    max_tokens: 2048
+    reasoning_effort: none
