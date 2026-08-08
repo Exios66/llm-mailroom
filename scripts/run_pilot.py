@@ -34,6 +34,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -57,17 +61,20 @@ def _fake_client(expect: dict) -> MagicMock:
         start = time.perf_counter()
         _LLM_METRICS["calls"] += 1
         content = "Mock free-form output (report / transcription)."
-        rf = kwargs.get("response_format") or {}
-        name = (rf.get("json_schema") or {}).get("name", "")
-        if name == "sorter_output":
+        # `_call_structured` sends response_format={"type": "json_object"} with
+        # the agent's instruction embedded in the user message, so the mock
+        # keys its canned output off that instruction.
+        last_msg = (kwargs.get("messages") or [{}])[-1]
+        user_content = last_msg.get("content", "") if isinstance(last_msg, dict) else ""
+        if "Classify this legal document" in user_content or "RE-EVALUATION REQUESTED" in user_content:
             content = json.dumps({
                 "doc_type": expect["doc_type"],
                 "confidence": expect["conf"],
                 "reasoning": "mock",
             })
-        elif name == "boss_output":
+        elif "ADJUDICATION REQUEST" in user_content:
             content = json.dumps({"decision": "approved", "reasoning": "mock", "resolution_notes": ""})
-        elif name.endswith("_output"):
+        else:
             content = json.dumps({"confidence": expect["conf"], "mock_extraction": True})
         resp = MagicMock()
         resp.choices = [MagicMock()]
@@ -114,13 +121,16 @@ def run_sample(sample: dict, mock_mode: bool) -> dict:
 
     return {
         "id": sample["id"],
+        "subdir": sample["subdir"],
         "filename": sample["filename"],
         "expected_doc_class": sample["expected_doc_class"],
         "expected_stage": sample["expected_stage"],
         "size_tier": sample["size_tier"],
         "actual_doc_class": result.get("doc_type"),
+        "doc_type": result.get("doc_type"),
         "classification_confidence": result.get("classification_confidence"),
         "extraction_confidence": result.get("extraction_confidence"),
+        "extracted_data": result.get("extracted_data"),
         "stage": result.get("stage"),
         "classification_attempts": result.get("classification_attempts", 0),
         "extraction_attempts": result.get("extraction_attempts", 0),
@@ -131,6 +141,50 @@ def run_sample(sample: dict, mock_mode: bool) -> dict:
         "class_match": result.get("doc_type") == sample["expected_doc_class"],
         "stage_expected": result.get("stage") == sample["expected_stage"],
     }
+
+
+def _ground_truth_scores(row: dict) -> dict:
+    """Ground-truth scores for one pilot sample (attached to its trace)."""
+    scores = {
+        "class_correct": int(row["class_match"]),
+        "stage_correct": int(row["stage_expected"]),
+    }
+    conf = row.get("classification_confidence")
+    if isinstance(conf, (int, float)) and not isinstance(conf, bool):
+        conf = float(conf)
+        # How far the model's stated confidence is from the (binary) truth —
+        # the calibration error. 0 means perfectly calibrated.
+        scores["confidence_calibration_error"] = round(abs(conf - scores["class_correct"]), 3)
+    return scores
+
+
+def _ingest_scores(sample: dict, row: dict) -> None:
+    """Attach ground-truth scores to the sample's deterministic trace id.
+
+    Ground-truth scores (class/stage correctness, calibration error) are only
+    computable against the pilot manifest, so they live here rather than in the
+    pipeline. Confidence values and self-evident signals are already emitted by
+    the pipeline itself.
+    """
+    from observability.langfuse_setup import _NoopLangfuse, get_langfuse_client
+    from observability.scores import create_trace_score, ensure_score_configs, is_enabled
+
+    if not is_enabled():
+        return
+    client = get_langfuse_client()
+    if isinstance(client, _NoopLangfuse):
+        return
+    try:
+        trace_id = client.create_trace_id(seed=Path(sample["filename"]).stem)
+    except Exception:
+        logger.error("score_trace_id_failed", filename=sample["filename"])
+        return
+
+    ensure_score_configs()
+    for name, value in _ground_truth_scores(row).items():
+        data_type = "BOOLEAN" if name in ("class_correct", "stage_correct") else "NUMERIC"
+        create_trace_score(trace_id, name, value, data_type=data_type)
+    logger.info("pilot_scores_ingested", filename=sample["filename"], trace_id=trace_id)
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -208,6 +262,12 @@ def main() -> int:
     parser.add_argument("--real", action="store_true", help="Use the real LLM (needs OPENROUTER_API_KEY).")
     parser.add_argument("--include", help="Only run samples of this expected doc class (e.g. contract).")
     parser.add_argument("--baseline", help="Path to a previous pilot report JSON to diff against.")
+    parser.add_argument(
+        "--scores",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Attach ground-truth scores to Langfuse traces (default: on for --real, off for --mock).",
+    )
     args = parser.parse_args()
 
     if args.mock and args.real:
@@ -216,6 +276,7 @@ def main() -> int:
     if mock_mode:
         # Mock runs must never send traces (fake LLM, no real data).
         os.environ["OBSERVABILITY_PROVIDER"] = "none"
+    scores_enabled = args.scores if args.scores is not None else (not mock_mode)
 
     prepare_samples()
 
@@ -226,6 +287,13 @@ def main() -> int:
 
     rows = [run_sample(m, mock_mode) for m in manifest]
 
+    if scores_enabled:
+        for m, r in zip(manifest, rows):
+            _ingest_scores(m, r)
+        from observability.tracing import flush
+
+        flush()
+
     summary = summarize(rows)
     print_rows(rows)
     print_summary(summary)
@@ -233,9 +301,14 @@ def main() -> int:
     report = {
         "run_id": datetime.now(timezone.utc).isoformat(),
         "mode": "mock" if mock_mode else "real",
+        "scores_enabled": scores_enabled,
         "summary": summary,
         "samples": rows,
     }
+    if scores_enabled:
+        report["scores"] = {
+            "samples": [{"id": m["id"], "scores": _ground_truth_scores(r)} for m, r in zip(manifest, rows)]
+        }
     out_path = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "pilot_report.json"
     out_path.write_text(json.dumps(report, indent=2))
     print(f"\nReport written to {out_path}")

@@ -8,13 +8,17 @@ Uses multiple strategies in priority order:
 import structlog
 from pathlib import Path
 from agents.base import BaseAgent
+from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
 
+# Below this many chars, just return the raw text — no need for an LLM pass.
+_DIRECT_MIN_CHARS = 500
+
 
 class PDFTranscriber(BaseAgent):
-    agent_name = "sorter"
+    agent_name = "pdf_transcriber"
 
     def system_prompt(self) -> str:
         return """You are a legal document transcriber. Your job is to convert the raw text
@@ -32,11 +36,17 @@ Rules:
 8. Include a confidence score for the transcription quality."""
 
     def transcribe(self, file_path: Path) -> dict:
-        raw_text = self._extract_raw_text(file_path)
+        raw_text, pages = self._extract_raw_text(file_path)
         if not raw_text or not raw_text.strip():
             return {"markdown": f"[PDF: {file_path.name} — no extractable text]", "confidence": 0.0}
 
-        if len(raw_text) < 500:
+        if len(raw_text) < _DIRECT_MIN_CHARS or self._looks_clean_text_pdf(raw_text, pages):
+            logger.info(
+                "pdf_direct_no_llm",
+                file=file_path.name,
+                chars=len(raw_text),
+                pages=pages,
+            )
             return {"markdown": raw_text, "text": raw_text, "confidence": 0.8, "method": "direct"}
 
         try:
@@ -49,21 +59,37 @@ Rules:
 
         return {"markdown": raw_text, "text": raw_text, "confidence": 0.75, "method": "direct"}
 
-    def _extract_raw_text(self, file_path: Path) -> str:
+    def _looks_clean_text_pdf(self, raw_text: str, pages: int) -> bool:
+        """Heuristic: if a PDF yields a dense, clean text extraction, the LLM
+        reformat pass adds little value and costs ~30-40s. Scanned/garbled PDFs
+        extract sparsely and still get the LLM pass."""
+        if not pages or pages <= 0:
+            return False
+        try:
+            from pipeline.config import load_config
+            threshold = load_config().get("pipeline", {}).get("pdf_direct_chars_per_page", 800)
+        except Exception:
+            threshold = 800
+        density = len(raw_text) / pages
+        return density >= threshold
+
+    def _extract_raw_text(self, file_path: Path) -> tuple[str, int]:
         text = ""
+        pages = 0
 
         try:
             import pdfplumber
             with pdfplumber.open(file_path) as pdf:
-                pages = []
+                extracted_pages = []
                 for page in pdf.pages:
                     page_text = page.extract_text()
                     if page_text:
-                        pages.append(page_text)
-                text = "\n\n".join(pages)
+                        extracted_pages.append(page_text)
+                text = "\n\n".join(extracted_pages)
+                pages = len(extracted_pages)
             if text.strip():
-                logger.info("pdf_text_extracted", method="pdfplumber", pages=len(pages), chars=len(text))
-                return text
+                logger.info("pdf_text_extracted", method="pdfplumber", pages=pages, chars=len(text))
+                return text, pages
         except ImportError:
             logger.debug("pdfplumber not available")
         except Exception:
@@ -72,15 +98,16 @@ Rules:
         try:
             import pypdf
             reader = pypdf.PdfReader(file_path)
-            pages = []
+            extracted_pages = []
             for page in reader.pages:
                 page_text = page.extract_text()
                 if page_text:
-                    pages.append(page_text)
-            text = "\n\n".join(pages)
+                    extracted_pages.append(page_text)
+            text = "\n\n".join(extracted_pages)
+            pages = len(extracted_pages)
             if text.strip():
-                logger.info("pdf_text_extracted", method="pypdf", pages=len(pages), chars=len(text))
-                return text
+                logger.info("pdf_text_extracted", method="pypdf", pages=pages, chars=len(text))
+                return text, pages
         except ImportError:
             logger.debug("pypdf not available")
         except Exception:
@@ -98,13 +125,13 @@ Rules:
             Path(tmp_path).unlink(missing_ok=True)
             if text.strip():
                 logger.info("pdf_text_extracted", method="pdftotext", chars=len(text))
-                return text
+                return text, 0
         except FileNotFoundError:
             logger.debug("pdftotext not available (install poppler-utils)")
         except Exception:
             logger.exception("pdftotext_failed", file=str(file_path))
 
-        return text
+        return text, pages
 
     def _llm_transcribe(self, raw_text: str, filename: str) -> str:
         max_chars = 16000
@@ -118,13 +145,14 @@ Rules:
             f"--- RAW TEXT ---\n{truncated}\n--- END RAW TEXT ---"
         )
 
-        response = self.client.chat.completions.create(
+        response = retry_chat_completion(
+            self.client,
             model=self.model,
             messages=[
                 {"role": "system", "content": self.system_prompt()},
                 {"role": "user", "content": user_message},
             ],
-            max_tokens=8192,
+            max_tokens=self._configured_max_tokens(),
             temperature=0.1,
             **langfuse_call_attrs("pdf-transcriber"),
         )

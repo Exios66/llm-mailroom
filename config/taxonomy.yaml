@@ -11,6 +11,16 @@ pipeline:
     failed: "{base_dir}/pipeline/failed"
     archive: "{base_dir}/archive"
     manifests: "{base_dir}/manifests"
+  # Text-based PDFs whose extraction yields at least this many chars/page are
+  # transcribed directly (no LLM reformat pass) — the LLM pass only runs for
+  # scanned/garbled PDFs. See agents/pdf_transcriber.py:_looks_clean_text_pdf.
+  pdf_direct_chars_per_page: 800
+
+llm_retry:
+  max_attempts: 3
+  base_delay: 1.0
+  max_delay: 30.0
+  jitter: 0.3
 
 confidence:
   high: 0.85       # confident enough to proceed without second-guessing
@@ -56,7 +66,8 @@ file_extensions:
   - .md
 
 # === Agent → model mapping ===
-# Each agent list entry: provider, model, temperature
+# Each agent list entry: provider, model, temperature, optional max_tokens
+# (caps output/reasoning-token generation — see agents/base.py).
 # To cut over locally: change provider to "ollama", model to e.g. "qwen3:7b"
 # Setting DEFAULT_PROVIDER env var overrides the provider globally.
 agents:
@@ -64,38 +75,59 @@ agents:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
+    max_tokens: 2048
 
   contracts_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
+    max_tokens: 4096
 
   corporate_records_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
+    max_tokens: 4096
 
   due_diligence_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
+    max_tokens: 4096
 
   correspondence_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
+    max_tokens: 4096
 
   compliance_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
+    max_tokens: 4096
 
   reporter:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.2
+    max_tokens: 2048
 
   boss:
     provider: openrouter
     model: deepseek/deepseek-v4-pro
     temperature: 0.1
+    max_tokens: 2048
+
+  pdf_transcriber:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+
+  # Offline LLM-as-a-judge used by scripts/run_completeness_judge.py.
+  judge:
+    provider: openrouter
+    model: deepseek/deepseek-v4-pro
+    temperature: 0.1
+    max_tokens: 1024

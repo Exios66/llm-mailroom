@@ -1,5 +1,6 @@
 import structlog
 
+from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
@@ -45,10 +46,18 @@ Please compile this into a clean matter-record summary."""
         {"role": "system", "content": _COMPILE_SYSTEM_PROMPT},
         {"role": "user", "content": user_message},
     ]
-    response = report_llm.chat.completions.create(
+    from pipeline.config import get_agent_config
+
+    try:
+        max_tokens = get_agent_config("reporter").get("max_tokens", 2048)
+    except Exception:
+        max_tokens = 2048
+    response = retry_chat_completion(
+        report_llm,
         model=report_model,
         messages=messages,
         temperature=temperature,
+        max_tokens=max_tokens,
         **langfuse_call_attrs("reporter"),
     )
     summary = response.choices[0].message.content or ""

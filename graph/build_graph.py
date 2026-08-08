@@ -516,6 +516,30 @@ def _write_audit_log(entry):
         logger.exception("audit_log_write_error")
 
 
+def _persist_scores(state: dict, scores: dict):
+    if not scores or not state.get("doc_id"):
+        return
+    try:
+        import asyncio
+        from storage.catalog import update_document_scores
+
+        async def _write():
+            await update_document_scores(state["doc_id"], scores)
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(_write(), loop)
+                future.result(timeout=5)
+            else:
+                asyncio.run(_write())
+        except RuntimeError:
+            asyncio.run(_write())
+    except Exception:
+        logger.exception("scores_persist_error")
+
+
 def build_graph(checkpointer=None):
     if checkpointer is None:
         checkpointer = _build_checkpointer()
@@ -608,6 +632,10 @@ def run_pipeline(file_path: Path, matter_id: str = "DEFAULT") -> dict[str, Any]:
     import os
     from observability import tracing
 
+    from observability import scores as pipeline_scores
+
+    pipeline_scores.ensure_score_configs()
+
     with tracing.pipeline_trace(
         seed=file_path.stem,  # deterministic trace id -> correlates with our doc
         session_id=matter_id,  # groups every document of a matter into one session
@@ -623,6 +651,8 @@ def run_pipeline(file_path: Path, matter_id: str = "DEFAULT") -> dict[str, Any]:
             if root is not None:
                 root.update(output={"stage": "failed", "error": True})
             raise
+        score_values = pipeline_scores.emit_pipeline_scores(result)
+        _persist_scores(result, score_values)
         if root is not None:
             root.update(output={
                 "stage": result.get("stage"),

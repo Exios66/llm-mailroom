@@ -36,6 +36,7 @@ class DocumentRecord(Base):
     extracted_data: Mapped[dict] = mapped_column(JSON, nullable=True)
     escalation_reason: Mapped[str] = mapped_column(Text, nullable=True)
     trace_id: Mapped[str] = mapped_column(String(128), nullable=True)
+    scores: Mapped[dict] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -100,6 +101,18 @@ async def get_document(doc_id: str) -> DocumentRecord | None:
     ensure_schema()
     async with async_session() as session:
         return await session.get(DocumentRecord, doc_id)
+
+
+async def update_document_scores(doc_id: str, scores: dict) -> None:
+    ensure_schema()
+    async with async_session() as session:
+        record = await session.get(DocumentRecord, doc_id)
+        if record is None:
+            logger.warning("scores_update_missing_doc", doc_id=doc_id)
+            return
+        record.scores = scores
+        record.updated_at = datetime.now(timezone.utc)
+        await session.commit()
 
 
 async def get_matter_documents(matter_id: str) -> list[DocumentRecord]:

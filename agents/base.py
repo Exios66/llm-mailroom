@@ -3,9 +3,15 @@ import structlog
 from abc import ABC, abstractmethod
 
 from llm.client import get_llm
+from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
+
+# Reasonable default so a single agent can never run away generating tokens
+# (qwen "flash" models emit heavy reasoning output). Per-agent caps live in
+# taxonomy.yaml under agents.<name>.max_tokens.
+_DEFAULT_MAX_TOKENS = 4096
 
 
 class BaseAgent(ABC):
@@ -18,11 +24,20 @@ class BaseAgent(ABC):
     def system_prompt(self) -> str:
         ...
 
+    def _configured_max_tokens(self) -> int:
+        from pipeline.config import get_agent_config
+
+        try:
+            return get_agent_config(self.agent_name).get("max_tokens", _DEFAULT_MAX_TOKENS)
+        except Exception:
+            return _DEFAULT_MAX_TOKENS
+
     def _call_llm(
         self,
         user_message: str,
         response_format: dict | None = None,
         temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         messages = [
             {"role": "system", "content": self.system_prompt()},
@@ -33,10 +48,14 @@ class BaseAgent(ABC):
             kwargs["temperature"] = temperature
         if response_format:
             kwargs["response_format"] = response_format
+        if max_tokens is None:
+            max_tokens = self._configured_max_tokens()
+        if max_tokens:
+            kwargs["max_tokens"] = max_tokens
         kwargs.update(langfuse_call_attrs(self.agent_name))
 
-        logger.info("llm_call", agent=self.agent_name, model=self.model)
-        response = self.client.chat.completions.create(**kwargs)
+        logger.info("llm_call", agent=self.agent_name, model=self.model, max_tokens=max_tokens)
+        response = retry_chat_completion(self.client, **kwargs)
         content = response.choices[0].message.content or ""
         logger.info("llm_response", agent=self.agent_name, length=len(content))
         return content
@@ -49,13 +68,15 @@ class BaseAgent(ABC):
     ) -> dict:
         # `json_object` response format is broadly supported across OpenRouter
         # providers (OpenAI `json_schema` strict mode is not). The schema is
-        # embedded in the prompt, and the "JSON" wording satisfies providers
-        # that require it in the message.
+        # embedded in the prompt, and the lowercase "json" wording is required
+        # verbatim by some providers (e.g. Qwen via Alibaba) whose gate rejects
+        # requests that lack the literal token `json` in the messages — an
+        # uppercase-only "JSON" does not satisfy it.
         schema_text = json.dumps(json_schema)
         user_message = (
             f"{user_message}\n\n"
-            "Return ONLY a valid JSON object that conforms to the schema below. "
-            "Do not include any text outside the JSON object.\n\n"
+            "Return ONLY a valid json object that conforms to the schema below. "
+            "Do not include any text outside the json object. Output strict JSON only.\n\n"
             f"JSON schema:\n{schema_text}"
         )
         raw = self._call_llm(
