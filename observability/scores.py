@@ -77,6 +77,13 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "llm_call_count", "data_type": "NUMERIC", "min_value": 0.0},
     {"name": "classification_attempts", "data_type": "NUMERIC", "min_value": 0.0},
     {"name": "extraction_attempts", "data_type": "NUMERIC", "min_value": 0.0},
+    # Deterministic field-type-aware extraction scoring (issues #4/#5) —
+    # emitted for grounded runs alongside the LLM-as-a-Judge evaluators.
+    {"name": "extraction_field_score", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "extraction_overall_score", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "extraction_needs_judge_review", "data_type": "BOOLEAN"},
+    {"name": "entity_list_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "entity_list_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
 ]
 
 

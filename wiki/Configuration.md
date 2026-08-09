@@ -61,12 +61,13 @@ Each entry defines a document type. To add a new type:
 5. Register the specialist dispatch in `graph/build_graph.py`
 
 | Field | Description |
-|---|---|
+|---|---|---|
 | `key` | Internal identifier (used in `doc_type` field) |
 | `label` | Human-readable label |
 | `schema` | Pydantic model name for extraction (must match `schemas/documents.py`) |
 | `specialist` | Agent name (must match an entry under `agents`) |
 | `description` | Used in Sorter's system prompt for classification |
+| `field_types` | Per-field deterministic scoring type for the extraction schema (see `field_scoring` below) |
 
 ```yaml
 doc_classes:
@@ -75,6 +76,10 @@ doc_classes:
     schema: ContractExtraction
     specialist: contracts_specialist
     description: "Formal agreements between parties: M&A, vendor, employment, NDAs, etc."
+    field_types:
+      parties: entity_list:name
+      effective_date: date
+      contract_value: money
 
   - key: corporate_record
     label: "Corporate Record"
@@ -93,12 +98,50 @@ doc_classes:
     schema: CorrespondenceExtraction
     specialist: correspondence_specialist
     description: "Letters, emails, memos, notices between parties or with regulators"
+    field_types:
+      sender: name
+      recipient: name
+      additional_recipients: entity_list
+      communication_type: name
+      communication_date: date
+      key_points: entity_list
+      demand_amount: money
+      action_items: entity_list
+      urgency: name
+      referenced_communications: entity_list
 
   - key: compliance_filing
     label: "Compliance Filing"
     schema: ComplianceFilingExtraction
     specialist: compliance_specialist
     description: "SEC filings, state registrations, regulatory submissions, annual reports"
+
+  - key: court_opinion
+    label: "Court Opinion"
+    schema: CourtOpinionExtraction
+    specialist: court_opinions_specialist
+    description: "Judicial opinions and orders: published decisions, memorandum opinions, rulings by federal and state courts"
+```
+
+### `field_scoring`
+
+Controls the deterministic field-type-aware extraction scorer (`observability/field_scoring.py`). Each field is normalized by its type before comparison: `id`/`date`/`money` are normalized then exact-matched, `name` uses Jaro-Winkler + token-set ratio, `free_text` uses token F1, and `entity_list` uses optimal bipartite matching (Hungarian) with precision/recall/F1. Embedding cosine similarity (sentence-transformers) acts as a second signal for ambiguous name/free-text fields.
+
+| Key | Default | Description |
+|---|---|---|
+| `ambiguous_band` | `[0.5, 0.85]` | Scores inside this band are ambiguous → escalate to the LLM judge |
+| `bipartite_match_threshold` | `0.6` | Minimum pairwise similarity for an entity-list match |
+| `embedding_enabled` | `true` | Use embedding cosine rescue for ambiguous name/free-text fields |
+| `embedding_model` | `sentence-transformers/all-MiniLM-L6-v2` | Sentence-transformer model for the embedding signal |
+| `embedding_rescue_below` | `0.7` | Only consult embeddings when the string score is below this |
+
+```yaml
+field_scoring:
+  ambiguous_band: [0.5, 0.85]
+  bipartite_match_threshold: 0.6
+  embedding_enabled: true
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_rescue_below: 0.7
 ```
 
 ### `file_extensions`

@@ -943,7 +943,7 @@ def _write_catalog_record(state: dict):
 PIPELINE_RESULT_TEXT_LIMIT = 100_000
 
 
-def _emit_pipeline_result(root, result: dict, state: dict) -> None:
+def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool | None = None) -> None:
     """Emit the single `pipeline-result` generation observation per document.
 
     This is the ONLY observation the live evaluation rule matches
@@ -961,9 +961,22 @@ def _emit_pipeline_result(root, result: dict, state: dict) -> None:
     - Live runs (no ground truth): the judge gets the (truncated) document
       text so it can verify grounding by rubric alone.
 
+    Judge gating (issues #4/#5): for grounded runs the deterministic
+    field-type-aware scorer (`observability/field_scoring.py`) runs first.
+    When its verdict is unambiguous — every scored field clearly correct
+    (above the ambiguous band) OR clearly wrong (below it) — `judge_required`
+    is False and the generation is NOT emitted, so neither evaluator rule
+    fires and two judge LLM calls are saved per document. When any field lands
+    in the ambiguous band (0.5-0.85), or there is no ground truth at all
+    (`judge_required is None`, live runs), the generation is emitted as
+    before.
+
     No-ops when tracing is disabled (root None).
     """
     if root is None:
+        return
+    if judge_required is False:
+        logger.info("pipeline_result_suppressed_deterministic_verdict")
         return
     import json
 
@@ -1130,8 +1143,40 @@ def _execute_run(
         metrics = pipeline_scores.compute_run_metrics(result, started_at, time.time())
         score_values = pipeline_scores.emit_pipeline_scores(result, metrics)
         _persist_scores(result, score_values)
+        # Deterministic field-type-aware scoring (issues #4/#5). Only grounded
+        # runs have expected field values to compare against; the scorer gates
+        # the LLM judge below: an unambiguous deterministic verdict skips the
+        # `pipeline-result` generation entirely (2 evaluator calls saved).
+        judge_required = None
+        expected_fields = (initial_state.get("ground_truth") or {}).get("expected_fields")
+        if expected_fields:
+            from observability.field_scoring import get_field_types, score_extraction
+            from observability.langfuse_field_scoring import score_and_log_extraction
+
+            extracted = result.get("extracted_data") or {}
+            doc_class = result.get("doc_type")
+            if doc_class and extracted:
+                try:
+                    field_result = score_and_log_extraction(
+                        trace_id=tracing.get_trace_id(),
+                        doc_class=doc_class,
+                        field_types=get_field_types(doc_class),
+                        predicted=extracted,
+                        expected=expected_fields,
+                        matter_id=initial_state.get("matter_id"),
+                    )
+                    judge_required = field_result.needs_judge_review
+                    logger.info(
+                        "field_scoring_computed",
+                        doc_id=result.get("doc_id"),
+                        overall=field_result.overall_score,
+                        ambiguous_fields=field_result.ambiguous_fields,
+                        judge_required=judge_required,
+                    )
+                except Exception:
+                    logger.exception("field_scoring_failed")
         if root is not None:
-            _emit_pipeline_result(root, result, initial_state)
+            _emit_pipeline_result(root, result, initial_state, judge_required=judge_required)
             root.update(output={
                 "stage": result.get("stage"),
                 "doc_type": result.get("doc_type"),

@@ -100,11 +100,13 @@ class TestCorrespondenceSpecialist:
     def test_extract_demand_letter(self, sample_correspondence_text, mock_openai_client):
         mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
             '{"sender": "Morrison & Chase LLP", "recipient": "Richard Palmer, NovaTech Solutions", '
-            '"date_sent": "2024-06-12", "subject": "Patent infringement demand", '
+            '"additional_recipients": [], '
+            '"communication_date": "2024-06-12", '
             '"communication_type": "demand letter", '
             '"key_points": ["Infringement of U.S. Patent 10,234,567", "OptiChip product line"], '
+            '"demand_amount": 250000.0, '
             '"action_items": ["Cease and desist", "Provide accounting", "Enter negotiations within 14 days"], '
-            '"urgency": "critical", "confidence": 0.96}'
+            '"urgency": "critical", "referenced_communications": [], "confidence": 0.96}'
         )
         from agents.correspondence_specialist import CorrespondenceSpecialist
         agent = CorrespondenceSpecialist()

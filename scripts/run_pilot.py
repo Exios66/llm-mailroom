@@ -390,7 +390,8 @@ def _ingest_scores(sample: dict, row: dict) -> None:
     Ground-truth scores (class/stage correctness, calibration error) are only
     computable against the pilot manifest, so they live here rather than in the
     pipeline. Confidence values and self-evident signals are already emitted by
-    the pipeline itself.
+    the pipeline itself. Deterministic field scores (field_scoring.py) are
+    attached inside the pipeline run itself (graph/build_graph.py), not here.
     """
     from observability.langfuse_setup import _NoopLangfuse, get_langfuse_client
     from observability.scores import create_trace_score, ensure_score_configs, is_enabled
@@ -412,6 +413,44 @@ def _ingest_scores(sample: dict, row: dict) -> None:
         data_type = "BOOLEAN" if name in ("class_correct", "stage_correct") else "NUMERIC"
         create_trace_score(trace_id, name, value, data_type=data_type)
     logger.info("pilot_scores_ingested", filename=sample["filename"], trace_id=trace_id)
+
+
+def _attach_field_scoring(sample: dict, row: dict) -> None:
+    """Compute the deterministic field-type-aware extraction scores for a
+    sample (issues #4/#5) and stash a serializable copy on the row for the
+    report. Attachment to Langfuse already happened inside the pipeline run.
+    """
+    from observability.field_scoring import get_field_types, score_extraction
+
+    expected = _parse_expected_fields(sample)
+    extracted = row.get("extracted_data") or {}
+    doc_class = row.get("doc_type") or sample.get("expected_doc_class")
+    if not expected or not doc_class:
+        row["field_scoring"] = None
+        return
+    try:
+        result = score_extraction(doc_class, get_field_types(doc_class), extracted, expected)
+        row["field_scoring"] = {
+            "doc_class": doc_class,
+            "field_scores": result.field_scores,
+            "overall_score": result.overall_score,
+            "ambiguous_fields": result.ambiguous_fields,
+            "needs_judge_review": result.needs_judge_review,
+            "entity_list_scores": {
+                name: {
+                    "precision": el.precision,
+                    "recall": el.recall,
+                    "f1": el.f1,
+                    "matched": el.matched,
+                    "unmatched_predicted": el.unmatched_predicted,
+                    "unmatched_expected": el.unmatched_expected,
+                }
+                for name, el in result.entity_list_scores.items()
+            },
+        }
+    except Exception:
+        logger.exception("field_scoring_failed", filename=sample.get("filename"))
+        row["field_scoring"] = None
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -442,6 +481,14 @@ def summarize(rows: list[dict]) -> dict:
     total_cost = round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 6)
     total_tokens = sum(r.get("llm_tokens", 0) for r in rows)
 
+    # Deterministic field-scoring summary (issues #4/#5): mean overall score,
+    # fraction escalated to the LLM judge (ambiguous band), and judge calls
+    # saved (2 evaluators skipped per unambiguous grounded run).
+    scored = [r.get("field_scoring") for r in rows if r.get("field_scoring")]
+    overalls = [s["overall_score"] for s in scored if isinstance(s.get("overall_score"), (int, float))]
+    judge_review_n = sum(1 for s in scored if s.get("needs_judge_review"))
+    judge_calls_saved = 2 * sum(1 for s in scored if s.get("needs_judge_review") is False)
+
     return {
         "samples": n,
         "archived": archived,
@@ -457,6 +504,9 @@ def summarize(rows: list[dict]) -> dict:
         "total_cost_usd": total_cost,
         "avg_tokens": round(total_tokens / n) if n else 0,
         "total_tokens": total_tokens,
+        "avg_extraction_overall_score": round(sum(overalls) / len(overalls), 3) if overalls else None,
+        "judge_review_rate": round(judge_review_n / len(scored), 3) if scored else None,
+        "judge_calls_saved": judge_calls_saved,
         "per_class": {
             cls: {
                 "n": v["n"],
@@ -549,6 +599,10 @@ def print_summary(summary: dict) -> None:
           f"review: {summary['review']} | failed: {summary['failed']}")
     print(f"class_accuracy: {summary['class_accuracy']} | review_rate: {summary['review_rate']} | "
           f"calibration_error: {summary['mean_calibration_error']} (n={summary['calibration_n']})")
+    if summary.get("avg_extraction_overall_score") is not None:
+        print(f"field_score_overall: {summary['avg_extraction_overall_score']} | "
+              f"judge_review_rate: {summary['judge_review_rate']} | "
+              f"judge_calls_saved: {summary['judge_calls_saved']}")
     print(f"avg_time_s: {summary['avg_time_s']} | avg_llm_calls: {summary['avg_llm_calls']} | "
           f"avg_cost_usd: {summary['avg_cost_usd']} | total_cost_usd: {summary['total_cost_usd']} | "
           f"avg_tokens: {summary['avg_tokens']}")
@@ -629,6 +683,7 @@ def main() -> int:
     if scores_enabled:
         for m, r in zip(manifest, rows):
             _ingest_scores(m, r)
+            _attach_field_scoring(m, r)
         from observability.tracing import flush
 
         flush()
@@ -653,6 +708,7 @@ def main() -> int:
                 {
                     "id": m["id"],
                     "scores": _ground_truth_scores(r, expected_fields=_parse_expected_fields(m)),
+                    "field_scoring": r.get("field_scoring"),
                 }
                 for m, r in zip(manifest, rows)
             ]

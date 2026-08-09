@@ -11,24 +11,31 @@ You handle: legal correspondence, demand letters, regulatory notices, client com
 settlement offers, engagement letters, cease-and-desist letters, opinion letters.
 
 Extraction rules:
-1. Identify sender and recipient precisely — full names, titles if present, entities.
+1. Identify sender, recipient, and any additional recipients (cc'd/copied parties) precisely —
+   full names, titles if present, entities.
 2. Determine the communication type: letter, email, memo, notice, demand, etc.
 3. Key points: preserve every distinct material fact, obligation, breach, demand,
    deadline, remedy, and waiver stated in the communication. Do not compress
    separate contractual terms into a summary that loses a condition or section
    reference. For a demand letter, retain the payment terms, amount, cure
    demand, consequences of nonpayment, and any interest, costs, or fees stated.
-4. Action items: what someone needs to DO as a result of this communication — deadlines included.
-5. Urgency: assess tone — is this routine, time-sensitive, or threatening?
-6. Dates are critical — correspondence is often date-sensitive.
-7. Track narrative: if this letter references prior communications, note the thread.
+4. Demand amount: for demand letters, extract the exact dollar amount demanded
+   as a number (e.g. 218440.00 for $218,440.00). Use null when no amount is
+   demanded, including memos that merely reference an outstanding balance.
+5. Action items: what someone needs to DO as a result of this communication — deadlines included.
+6. Urgency: assess tone — is this routine, time-sensitive, or threatening?
+   Neutral communications default to "routine" rather than null.
+7. Dates are critical — correspondence is often date-sensitive. Use the date the
+   communication was sent, not a referenced deadline.
+8. Referenced communications: track the narrative thread — list prior letters,
+   notices, or communications this message references (e.g. a prior demand letter).
 
-8. Do not infer or embellish facts. Preserve explicit details faithfully; concise
+9. Do not infer or embellish facts. Preserve explicit details faithfully; concise
    paraphrases are fine only when they retain the original meaning and conditions.
-9. The `confidence` score must be derived from the evidence in THIS document, not assumed:
-   start from the share of schema fields actually found (fields left null lower it), and lower
-   it further for uncertain values or truncated input. Never default to a fixed high value
-   (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
+10. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+    start from the share of schema fields actually found (fields left null lower it), and lower
+    it further for uncertain values or truncated input. Never default to a fixed high value
+    (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
 
 Use the explicit text as the source of truth. Return one complete JSON object with every
 schema field; use null for unstated optional values and do not infer urgency from tone alone."""
@@ -46,19 +53,27 @@ class CorrespondenceSpecialist(BaseAgent):
             {
                 "sender": {"type": "string", "description": "Who sent the communication"},
                 "recipient": {"type": "string", "description": "Who received it"},
-                "date_sent": {
-                    "type": ["string", "null"],
-                    "description": "Date the communication was sent",
+                "additional_recipients": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Cc'd or otherwise copied parties",
                 },
-                "subject": {"type": "string", "description": "Subject line or topic"},
                 "communication_type": {
                     "type": "string",
                     "description": "Type: letter, email, memo, notice, demand, etc.",
+                },
+                "communication_date": {
+                    "type": ["string", "null"],
+                    "description": "Date the communication was sent",
                 },
                 "key_points": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Main substantive points made",
+                },
+                "demand_amount": {
+                    "type": ["number", "null"],
+                    "description": "Exact dollar amount demanded (demand letters only)",
                 },
                 "action_items": {
                     "type": "array",
@@ -66,8 +81,13 @@ class CorrespondenceSpecialist(BaseAgent):
                     "description": "Actions required, with deadlines if stated",
                 },
                 "urgency": {
-                    "type": ["string", "null"],
+                    "type": "string",
                     "description": "Urgency level: routine, time-sensitive, urgent, critical",
+                },
+                "referenced_communications": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Prior letters, notices, or communications this message references",
                 },
                 "confidence": {
                     "type": "number",
