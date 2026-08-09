@@ -35,12 +35,15 @@ class DueDiligenceExtraction(BaseModel):
 class CorrespondenceExtraction(BaseModel):
     sender: str = ""
     recipient: str = ""
-    date_sent: str | None = None
-    subject: str = ""
+    additional_recipients: list[str] = Field(default_factory=list)
     communication_type: str = ""
+    communication_date: str | None = None
     key_points: list[str] = Field(default_factory=list)
+    demand_amount: float | None = None
     action_items: list[str] = Field(default_factory=list)
-    urgency: str | None = None
+    urgency: str = ""
+    referenced_communications: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
 
 
 class ComplianceFilingExtraction(BaseModel):

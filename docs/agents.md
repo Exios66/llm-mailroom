@@ -134,12 +134,15 @@ The Sorter is the first LLM call in the pipeline. It reads the document text and
 |---|---|---|
 | `sender` | `str` | Who sent it |
 | `recipient` | `str` | Who received it |
-| `date_sent` | `str \| None` | When it was sent |
-| `subject` | `str` | Topic |
+| `additional_recipients` | `list[str]` | Cc'd / copied parties |
 | `communication_type` | `str` | letter, email, memo, notice, demand, etc. |
+| `communication_date` | `str \| None` | When it was sent |
 | `key_points` | `list[str]` | Main points made |
+| `demand_amount` | `float \| None` | Exact dollar amount demanded (demand letters) |
 | `action_items` | `list[str]` | Actions required |
-| `urgency` | `str \| None` | routine, time-sensitive, urgent, critical |
+| `urgency` | `str` | routine, time-sensitive, urgent, critical |
+| `referenced_communications` | `list[str]` | Prior letters/notices this message references |
+| `confidence` | `float` | Extraction confidence (evidence-derived) |
 
 ---
 

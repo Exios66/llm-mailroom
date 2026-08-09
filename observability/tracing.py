@@ -179,6 +179,15 @@ def flush():
         pass
 
 
+def get_trace_id():
+    """Current trace id for the active backend, or None (disabled/unavailable)."""
+    if resolve_provider_name() != "langfuse":
+        return None
+    from .langfuse_setup import get_trace_id as _langfuse_trace_id
+
+    return _langfuse_trace_id()
+
+
 def register_atexit_flush():
     """Flush pending traces when the process exits (so the last events land)."""
     import atexit

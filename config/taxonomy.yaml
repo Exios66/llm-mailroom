@@ -56,42 +56,114 @@ confidence:
   retry_max: 1     # max retries before routing to review
   conflict_threshold: 0.3  # extraction confidence gap below this → potential conflict
 
+# Deterministic field-type-aware extraction scoring (issues #4/#5). The scorer
+# normalizes each field by its type (date/money/id exact-after-normalize, name
+# fuzzy match, free-text token F1, entity-list bipartite matching) and, for
+# ambiguous free-text/name fields, uses embedding cosine similarity
+# (sentence-transformers) as a second signal. `ambiguous_band` is the judge
+# escalation gate: fields scoring inside the band trigger the LLM judge; runs
+# scoring clearly above or below the band skip the judge entirely (2 evaluator
+# calls saved per run). See observability/field_scoring.py.
+field_scoring:
+  ambiguous_band: [0.5, 0.85]
+  bipartite_match_threshold: 0.6  # minimum pairwise similarity for a list match
+  embedding_enabled: true
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_rescue_below: 0.7  # only consult embeddings when string score is below this
+
 doc_classes:
   - key: contract
     label: "Contract / Agreement"
     schema: ContractExtraction
     specialist: contracts_specialist
     description: "Formal agreements between parties: M&A, vendor, employment, NDAs, etc."
+    field_types:
+      parties: entity_list:name
+      effective_date: date
+      term_length: free_text
+      termination_clauses: entity_list:free_text
+      governing_law: name
+      key_obligations: entity_list:free_text
+      contract_value: money
+      renewal_terms: free_text
 
   - key: corporate_record
     label: "Corporate Record"
     schema: CorporateRecordExtraction
     specialist: corporate_records_specialist
     description: "Bylaws, resolutions, board minutes, cap table entries, incorporation docs"
+    field_types:
+      entity_name: name
+      record_type: name
+      effective_date: date
+      key_provisions: entity_list:free_text
+      signatories: entity_list:name
+      jurisdiction: name
+      filing_number: id
 
   - key: due_diligence
     label: "Due Diligence"
     schema: DueDiligenceExtraction
     specialist: due_diligence_specialist
     description: "Checklists, disclosure schedules, diligence memos, risk assessments"
+    field_types:
+      target_entity: name
+      diligence_type: name
+      material_findings: entity_list:free_text
+      risk_flags: entity_list:free_text
+      outstanding_items: entity_list:free_text
+      document_date: date
+      prepared_by: name
 
   - key: correspondence
     label: "Correspondence"
     schema: CorrespondenceExtraction
     specialist: correspondence_specialist
     description: "Letters, emails, memos, notices between parties or with regulators"
+    field_types:
+      sender: name
+      recipient: name
+      additional_recipients: entity_list
+      communication_type: name
+      communication_date: date
+      key_points: entity_list
+      demand_amount: money
+      action_items: entity_list
+      urgency: name
+      referenced_communications: entity_list
 
   - key: compliance_filing
     label: "Compliance Filing"
     schema: ComplianceFilingExtraction
     specialist: compliance_specialist
     description: "SEC filings, state registrations, regulatory submissions, annual reports"
+    field_types:
+      filing_type: name
+      regulatory_body: name
+      filing_date: date
+      due_date: date
+      entity_name: name
+      key_requirements: entity_list:free_text
+      status: name
+      reference_number: id
 
   - key: court_opinion
     label: "Court Opinion"
     schema: CourtOpinionExtraction
     specialist: court_opinions_specialist
     description: "Judicial opinions and orders: published decisions, memorandum opinions, rulings by federal and state courts"
+    field_types:
+      case_name: name
+      court: name
+      date_decided: date
+      docket_number: id
+      opinion_type: name
+      parties: entity_list:name
+      holding: free_text
+      legal_issues: entity_list:free_text
+      outcome: free_text
+      citations: entity_list:id
+      authored_by: name
 
 file_extensions:
   - .txt
