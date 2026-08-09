@@ -62,6 +62,14 @@ python scripts/run_pilot.py --mock
 # 3. Or run for real (needs OPENROUTER_API_KEY in .env)
 python scripts/run_pilot.py --real
 
+# Real runs process ONLY the actual committed legal documents: the 9
+# Atticus/CUAD contract & agreement PDFs (contract_01..03, atticus_01..06)
+# plus the 6 LegalBench MAUD and 6 Pile of Law external samples (21 real
+# samples). The repo-written synthetic .txt-derived PDFs (compliance /
+# corporate / correspondence / due_diligence / ambiguous, 9 samples) are
+# **mock-only** — --real refuses them so no real LLM/eval tokens or live
+# traces are ever spent on fake documents. Mock runs keep the full 30.
+
 # 4. Run a single source corpus
 python scripts/run_pilot.py --mock --source pileoflaw
 

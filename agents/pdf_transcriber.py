@@ -54,6 +54,23 @@ class PDFTranscriber(BaseAgent):
             )
             return {"markdown": raw_text, "text": raw_text, "confidence": 0.8, "method": "direct"}
 
+        # Vision-capable pipelines render the PDF pages as images for the
+        # downstream agents, so a separate LLM transcription pass is redundant
+        # (and expensive). Keep the raw direct extraction as `doc_text` for
+        # text-only processes / audit, but skip the reformat call.
+        try:
+            from llm.vision import pipeline_uses_vision
+        except Exception:
+            pipeline_uses_vision = lambda: False  # noqa: E731
+        if pipeline_uses_vision():
+            logger.info(
+                "pdf_llm_pass_skipped_for_vision",
+                file=file_path.name,
+                chars=len(raw_text),
+                hint="pipeline is vision-capable; page images carry the content",
+            )
+            return {"markdown": raw_text, "text": raw_text, "confidence": 0.8, "method": "direct-vision"}
+
         try:
             markdown = self._llm_transcribe(raw_text, file_path.name)
             if markdown and len(markdown) > 100:

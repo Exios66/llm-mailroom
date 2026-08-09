@@ -35,7 +35,7 @@ class DueDiligenceSpecialist(BaseAgent):
         text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
         return text
 
-    def extract(self, doc_text: str) -> dict:
+    def extract(self, doc_text: str, pages: list[str] | None = None) -> dict:
         schema = build_structured_schema(
             {
                 "target_entity": {"type": "string", "description": "Entity being investigated"},
@@ -73,15 +73,21 @@ class DueDiligenceSpecialist(BaseAgent):
                 },
             }
         )
+        # Full transcription is ALWAYS the message body (no page content lost);
+        # page images are appended additively when the model is vision-capable.
         max_chars = self._configured_max_input_chars()
         truncated = doc_text[:max_chars]
         if len(doc_text) > max_chars:
             truncated += f"\n\n[... document truncated, {len(doc_text)} total chars ...]"
+        if pages:
+            truncated += f"\n\n[Attached: {len(pages)} page image(s) of this document — also read them.]"
+        user_message = f"Extract structured data from this due diligence document:\n\n{truncated}"
 
         result = self._call_structured(
-            f"Extract structured data from this due diligence document:\n\n{truncated}",
+            user_message,
             json_schema=schema,
             temperature=0.1,
+            pages=pages,
         )
         if result.get("_parse_error"):
             logger.error("dd_parse_error")

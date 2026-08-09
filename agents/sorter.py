@@ -53,7 +53,7 @@ class SorterAgent(BaseAgent):
         )
         return text
 
-    def classify(self, doc_text: str) -> tuple[str, float, str]:
+    def classify(self, doc_text: str, pages: list[str] | None = None) -> tuple[str, float, str]:
         schema = build_structured_schema(
             {
                 "doc_type": {"type": "string", "enum": get_all_doc_types()},
@@ -61,15 +61,23 @@ class SorterAgent(BaseAgent):
                 "reasoning": {"type": "string"},
             }
         )
+        # The full (budget-truncated) transcription is ALWAYS the message body so
+        # no page content is ever lost; page images are appended on top by
+        # `_build_multimodal` when the model is vision-capable (additive, not
+        # replacement). An explicit note tells the model images are attached.
         max_chars = self._configured_max_input_chars()
         truncated = doc_text[:max_chars]
         if len(doc_text) > max_chars:
             truncated += f"\n\n[... document truncated, {len(doc_text)} total chars ...]"
+        if pages:
+            truncated += f"\n\n[Attached: {len(pages)} page image(s) of this document — also read them.]"
+        user_message = f"Classify this legal document:\n\n{truncated}"
 
         result = self._call_structured(
-            f"Classify this legal document:\n\n{truncated}",
+            user_message,
             json_schema=schema,
             temperature=0.1,
+            pages=pages,
         )
         if result.get("_parse_error"):
             logger.error("sorter_parse_error")

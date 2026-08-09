@@ -49,10 +49,13 @@ pytest tests/ --cov=. --cov-report=html   # Coverage
 
 ## Pilot Testing
 
-`examples/samples/` holds a 12-PDF pilot set (ground truth in `manifest.csv`).
+`examples/samples/` holds a 30-sample pilot set (ground truth in `manifest.csv`).
 Build it with `python scripts/prepare_samples.py`, then evaluate with
-`python scripts/run_pilot.py --mock` (deterministic) or `--real` (needs
-`OPENROUTER_API_KEY`), and diff two runs with `--baseline <report.json>` to
+`python scripts/run_pilot.py --mock` (deterministic, full 30-sample set) or
+`--real` (needs `OPENROUTER_API_KEY`; restricted to the 21 actual committed
+legal documents — the 9 Atticus/CUAD contract PDFs plus 6 LegalBench MAUD and 6
+Pile of Law samples; the repo-written synthetic `.txt` samples are mock-only and
+refused by `--real`), and diff two runs with `--baseline <report.json>` to
 measure the impact of procedural changes. See `examples/samples/README.md`.
 
 ## Adding a New Document Type

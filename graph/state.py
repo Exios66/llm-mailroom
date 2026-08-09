@@ -22,6 +22,11 @@ class DocumentState(TypedDict, total=False):
     classification_guardrail: list[str]
     file_path: str
     doc_text: str
+    # Page-image data-URIs rendered at ingest for vision-capable input agents
+    # (PDFs rendered page-by-page; image files passed through). Sent to the
+    # sorter/specialist prompts when the agent's model is vision-capable;
+    # `doc_text` above is always produced regardless for text-only paths.
+    doc_pages: list[str]
     error_message: str | None
     run_deadline: float
     run_aborted: bool

@@ -56,7 +56,7 @@ setup_logging()
 # environment — llm/providers.py rejects the historical "mock-key" placeholder,
 # so a live run can never silently execute against fake credentials.
 
-from scripts.prepare_samples import prepare_samples  # noqa: E402
+from scripts.prepare_samples import is_real_sample, prepare_samples  # noqa: E402
 from schemas.documents import get_extraction_schema  # noqa: E402
 
 MANIFEST = REPO_ROOT / "examples" / "samples" / "manifest.csv"
@@ -329,6 +329,32 @@ def _parse_expected_fields(sample: dict) -> dict | None:
     except json.JSONDecodeError:
         logger.error("expected_fields_invalid", filename=sample.get("filename"))
         return None
+
+
+def filter_real_samples(manifest: list[dict], *, mock_mode: bool) -> list[dict]:
+    """Restrict a pilot manifest to samples a given mode may process.
+
+    Real (non-mock) runs must only process actual committed legal documents —
+    the full Atticus/CUAD contract & agreement PDFs plus the other legal-DB
+    samples (LegalBench MAUD, Pile of Law). Repo-written synthetic .txt samples
+    (render-to-PDF stand-ins under examples/sources/) are mock-only; they exist
+    to test pipeline machinery, never to spend real LLM/eval tokens or pollute
+    live traces. Mock runs keep the full 30-sample set.
+
+    Returns the filtered manifest. Real-mode callers that end up with zero
+    samples must refuse (see main()).
+    """
+    if mock_mode:
+        return list(manifest)
+    filtered = [m for m in manifest if is_real_sample(m)]
+    synthetic = [m for m in manifest if not is_real_sample(m)]
+    if synthetic:
+        logger.warning(
+            "real_run_blocked_synthetic_samples",
+            blocked_ids=", ".join(m["id"] for m in synthetic),
+            hint="synthetic .txt samples are mock-only; run them with --mock",
+        )
+    return filtered
 
 
 def _validate_manifest_ground_truth(manifest: list[dict]) -> None:
@@ -675,6 +701,22 @@ def main() -> int:
     if args.max_docs:
         manifest = manifest[: args.max_docs]
         logger.info("max_docs_limit", limit=args.max_docs, remaining=len(manifest))
+
+    # Real (non-mock) runs must only process real committed legal documents —
+    # the full Atticus/CUAD contract & agreement PDFs plus the other legal-DB
+    # samples (LegalBench MAUD, Pile of Law). The repo-written synthetic .txt
+    # samples (render-to-PDF stand-ins under examples/sources/) are mock-only:
+    # they exist to test pipeline machinery, never to spend real LLM/eval
+    # tokens or pollute live traces. Mock runs keep the full 30-sample set.
+    if not mock_mode:
+        manifest = filter_real_samples(manifest, mock_mode=False)
+        if not manifest:
+            parser.error(
+                "No real samples selected. --real runs only process actual "
+                "committed legal documents (CUAD/Atticus PDFs, LegalBench, Pile "
+                "of Law). Synthetic .txt samples are mock-only — run with --mock."
+            )
+        logger.info("real_sample_filter", remaining=len(manifest))
 
     _validate_manifest_ground_truth(manifest)
 

@@ -109,6 +109,19 @@ def _read_file_text(file_path: Path) -> tuple[str, bool]:
             return (f"[Unreadable file: {file_path.name}]", False)
 
 
+def _render_doc_pages(file_path: Path) -> list[str]:
+    """Render an input document to page-image data-URIs for vision-capable
+    agents (PDFs page-by-page, image files passed through). Empty when vision is
+    disabled or rendering is unavailable — text-only behaviour is unchanged."""
+    try:
+        from llm.vision import render_document_pages
+
+        return render_document_pages(file_path)
+    except Exception:
+        logger.exception("doc_page_render_failed", file=str(file_path))
+        return []
+
+
 def _extract_text_from_docx(file_path: Path) -> tuple[str, bool]:
     """Extract text from .docx (paragraphs + tables) via python-docx.
 
@@ -260,6 +273,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         file_path = claim_file(file_path, worker_id)
 
     doc_text, text_ok = _read_file_text(file_path)
+    doc_pages = _render_doc_pages(file_path)
 
     matter_id = state.get("matter_id", "DEFAULT")
     manifest = DocumentManifest(
@@ -270,7 +284,14 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
     manifest.touch()
     save_manifest(manifest)
 
-    logger.info("ingest", doc_id=manifest.doc_id, file=file_path.name, chars=len(doc_text), suffix=file_path.suffix)
+    logger.info(
+        "ingest",
+        doc_id=manifest.doc_id,
+        file=file_path.name,
+        chars=len(doc_text),
+        suffix=file_path.suffix,
+        vision_pages=len(doc_pages),
+    )
     return {
         "doc_id": manifest.doc_id,
         "matter_id": matter_id,
@@ -278,6 +299,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         "stage": PipelineStage.PROCESSING.value,
         "file_path": str(file_path),
         "doc_text": doc_text,
+        "doc_pages": doc_pages,
         "classification_attempts": 0,
         "extraction_attempts": 0,
         "retry_count": 0,
@@ -306,7 +328,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     sorter = SorterAgent()
     attempts = state.get("classification_attempts", 0)
     try:
-        doc_type, confidence, reasoning = sorter.classify(doc_text)
+        doc_type, confidence, reasoning = sorter.classify(doc_text, pages=state.get("doc_pages"))
     except Exception as exc:
         if is_transient_error(exc):
             # Provider-side transient failure (connection/timeout/rate-limit/
@@ -366,7 +388,7 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         f"{doc_text[:12000]}"
     )
     try:
-        doc_type, confidence, reasoning = sorter.classify(augmented_text)
+        doc_type, confidence, reasoning = sorter.classify(augmented_text, pages=state.get("doc_pages"))
     except Exception as exc:
         if is_transient_error(exc):
             transient = state.get("transient_retries", 0) + 1
@@ -404,12 +426,13 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
 def extract_node(state: DocumentState) -> dict[str, Any]:
     doc_type = state.get("doc_type", "")
     doc_text = state.get("doc_text", "")
+    doc_pages = state.get("doc_pages") or []
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
+    extractor = dispatch.get(doc_type, lambda t, pages=None: {"confidence": 0.3, "_unsupported": True})
     attempts = state.get("extraction_attempts", 0)
     try:
-        result = extractor(doc_text)
+        result = extractor(doc_text, doc_pages)
     except Exception as exc:
         from llm.retry import is_transient_error
 
@@ -460,39 +483,40 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     }
 
 
-def _extract_contracts(doc_text: str) -> dict:
+def _extract_contracts(doc_text: str, pages: list[str] | None = None) -> dict:
     from agents.contracts_specialist import ContractsSpecialist
-    return ContractsSpecialist().extract(doc_text)
+    return ContractsSpecialist().extract(doc_text, pages=pages)
 
 
-def _extract_corporate_records(doc_text: str) -> dict:
+def _extract_corporate_records(doc_text: str, pages: list[str] | None = None) -> dict:
     from agents.corporate_records_specialist import CorporateRecordsSpecialist
-    return CorporateRecordsSpecialist().extract(doc_text)
+    return CorporateRecordsSpecialist().extract(doc_text, pages=pages)
 
 
-def _extract_due_diligence(doc_text: str) -> dict:
+def _extract_due_diligence(doc_text: str, pages: list[str] | None = None) -> dict:
     from agents.due_diligence_specialist import DueDiligenceSpecialist
-    return DueDiligenceSpecialist().extract(doc_text)
+    return DueDiligenceSpecialist().extract(doc_text, pages=pages)
 
 
-def _extract_correspondence(doc_text: str) -> dict:
+def _extract_correspondence(doc_text: str, pages: list[str] | None = None) -> dict:
     from agents.correspondence_specialist import CorrespondenceSpecialist
-    return CorrespondenceSpecialist().extract(doc_text)
+    return CorrespondenceSpecialist().extract(doc_text, pages=pages)
 
 
-def _extract_compliance(doc_text: str) -> dict:
+def _extract_compliance(doc_text: str, pages: list[str] | None = None) -> dict:
     from agents.compliance_specialist import ComplianceSpecialist
-    return ComplianceSpecialist().extract(doc_text)
+    return ComplianceSpecialist().extract(doc_text, pages=pages)
 
 
-def _extract_court_opinions(doc_text: str) -> dict:
+def _extract_court_opinions(doc_text: str, pages: list[str] | None = None) -> dict:
     from agents.court_opinions_specialist import CourtOpinionsSpecialist
-    return CourtOpinionsSpecialist().extract(doc_text)
+    return CourtOpinionsSpecialist().extract(doc_text, pages=pages)
 
 
 def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     doc_type = state.get("doc_type", "")
     doc_text = state.get("doc_text", "")
+    doc_pages = state.get("doc_pages") or []
     prev_extracted = state.get("extracted_data", {})
     attempts = state.get("extraction_attempts", 0)
 
@@ -503,9 +527,9 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     )
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(doc_type, lambda t: {"confidence": 0.3, "_unsupported": True})
+    extractor = dispatch.get(doc_type, lambda t, pages=None: {"confidence": 0.3, "_unsupported": True})
     try:
-        result = extractor(augmented_text)
+        result = extractor(augmented_text, doc_pages)
     except Exception as exc:
         from llm.retry import is_transient_error
 
@@ -1218,6 +1242,7 @@ def run_pipeline(
         "conflict_detected": False,
         "file_path": str(file_path),
         "doc_text": "",
+        "doc_pages": [],
         "error_message": None,
         "messages": [],
         "transient_error": False,
@@ -1263,6 +1288,7 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
     worker_id = get_worker_id()
     queued = requeue_from_review(review_file, worker_id)
     doc_text, text_ok = _read_file_text(queued)
+    doc_pages = _render_doc_pages(queued)
 
     initial_state: DocumentState = {
         "doc_id": manifest.doc_id,
@@ -1282,6 +1308,7 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "conflict_detected": False,
         "file_path": str(queued),
         "doc_text": doc_text,
+        "doc_pages": doc_pages,
         "error_message": None if text_ok else f"Could not extract text from {queued.suffix} file",
         "messages": [],
         "resume_extraction": True,

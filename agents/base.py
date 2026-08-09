@@ -83,6 +83,33 @@ class BaseAgent(ABC):
         except Exception:
             return None
 
+    def _uses_vision(self, pages: list[str] | None = None) -> bool:
+        """True when this agent's model accepts image input and (optionally)
+        page images are available to send. Vision capability is config-driven
+        (`config/taxonomy.yaml` -> `vision.models` substrings)."""
+        if not pages:
+            return False
+        try:
+            from llm.vision import is_vision_capable
+
+            return is_vision_capable(self.model)
+        except Exception:
+            return False
+
+    def _build_multimodal(self, text: str, pages: list[str] | None) -> str | list[dict]:
+        """Build the user-message content for a document input.
+
+        Vision-capable models get a multimodal content list (text instruction +
+        image_url parts for each page). Text-only models get the plain string —
+        totally unchanged today's behaviour.
+        """
+        if pages and self._uses_vision(pages):
+            parts: list[dict] = [{"type": "text", "text": text}]
+            for uri in pages:
+                parts.append({"type": "image_url", "image_url": {"url": uri}})
+            return parts
+        return text
+
     def _call_llm(
         self,
         user_message: str,
@@ -91,12 +118,15 @@ class BaseAgent(ABC):
         max_tokens: int | None = None,
         system_prompt: str | None = None,
         reasoning_effort: str | None = None,
+        pages: list[str] | None = None,
     ) -> str:
         from pipeline.limits import get_run_deadline, record_usage
 
+        content = self._build_multimodal(user_message, pages)
+
         messages = [
             {"role": "system", "content": system_prompt or self.system_prompt()},
-            {"role": "user", "content": user_message},
+            {"role": "user", "content": content},
         ]
         kwargs = {"model": self.model, "messages": messages}
         if temperature is not None:
@@ -132,6 +162,7 @@ class BaseAgent(ABC):
         system_prompt: str | None = None,
         max_tokens: int | None = None,
         reasoning_effort: str | None = None,
+        pages: list[str] | None = None,
     ) -> dict:
         # `json_object` response format is broadly supported across OpenRouter
         # providers (OpenAI `json_schema` strict mode is not). The schema is
@@ -158,6 +189,7 @@ class BaseAgent(ABC):
             system_prompt=system_prompt,
             max_tokens=max_tokens,
             reasoning_effort=reasoning_effort,
+            pages=pages,
         )
         try:
             return json.loads(raw)

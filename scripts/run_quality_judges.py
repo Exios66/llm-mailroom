@@ -53,9 +53,11 @@ setup_logging()
 # environment — llm/providers.py rejects the historical "mock-key" placeholder,
 # so a live run can never silently execute against fake credentials.
 
-from scripts.prepare_samples import prepare_samples  # noqa: E402
+from scripts.prepare_samples import is_real_sample, prepare_samples  # noqa: E402
 
 DEFAULT_REPORT = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "pilot_report.json"
+
+MANIFEST = REPO_ROOT / "examples" / "samples" / "manifest.csv"
 
 JUDGES = ["classification", "completeness", "correctness"]
 
@@ -296,6 +298,35 @@ def main() -> int:
     prepare_samples()
     report = json.loads(args.report.read_text())
     samples = report.get("samples", [])
+
+    # Real (non-mock) judging must only ever spend LLM tokens on real committed
+    # legal documents. If the report contains repo-written synthetic samples
+    # (e.g. produced by an earlier mock run), skip them — never judge fake
+    # documents with the real judge LLM.
+    if not mock_mode:
+        real_ids = set()
+        import csv as _csv
+
+        with MANIFEST.open() as _fh:
+            for _row in _csv.DictReader(_fh):
+                if is_real_sample(_row):
+                    real_ids.add(_row["id"])
+        synthetic = [s for s in samples if s.get("id") not in real_ids]
+        if synthetic:
+            ids = ", ".join(s.get("id", "?") for s in synthetic)
+            logger.warning(
+                "real_judge_skipped_synthetic_samples",
+                skipped_ids=ids,
+                hint="synthetic .txt samples are mock-only; judge them with --mock",
+            )
+        samples = [s for s in samples if s.get("id") in real_ids]
+        if not samples:
+            parser.error(
+                "No real samples in the report to judge. --real judging only "
+                "processes actual committed legal documents; run the judge with "
+                "--mock to include synthetic .txt samples."
+            )
+        logger.info("real_judge_sample_filter", remaining=len(samples))
 
     results = []
     for s in samples:
