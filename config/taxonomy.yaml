@@ -71,6 +71,28 @@ field_scoring:
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
   embedding_rescue_below: 0.7  # only consult embeddings when string score is below this
 
+# Vision-mode ingestion (issue: vision-capable models can read PDFs page-by-page
+# as images; text-only models still get the transcription). When a document's
+# input agent model is listed in `models` (substring match), the pipeline renders
+# the first `max_pages` PDF/scan pages to image data-URIs and sends them to the
+# classified/extraction prompt AS WELL AS (or instead of) the transcribed text.
+# `doc_text` is still transcribed and stored for text-only processes, the judge,
+# reports, and auditability — vision only changes the LLM prompt content, never
+# the downstream catalog/audit trail.
+vision:
+  enabled: true
+  max_pages: 10          # cap the page-image budget per document (large PDFs)
+  dpi: 150               # render resolution for page images
+  models:                # model strings (substring match) that accept image input
+    - "qwen/"
+    - "gpt-4o"
+    - "gpt-4.1"
+    - "claude"
+    - "gemini"
+    - "llava"
+    - "llama-3.2"
+    - "qwen-vl"
+
 doc_classes:
   - key: contract
     label: "Contract / Agreement"

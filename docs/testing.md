@@ -102,13 +102,16 @@ These tests spin up a complete LangGraph graph with all 11 nodes and mock the LL
 ### Pilot sample set
 
 For live end-to-end pilots (not the unit suite), see `examples/samples/`: 30 legal
-PDFs (real CC-BY-4.0 CUAD contracts + LegalBench MAUD merger agreements +
-public-domain Pile of Law court opinions + original text) with a ground-truth
-`manifest.csv`, built by `scripts/prepare_samples.py` (and
+PDFs (real CC-BY-4.0 CUAD/Atticus contracts + LegalBench MAUD merger agreements +
+public-domain Pile of Law court opinions + repo-written synthetic text) with a
+ground-truth `manifest.csv`, built by `scripts/prepare_samples.py` (and
 `scripts/fetch_external_samples.py` for the external corpus) and evaluated by
-`scripts/run_pilot.py` (`--mock` for a deterministic run, `--real` for actual
-LLM accuracy, `--baseline` to diff two runs, `--source <corpus>` to run one
-dataset). See `examples/samples/README.md`.
+`scripts/run_pilot.py` (`--mock` for a deterministic run over the full 30-sample
+set, `--real` for actual LLM accuracy on the 21 real committed documents, 
+`--baseline` to diff two runs, `--source <corpus>` to run one dataset). Real
+runs are restricted to the actual committed legal documents (CUAD/Atticus PDFs,
+LegalBench, Pile of Law); the repo-written synthetic `.txt` samples are mock-only
+and are refused by `--real`. See `examples/samples/README.md`.
 
 ### Shared Fixtures (`conftest.py`)
 

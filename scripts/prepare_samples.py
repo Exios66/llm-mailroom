@@ -77,6 +77,20 @@ def _load_manifest():
         return list(csv.DictReader(fh))
 
 
+def is_real_sample(row: dict) -> bool:
+    """True when a manifest row is a real committed legal document.
+
+    Real samples are either a CUAD/Atticus PDF committed under
+    examples/samples/contract/ (source starts with "CUAD") or an external
+    LegalBench / Pile of Law source committed under examples/external/ (source
+    starts with "external/"). Everything else is a repo-written synthetic .txt
+    under examples/sources/ that is rendered to PDF only for mock runs — it
+    must never be processed by a real (non-mock) pilot run.
+    """
+    source = (row.get("source") or "").strip()
+    return source.startswith("CUAD") or source.startswith("external/")
+
+
 def prepare_samples(base_dir: Path | None = None) -> Path:
     """Materialize every manifest row under data/samples/. Returns its path."""
     if base_dir is None:
