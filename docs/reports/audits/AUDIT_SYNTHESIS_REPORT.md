@@ -610,57 +610,61 @@ data/
 
 ## 10. Gaps & Inconsistencies
 
+> **Status (2026-08-10):** all actionable gaps below have been verified resolved
+> in the current version. The remaining items are by-design or documented
+> deferrals.
+
 ### 10.1 Documentation Gaps
 
-| Gap | Location | Impact |
+| Gap | Location | Status |
 |-----|----------|--------|
-| **No `examples/` README** | Root level | Users may miss pilot sample documentation |
-| **No `scripts/` README** | `scripts/` | 15+ scripts undocumented at directory level |
-| **No `langchain_agents/` README** | `langchain_agents/` | Vendored agents lack local documentation |
-| **`wiki/_Sidebar.md` / `_Footer.md` not in `docs/`** | Wiki only | Navigation elements only in wiki |
-| **No API versioning docs** | `docs/api.md` | All endpoints unversioned |
-| **No troubleshooting guide for local models** | `docs/local-models.md` | Only basic troubleshooting table |
+| **No `examples/` README** | Root level | ✅ `examples/README.md` exists |
+| **No `scripts/` README** | `scripts/` | ✅ `scripts/README.md` documents all 19 scripts |
+| **No `langchain_agents/` README** | `langchain_agents/` | ✅ exists (condensed, issue #13) |
+| **`wiki/_Sidebar.md` / `_Footer.md` not in `docs/`** | Wiki only | ✅ by design — wiki is GitHub-wiki-native only, not a `docs/` mirror |
+| **No API versioning docs** | `docs/api.md` | ✅ documented (unversioned pre-1.0, additive-evolution convention) |
+| **No troubleshooting guide for local models** | `docs/local-models.md` | ✅ `## Troubleshooting Local Models` section exists |
 
 ### 10.2 Code-Documentation Inconsistencies
 
-| Inconsistency | Details |
-|---------------|---------|
-| **Agent count discrepancy** | README says "5 specialists" but there are 6 (contracts, corporate, DD, correspondence, compliance, court_opinions) |
-| **Specialist dispatch hardcoded** | `graph/build_graph.py:_build_specialist_dispatch()` maps 6 names but docs say "5 specialists" |
-| **Vision config in taxonomy vs env** | `vision.enabled` in YAML but env overrides (`MAILROOM_VISION_ENABLED`) not fully documented in config reference |
-| **Contract subtype in sorter only** | Sorter returns `contract_subtype` but only contracts specialist uses it; other specialists accept `handoff_context` but ignore subtype |
-| **Boss dual role** | In-graph + ops monitor — docs mention both but API doesn't expose ops monitor trigger |
-| **Cost model prices** | `taxonomy.yaml` has 3 models but `DEFAULT_MODELS` in providers has many more — sync needed |
+| Inconsistency | Status |
+|---------------|--------|
+| **Agent count discrepancy** | ✅ All references say 6 specialists |
+| **Specialist dispatch hardcoded** | ✅ `_build_specialist_dispatch()` is config-driven (walks `doc_classes` from taxonomy) |
+| **Vision config in taxonomy vs env** | ✅ `docs/configuration.md` `### vision` documents YAML + `MAILROOM_VISION_*` env overrides |
+| **Contract subtype in sorter only** | ✅ documented — subtype flows into state, handoff context, report, catalog |
+| **Boss dual role** | ✅ API exposes `POST /ops/sweep` + `GET /ops/status` |
+| **Cost model prices** | ✅ `cost_models:` synced to Langfuse registry via `scripts/sync_models.py` |
 
 ### 10.3 Operational Gaps
 
-| Gap | Description |
-|-----|-------------|
-| **Ops monitor pause flag not respected** | `pipeline/ops_monitor.py` writes `ops_monitor_paused` but watcher doesn't read it |
-| **No health check for LLM providers** | API `/health` only returns static OK — no dependency checks |
-| **No backup/restore documentation** | Critical for audit trail + SQLite but not covered |
-| **No log rotation policy** | Structured logging configured but no rotation/retention |
-| **Langfuse environment immutability** | Re-runs keep first run's environment/tags — documented but can confuse users |
-| **No multi-tenancy / RBAC** | Single DEFAULT matter, no auth on API — acknowledged as deferred |
+| Gap | Status |
+|-----|--------|
+| **Ops monitor pause flag not respected** | ✅ watcher reads `ops_monitor_paused` (`bins.py:is_ingestion_paused`) and pauses/resumes |
+| **No health check for LLM providers** | ✅ `api/main.py:_check_llm_provider` — `/health` reports provider connectivity |
+| **No backup/restore documentation** | ✅ SQLite backup section in `docs/deployment.md` |
+| **No log rotation policy** | ✅ `LOG_FILE`/`LOG_MAX_BYTES`/`LOG_BACKUP_COUNT` — rotating file sink in `pipeline/logging.py` |
+| **Langfuse environment immutability** | ✅ documented (deterministic trace ids, immutable tags/environment) |
+| **No multi-tenancy / RBAC** | 🔧 acknowledged as deferred (documented in `wiki/FAQ.md`) |
 
 ### 10.4 Test Coverage Gaps
 
-| Gap | Area |
-|-----|------|
-| **No integration tests with real LLM** | All tests mocked; pilot runs are manual |
-| **No load/concurrency tests** | Threaded watcher + single process design untested under load |
-| **No vision model tests with real images** | `test_vision.py` uses mocks |
-| **No audit log tampering tests with real DB corruption** | Unit tests only |
-| **No upgrade/migration tests** | Schema migration tested but not end-to-end |
+| Gap | Status |
+|-----|--------|
+| **No integration tests with real LLM** | ✅ by design — pilot runs (`run_pilot.py --real`) are the real-LLM integration path; CI is fully mocked |
+| **No load/concurrency tests** | 🔧 by design for pilot scale; watcher thread pool + single-process design reviewed |
+| **No vision model tests with real images** | ✅ partial — `test_vision.py` renders real fixture PDFs to data-URIs with mocks; real-model vision is swept via `run_vision_sweep.py --real` |
+| **No audit log tampering tests with real DB corruption** | ✅ `tests/test_audit_log.py::test_verify_chain_tampered` covers chain tampering; DB-level corruption is covered by best-effort write design |
+| **No upgrade/migration tests** | 🔧 schema auto-creates idempotently (`ensure_schema`); no release migrations yet |
 
 ### 10.5 Schema/Configuration Gaps
 
-| Gap | Details |
-|-----|---------|
-| **`field_types` not defined for all doc classes** | Only `contract` and `correspondence` have full mappings; others empty — falls back to heuristic |
-| **No `max_input_chars` for all agents** | Some agents use default 25000 — may truncate large docs (contract_03 issue) |
-| **`reasoning_effort` only on some agents** | Reporter, due_diligence, boss have it; others don't |
-| **Court opinions specialist in taxonomy but not fully documented** | Added in unreleased but some docs still reference 5 specialists |
+| Gap | Status |
+|-----|--------|
+| **`field_types` not defined for all doc classes** | ✅ all 6 doc classes have complete `field_types` maps (verified) |
+| **No `max_input_chars` for all agents** | ✅ every agent has an explicit `max_input_chars` (12k–100k, verified) |
+| **`reasoning_effort` only on some agents** | ✅ all 12 agents set it explicitly (`none`/`medium`/`max`); reporter's manual calls propagate it |
+| **Court opinions specialist under-documented** | ✅ `docs/agents.md` §7 covers it; all count references say 6 |
 
 ---
 
