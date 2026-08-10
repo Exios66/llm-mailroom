@@ -129,7 +129,8 @@ Controls the deterministic field-type-aware extraction scorer (`observability/fi
 
 | Key | Default | Description |
 |---|---|---|
-| `ambiguous_band` | `[0.5, 0.85]` | Scores inside this band are ambiguous → escalate to the LLM judge |
+| `ambiguous_band` | `[0.5, 0.85]` | Global scores-inside-this-band → escalate to the LLM judge (fallback when no per-type band applies) |
+| `type_bands` | see YAML | **Per-field-type** judge-escalation bands, calibrated by `scripts/calibrate_field_scoring.py` (issues #4/#5). `date`/`id` are `never` (deterministic score decisive both ways); `money`/`free_text` get calibrated numeric cutoffs; `name`/`entity_list` use `[0.5, 1.0]` (trust only perfect scores, escalate near-misses — Jaro-Winkler/token-set are typo-tolerant by design, so a deterministic reject is unreliable). `always`/`never` are also accepted. |
 | `bipartite_match_threshold` | `0.6` | Minimum pairwise similarity for an entity-list match |
 | `embedding_enabled` | `true` | Use embedding cosine rescue for ambiguous name/free-text fields |
 | `embedding_model` | `sentence-transformers/all-MiniLM-L6-v2` | Sentence-transformer model for the embedding signal |
@@ -138,6 +139,13 @@ Controls the deterministic field-type-aware extraction scorer (`observability/fi
 ```yaml
 field_scoring:
   ambiguous_band: [0.5, 0.85]
+  type_bands:
+    date: never              # exact-after-normalize: decisive both ways
+    id: never                # exact match: decisive both ways
+    money: [0.675, 0.938]    # numeric tolerance: calibrated cutoff
+    free_text: [0.6, 0.95]   # token F1: paraphrases legitimately score 0.6-0.88 — escalate them
+    name: [0.5, 1.0]         # trust only perfect matches; near-misses go to judge
+    entity_list: [0.5, 1.0]  # trust only perfect lists; partial matches go to judge
   bipartite_match_threshold: 0.6
   embedding_enabled: true
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
