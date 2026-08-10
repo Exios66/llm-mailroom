@@ -57,4 +57,4 @@ python api/main.py &
 curl -X POST http://localhost:8000/upload -F "file=@tests/fixtures/contract/sample_msa.txt" -F "matter_id=MATTER-001"
 ```
 
-No database server needed — SQLite files (`data/mailroom.db`, `data/checkpoints.db`) are created automatically. Docker is only required for the optional Langfuse trace viewer (`docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server`).
+No database server needed — SQLite files (`data/mailroom.db`, `data/checkpoints.db`) are created automatically. Docker is only required for the optional Langfuse trace viewer (`docker compose -f config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server`).
