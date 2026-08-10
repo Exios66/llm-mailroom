@@ -1,4 +1,4 @@
-# `docker/` — Optional services
+# `config/docker/` — Optional services
 
 ## What this folder is (plain English)
 
