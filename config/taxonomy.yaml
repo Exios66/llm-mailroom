@@ -63,9 +63,21 @@ confidence:
 # (sentence-transformers) as a second signal. `ambiguous_band` is the judge
 # escalation gate: fields scoring inside the band trigger the LLM judge; runs
 # scoring clearly above or below the band skip the judge entirely (2 evaluator
-# calls saved per run). See observability/field_scoring.py.
+# calls saved per run). `type_bands` overrides the band per field type —
+# calibrated by scripts/calibrate_field_scoring.py (issue #4): date/id/money/
+# free_text have a real deterministic cutoff, while name and entity_list
+# types are too lenient for a deterministic reject (Jaro-Winkler/token-set are
+# typo-tolerant by design), so every such field escalates to the judge
+# ("always"). See observability/field_scoring.py.
 field_scoring:
   ambiguous_band: [0.5, 0.85]
+  type_bands:
+    date: never              # exact-after-normalize: decisive both ways
+    id: never                # exact match: decisive both ways
+    money: [0.675, 0.938]    # numeric tolerance: calibrated cutoff
+    free_text: [0.6, 0.95]   # token F1: paraphrases legitimately score 0.6-0.88 — escalate them
+    name: [0.5, 1.0]         # trust only perfect matches; near-misses go to judge
+    entity_list: [0.5, 1.0]  # trust only perfect lists; partial matches go to judge
   bipartite_match_threshold: 0.6  # minimum pairwise similarity for a list match
   embedding_enabled: true
   embedding_model: sentence-transformers/all-MiniLM-L6-v2

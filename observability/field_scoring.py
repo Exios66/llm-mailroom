@@ -74,6 +74,43 @@ def get_ambiguous_band() -> tuple[float, float]:
     return _DEFAULT_AMBIGUOUS_BAND
 
 
+def get_type_bands() -> dict:
+    """Per-field-type ambiguous-band overrides from ``field_scoring.type_bands``
+    (issue #4 calibration: each field type gets its own cutoff instead of one
+    global band). ``"always"`` = every field of that type escalates to the LLM
+    judge (no deterministic cutoff exists); ``"never"`` = no field of that type
+    ever escalates (the deterministic score is decisive both ways)."""
+    tb = _field_scoring_config().get("type_bands") or {}
+    out: dict[str, tuple] = {}
+    for k, v in tb.items():
+        if v == "always":
+            out[k] = ("always",)
+        elif v == "never":
+            out[k] = ("never",)
+        elif isinstance(v, (list, tuple)) and len(v) == 2:
+            out[k] = (float(v[0]), float(v[1]))
+    return out
+
+
+def field_is_ambiguous(field_type: str, score: float) -> bool:
+    """Is this field score in the (possibly type-specific) ambiguous band?
+
+    Band check is half-open (``low <= score < high``): a perfect score of 1.0
+    is never ambiguous, and a score exactly at the low cutoff still escalates
+    (fail-safe toward the judge)."""
+    bands = get_type_bands()
+    band = bands.get(field_type) or bands.get(field_type.split(":", 1)[0])
+    if band == ("always",):
+        return True
+    if band == ("never",):
+        return False
+    if band is not None:
+        low, high = band
+        return low <= score < high
+    low, high = get_ambiguous_band()
+    return low <= score < high
+
+
 def get_bipartite_match_threshold() -> float:
     val = _field_scoring_config().get("bipartite_match_threshold")
     try:
@@ -541,13 +578,13 @@ def score_extraction(
     - ``overall_score`` is the mean of the per-field scores (None when no
       field is scored).
     - ``ambiguous_fields`` collects fields landing in the ambiguous band
-      (``field_scoring.ambiguous_band``) — the signal that escalates to the
+      (``field_scoring.ambiguous_band``, or the per-type override in
+      ``field_scoring.type_bands``) — the signal that escalates to the
       LLM judge.
     - List fields also produce ``entity_list_scores`` with precision/recall.
     """
     predicted = predicted or {}
     expected = expected or {}
-    band_low, band_high = get_ambiguous_band()
     needs_embedding = any(
         ft in ("name", "free_text") or (is_entity_list(ft) and (ft.split(":", 1)[1] if ":" in ft else "name") in ("name", "free_text"))
         for ft in field_types.values()
@@ -575,7 +612,7 @@ def score_extraction(
                 score = result
         score = round(score, 4)
         field_scores[key] = score
-        if band_low <= score <= band_high:
+        if field_is_ambiguous(field_type, score):
             ambiguous.append(key)
 
     overall = round(sum(field_scores.values()) / len(field_scores), 4) if field_scores else None

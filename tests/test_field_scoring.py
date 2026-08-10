@@ -19,7 +19,9 @@ from observability.field_scoring import (
     FIELD_SCORERS,
     EntityListScore,
     ExtractionScoreResult,
+    field_is_ambiguous,
     get_field_types,
+    get_type_bands,
     normalize_text,
     score_date_field,
     score_extraction,
@@ -261,6 +263,47 @@ class TestScoreExtraction:
         el = result.entity_list_scores["parties"]
         assert el.recall == pytest.approx(2 / 3)
         assert el.unmatched_expected == 1
+
+
+class TestTypeBands:
+    """Calibrated per-field-type ambiguous bands (issue #4 calibration step)."""
+
+    def test_bands_loaded_from_taxonomy(self):
+        bands = get_type_bands()
+        assert bands["date"] == ("never",)       # decisive both ways
+        assert bands["id"] == ("never",)
+        assert 0.0 < bands["money"][0] < 1.0     # calibrated numeric cutoff
+        assert bands["name"] == (0.5, 1.0)       # trust only perfect matches
+        assert bands["entity_list"] == (0.5, 1.0)
+
+    def test_perfect_score_never_ambiguous(self):
+        assert not field_is_ambiguous("free_text", 1.0)
+        assert not field_is_ambiguous("name", 1.0)
+        assert not field_is_ambiguous("entity_list:name", 1.0)
+        assert not field_is_ambiguous("money", 1.0)
+
+    def test_date_never_ambiguous_any_score(self):
+        assert not field_is_ambiguous("date", 0.0)
+        assert not field_is_ambiguous("date", 0.6)
+        assert not field_is_ambiguous("date", 1.0)
+
+    def test_name_partial_match_is_ambiguous(self):
+        assert field_is_ambiguous("name", 0.98)    # typo-tolerant near-miss
+        assert not field_is_ambiguous("name", 0.4) # clearly wrong, no judge
+
+    def test_free_text_paraphrase_band_is_wide(self):
+        assert field_is_ambiguous("free_text", 0.8)   # correct paraphrase zone
+        assert not field_is_ambiguous("free_text", 0.3)  # clearly wrong
+        assert not field_is_ambiguous("free_text", 1.0)
+
+    def test_money_calibrated_cutoff(self):
+        assert field_is_ambiguous("money", 0.7)     # inside 0.675-0.938
+        assert not field_is_ambiguous("money", 0.5)  # below cutoff: clearly wrong
+        assert not field_is_ambiguous("money", 0.95)  # above cutoff: clearly right
+
+    def test_entity_list_suffix_inherits_base_band(self):
+        assert field_is_ambiguous("entity_list:free_text", 0.8)
+        assert not field_is_ambiguous("entity_list:free_text", 1.0)
 
 
 class TestLangfuseWiring:
