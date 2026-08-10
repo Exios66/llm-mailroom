@@ -1,4 +1,11 @@
-# VENDORED from github.com/Exios66/llm-entity-extraction (commit 055df31, ~v0.11.0).
+# VENDORED from github.com/Exios66/llm-entity-extraction (verified against
+# commit 3a03d5c, 2026-08-10 — issue #10 alignment check: CONTRACT_SUBTYPES,
+# _SUBTYPE_ALIASES, SUBTYPE_EQUIVALENCES, SORTER_SCHEMA, DOC_CLASSES, and the
+# sorter_v5 prompt are byte-identical to upstream; the only divergences are the
+# MAILROOM PATCHes below and the corrected 4-tuple return annotation, which
+# matches upstream's actual return value — upstream declares a stale
+# ``tuple[str, float, str]`` but returns (doc_type, subtype, confidence,
+# reasoning)).
 # Imported verbatim (import paths rewritten to ``langchain_agents.*``) so the
 # eval-validated LangChain sorter/contracts-specialist agents run inside the
 # mailroom. Local adaptations (pages/vision, usage/deadline hooks) are marked

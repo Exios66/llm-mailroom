@@ -1,4 +1,7 @@
-# VENDORED from github.com/Exios66/llm-entity-extraction (commit 055df31, ~v0.11.0).
+# VENDORED from github.com/Exios66/llm-entity-extraction (verified against
+# commit 3a03d5c, 2026-08-10 — issue #10 alignment check: the
+# contracts_specialist_v11 prompt is byte-identical to upstream; only the
+# MAILROOM PATCHes below diverge).
 # Imported verbatim (import paths rewritten to ``langchain_agents.*``) so the
 # eval-validated LangChain sorter/contracts-specialist agents run inside the
 # mailroom. Local adaptations (pages/vision, usage/deadline hooks) are marked
