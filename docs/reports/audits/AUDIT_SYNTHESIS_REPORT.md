@@ -755,12 +755,12 @@ data/
 - ✅ **Operational** — Filesystem bins for human-legible state, API for integration, ops monitor
 
 ### Areas for Improvement
-- 📝 **Documentation layout** — `docs/` is canonical; `wiki/` holds GitHub-wiki-native pages only (synced to the GitHub wiki via `wiki/sync-wiki.sh`, never a `docs/` mirror); add missing READMEs
-- 📝 **Agent count consistency** — Update all references from "5 specialists" to 6
-- 🔧 **Ops monitor integration** — Wire pause flag to watcher
-- 🔧 **Multi-tenancy/RBAC** — Deferred but needed for production
-- 🔧 **Schema completeness** — Add `field_types` for all doc classes
-- 🔧 **Backup/restore docs** — Critical for compliance use cases
+- ✅ **Documentation layout** — `docs/` is canonical; `wiki/` holds GitHub-wiki-native pages only (synced to the GitHub wiki via `wiki/sync-wiki.sh`, never a `docs/` mirror); all directory READMEs present
+- ✅ **Agent count consistency** — All references say 6 specialists (contracts + corporate records + due diligence + correspondence + compliance + court opinions)
+- ✅ **Ops monitor integration** — Pause flag wired to watcher (`pipeline/bins.py:is_ingestion_paused` → `pipeline/watcher.py` pauses/resumes)
+- 🔧 **Multi-tenancy/RBAC** — Deferred but needed for production (documented in `wiki/FAQ.md` and this report)
+- ✅ **Schema completeness** — `field_types` defined for all 6 doc classes in `config/taxonomy.yaml` (drives deterministic field scoring)
+- ✅ **Backup/restore docs** — SQLite backup guidance in `docs/deployment.md` (online `.backup`, restore, Postgres equivalent)
 
 The codebase demonstrates mature engineering practices: clear separation of concerns, extensive observability, deterministic guardrails, and a principled approach to LLM integration that prioritizes auditability and configurability over emergent behavior.
 
