@@ -94,10 +94,14 @@ def subtype_for_title(title: str, labels, aliases, unknown) -> tuple[str, str]:
     Strategy: first the folder/category aliases (authoritative for the txt/pdf
     tree), then the agreement-family keywords in the title, then 'other'."""
     lower = title.lower()
-    words = set(re.findall(r"[a-z0-9]+", lower))
+
+    # Tokenize with word stems: strip trailing digits/ordinals so
+    # "DEVELOPMENT AGREEMENT1" and "DEVELOPMENT AGREEMENT2" (consecutive
+    # exhibits of the same agreement) both match "development agreement".
+    stems = set(re.findall(r"[a-z]+", re.sub(r"[0-9]+", " ", lower)))
 
     def has(phrase: str) -> bool:
-        return all(w in words for w in re.findall(r"[a-z0-9]+", phrase))
+        return all(w in stems for w in re.findall(r"[a-z]+", phrase))
 
     # 1) folder alias (title may contain the category, e.g. Part_I/License_Agreements/...)
     # Word-bounded so the one-letter alias "ip" cannot match inside "sponsorship".
@@ -105,38 +109,70 @@ def subtype_for_title(title: str, labels, aliases, unknown) -> tuple[str, str]:
         if has(alias):
             return key, alias
     # 2) agreement-family keyword phrases (word-bounded: "ip" must be its own
-    # word, not the tail of "sponsorship"; "supply" not the tail of "supplying")
+    # word, not the tail of "sponsorship"; "supply" not the tail of "supplying").
+    # Trailing ordinals are stripped by the stem tokenizer ("AGREEMENT2" == "agreement").
+    # Distinctive families are checked BEFORE generic ones so compound titles
+    # ("TRANSPORTATION SERVICE AGREEMENT", "SITE DEVELOPMENT AND HOSTING
+    # AGREEMENT") route to the specific family, matching the paper's folders.
     family_kw = {
-        "affiliate": ("affiliate", "referral"),
-        "agency": ("agency agreement",),
-        "collaboration": ("collaboration", "cooperation agreement"),
-        "co_branding": ("co-branding", "co branding", "cobranding"),
-        "consulting": ("consulting", "advisory"),
-        "development": ("development agreement", "development and"),
-        "distributor": ("distributor", "distribution agreement", "resale"),
-        "endorsement": ("endorsement",),
-        "franchise": ("franchise", "franchisor", "franchisee"),
+        "transportation": ("transportation", "logistics", "carrier", "shipping"),
         "hosting": ("hosting", "web hosting"),
-        "ip": ("intellectual property", "ip agreement"),
-        "joint_venture": ("joint venture",),
-        "license": ("license", "licensor", "licensee", "licence"),
-        "maintenance": ("maintenance",),
+        "strategic_alliance": ("strategic alliance",),
+        "joint_venture": ("joint venture", "joint filing", "jointly"),
+        "non_compete_no_solicit": ("non-compete", "non compete", "no-solicit",
+                                   "non-solicit", "non-competition", "non competition",
+                                   "non-disparagement", "non disparagement"),
+        "co_branding": ("co-branding", "co branding", "cobranding"),
+        "collaboration": ("collaboration", "cooperation agreement"),
+        "franchise": ("franchise", "franchisor", "franchisee"),
+        "endorsement": ("endorsement",),
+        "distributor": ("distributor", "distribution agreement", "resale"),
+        "reseller": ("reseller",),
+        "supply": ("supply agreement", "supply of", "purchase"),
         "manufacturing": ("manufacturing", "manufacture"),
         "marketing": ("marketing",),
-        "non_compete_no_solicit": ("non-compete", "non compete", "no-solicit", "non-solicit"),
-        "outsourcing": ("outsourcing",),
         "promotion": ("promotion",),
-        "reseller": ("reseller",),
-        "service": ("service agreement", "services agreement", "msa", "master service"),
         "sponsorship": ("sponsorship", "sponsor"),
-        "strategic_alliance": ("strategic alliance",),
-        "supply": ("supply agreement", "supply of", "purchase"),
-        "transportation": ("transportation", "logistics", "carrier", "shipping"),
+        "agency": ("agency agreement",),
+        "affiliate": ("affiliate", "referral"),
+        "consulting": ("consulting", "advisory"),
+        "outsourcing": ("outsourcing",),
+        "ip": ("intellectual property", "ip agreement"),
+        "license": ("license", "licensor", "licensee", "licence"),
+        "maintenance": ("maintenance",),
+        "development": ("development agreement", "development and"),
+        "service": ("service agreement", "services agreement", "msa", "master service",
+                    "servicing agreement", "remarketing"),
     }
     for key, kws in family_kw.items():
         if any(has(k) for k in kws):
             return key, "title"
     return unknown, "title"
+
+
+def _slug(s: str) -> str:
+    """Case/punctuation-insensitive key for matching annotation titles to the
+    CUAD PDF tree (e.g. 'LIMEENERGYCO_..._Distributor Agreement' matches
+    '...-DISTRIBUTOR AGREEMENT.pdf')."""
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _pdf_folder_subtypes(pdf_dir: Path) -> dict[str, str]:
+    """Build {annotation-title-slug: subtype_key} from the CUAD PDF tree, whose
+    category folders are the authoritative subtype labels for the 199 PDFs HF
+    ships (the original CUAD paper's counts come from this same folder
+    taxonomy). Folders map through the sorter's _SUBTYPE_ALIASES; unmapped
+    folder names fall back to the slugified folder name."""
+    labels, aliases, unknown = _load_subtype_taxonomy()
+    mapping: dict[str, str] = {}
+    if not pdf_dir.exists():
+        return mapping
+    for p in pdf_dir.rglob("*.pdf"):
+        folder = p.parent.name
+        key = aliases.get(_normalize_category(folder), _normalize_category(folder))
+        if key in labels or key == unknown:
+            mapping[_slug(p.stem)] = key
+    return mapping
 
 
 # ---------------------------------------------------------------------------
@@ -239,8 +275,17 @@ def run_eda(data_dir: Path) -> dict:
     if not contracts:
         raise SystemExit("No contracts found — run without --skip-download first.")
 
-    # Derive subtype + category per contract (folder alias from title first).
+    # Authoritative folder mapping first (CUAD PDF tree categories), then
+    # title keywords for the 311 contracts HF ships without a categorized PDF.
+    folder_map = _pdf_folder_subtypes(data_dir / "pdfs")
+    n_folder = 0
     for c in contracts:
+        key = folder_map.get(_slug(c["title"]))
+        if key is not None:
+            c["subtype"] = key
+            c["category"] = "folder"
+            n_folder += 1
+            continue
         key, cat = subtype_for_title(c["title"], labels, aliases, unknown)
         c["subtype"] = key
         c["category"] = cat
@@ -284,15 +329,35 @@ def run_eda(data_dir: Path) -> dict:
         for q in c["qas"]:
             qa_counts[q["question"][:70]] += 1
 
+    # Reference distribution from the CUAD paper (25 commercial-contract
+    # categories; the 510 counts sum exactly) — the ground truth issue #9
+    # documents. Title-derived classification approximates it; the PDF-folder
+    # subset is authoritative.
+    paper_counts = {
+        "affiliate": 10, "agency": 13, "collaboration": 26, "co_branding": 22,
+        "consulting": 11, "development": 29, "distributor": 32, "endorsement": 24,
+        "franchise": 15, "hosting": 20, "ip": 17, "joint_venture": 23,
+        "license": 33, "maintenance": 34, "manufacturing": 17, "marketing": 17,
+        "non_compete_no_solicit": 3, "outsourcing": 18, "promotion": 12,
+        "reseller": 12, "service": 28, "sponsorship": 31, "supply": 18,
+        "strategic_alliance": 32, "transportation": 13,
+    }
+    vs_paper = {
+        k: {"paper": v, "mapped": dist.get(k, 0), "delta": dist.get(k, 0) - v}
+        for k, v in paper_counts.items()
+    }
+
     summary = {
         "corpus": HF_DATASET,
         "subtype_taxonomy": "mailroom CONTRACT_SUBTYPES (25 families + other)",
         "distribution": dist,
         "by_part": dict(by_part),
+        "folder_mapped_contracts": n_folder,
         "content": content,
         "per_subtype": per_subtype,
         "clause_types_present": len(qa_counts),
         "top_clause_types": qa_counts.most_common(12),
+        "vs_paper": vs_paper,
     }
 
     (data_dir / "subtype_distribution.json").write_text(json.dumps(summary, indent=2))
@@ -322,6 +387,19 @@ def _render_eda_md(summary: dict, labels: dict) -> str:
         )
     lines += ["", "## Clause/attribute coverage (41 CUAD question types)", ""]
     lines += [f"- {q} — {n} annotations" for q, n in summary["top_clause_types"]]
+    lines += ["", "## Comparison vs CUAD paper reference counts (issue #9)", ""]
+    lines += [
+        f"- **Authoritative mapping**: {summary['folder_mapped_contracts']} of "
+        f"{summary['content']['total_contracts']} contracts mapped from the CUAD PDF "
+        "tree category folders (the paper's own taxonomy); the rest are title-derived.",
+        "",
+        "| subtype | paper | mapped | delta |",
+        "|---|---|---|---|",
+    ]
+    for key, d in sorted(summary["vs_paper"].items(), key=lambda kv: -kv[1]["paper"]):
+        mark = "" if d["delta"] == 0 else (" over" if d["delta"] > 0 else " under")
+        lines.append(f"| `{key}` | {d['paper']} | {d['mapped']} | {d['delta']:+d}{mark} |")
+    lines += ["", f"`other` (title-unclassifiable): {summary['distribution'].get('other', 0)}"]
     lines += ["", "## By corpus part", ""]
     for part, n in sorted(summary["by_part"].items(), key=lambda kv: -kv[1]):
         lines.append(f"- {part}: {n} contracts")
