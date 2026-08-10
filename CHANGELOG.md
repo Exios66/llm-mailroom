@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Full CUAD corpus support (issue #9)**: `scripts/fetch_full_cuad.py` now downloads the complete 510-contract CUAD v1 dataset (annotations, txt, PDFs, master clauses) and produces an EDA (`data/cuad/EDA.md` + `subtype_distribution.json`) that validates the mailroom 25-family `CONTRACT_SUBTYPES` taxonomy against the corpus. Subtype mapping is folder-authoritative where the CUAD PDF tree exists (198 contracts, 100% alias coverage) and title-derived elsewhere, with a delta table vs the CUAD paper's canonical counts (21/25 families exact; residual deltas are compound-title artifacts documented in the EDA).
+- **Pipeline smoke-test CLI**: `scripts/validate_pipeline.py` runs the full mocked pipeline over fixture/sample/PDF files and reports per-class pass rates plus the sorter's subtype distribution (exit 0 only if every file archives).
+
 ### Changed
 
 - **Catalog now tracks the true conveyor position of every document** (was: only happy-path runs got a record, and always with the stale `classified` stage): `ingest_node` upserts a `processing` row (so stuck-doc detection and `/ops/status` see in-flight documents), `human_review_node` upserts `review` (so `/ops/status` review_queue and error-rate stats are accurate instead of permanently 0), `catalog_write_node` writes the pre-archive row, and `archive_node` finalizes it to `archived`. `storage/catalog.py` needs no changes — the graph now writes the right rows at the right time. Regression tests in `tests/test_conveyor_stages.py`.
