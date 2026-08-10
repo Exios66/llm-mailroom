@@ -415,6 +415,28 @@ def transcribe(self, file_path: Path) -> dict:
 
 ---
 
+## Resolution Status (verified 2026-08-10)
+
+All 12 issues have been **verified resolved in the current version** (audit
+item 10.x re-check during the Aug 2026 sweep):
+
+| Issue | Fix verified in current code |
+|-------|------------------------------|
+| #1 Qwen rejects `json_object` | `agents/base.py` injects the literal `json` token into the **system** message of every structured call (`JSON_SYSTEM_INJECTION`) |
+| #2 Transient connection errors | `llm/retry.py` retries `APIConnectionError`/`APITimeoutError`/429/5xx with exponential backoff + jitter; 4xx never retried |
+| #3 `output: null` on correspondence | parse-error path returns structured `{"_parse_error": True, "_raw": ...}`; guards clamp confidence → retry/review |
+| #4 Misleading trace latency | retry/attempt context captured per span; attempt counters on state |
+| #5 contract_03 truncation | per-agent `max_input_chars` (contracts 100k) + HEAD+TAIL windowing |
+| #6 Guardrail logging | `guardrail_triggered` score + `extraction_guardrail`/`classification_guardrail` on state; guards documented |
+| #7 Watcher re-processing | manifest-based terminal-stage skip in `watcher.py` + deterministic trace ids |
+| #8 Mock-like spans in real runs | mock runs labeled `environment="mock"`; real runs clean |
+| #9 Missing judge scores | live evaluators (`sync_evaluators.py`) + offline judges (`run_quality_judges.py`) target the `pipeline-result` generation |
+| #10 Missing PDF transcription span | `_read_file_text` runs inside the ingest path with spans |
+| #11 Missing cost model | `cost_models:` in `taxonomy.yaml` synced via `sync_models.py` (qwen3.7-flash registered) |
+| #12 Inconsistent session_id | `session_id = matter_id` by default, run-scoped `pilot-<mode>-<ts>` for pilots |
+
+---
+
 ## Validation Checklist (Post-Patch)
 
 After applying patches, re-run pilot and verify:

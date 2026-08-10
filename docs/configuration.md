@@ -256,6 +256,9 @@ See `.env.example` for the complete list:
 | `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `none` |
 | `LOG_LEVEL` | No | `INFO` | Structured log level (`DEBUG`, `INFO`, `WARNING`, ...) |
 | `LOG_FORMAT` | No | `pretty` | Log renderer: `pretty` (console) or `json` (machine-readable) |
+| `LOG_FILE` | No | — | Optional rotating file sink: every structlog event is appended here as a JSON line (audit item 10.3 — no unbounded log files) |
+| `LOG_MAX_BYTES` | No | `10485760` | Rotation size per log file (10 MB default) |
+| `LOG_BACKUP_COUNT` | No | `5` | Rotated log files kept |
 | `LANGFUSE_PUBLIC_KEY` | No | `pk-lf-local` | Langfuse public key |
 | `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key (present ⇒ `auto` picks Langfuse) |
 | `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server URL (`LANGFUSE_BASE_URL` accepted as alias) |
