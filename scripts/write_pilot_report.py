@@ -13,7 +13,7 @@ self-contained markdown report with:
   - the optimal vision tradeoff analysis (accuracy per token/dollar)
 
 Usage:
-    python scripts/write_pilot_report.py [--out reports/pilot-vision-tradeoff.md]
+    python scripts/write_pilot_report.py [--out docs/reports/pilot-vision-tradeoff.md]
     python scripts/write_pilot_report.py --dry-run
 """
 
@@ -302,8 +302,8 @@ def main() -> int:
     parser.add_argument(
         "--out",
         type=Path,
-        default=REPO_ROOT / "reports" / "pilot-vision-tradeoff.md",
-        help="Output markdown path (default: reports/pilot-vision-tradeoff.md).",
+        default=REPO_ROOT / "docs" / "reports" / "pilot-vision-tradeoff.md",
+        help="Output markdown path (default: docs/reports/pilot-vision-tradeoff.md).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print to stdout instead of writing.")
     args = parser.parse_args()

@@ -9,7 +9,7 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 | `run_pilot.py` | Main pilot testing entrypoint. Runs the full pipeline over the sample set with mock (`--mock`) or real (`--real`) LLM. Supports baseline diffing (`--baseline`) and ground-truth score ingestion (`--scores`). |
 | `run_quality_judges.py` | Offline LLM-as-a-Judge evaluation over a pilot run. Measures classification correctness, extraction completeness, and extraction correctness. Supports `--mock` for deterministic fake judges. |
 | `run_vision_sweep.py` | Vision vs. text tradeoff benchmarking. Runs the same documents with text-only, vision-10-pages, and vision-all-pages modes. Outputs comparison metrics. |
-| `write_pilot_report.py` | Renders tracked markdown + JSON pilot report from collected run data (default: `reports/pilot-vision-tradeoff.md`). |
+| `write_pilot_report.py` | Renders tracked markdown + JSON pilot report from collected run data (default: `docs/reports/pilot-vision-tradeoff.md`). |
 
 ## Data Preparation
 
@@ -17,6 +17,8 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 |--------|---------|
 | `prepare_samples.py` | Builds the pilot PDF set in `data/samples/` from committed sources and `examples/sources/`. |
 | `fetch_external_samples.py` | Downloads LegalBench MAUD, Atticus CUAD, and Pile of Law samples into `examples/external/`. Idempotent. |
+| `fetch_full_cuad.py` | Downloads the **full CUAD corpus** (510 annotated contracts, 200 txt, 199 PDFs) into `data/cuad/` and writes the subtype-distribution EDA. Idempotent — resumes partial downloads. |
+| `validate_pipeline.py` | CLI smoke test of the full pipeline (mock LLM) over sample files; supports `--count`, `--doc-type`, and direct file arguments. Exit code 0 only if every file reaches archive. |
 
 ## Langfuse Synchronization
 
@@ -33,7 +35,7 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 
 | Script | Purpose |
 |--------|---------|
-| `cutover.py` | Per-agent provider/model switching utility. `--list` shows current assignments, `--recommend` suggests cutover order, `--validate --agent <name>` runs tests against the proposed model, `--agent <name> --provider <p> --model <m>` updates `taxonomy.yaml`. |
+| `scripts/cutover.py` | Per-agent provider/model switching utility. `--list` shows current assignments, `--recommend` suggests cutover order, `--validate --agent <name>` runs tests against the proposed model, `--agent <name> --provider <p> --model <m>` updates `taxonomy.yaml`. |
 |
 
 ## Utility

@@ -59,7 +59,7 @@ state) appear after the first document is processed.
 If you opted for Postgres, start it and initialize:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d postgres
+docker compose -f config/docker/docker-compose.yml up -d postgres
 python -c "import asyncio; from storage.db import init_db; asyncio.run(init_db())"
 ```
 
@@ -322,7 +322,7 @@ stderr_logfile_backups=14
 ### Database errors
 
 - **SQLite:** verify the `data/` directory is writable; the DB files are created automatically. If the DB was created by a different `MAILROOM_BASE_DIR`, point it back or delete the old files.
-- **Postgres:** verify `DATABASE_URL` in `.env` and that Postgres is running: `docker compose -f docker/docker-compose.yml ps`
+- **Postgres:** verify `DATABASE_URL` in `.env` and that Postgres is running: `docker compose -f config/docker/docker-compose.yml ps`
 
 ### Langfuse not showing traces
 

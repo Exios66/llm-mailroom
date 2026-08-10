@@ -54,10 +54,10 @@ All agents use Ollama with their configured model.
 Use the cutover utility:
 
 ```bash
-python cutover.py --list                          # See current assignments
-python cutover.py --agent sorter --provider ollama --model qwen3:7b
-python cutover.py --validate --agent sorter       # Run tests
-python cutover.py --recommend                     # View cutover order
+python scripts/cutover.py --list                          # See current assignments
+python scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
+python scripts/cutover.py --validate --agent sorter       # Run tests
+python scripts/cutover.py --recommend                     # View cutover order
 ```
 
 Or edit `config/taxonomy.yaml` directly:
@@ -121,7 +121,7 @@ agents:
 | JSON mode rejected (HTTP 400) | Use a model that supports `response_format: json_object` (Qwen family) or route the agent to OpenRouter |
 | Vision pages missing | Add the model substring to `vision.models` in `taxonomy.yaml`; confirm `MAILROOM_VISION_ENABLED` and that `pymupdf` (fitz) is installed |
 | OOM | Use a smaller quant (`qwen3:7b-q4_K_M`); reduce `num_ctx`/GPU memory in vLLM |
-| Cutover validation fails | Check `cutover.py --list`; confirm model is pulled; tests validate config plumbing, run a `--real` pilot for accuracy |
+| Cutover validation fails | Check `scripts/cutover.py --list`; confirm model is pulled; tests validate config plumbing, run a `--real` pilot for accuracy |
 | Everything routes to review | Compare against OpenRouter with a pilot baseline; tune `confidence.high`/`confidence.low` in `taxonomy.yaml` |
 
 See `docs/local-models.md` for the full guide.

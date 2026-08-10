@@ -92,20 +92,20 @@ Move agents one at a time, validating each before moving the next. This minimize
 
 ```bash
 # 1. See current assignments
-python cutover.py --list
+python scripts/cutover.py --list
 
 # 2. Move one agent to local
-python cutover.py --agent sorter --provider ollama --model qwen3:7b
+python scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
 
 # 3. Validate with tests
-python cutover.py --validate --agent sorter
+python scripts/cutover.py --validate --agent sorter
 
 # 4. If validation passes, move to the next agent
-python cutover.py --agent compliance_specialist --provider ollama --model qwen3:7b
-python cutover.py --validate --agent compliance_specialist
+python scripts/cutover.py --agent compliance_specialist --provider ollama --model qwen3:7b
+python scripts/cutover.py --validate --agent compliance_specialist
 
 # 5. If validation fails, roll back
-python cutover.py --agent sorter --provider openrouter --model openai/gpt-4o
+python scripts/cutover.py --agent sorter --provider openrouter --model openai/gpt-4o
 ```
 
 ### Manual Cutover (Direct YAML Edit)
@@ -212,7 +212,7 @@ If the pipeline logs `APIConnectionError` or `ConnectError`:
 1. Verify the service is running:
    ```bash
    # Ollama (Docker)
-   docker compose -f docker/docker-compose.yml --profile local-llm ps
+   docker compose -f config/docker/docker-compose.yml --profile local-llm ps
    curl http://localhost:11434/v1/models
 
    # vLLM
@@ -220,7 +220,7 @@ If the pipeline logs `APIConnectionError` or `ConnectError`:
    ```
 2. Confirm `OLLAMA_BASE_URL` / `VLLM_BASE_URL` matches the service (defaults: `http://localhost:11434/v1`, `http://localhost:8000/v1`). Note the **`/v1` suffix is required** — the OpenAI SDK appends `/chat/completions`, so omitting it produces a 404/connection error.
 3. If running Ollama **on the host** (not Docker), make sure it exposes the OpenAI-compatible endpoint: `OLLAMA_HOST=0.0.0.0 ollama serve`.
-4. If agents still resolve to OpenRouter, check `DEFAULT_PROVIDER` isn't overriding: `python cutover.py --list` shows the effective provider per agent.
+4. If agents still resolve to OpenRouter, check `DEFAULT_PROVIDER` isn't overriding: `python scripts/cutover.py --list` shows the effective provider per agent.
 
 ### HTTP 404 on `/models` or `/chat/completions`
 
@@ -265,9 +265,9 @@ Page images are only attached when the agent's model matches a `vision.models` s
 
 ### Cutover validation fails
 
-`python cutover.py --validate --agent <name>` runs the unit tests against the new provider/model. If it fails:
+`python scripts/cutover.py --validate --agent <name>` runs the unit tests against the new provider/model. If it fails:
 
-1. Check the agent's `provider` and `model` values resolved correctly: `python cutover.py --list`
+1. Check the agent's `provider` and `model` values resolved correctly: `python scripts/cutover.py --list`
 2. Confirm the model is pulled: `docker exec mailroom-ollama ollama list`
 3. The tests never hit the real LLM — they validate the config plumbing, not the model's accuracy. For accuracy, run a pilot: `python scripts/run_pilot.py --real --source <corpus>`
 

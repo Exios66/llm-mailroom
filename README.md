@@ -17,7 +17,7 @@ cp .env.example .env
 pip install -e ".[dev]"
 
 # 3. (Optional) Start Langfuse for trace viewing — needs Docker
-docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
+docker compose -f config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
 # 4. (Optional) Sync the agent prompts into Langfuse prompt management
 python scripts/sync_prompts.py
@@ -159,18 +159,23 @@ flowchart LR
 ```
 mailroom/
 ├── agents/          # Specialist agents (Sorter, Contract, Corp Records, Judge, …)
+├── langchain_agents/# Vendored LangChain agents (Sorter, Contracts Specialist) from llm-entity-extraction
 ├── graph/           # LangGraph state machine: nodes, routing, state
 ├── llm/             # Provider-agnostic LLM client, retry, Langfuse-managed prompts
 ├── schemas/         # Pydantic models: manifest, matter, documents, audit
 ├── pipeline/        # Watcher, filesystem bins, ops monitor
 ├── storage/         # SQLite/Postgres: catalog CRUD, audit log
 ├── api/             # FastAPI: upload, review, status, audit
-├── observability/   # Langfuse tracing + task-spec scores (backend-agnostic)
+├── observability/   # Langfuse tracing + task-spec scores + deterministic field scoring
 ├── config/          # taxonomy.yaml — doc classes, thresholds, model mappings
-├── scripts/         # prepare_samples, run_pilot, run_quality_judges, sync_prompts, sync_dataset, sync_evaluators, sync_langfuse_logs
-├── docker/          # docker-compose: Langfuse, Ollama (Postgres optional)
+│   └── docker/      # docker-compose: Langfuse, Ollama (Postgres optional)
+├── scripts/         # ops & eval: run_pilot, run_quality_judges, run_vision_sweep, sync_*, cutover, compare_runs, fetch_full_cuad, validate_pipeline
+├── examples/        # sample documents + manifest ground truth (samples/, sources/, external/)
+├── data/            # runtime state: inbox/processing/archive bins, mailroom.db, cuad/ corpus, manifests/
 ├── tests/           # pytest: unit, routing, e2e, judge, fixtures
-└── docs/            # Detailed documentation
+├── docs/            # user docs (agents, architecture, configuration, deployment, local-models)
+│   └── reports/     # audit reports + pilot findings
+└── wiki/            # GitHub wiki mirror of docs/ (synced via wiki/sync-wiki.sh)
 ```
 
 ## Configuration
@@ -310,19 +315,19 @@ Structured logging via `pipeline/logging.py` (`setup_logging()`, called by every
 
 ```bash
 # See current agent→model assignments
-python cutover.py --list
+python scripts/cutover.py --list
 
 # Move sorter to local (safest first step)
-python cutover.py --agent sorter --provider ollama --model qwen3:7b
+python scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
 
 # Validate with tests
-python cutover.py --validate --agent sorter
+python scripts/cutover.py --validate --agent sorter
 
 # View recommended cutover order
-python cutover.py --recommend
+python scripts/cutover.py --recommend
 
 # Cut all agents at once
-python cutover.py --all --provider ollama --model qwen3:7b
+python scripts/cutover.py --all --provider ollama --model qwen3:7b
 ```
 
 ### Available Local Models (Ollama)
@@ -419,7 +424,7 @@ The report records per-document stage, doc type, confidence, retries, LLM call c
 
 ```bash
 # 1. (Optional) Start Langfuse for trace viewing
-docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
+docker compose -f config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
 # 2. Set environment
 export OPENROUTER_API_KEY=sk-or-v1-...

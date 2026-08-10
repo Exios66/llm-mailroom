@@ -3,11 +3,11 @@
 Phase 10: Agent-by-agent local model cutover utility.
 
 Usage:
-  python cutover.py --list                    # Show all agents and their current provider/model
-  python cutover.py --agent sorter --provider ollama --model qwen3:7b
-  python cutover.py --all --provider ollama --model qwen3:7b
-  python cutover.py --agent sorter --provider openrouter --model openai/gpt-4o   # cut back
-  python cutover.py --validate --agent sorter  # Run fixture tests for one agent against current config
+  python scripts/cutover.py --list                    # Show all agents and their current provider/model
+  python scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
+  python scripts/cutover.py --all --provider ollama --model qwen3:7b
+  python scripts/cutover.py --agent sorter --provider openrouter --model openai/gpt-4o   # cut back
+  python scripts/cutover.py --validate --agent sorter  # Run fixture tests for one agent against current config
 """
 
 import argparse
@@ -16,7 +16,8 @@ import sys
 from pathlib import Path
 import yaml
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config" / "taxonomy.yaml"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_PATH = REPO_ROOT / "config" / "taxonomy.yaml"
 
 LOCAL_MODEL_MAP = {
     "qwen": {
@@ -127,10 +128,10 @@ Recommended agent-by-agent cutover order (least risky first):
   8. boss                         (adjudication/analysis)
 
 For each agent:
-  - Run: python cutover.py --agent <name> --provider ollama --model qwen3:7b
-  - Validate: python cutover.py --validate --agent <name>
+  - Run: python scripts/cutover.py --agent <name> --provider ollama --model qwen3:7b
+  - Validate: python scripts/cutover.py --validate --agent <name>
   - If validation passes, move to next agent.
-  - If validation fails, revert: python cutover.py --agent <name> --provider openrouter --model openai/gpt-4o
+  - If validation fails, revert: python scripts/cutover.py --agent <name> --provider openrouter --model openai/gpt-4o
 """)
 
 

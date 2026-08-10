@@ -210,7 +210,7 @@ file_extensions:
 # (caps output/reasoning-token generation — see agents/base.py) and optional
 # max_input_chars (input-text budget per call; defaults to 25000). Large
 # documents need a bigger window or late-page fields (termination clauses,
-# obligations) get truncated away — see PILOT_AUDIT_REPORT.md fix #5.
+# obligations) get truncated away — see docs/reports/audits/PILOT_AUDIT_REPORT.md fix #5.
 # To cut over locally: change provider to "ollama", model to e.g. "qwen3:7b"
 # Setting DEFAULT_PROVIDER env var overrides the provider globally.
 agents:
