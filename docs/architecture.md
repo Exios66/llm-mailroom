@@ -236,6 +236,14 @@ Every state transition writes an `AuditLogEntry` to the database. Each entry:
 
 ## Evaluators & Quality
 
+### Deterministic field scoring (issues #4/#5)
+
+Before any LLM judge runs, grounded extractions are scored deterministically by `observability/field_scoring.py` — a field-type-aware scorer that is cheap, reproducible, and costs no API calls. Each field is compared according to its type (`doc_classes[].field_types` in `taxonomy.yaml`): `id`/`date`/`money` are parsed and normalized then exact-matched (a one-day-off date scores 0, not 0.95); `name` uses Jaro-Winkler + token-set ratio over normalized text (uppercase, punctuation/suffix-stripped); `free_text` uses SQuAD-style token F1; `entity_list` fields use optimal bipartite matching (scipy Hungarian) with precision/recall/F1, so reordered lists score correctly. An optional sentence-transformers embedding cosine similarity rescues lexically-distant-but-semantically-equal name/free-text fields below `embedding_rescue_below`.
+
+Judge escalation is gated by **per-field-type bands** (`field_scoring.type_bands`), calibrated by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are `never` (decisive both ways), money/free_text have calibrated numeric cutoffs, and name/entity-list trust only perfect scores (`[0.5, 1.0]`) — near-misses escalate to the LLM judge because Jaro-Winkler/token-set are typo-tolerant by design. `observability/langfuse_field_scoring.py` attaches `extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, and `entity_list_recall` to the document trace, and on grounded runs `graph/build_graph.py` suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both LLM-as-judge evaluator calls.
+
+### LLM-as-judge
+
 The `judge` agent (`agents/judge.py`, offline — not in the document graph) audits pipeline output against the task specification. `scripts/run_quality_judges.py` runs it over a pilot report and attaches scores to each sample's trace:
 
 | Judge | Measures | Scores |
