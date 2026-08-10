@@ -165,3 +165,20 @@ async def get_session() -> AsyncSession:
 async def close_db():
     await get_engine().dispose()
     logger.info("database_disposed")
+
+
+async def check_connectivity() -> bool:
+    """Probe database connectivity with a cheap round-trip.
+
+    Returns True when a connection can be established (and, for SQLite, the
+    DB file is writable enough to create). Never creates or mutates tables.
+    """
+    try:
+        from sqlalchemy import text
+
+        async with get_engine().connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        logger.warning("database_connectivity_check_failed")
+        return False

@@ -116,3 +116,12 @@ agents:
 | Model not found | `docker exec mailroom-ollama ollama pull qwen3:7b` |
 | JSON parse errors | Try larger model or fall back to OpenRouter for that agent |
 | Slow inference | Use quantized models, enable GPU, reduce context window |
+| Connection refused | Verify service is up (`curl http://localhost:11434/v1/models`); confirm `OLLAMA_BASE_URL`/`VLLM_BASE_URL` includes the `/v1` suffix |
+| HTTP 404 on `/models` | Base URL must be OpenAI-compatible (`:11434/v1`, `:8000/v1`) — the raw root is not |
+| JSON mode rejected (HTTP 400) | Use a model that supports `response_format: json_object` (Qwen family) or route the agent to OpenRouter |
+| Vision pages missing | Add the model substring to `vision.models` in `taxonomy.yaml`; confirm `MAILROOM_VISION_ENABLED` and that `pymupdf` (fitz) is installed |
+| OOM | Use a smaller quant (`qwen3:7b-q4_K_M`); reduce `num_ctx`/GPU memory in vLLM |
+| Cutover validation fails | Check `cutover.py --list`; confirm model is pulled; tests validate config plumbing, run a `--real` pilot for accuracy |
+| Everything routes to review | Compare against OpenRouter with a pilot baseline; tune `confidence.high`/`confidence.low` in `taxonomy.yaml` |
+
+See `docs/local-models.md` for the full guide.

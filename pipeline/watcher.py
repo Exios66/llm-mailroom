@@ -22,6 +22,7 @@ from .bins import (
     list_inbox_files,
     get_worker_id,
     claim_file,
+    is_ingestion_paused,
 )
 from graph.build_graph import build_graph, run_pipeline
 
@@ -103,6 +104,9 @@ class InboxHandler(FileSystemEventHandler):
         if not _mark_active(path.name):
             logger.info("file_already_processing", file=str(path))
             return
+        if is_ingestion_paused():
+            logger.info("ingestion_paused_by_ops_monitor", file=str(path))
+            return
         try:
             time.sleep(0.5)
             if not path.exists():
@@ -165,6 +169,9 @@ class Watcher:
     def _process_existing(self, path: Path):
         if not _mark_active(path.name):
             logger.info("file_already_processing", file=str(path))
+            return
+        if is_ingestion_paused():
+            logger.info("ingestion_paused_by_ops_monitor", file=str(path))
             return
         try:
             if not path.exists():

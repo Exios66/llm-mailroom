@@ -182,6 +182,135 @@ services:
 
 ---
 
+## Backup & Restore
+
+The audit log is the compliance record — backup strategy is a critical concern. The following guidance covers the SQLite default; the same principles apply to Postgres.
+
+### What to back up
+
+| Artifact | Path | Purpose | Frequency |
+|---|---|---|---|
+| Catalog DB | `data/mailroom.db` | matters, documents, audit_log | Daily (or continuous) |
+| Crash-resume checkpoints | `data/checkpoints.db` | LangGraph in-flight state | Daily |
+| Archived documents | `data/archive/` | Final durable document copies | Continuous (as docs are archived) |
+| Manifests | `data/manifests/` | Self-contained per-document records (mirror of manifest JSON) | Daily |
+| Mirrored run logs | `data/langfuse_logs/` | Offline analysis copies of traces | Optional — only if you use `sync_langfuse_logs.py` |
+
+### SQLite backup
+
+SQLite files are safe to copy with a consistent snapshot. **Do not** copy a live `.db` file while the watcher/API are writing to it without a safe snapshot mechanism:
+
+```bash
+# Recommended: use SQLite's online backup (safe while the service is running)
+sqlite3 data/mailroom.db ".backup 'backup/mailroom.db'"
+sqlite3 data/checkpoints.db ".backup 'backup/checkpoints.db'"
+
+# Or, stop services, then plain copy:
+# (stop watcher + API + ops monitor)
+cp data/mailroom.db backup/
+cp data/checkpoints.db backup/
+```
+
+Schedule a daily snapshot via cron:
+
+```cron
+# Daily 2am — safe online snapshot
+0 2 * * * cd /path/to/llm-mailroom && \
+  mkdir -p backup/$(date +\%Y-\%m-\%d) && \
+  sqlite3 data/mailroom.db ".backup 'backup/$(date +\%Y-\%m-\%d)/mailroom.db'" && \
+  sqlite3 data/checkpoints.db ".backup 'backup/$(date +\%Y-\%m-\%d)/checkpoints.db'" && \
+  cp -R data/archive backup/$(date +\%Y-\%m-\%d)/archive && \
+  cp -R data/manifests backup/$(date +\%Y-\%m-\%d)/manifests
+```
+
+Retain a rotation window (e.g. 30–90 days) sized to your compliance requirements. The audit log is append-only — backups are the only way to reconstruct it.
+
+### Postgres backup
+
+If using `DATABASE_URL` with Postgres, use `pg_dump`:
+
+```bash
+pg_dump -h localhost -U mailroom mailroom > backup/mailroom-$(date +%F).sql
+```
+
+### Restore procedure
+
+1. Stop the watcher, API, and ops monitor (prevents writes during restore).
+2. Restore the catalog DB:
+   ```bash
+   # SQLite
+   cp backup/mailroom.db data/mailroom.db
+   cp backup/checkpoints.db data/checkpoints.db
+   # Postgres
+   # psql -h localhost -U mailroom mailroom < backup/mailroom-YYYY-MM-DD.sql
+   ```
+3. Restore `/archive` and `/manifests`:
+   ```bash
+   cp -R backup/archive data/archive
+   cp -R backup/manifests data/manifests
+   ```
+4. Restart services.
+5. **Verify the audit chain**: `curl http://localhost:8000/audit/<doc_id>` must report `"chain_valid": true`. If hashes break, the restored DB and manifests are out of sync (e.g. mixed backup dates).
+
+### Disaster-recovery checklist
+
+- [ ] Archives + manifests + catalog DB backed up from the same point in time
+- [ ] Audit chain verified after every restore
+- [ ] Backups stored off-host (cloud object storage, WORM bucket, etc.)
+- [ ] Test a restore at least quarterly — an untested backup is not a backup
+- [ ] Encrypt backups at rest (they contain confidential client documents)
+
+### Logging & Log Rotation
+
+The pipeline emits **structured logs to stdout** (structlog, `LOG_FORMAT=json|pretty`, level `LOG_LEVEL`) — it does not write log files itself. Log file capture, rotation, and retention are the responsibility of the process manager (systemd, supervisord, Docker). Recommended policies:
+
+| Concern | Recommendation |
+|---|---|
+| **Capture** | Redirect each service's stdout/stderr to a log file (see examples below) |
+| **Rotation** | Rotate daily or at 100MB, whichever comes first |
+| **Retention** | Keep 14–30 days (or as required by your retention policy); the audit log in SQLite is the long-term compliance record, logs are operational only |
+| **Format** | Use `LOG_FORMAT=json` in production so rotated logs are machine-parseable |
+
+**systemd** (`journald` handles rotation automatically):
+
+```ini
+[Service]
+ExecStart=/usr/bin/python pipeline/watcher.py
+StandardOutput=journal
+StandardError=journal
+```
+
+**supervisord:**
+
+```ini
+[program:watcher]
+command=/usr/bin/python pipeline/watcher.py
+stdout_logfile=/var/log/mailroom/watcher.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=14
+stderr_logfile=/var/log/mailroom/watcher.err.log
+stderr_logfile_maxbytes=100MB
+stderr_logfile_backups=14
+```
+
+**logrotate** (if you redirect output to files manually):
+
+```
+/var/log/mailroom/*.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+**JSON logs + rotation:** when `LOG_FORMAT=json`, each line is a self-contained JSON object — safe to rotate at any line boundary, no partial-line concerns.
+
+---
+
 ## Troubleshooting
 
 ### Watcher not picking up files

@@ -37,9 +37,65 @@ app = FastAPI(
 )
 
 
+async def _check_llm_provider() -> dict:
+    """Best-effort LLM provider connectivity check.
+
+    Resolves the provider for the sorter agent (fails fast if the API key is
+    missing or is the mock placeholder) and pings the models endpoint with a
+    short timeout. Never spends completion tokens.
+    """
+    import os
+    try:
+        from llm.providers import resolve_provider
+        from pipeline.config import get_agent_config
+
+        agent_cfg = get_agent_config("sorter")
+        provider, model = resolve_provider(agent_cfg)
+        status = "ok"
+        detail = f"{provider.name}:{model}"
+        try:
+            from openai import OpenAI
+
+            kwargs = {"base_url": provider.base_url, "api_key": "not-needed", "timeout": 5.0}
+            if provider.api_key_env:
+                key = os.environ.get(provider.api_key_env)
+                if key:
+                    kwargs["api_key"] = key
+            client = OpenAI(**kwargs)
+            client.models.list()
+        except Exception as exc:
+            status = "degraded"
+            detail = f"{provider.name}:{model} — models endpoint unreachable: {type(exc).__name__}"
+        return {"status": status, "detail": detail, "provider": provider.name}
+    except Exception as exc:
+        return {
+            "status": "degraded",
+            "detail": f"provider resolution failed: {type(exc).__name__}: {exc}",
+            "provider": None,
+        }
+
+
+async def _check_database() -> dict:
+    """Best-effort database connectivity check (SQLite or Postgres)."""
+    try:
+        from storage.db import check_connectivity
+
+        ok = await check_connectivity()
+        return {"status": "ok" if ok else "degraded", "detail": "database reachable" if ok else "database unreachable"}
+    except Exception as exc:
+        return {"status": "degraded", "detail": f"database check failed: {type(exc).__name__}"}
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "mailroom"}
+    llm = await _check_llm_provider()
+    db = await _check_database()
+    overall = "ok" if (llm["status"] == "ok" and db["status"] == "ok") else "degraded"
+    return {
+        "status": overall,
+        "service": "mailroom",
+        "checks": {"llm_provider": llm, "database": db},
+    }
 
 
 @app.post("/upload")
@@ -242,6 +298,70 @@ async def ops_status():
         "error_rates": error_rates,
         "timestamp": __import__("datetime").datetime.now().isoformat(),
     }
+
+
+@app.post("/ops/sweep")
+async def ops_sweep():
+    """Run a one-off Boss ops-monitor sweep on demand.
+
+    Mirrors the scheduled `pipeline/ops_monitor.py` sweep (gather metrics →
+    Boss analysis) without waiting for the interval. Pauses ingestion if the
+    Boss recommends `pause_ingestion` (writes the `ops_monitor_paused` flag,
+    which the watcher honors).
+    """
+    try:
+        from pipeline.ops_monitor import OpsMonitor
+
+        monitor = OpsMonitor()
+        metrics = await monitor._gather_metrics()
+        findings = await monitor._analyze_metrics(metrics)
+    except Exception as exc:
+        logger.exception("ops_sweep_failed")
+        raise HTTPException(500, f"Ops sweep failed: {exc}")
+
+    if findings.get("recommended_action") in ("alert", "pause_ingestion"):
+        if findings.get("recommended_action") == "pause_ingestion":
+            try:
+                monitor._pause_file.parent.mkdir(parents=True, exist_ok=True)
+                monitor._pause_file.write_text("1")
+                logger.critical("ops_sweep_paused_ingestion")
+            except Exception:
+                logger.exception("ops_sweep_pause_file_failed")
+
+    return {
+        "status": "ok",
+        "findings": findings.get("findings", []),
+        "severity": findings.get("severity"),
+        "recommended_action": findings.get("recommended_action"),
+        "paused_ingestion": monitor.is_paused,
+        "timestamp": __import__("datetime").datetime.now().isoformat(),
+    }
+
+
+@app.post("/ops/resume")
+async def ops_resume():
+    """Clear the ingestion-pause flag so the watcher resumes processing.
+
+    The ops monitor (scheduled sweep or `/ops/sweep`) can pause ingestion by
+    writing `ops_monitor_paused`. This endpoint clears it — the watcher picks
+    up the change on the next file event without a restart.
+    """
+    try:
+        from pipeline.ops_monitor import OpsMonitor
+
+        monitor = OpsMonitor()
+        pause_file = monitor._pause_file
+        if pause_file.exists():
+            pause_file.unlink()
+            logger.info("ops_resume_ingestion")
+        return {
+            "status": "ok",
+            "was_paused": True,
+            "paused_ingestion": monitor.is_paused,
+        }
+    except Exception as exc:
+        logger.exception("ops_resume_failed")
+        raise HTTPException(500, f"Ops resume failed: {exc}")
 
 
 if __name__ == "__main__":

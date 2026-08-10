@@ -159,6 +159,12 @@ def get_worker_id() -> str:
     return str(uuid.uuid4())[:8]
 
 
+def is_ingestion_paused() -> bool:
+    """Check if the ops monitor has paused ingestion."""
+    pause_file = get_base_dir() / "ops_monitor_paused"
+    return pause_file.exists()
+
+
 def list_inbox_files() -> list[Path]:
     inbox = inbox_dir()
     if not inbox.exists():

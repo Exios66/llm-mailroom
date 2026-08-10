@@ -66,7 +66,7 @@ flowchart LR
 
     subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
         SORTER["SorterAgent"]
-        SPEC["5 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence, compliance"]
+        SPEC["6 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence,<br/>compliance, court opinions"]
         BOSS["BossAgent"]
         REPORTER["ReporterAgent"]
         PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
