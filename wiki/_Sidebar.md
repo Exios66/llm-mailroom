@@ -5,15 +5,7 @@
 - [Getting Started](Getting-Started)
 
 ## Reference
-- [Architecture](Architecture)
-- [Configuration](Configuration)
-- [Agents](Agents)
-- [API Reference](API-Reference)
+- [Repo docs/](https://github.com/Exios66/llm-mailroom/tree/main/docs) — canonical docs (architecture, agents, configuration, API, deployment, local models)
 
 ## Operations
-- [Deployment](Deployment)
-- [Local Model Cutover](Local-Model-Cutover)
-
-## Development
-- [Development](Development)
 - [FAQ](FAQ)

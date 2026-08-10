@@ -102,6 +102,4 @@ If you configured observability (Langfuse or Braintrust), every LLM call is auto
 
 ## Next Steps
 
-- [Configuration](Configuration) — customize taxonomy, thresholds, and model mappings
-- [Architecture](Architecture) — understand the full system design
-- [Agents](Agents) — learn about each specialist agent
+- [Repository docs/](https://github.com/Exios66/llm-mailroom/tree/main/docs) — architecture, agents, configuration, and more

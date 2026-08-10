@@ -579,20 +579,20 @@ data/
 
 ## 9. Cross-References Between Docs
 
-### 9.1 Documentation Mirroring (`docs/` ↔ `wiki/`)
+### 9.1 Documentation Layout (`docs/` vs `wiki/`)
+
+**Policy (Aug 2026):** `docs/` is the single source of truth for repository documentation. `wiki/` contains only GitHub-wiki-native pages (Home, Getting-Started, FAQ, _Sidebar, _Footer) and is **not** a mirror of `docs/`. `wiki/sync-wiki.sh` pushes `wiki/` to the GitHub wiki repo; `docs/` is never duplicated into `wiki/`.
 
 | `docs/` | `wiki/` | Status |
 |---------|---------|--------|
-| `architecture.md` | `Architecture.md` | ✅ Identical |
-| `agents.md` | `Agents.md` | ✅ Identical |
-| `configuration.md` | `Configuration.md` | ✅ Identical |
-| `deployment.md` | `Deployment.md` | ✅ Identical |
-| `api.md` | `API-Reference.md` | ✅ Identical |
-| `testing.md` | `Development.md` | ✅ Identical (wiki has extra Getting-Started/FAQ) |
-| `local-models.md` | `Local-Model-Cutover.md` | ✅ Identical |
+| `architecture.md` | — | Canonical in `docs/` only |
+| `agents.md` | — | Canonical in `docs/` only |
+| `configuration.md` | — | Canonical in `docs/` only |
+| `deployment.md` | — | Canonical in `docs/` only |
+| `api.md` | — | Canonical in `docs/` only |
+| `testing.md` | — | Canonical in `docs/` only |
+| `local-models.md` | — | Canonical in `docs/` only |
 | `README.md` | `README.md` (wiki root) | Different — wiki has Home/Getting-Started/FAQ |
-
-**Sync mechanism:** `wiki/sync-wiki.sh` pushes `wiki/` to GitHub wiki repo.
 
 ### 9.2 Key Cross-References
 
@@ -600,7 +600,7 @@ data/
 |--------|------------|--------|
 | `README.md` | Links to all `docs/` pages | `docs/architecture.md`, `docs/agents.md`, etc. |
 | `AGENTS.md` | Architecture deep-dive | `graph/`, `llm/`, `observability/`, `.opencode/skills/langfuse/` |
-| `docs/architecture.md` | Mermaid diagrams | Matches `README.md` and `wiki/Architecture.md` |
+| `docs/architecture.md` | Mermaid diagrams | Matches `README.md` |
 | `docs/configuration.md` | `config/taxonomy.yaml` structure | Field-by-field reference |
 | `docs/agents.md` | Agent specs + `schemas/documents.py` | Extraction schemas per agent |
 | `CHANGELOG.md` | GitHub compare links | `[Unreleased]`, `[0.2.2]`, `[0.2.1]`, `[0.2.0]` |
@@ -674,7 +674,7 @@ data/
 - `pyproject.toml` — Dependencies, pytest config
 
 ### Documentation (`docs/` + `wiki/`)
-- 7 core docs in `docs/`, mirrored in `wiki/` + wiki-exclusive pages (Home, Getting-Started, FAQ, _Sidebar, _Footer)
+- 7 core docs in `docs/` (single source of truth); `wiki/` holds only wiki-exclusive pages (Home, Getting-Started, FAQ, _Sidebar, _Footer), pushed to the GitHub wiki via `wiki/sync-wiki.sh`
 
 ### Configuration
 - `config/taxonomy.yaml` — Single source of truth (285 lines)
@@ -755,7 +755,7 @@ data/
 - ✅ **Operational** — Filesystem bins for human-legible state, API for integration, ops monitor
 
 ### Areas for Improvement
-- 📝 **Documentation synchronization** — Keep `docs/` and `wiki/` in sync; add missing READMEs
+- 📝 **Documentation layout** — `docs/` is canonical; `wiki/` holds GitHub-wiki-native pages only (synced to the GitHub wiki via `wiki/sync-wiki.sh`, never a `docs/` mirror); add missing READMEs
 - 📝 **Agent count consistency** — Update all references from "5 specialists" to 6
 - 🔧 **Ops monitor integration** — Wire pause flag to watcher
 - 🔧 **Multi-tenancy/RBAC** — Deferred but needed for production

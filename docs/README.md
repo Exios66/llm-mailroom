@@ -18,5 +18,5 @@ This is the manual for the project — deeper, more detailed versions of everyth
 
 ## Technical reference
 
-- `docs/` and `wiki/` are **mirrors**: `docs/agents.md` == `wiki/Agents.md`, and so on. `wiki/sync-wiki.sh` pushes `wiki/` to the GitHub wiki. When you edit a page in `docs/`, update the matching page in `wiki/` too (or run the sync script after).
+- `docs/` is the **single source of truth** for repository documentation. `wiki/` contains only GitHub-wiki-native pages (Home, Getting-Started, FAQ, _Sidebar, _Footer) and is pushed to the GitHub wiki via `wiki/sync-wiki.sh` — it is **not** a mirror of `docs/`.
 - `docs/agents.md` is an architecture doc about the pipeline's LLM agents — it is NOT an instruction file for coding assistants (that's `AGENTS.md` at the repo root).

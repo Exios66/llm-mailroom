@@ -92,7 +92,8 @@ python scripts/write_pilot_report.py       # render tracked markdown+JSON pilot 
 - Tests run without Docker: conftest auto-sets `OPENROUTER_API_KEY` and `MAILROOM_BASE_DIR` to a tmpdir (`temp_base_dir` fixture). E2E tests build the full graph with mocked LLM and the SQLite checkpointer.
 - `asyncio_mode = "auto"` is set; graph nodes are sync. Fixtures are plain-text files in `tests/fixtures/<doc_type>/`.
 
-## Docs duplication
+## Documentation layout
 
-- `docs/` and `wiki/` mirror each other (e.g. `docs/agents.md` == `wiki/Agents.md`; `wiki/sync-wiki.sh` pushes wiki/ to the GitHub wiki). When editing user-facing docs, keep both in sync.
-- `docs/agents.md` and `wiki/Agents.md` document the pipeline's LLM agents — they are architecture docs, not coding-instruction files.
+- `docs/` is the single source of truth for repository documentation (architecture, agents, configuration, deployment, testing, local models, reports). Do not duplicate its content anywhere else in the repo.
+- `wiki/` holds **GitHub-wiki-only** pages (Home, Getting-Started, FAQ, _Sidebar, _Footer, README). It is NOT a mirror of `docs/` — never copy docs pages into it. `wiki/sync-wiki.sh` pushes `wiki/` to the GitHub wiki.
+- `docs/agents.md` documents the pipeline's LLM agents — an architecture doc, not a coding-instruction file.

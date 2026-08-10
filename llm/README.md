@@ -30,4 +30,4 @@ Override the provider for **all** agents at once with the `DEFAULT_PROVIDER` env
   - `resolve_provider(agent_config) -> (ProviderConfig, model)` — applies the `DEFAULT_PROVIDER` override, then falls back to the agent's own `provider`/`model`.
   - `DEFAULT_MODELS` — the menu of known model names per provider (used by `scripts/cutover.py` recommendations and validation).
 - `get_llm` always builds an `OpenAI` client (OpenAI-compatible protocol), so all providers speak the same API.
-- Local cutover tooling: `scripts/cutover.py` edits `config/taxonomy.yaml` agent entries; `docs/local-models.md` (mirrors `wiki/Local-Model-Cutover.md`) is the walkthrough.
+- Local cutover tooling: `scripts/cutover.py` edits `config/taxonomy.yaml` agent entries; `docs/local-models.md` is the walkthrough.
