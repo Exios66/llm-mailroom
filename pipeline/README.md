@@ -33,5 +33,6 @@ manifests/<doc_id>.json      ← JSON sidecar per document
   - Caches config at module level (`_config`) — restart the process after editing `taxonomy.yaml`.
 - `config.py` — `load_config()` is `@lru_cache(maxsize=1)`; `get_agent_config`, `get_confidence_thresholds`, `get_all_doc_types`, `get_doc_class`, `get_extraction_schema_name`.
 - `ops_monitor.py`
-  - `OpsMonitor._sweep()` gathers metrics (stuck docs from catalog, review/failed queue sizes) → `BossAgent.analyze_system_metrics()` → on `pause_ingestion` writes a pause-flag file `{base_dir}/ops_monitor_paused` (the watcher does NOT currently read this flag — the flag is informational for now).
+  - `OpsMonitor._sweep()` gathers metrics (stuck docs from catalog, review/failed queue sizes) → `BossAgent.analyze_system_metrics()` → on `pause_ingestion` writes a pause-flag file `{base_dir}/ops_monitor_paused`.
+  - **The watcher reads the flag**: `bins.py:is_ingestion_paused()` is checked by `watcher.py` on every new file (and during periodic inbox rescans) — paused ingestion leaves files in the inbox and resumes automatically once `/ops/resume` (API) or manual deletion clears the flag.
   - Interval from `OPS_MONITOR_INTERVAL_SECONDS` (default 300). Entry: `python pipeline/ops_monitor.py`.

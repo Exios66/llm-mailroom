@@ -35,8 +35,9 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 - `routing.py` — pure functions returning the name of the next node: `after_classify`, `after_retry_classify`, `after_extraction`, `after_retry_extraction`, `after_boss`, `after_human_review`. Thresholds come from `config/taxonomy.yaml` → `get_confidence_thresholds()`, never hardcoded.
 - `build_graph.py` also handles:
   - Text extraction for images/PDFs (`_read_file_text` → `agents/image_extractor.py`, `agents/pdf_transcriber.py`).
-  - Specialist dispatch via `_build_specialist_dispatch()` — a hardcoded 5-name map (`contracts_specialist`, `corporate_records_specialist`, `due_diligence_specialist`, `correspondence_specialist`, `compliance_specialist`). Adding an agent means adding an entry here too.
+  - Specialist dispatch via `_build_specialist_dispatch()` — **config-driven**: it walks `doc_classes` in `config/taxonomy.yaml` and maps each `specialist:` name to its extraction function (6 specialists: contracts, corporate records, due diligence, correspondence, compliance, court opinions). Adding an agent means adding a taxonomy entry + dispatch case.
   - The **checkpointer** (`_build_checkpointer`): SQLite-backed (`data/checkpoints.db`, via `langgraph.checkpoint.sqlite.SqliteSaver`) for crash-resume, with a `MemorySaver` fallback if anything fails.
   - `run_pipeline(file_path, matter_id)` — convenience entrypoint that builds the graph and runs one document.
+  - **Judge gating**: for grounded runs with deterministic field scoring, `_emit_pipeline_result` suppresses the `pipeline-result` generation when the verdict is unambiguous (see `field_scoring.type_bands` in `taxonomy.yaml`) — saving both LLM-as-judge evaluator calls.
 - Conditionals are wired with `add_conditional_edges("classify", after_classify, {...})`; `after_classify` can return `"retry_classify"`, `"extract"`, or `"human_review"`.
-- Architecture doc: `docs/architecture.md` (mirrors `wiki/Architecture.md`).
+- Architecture doc: `docs/architecture.md`.
