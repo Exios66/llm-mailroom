@@ -33,7 +33,7 @@ OPENROUTER_API_KEY=sk-or-v1-...
 ## 3. Database
 
 **Nothing to do** — SQLite tables auto-create on first use (`data/mailroom.db`,
-`data/checkpoints.db`). For Postgres: `docker compose -f docker/docker-compose.yml up -d postgres`
+`data/checkpoints.db`). For Postgres: `docker compose -f config/docker/docker-compose.yml up -d postgres`
 then `python -c "import asyncio; from storage.db import init_db; asyncio.run(init_db())"`.
 
 ---

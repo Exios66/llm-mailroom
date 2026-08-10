@@ -21,5 +21,5 @@ If you change something here, **restart the watcher/API** — the config is cach
   - `agents/sorter.py` — builds its classification prompt from `doc_classes` dynamically.
 - `agents:` names must match each agent's `agent_name` class attribute in `agents/` (see `agents/` README).
 - Editing `config/taxonomy.yaml` requires a process restart because of the `lru_cache` + module-level config cache.
-- `python cutover.py` (repo root) edits `agents:` in this file to switch agents between providers.
+- `python scripts/cutover.py` (repo root) edits `agents:` in this file to switch agents between providers.
 - Full reference with defaults: `docs/configuration.md` (mirrors `wiki/Configuration.md`).

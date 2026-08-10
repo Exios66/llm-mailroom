@@ -137,7 +137,7 @@ Mailroom is a **multi-agent legal document processing pipeline** designed for tr
 |---------|-------------|
 | **API server** | FastAPI on :8000 — upload, status, review resolve, audit, matter listing, ops metrics |
 | **Ops monitor** | Scheduled Boss sweep (default 5 min) for stuck docs, error spikes, review backlog |
-| **Local model cutover** | `cutover.py` utility — per-agent provider/model switching with validation |
+| **Local model cutover** | `scripts/cutover.py` utility — per-agent provider/model switching with validation |
 | **Cost tracking** | Per-run estimated cost from OpenRouter pricing, synced to Langfuse model registry |
 | **Log mirroring** | `sync_langfuse_logs.py` — traces + scores → `data/langfuse_logs/` for offline analysis |
 | **Prompt sync** | `sync_prompts.py` — idempotent push of local templates to Langfuse Prompt Management |
@@ -482,7 +482,7 @@ cp .env.example .env
 pip install -e ".[dev]"
 
 # Optional: Langfuse (needs Docker)
-docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server
+docker compose -f config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
 # Optional: Sync prompts to Langfuse
 python scripts/sync_prompts.py
@@ -542,7 +542,7 @@ data/
 | `pipeline/watcher.py` | Main entrypoint — filesystem watcher |
 | `api/main.py` | FastAPI server on :8000 |
 | `pipeline/ops_monitor.py` | Scheduled health sweeps (Boss agent) |
-| `cutover.py` | Agent→model mapping management (`--list`, `--recommend`, `--validate`, `--agent`) |
+| `scripts/cutover.py` | Agent→model mapping management (`--list`, `--recommend`, `--validate`, `--agent`) |
 | `scripts/sync_prompts.py` | Push agent prompts to Langfuse (idempotent) |
 | `scripts/sync_evaluators.py` | Deploy LLM-as-a-Judge evaluators + rules |
 | `scripts/sync_langfuse_logs.py` | Mirror traces to local for offline analysis |
@@ -604,7 +604,7 @@ data/
 | `docs/configuration.md` | `config/taxonomy.yaml` structure | Field-by-field reference |
 | `docs/agents.md` | Agent specs + `schemas/documents.py` | Extraction schemas per agent |
 | `CHANGELOG.md` | GitHub compare links | `[Unreleased]`, `[0.2.2]`, `[0.2.1]`, `[0.2.0]` |
-| `PILOT_AUDIT_REPORT.md` | Trace IDs, file paths | `data/langfuse_logs/`, `graph/build_graph.py`, `agents/base.py` |
+| `docs/reports/audits/PILOT_AUDIT_REPORT.md` | Trace IDs, file paths | `data/langfuse_logs/`, `graph/build_graph.py`, `agents/base.py` |
 
 ---
 
@@ -669,7 +669,7 @@ data/
 ### Root Level
 - `README.md` — Project overview, quick start, architecture diagrams
 - `CHANGELOG.md` — Full version history (v0.1.0 → unreleased)
-- `PILOT_AUDIT_REPORT.md` — 12 critical/high/medium/low issues from pilot traces
+- `docs/reports/audits/PILOT_AUDIT_REPORT.md` — 12 critical/high/medium/low issues from pilot traces
 - `AGENTS.md` — Comprehensive architecture & development guide
 - `pyproject.toml` — Dependencies, pytest config
 
@@ -734,7 +734,7 @@ data/
 - `run_quality_judges.py` — Offline judge evaluation
 - `run_vision_sweep.py` — Vision tradeoff benchmarking
 - `prepare_samples.py` / `fetch_external_samples.py` — Pilot data preparation
-- `cutover.py` — Local model cutover utility
+- `scripts/cutover.py` — Local model cutover utility
 
 ### Tests (25+ test files)
 - Unit, routing, audit, e2e, specialized tests with full mock infrastructure

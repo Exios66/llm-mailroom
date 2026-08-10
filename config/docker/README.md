@@ -12,9 +12,9 @@ Docker is only needed for two **optional** extras:
 ## Start it
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d postgres clickhouse langfuse-server   # Langfuse
-docker compose -f docker/docker-compose.yml --profile local-llm up -d ollama            # local LLM
-docker compose -f docker/docker-compose.yml ps                                          # check health
+docker compose -f config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server   # Langfuse
+docker compose -f config/docker/docker-compose.yml --profile local-llm up -d ollama            # local LLM
+docker compose -f config/docker/docker-compose.yml ps                                          # check health
 ```
 
 ## Technical reference
