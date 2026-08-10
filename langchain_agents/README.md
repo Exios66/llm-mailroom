@@ -1,6 +1,6 @@
 # Vendored LangChain Agents
 
-This directory contains **vendored LangChain agents** adapted for the LLM-Mailroom pipeline. These agents originate from `github.com/Exios66/llm-entity-extraction` (commit `055df31`) and have been integrated with mailroom-specific plumbing.
+This directory contains **vendored LangChain agents** adapted for the LLM-Mailroom pipeline. These agents originate from `github.com/Exios66/llm-entity-extraction` (verified against commit `3a03d5c`, 2026-08-10 — issue #10 alignment check: `CONTRACT_SUBTYPES`, `_SUBTYPE_ALIASES`, `SUBTYPE_EQUIVALENCES`, `SORTER_SCHEMA`, `DOC_CLASSES`, and the `sorter_v5`/`contracts_specialist_v11` prompts are byte-identical to upstream) and have been integrated with mailroom-specific plumbing (`MAILROOM PATCH` markers).
 
 ## Overview
 
