@@ -43,6 +43,7 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 | Script | Purpose |
 |--------|---------|
 | `compare_runs.py` | Compares two pilot run reports and outputs a diff of stage changes, confidence shifts, and extraction differences. |
+| `calibrate_field_scoring.py` | Issue #4 calibration step: builds a labeled field sample from `examples/samples/manifest.csv` ground truth (exact/format variants = correct; controlled perturbations = incorrect) and reports per-field-type score separation + calibrated `field_scoring.type_bands` cutoffs. Supports `--band LOW HIGH` to evaluate a candidate band and `--json` for machine-readable output. |
 
 ## Common Patterns
 
