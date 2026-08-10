@@ -13,7 +13,7 @@ Five types in v1:
 - **Correspondence** (demand letters, legal notices, memos)
 - **Compliance Filings** (SEC filings, state registrations, regulatory docs)
 
-Adding a new type takes 5 steps — see [Development](Development).
+Adding a new type takes 5 steps — see [the repo docs](https://github.com/Exios66/llm-mailroom/tree/main/docs).
 
 ## Why LangGraph instead of plain agent chains?
 
@@ -25,7 +25,7 @@ LangGraph provides:
 
 ## Can I use local models instead of OpenRouter?
 
-Yes. Set `DEFAULT_PROVIDER=ollama` in `.env`, or configure per-agent in `config/taxonomy.yaml`. See [Local Model Cutover](Local-Model-Cutover).
+Yes. Set `DEFAULT_PROVIDER=ollama` in `.env`, or configure per-agent in `config/taxonomy.yaml`. See [Local Model Cutover](https://github.com/Exios66/llm-mailroom/blob/main/docs/local-models.md).
 
 ## What happens if the database is unavailable?
 

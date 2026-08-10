@@ -24,14 +24,8 @@ Mailroom is a multi-agent pipeline that ingests high-volume legal documents, cla
 |---|---|
 | [Home](Home) | This page |
 | [Getting Started](Getting-Started) | Installation and first run |
-| [Architecture](Architecture) | Full architectural overview |
-| [Configuration](Configuration) | Config reference and environment variables |
-| [Agents](Agents) | Agent specifications and personalities |
-| [API Reference](API-Reference) | Complete API endpoint documentation |
-| [Deployment](Deployment) | Production deployment guide |
-| [Local Model Cutover](Local-Model-Cutover) | Switching to local LLMs |
-| [Development](Development) | Development and testing guide |
 | [FAQ](FAQ) | Frequently asked questions |
+| [Repository `docs/`](https://github.com/Exios66/llm-mailroom/tree/main/docs) | Canonical docs: architecture, agents, configuration, API, deployment, local models |
 
 ---
 
