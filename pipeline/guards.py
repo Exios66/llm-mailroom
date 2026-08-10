@@ -33,10 +33,22 @@ def _is_valid_confidence(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and 0.0 <= value <= 1.0
 
 
+def _valid_subtypes() -> frozenset[str]:
+    """Valid contract-subtype keys (vendored LangChain sorter's 25 CUAD
+    families + "other"). Lazily imported so guards never hard-pin the list."""
+    try:
+        from langchain_agents.sorter_agent import CONTRACT_SUBTYPE_KEYS, SUBTYPE_UNKNOWN
+
+        return frozenset(CONTRACT_SUBTYPE_KEYS + [SUBTYPE_UNKNOWN])
+    except Exception:
+        return frozenset()
+
+
 def guard_classification(state: dict) -> dict:
     """Validate the sorter's output. Returns {"ok", "issues", "confidence"}."""
     doc_type = state.get("doc_type")
     confidence = state.get("classification_confidence")
+    contract_subtype = state.get("contract_subtype")
     issues: list[str] = []
 
     from pipeline.config import get_all_doc_types
@@ -45,6 +57,17 @@ def guard_classification(state: dict) -> dict:
         issues.append(f"unknown_doc_type: {doc_type!r} not in taxonomy")
     if confidence is not None and not _is_valid_confidence(confidence):
         issues.append(f"classification_confidence_out_of_range: {confidence!r}")
+    # Contract-subtype discipline (mirrors the vendored sorter's key rules):
+    # a contract MUST carry a valid subtype key; a non-contract MUST NOT.
+    if doc_type == "contract":
+        if not contract_subtype:
+            issues.append("contract_subtype_missing")
+        elif contract_subtype not in _valid_subtypes():
+            issues.append(f"contract_subtype_unknown: {contract_subtype!r}")
+    elif contract_subtype is not None:
+        issues.append(
+            f"contract_subtype_not_null_for_non_contract: {contract_subtype!r}"
+        )
 
     result = {"ok": not issues, "issues": issues}
     if confidence is not None and _is_valid_confidence(confidence):

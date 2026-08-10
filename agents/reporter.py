@@ -33,6 +33,7 @@ def compile_matter_record(
     temperature: float = 0.2,
 ) -> dict:
     doc_type = manifest_data.get("doc_type", "unknown")
+    contract_subtype = manifest_data.get("contract_subtype")
     extracted = manifest_data.get("extracted_data", {})
     classification_confidence = manifest_data.get("classification_confidence")
     extraction_confidence = manifest_data.get("extraction_confidence")
@@ -40,6 +41,7 @@ def compile_matter_record(
     cleaned_extracted = {k: v for k, v in (extracted or {}).items() if k != "confidence"}
 
     user_message = f"""Document type: {doc_type}
+Contract subtype: {contract_subtype}
 Classification confidence: {classification_confidence}
 Extraction confidence: {extraction_confidence}
 
@@ -84,6 +86,7 @@ Please compile this into a clean matter-record summary."""
     return {
         "summary": summary,
         "doc_type": doc_type,
+        "contract_subtype": contract_subtype,
         "extracted_data": cleaned_extracted,
         "classification_confidence": classification_confidence,
         "extraction_confidence": extraction_confidence,

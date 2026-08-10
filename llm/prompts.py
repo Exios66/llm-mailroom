@@ -85,6 +85,14 @@ def get_managed_prompt(
     return render_template(default_text, variables), None
 
 
+def _langchain_prompt(version: str) -> str:
+    """Local template for the vendored LangChain agents' versioned prompts
+    (langchain_agents/prompts.py, committed with the vendored stack)."""
+    from langchain_agents.prompts import get_prompt
+
+    return get_prompt(version)
+
+
 def prompt_templates() -> dict[str, str]:
     """agent_name -> local prompt template (with `{{var}}` placeholders).
 
@@ -106,8 +114,11 @@ def prompt_templates() -> dict[str, str]:
     )
 
     return {
-        "sorter": sorter.SYSTEM_PROMPT,
-        "contracts_specialist": contracts_specialist.SYSTEM_PROMPT,
+        # The sorter/contracts specialist are the vendored LangChain agents
+        # (llm-entity-extraction); their local templates are the eval-validated
+        # versioned prompts (sorter_v5 / contracts_specialist_v11).
+        "sorter": _langchain_prompt("sorter_v5"),
+        "contracts_specialist": _langchain_prompt("contracts_specialist_v11"),
         "corporate_records_specialist": corporate_records_specialist.SYSTEM_PROMPT,
         "due_diligence_specialist": due_diligence_specialist.SYSTEM_PROMPT,
         "correspondence_specialist": correspondence_specialist.SYSTEM_PROMPT,

@@ -48,7 +48,12 @@ class CorrespondenceSpecialist(BaseAgent):
         text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
         return text
 
-    def extract(self, doc_text: str, pages: list[str] | None = None) -> dict:
+    def extract(
+        self,
+        doc_text: str,
+        pages: list[str] | None = None,
+        handoff_context: str | None = None,
+    ) -> dict:
         schema = build_structured_schema(
             {
                 "sender": {"type": "string", "description": "Who sent the communication"},
@@ -105,6 +110,8 @@ class CorrespondenceSpecialist(BaseAgent):
         if pages:
             truncated += f"\n\n[Attached: {len(pages)} page image(s) of this document — also read them.]"
         user_message = f"Extract structured data from this correspondence:\n\n{truncated}"
+        if handoff_context:
+            user_message = f"{handoff_context}\n\n{user_message}"
 
         result = self._call_structured(
             user_message,

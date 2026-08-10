@@ -11,6 +11,7 @@ dependencies = [
     "langgraph>=0.2.0",
     "langgraph-checkpoint-sqlite>=1.0",
     "langchain-core>=0.3.0",
+    "langchain-openai>=0.3",
     "pydantic>=2.0",
     "watchdog>=4.0",
     "fastapi>=0.110",
@@ -46,7 +47,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["agents*", "graph*", "llm*", "schemas*", "pipeline*", "storage*", "api*", "observability*"]
+include = ["agents*", "langchain_agents*", "graph*", "llm*", "schemas*", "pipeline*", "storage*", "api*", "observability*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

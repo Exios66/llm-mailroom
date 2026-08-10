@@ -23,10 +23,23 @@ REPORT_TEXT = "Matter record: Acme Corp service agreement, effective 2024-01-01.
 
 
 @pytest.fixture
-def phased_client(mocker):
-    """Mock LLM client with a scripted sequence of responses: classify low →
-    retry low → (resume) fresh extract high → report text."""
-    contents = [LOW_CLASSIFY, LOW_CLASSIFY, HIGH_EXTRACT, REPORT_TEXT]
+def phased_client(mocker, mock_langchain_llm):
+    """Mock LLM clients with a scripted sequence: the LangChain sorter returns
+    low confidence twice (classify → retry → review), the LangChain contracts
+    specialist returns a high-confidence extraction on resume, and the reporter
+    (get_llm path) returns the matter record."""
+    mock_langchain_llm.classification = {
+        "doc_type": "contract",
+        "contract_subtype": "other",
+        "confidence": 0.40,
+        "reasoning": "Unsure",
+    }
+    mock_langchain_llm.extraction = {
+        "parties": ["Acme Corp"],
+        "effective_date": "2024-01-01",
+        "confidence": 0.95,
+    }
+    contents = [REPORT_TEXT]
     client = MagicMock()
     client.chat.completions.create.side_effect = [_resp(c) for c in contents]
     mocker.patch("llm.client.OpenAI", return_value=client)

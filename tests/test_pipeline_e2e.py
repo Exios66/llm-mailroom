@@ -41,10 +41,15 @@ class TestPipelineE2E:
         assert result.get("doc_id") != ""
         assert result.get("stage") == "archived"
 
-    def test_graph_routes_low_confidence_to_review(self, temp_base_dir, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"doc_type": "contract", "confidence": 0.40, "reasoning": "Unsure"}'
-        )
+    def test_graph_routes_low_confidence_to_review(
+        self, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        mock_langchain_llm.classification = {
+            "doc_type": "contract",
+            "contract_subtype": "other",
+            "confidence": 0.40,
+            "reasoning": "Unsure",
+        }
         from graph.build_graph import build_graph
         _ensure_dirs_relative(temp_base_dir)
 
@@ -81,13 +86,16 @@ class TestPipelineE2E:
         assert result.get("stage") == "review"
 
     def test_graph_routes_medium_confidence_to_review(
-        self, temp_base_dir, mock_openai_client
+        self, temp_base_dir, mock_openai_client, mock_langchain_llm
     ):
         # Classified but not clearly confident (low <= confidence < high):
         # must route to human review instead of archiving (ambiguous_01 case).
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"doc_type": "correspondence", "confidence": 0.90, "reasoning": "Multi-topic memo"}'
-        )
+        mock_langchain_llm.classification = {
+            "doc_type": "correspondence",
+            "contract_subtype": None,
+            "confidence": 0.90,
+            "reasoning": "Multi-topic memo",
+        }
         from graph.build_graph import build_graph
         _ensure_dirs_relative(temp_base_dir)
 
@@ -158,10 +166,15 @@ class TestPipelineE2E:
         assert result["stage"] == "processing"
         assert result["doc_text"] == "Test ingest content."
 
-    def test_pipeline_completes_with_mocked_llm(self, temp_base_dir, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"doc_type": "correspondence", "confidence": 0.96, "reasoning": "Legal letter"}'
-        )
+    def test_pipeline_completes_with_mocked_llm(
+        self, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        mock_langchain_llm.classification = {
+            "doc_type": "correspondence",
+            "contract_subtype": None,
+            "confidence": 0.96,
+            "reasoning": "Legal letter",
+        }
         from graph.build_graph import build_graph
         _ensure_dirs_relative(temp_base_dir)
 
