@@ -28,7 +28,8 @@ Then open `http://localhost:8000/docs` for an interactive test page (Swagger UI)
 - `POST /upload` writes bytes straight into the inbox bin — it does NOT run the pipeline itself. Processing happens asynchronously in the watcher process. Response is `202 Accepted`.
 - `GET /status` and `GET /matters` read from the Postgres/SQLite catalog via `storage/catalog.py`, falling back to the JSON manifest on DB failure.
 - `GET /audit/{doc_id}` returns the hash chain from `storage/audit_log.py` plus a `chain_valid` bool from `schemas/audit.py:verify_chain`.
-- Full endpoint docs (request/response shapes): `docs/api.md` (mirrors `wiki/API-Reference.md`).
+- `POST /ops/pause` / `POST /ops/resume` — manual ingestion pause/resume (mirrors the scheduled `pipeline/ops_monitor.py` sweep); `GET /ops/status` reports `paused_ingestion`.
+- Full endpoint docs (request/response shapes): `docs/api.md`.
 
 ### Wiring notes
 
