@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """Sync the mailroom health dashboards into Langfuse (idempotent).
 
-Declares the quality widgets that surface quality declines automatically:
-average score, p95 latency, and total cost per prompt over time (all
-LINE_TIME_SERIES, bucketed by time so a regression shows up as a trend).
+Three dashboards:
 
-Also wires the LLM-as-a-Judge infrastructure widgets (throughput / P95 / P99
-latency / errors) onto the existing "Production Health — Judges" dashboard.
+1. **Mailroom Quality — per Prompt over Time**: average score, p95 latency,
+   and total cost per prompt (all LINE_TIME_SERIES, bucketed by time so a
+   regression shows up as a trend).
+2. **Production Health — Judges (Qwen & DeepSeek)**: LLM-as-a-judge
+   throughput / P95 / P99 latency / errors.
+3. **Mailroom Quality — Completion / Correctness / Accuracy / Latency**
+   (issue #2): tailored dimension views — completion (stage_completed rate,
+   expected_field_presence, judge completeness), correctness (deterministic
+   extraction_overall_score, judge extraction_correctness, class_correct
+   rate, guardrail rate), accuracy by doc class, duration/latency
+   (run_duration_seconds avg + p95 by class), cost, and LLM-call volume.
+   Scoped to pilot runs where ground-truth scores exist.
 
 - Idempotent: widgets/dashboards are matched by name; existing ones are
   updated in place when their config drifted, and placements are restored.
@@ -141,6 +149,126 @@ QUALITY_DASHBOARD = {
 JUDGE_DASHBOARD = {
     "name": "Production Health — Judges (Qwen & DeepSeek)",
     "description": "Production health for LLM-as-a-judge evaluations using qwen and deepseek models: throughput, latency (P95/P99), and errors.",
+}
+
+
+# ---------------------------------------------------------------------------
+# Tailored dimension views (issue #2): dedicated widgets for COMPLETION,
+# CORRECTNESS, ACCURACY, LATENCY, and DURATION. Ground-truth and judge scores
+# exist on pilot runs (environment `pilot`); the score-based widgets scope
+# there so they never mix live (ungrounded) runs into accuracy averages.
+# ---------------------------------------------------------------------------
+
+PILOT_ENV_FILTER = {"column": "environment", "operator": "any of", "type": "stringOptions", "value": ["pilot"]}
+
+
+def _score_widget(name, score_name, agg="avg", dimensions=("traceName",), description=""):
+    return WidgetSpec(
+        name=name,
+        view="scores-numeric",
+        dimensions=list(dimensions),
+        metrics=[("value", agg)],
+        chart_type="LINE_TIME_SERIES",
+        filters=[PILOT_ENV_FILTER, {"column": "name", "operator": "=", "type": "string", "value": score_name}],
+        description=description,
+    )
+
+
+DIMENSION_WIDGETS = [
+    # --- Completion (did the run reach a terminal stage? did all fields get extracted?)
+    _score_widget(
+        "Mailroom Completion — stage_completed rate over Time",
+        "stage_completed",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Fraction of runs reaching a terminal stage (archived/review/failed) per run over time.",
+    ),
+    _score_widget(
+        "Mailroom Completion — expected_field_presence over Time",
+        "expected_field_presence",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Average fraction of required expected fields extracted non-empty (completeness of the extraction).",
+    ),
+    _score_widget(
+        "Mailroom Completion — LLM-judge completeness over Time",
+        "completeness",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Offline LLM-as-a-judge completeness verdict (0-1) per run over time.",
+    ),
+    # --- Correctness (did we extract the right values / classify correctly?)
+    _score_widget(
+        "Mailroom Correctness — extraction_overall_score over Time",
+        "extraction_overall_score",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Deterministic field-scoring overall score (0-1) per run — extraction correctness vs ground truth.",
+    ),
+    _score_widget(
+        "Mailroom Correctness — LLM-judge extraction_correctness over Time",
+        "extraction_correctness",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Offline LLM-as-a-judge factual-correctness verdict (0-1) per run over time.",
+    ),
+    _score_widget(
+        "Mailroom Correctness — classification_correct rate over Time",
+        "class_correct",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Binary classification-correct rate against ground truth per run over time.",
+    ),
+    _score_widget(
+        "Mailroom Correctness — guardrail_triggered rate over Time",
+        "guardrail_triggered",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Share of runs where a classification/extraction guardrail fired.",
+    ),
+    # --- Accuracy (aggregate accuracy per doc class over time)
+    _score_widget(
+        "Mailroom Accuracy — overall score by doc class",
+        "extraction_overall_score",
+        agg="avg",
+        dimensions=("traceName", "docType"),
+        description="Deterministic extraction accuracy split by document class (docType from trace metadata).",
+    ),
+    # --- Latency / Duration (how long did runs take?)
+    _score_widget(
+        "Mailroom Duration — run_duration_seconds over Time",
+        "run_duration_seconds",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Average wall-clock pipeline duration (seconds) per run over time.",
+    ),
+    _score_widget(
+        "Mailroom Latency — p95 run duration by doc class",
+        "run_duration_seconds",
+        agg="p95",
+        dimensions=("traceName", "docType"),
+        description="p95 pipeline duration split by document class.",
+    ),
+    _score_widget(
+        "Mailroom Cost — estimated_cost_usd over Time",
+        "estimated_cost_usd",
+        agg="sum",
+        dimensions=("traceName",),
+        description="Estimated LLM cost per run over time.",
+    ),
+    _score_widget(
+        "Mailroom Volume — llm_call_count over Time",
+        "llm_call_count",
+        agg="avg",
+        dimensions=("traceName",),
+        description="Average number of LLM calls per run over time (retry pressure).",
+    ),
+]
+
+
+DIMENSION_DASHBOARD = {
+    "name": "Mailroom Quality — Completion / Correctness / Accuracy / Latency",
+    "description": "Tailored dimension views (issue #2): dedicated widgets for completion (stage_completed, field presence, judge completeness), correctness (deterministic field scores, judge correctness, classification rate, guardrails), accuracy by doc class, duration/latency, cost, and LLM-call volume. Scoped to pilot runs where ground truth exists.",
 }
 
 
@@ -314,6 +442,7 @@ def main() -> int:
 
     quality_ids = sync_widgets(client, QUALITY_WIDGETS, dry_run=dry_run)
     judge_ids = sync_widgets(client, JUDGE_WIDGETS, dry_run=dry_run)
+    dimension_ids = sync_widgets(client, DIMENSION_WIDGETS, dry_run=dry_run)
 
     quality_layout = [
         (w.name, 0, y, 12, 6)
@@ -327,9 +456,13 @@ def main() -> int:
         (JUDGE_WIDGETS[2].name, 0, 6, 6, 6),
         (JUDGE_WIDGETS[3].name, 6, 6, 6, 6),
     ]
+    dimension_layout = [
+        (w.name, 0, y, 12, 5) for y, w in enumerate(DIMENSION_WIDGETS)
+    ]
 
     sync_dashboard(client, QUALITY_DASHBOARD, quality_ids, quality_layout, dry_run=dry_run)
     sync_dashboard(client, JUDGE_DASHBOARD, judge_ids, judge_layout, dry_run=dry_run)
+    sync_dashboard(client, DIMENSION_DASHBOARD, dimension_ids, dimension_layout, dry_run=dry_run)
 
     print("\nDone. Dashboards live in the Langfuse UI under Dashboards.")
     return 0
