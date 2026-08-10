@@ -145,7 +145,12 @@ async def get_stuck_documents(stale_minutes: int = 15) -> list[DocumentRecord]:
     async with async_session() as session:
         result = await session.execute(
             select(DocumentRecord).where(
-                DocumentRecord.stage.in_(["processing", "inbox"]),
+                # Any non-terminal stage can be "stuck": a process kill in the
+                # catalog_write → archive window leaves stage=classified with
+                # the file still in processing/. Review docs are NOT stuck —
+                # they legitimately await a human decision (counted separately
+                # as review_queue).
+                DocumentRecord.stage.in_(["processing", "inbox", "classified"]),
                 DocumentRecord.updated_at < cutoff,
             )
         )
@@ -170,6 +175,11 @@ async def get_error_rate_by_doc_type() -> dict[str, dict]:
         rows = result.all()
         stats: dict[str, dict] = {}
         for doc_type, stage in rows:
+            if not doc_type:
+                # Documents with no classification (unknown-type review,
+                # ingest-crash aborts) are not a doc-type bucket; skip them so
+                # the response JSON never carries a None key.
+                continue
             if doc_type not in stats:
                 stats[doc_type] = {"total": 0, "failed": 0, "review": 0}
             stats[doc_type]["total"] += 1

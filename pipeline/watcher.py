@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 import structlog
@@ -104,10 +105,12 @@ class InboxHandler(FileSystemEventHandler):
         if not _mark_active(path.name):
             logger.info("file_already_processing", file=str(path))
             return
-        if is_ingestion_paused():
-            logger.info("ingestion_paused_by_ops_monitor", file=str(path))
-            return
         try:
+            if is_ingestion_paused():
+                # Leave the file in the inbox (never claim it). The periodic
+                # rescan re-attempts it once ingestion is resumed.
+                logger.info("ingestion_paused_by_ops_monitor", file=str(path))
+                return
             time.sleep(0.5)
             if not path.exists():
                 logger.warning("file_gone_before_processing", file=str(path))
@@ -159,6 +162,27 @@ class Watcher:
         self._running = True
         logger.info("watcher_running", inbox=str(inbox))
 
+        # Periodic inbox rescan: catches files skipped while ingestion was
+        # paused (the pause path leaves them in the inbox) and any file that
+        # appeared between watchdog events. Cheap and idempotent — already-
+        # processed files are skipped by `_is_already_processed`.
+        threading.Thread(target=self._rescan_loop, daemon=True).start()
+
+    def _rescan_loop(self):
+        import time as _time
+
+        poll = float(os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", "5"))
+        while self._running:
+            _time.sleep(poll)
+            if is_ingestion_paused():
+                continue
+            for f in list_inbox_files():
+                if f.name in _active_files:
+                    continue
+                threading.Thread(
+                    target=self._process_existing, args=(f,), daemon=True
+                ).start()
+
     def stop(self):
         if self._running:
             self.observer.stop()
@@ -170,10 +194,10 @@ class Watcher:
         if not _mark_active(path.name):
             logger.info("file_already_processing", file=str(path))
             return
-        if is_ingestion_paused():
-            logger.info("ingestion_paused_by_ops_monitor", file=str(path))
-            return
         try:
+            if is_ingestion_paused():
+                logger.info("ingestion_paused_by_ops_monitor", file=str(path))
+                return
             if not path.exists():
                 logger.warning("existing_file_gone", file=str(path))
                 return
