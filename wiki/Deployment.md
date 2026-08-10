@@ -108,6 +108,46 @@ services:
 
 ---
 
+## Logging & Log Rotation
+
+The pipeline emits **structured logs to stdout** — it does not write log files itself. Capture, rotation, and retention are the process manager's job (systemd, supervisord, Docker).
+
+- Set `LOG_FORMAT=json` in production for machine-parseable logs.
+- Rotate daily or at 100MB; keep 14–30 days. The SQLite audit log is the long-term compliance record — rotated logs are operational only.
+
+**supervisord example:**
+
+```ini
+[program:watcher]
+command=/usr/bin/python pipeline/watcher.py
+stdout_logfile=/var/log/mailroom/watcher.log
+stdout_logfile_maxbytes=100MB
+stdout_logfile_backups=14
+```
+
+See `docs/deployment.md` for systemd and logrotate examples.
+
+---
+
+## Backup & Restore
+
+The audit log is the compliance record — back it up. See `docs/deployment.md` for the full guide.
+
+**What to back up:** `data/mailroom.db` (catalog + audit log), `data/checkpoints.db` (crash-resume), `data/archive/` (final documents), `data/manifests/`.
+
+**SQLite safe snapshot** (works while running):
+
+```bash
+sqlite3 data/mailroom.db ".backup 'backup/mailroom.db'"
+sqlite3 data/checkpoints.db ".backup 'backup/checkpoints.db'"
+```
+
+**Restore:** stop services → restore the three artifacts → restart → verify the audit chain via `GET /audit/{doc_id}` (`"chain_valid": true`).
+
+> Always back up archive + manifests + DB from the same point in time, store off-host, and test a restore quarterly.
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |

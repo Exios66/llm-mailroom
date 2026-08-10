@@ -20,13 +20,28 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 GET /health
 ```
 
+Checks the API plus best-effort dependency health: LLM provider connectivity (resolves the sorter agent's provider, pings the models endpoint — no completion tokens spent) and database reachability (`SELECT 1`).
+
 **Response:**
 ```json
 {
     "status": "ok",
-    "service": "mailroom"
+    "service": "mailroom",
+    "checks": {
+        "llm_provider": {
+            "status": "ok",
+            "detail": "openrouter:qwen/qwen3.7-flash",
+            "provider": "openrouter"
+        },
+        "database": {
+            "status": "ok",
+            "detail": "database reachable"
+        }
+    }
 }
 ```
+
+`status` is `"ok"` when all checks pass, `"degraded"` when any dependency is unreachable (e.g. provider resolution fails, missing API key, or the models endpoint is down). Dependency checks are best-effort and never block the response.
 
 ---
 
@@ -239,6 +254,52 @@ Get pipeline-wide operational metrics.
 
 ---
 
+### Ops Sweep
+
+```
+POST /ops/sweep
+```
+
+Run a **one-off Boss ops-monitor sweep on demand** (same logic as the scheduled `pipeline/ops_monitor.py`, without waiting for the interval). Gathers system metrics, runs the Boss agent's analysis, and — if the Boss recommends `pause_ingestion` — writes the `ops_monitor_paused` flag (which the watcher honors). Use this to inspect system health interactively or to trigger a pause without touching the running monitor.
+
+**Response:**
+```json
+{
+    "status": "ok",
+    "findings": ["review backlog growing: 12 documents waiting"],
+    "severity": "warning",
+    "recommended_action": "alert",
+    "paused_ingestion": false,
+    "timestamp": "2024-01-15T10:35:00.000Z"
+}
+```
+
+**Errors:**
+- `500`: Metrics gathering or Boss analysis failed
+
+---
+
+### Resume Ingestion
+
+```
+POST /ops/resume
+```
+
+Clear the `ops_monitor_paused` flag so the watcher resumes processing new files. The watcher honors the flag on every file event, so this takes effect without a restart.
+
+**Response:**
+```json
+{
+    "status": "ok",
+    "was_paused": true,
+    "paused_ingestion": false
+}
+```
+
+`was_paused` is `true` if the pause flag existed and was cleared; `false` if ingestion was not paused.
+
+---
+
 ## Error Responses
 
 All errors follow a consistent format:
@@ -263,3 +324,42 @@ When the API is running, visit:
 
 - **Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
+
+---
+
+## API Versioning
+
+The Mailroom API is currently **unversioned**. All endpoints are served from the root path (`/`) without a version prefix. This is acceptable while the API is internal and pre-1.0, but the following conventions apply:
+
+### Versioning policy
+
+| Concern | Policy |
+|---|---|
+| **Current status** | Unversioned (pre-1.0), internal use only |
+| **Version prefix** | Planned: `/v1/` when the first breaking change ships |
+| **Backwards compatibility** | Breaking changes are grouped into a single release; the old route set is deprecated for one minor release before removal |
+| **Response evolution** | Additive fields in JSON responses are allowed within a version (consumers must ignore unknown fields) |
+| **Removal of fields** | Always a breaking change → new version |
+| **Content type** | `application/json` only |
+
+### Guidance for API consumers
+
+- Treat the API as unstable: pin to the Mailroom release you integrate against (see `CHANGELOG.md`).
+- Do not depend on undocumented response fields — only fields documented in this reference are stable.
+- Breaking changes are announced in `CHANGELOG.md` under the "Breaking changes" section of the release.
+
+### Planned `/v1/` layout
+
+When versioning ships, routes will move under a prefix:
+
+```
+GET  /v1/health
+POST /v1/upload
+POST /v1/review/{doc_id}/resolve
+GET  /v1/status/{doc_id}
+GET  /v1/matters/{matter_id}
+GET  /v1/audit/{doc_id}
+GET  /v1/ops/status
+```
+
+The unversioned routes will continue to work during the deprecation window, then be removed.

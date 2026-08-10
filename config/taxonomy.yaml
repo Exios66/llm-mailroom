@@ -79,6 +79,10 @@ field_scoring:
 # `doc_text` is still transcribed and stored for text-only processes, the judge,
 # reports, and auditability — vision only changes the LLM prompt content, never
 # the downstream catalog/audit trail.
+# Environment variable overrides (useful for pilot sweeps without editing YAML):
+#   MAILROOM_VISION_ENABLED=true|false
+#   MAILROOM_VISION_MAX_PAGES=<int>  (0 = all pages)
+#   MAILROOM_VISION_DPI=<int>
 vision:
   enabled: true
   max_pages: 10          # cap the page-image budget per document (large PDFs)
@@ -208,6 +212,9 @@ agents:
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 12000
+    # Matches the eval-validated vendored default (sorter_v5 was validated
+    # with medium reasoning); explicitly declared for config completeness.
+    reasoning_effort: medium
 
   contracts_specialist:
     provider: openrouter
@@ -215,6 +222,7 @@ agents:
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 100000
+    reasoning_effort: none
 
   corporate_records_specialist:
     provider: openrouter
@@ -222,6 +230,7 @@ agents:
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 40000
+    reasoning_effort: none
 
   due_diligence_specialist:
     provider: openrouter
@@ -237,6 +246,7 @@ agents:
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 40000
+    reasoning_effort: none
 
   compliance_specialist:
     provider: openrouter
@@ -244,6 +254,7 @@ agents:
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 60000
+    reasoning_effort: none
 
   court_opinions_specialist:
     provider: openrouter
@@ -251,12 +262,14 @@ agents:
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 60000
+    reasoning_effort: none
 
   reporter:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.2
     max_tokens: 3072
+    max_input_chars: 40000
     # Reports are synthesis, not analysis; reserve the completion budget for
     # visible output instead of hidden reasoning tokens.
     reasoning_effort: none
@@ -266,6 +279,7 @@ agents:
     model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 8192
+    max_input_chars: 40000
     # OpenRouter reasoning effort; "max" maps to ~95% of max_tokens as the
     # thinking budget for Qwen thinking models.
     reasoning_effort: max
@@ -275,6 +289,8 @@ agents:
     model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 8192
+    max_input_chars: 40000
+    reasoning_effort: none
 
   # Offline LLM-as-a-judge used by scripts/run_quality_judges.py.
   judge:
@@ -282,4 +298,5 @@ agents:
     model: deepseek/deepseek-v4-flash
     temperature: 0.1
     max_tokens: 2048
+    max_input_chars: 60000
     reasoning_effort: none

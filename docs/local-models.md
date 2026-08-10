@@ -205,6 +205,27 @@ docker exec mailroom-ollama ollama list
 docker exec mailroom-ollama ollama pull qwen3:7b
 ```
 
+### Connection refused / provider not reachable
+
+If the pipeline logs `APIConnectionError` or `ConnectError`:
+
+1. Verify the service is running:
+   ```bash
+   # Ollama (Docker)
+   docker compose -f docker/docker-compose.yml --profile local-llm ps
+   curl http://localhost:11434/v1/models
+
+   # vLLM
+   curl http://localhost:8000/v1/models
+   ```
+2. Confirm `OLLAMA_BASE_URL` / `VLLM_BASE_URL` matches the service (defaults: `http://localhost:11434/v1`, `http://localhost:8000/v1`). Note the **`/v1` suffix is required** — the OpenAI SDK appends `/chat/completions`, so omitting it produces a 404/connection error.
+3. If running Ollama **on the host** (not Docker), make sure it exposes the OpenAI-compatible endpoint: `OLLAMA_HOST=0.0.0.0 ollama serve`.
+4. If agents still resolve to OpenRouter, check `DEFAULT_PROVIDER` isn't overriding: `python cutover.py --list` shows the effective provider per agent.
+
+### HTTP 404 on `/models` or `/chat/completions`
+
+The OpenAI SDK needs the OpenAI-compatible base URL. For Ollama that is `http://<host>:11434/v1` (the raw `:11434` root is not OpenAI-compatible). For vLLM it is `http://<host>:8000/v1`. Double-check there is no trailing slash and no extra path.
+
 ### Structured output failures
 
 Some local models struggle with strict JSON schema mode. If you see `_parse_error: true` in extraction results:
@@ -213,8 +234,47 @@ Some local models struggle with strict JSON schema mode. If you see `_parse_erro
 2. Try Llama 3.1 or DeepSeek-R1 for better instruction following
 3. Fall back to OpenRouter for that specific agent
 
+### JSON `json_object` mode rejected (HTTP 400)
+
+`agents/base.py:_call_structured` deliberately embeds the literal token `json` in both the system and user messages (some providers gate `response_format: json_object` on that word). If a **local** provider still rejects the request:
+
+1. Check whether the provider supports `response_format` at all — some local serving stacks only accept it for specific models.
+2. If your local model doesn't support `json_object`, prefer a model that does (Qwen family), or route the offending agent back to OpenRouter.
+3. vLLM: use an engine version that supports `guided_json`/structured output and confirm the model is served with a compatible chat template.
+
+### Vision pages not being sent
+
+Page images are only attached when the agent's model matches a `vision.models` substring in `taxonomy.yaml`. If your local model accepts images but pages never appear:
+
+1. Add the model substring to `vision.models` (e.g. `"qwen"`, `"llava"`).
+2. Confirm `MAILROOM_VISION_ENABLED` isn't forcing vision off.
+3. Confirm `pymupdf` (fitz) is installed — it's required for PDF→image rendering (`llm/vision.py`). Without it, `_render_doc_pages` is skipped regardless of config.
+
 ### Slow inference
 
 - Use quantized models (`qwen3:7b-q4_K_M` for GGUF quants)
 - Enable GPU passthrough in Docker Compose
 - Reduce context window (agents truncate to 12K-25K chars already)
+- Check the model actually runs on GPU: `docker exec mailroom-ollama ollama ps` (a CPU-only model will be listed without a GPU line)
+
+### OOM / out-of-memory
+
+- Drop to a smaller quant (e.g. `qwen3:7b-q4_K_M` instead of `qwen3:7b` fp16)
+- Reduce `num_ctx`/`num_gpu` in the Ollama model config (`ollama run --keepalive` or Modelfile)
+- For vLLM, lower `--max-model-len` and `--gpu-memory-utilization` to free VRAM
+
+### Cutover validation fails
+
+`python cutover.py --validate --agent <name>` runs the unit tests against the new provider/model. If it fails:
+
+1. Check the agent's `provider` and `model` values resolved correctly: `python cutover.py --list`
+2. Confirm the model is pulled: `docker exec mailroom-ollama ollama list`
+3. The tests never hit the real LLM — they validate the config plumbing, not the model's accuracy. For accuracy, run a pilot: `python scripts/run_pilot.py --real --source <corpus>`
+
+### Consistent low confidence / routes to review
+
+Smaller local models are often over-confident or under-confident. If everything lands in `review`:
+
+1. Verify the agent model actually serves the taxonomy classes (a model not fine-tuned for legal text may classify poorly).
+2. Compare against OpenRouter with `scripts/run_vision_sweep.py --real` or a pilot diff: `python scripts/run_pilot.py --real --baseline data/pilot_report_baseline.json`.
+3. Adjust `confidence.high` / `confidence.low` in `taxonomy.yaml` — thresholds are config, not code.

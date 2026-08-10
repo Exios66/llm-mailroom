@@ -4,6 +4,12 @@ from dataclasses import dataclass, field
 
 DEFAULT_MODELS = {
     "openrouter": [
+        # Models actually in use by agents (taxonomy.yaml `agents:` → must match
+        # a `cost_models:` entry so estimated_cost_usd is priced correctly).
+        "qwen/qwen3.7-flash",
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-pro",
+        # Broader OpenRouter catalog (informational / cutover candidates).
         "openai/gpt-4o",
         "openai/gpt-4o-mini",
         "anthropic/claude-sonnet-4-20250514",

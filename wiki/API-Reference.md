@@ -18,12 +18,21 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 ### `GET /health`
 
-Health check.
+Health check — API plus best-effort dependency checks: LLM provider connectivity (pings the models endpoint, no completion tokens) and database reachability (`SELECT 1`).
 
 **Response:**
 ```json
-{"status": "ok", "service": "mailroom"}
+{
+  "status": "ok",
+  "service": "mailroom",
+  "checks": {
+    "llm_provider": {"status": "ok", "detail": "openrouter:qwen/qwen3.7-flash", "provider": "openrouter"},
+    "database": {"status": "ok", "detail": "database reachable"}
+  }
+}
 ```
+
+`status` is `"degraded"` when any dependency is unreachable.
 
 ---
 
@@ -179,6 +188,35 @@ Pipeline-wide operational metrics.
 
 ---
 
+### `POST /ops/sweep`
+
+Run a **one-off Boss ops-monitor sweep on demand** (same logic as the scheduled `pipeline/ops_monitor.py`). Gathers metrics, runs Boss analysis, and pauses ingestion if recommended (`ops_monitor_paused` flag).
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "findings": ["review backlog growing: 12 documents waiting"],
+  "severity": "warning",
+  "recommended_action": "alert",
+  "paused_ingestion": false,
+  "timestamp": "2024-01-15T10:35:00.000Z"
+}
+```
+
+---
+
+### `POST /ops/resume`
+
+Clear the `ops_monitor_paused` flag so the watcher resumes processing. Takes effect without a restart.
+
+**Response:**
+```json
+{"status": "ok", "was_paused": true, "paused_ingestion": false}
+```
+
+---
+
 ## Error Responses
 
 ```json
@@ -190,3 +228,42 @@ Pipeline-wide operational metrics.
 | 400 | Bad request |
 | 404 | Not found |
 | 500 | Internal / DB unavailable |
+
+---
+
+## API Versioning
+
+The Mailroom API is currently **unversioned**. All endpoints are served from the root path (`/`) without a version prefix. This is acceptable while the API is internal and pre-1.0, but the following conventions apply:
+
+### Versioning policy
+
+| Concern | Policy |
+|---|---|
+| **Current status** | Unversioned (pre-1.0), internal use only |
+| **Version prefix** | Planned: `/v1/` when the first breaking change ships |
+| **Backwards compatibility** | Breaking changes are grouped into a single release; the old route set is deprecated for one minor release before removal |
+| **Response evolution** | Additive fields in JSON responses are allowed within a version (consumers must ignore unknown fields) |
+| **Removal of fields** | Always a breaking change → new version |
+| **Content type** | `application/json` only |
+
+### Guidance for API consumers
+
+- Treat the API as unstable: pin to the Mailroom release you integrate against (see `CHANGELOG.md`).
+- Do not depend on undocumented response fields — only fields documented in this reference are stable.
+- Breaking changes are announced in `CHANGELOG.md` under the "Breaking changes" section of the release.
+
+### Planned `/v1/` layout
+
+When versioning ships, routes will move under a prefix:
+
+```
+GET  /v1/health
+POST /v1/upload
+POST /v1/review/{doc_id}/resolve
+GET  /v1/status/{doc_id}
+GET  /v1/matters/{matter_id}
+GET  /v1/audit/{doc_id}
+GET  /v1/ops/status
+```
+
+The unversioned routes will continue to work during the deprecation window, then be removed.

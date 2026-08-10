@@ -110,7 +110,7 @@ flowchart LR
 
     subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
         SORTER["SorterAgent"]
-        SPEC["5 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence, compliance"]
+        SPEC["6 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence,<br/>compliance, court opinions"]
         BOSS["BossAgent"]
         REPORTER["ReporterAgent"]
         PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
@@ -345,13 +345,15 @@ python cutover.py --all --provider ollama --model qwen3:7b
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Health check |
+| `GET` | `/health` | Health check (includes LLM provider + DB dependency checks) |
 | `POST` | `/upload` | Upload document to inbox |
 | `POST` | `/review/{doc_id}/resolve` | Resolve human review (approved/rejected) |
 | `GET` | `/status/{doc_id}` | Document pipeline status |
 | `GET` | `/matters/{matter_id}` | All documents in a matter |
 | `GET` | `/audit/{doc_id}` | Hash-chained audit trail + validity check |
 | `GET` | `/ops/status` | Pipeline-wide operational metrics |
+| `POST` | `/ops/sweep` | Run a one-off Boss ops-monitor sweep |
+| `POST` | `/ops/resume` | Clear the ingestion-pause flag |
 
 ## Pipeline Bins (Filesystem)
 

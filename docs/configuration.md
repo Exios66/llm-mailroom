@@ -144,6 +144,35 @@ field_scoring:
   embedding_rescue_below: 0.7
 ```
 
+### `vision`
+
+Controls vision-mode ingestion — rendering PDF/scan pages to image data-URIs for vision-capable models. Vision is **additive**: the full `doc_text` transcription is always sent; page images are appended only when the input agent's model matches one of `vision.models` (substring match). `max_pages` bounds the image budget, never the content.
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Master switch for vision ingestion |
+| `max_pages` | `10` | Max PDF pages rendered as images per document (0 = all pages) |
+| `dpi` | `150` | Render resolution for page images |
+| `models` | — | Model strings (substring match) that accept image input (`qwen/`, `gpt-4o`, `claude`, `gemini`, …) |
+
+```yaml
+vision:
+  enabled: true
+  max_pages: 10
+  dpi: 150
+  models:
+    - "qwen/"
+    - "gpt-4o"
+    - "gpt-4.1"
+    - "claude"
+    - "gemini"
+    - "llava"
+    - "llama-3.2"
+    - "qwen-vl"
+```
+
+**Environment overrides** (useful for pilot sweeps without editing YAML): `MAILROOM_VISION_ENABLED`, `MAILROOM_VISION_MAX_PAGES`, `MAILROOM_VISION_DPI`.
+
 ### `file_extensions`
 
 Accepted file extensions for inbox processing.
@@ -166,6 +195,8 @@ Per-agent model and provider configuration. This is where agent-by-agent local m
 | `model` | Model name (provider-specific) |
 | `temperature` | LLM temperature (0.0–2.0) |
 | `max_tokens` | Output token cap for the agent (bounds runaway reasoning-token generation) |
+| `max_input_chars` | Input-text budget per call (defaults to 25000); large docs need a bigger window or late-page fields get truncated |
+| `reasoning_effort` | OpenRouter reasoning budget for thinking models: `none`, `low`, `medium`, `high`, `max` |
 
 ```yaml
 agents:
@@ -225,6 +256,9 @@ See `.env.example` for the complete list:
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `2` | Watcher poll interval |
 | `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |
+| `MAILROOM_VISION_ENABLED` | No | `true` | Enable/disable vision ingestion (overrides `vision.enabled` in taxonomy.yaml) |
+| `MAILROOM_VISION_MAX_PAGES` | No | `10` | Max PDF pages to render as images (0 = all pages; overrides `vision.max_pages`) |
+| `MAILROOM_VISION_DPI` | No | `150` | Render DPI for page images (overrides `vision.dpi`) |
 
 ## Provider Configuration
 
