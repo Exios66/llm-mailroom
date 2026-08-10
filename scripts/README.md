@@ -9,7 +9,7 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 | `run_pilot.py` | Main pilot testing entrypoint. Runs the full pipeline over the sample set with mock (`--mock`) or real (`--real`) LLM. Supports baseline diffing (`--baseline`) and ground-truth score ingestion (`--scores`). |
 | `run_quality_judges.py` | Offline LLM-as-a-Judge evaluation over a pilot run. Measures classification correctness, extraction completeness, and extraction correctness. Supports `--mock` for deterministic fake judges. |
 | `run_vision_sweep.py` | Vision vs. text tradeoff benchmarking. Runs the same documents with text-only, vision-10-pages, and vision-all-pages modes. Outputs comparison metrics. |
-| `write_pilot_report.py` | Renders tracked markdown + JSON pilot report from collected run data (default: `docs/reports/pilot-vision-tradeoff.md`). |
+| `write_pilot_report.py` | Renders tracked markdown + JSON pilot report from collected run data (default: `docs/reports/pilots/pilot-vision-tradeoff.md`). |
 
 ## Data Preparation
 
@@ -43,6 +43,7 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 | Script | Purpose |
 |--------|---------|
 | `compare_runs.py` | Compares two pilot run reports and outputs a diff of stage changes, confidence shifts, and extraction differences. |
+| `new_report.py` | Scaffolds a new evaluation write-up / audit / report under `docs/reports/<kind>/` (`audits` \| `pilots` \| `evaluations`) with a dated kebab-case filename and a standard header. Use this for any future report — never drop reports in the repo root. Supports `--date` and `--dry-run`. |
 | `calibrate_field_scoring.py` | Issue #4 calibration step: builds a labeled field sample from `examples/samples/manifest.csv` ground truth (exact/format variants = correct; controlled perturbations = incorrect) and reports per-field-type score separation + calibrated `field_scoring.type_bands` cutoffs. Supports `--band LOW HIGH` to evaluate a candidate band and `--json` for machine-readable output. |
 
 ## Common Patterns
