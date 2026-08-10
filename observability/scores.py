@@ -181,6 +181,7 @@ def create_trace_score(
     comment: str | None = None,
     config_id: str | None = None,
     score_id: str | None = None,
+    observation_id: str | None = None,
 ) -> None:
     """Attach a score to a trace by id (offline/pilot scoring — no active
     tracing context required). No-ops when tracing is disabled."""
@@ -196,6 +197,7 @@ def create_trace_score(
             comment=comment,
             config_id=config_id,
             score_id=score_id,
+            observation_id=observation_id,
         )
         logger.debug("score_created_for_trace", trace_id=trace_id, name=name, value=value)
     except Exception:

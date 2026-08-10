@@ -75,11 +75,33 @@ def guard_classification(state: dict) -> dict:
     return result
 
 
+def _has_substantive_content(extracted_data: dict | None) -> bool:
+    """True when the extraction carries at least one populated schema field.
+
+    Underscore-prefixed keys are pipeline metadata (`_report`, `_unsupported`,
+    `_parse_error`), never extraction content. An extraction whose only fields
+    are empty/null/[] is a failed extraction regardless of schema validity —
+    routing must not archive it (see `apply_extraction_guard`).
+    """
+    for key, value in (extracted_data or {}).items():
+        if key.startswith("_"):
+            continue
+        if value is None:
+            continue
+        if isinstance(value, (str, list, dict, tuple, set)):
+            if value:
+                return True
+        elif value != 0:
+            return True
+    return False
+
+
 def guard_extraction(doc_type: str, extracted_data: dict | None) -> dict:
     """Validate a specialist's extraction against its schema.
 
     Returns {"ok", "issues", "parse_error", "schema_valid"}. `ok` is False when
-    the extraction cannot be trusted (JSON parse failure or schema violation).
+    the extraction cannot be trusted (JSON parse failure, schema violation, or
+    no substantive content at all).
     """
     from observability.scores import validate_extraction
 
@@ -90,6 +112,8 @@ def guard_extraction(doc_type: str, extracted_data: dict | None) -> dict:
         issues.append("extraction_parse_error")
     if not checks["schema_valid"]:
         issues.append("extraction_schema_invalid")
+    if not _has_substantive_content(extracted_data):
+        issues.append("extraction_empty")
     return {
         "ok": not issues,
         "issues": issues,

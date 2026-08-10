@@ -14,7 +14,7 @@ logger = structlog.get_logger(__name__)
 
 
 class ImageExtractor(BaseAgent):
-    agent_name = "sorter"
+    agent_name = "image_extractor"
 
     def system_prompt(self) -> str:
         return """You are an expert document image analyst. Your task is to extract all visible text
@@ -52,7 +52,17 @@ Rules:
 
     def _extract_with_vision(self, data_uri: str, filename: str) -> dict:
         try:
-            response = self.client.chat.completions.create(
+            # Route through the shared retry/deadline/usage plumbing so a
+            # transient provider error is retried (not silently downgraded to
+            # the fallback marker) and the call counts toward run limits and
+            # cost/token scores. Raises on persistent failure — the caller
+            # (`graph/build_graph.py:_extract_text_from_image`) catches and
+            # routes the document to review.
+            from llm.retry import retry_chat_completion
+            from pipeline.limits import get_run_deadline, record_usage
+
+            response = retry_chat_completion(
+                self.client,
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.system_prompt()},
@@ -68,14 +78,16 @@ Rules:
                     },
                 ],
                 max_tokens=4096,
+                run_deadline=get_run_deadline(),
                 **langfuse_call_attrs("image-extractor"),
             )
+            record_usage(getattr(response, "usage", None), self.model)
             text = response.choices[0].message.content or ""
             logger.info("vision_extraction_complete", filename=filename, chars=len(text))
             return {"text": text, "confidence": 0.85, "method": "vision"}
         except Exception as e:
             logger.warning("vision_call_failed", filename=filename, error=str(e))
-            return self._fallback_extract(filename)
+            raise
 
     def _fallback_extract(self, filename: str) -> dict:
         text = (

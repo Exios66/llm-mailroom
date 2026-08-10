@@ -103,20 +103,39 @@ async def upload_document(
     file: UploadFile = File(...),
     matter_id: str = Form(default="DEFAULT"),
 ):
+    from pipeline.config import load_config
+
+    ext = Path(file.filename or "").suffix.lower()
+    accepted = load_config().get("file_extensions", [".txt", ".pdf", ".docx", ".md"])
+    if not ext or ext not in accepted:
+        raise HTTPException(
+            400,
+            f"Unsupported file type '{ext}'. Accepted: {', '.join(accepted)}",
+        )
+
     inbox = inbox_dir()
     inbox.mkdir(parents=True, exist_ok=True)
 
-    file_path = inbox / file.filename
-    content = await file.read()
-    file_path.write_bytes(content)
+    # Avoid clobbering a document with the same name (the watcher keys claims
+    # by file name): write to a uniquified name when a collision exists.
+    dest = inbox / file.filename
+    if dest.exists():
+        stem, suffix = Path(file.filename).stem, Path(file.filename).suffix
+        counter = 1
+        while dest.exists():
+            dest = inbox / f"{stem}-{counter}{suffix}"
+            counter += 1
 
-    logger.info("file_uploaded", file=str(file_path), matter_id=matter_id, size=len(content))
+    content = await file.read()
+    dest.write_bytes(content)
+
+    logger.info("file_uploaded", file=str(dest), matter_id=matter_id, size=len(content))
 
     return JSONResponse(
         status_code=202,
         content={
             "status": "accepted",
-            "file": file.filename,
+            "file": dest.name,
             "matter_id": matter_id,
             "message": "File queued for processing — watcher will pick it up.",
         },
@@ -144,6 +163,8 @@ async def resolve_review(
         manifest.stage = PipelineStage.FAILED
         manifest.touch()
         save_manifest(manifest)
+        _move_rejected_to_failed(doc_id, manifest)
+        _write_review_audit_entry(doc_id, manifest.matter_id, "review_rejected", notes)
         logger.info("review_rejected", doc_id=doc_id)
         return {"status": "ok", "doc_id": doc_id, "decision": decision, "notes": notes}
 
@@ -171,6 +192,13 @@ async def resolve_review(
         logger.exception("review_resume_failed", doc_id=doc_id)
         raise HTTPException(500, f"Resume failed: {exc}")
 
+    _write_review_audit_entry(
+        doc_id,
+        manifest.matter_id,
+        "review_approved",
+        notes,
+        detail={"resumed_stage": result.get("stage")},
+    )
     logger.info("review_approved_resumed", doc_id=doc_id, stage=result.get("stage"))
     return {
         "status": "ok",
@@ -184,6 +212,86 @@ async def resolve_review(
             "extraction_attempts": result.get("extraction_attempts"),
         },
     }
+
+
+def _write_review_audit_entry(
+    doc_id: str, matter_id: str, event: str, notes: str, detail: dict | None = None
+) -> None:
+    """Append a hash-chained audit entry for a human review decision.
+
+    The review decision is part of the document's compliance record: it must
+    be chained to the previous entry for this doc_id (best-effort; the audit
+    log is the durable record, but a DB failure must not fail the API call).
+    """
+    try:
+        import asyncio
+        from schemas.audit import build_audit_entry
+        from graph.build_graph import _latest_audit_hash, _write_audit_log
+
+        entry_detail = dict(detail or {})
+        if notes:
+            entry_detail["notes"] = notes
+        entry = build_audit_entry(
+            doc_id=doc_id,
+            matter_id=matter_id,
+            event=event,
+            actor="human_reviewer",
+            detail=entry_detail,
+            prev_hash=_latest_audit_hash(doc_id),
+        )
+        _write_audit_log(entry)
+    except Exception:
+        logger.exception("review_audit_entry_failed", doc_id=doc_id, event=event)
+
+
+def _move_rejected_to_failed(doc_id: str, manifest) -> None:
+    """Close the conveyor loop for a rejected review: move the file from the
+    review bin to the failed bin and flip the catalog record to failed.
+
+    Without this the manifest says failed while the file stays in review/ and
+    the catalog row stays `review` — inflating review_queue/ops stats forever.
+    Best-effort: never fails the API call.
+    """
+    try:
+        from pipeline.bins import review_dir, move_to_failed
+        from storage.catalog import write_document_record
+
+        review_file = review_dir() / manifest.original_filename
+        if review_file.exists():
+            move_to_failed(review_file)
+
+        doc_record = {
+            "doc_id": doc_id,
+            "matter_id": manifest.matter_id,
+            "original_filename": manifest.original_filename,
+            "doc_type": manifest.doc_type,
+            "contract_subtype": manifest.contract_subtype,
+            "stage": PipelineStage.FAILED.value,
+            "classification_confidence": manifest.classification_confidence,
+            "extraction_confidence": manifest.extraction_confidence,
+            "extracted_data": manifest.extracted_data,
+            "escalation_reason": manifest.escalation_reason,
+            "trace_id": manifest.trace_id,
+        }
+
+        async def _write():
+            await write_document_record(doc_record)
+
+        import asyncio
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(_write(), loop)
+                future.result(timeout=5)
+            else:
+                asyncio.run(_write())
+        except RuntimeError:
+            asyncio.run(_write())
+        logger.info("review_rejected_finalized", doc_id=doc_id)
+    except Exception:
+        logger.exception("review_rejected_finalize_failed", doc_id=doc_id)
 
 
 @app.get("/status/{doc_id}")
@@ -351,12 +459,13 @@ async def ops_resume():
 
         monitor = OpsMonitor()
         pause_file = monitor._pause_file
-        if pause_file.exists():
+        was_paused = pause_file.exists()
+        if was_paused:
             pause_file.unlink()
             logger.info("ops_resume_ingestion")
         return {
             "status": "ok",
-            "was_paused": True,
+            "was_paused": was_paused,
             "paused_ingestion": monitor.is_paused,
         }
     except Exception as exc:

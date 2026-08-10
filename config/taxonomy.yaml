@@ -196,6 +196,14 @@ file_extensions:
   - .pdf
   - .docx
   - .md
+  - .jpg
+  - .jpeg
+  - .png
+  - .gif
+  - .bmp
+  - .webp
+  - .tiff
+  - .tif
 
 # === Agent → model mapping ===
 # Each agent list entry: provider, model, temperature, optional max_tokens
@@ -290,6 +298,15 @@ agents:
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 40000
+    reasoning_effort: none
+
+  # Vision-based text extraction from image-only documents (jpg/png/...).
+  image_extractor:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 4096
+    max_input_chars: 20000
     reasoning_effort: none
 
   # Offline LLM-as-a-judge used by scripts/run_quality_judges.py.

@@ -124,12 +124,13 @@ def score_and_log_extraction(
             **common_kwargs,
         )
 
-    create_trace_score(
-        name="extraction_overall_score",
-        value=result.overall_score,
-        comment=f"doc_class={doc_class} n_fields={len(result.field_scores)}",
-        **common_kwargs,
-    )
+    if result.overall_score is not None:
+        create_trace_score(
+            name="extraction_overall_score",
+            value=result.overall_score,
+            comment=f"doc_class={doc_class} n_fields={len(result.field_scores)}",
+            **common_kwargs,
+        )
 
     create_trace_score(
         name="extraction_needs_judge_review",

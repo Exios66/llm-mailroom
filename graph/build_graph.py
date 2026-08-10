@@ -299,6 +299,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         matter_id=matter_id,
         original_filename=file_path.name,
         stage=PipelineStage.PROCESSING,
+        trace_id=state.get("trace_id"),
     )
     manifest.touch()
     save_manifest(manifest)
@@ -310,6 +311,19 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         chars=len(doc_text),
         suffix=file_path.suffix,
         vision_pages=len(doc_pages),
+    )
+    # Write the processing-stage catalog record immediately so a crashed run is
+    # visible to stuck-doc detection (`get_stuck_documents`) and `/ops/status`
+    # instead of disappearing from the conveyor entirely.
+    _catalog_upsert(
+        {
+            "doc_id": manifest.doc_id,
+            "matter_id": matter_id,
+            "original_filename": file_path.name,
+            "doc_type": None,
+            "stage": PipelineStage.PROCESSING.value,
+        },
+        stage=PipelineStage.PROCESSING.value,
     )
     return {
         "doc_id": manifest.doc_id,
@@ -331,10 +345,16 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     doc_text = state.get("doc_text", "")
     if not doc_text or not doc_text.strip():
         logger.warning("empty_doc_text_classify", doc_id=state.get("doc_id"))
+        # Empty/unreadable text can never be classified — route straight to
+        # human review instead of burning a retry call on the same empty text
+        # (which also clobbered this escalation reason on the retry). Setting
+        # classification_attempts past retry_max makes after_classify send it
+        # to review immediately.
+        retry_max = get_confidence_thresholds().get("retry_max", 1)
         return {
             "doc_type": "correspondence",
             "classification_confidence": 0.1,
-            "classification_attempts": state.get("classification_attempts", 0) + 1,
+            "classification_attempts": max(state.get("classification_attempts", 0), retry_max) + 1,
             "stage": PipelineStage.CLASSIFIED.value,
             "escalation_reason": "Empty or unreadable document content",
             "transient_error": False,
@@ -385,7 +405,8 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     if not guard["ok"]:
         # Never trust out-of-range confidence or an invalid contract subtype;
         # leave doc_type untouched so routing's unknown-type check sends it to
-        # human review.
+        # human review. Record the guardrail on state so it is scored
+        # (guardrail_triggered) and visible in traces.
         logger.warning("classification_guardrail_triggered", doc_id=state.get("doc_id"), issues=guard["issues"])
         confidence = guard.get("confidence", 0.1)
 
@@ -401,6 +422,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         "contract_subtype": contract_subtype,
         "classification_confidence": confidence,
         "classification_attempts": attempts,
+        "classification_guardrail": guard["issues"],
         "stage": PipelineStage.CLASSIFIED.value,
         "escalation_reason": reasoning
         if confidence < get_confidence_thresholds().get("high", 0.95)
@@ -448,6 +470,26 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         raise
     attempts = attempts + 1
 
+    # Same deterministic guard as the first-pass classify: never trust an
+    # out-of-range confidence, unknown doc type, or invalid contract subtype
+    # from the retry either (it would otherwise route to extract directly).
+    from pipeline.guards import guard_classification
+
+    guard = guard_classification(
+        {
+            "doc_type": doc_type,
+            "classification_confidence": confidence,
+            "contract_subtype": contract_subtype,
+        }
+    )
+    if not guard["ok"]:
+        logger.warning(
+            "retry_classification_guardrail_triggered",
+            doc_id=state.get("doc_id"),
+            issues=guard["issues"],
+        )
+        confidence = guard.get("confidence", 0.1)
+
     logger.info(
         "retry_classified",
         doc_type=doc_type,
@@ -461,12 +503,108 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         "classification_confidence": confidence,
         "classification_attempts": attempts,
         "retry_count": state.get("retry_count", 0) + 1,
+        "classification_guardrail": guard["issues"],
         "stage": PipelineStage.CLASSIFIED.value,
         "escalation_reason": reasoning
         if confidence < get_confidence_thresholds().get("high", 0.95)
         else None,
         "transient_error": False,
     }
+
+
+def _fetch_matter_context(state: dict) -> list[dict]:
+    """Best-effort fetch of archived matter records for the Boss / conflict
+    detection. Returns a list of {doc_id, doc_type, extracted_data} dicts;
+    never raises (DB unavailable → empty context)."""
+    matter_id = state.get("matter_id")
+    doc_id = state.get("doc_id")
+    if not matter_id:
+        return []
+    try:
+        from storage.catalog import get_matter_documents
+
+        rows = _run_coro(lambda: get_matter_documents(matter_id))
+        return [
+            {
+                "doc_id": r.doc_id,
+                "doc_type": r.doc_type,
+                "extracted_data": r.extracted_data or {},
+                "stage": r.stage,
+            }
+            for r in rows
+            if r.doc_id != doc_id and r.stage == "archived"
+        ]
+    except Exception:
+        logger.exception("matter_context_fetch_failed")
+        return []
+
+
+def _normalized_compare(a, b) -> bool:
+    """Normalized value comparison for conflict detection (list-aware)."""
+    if isinstance(a, list) and isinstance(b, list):
+        na = {_norm_str(x) for x in a}
+        nb = {_norm_str(x) for x in b}
+        return na == nb
+    return _norm_str(a) == _norm_str(b)
+
+
+def _norm_str(v) -> str:
+    try:
+        from observability.field_scoring import normalize_text
+
+        return normalize_text(v)
+    except Exception:
+        return str(v).strip().lower()
+
+
+def _detect_conflict(state: dict, extracted_data: dict | None) -> tuple[bool, list[str]]:
+    """Deterministically compare a fresh extraction against archived records
+    of the same matter. A conflict exists when the same field is populated on
+    both sides with a different normalized value (e.g. two contracts in one
+    matter claiming different governing laws or parties).
+
+    Returns (conflict_detected, details). Best-effort: no DB → no conflict.
+    """
+    if not extracted_data:
+        return False, []
+    # Only fields present in the schema are conflict-relevant (ignore pipeline
+    # metadata keys like `_report`).
+    schema_fields = set()
+    try:
+        from schemas.documents import get_extraction_schema
+
+        model = get_extraction_schema(state.get("doc_type") or "")
+        if model is not None:
+            schema_fields = set(model.model_fields.keys())
+    except Exception:
+        pass
+
+    details: list[str] = []
+    for record in _fetch_matter_context(state):
+        prior = record.get("extracted_data") or {}
+        if not prior:
+            continue
+        for field in sorted(schema_fields):
+            new_val = extracted_data.get(field)
+            old_val = prior.get(field)
+            if new_val is None or old_val is None:
+                continue
+            if isinstance(new_val, str) and not new_val.strip():
+                continue
+            if isinstance(old_val, str) and not old_val.strip():
+                continue
+            if isinstance(new_val, (list, dict)) and not new_val:
+                continue
+            if isinstance(old_val, (list, dict)) and not old_val:
+                continue
+            if _normalized_compare(new_val, old_val):
+                continue
+            details.append(
+                f"field '{field}' differs from archived record "
+                f"{record.get('doc_id', '?')}: '{old_val}' vs '{new_val}'"
+            )
+            break  # one conflict per prior record is enough to escalate
+    return bool(details), details
 
 
 def extract_node(state: DocumentState) -> dict[str, Any]:
@@ -523,12 +661,29 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
 
     guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
 
-    logger.info("extracted", doc_type=doc_type, confidence=confidence, attempts=attempts)
+    # Deterministic conflict detection against archived matter records: a
+    # materially different value for the same schema field (governing law,
+    # parties, effective date, amounts) is escalated to the Boss for
+    # adjudication instead of silently overwriting matter history.
+    conflict_detected, conflict_details = _detect_conflict(state, result)
+
+    logger.info(
+        "extracted",
+        doc_type=doc_type,
+        confidence=confidence,
+        attempts=attempts,
+        conflict_detected=conflict_detected,
+    )
     return {
         "extracted_data": result,
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
         "extraction_guardrail": guard["issues"],
+        "conflict_detected": conflict_detected,
+        "conflict_details": conflict_details,
+        "escalation_reason": "; ".join(conflict_details)
+        if conflict_detected
+        else state.get("escalation_reason"),
         "transient_error": False,
     }
 
@@ -631,13 +786,26 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
 
     guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
 
-    logger.info("retry_extracted", doc_type=doc_type, confidence=confidence, attempts=attempts)
+    conflict_detected, conflict_details = _detect_conflict(state, result)
+
+    logger.info(
+        "retry_extracted",
+        doc_type=doc_type,
+        confidence=confidence,
+        attempts=attempts,
+        conflict_detected=conflict_detected,
+    )
     return {
         "extracted_data": result,
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
         "retry_count": state.get("retry_count", 0) + 1,
         "extraction_guardrail": guard["issues"],
+        "conflict_detected": conflict_detected,
+        "conflict_details": conflict_details,
+        "escalation_reason": "; ".join(conflict_details)
+        if conflict_detected
+        else state.get("escalation_reason"),
         "transient_error": False,
     }
 
@@ -666,11 +834,32 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             extraction_attempts=state.get("extraction_attempts", 0),
         )
         move_to_review(Path(file_path_str), manifest)
+        # Persist the review position in the catalog so `/ops/status`
+        # review_queue and error-rate stats see it (they query the catalog).
+        _catalog_upsert(
+            {
+                "doc_id": doc_id,
+                "matter_id": state.get("matter_id", "DEFAULT"),
+                "original_filename": state.get("original_filename", ""),
+                "doc_type": state.get("doc_type"),
+                "contract_subtype": state.get("contract_subtype"),
+                "classification_confidence": state.get("classification_confidence"),
+                "extraction_confidence": state.get("extraction_confidence"),
+                "extracted_data": state.get("extracted_data"),
+                "escalation_reason": esc_reason,
+                "trace_id": state.get("trace_id"),
+                "stage": PipelineStage.REVIEW.value,
+            },
+            stage=PipelineStage.REVIEW.value,
+        )
 
     return {
         "stage": PipelineStage.REVIEW.value,
         "escalation_reason": esc_reason,
-        "review_decision": "rejected",
+        # Sentinal for graph termination, NOT a human decision: the document
+        # was routed to review and is awaiting a human. "rejected" would leak
+        # into traces/manifests as a verdict the human never gave.
+        "review_decision": "pending_review",
     }
 
 
@@ -687,11 +876,21 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
         "escalation_reason": state.get("escalation_reason"),
     }
 
-    result = boss.adjudicate(manifest_data)
+    # Give the Boss the archived matter context it adjudicates against, so its
+    # decision is grounded in the actual conflicting records (it receives only
+    # the doc manifest otherwise). Best-effort: empty context when unavailable.
+    matter_context = _fetch_matter_context(state)
+
+    result = boss.adjudicate(manifest_data, matter_context=matter_context)
     decision = result.get("decision", "review")
     reasoning = result.get("reasoning", "")
 
-    logger.info("boss_decision", doc_id=state.get("doc_id"), decision=decision)
+    logger.info(
+        "boss_decision",
+        doc_id=state.get("doc_id"),
+        decision=decision,
+        context_records=len(matter_context),
+    )
     return {
         "review_decision": decision,
         "escalation_reason": f"Boss: {reasoning}",
@@ -724,54 +923,66 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
     }
 
 
-def catalog_write_node(state: DocumentState) -> dict[str, Any]:
-    doc_id = state.get("doc_id", "")
-    logger.info("catalog_write", doc_id=doc_id)
+def _catalog_upsert(state: dict, *, stage: str | None = None, update_only: bool = False) -> None:
+    """Best-effort write/update the catalog record for a document state.
+
+    The catalog is the durable conveyor position: every stage transition that
+    moves a document (processing → review/failed/archived) upserts the row so
+    `/ops/status`, stuck-doc detection, matter listings, and error rates reflect
+    reality even when the run ends in review or fails. Never raises.
+    """
     try:
-        import asyncio
         from schemas.matter import Matter
         from storage.catalog import write_document_record as _write_doc, write_matter_record as _write_matter
 
-        matter = Matter(
-            matter_id=state.get("matter_id", ""),
-            name=state.get("matter_id", "DEFAULT"),
-            client_name="auto-created",
-            practice_area="transactional",
-        )
+        doc_id = state.get("doc_id") or ""
+        matter_id = state.get("matter_id") or "DEFAULT"
+        if not doc_id:
+            return
 
         doc_record = {
-            "doc_id": state["doc_id"],
-            "matter_id": state["matter_id"],
-            "original_filename": state["original_filename"],
+            "doc_id": doc_id,
+            "matter_id": matter_id,
+            "original_filename": state.get("original_filename", ""),
             "doc_type": state.get("doc_type", "unknown"),
             "contract_subtype": state.get("contract_subtype"),
-            "stage": state.get("stage", "cataloged"),
+            "stage": stage or state.get("stage", "cataloged"),
             "classification_confidence": state.get("classification_confidence"),
             "extraction_confidence": state.get("extraction_confidence"),
             "extracted_data": state.get("extracted_data"),
-            "escalation_reason": state.get("escalation_reason"),
+            "escalation_reason": state.get("escalation_reason") or state.get("error_message"),
             "trace_id": state.get("trace_id"),
         }
 
         def _sync_write():
             async def _runner():
-                await _write_matter(matter)
+                if not update_only:
+                    matter = Matter(
+                        matter_id=matter_id,
+                        name=matter_id,
+                        client_name="auto-created",
+                        practice_area="transactional",
+                    )
+                    await _write_matter(matter)
                 await _write_doc(doc_record)
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    future = asyncio.run_coroutine_threadsafe(_runner(), loop)
-                    future.result(timeout=5)
-                else:
-                    asyncio.run(_runner())
-            except RuntimeError:
-                asyncio.run(_runner())
+
+            _run_coro(_runner)
 
         _sync_write()
-        logger.info("catalog_written", doc_id=doc_id)
+        logger.debug("catalog_upserted", doc_id=doc_id, stage=doc_record["stage"])
     except Exception:
-        logger.exception("catalog_write_error")
+        logger.exception("catalog_upsert_error")
+
+
+def catalog_write_node(state: DocumentState) -> dict[str, Any]:
+    doc_id = state.get("doc_id", "")
+    logger.info("catalog_write", doc_id=doc_id)
+    # The catalog_write node runs BEFORE archive: the doc_type/confidence/
+    # extraction fields are final here, but the terminal stage is not yet known
+    # (archive_node completes the move). Write with the current stage; the
+    # archive node upserts stage=archived afterwards so the catalog never
+    # permanently shows a document as merely "classified".
+    _catalog_upsert(state, stage=state.get("stage", "classified"))
     return {}
 
 
@@ -809,12 +1020,75 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
             return {"stage": PipelineStage.FAILED.value, "error_message": f"File not found: {file_path_str}"}
 
     from agents.archivist import archive_document
-    archive_path, audit_entry = archive_document(manifest, file_path)
+    # Hash-chained audit trail: the new entry must link to the previous entry
+    # for THIS doc_id (review decisions, re-runs, resumes all append to the
+    # same chain). A stale `""` would break `verify_chain` for any second
+    # event on the same document.
+    prev_audit_hash = _latest_audit_hash(manifest.doc_id)
+    archive_path, audit_entry = archive_document(manifest, file_path, prev_audit_hash=prev_audit_hash)
 
     _write_audit_log(audit_entry)
 
+    # Final conveyor position: the catalog record (created at ingest/catalog
+    # write) must show archived, not classified — archive is the terminal stage.
+    _catalog_upsert(
+        {
+            "doc_id": manifest.doc_id,
+            "matter_id": manifest.matter_id,
+            "original_filename": manifest.original_filename,
+            "doc_type": manifest.doc_type,
+            "contract_subtype": manifest.contract_subtype,
+            "classification_confidence": manifest.classification_confidence,
+            "extraction_confidence": manifest.extraction_confidence,
+            "extracted_data": manifest.extracted_data,
+            "escalation_reason": manifest.escalation_reason,
+            "trace_id": manifest.trace_id,
+            "stage": PipelineStage.ARCHIVED.value,
+        },
+        stage=PipelineStage.ARCHIVED.value,
+        update_only=True,
+    )
+
     logger.info("pipeline_complete", doc_id=manifest.doc_id, archive=str(archive_path))
     return {"stage": PipelineStage.ARCHIVED.value}
+
+
+def _run_coro(coro):
+    """Run a coroutine from a sync context: schedule it on the running loop
+    when one exists (thread-safe), otherwise run a fresh loop.
+
+    `asyncio.get_event_loop()` is deprecated when no loop is running, and
+    graph nodes execute both from the watcher's daemon threads (no loop) and
+    from the API's `asyncio.to_thread` (a running loop in another thread), so
+    both branches are needed.
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro())
+    import concurrent.futures
+
+    future = asyncio.run_coroutine_threadsafe(coro(), loop)
+    return future.result(timeout=10)
+
+
+def _latest_audit_hash(doc_id: str) -> str:
+    """Best-effort fetch of the last entry_hash for this doc_id (the previous
+    link of the hash chain). Returns "" when no entries exist yet (a fresh
+    chain) or the DB is unavailable — a broken link can never be caused by
+    this: `build_audit_entry` uses whatever we return as prev_hash, and
+    `verify_chain` recomputes from timestamps."""
+    if not doc_id:
+        return ""
+    try:
+        from storage.audit_log import get_latest_audit_hash
+
+        return _run_coro(lambda: get_latest_audit_hash(doc_id))
+    except Exception:
+        logger.exception("latest_audit_hash_fetch_failed", doc_id=doc_id)
+        return ""
 
 
 def _write_audit_log(entry):
@@ -825,17 +1099,7 @@ def _write_audit_log(entry):
         async def _write():
             await write_audit_entry(entry)
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                future = asyncio.run_coroutine_threadsafe(_write(), loop)
-                future.result(timeout=5)
-            else:
-                asyncio.run(_write())
-        except RuntimeError:
-            asyncio.run(_write())
-        logger.info("audit_entry_written", entry_id=entry.entry_id, event_name=entry.event)
+        _run_coro(_write)
     except Exception:
         logger.exception("audit_log_write_error")
 
@@ -844,22 +1108,12 @@ def _persist_scores(state: dict, scores: dict):
     if not scores or not state.get("doc_id"):
         return
     try:
-        import asyncio
         from storage.catalog import update_document_scores
 
         async def _write():
             await update_document_scores(state["doc_id"], scores)
 
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                future = asyncio.run_coroutine_threadsafe(_write(), loop)
-                future.result(timeout=5)
-            else:
-                asyncio.run(_write())
-        except RuntimeError:
-            asyncio.run(_write())
+        _run_coro(_write)
     except Exception:
         logger.exception("scores_persist_error")
 
@@ -951,6 +1205,37 @@ def build_graph(checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
+def _existing_processing_doc_id(original_filename: str) -> str | None:
+    """Find the doc_id of an in-flight manifest for this filename.
+
+    A run that crashed after ingest already saved a processing-stage manifest
+    (and a catalog row); the abort path must reuse that doc_id so the failed
+    manifest/catalog record supersede the same document instead of orphaning
+    the ingest manifest and minting a second identity.
+    """
+    if not original_filename:
+        return None
+    try:
+        import json as _json
+        from pipeline.bins import manifests_dir
+
+        mdir = manifests_dir()
+        if not mdir.exists():
+            return None
+        for mf in mdir.glob("*.json"):
+            try:
+                data = _json.loads(mf.read_text())
+            except Exception:
+                continue
+            if data.get("original_filename") != original_filename:
+                continue
+            if data.get("stage") == PipelineStage.PROCESSING.value:
+                return data.get("doc_id")
+    except Exception:
+        logger.exception("abort_doc_id_lookup_failed")
+    return None
+
+
 def _finalize_aborted(initial_state: dict, reason: str) -> dict:
     """Turn a run that hit a hard limit (or crashed) into a failed result.
 
@@ -963,7 +1248,13 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
     from schemas.manifest import DocumentManifest, PipelineStage
 
     state = dict(initial_state)
-    manifest = DocumentManifest(
+    # Reuse the ingest manifest's doc_id when the run crashed after ingest, so
+    # the aborted manifest supersedes the processing manifest (same identity).
+    # Passed explicitly — DocumentManifest would otherwise mint a fresh UUID.
+    aborted_doc_id = state.get("doc_id") or _existing_processing_doc_id(
+        state.get("original_filename", "")
+    )
+    manifest_kwargs = dict(
         matter_id=state.get("matter_id", "DEFAULT"),
         original_filename=state.get("original_filename", ""),
         stage=PipelineStage.FAILED,
@@ -975,7 +1266,11 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
         extraction_confidence=state.get("extraction_confidence"),
         extraction_attempts=state.get("extraction_attempts", 0),
         escalation_reason=f"run aborted: {reason}",
+        trace_id=state.get("trace_id"),
     )
+    if aborted_doc_id:
+        manifest_kwargs["doc_id"] = aborted_doc_id
+    manifest = DocumentManifest(**manifest_kwargs)
     state["doc_id"] = manifest.doc_id
     state["stage"] = PipelineStage.FAILED.value
     state["run_aborted"] = True
@@ -1020,16 +1315,7 @@ def _write_catalog_record(state: dict):
     async def _write():
         await write_document_record(doc_record)
 
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            future = asyncio.run_coroutine_threadsafe(_write(), loop)
-            future.result(timeout=5)
-        else:
-            asyncio.run(_write())
-    except RuntimeError:
-        asyncio.run(_write())
+    _run_coro(_write)
 
 
 # Cap for the judge-visible document text in the pipeline-result generation.
@@ -1067,8 +1353,19 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
     before.
 
     No-ops when tracing is disabled (root None).
+
+    A run that ends in `review` is NOT a final pipeline outcome: the document
+    is awaiting (or has already received) a human decision, and the resumed
+    run (if approved) re-archives under the same deterministic trace id. The
+    generation is therefore suppressed for review-routed runs — the resumed
+    run emits the single authoritative `pipeline-result`, so the evaluator
+    fires exactly once per document trace instead of twice (once judged MISS
+    for the review stage, once CORRECT after resume).
     """
     if root is None:
+        return
+    if result.get("stage") in ("review", "failed"):
+        logger.info("pipeline_result_suppressed_non_terminal_stage", stage=result.get("stage"))
         return
     if judge_required is False:
         logger.info("pipeline_result_suppressed_deterministic_verdict")
@@ -1221,6 +1518,11 @@ def _execute_run(
         tags=tags,
         environment=environment,
     ) as root:
+        # Capture the trace id into the state so manifests, catalog records and
+        # the returned result all carry it (the DB↔Langfuse correlation link).
+        # get_trace_id() is only valid inside the trace block.
+        state_trace_id = tracing.get_trace_id() or ""
+        initial_state = {**initial_state, "trace_id": state_trace_id}
         try:
             result = graph.invoke(initial_state, config)
         except (limits.RunDeadlineExceeded, limits.RunBudgetExceeded) as exc:
@@ -1234,10 +1536,21 @@ def _execute_run(
         except Exception:
             logger.exception("run_crashed", doc_id=initial_state.get("doc_id"))
             result = _finalize_aborted(initial_state, "unexpected error")
+        # Ensure the trace id survives into the final state (ingest_node creates
+        # the manifest with its own doc_id; the trace id must be attached even
+        # when the graph never ran ingest, e.g. aborted runs).
+        if not result.get("trace_id"):
+            result["trace_id"] = state_trace_id
 
-        metrics = pipeline_scores.compute_run_metrics(result, started_at, time.time())
-        score_values = pipeline_scores.emit_pipeline_scores(result, metrics)
-        _persist_scores(result, score_values)
+        # Post-invoke scoring/emission is best-effort: the file may already be
+        # archived/reviewed, so a failure here must never surface as a pipeline
+        # failure to the watcher (the run itself succeeded).
+        try:
+            metrics = pipeline_scores.compute_run_metrics(result, started_at, time.time())
+            score_values = pipeline_scores.emit_pipeline_scores(result, metrics)
+            _persist_scores(result, score_values)
+        except Exception:
+            logger.exception("post_run_scoring_failed", doc_id=result.get("doc_id"))
         # Deterministic field-type-aware scoring (issues #4/#5). Only grounded
         # runs have expected field values to compare against; the scorer gates
         # the LLM judge below: an unambiguous deterministic verdict skips the
@@ -1250,6 +1563,7 @@ def _execute_run(
 
             extracted = result.get("extracted_data") or {}
             doc_class = result.get("doc_type")
+            expected_class = (initial_state.get("ground_truth") or {}).get("expected_doc_class")
             if doc_class and extracted:
                 try:
                     field_result = score_and_log_extraction(
@@ -1261,6 +1575,19 @@ def _execute_run(
                         matter_id=initial_state.get("matter_id"),
                     )
                     judge_required = field_result.needs_judge_review
+                    # A wrong classification must ALWAYS reach the LLM judge:
+                    # the deterministic field scorer compares the extraction
+                    # against the EXPECTED class's fields, so a misfiled doc
+                    # scores ~0 (below the ambiguous band) and would suppress
+                    # the verdict for exactly the runs that need scrutiny.
+                    if expected_class and doc_class != expected_class:
+                        judge_required = True
+                        logger.info(
+                            "field_scoring_class_mismatch_forces_judge",
+                            doc_id=result.get("doc_id"),
+                            doc_class=doc_class,
+                            expected_class=expected_class,
+                        )
                     logger.info(
                         "field_scoring_computed",
                         doc_id=result.get("doc_id"),
@@ -1270,16 +1597,19 @@ def _execute_run(
                     )
                 except Exception:
                     logger.exception("field_scoring_failed")
-        if root is not None:
-            _emit_pipeline_result(root, result, initial_state, judge_required=judge_required)
-            root.update(output={
-                "stage": result.get("stage"),
-                "doc_type": result.get("doc_type"),
-                "classification_confidence": result.get("classification_confidence"),
-                "extraction_confidence": result.get("extraction_confidence"),
-                "run_aborted": bool(result.get("run_aborted")),
-                "error_message": result.get("error_message"),
-            })
+        try:
+            if root is not None:
+                _emit_pipeline_result(root, result, initial_state, judge_required=judge_required)
+                root.update(output={
+                    "stage": result.get("stage"),
+                    "doc_type": result.get("doc_type"),
+                    "classification_confidence": result.get("classification_confidence"),
+                    "extraction_confidence": result.get("extraction_confidence"),
+                    "run_aborted": bool(result.get("run_aborted")),
+                    "error_message": result.get("error_message"),
+                })
+        except Exception:
+            logger.exception("pipeline_result_emission_failed", doc_id=result.get("doc_id"))
     tracing.flush()
     return result
 
