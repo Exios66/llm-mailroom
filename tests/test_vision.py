@@ -107,29 +107,29 @@ def test_empty_pages_stays_string(pdf_fixture):
     assert content == "Read this contract."
 
 
-def test_sorter_sends_pages_when_vision(page_images):
+def test_sorter_sends_pages_when_vision(page_images, mock_langchain_llm):
     from agents.sorter import SorterAgent
 
-    sorter = SorterAgent.__new__(SorterAgent)
-    sorter.model = "qwen/qwen3.7-flash"
-    sorter.agent_name = "sorter"
-    sorter._langfuse_prompt = None
-    sorter._configured_max_input_chars = lambda: 25000
-    sorter._configured_max_tokens = lambda: 2048
-    sorter._configured_reasoning_effort = lambda: None
-    sorter.client = MagicMock()
-    sorter.client.chat.completions.create.return_value = _completion(
-        '{"doc_type": "contract", "confidence": 0.95, "reasoning": "ok"}'
-    )
+    seen = {}
+    orig_run = mock_langchain_llm._run
 
-    doc_type, conf, _ = sorter.classify("ignored transcription text", pages=page_images)
+    def _run_with_capture(messages):
+        seen["messages"] = messages
+        return orig_run(messages)
+
+    mock_langchain_llm._run = _run_with_capture
+
+    sorter = SorterAgent()
+    doc_type, contract_subtype, conf, _ = sorter.classify(
+        "ignored transcription text", pages=page_images
+    )
 
     assert doc_type == "contract"
     assert conf == 0.95
-    call = sorter.client.chat.completions.create.call_args[1]
-    user = call["messages"][1]["content"]
-    assert isinstance(user, list)
-    assert len(user) == 1 + len(page_images)  # text + images
+    human = seen["messages"][-1]
+    content = human.content
+    assert isinstance(content, list)
+    assert len(content) == 1 + len(page_images)  # text + images
 
 
 def test_ingest_produces_doc_pages(tmp_path, temp_base_dir):

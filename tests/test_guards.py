@@ -5,7 +5,13 @@ class TestGuardClassification:
     def test_valid_classification_passes(self):
         from pipeline.guards import guard_classification
 
-        guard = guard_classification({"doc_type": "contract", "classification_confidence": 0.9})
+        guard = guard_classification(
+            {
+                "doc_type": "contract",
+                "contract_subtype": "license",
+                "classification_confidence": 0.9,
+            }
+        )
         assert guard["ok"] is True
         assert guard["issues"] == []
         assert guard["confidence"] == 0.9
@@ -28,8 +34,45 @@ class TestGuardClassification:
     def test_missing_confidence_passes(self):
         from pipeline.guards import guard_classification
 
-        guard = guard_classification({"doc_type": "contract"})
+        guard = guard_classification(
+            {"doc_type": "contract", "contract_subtype": "other"}
+        )
         assert guard["ok"] is True
+
+    def test_contract_missing_subtype_fails(self):
+        from pipeline.guards import guard_classification
+
+        guard = guard_classification(
+            {"doc_type": "contract", "classification_confidence": 0.9}
+        )
+        assert guard["ok"] is False
+        assert any("contract_subtype_missing" in i for i in guard["issues"])
+
+    def test_contract_unknown_subtype_fails(self):
+        from pipeline.guards import guard_classification
+
+        guard = guard_classification(
+            {
+                "doc_type": "contract",
+                "contract_subtype": "bogus_family",
+                "classification_confidence": 0.9,
+            }
+        )
+        assert guard["ok"] is False
+        assert any("contract_subtype_unknown" in i for i in guard["issues"])
+
+    def test_non_contract_with_subtype_fails(self):
+        from pipeline.guards import guard_classification
+
+        guard = guard_classification(
+            {
+                "doc_type": "correspondence",
+                "contract_subtype": "license",
+                "classification_confidence": 0.9,
+            }
+        )
+        assert guard["ok"] is False
+        assert any("contract_subtype_not_null_for_non_contract" in i for i in guard["issues"])
 
 
 class TestGuardExtraction:

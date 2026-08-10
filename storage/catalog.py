@@ -31,6 +31,7 @@ class DocumentRecord(Base):
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
     stage: Mapped[str] = mapped_column(String(64), default="inbox")
     doc_type: Mapped[str] = mapped_column(String(64), nullable=True)
+    contract_subtype: Mapped[str] = mapped_column(String(64), nullable=True)
     classification_confidence: Mapped[float] = mapped_column(Float, nullable=True)
     extraction_confidence: Mapped[float] = mapped_column(Float, nullable=True)
     extracted_data: Mapped[dict] = mapped_column(JSON, nullable=True)
@@ -73,6 +74,7 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
         if existing:
             existing.stage = doc_data.get("stage", existing.stage)
             existing.doc_type = doc_data.get("doc_type", existing.doc_type)
+            existing.contract_subtype = doc_data.get("contract_subtype", existing.contract_subtype)
             existing.classification_confidence = doc_data.get("classification_confidence", existing.classification_confidence)
             existing.extraction_confidence = doc_data.get("extraction_confidence", existing.extraction_confidence)
             existing.extracted_data = doc_data.get("extracted_data", existing.extracted_data)
@@ -86,6 +88,7 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
                 original_filename=doc_data["original_filename"],
                 stage=doc_data.get("stage", "inbox"),
                 doc_type=doc_data.get("doc_type"),
+                contract_subtype=doc_data.get("contract_subtype"),
                 classification_confidence=doc_data.get("classification_confidence"),
                 extraction_confidence=doc_data.get("extraction_confidence"),
                 extracted_data=doc_data.get("extracted_data"),

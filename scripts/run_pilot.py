@@ -227,6 +227,115 @@ def _fake_client(expect: dict) -> MagicMock:
     return client
 
 
+# ---------------------------------------------------------------------------
+# Vendored LangChain agents (sorter / contracts specialist) mocking + recording.
+# They build their own ChatOpenAI and bypass llm.client.get_llm, so mock runs
+# patch langchain_agents.base_agent.BaseAgent.llm and real runs wrap it with
+# the same usage/cost recording as _wrap_client.
+# ---------------------------------------------------------------------------
+
+_LANGCHAIN_CLASSIFY_MARKERS = ("Classify this legal document", "RE-EVALUATION REQUESTED")
+
+
+def _is_langchain_classify_call(user_text: str) -> bool:
+    return any(marker in user_text for marker in _LANGCHAIN_CLASSIFY_MARKERS)
+
+
+def _make_mock_langchain_llm(expect: dict):
+    """Build the BaseAgent.llm replacement for mock mode: a deterministic
+    FakeLangChainLLM keyed off the same per-sample expectations as
+    _fake_client (calls/seconds recorded; no usage/cost, like the get_llm
+    mock)."""
+    from langchain_agents.mock import FakeLangChainLLM
+
+    def _on_call(user_text: str, parsed: dict) -> None:
+        _LLM_METRICS["calls"] += 1
+        _LLM_METRICS["seconds"] += 0.005
+
+    def _llm(self):
+        return FakeLangChainLLM(
+            classification={
+                "doc_type": expect["doc_type"],
+                "contract_subtype": "other" if expect["doc_type"] == "contract" else None,
+                "confidence": expect["conf"],
+                "reasoning": "mock",
+            },
+            extraction={"confidence": expect["conf"], "mock_extraction": True},
+            on_call=_on_call,
+        )
+
+    return _llm
+
+
+def _record_langchain_response(response, start: float, agent_name: str, model: str) -> None:
+    """Mirror _wrap_client's usage/cost accounting for a LangChain response."""
+    elapsed = time.perf_counter() - start
+    usage = getattr(response, "usage_metadata", None) or (response.response_metadata or {}).get("usage") or {}
+    pt = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
+    ct = usage.get("output_tokens") or usage.get("completion_tokens") or 0
+    in_price, out_price = _price_for(model)
+    cost = (pt * in_price + ct * out_price) / 1_000_000
+    _LLM_METRICS["calls"] += 1
+    _LLM_METRICS["seconds"] += elapsed
+    _LLM_METRICS["cost_usd"] += cost
+    _LLM_METRICS["usage"].append({
+        "agent": agent_name,
+        "model": model,
+        "prompt_tokens": pt,
+        "completion_tokens": ct,
+        "latency_ms": round(elapsed * 1000, 1),
+        "cost_usd": round(cost, 6),
+    })
+    _RUN_COST_USD["value"] += cost
+    _check_cost_watchdog()
+
+
+def _make_real_langchain_llm():
+    """Wrap the vendored base's ChatOpenAI with per-invoke recording (real
+    mode). Handles both the plain and the with_structured_output paths."""
+    from langchain_agents.base_agent import BaseAgent as _LangChainBaseAgent
+
+    _original_llm = _LangChainBaseAgent.llm
+
+    class _RecordingLangChainLLM:
+        def __init__(self, llm, agent_name, model):
+            self._llm = llm
+            self._agent_name = agent_name
+            self._model = model
+
+        def bind(self, **kwargs):
+            return _RecordingLangChainLLM(self._llm.bind(**kwargs), self._agent_name, self._model)
+
+        def with_structured_output(self, schema, **kwargs):
+            inner = self._llm.with_structured_output(schema, **kwargs)
+            return _RecordingStructuredOutput(inner, self._agent_name, self._model)
+
+        def invoke(self, messages, **kwargs):
+            start = time.perf_counter()
+            response = self._llm.invoke(messages, **kwargs)
+            _record_langchain_response(response, start, self._agent_name, self._model)
+            return response
+
+    class _RecordingStructuredOutput:
+        def __init__(self, inner, agent_name, model):
+            self._inner = inner
+            self._agent_name = agent_name
+            self._model = model
+
+        def invoke(self, messages, **kwargs):
+            start = time.perf_counter()
+            raw_out = self._inner.invoke(messages, **kwargs)
+            message = raw_out.get("raw") if isinstance(raw_out, dict) else getattr(raw_out, "raw", None)
+            if message is not None:
+                _record_langchain_response(message, start, self._agent_name, self._model)
+            return raw_out
+
+    def _llm(self):
+        return _RecordingLangChainLLM(_original_llm(self), self.agent_name, self.model)
+
+    return _llm
+
+
 def run_sample(
     sample: dict, mock_mode: bool, session_id: str | None = None, run_id: str | None = None
 ) -> dict:
@@ -272,9 +381,12 @@ def run_sample(
         ground_truth["expected_fields"] = expected_fields
 
     started = time.perf_counter()
+    from langchain_agents.base_agent import BaseAgent as _LangChainBaseAgent
+
     if mock_mode:
         with patch("llm.client.get_llm", side_effect=_mock_get_llm), \
-             patch("agents.base.get_llm", side_effect=_mock_get_llm):
+             patch("agents.base.get_llm", side_effect=_mock_get_llm), \
+             patch.object(_LangChainBaseAgent, "llm", new=_make_mock_langchain_llm(expect)):
             result = run_pipeline(
                 queued, matter_id, source=sample.get("dataset"), ground_truth=ground_truth,
                 session_id=session_id, run_id=run_id,
@@ -282,7 +394,8 @@ def run_sample(
     else:
         # Real mode: instrument every client with usage/latency/cost capture.
         with patch("llm.client.get_llm", side_effect=_real_get_llm), \
-             patch("agents.base.get_llm", side_effect=_real_get_llm):
+             patch("agents.base.get_llm", side_effect=_real_get_llm), \
+             patch.object(_LangChainBaseAgent, "llm", new=_make_real_langchain_llm()):
             result = run_pipeline(
                 queued, matter_id, source=sample.get("dataset"), ground_truth=ground_truth,
                 session_id=session_id, run_id=run_id,
@@ -300,6 +413,7 @@ def run_sample(
         "size_tier": sample["size_tier"],
         "actual_doc_class": result.get("doc_type"),
         "doc_type": result.get("doc_type"),
+        "contract_subtype": result.get("contract_subtype"),
         "classification_confidence": result.get("classification_confidence"),
         "extraction_confidence": result.get("extraction_confidence"),
         "extracted_data": result.get("extracted_data"),

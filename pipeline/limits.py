@@ -60,11 +60,20 @@ def get_run_deadline() -> float | None:
 
 def record_usage(usage, model: str | None = None) -> None:
     """Append an OpenAI-compatible usage object to the current run's
-    accumulator. Tolerates mocks and odd shapes: only real int counts count."""
+    accumulator. Tolerates mocks and odd shapes: only real int counts count.
+
+    Accepts SDK ``CompletionUsage`` objects (``usage.prompt_tokens``) and
+    LangChain ``usage_metadata`` dicts (``usage["input_tokens"]`` /
+    ``usage["prompt_tokens"]``) so the vendored LangChain agents record too.
+    """
     if usage is None:
         return
-    prompt = getattr(usage, "prompt_tokens", None)
-    completion = getattr(usage, "completion_tokens", None)
+    if isinstance(usage, dict):
+        prompt = usage.get("input_tokens") or usage.get("prompt_tokens")
+        completion = usage.get("output_tokens") or usage.get("completion_tokens")
+    else:
+        prompt = getattr(usage, "prompt_tokens", None)
+        completion = getattr(usage, "completion_tokens", None)
     if not isinstance(prompt, int) or not isinstance(completion, int):
         return
     _run_usage.get().append(

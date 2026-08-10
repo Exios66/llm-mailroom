@@ -231,6 +231,25 @@ def entry_route(state: dict) -> str:
     return "ingest"
 
 
+def _build_handoff_context(state: DocumentState) -> str | None:
+    """Chained-eval handoff: prefix the sorter's classification (doc class +
+    contract subtype) to the specialist's extraction call so it extracts with
+    the expected field/clause set in mind (mirrors the sister repo's
+    run_chained_eval pattern)."""
+    doc_type = state.get("doc_type")
+    if not doc_type:
+        return None
+    context = f"Sorter classification: doc_type={doc_type}"
+    contract_subtype = state.get("contract_subtype")
+    if doc_type == "contract" and contract_subtype:
+        context += f" contract_subtype={contract_subtype}"
+    confidence = state.get("classification_confidence")
+    if confidence is not None:
+        context += f" confidence={float(confidence):.2f}"
+    context += ". Extract this document's fields accordingly, ensuring every expected item of this document class is captured."
+    return context
+
+
 def _build_specialist_dispatch():
     from pipeline.config import load_config
     cfg = load_config()
@@ -328,7 +347,11 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     sorter = SorterAgent()
     attempts = state.get("classification_attempts", 0)
     try:
-        doc_type, confidence, reasoning = sorter.classify(doc_text, pages=state.get("doc_pages"))
+        # Vendored LangChain sorter returns the 4-tuple (doc_type,
+        # contract_subtype, confidence, reasoning).
+        doc_type, contract_subtype, confidence, reasoning = sorter.classify(
+            doc_text, pages=state.get("doc_pages")
+        )
     except Exception as exc:
         if is_transient_error(exc):
             # Provider-side transient failure (connection/timeout/rate-limit/
@@ -352,16 +375,30 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         raise
     attempts = attempts + 1
 
-    guard = guard_classification({"doc_type": doc_type, "classification_confidence": confidence})
+    guard = guard_classification(
+        {
+            "doc_type": doc_type,
+            "classification_confidence": confidence,
+            "contract_subtype": contract_subtype,
+        }
+    )
     if not guard["ok"]:
-        # Never trust out-of-range confidence; leave doc_type untouched so
-        # routing's unknown-type check sends it to human review.
+        # Never trust out-of-range confidence or an invalid contract subtype;
+        # leave doc_type untouched so routing's unknown-type check sends it to
+        # human review.
         logger.warning("classification_guardrail_triggered", doc_id=state.get("doc_id"), issues=guard["issues"])
         confidence = guard.get("confidence", 0.1)
 
-    logger.info("classified", doc_type=doc_type, confidence=confidence, attempts=attempts)
+    logger.info(
+        "classified",
+        doc_type=doc_type,
+        contract_subtype=contract_subtype,
+        confidence=confidence,
+        attempts=attempts,
+    )
     return {
         "doc_type": doc_type,
+        "contract_subtype": contract_subtype,
         "classification_confidence": confidence,
         "classification_attempts": attempts,
         "stage": PipelineStage.CLASSIFIED.value,
@@ -388,7 +425,9 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         f"{doc_text[:12000]}"
     )
     try:
-        doc_type, confidence, reasoning = sorter.classify(augmented_text, pages=state.get("doc_pages"))
+        doc_type, contract_subtype, confidence, reasoning = sorter.classify(
+            augmented_text, pages=state.get("doc_pages")
+        )
     except Exception as exc:
         if is_transient_error(exc):
             transient = state.get("transient_retries", 0) + 1
@@ -409,9 +448,16 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         raise
     attempts = attempts + 1
 
-    logger.info("retry_classified", doc_type=doc_type, confidence=confidence, attempts=attempts)
+    logger.info(
+        "retry_classified",
+        doc_type=doc_type,
+        contract_subtype=contract_subtype,
+        confidence=confidence,
+        attempts=attempts,
+    )
     return {
         "doc_type": doc_type,
+        "contract_subtype": contract_subtype,
         "classification_confidence": confidence,
         "classification_attempts": attempts,
         "retry_count": state.get("retry_count", 0) + 1,
@@ -429,10 +475,14 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     doc_pages = state.get("doc_pages") or []
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(doc_type, lambda t, pages=None: {"confidence": 0.3, "_unsupported": True})
+    extractor = dispatch.get(
+        doc_type,
+        lambda t, pages=None, handoff_context=None: {"confidence": 0.3, "_unsupported": True},
+    )
+    handoff_context = _build_handoff_context(state)
     attempts = state.get("extraction_attempts", 0)
     try:
-        result = extractor(doc_text, doc_pages)
+        result = extractor(doc_text, doc_pages, handoff_context)
     except Exception as exc:
         from llm.retry import is_transient_error
 
@@ -483,34 +533,46 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     }
 
 
-def _extract_contracts(doc_text: str, pages: list[str] | None = None) -> dict:
+def _extract_contracts(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
     from agents.contracts_specialist import ContractsSpecialist
-    return ContractsSpecialist().extract(doc_text, pages=pages)
+    return ContractsSpecialist(handoff_context=handoff_context).extract(doc_text, pages=pages)
 
 
-def _extract_corporate_records(doc_text: str, pages: list[str] | None = None) -> dict:
+def _extract_corporate_records(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
     from agents.corporate_records_specialist import CorporateRecordsSpecialist
-    return CorporateRecordsSpecialist().extract(doc_text, pages=pages)
+    return CorporateRecordsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
-def _extract_due_diligence(doc_text: str, pages: list[str] | None = None) -> dict:
+def _extract_due_diligence(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
     from agents.due_diligence_specialist import DueDiligenceSpecialist
-    return DueDiligenceSpecialist().extract(doc_text, pages=pages)
+    return DueDiligenceSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
-def _extract_correspondence(doc_text: str, pages: list[str] | None = None) -> dict:
+def _extract_correspondence(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
     from agents.correspondence_specialist import CorrespondenceSpecialist
-    return CorrespondenceSpecialist().extract(doc_text, pages=pages)
+    return CorrespondenceSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
-def _extract_compliance(doc_text: str, pages: list[str] | None = None) -> dict:
+def _extract_compliance(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
     from agents.compliance_specialist import ComplianceSpecialist
-    return ComplianceSpecialist().extract(doc_text, pages=pages)
+    return ComplianceSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
-def _extract_court_opinions(doc_text: str, pages: list[str] | None = None) -> dict:
+def _extract_court_opinions(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
     from agents.court_opinions_specialist import CourtOpinionsSpecialist
-    return CourtOpinionsSpecialist().extract(doc_text, pages=pages)
+    return CourtOpinionsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
 def retry_extract_node(state: DocumentState) -> dict[str, Any]:
@@ -527,9 +589,13 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     )
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(doc_type, lambda t, pages=None: {"confidence": 0.3, "_unsupported": True})
+    extractor = dispatch.get(
+        doc_type,
+        lambda t, pages=None, handoff_context=None: {"confidence": 0.3, "_unsupported": True},
+    )
+    handoff_context = _build_handoff_context(state)
     try:
-        result = extractor(augmented_text, doc_pages)
+        result = extractor(augmented_text, doc_pages, handoff_context)
     except Exception as exc:
         from llm.retry import is_transient_error
 
@@ -590,6 +656,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             original_filename=state.get("original_filename", ""),
             stage=PipelineStage.REVIEW,
             doc_type=state.get("doc_type"),
+            contract_subtype=state.get("contract_subtype"),
             classification_confidence=state.get("classification_confidence"),
             extracted_data=state.get("extracted_data"),
             extraction_confidence=state.get("extraction_confidence"),
@@ -638,6 +705,7 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
         "doc_id": state.get("doc_id"),
         "matter_id": state.get("matter_id"),
         "doc_type": state.get("doc_type"),
+        "contract_subtype": state.get("contract_subtype"),
         "classification_confidence": state.get("classification_confidence"),
         "extraction_confidence": state.get("extraction_confidence"),
         "extracted_data": state.get("extracted_data"),
@@ -676,6 +744,7 @@ def catalog_write_node(state: DocumentState) -> dict[str, Any]:
             "matter_id": state["matter_id"],
             "original_filename": state["original_filename"],
             "doc_type": state.get("doc_type", "unknown"),
+            "contract_subtype": state.get("contract_subtype"),
             "stage": state.get("stage", "cataloged"),
             "classification_confidence": state.get("classification_confidence"),
             "extraction_confidence": state.get("extraction_confidence"),
@@ -713,6 +782,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         original_filename=state.get("original_filename", ""),
         stage=PipelineStage.ARCHIVED,
         doc_type=state.get("doc_type", "unknown"),
+        contract_subtype=state.get("contract_subtype"),
         classification_confidence=state.get("classification_confidence"),
         extracted_data=state.get("extracted_data"),
         extraction_confidence=state.get("extraction_confidence"),
@@ -898,6 +968,7 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
         original_filename=state.get("original_filename", ""),
         stage=PipelineStage.FAILED,
         doc_type=state.get("doc_type"),
+        contract_subtype=state.get("contract_subtype"),
         classification_confidence=state.get("classification_confidence"),
         classification_attempts=state.get("classification_attempts", 0),
         extracted_data=state.get("extracted_data"),
@@ -1296,6 +1367,7 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "original_filename": manifest.original_filename,
         "stage": PipelineStage.CLASSIFIED.value,
         "doc_type": manifest.doc_type,
+        "contract_subtype": manifest.contract_subtype,
         "classification_confidence": manifest.classification_confidence,
         "classification_attempts": manifest.classification_attempts,
         "extracted_data": None,  # fresh extraction — never reuse the reviewed data

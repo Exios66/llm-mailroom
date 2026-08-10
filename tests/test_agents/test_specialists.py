@@ -26,36 +26,84 @@ def test_specialist_dispatch_includes_court_opinion():
 
 
 class TestContractsSpecialist:
-    def test_extract_contract(self, sample_contract_text, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"parties": ["ACME Corporation", "Zenith Technologies LLC"], '
-            '"effective_date": "2024-01-15", "term_length": "3 years", '
-            '"termination_clauses": ["30-day material breach", "60-day convenience", "insolvency"], '
-            '"governing_law": "Delaware", "key_obligations": ["monthly status reports", "99.9% uptime"], '
-            '"contract_value": "$2,500,000", "renewal_terms": "Automatic 1-year renewal", '
-            '"confidence": 0.93}'
-        )
+    def test_extract_contract(self, sample_contract_text, mock_langchain_llm):
+        mock_langchain_llm.extraction = {
+            "document_name": "Master Services Agreement",
+            "parties": ["ACME Corporation", "Zenith Technologies LLC"],
+            "effective_date": "2024-01-15",
+            "term_length": "3 years",
+            "termination_clauses": ["30-day material breach", "60-day convenience", "insolvency"],
+            "governing_law": "Delaware",
+            "key_obligations": ["monthly status reports", "99.9% uptime"],
+            "contract_value": "$2,500,000",
+            "renewal_terms": "Automatic 1-year renewal",
+            "confidence": 0.93,
+        }
         from agents.contracts_specialist import ContractsSpecialist
+
         agent = ContractsSpecialist()
-        agent.client = mock_openai_client
-        agent.model = "test-model"
         result = agent.extract(sample_contract_text[:1000])
         assert result.get("confidence", 0) >= 0.80
         assert "ACME" in str(result.get("parties", []))
+        # normalize_extraction guarantees every schema field is present.
+        assert "document_name" in result
 
-    def test_extract_returns_confidence(self, sample_contract_text, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"parties": [], "effective_date": null, "term_length": null, '
-            '"termination_clauses": [], "governing_law": null, "key_obligations": [], '
-            '"contract_value": null, "renewal_terms": null, "confidence": 0.30}'
-        )
+    def test_extract_returns_confidence(self, sample_contract_text, mock_langchain_llm):
+        mock_langchain_llm.extraction = {
+            "parties": [],
+            "effective_date": None,
+            "term_length": None,
+            "termination_clauses": [],
+            "governing_law": None,
+            "key_obligations": [],
+            "contract_value": None,
+            "renewal_terms": None,
+            "confidence": 0.30,
+        }
         from agents.contracts_specialist import ContractsSpecialist
+
         agent = ContractsSpecialist()
-        agent.client = mock_openai_client
-        agent.model = "test-model"
         result = agent.extract("vague document text")
         assert "confidence" in result
         assert isinstance(result["confidence"], (int, float))
+
+    def test_extract_handoff_context_prefixed(
+        self, sample_contract_text, mock_langchain_llm
+    ):
+        # Chained-eval pattern: the sorter's classification (incl. contract
+        # subtype) is prefixed to the extraction call.
+        calls = []
+        mock_langchain_llm.on_call = lambda text, parsed: calls.append(text)
+        from agents.contracts_specialist import ContractsSpecialist
+
+        agent = ContractsSpecialist(
+            handoff_context=(
+                "Sorter classification: doc_type=contract contract_subtype=license. "
+                "Extract this contract's fields accordingly, ensuring every clause "
+                "of this agreement family is captured."
+            )
+        )
+        agent.extract(sample_contract_text[:1000])
+        assert calls
+        assert "contract_subtype=license" in calls[0]
+        assert "Extract fields from this contracts document" in calls[0]
+
+    def test_extract_with_pages_builds_multimodal(
+        self, sample_contract_text, mock_langchain_llm
+    ):
+        # Page data-URIs must be threaded into the multimodal human message.
+        pages = ["data:image/png;base64,AAAA"]
+        seen = {}
+
+        def capture(text, parsed):
+            seen["text"] = text
+
+        mock_langchain_llm.on_call = capture
+        from agents.contracts_specialist import ContractsSpecialist
+
+        agent = ContractsSpecialist()
+        result = agent.extract(sample_contract_text[:1000], pages=pages)
+        assert seen.get("text", "").startswith("Extract fields from this contracts document")
 
 
 class TestCorporateRecordsSpecialist:

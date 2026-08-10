@@ -2,6 +2,9 @@ from pydantic import BaseModel, Field
 
 
 class ContractExtraction(BaseModel):
+    # document_name matches the vendored LangChain contracts specialist schema
+    # (CONTRACTS_SCHEMA) — normalize_extraction guarantees every field present.
+    document_name: str | None = None
     parties: list[str] = Field(default_factory=list)
     effective_date: str | None = None
     term_length: str | None = None

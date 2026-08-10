@@ -8,6 +8,10 @@ class DocumentState(TypedDict, total=False):
     original_filename: str
     stage: str
     doc_type: str | None
+    # Contract subtype (25 CUAD families + "other") from the LangChain sorter;
+    # None for non-contract documents. Additive classification detail used for
+    # the extraction handoff context and reporting.
+    contract_subtype: str | None
     classification_confidence: float | None
     classification_attempts: int
     extracted_data: dict[str, Any] | None

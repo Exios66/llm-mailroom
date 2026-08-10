@@ -29,6 +29,8 @@ Key design points:
 - When a managed prompt is active, it's passed to the OpenAI call as `langfuse_prompt=`, linking each generation to its exact prompt version in the trace UI.
 - Every agent has a distinct system prompt ("personality") aligned with its role
 
+**Two of the agents — the Sorter and the Contracts Specialist — are vendored LangChain agents** (from `github.com/Exios66/llm-entity-extraction`, commit `055df31`), imported into `langchain_agents/` with mailroom plumbing adapted in (pages/vision, run-deadline checks, per-call usage accounting — each adaptation marked `MAILROOM PATCH`). They use `langchain-openai`'s `ChatOpenAI` + `with_structured_output` instead of the mailroom's `agents/base.py` plumbing, and their system prompts are the eval-validated *versioned* prompts (`sorter_v5`, `contracts_specialist_v11`) from `langchain_agents/prompts.py` — they bypass `get_managed_prompt`/Langfuse prompt linking (generations are still auto-traced via the langfuse-openai SDK patch). All other agents follow the `BaseAgent` contract below.
+
 ---
 
 ## Agent Roster
@@ -39,13 +41,15 @@ Key design points:
 |---|---|
 | **Node** | `classify`, `retry_classify` |
 | **Trigger** | New document in `/processing` |
-| **Input** | Raw document text |
-| **Output** | `doc_type` + `confidence` + `reasoning` |
+| **Input** | Raw document text (+ page images for vision-capable models) |
+| **Output** | `doc_type` + `contract_subtype` + `confidence` + `reasoning` |
 | **Personality** | Fast, decisive, flags ambiguity instead of guessing |
 
 **System prompt seed:** "You are a fast, decisive legal document classifier operating in a transactional/corporate law firm's mailroom."
 
 The Sorter is the first LLM call in the pipeline. It reads the document text and determines which of the configured document classes it belongs to. The list of available classes is dynamically read from `config/taxonomy.yaml`, so adding a new document type automatically expands the Sorter's options.
+
+The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `langchain_agents.sorter_agent.SorterAgent`): it classifies via `with_structured_output` against the `SORTER_SCHEMA`, uses the eval-validated `sorter_v5` prompt, and adds a **contract-subtype dimension** — for contracts it assigns one of 25 CUAD agreement families (affiliate, license, distributor, franchise, …) plus `other` (`CONTRACT_SUBTYPE_KEYS`, normalized via `normalize_subtype`; non-contracts carry `contract_subtype=None`). `classify()` returns a 4-tuple `(doc_type, contract_subtype, confidence, reasoning)`; the subtype flows into state, the classification guard, the extraction handoff context, the report, and the catalog. Truncation past the input budget uses the upstream **HEAD+TAIL window** (opening + closing portions where term/termination/governing-law/signatures live).
 
 ---
 
@@ -55,13 +59,14 @@ The Sorter is the first LLM call in the pipeline. It reads the document text and
 |---|---|
 | **Node** | `extract`, `retry_extract` |
 | **Trigger** | `doc_type == contract` |
-| **Input** | Contract text + `ContractExtraction` schema |
+| **Input** | Contract text + `ContractExtraction` schema (+ page images) |
 | **Output** | Structured extraction + confidence |
 | **Personality** | Meticulous, formal, precise to a fault |
 
 **Output schema fields:**
 | Field | Type | Description |
 |---|---|---|
+| `document_name` | `str \| None` | The name of the contract (e.g. 'Web Hosting Agreement') |
 | `parties` | `list[str]` | All named parties |
 | `effective_date` | `str \| None` | Contract effective date |
 | `term_length` | `str \| None` | Duration |
@@ -70,6 +75,8 @@ The Sorter is the first LLM call in the pipeline. It reads the document text and
 | `key_obligations` | `list[str]` | Performance obligations |
 | `contract_value` | `str \| None` | Total value |
 | `renewal_terms` | `str \| None` | Renewal conditions |
+
+The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): `contracts_specialist_v11` prompt, `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other five specialists accept the same optional `handoff_context` parameter.
 
 ---
 

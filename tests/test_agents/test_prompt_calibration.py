@@ -25,7 +25,16 @@ AGENT_PROMPTS_WITH_CONFIDENCE = [
 ]
 
 ANTI_ANCHOR = "never default to a fixed high value (e.g. 0.90 or 0.95)"
+# The vendored LangChain prompts (sorter_v5 / contracts_specialist_v11,
+# eval-validated upstream) phrase the same rule more strongly: a high score is
+# acceptable only when the reasoning cites the concrete evidence.
+ANTI_ANCHOR_VARIANT = (
+    "high score (0.90+) is acceptable only when the reasoning cites the concrete evidence"
+)
 EVIDENCE_BASE = "derived from the evidence"
+# ...which sorter_v5 words as "Derive the confidence from the evidence in THIS
+# document".
+EVIDENCE_VARIANT = "from the evidence in this document"
 
 
 def _normalize(prompt: str) -> str:
@@ -35,9 +44,9 @@ def _normalize(prompt: str) -> str:
 @pytest.mark.parametrize("agent_name", AGENT_PROMPTS_WITH_CONFIDENCE)
 def test_confidence_calibration_rule_present(agent_name):
     prompt = _normalize(prompt_templates()[agent_name])
-    assert ANTI_ANCHOR in prompt, (
+    assert any(anchor in prompt for anchor in (ANTI_ANCHOR, ANTI_ANCHOR_VARIANT)), (
         f"{agent_name} prompt must forbid anchoring confidence on a fixed high value"
     )
-    assert EVIDENCE_BASE in prompt, (
+    assert any(evidence in prompt for evidence in (EVIDENCE_BASE, EVIDENCE_VARIANT)), (
         f"{agent_name} prompt must require evidence-derived confidence"
     )

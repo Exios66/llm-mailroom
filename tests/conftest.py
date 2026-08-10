@@ -41,6 +41,24 @@ def temp_base_dir():
         os.environ.pop("MAILROOM_BASE_DIR", None)
 
 
+@pytest.fixture(autouse=True)
+def mock_langchain_llm(mocker):
+    """Patch the vendored LangChain agents' ChatOpenAI path with a
+    deterministic fake (no network). The LangChain sorter/contracts
+    specialist build their own ChatOpenAI and bypass llm.client.get_llm, so
+    the mock targets langchain_agents.base_agent.BaseAgent.llm instead.
+
+    Tests configure per-test behavior by mutating the returned fake's
+    ``classification`` / ``extraction`` canned dicts.
+    """
+    from langchain_agents.base_agent import BaseAgent as _LangChainBaseAgent
+    from langchain_agents.mock import FakeLangChainLLM
+
+    fake = FakeLangChainLLM()
+    mocker.patch.object(_LangChainBaseAgent, "llm", new=lambda self: fake)
+    return fake
+
+
 def _make_mock_client(content: str) -> MagicMock:
     mock_choice = MagicMock()
     mock_choice.message.content = content
