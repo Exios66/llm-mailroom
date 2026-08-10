@@ -173,9 +173,9 @@ mailroom/
 ├── examples/        # sample documents + manifest ground truth (samples/, sources/, external/)
 ├── data/            # runtime state: inbox/processing/archive bins, mailroom.db, cuad/ corpus, manifests/
 ├── tests/           # pytest: unit, routing, e2e, judge, fixtures
-├── docs/            # user docs (agents, architecture, configuration, deployment, local-models)
-│   └── reports/     # audit reports + pilot findings
-└── wiki/            # GitHub wiki mirror of docs/ (synced via wiki/sync-wiki.sh)
+├── docs/            # canonical user docs (agents, architecture, configuration, deployment, local-models)
+│   └── reports/     # evaluation write-ups: audits/, pilots/, evaluations/ (see docs/reports/README.md)
+└── wiki/            # GitHub-wiki-only pages, pushed to the GitHub wiki via wiki/sync-wiki.sh (NOT a docs/ mirror)
 ```
 
 ## Configuration
@@ -259,6 +259,19 @@ python scripts/sync_langfuse_logs.py --trace-id <id>
 - **Manifest sidecar** — JSON file archived alongside every document (self-contained record)
 
 ## Evaluators & Quality
+
+### Deterministic field scoring (issues #4/#5)
+
+Before any LLM judge runs, every grounded extraction gets a **field-type-aware deterministic score** (`observability/field_scoring.py`) — cheap, reproducible, zero API cost:
+
+- `date` / `id` / `money` — parse + normalize, then exact match (a one-day-off date scores 0, not 0.95)
+- `name` — normalized fuzzy match (Jaro-Winkler + token-set ratio, suffix-stripping)
+- `free_text` — SQuAD-style token F1 (optional sentence-transformers embedding rescue for paraphrases)
+- `entity_list` — optimal bipartite matching (Hungarian) → precision/recall/F1 (order-agnostic)
+
+Per-field-type judge-escalation bands (`field_scoring.type_bands` in `taxonomy.yaml`) are **calibrated** by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are decisive (`never` escalate), money/free_text have calibrated cutoffs, name and entity-list trust only perfect scores and escalate everything else to the LLM judge. On grounded runs the pipeline suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both evaluator calls. The same scores are attached to traces via `observability/langfuse_field_scoring.py` (`extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, `entity_list_recall`).
+
+### LLM-as-a-judge
 
 Mailroom evaluates its own work against the **task specification** (the taxonomy doc classes + extraction schemas) using a dedicated `judge` agent. Judge dimensions:
 
@@ -358,6 +371,7 @@ python scripts/cutover.py --all --provider ollama --model qwen3:7b
 | `GET` | `/audit/{doc_id}` | Hash-chained audit trail + validity check |
 | `GET` | `/ops/status` | Pipeline-wide operational metrics |
 | `POST` | `/ops/sweep` | Run a one-off Boss ops-monitor sweep |
+| `POST` | `/ops/pause` | Pause ingestion (writes the `ops_monitor_paused` flag the watcher honors) |
 | `POST` | `/ops/resume` | Clear the ingestion-pause flag |
 
 ## Pipeline Bins (Filesystem)
@@ -399,7 +413,7 @@ Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mo
 
 ## Pilot Testing & Evaluation
 
-A ready-made set of 12 legal PDFs lives in `examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset plus original text for the other doc classes). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
+A ready-made set of **30 pilot samples** lives in `examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset, LegalBench MAUD merger agreements, public-domain Pile of Law court opinions, plus original text for the other doc classes — see `examples/README.md`). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
 
 ```bash
 # Build the sample PDFs into data/samples/ (gitignored)
@@ -419,6 +433,18 @@ python scripts/run_quality_judges.py --real
 ```
 
 The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `examples/samples/manifest.csv`. See `examples/samples/README.md`.
+
+## Full CUAD Corpus (issue #9)
+
+The **complete CUAD v1 dataset** (510 annotated contracts, 20,910 clause annotations, PDFs + plain text + master clause taxonomy) can be downloaded and validated against the pipeline's 25-family contract-subtype taxonomy:
+
+```bash
+# Download everything into data/cuad/ + write the EDA (idempotent, resumes)
+python scripts/fetch_full_cuad.py
+python scripts/fetch_full_cuad.py --skip-download   # EDA only over existing data
+```
+
+The EDA (`data/cuad/EDA.md`) maps each contract to a `contract_subtype` — folder-authoritative from the CUAD PDF tree where available (198 contracts, all 20 folders resolve through the sorter's alias table) and title-derived elsewhere — and compares the resulting distribution against the CUAD paper's canonical 25-type counts. See `docs/reports/audits/` for the subclass-validation write-up.
 
 ## Deployment
 
@@ -462,4 +488,5 @@ python scripts/sync_langfuse_logs.py --since 24h
 - [Deployment](docs/deployment.md) — deployment and operations
 - [Testing](docs/testing.md) — testing strategy and fixtures
 - [Local Models](docs/local-models.md) — local model cutover guide
-- [Wiki](https://github.com/your-org/llm-mailroom/wiki) — GitHub wiki
+- [Reports](docs/reports/README.md) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
+- [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `wiki/` via `wiki/sync-wiki.sh`)
