@@ -9,6 +9,7 @@
 > - **Upstream commit:** `2df190cccfdeffbdf75f6e400cc1b5b79c75ceb0` ("Full CUAD Classification Experiment Run", 2026-08-11)
 > - **Synced into llm-mailroom:** 2026-08-10, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
+> - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
 > - **How it relates to llm-mailroom:** the sorter and contracts-specialist agents vendored into `llm-mailroom/langchain_agents/` are the eval-validated prompts tracked here (`sorter_v5`, `contracts_specialist_v11`). This log is the evidence base for which prompt versions are in production. Re-sync to pick up newer runs.
 >
 > ---
