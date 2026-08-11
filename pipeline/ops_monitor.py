@@ -39,6 +39,23 @@ class OpsMonitor:
                 logger.exception("ops_monitor_sweep_error")
             await asyncio.sleep(self.sweep_interval)
 
+    async def start_until(self, stop_event: asyncio.Event):
+        """Like start(), but exits when ``stop_event`` is set (L-6: signal
+        driven graceful shutdown instead of relying on CancelledError)."""
+        logger.info("ops_monitor_starting", interval=self.sweep_interval)
+        self._running = True
+        while self._running and not stop_event.is_set():
+            try:
+                await self._sweep()
+            except Exception:
+                logger.exception("ops_monitor_sweep_error")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=self.sweep_interval)
+            except asyncio.TimeoutError:
+                continue
+        self._running = False
+        logger.info("ops_monitor_stopped")
+
     async def _sweep(self):
         metrics = await self._gather_metrics()
         findings = await self._analyze_metrics(metrics)
@@ -123,4 +140,22 @@ async def run_ops_monitor(sweep_interval: int | None = None):
 
 
 if __name__ == "__main__":
-    asyncio.run(run_ops_monitor())
+    import signal
+    from observability.tracing import flush, register_atexit_flush
+
+    stop = asyncio.Event()
+
+    def _signal_handler(signum, frame):
+        logger.info("ops_monitor_signal_received", signal=signum)
+        stop.set()
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+    register_atexit_flush()  # O-7/L-6: flush buffered traces on exit
+
+    async def _main():
+        monitor = OpsMonitor()
+        await monitor.start_until(stop)
+
+    asyncio.run(_main())
+    flush()

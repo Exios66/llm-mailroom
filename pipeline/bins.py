@@ -21,6 +21,67 @@ def get_base_dir() -> Path:
     return Path(os.environ.get("MAILROOM_BASE_DIR", "./data")).resolve()
 
 
+def list_stale_processing_files(stale_minutes: int = 60) -> list[Path]:
+    """Files stranded in processing/<worker_id>/ by a crashed process (L-1/A-18).
+
+    A file claimed by a worker that died mid-run stays in its worker dir
+    forever (no SIGTERM handler, no reclaim path). Anything older than
+    ``stale_minutes`` is presumed orphaned — return it for re-queueing or
+    finalizing as failed.
+    """
+    import time as _time
+
+    cutoff = _time.time() - stale_minutes * 60
+    stale: list[Path] = []
+    proc_root = processing_dir()
+    if not proc_root.exists():
+        return stale
+    for worker_dir in proc_root.iterdir():
+        if not worker_dir.is_dir():
+            continue
+        for f in worker_dir.iterdir():
+            if not f.is_file():
+                continue
+            try:
+                if f.stat().st_mtime < cutoff:
+                    stale.append(f)
+            except OSError:
+                continue
+    return stale
+
+
+def requeue_stale_processing(file_path: Path) -> Path:
+    """Move a stale processing claim back to the inbox (L-1/A-18).
+
+    The watcher's ``_is_already_processed`` will skip it if a terminal
+    manifest already exists; otherwise it is re-claimed and re-run.
+    """
+    inbox = inbox_dir()
+    inbox.mkdir(parents=True, exist_ok=True)
+    dest = inbox / file_path.name
+    shutil.move(str(file_path), str(dest))
+    return dest
+
+
+def mark_processing_dead(worker_id: str, file_name: str) -> Path:
+    """Move a stale processing file to the failed bin (finalize path).
+
+    Used by startup reconciliation when a manifest shows the document already
+    reached a terminal stage: the stranded copy is retired to failed/ so it
+    never resurfaces, and the terminal manifest stays authoritative.
+    """
+    src = processing_dir(worker_id) / file_name
+    if not src.exists():
+        raise FileNotFoundError(f"no such processing file: {src}")
+    dest_dir = failed_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / file_name
+    if dest.exists():
+        dest = dest_dir / f"{Path(file_name).stem}--stale{Path(file_name).suffix}"
+    shutil.move(str(src), str(dest))
+    return dest
+
+
 def _resolve(path_template: str) -> Path:
     cfg = _get_config()
     base = get_base_dir()
