@@ -92,9 +92,36 @@ class TestAuditLog:
         assert entry.timestamp is not None
 
     def test_compute_audit_hash_deterministic(self):
-        h1 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {"key": "val"})
-        h2 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {"key": "val"})
+        from datetime import datetime, timezone
+
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        h1 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {"key": "val"}, matter_id="m1", actor="a1", timestamp=ts)
+        h2 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {"key": "val"}, matter_id="m1", actor="a1", timestamp=ts)
         assert h1 == h2
+
+    def test_hash_covers_actor_matter_timestamp(self):
+        """A-4: the v2 payload covers the who/what/when fields — mutating them
+        without re-hashing breaks the chain."""
+        from datetime import datetime, timezone
+
+        ts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        h1 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {}, matter_id="m1", actor="alice", timestamp=ts)
+        h2 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {}, matter_id="m1", actor="mallory", timestamp=ts)
+        h3 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {}, matter_id="m2", actor="alice", timestamp=ts)
+        assert h1 != h2  # actor mutation breaks the hash
+        assert h1 != h3  # matter_id mutation breaks the hash
+
+    def test_v1_hash_still_verifies(self):
+        """Legacy v1 rows (empty matter_id/actor) verify with the v1 algorithm."""
+        from schemas.audit import compute_audit_hash_v1
+
+        legacy = compute_audit_hash_v1("", "doc-1", "entry-1", "event", {"key": "val"})
+        entry = AuditLogEntry(
+            entry_id="entry-1",
+            doc_id="doc-1", matter_id="", event="event", actor="", detail={"key": "val"},
+            prev_hash="", entry_hash=legacy,
+        )
+        assert verify_chain([entry]) is True
 
     def test_compute_audit_hash_differs_on_input(self):
         h1 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {"key": "val"})
