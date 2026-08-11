@@ -20,6 +20,9 @@ setup_logging()
 
 # O-1: kick the score-config warm-up off the document path at startup.
 from observability.scores import warmup_score_configs
+from observability.tracing import install_on_dropped
+
+install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
 
 warmup_score_configs(blocking=False)
 from observability.field_scoring import warm_embedding_model

@@ -224,6 +224,20 @@ def flush_langfuse():
         pass
 
 
+def install_on_dropped() -> None:
+    """Wire the Langfuse SDK's on_dropped callback (O-3): any event dropped by
+    the client queue is logged at WARNING instead of vanishing silently."""
+    try:
+        client = get_langfuse_client()
+        if isinstance(client, _NoopLangfuse):
+            return
+        client.on_dropped = lambda dropped: logger.warning(
+            "langfuse_events_dropped", dropped=len(dropped or [])
+        )
+    except Exception:
+        logger.debug("on_dropped_wire_failed")
+
+
 def shutdown_langfuse():
     client = get_langfuse_client()
     try:
