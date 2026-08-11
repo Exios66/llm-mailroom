@@ -1338,16 +1338,38 @@ def _bounded(fn):
     """Node wrapper enforcing the per-run hard cutoff: wall-clock deadline and
     cumulative output-token budget. Raises RunDeadlineExceeded /
     RunBudgetExceeded, which `_execute_run` catches and finalizes as an
-    aborted run (failed bin + scores)."""
+    aborted run (failed bin + scores).
+
+    L-5: also emits a progress heartbeat — touches the catalog row's
+    `updated_at` at every node boundary so long retry storms / big-PDF
+    transcription keep the document "alive" to stuck detection instead of
+    looking stale while actively burning LLM calls."""
     from pipeline.limits import check_run_deadline, check_token_budget
 
     @functools.wraps(fn)
     def wrapper(state):
         check_run_deadline(state.get("run_deadline"))
         check_token_budget()
+        _touch_heartbeat(state)
         return fn(state)
 
     return wrapper
+
+
+def _touch_heartbeat(state: dict) -> None:
+    """L-5: best-effort `updated_at` bump for the document row (progress
+    heartbeat). Stuck detection keys on updated_at; without this, a document
+    in a long retry storm or PDF transcription looks stuck even though it is
+    actively processing."""
+    doc_id = state.get("doc_id")
+    if not doc_id:
+        return
+    try:
+        from storage.catalog import touch_document_heartbeat
+
+        _run_coro(lambda: touch_document_heartbeat(doc_id))
+    except Exception:
+        pass  # heartbeat is best-effort; never fails the node
 
 
 def build_graph(checkpointer=None):
