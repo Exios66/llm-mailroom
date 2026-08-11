@@ -311,6 +311,7 @@ class TestAuditHashChaining:
                 entry_id=r["entry_id"], doc_id="chain-doc-1", matter_id="M",
                 event=r["event"], actor=r["actor"], detail=r["detail"],
                 prev_hash=r["prev_hash"], entry_hash=r["entry_hash"],
+                timestamp=r["timestamp"],
             )
             for r in records
         ]
@@ -360,9 +361,10 @@ class TestAuditHashChaining:
         assert len(records) >= 1
         entries = [
             AuditLogEntry(
-                entry_id=r["entry_id"], doc_id=result["doc_id"], matter_id="M",
+                entry_id=r["entry_id"], doc_id=result["doc_id"], matter_id=r["matter_id"],
                 event=r["event"], actor=r["actor"], detail=r["detail"],
                 prev_hash=r["prev_hash"], entry_hash=r["entry_hash"],
+                timestamp=r["timestamp"],
             )
             for r in records
         ]

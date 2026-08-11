@@ -2,6 +2,7 @@ import asyncio
 import os
 import structlog
 from pathlib import Path
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
@@ -40,6 +41,23 @@ def _engine_kwargs(url: str) -> dict:
     return kwargs
 
 
+def _apply_sqlite_pragmas(dbapi_conn, _connection_record=None) -> None:
+    """WAL + busy_timeout + FK enforcement on every SQLite connection
+    (audit A-15/A-5). Previously ``journal_mode=delete`` with no busy timeout
+    meant concurrent watcher/API/ops-monitor writers hit SQLITE_BUSY and
+    silently dropped audit/catalog records. WAL lets readers and the single
+    writer proceed concurrently; busy_timeout makes the writer wait instead
+    of failing; foreign_keys=ON enforces the audit FK (A-5)."""
+    try:
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+    except Exception:
+        logger.debug("sqlite_pragma_apply_failed")
+
+
 _engine = None
 _engine_url: str | None = None
 _sessionmaker = None
@@ -51,6 +69,11 @@ def get_engine():
     url = _resolve_url()
     if _engine is None or _engine_url != url:
         _engine = create_async_engine(url, **_engine_kwargs(url))
+        if url.startswith("sqlite"):
+            # A-15/A-5: WAL + busy_timeout + FK enforcement per connection.
+            from sqlalchemy import event
+
+            event.listen(_engine.sync_engine, "connect", _apply_sqlite_pragmas)
         _engine_url = url
         _sessionmaker = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     return _engine
@@ -104,12 +127,13 @@ def ensure_schema() -> bool:
     _ensure_models_imported()
     try:
         if url.startswith("sqlite"):
-            from sqlalchemy import create_engine
+            from sqlalchemy import create_engine, event
 
             # Sync sqlite driver (stdlib) — no event loop involvement, so this
             # is safe to call from graph nodes, watcher threads, or the API.
             sync_url = url.replace("+aiosqlite", "")
             sync_engine = create_engine(sync_url)
+            event.listen(sync_engine, "connect", _apply_sqlite_pragmas)
             Base.metadata.create_all(sync_engine)  # checkfirst=True by default
             _migrate_sqlite_columns(sync_engine)
             sync_engine.dispose()

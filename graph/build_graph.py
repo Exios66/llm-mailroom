@@ -325,6 +325,17 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         },
         stage=PipelineStage.PROCESSING.value,
     )
+    # A-1/A-7: ingest is the start of the compliance record — record the file
+    # hash (sha256) + size so post-archive substitution is detectable.
+    file_hash = _file_sha256(file_path)
+    ingest_detail = {"file_sha256": file_hash, "size_bytes": _file_size(file_path)}
+    _emit_stage_audit(
+        {"doc_id": manifest.doc_id, "matter_id": matter_id, "stage": PipelineStage.PROCESSING.value,
+         "original_filename": file_path.name},
+        "ingested",
+        actor="pipeline",
+        detail=ingest_detail,
+    )
     return {
         "doc_id": manifest.doc_id,
         "matter_id": matter_id,
@@ -417,7 +428,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         confidence=confidence,
         attempts=attempts,
     )
-    return {
+    result = {
         "doc_type": doc_type,
         "contract_subtype": contract_subtype,
         "classification_confidence": confidence,
@@ -429,6 +440,11 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         else None,
         "transient_error": False,
     }
+    # A-1: the classification decision (incl. guardrail issues) is part of the
+    # compliance record.
+    _emit_stage_audit({**state, **result}, "classified", actor="sorter",
+                      detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None})
+    return result
 
 
 def retry_classify_node(state: DocumentState) -> dict[str, Any]:
@@ -674,7 +690,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         attempts=attempts,
         conflict_detected=conflict_detected,
     )
-    return {
+    result_dict = {
         "extracted_data": result,
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
@@ -686,6 +702,15 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
+    # A-1: record the extraction decision (attempt, guardrail issues, conflict).
+    _emit_stage_audit(
+        {**state, **result_dict},
+        "extracted",
+        actor=state.get("doc_type", "specialist"),
+        detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None,
+                "conflict_detected": bool(conflict_detected)},
+    )
+    return result_dict
 
 
 def _extract_contracts(
@@ -853,7 +878,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             stage=PipelineStage.REVIEW.value,
         )
 
-    return {
+    result = {
         "stage": PipelineStage.REVIEW.value,
         "escalation_reason": esc_reason,
         # Sentinal for graph termination, NOT a human decision: the document
@@ -861,6 +886,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         # into traces/manifests as a verdict the human never gave.
         "review_decision": "pending_review",
     }
+    # A-1: routing to human review is a compliance-record decision.
+    _emit_stage_audit({**state, **result}, "routed_to_review", actor="pipeline",
+                      detail={"reason": esc_reason})
+    return result
 
 
 def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
@@ -891,10 +920,16 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
         decision=decision,
         context_records=len(matter_context),
     )
-    return {
+    result = {
         "review_decision": decision,
         "escalation_reason": f"Boss: {reasoning}",
     }
+    # A-1: Boss adjudication is part of the compliance record ("who decided
+    # what, based on what").
+    _emit_stage_audit({**state, **result}, "boss_adjudicated", actor="boss",
+                      detail={"decision": decision, "reasoning": reasoning,
+                              "context_records": len(matter_context)})
+    return result
 
 
 def compile_report_node(state: DocumentState) -> dict[str, Any]:
@@ -1074,6 +1109,28 @@ def _run_coro(coro):
     return future.result(timeout=10)
 
 
+def _file_sha256(path) -> str:
+    """SHA-256 of a file's bytes (audit A-7). Best-effort; "" on failure."""
+    import hashlib
+
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        logger.warning("file_sha256_failed", file=str(path))
+        return ""
+
+
+def _file_size(path) -> int:
+    try:
+        return path.stat().st_size
+    except Exception:
+        return 0
+
+
 def _latest_audit_hash(doc_id: str) -> str:
     """Best-effort fetch of the last entry_hash for this doc_id (the previous
     link of the hash chain). Returns "" when no entries exist yet (a fresh
@@ -1102,6 +1159,47 @@ def _write_audit_log(entry):
         _run_coro(_write)
     except Exception:
         logger.exception("audit_log_write_error")
+
+
+def _emit_stage_audit(state: dict, event: str, actor: str = "pipeline", detail: dict | None = None) -> None:
+    """Append a hash-chained audit entry for a stage transition (audit A-1).
+
+    Before this, only the archivist and review decisions produced audit
+    entries — classify/extract/retries/guardrails/Boss/review-routing/failures
+    existed only in state + Langfuse. This gives every stage transition a
+    chained, durable record so the compliance log answers "what decisions were
+    made about this document, and when".
+
+    Best-effort by design (an audit-write failure must never fail the run),
+    but unlike the old swallow, the failure is logged with the event name so
+    an operator can detect a gap (AUDIT_GAP).
+    """
+    doc_id = state.get("doc_id")
+    if not doc_id:
+        return
+    try:
+        from schemas.audit import build_audit_entry
+
+        entry = build_audit_entry(
+            doc_id=doc_id,
+            matter_id=state.get("matter_id", "DEFAULT"),
+            event=event,
+            actor=actor,
+            detail={
+                **(detail or {}),
+                "stage": state.get("stage"),
+                "doc_type": state.get("doc_type"),
+                "contract_subtype": state.get("contract_subtype"),
+                "classification_confidence": state.get("classification_confidence"),
+                "extraction_confidence": state.get("extraction_confidence"),
+                "escalation_reason": state.get("escalation_reason"),
+                "run_attempt": state.get("run_attempt"),
+            },
+            prev_hash=_latest_audit_hash(doc_id),
+        )
+        _write_audit_log(entry)
+    except Exception:
+        logger.warning("audit_gap", event=event, doc_id=doc_id, exc_info=True)
 
 
 def _persist_scores(state: dict, scores: dict):
@@ -1290,6 +1388,12 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
         _write_catalog_record(state)
     except Exception:
         logger.exception("abort_catalog_write_error", doc_id=manifest.doc_id)
+    # A-1: a failed/aborted run is a compliance-record event (previously only
+    # archived/reviewed runs left audit entries).
+    try:
+        _emit_stage_audit(state, "run_aborted", actor="pipeline", detail={"reason": reason})
+    except Exception:
+        logger.exception("abort_audit_write_error", doc_id=manifest.doc_id)
     return state
 
 

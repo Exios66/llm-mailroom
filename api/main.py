@@ -448,12 +448,13 @@ async def get_audit_trail(doc_id: str):
             AuditLogEntry(
                 entry_id=r["entry_id"],
                 doc_id=doc_id,
-                matter_id="",
+                matter_id=r.get("matter_id") or "",
                 event=r["event"],
                 actor=r["actor"],
                 detail=r["detail"],
                 prev_hash=r["prev_hash"],
                 entry_hash=r["entry_hash"],
+                timestamp=r["timestamp"],
             )
             for r in records
         ]
@@ -462,7 +463,10 @@ async def get_audit_trail(doc_id: str):
             "doc_id": doc_id,
             "chain_length": len(records),
             "chain_valid": chain_valid,
-            "entries": records,
+            "entries": [
+                {**r, "timestamp": r["timestamp"].isoformat() if hasattr(r["timestamp"], "isoformat") else r["timestamp"]}
+                for r in records
+            ],
         }
     except Exception:
         raise HTTPException(500, "Audit log unavailable")
