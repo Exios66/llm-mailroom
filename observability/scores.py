@@ -86,6 +86,14 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "extraction_needs_judge_review", "data_type": "BOOLEAN"},
     {"name": "entity_list_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "entity_list_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    # --- LegalBench evaluation suite (legalbench/) ----------------------
+    # Run-level scores attached to the per-run Langfuse trace by the suite's
+    # runner; deterministic, computed locally (never LLM-graded).
+    {"name": "legalbench_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "legalbench_macro_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "legalbench_calibration_error", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "legalbench_n_questions", "data_type": "NUMERIC", "min_value": 0.0},
+    {"name": "legalbench_task", "data_type": "TEXT"},
 ]
 
 
