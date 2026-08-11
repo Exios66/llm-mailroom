@@ -1,20 +1,35 @@
 #!/usr/bin/env python3
 """Sync the mailroom health dashboards into Langfuse (idempotent).
 
-Three dashboards:
+Four dashboards:
 
-1. **Mailroom Quality — per Prompt over Time**: average score, p95 latency,
-   and total cost per prompt (all LINE_TIME_SERIES, bucketed by time so a
-   regression shows up as a trend).
-2. **Production Health — Judges (Qwen & DeepSeek)**: LLM-as-a-judge
-   throughput / P95 / P99 latency / errors.
+1. **Mailroom Quality — Scores over Time**: every numeric score type as its
+   own series (trace-attached scores dimensioned by score name, NOT by
+   prompt — the old prompt dimension produced one null bucket), plus p95
+   latency and total cost per model.
+2. **Production Health — Judges**: LLM-as-a-judge throughput / p95 / p99 /
+   errors / tokens / cost per model (dimensioned by `model`, the requested
+   qwen/deepseek string — the old providedModelName + negative-openai filter
+   showed wrong models).
 3. **Mailroom Quality — Completion / Correctness / Accuracy / Latency**
-   (issue #2): tailored dimension views — completion (stage_completed rate,
-   expected_field_presence, judge completeness), correctness (deterministic
-   extraction_overall_score, judge extraction_correctness, class_correct
-   rate, guardrail rate), accuracy by doc class, duration/latency
-   (run_duration_seconds avg + p95 by class), cost, and LLM-call volume.
-   Scoped to pilot runs where ground-truth scores exist.
+   (issue #2): completion (stage_completed, field presence, judge
+   completeness), correctness (deterministic scores, judge correctness,
+   classification rate, guardrails), accuracy, duration/latency, cost, LLM
+   volume — each a single aggregate time series (all traces are named
+   `document-pipeline`, so trace dimensions collapse).
+4. **Mailroom Performance** (dashboard-correctness pass): throughput, errors,
+   tokens per model, cost per model, p99 latency per model, run duration,
+   cost, stage completion — the operational gauges for a true pipeline-status
+   read.
+
+Correctness fixes vs. the earlier definitions:
+- score widgets dimension by score `name` (or none) — scores attach to the
+  trace, never to observations/prompts
+- model widgets use `model` (requested string) and a positive configured-models
+  filter instead of providedModelName + "does not contain openai"
+- removed invalid `docType` dimensions (not a widget dimension)
+- model registry (`scripts/sync_models.py`) must be run once so cost widgets
+  have prices (cost is computed at ingestion time)
 
 - Idempotent: widgets/dashboards are matched by name; existing ones are
   updated in place when their config drifted, and placements are restored.
@@ -57,7 +72,15 @@ setup_logging()
 REAL_ENVS_FILTER = {"column": "environment", "operator": "any of", "type": "stringOptions", "value": ["live", "pilot"]}
 
 JUDGE_ENV_FILTER = {"column": "environment", "operator": "=", "type": "string", "value": "langfuse-llm-as-a-judge"}
-NO_OPENAI_FILTER = {"column": "providedModelName", "operator": "does not contain", "type": "string", "value": "openai"}
+# NOTE: dimension on `model` (the requested model string, e.g.
+# qwen/qwen3.7-flash), NOT `providedModelName` — the OpenRouter adapter with
+# with_default_models=true can report adapter-style names for non-custom
+# models, and the old negative `does not contain openai` filter could hide the
+# real models entirely (dashboard showed "incorrect models").
+CONFIGURED_MODELS_FILTER = {
+    "column": "model", "operator": "any of", "type": "stringOptions",
+    "value": ["qwen/qwen3.7-flash", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"],
+}
 ERROR_FILTER = {"column": "level", "operator": "=", "type": "string", "value": "ERROR"}
 
 
@@ -72,72 +95,95 @@ class WidgetSpec:
     description: str = ""
 
 
+# Scores are attached to the TRACE (score_current_trace / create_score with
+# trace_id) — never to an observation or prompt. Dimensioning score widgets by
+# `observationPromptName` grouped everything into one null bucket (wrong
+# numbers). `name` (the score name) is the correct dimension: each score type
+# becomes its own series over time.
 QUALITY_WIDGETS = [
     WidgetSpec(
-        name="Mailroom Avg Score per Prompt over Time",
+        name="Mailroom Scores over Time (all score types)",
         view="scores-numeric",
-        dimensions=["observationPromptName"],
+        dimensions=["name"],
         metrics=[("value", "avg")],
         chart_type="LINE_TIME_SERIES",
         filters=[REAL_ENVS_FILTER],
-        description="Average quality score per prompt over time — a declining trend flags quality regressions early.",
+        description="Average value of every numeric score type over time — parse_error, schema_valid, stage_completed, guardrail_triggered, confidences, ground-truth and judge scores. One series per score name.",
     ),
     WidgetSpec(
-        name="Mailroom p95 Latency per Prompt over Time",
+        name="Mailroom p95 Latency per Model over Time",
         view="observations",
-        dimensions=["promptName"],
+        dimensions=["model"],
         metrics=[("latency", "p95")],
         chart_type="LINE_TIME_SERIES",
-        filters=[REAL_ENVS_FILTER],
-        description="p95 latency per prompt over time.",
+        filters=[REAL_ENVS_FILTER, CONFIGURED_MODELS_FILTER],
+        description="p95 generation latency per model (qwen/deepseek) over time.",
     ),
     WidgetSpec(
-        name="Mailroom Total Cost per Prompt over Time",
+        name="Mailroom Total Cost per Model over Time",
         view="observations",
-        dimensions=["promptName"],
+        dimensions=["model"],
         metrics=[("totalCost", "sum")],
         chart_type="LINE_TIME_SERIES",
-        filters=[REAL_ENVS_FILTER],
-        description="Total generation cost per prompt over time.",
+        filters=[REAL_ENVS_FILTER, CONFIGURED_MODELS_FILTER],
+        description="Total generation cost per model over time (cost requires the model registry entry — see scripts/sync_models.py).",
     ),
 ]
 
 JUDGE_WIDGETS = [
     WidgetSpec(
-        name="Judge Throughput (Qwen & DeepSeek)",
+        name="Judge Throughput per Model",
         view="observations",
-        dimensions=["providedModelName"],
+        dimensions=["model"],
         metrics=[("count", "count")],
         chart_type="BAR_TIME_SERIES",
-        filters=[JUDGE_ENV_FILTER, NO_OPENAI_FILTER],
-        description="LLM-as-a-judge evaluation volume per model.",
+        filters=[JUDGE_ENV_FILTER, CONFIGURED_MODELS_FILTER],
+        description="LLM-as-a-judge evaluation volume per model (qwen/deepseek).",
     ),
     WidgetSpec(
-        name="Judge P95 Latency (Qwen & DeepSeek)",
+        name="Judge P95 Latency per Model",
         view="observations",
-        dimensions=["providedModelName"],
+        dimensions=["model"],
         metrics=[("latency", "p95")],
         chart_type="LINE_TIME_SERIES",
-        filters=[JUDGE_ENV_FILTER, NO_OPENAI_FILTER],
+        filters=[JUDGE_ENV_FILTER, CONFIGURED_MODELS_FILTER],
         description="p95 latency of LLM-as-a-judge evaluations per model.",
     ),
     WidgetSpec(
-        name="Judge P99 Latency (Qwen & DeepSeek)",
+        name="Judge P99 Latency per Model",
         view="observations",
-        dimensions=["providedModelName"],
+        dimensions=["model"],
         metrics=[("latency", "p99")],
         chart_type="LINE_TIME_SERIES",
-        filters=[JUDGE_ENV_FILTER, NO_OPENAI_FILTER],
+        filters=[JUDGE_ENV_FILTER, CONFIGURED_MODELS_FILTER],
         description="p99 latency of LLM-as-a-judge evaluations per model.",
     ),
     WidgetSpec(
-        name="Judge Errors (Qwen & DeepSeek)",
+        name="Judge Errors per Model",
         view="observations",
-        dimensions=["providedModelName"],
+        dimensions=["model"],
         metrics=[("count", "count")],
         chart_type="BAR_TIME_SERIES",
-        filters=[JUDGE_ENV_FILTER, NO_OPENAI_FILTER, ERROR_FILTER],
+        filters=[JUDGE_ENV_FILTER, CONFIGURED_MODELS_FILTER, ERROR_FILTER],
         description="LLM-as-a-judge evaluation errors per model.",
+    ),
+    WidgetSpec(
+        name="Judge Total Tokens per Model",
+        view="observations",
+        dimensions=["model"],
+        metrics=[("totalTokens", "sum")],
+        chart_type="BAR_TIME_SERIES",
+        filters=[JUDGE_ENV_FILTER, CONFIGURED_MODELS_FILTER],
+        description="LLM-as-a-judge token spend per model.",
+    ),
+    WidgetSpec(
+        name="Judge Cost per Model",
+        view="observations",
+        dimensions=["model"],
+        metrics=[("totalCost", "sum")],
+        chart_type="BAR_TIME_SERIES",
+        filters=[JUDGE_ENV_FILTER, CONFIGURED_MODELS_FILTER],
+        description="LLM-as-a-judge cost per model.",
     ),
 ]
 
@@ -153,16 +199,22 @@ JUDGE_DASHBOARD = {
 
 
 # ---------------------------------------------------------------------------
-# Tailored dimension views (issue #2): dedicated widgets for COMPLETION,
-# CORRECTNESS, ACCURACY, LATENCY, and DURATION. Ground-truth and judge scores
-# exist on pilot runs (environment `pilot`); the score-based widgets scope
-# there so they never mix live (ungrounded) runs into accuracy averages.
+# Tailored dimension views (issue #2 + dashboard-correctness pass): dedicated
+# widgets for COMPLETION, CORRECTNESS, ACCURACY, LATENCY, and DURATION.
+#
+# Correctness notes (the earlier definitions showed wrong numbers):
+#  - scores are attached to the TRACE, and every document trace is named
+#    `document-pipeline`, so dimensioning by traceName/observationPromptName
+#    collapses everything into one series. Time-series score widgets must use
+#    NO dimension (single aggregate line over time).
+#  - `docType` is not a valid Langfuse widget dimension — split-by-class views
+#    are served by the per-score-name series in "Scores over Time" instead.
 # ---------------------------------------------------------------------------
 
 PILOT_ENV_FILTER = {"column": "environment", "operator": "any of", "type": "stringOptions", "value": ["pilot"]}
 
 
-def _score_widget(name, score_name, agg="avg", dimensions=("traceName",), description=""):
+def _score_widget(name, score_name, agg="avg", dimensions=(), description=""):
     return WidgetSpec(
         name=name,
         view="scores-numeric",
@@ -180,87 +232,75 @@ DIMENSION_WIDGETS = [
         "Mailroom Completion — stage_completed rate over Time",
         "stage_completed",
         agg="avg",
-        dimensions=("traceName",),
-        description="Fraction of runs reaching a terminal stage (archived/review/failed) per run over time.",
+        description="Fraction of runs reaching a terminal stage (archived/review/failed) over time.",
     ),
     _score_widget(
         "Mailroom Completion — expected_field_presence over Time",
         "expected_field_presence",
         agg="avg",
-        dimensions=("traceName",),
         description="Average fraction of required expected fields extracted non-empty (completeness of the extraction).",
     ),
     _score_widget(
         "Mailroom Completion — LLM-judge completeness over Time",
         "completeness",
         agg="avg",
-        dimensions=("traceName",),
-        description="Offline LLM-as-a-judge completeness verdict (0-1) per run over time.",
+        description="Offline LLM-as-a-judge completeness verdict (0-1) over time.",
     ),
     # --- Correctness (did we extract the right values / classify correctly?)
     _score_widget(
         "Mailroom Correctness — extraction_overall_score over Time",
         "extraction_overall_score",
         agg="avg",
-        dimensions=("traceName",),
-        description="Deterministic field-scoring overall score (0-1) per run — extraction correctness vs ground truth.",
+        description="Deterministic field-scoring overall score (0-1) — extraction correctness vs ground truth.",
     ),
     _score_widget(
         "Mailroom Correctness — LLM-judge extraction_correctness over Time",
         "extraction_correctness",
         agg="avg",
-        dimensions=("traceName",),
-        description="Offline LLM-as-a-judge factual-correctness verdict (0-1) per run over time.",
+        description="Offline LLM-as-a-judge factual-correctness verdict (0-1) over time.",
     ),
     _score_widget(
         "Mailroom Correctness — classification_correct rate over Time",
         "class_correct",
         agg="avg",
-        dimensions=("traceName",),
-        description="Binary classification-correct rate against ground truth per run over time.",
+        description="Binary classification-correct rate against ground truth over time.",
     ),
     _score_widget(
         "Mailroom Correctness — guardrail_triggered rate over Time",
         "guardrail_triggered",
         agg="avg",
-        dimensions=("traceName",),
         description="Share of runs where a classification/extraction guardrail fired.",
     ),
-    # --- Accuracy (aggregate accuracy per doc class over time)
+    # --- Accuracy (aggregate accuracy over time)
     _score_widget(
-        "Mailroom Accuracy — overall score by doc class",
+        "Mailroom Accuracy — extraction_overall_score over Time",
         "extraction_overall_score",
         agg="avg",
-        dimensions=("traceName", "docType"),
-        description="Deterministic extraction accuracy split by document class (docType from trace metadata).",
+        description="Deterministic extraction accuracy (0-1) over time.",
     ),
     # --- Latency / Duration (how long did runs take?)
     _score_widget(
         "Mailroom Duration — run_duration_seconds over Time",
         "run_duration_seconds",
         agg="avg",
-        dimensions=("traceName",),
-        description="Average wall-clock pipeline duration (seconds) per run over time.",
+        description="Average wall-clock pipeline duration (seconds) over time.",
     ),
     _score_widget(
-        "Mailroom Latency — p95 run duration by doc class",
+        "Mailroom Latency — p95 run duration over Time",
         "run_duration_seconds",
         agg="p95",
-        dimensions=("traceName", "docType"),
-        description="p95 pipeline duration split by document class.",
+        description="p95 pipeline duration over time.",
     ),
     _score_widget(
         "Mailroom Cost — estimated_cost_usd over Time",
         "estimated_cost_usd",
         agg="sum",
-        dimensions=("traceName",),
-        description="Estimated LLM cost per run over time.",
+        description="Estimated LLM cost over time.",
     ),
     _score_widget(
         "Mailroom Volume — llm_call_count over Time",
         "llm_call_count",
         agg="avg",
-        dimensions=("traceName",),
         description="Average number of LLM calls per run over time (retry pressure).",
     ),
 ]
@@ -268,7 +308,96 @@ DIMENSION_WIDGETS = [
 
 DIMENSION_DASHBOARD = {
     "name": "Mailroom Quality — Completion / Correctness / Accuracy / Latency",
-    "description": "Tailored dimension views (issue #2): dedicated widgets for completion (stage_completed, field presence, judge completeness), correctness (deterministic field scores, judge correctness, classification rate, guardrails), accuracy by doc class, duration/latency, cost, and LLM-call volume. Scoped to pilot runs where ground truth exists.",
+    "description": "Tailored dimension views (issue #2 + dashboard-correctness pass): dedicated widgets for completion (stage_completed, field presence, judge completeness), correctness (deterministic field scores, judge correctness, classification rate, guardrails), accuracy, duration/latency, cost, and LLM-call volume. Scoped to pilot runs where ground truth exists. Scores are trace-attached, so each widget is a single aggregate series over time (trace names are all 'document-pipeline').",
+}
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Performance dashboard (dashboard-correctness pass): the operational
+# gauges operators actually want — throughput, errors, tokens, cost, latency —
+# over the real environments, dimensioned by model (the requested model
+# string, not the adapter's providedModelName).
+# ---------------------------------------------------------------------------
+
+PERF_WIDGETS = [
+    WidgetSpec(
+        name="Throughput — documents per hour",
+        view="traces",
+        dimensions=[],
+        metrics=[("count", "count")],
+        chart_type="BAR_TIME_SERIES",
+        filters=[REAL_ENVS_FILTER],
+        description="Document pipeline runs per time bucket (live + pilot environments).",
+    ),
+    WidgetSpec(
+        name="Error rate — ERROR observations over Time",
+        view="observations",
+        dimensions=[],
+        metrics=[("count", "count")],
+        chart_type="LINE_TIME_SERIES",
+        filters=[REAL_ENVS_FILTER, ERROR_FILTER],
+        description="ERROR-level observations over time — provider failures, guardrail triggers logged at error.",
+    ),
+    WidgetSpec(
+        name="Total Tokens per Model over Time",
+        view="observations",
+        dimensions=["model"],
+        metrics=[("totalTokens", "sum")],
+        chart_type="BAR_TIME_SERIES",
+        filters=[REAL_ENVS_FILTER, CONFIGURED_MODELS_FILTER],
+        description="Token spend per model (qwen/deepseek) over time.",
+    ),
+    WidgetSpec(
+        name="Cost per Model over Time",
+        view="observations",
+        dimensions=["model"],
+        metrics=[("totalCost", "sum")],
+        chart_type="BAR_TIME_SERIES",
+        filters=[REAL_ENVS_FILTER, CONFIGURED_MODELS_FILTER],
+        description="Generation cost per model over time (registry prices from scripts/sync_models.py).",
+    ),
+    WidgetSpec(
+        name="p99 Latency per Model over Time",
+        view="observations",
+        dimensions=["model"],
+        metrics=[("latency", "p99")],
+        chart_type="LINE_TIME_SERIES",
+        filters=[REAL_ENVS_FILTER, CONFIGURED_MODELS_FILTER],
+        description="p99 generation latency per model over time.",
+    ),
+    WidgetSpec(
+        name="Run Duration (score) over Time",
+        view="scores-numeric",
+        dimensions=[],
+        metrics=[("value", "avg")],
+        chart_type="LINE_TIME_SERIES",
+        filters=[PILOT_ENV_FILTER, {"column": "name", "operator": "=", "type": "string", "value": "run_duration_seconds"}],
+        description="Average wall-clock pipeline duration (seconds) over time.",
+    ),
+    WidgetSpec(
+        name="Cost (score) over Time",
+        view="scores-numeric",
+        dimensions=[],
+        metrics=[("value", "sum")],
+        chart_type="LINE_TIME_SERIES",
+        filters=[PILOT_ENV_FILTER, {"column": "name", "operator": "=", "type": "string", "value": "estimated_cost_usd"}],
+        description="Estimated LLM cost per pilot run over time (backend-independent).",
+    ),
+    WidgetSpec(
+        name="Stage completion rate over Time",
+        view="scores-numeric",
+        dimensions=[],
+        metrics=[("value", "avg")],
+        chart_type="LINE_TIME_SERIES",
+        filters=[PILOT_ENV_FILTER, {"column": "name", "operator": "=", "type": "string", "value": "stage_completed"}],
+        description="Fraction of runs reaching a terminal stage over time.",
+    ),
+]
+
+
+PERF_DASHBOARD = {
+    "name": "Mailroom Performance — Throughput / Errors / Tokens / Cost / Latency",
+    "description": "Operational gauges over live + pilot runs: document throughput, error count, token spend per model, cost per model, p99 latency per model, run duration, cost, and stage completion. Model grouping uses the requested model string (qwen/deepseek), never the OpenRouter adapter's providedModelName.",
 }
 
 
@@ -443,6 +572,7 @@ def main() -> int:
     quality_ids = sync_widgets(client, QUALITY_WIDGETS, dry_run=dry_run)
     judge_ids = sync_widgets(client, JUDGE_WIDGETS, dry_run=dry_run)
     dimension_ids = sync_widgets(client, DIMENSION_WIDGETS, dry_run=dry_run)
+    perf_ids = sync_widgets(client, PERF_WIDGETS, dry_run=dry_run)
 
     quality_layout = [
         (w.name, 0, y, 12, 6)
@@ -455,14 +585,20 @@ def main() -> int:
         (JUDGE_WIDGETS[1].name, 6, 0, 6, 6),
         (JUDGE_WIDGETS[2].name, 0, 6, 6, 6),
         (JUDGE_WIDGETS[3].name, 6, 6, 6, 6),
+        (JUDGE_WIDGETS[4].name, 0, 12, 6, 6),
+        (JUDGE_WIDGETS[5].name, 6, 12, 6, 6),
     ]
     dimension_layout = [
         (w.name, 0, y, 12, 5) for y, w in enumerate(DIMENSION_WIDGETS)
+    ]
+    perf_layout = [
+        (w.name, 0, y, 12, 5) for y, w in enumerate(PERF_WIDGETS)
     ]
 
     sync_dashboard(client, QUALITY_DASHBOARD, quality_ids, quality_layout, dry_run=dry_run)
     sync_dashboard(client, JUDGE_DASHBOARD, judge_ids, judge_layout, dry_run=dry_run)
     sync_dashboard(client, DIMENSION_DASHBOARD, dimension_ids, dimension_layout, dry_run=dry_run)
+    sync_dashboard(client, PERF_DASHBOARD, perf_ids, perf_layout, dry_run=dry_run)
 
     print("\nDone. Dashboards live in the Langfuse UI under Dashboards.")
     return 0
