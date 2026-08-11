@@ -17,16 +17,16 @@ cp .env.example .env
 pip install -e ".[dev]"
 
 # 3. (Optional) Start Langfuse for trace viewing — needs Docker
-docker compose -f config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
+docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
 # 4. (Optional) Sync the agent prompts into Langfuse prompt management
-python scripts/sync_prompts.py
+PYTHONPATH=src python src/scripts/sync_prompts.py
 
 # 5. Run the watcher (starts processing documents from inbox)
-python pipeline/watcher.py
+PYTHONPATH=src python -m pipeline.watcher
 
 # 6. In another terminal, start the API
-python api/main.py
+PYTHONPATH=src python -m api.main
 
 # 7. Upload a document
 curl -X POST http://localhost:8000/upload \
@@ -156,27 +156,36 @@ flowchart LR
 
 ## Project Structure
 
+The repository root holds only the essentials — `src/` (all code), `data/`
+(runtime state), `docs/` (documentation + reference material), plus the
+tooling files. Everything else is nested:
+
 ```
 mailroom/
-├── agents/          # Specialist agents (Sorter, Contract, Corp Records, Judge, …)
-├── langchain_agents/# Vendored LangChain agents (Sorter, Contracts Specialist) from llm-entity-extraction
-├── graph/           # LangGraph state machine: nodes, routing, state
-├── llm/             # Provider-agnostic LLM client, retry, Langfuse-managed prompts
-├── schemas/         # Pydantic models: manifest, matter, documents, audit
-├── pipeline/        # Watcher, filesystem bins, ops monitor
-├── storage/         # SQLite/Postgres: catalog CRUD, audit log
-├── api/             # FastAPI: upload, review, status, audit
-├── observability/   # Langfuse tracing + task-spec scores + deterministic field scoring
-├── config/          # taxonomy.yaml — doc classes, thresholds, model mappings
-│   └── docker/      # docker-compose: Langfuse, Ollama (Postgres optional)
-├── scripts/         # ops & eval: run_pilot, run_quality_judges, run_vision_sweep, sync_*, cutover, compare_runs, fetch_full_cuad, validate_pipeline
-├── examples/        # sample documents + manifest ground truth (samples/, sources/, external/)
-├── data/            # runtime state: inbox/processing/archive bins, mailroom.db, cuad/ corpus, manifests/
-├── tests/           # pytest: unit, routing, e2e, judge, fixtures
-├── docs/            # canonical user docs (agents, architecture, configuration, deployment, local-models)
-│   └── reports/     # evaluation write-ups: audits/, pilots/, evaluations/ (see docs/reports/README.md)
-└── wiki/            # GitHub-wiki-only pages, pushed to the GitHub wiki via wiki/sync-wiki.sh (NOT a docs/ mirror)
+├── src/             # ALL Python code
+│   ├── agents/          # Specialist agents (Sorter, Contract, Corp Records, Judge, …)
+│   ├── langchain_agents/# Vendored LangChain agents (Sorter, Contracts Specialist) from llm-entity-extraction
+│   ├── graph/           # LangGraph state machine: nodes, routing, state
+│   ├── llm/             # Provider-agnostic LLM client, retry, Langfuse-managed prompts
+│   ├── schemas/         # Pydantic models: manifest, matter, documents, audit
+│   ├── pipeline/        # Watcher, filesystem bins, ops monitor
+│   ├── storage/         # SQLite/Postgres: catalog CRUD, audit log
+│   ├── api/             # FastAPI: upload, review, status, audit
+│   ├── observability/   # Langfuse tracing + task-spec scores + deterministic field scoring
+│   ├── config/          # taxonomy.yaml — doc classes, thresholds, model mappings
+│   │   └── docker/      # docker-compose: Langfuse, Ollama (Postgres optional)
+│   ├── legalbench/      # LegalBench evaluation suite (binary QA + family classification)
+│   ├── scripts/         # ops & eval: run_pilot, run_quality_judges, run_vision_sweep, sync_*, cutover, compare_runs, fetch_full_cuad, validate_pipeline
+│   └── tests/           # pytest: unit, routing, e2e, judge, fixtures
+├── data/             # runtime state: inbox/processing/archive bins, mailroom.db, cuad/ corpus, manifests/
+└── docs/             # canonical user docs (agents, architecture, configuration, deployment, local-models)
+    ├── reports/      # evaluation write-ups: audits/, pilots/, evaluations/ (see docs/reports/README.md)
+    ├── examples/     # sample documents + manifest ground truth (samples/, sources/, external/)
+    └── wiki/         # GitHub-wiki-only pages, pushed to the GitHub wiki via docs/wiki/sync-wiki.sh (NOT a docs/ mirror)
 ```
+
+All code runs with `src/` on the import path (`PYTHONPATH=src`), so intra-repo
+imports keep their plain package names (`from pipeline import …`).
 
 ## Configuration
 
@@ -235,9 +244,9 @@ Every agent's system prompt is a **Langfuse-managed prompt** (`mailroom-<agent_n
 
 ```bash
 # Push the local prompt templates to Langfuse (idempotent: only new versions on change)
-python scripts/sync_prompts.py
-python scripts/sync_prompts.py --dry-run   # preview
-python scripts/sync_prompts.py --agent sorter
+PYTHONPATH=src python src/scripts/sync_prompts.py
+PYTHONPATH=src python src/scripts/sync_prompts.py --dry-run   # preview
+PYTHONPATH=src python src/scripts/sync_prompts.py --agent sorter
 ```
 
 The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
@@ -249,9 +258,9 @@ The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse i
 - **Run-log mirroring** — pull traces (with observations + scores) into the repo for offline analysis by subagents:
 
 ```bash
-python scripts/sync_langfuse_logs.py                    # last 24h
-python scripts/sync_langfuse_logs.py --since 7d --limit 100
-python scripts/sync_langfuse_logs.py --trace-id <id>
+PYTHONPATH=src python src/scripts/sync_langfuse_logs.py                    # last 24h
+PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 7d --limit 100
+PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --trace-id <id>
 # → data/langfuse_logs/<run>/<trace_id>.json + index.json
 ```
 
@@ -284,9 +293,9 @@ Mailroom evaluates its own work against the **task specification** (the taxonomy
 The same rubrics are **configured as two independent live LLM-as-a-Judge evaluators in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and two observation rules independently evaluate it: `mailroom-pipeline-judge` returns a **CORRECT/PARTIAL/MISS** verdict, while `mailroom-pipeline-quality` returns a proportional **0.0-1.0 quality score**. A substantially correct extraction with limited material gaps earns `PARTIAL` instead of a hard `MISS`, and still receives a useful quality score; the numeric score never replaces or alters the run verdict. Grounded runs skip document text in the judge input — the input is a labeled, pretty-printed expected-fields block and the output is a cleaned schema-only extraction, cutting ~90% of judge tokens. Live runs without ground truth fall back to rubric judgment:
 
 ```bash
-python scripts/sync_evaluators.py        # create/update evaluator + rule (idempotent)
-python scripts/sync_evaluators.py --dry-run
-python scripts/sync_evaluators.py --disable   # pause the rule
+PYTHONPATH=src python src/scripts/sync_evaluators.py        # create/update evaluator + rule (idempotent)
+PYTHONPATH=src python src/scripts/sync_evaluators.py --dry-run
+PYTHONPATH=src python src/scripts/sync_evaluators.py --disable   # pause the rule
 ```
 
 `sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so both evaluators can run. Deployed: `mailroom-pipeline-judge` + `mailroom-pipeline-rule` (CORRECT/PARTIAL/MISS verdict), and `mailroom-pipeline-quality` + `mailroom-pipeline-quality-rule` (proportional quality), all targeting `pipeline-result`. Old per-agent evaluators/rules are pruned automatically. Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct` — binary 0/1 against the manifest; `expected_field_presence` — fraction of required expected fields extracted non-empty) attached by `run_pilot.py --scores`.
@@ -296,17 +305,17 @@ python scripts/sync_evaluators.py --disable   # pause the rule
 The pilot samples are mirrored into the **`mailroom-pilot` Langfuse dataset** (PDF text + ground truth incl. per-field `expected_fields` + manifest metadata) for experiments and judge calibration:
 
 ```bash
-python scripts/sync_dataset.py            # 30 items, deterministic ids (upsert-safe)
-python scripts/sync_dataset.py --include contract
+PYTHONPATH=src python src/scripts/sync_dataset.py            # 30 items, deterministic ids (upsert-safe)
+PYTHONPATH=src python src/scripts/sync_dataset.py --include contract
 ```
 
 ### Offline judges over a pilot run
 
 ```bash
-python scripts/run_pilot.py --real --scores        # needs OPENROUTER_API_KEY
-python scripts/run_quality_judges.py --real        # LLM-as-a-judge on every sample
-python scripts/run_quality_judges.py --mock        # deterministic fake judge
-python scripts/run_quality_judges.py --judges classification,completeness
+PYTHONPATH=src python src/scripts/run_pilot.py --real --scores        # needs OPENROUTER_API_KEY
+PYTHONPATH=src python src/scripts/run_quality_judges.py --real        # LLM-as-a-judge on every sample
+PYTHONPATH=src python src/scripts/run_quality_judges.py --mock        # deterministic fake judge
+PYTHONPATH=src python src/scripts/run_quality_judges.py --judges classification,completeness
 ```
 
 Judges attach scores to each sample's trace (configs auto-created), print a per-class calibration summary, and append an `evaluation` section to the pilot report. For production traces with no ground truth, the live Langfuse evaluators above cover the same dimensions automatically.
@@ -328,19 +337,19 @@ Structured logging via `pipeline/logging.py` (`setup_logging()`, called by every
 
 ```bash
 # See current agent→model assignments
-python scripts/cutover.py --list
+PYTHONPATH=src python src/scripts/cutover.py --list
 
 # Move sorter to local (safest first step)
-python scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
+PYTHONPATH=src python src/scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
 
 # Validate with tests
-python scripts/cutover.py --validate --agent sorter
+PYTHONPATH=src python src/scripts/cutover.py --validate --agent sorter
 
 # View recommended cutover order
-python scripts/cutover.py --recommend
+PYTHONPATH=src python src/scripts/cutover.py --recommend
 
 # Cut all agents at once
-python scripts/cutover.py --all --provider ollama --model qwen3:7b
+PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwen3:7b
 ```
 
 ### Available Local Models (Ollama)
@@ -413,26 +422,26 @@ Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mo
 
 ## Pilot Testing & Evaluation
 
-A ready-made set of **30 pilot samples** lives in `examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset, LegalBench MAUD merger agreements, public-domain Pile of Law court opinions, plus original text for the other doc classes — see `examples/README.md`). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
+A ready-made set of **30 pilot samples** lives in `docs/examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset, LegalBench MAUD merger agreements, public-domain Pile of Law court opinions, plus original text for the other doc classes — see `docs/examples/README.md`). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
 
 ```bash
 # Build the sample PDFs into data/samples/ (gitignored)
-python scripts/prepare_samples.py
+PYTHONPATH=src python src/scripts/prepare_samples.py
 
 # Deterministic run (fake LLM, no API key) — tests the machinery
-python scripts/run_pilot.py --mock
+PYTHONPATH=src python src/scripts/run_pilot.py --mock
 
 # Real run (needs OPENROUTER_API_KEY in .env) — measures LLM accuracy too
-python scripts/run_pilot.py --real --scores
+PYTHONPATH=src python src/scripts/run_pilot.py --real --scores
 
 # Diff two runs, e.g. after a routing/threshold change
-python scripts/run_pilot.py --mock --baseline data/pilot_report.json
+PYTHONPATH=src python src/scripts/run_pilot.py --mock --baseline data/pilot_report.json
 
 # LLM-as-a-judge over the run: classification, completeness, correctness
-python scripts/run_quality_judges.py --real
+PYTHONPATH=src python src/scripts/run_quality_judges.py --real
 ```
 
-The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `examples/samples/manifest.csv`. See `examples/samples/README.md`.
+The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `docs/examples/samples/manifest.csv`. See `docs/examples/samples/README.md`.
 
 ## Full CUAD Corpus (issue #9)
 
@@ -440,8 +449,8 @@ The **complete CUAD v1 dataset** (510 annotated contracts, 20,910 clause annotat
 
 ```bash
 # Download everything into data/cuad/ + write the EDA (idempotent, resumes)
-python scripts/fetch_full_cuad.py
-python scripts/fetch_full_cuad.py --skip-download   # EDA only over existing data
+PYTHONPATH=src python src/scripts/fetch_full_cuad.py
+PYTHONPATH=src python src/scripts/fetch_full_cuad.py --skip-download   # EDA only over existing data
 ```
 
 The EDA (`data/cuad/EDA.md`) maps each contract to a `contract_subtype` — folder-authoritative from the CUAD PDF tree where available (198 contracts, all 20 folders resolve through the sorter's alias table) and title-derived elsewhere — and compares the resulting distribution against the CUAD paper's canonical 25-type counts. See `docs/reports/audits/` for the subclass-validation write-up.
@@ -450,26 +459,26 @@ The EDA (`data/cuad/EDA.md`) maps each contract to a `contract_subtype` — fold
 
 ```bash
 # 1. (Optional) Start Langfuse for trace viewing
-docker compose -f config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
+docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 
 # 2. Set environment
 export OPENROUTER_API_KEY=sk-or-v1-...
 # MAILROOM_BASE_DIR defaults to ./data; mailroom.db + checkpoints.db are created there automatically
 
 # 3. Sync prompts into Langfuse (once, and after prompt edits)
-python scripts/sync_prompts.py
+PYTHONPATH=src python src/scripts/sync_prompts.py
 
 # 4. Run the pipeline watcher
-python pipeline/watcher.py &
+PYTHONPATH=src python -m pipeline.watcher &
 
 # 5. Run the API server
-python api/main.py &
+PYTHONPATH=src python -m api.main &
 
 # 6. (Optional) Run the ops monitor
-python pipeline/ops_monitor.py &
+PYTHONPATH=src python -m pipeline.ops_monitor &
 
 # 7. (Optional) Mirror run logs for analysis
-python scripts/sync_langfuse_logs.py --since 24h
+PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 ```
 
 ## Security
@@ -489,4 +498,4 @@ python scripts/sync_langfuse_logs.py --since 24h
 - [Testing](docs/testing.md) — testing strategy and fixtures
 - [Local Models](docs/local-models.md) — local model cutover guide
 - [Reports](docs/reports/README.md) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
-- [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `wiki/` via `wiki/sync-wiki.sh`)
+- [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `docs/wiki/` via `docs/wiki/sync-wiki.sh`)

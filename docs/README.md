@@ -18,5 +18,5 @@ This is the manual for the project — deeper, more detailed versions of everyth
 
 ## Technical reference
 
-- `docs/` is the **single source of truth** for repository documentation. `wiki/` contains only GitHub-wiki-native pages (Home, Getting-Started, FAQ, _Sidebar, _Footer) and is pushed to the GitHub wiki via `wiki/sync-wiki.sh` — it is **not** a mirror of `docs/`.
+- `docs/` is the **single source of truth** for repository documentation. `docs/wiki/` contains only GitHub-wiki-native pages (Home, Getting-Started, FAQ, _Sidebar, _Footer) and is pushed to the GitHub wiki via `docs/docs/wiki/sync-wiki.sh` — it is **not** a mirror of `docs/`.
 - `docs/agents.md` is an architecture doc about the pipeline's LLM agents — it is NOT an instruction file for coding assistants (that's `AGENTS.md` at the repo root).

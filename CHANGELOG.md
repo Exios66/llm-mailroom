@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Repository root restructured to the essentials**: all Python code now
+  lives under `src/` (agents, api, config, graph, langchain_agents,
+  legalbench, llm, observability, pipeline, schemas, scripts, storage,
+  tests); `examples/` moved to `docs/examples/`; `wiki/` moved to
+  `docs/wiki/`. The root now holds only `src/`, `data/` (runtime state),
+  `docs/`, `.opencode/` and the tooling files. Every import and expected
+  path was fixed in the same change: scripts bootstrap `src/` onto
+  `sys.path` (`PYTHONPATH=src` for entry points and CLIs — e.g.
+  `PYTHONPATH=src python -m pipeline.watcher`), `pipeline/env.py` reads
+  `.env` from the repo root, `pipeline/config.py` resolves
+  `src/config/taxonomy.yaml`, pyproject maps `testpaths=["src/tests"]` +
+  `pythonpath=["src", "."]`, and all data/manifest/wiki paths were
+  re-pointed (`docs/examples/samples/manifest.csv`). Docker:
+  `src/config/docker/docker-compose.yml`. Repository-structure maps in the
+  root README, AGENTS.md, docs/, and wiki were updated to match; the
+  console's `MAILROOM_TAXONOMY` documentation now points at
+  `src/config/taxonomy.yaml`. No functionality changed — the full suite
+  passes under the new layout.
+
 ### Added
 
 - **LegalBench evaluation suite (`legalbench/`)**: a self-contained submodule that evaluates models through the LegalBench task families on the locally-mirrored corpora — `contract_qa` (**binary answer**: the full CUAD annotations, 510 contracts × 41 clause categories = 20,910 yes/no questions with evidence spans) and `family_classification` (**multiclass classification**: 200 labeled CUAD contract texts into the 25 contract families + `other`). Each run: deterministic local scoring (accuracy, macro per-category accuracy, yes-class F1, ECE calibration; strict + equiv family accuracy, macro-F1), one Langfuse trace per run with per-question spans and run-level scores (new `legalbench_*` score configs in `observability/scores.py`, 29 → 34), and an automatic experiment-log record appended to the shared JSONL on completion — which also regenerates the markdown log, the experiment-log site data, and the synced copy at `docs/reports/experiments/experiment_log.md`. Run via `python -m legalbench.cli --task contract_qa|family_classification --n 30 [--mock]`. The sibling repo's `scripts/site/build_site.py` gained `legalbench_binary_answer` / `legalbench_multiclass_classification` headline + breakdown + scoring-guide handlers so the site renders the new runs. Tests: `tests/test_legalbench.py` (18, synthetic corpora, network-free).
