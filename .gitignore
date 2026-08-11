@@ -35,3 +35,6 @@ docker/volumes/
 
 # Langfuse
 langfuse_data/
+
+# LegalBench suite derived artifacts (regenerated on demand)
+legalbench/reports/
