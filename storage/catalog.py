@@ -38,6 +38,15 @@ class DocumentRecord(Base):
     escalation_reason: Mapped[str] = mapped_column(Text, nullable=True)
     trace_id: Mapped[str] = mapped_column(String(128), nullable=True)
     scores: Mapped[dict] = mapped_column(JSON, nullable=True)
+    # A-10: end-to-end provenance — doc → run → trace → prompt → model → cost.
+    # Persisted post-invoke so the chain is reconstructable even with tracing
+    # off (trace_id was empty 60/60 in the live DB audit).
+    run_id: Mapped[str] = mapped_column(String(128), nullable=True)
+    model: Mapped[str] = mapped_column(String(256), nullable=True)
+    prompt_version: Mapped[str] = mapped_column(String(128), nullable=True)
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=True)
+    latency_s: Mapped[float] = mapped_column(Float, nullable=True)
+    file_sha256: Mapped[str] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -124,6 +133,40 @@ async def update_document_scores(doc_id: str, scores: dict) -> None:
             logger.warning("scores_update_missing_doc", doc_id=doc_id)
             return
         record.scores = scores
+        record.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+
+
+async def update_document_provenance(
+    doc_id: str,
+    *,
+    run_id: str | None = None,
+    model: str | None = None,
+    prompt_version: str | None = None,
+    cost_usd: float | None = None,
+    latency_s: float | None = None,
+    file_sha256: str | None = None,
+) -> None:
+    """A-10: persist end-to-end provenance columns (doc → run → model →
+    prompt → cost → latency → file hash) on the document row."""
+    ensure_schema()
+    async with async_session() as session:
+        record = await session.get(DocumentRecord, doc_id)
+        if record is None:
+            logger.warning("provenance_update_missing_doc", doc_id=doc_id)
+            return
+        if run_id is not None:
+            record.run_id = run_id
+        if model is not None:
+            record.model = model
+        if prompt_version is not None:
+            record.prompt_version = prompt_version
+        if cost_usd is not None:
+            record.cost_usd = cost_usd
+        if latency_s is not None:
+            record.latency_s = latency_s
+        if file_sha256 is not None:
+            record.file_sha256 = file_sha256
         record.updated_at = datetime.now(timezone.utc)
         await session.commit()
 
