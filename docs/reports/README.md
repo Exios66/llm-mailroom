@@ -11,6 +11,7 @@ repo root, `docs/`, or anywhere else.
 | `audits/` | Repository audits and synthesis reports | `AUDIT_SYNTHESIS_REPORT.md`, `PILOT_AUDIT_REPORT.md` |
 | `pilots/` | Pilot-run evaluation write-ups (vision tradeoffs, run comparisons, etc.) | `pilot-vision-tradeoff.md` |
 | `evaluations/` | Offline judge/quality evaluations over corpora (CUAD, MAUD, …) | — |
+| `experiments/` | Synced experiment logs from the `llm-entity-extraction` prompt-experiment loop | `experiment_log.md` |
 
 ## Creating a new report
 
@@ -42,6 +43,10 @@ The scaffolder:
 - **Evaluations** (`evaluations/`) — offline LLM-as-judge or deterministic
   evaluations over corpora (CUAD subclass sweeps, field-scoring calibration
   summaries, model comparisons).
+- **Experiments** (`experiments/`) — **synced, NOT scaffolded**: mirrors of the
+  experiment log from the upstream `llm-entity-extraction` repo
+  (`docs/reports/experiments/experiment_log.md`, annotated with its upstream
+  repo/commit). Never hand-edit it — re-sync from the source repo.
 
 Rules: one report per file, dated filenames, no reports at repo root or inside
 `docs/` outside this tree.
