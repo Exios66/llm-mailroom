@@ -419,7 +419,29 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
                 "error_message": f"transient provider error: {str(exc)[:200]}",
                 "escalation_reason": "transient provider error during classification",
             }
-        raise
+        # L-15: non-transient classify errors used to `raise` — the run's
+        # catch-all sent the document to the FAILED bin. Classify hard-failures
+        # are exactly the documents needing human eyes, so mirror extract's
+        # conversion: surface the error as a low-confidence review-routing
+        # result instead of crashing the run. The classification_attempts
+        # counter is pushed past retry_max so after_classify routes straight to
+        # human review (same mechanism as the empty-text fast path above).
+        retry_max = get_confidence_thresholds().get("retry_max", 1)
+        logger.exception(
+            "classification_exception",
+            doc_id=state.get("doc_id"),
+            error=str(exc)[:300],
+        )
+        return {
+            "doc_type": "correspondence",
+            "contract_subtype": None,
+            "classification_confidence": 0.1,
+            "classification_attempts": max(attempts, retry_max) + 1,
+            "stage": PipelineStage.CLASSIFIED.value,
+            "error_message": f"classification error: {str(exc)[:200]}",
+            "escalation_reason": f"classification failed ({type(exc).__name__}) — routing to human review",
+            "transient_error": False,
+        }
     attempts = attempts + 1
 
     guard = guard_classification(
@@ -926,9 +948,27 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
     # the doc manifest otherwise). Best-effort: empty context when unavailable.
     matter_context = _fetch_matter_context(state)
 
-    result = boss.adjudicate(manifest_data, matter_context=matter_context)
-    decision = result.get("decision", "review")
-    reasoning = result.get("reasoning", "")
+    # L-10: the Boss node was unguarded — a provider outage raised out of
+    # adjudicate and the run's catch-all sent a well-classified/extracted
+    # document to the FAILED bin (opposite of the Boss contract, which is to
+    # route to human review when in doubt). Mirror the other nodes: transient
+    # errors surface as a transient_error state (routing retries), and any
+    # other exception defaults review_decision="review" so the document goes
+    # to human review instead of being failed.
+    try:
+        result = boss.adjudicate(manifest_data, matter_context=matter_context)
+        decision = result.get("decision", "review")
+        reasoning = result.get("reasoning", "")
+    except Exception as exc:
+        from llm.retry import is_transient_error
+
+        if is_transient_error(exc):
+            logger.warning("boss_transient_error", doc_id=state.get("doc_id"), error=type(exc).__name__)
+            return {"transient_error": True}
+        logger.warning("boss_failed_defaulting_to_review", doc_id=state.get("doc_id"),
+                       error=type(exc).__name__, exc_info=True)
+        decision = "review"
+        reasoning = f"Boss unavailable ({type(exc).__name__}) — defaulting to human review"
 
     logger.info(
         "boss_decision",
