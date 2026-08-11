@@ -458,6 +458,21 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         # (guardrail_triggered) and visible in traces.
         logger.warning("classification_guardrail_triggered", doc_id=state.get("doc_id"), issues=guard["issues"])
         confidence = guard.get("confidence", 0.1)
+        # Per-agent memory (iterative improvement): record what the guardrail
+        # rejected so retry calls can learn from it.
+        try:
+            from langchain_agents.memory import record_outcome
+
+            record_outcome(
+                "sorter",
+                doc_type=doc_type or "",
+                decision=f"{doc_type}/{contract_subtype}",
+                confidence=confidence,
+                feedback=f"classification guardrail rejected: {guard['issues']}",
+                source="guardrail",
+            )
+        except Exception:
+            pass
 
     logger.info(
         "classified",
@@ -495,10 +510,19 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
 
     prev_type = state.get("doc_type", "")
     prev_confidence = state.get("classification_confidence", 0)
+    # Inner-context memory (iterative improvement): the retry sees what similar
+    # classifications were corrected/guarded before.
+    try:
+        from langchain_agents.memory import recent_context
+
+        memory = recent_context("sorter", doc_type=prev_type or "", k=3)
+    except Exception:
+        memory = ""
     augmented_text = (
         f"RE-EVALUATION REQUESTED - previous classification was '{prev_type}' with "
         f"confidence {prev_confidence:.2f}. Please re-examine this document independently:\n\n"
         f"{doc_text[:12000]}"
+        + (f"\n\n{memory}" if memory else "")
     )
     try:
         doc_type, contract_subtype, confidence, reasoning = sorter.classify(
@@ -740,6 +764,22 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
+    # Per-agent memory (iterative improvement): record guardrail rejections and
+    # extraction confidence so the specialist's retry calls learn from them.
+    try:
+        from langchain_agents.memory import record_outcome
+
+        record_outcome(
+            "contracts_specialist",
+            doc_type=doc_type or "",
+            decision=f"conf={confidence:.2f}",
+            confidence=confidence,
+            feedback=f"extraction guardrail: {guard['issues']}" if guard["issues"] else f"extraction confidence {confidence:.2f}",
+            source="guardrail" if guard["issues"] else "run",
+            detail={"conflict_detected": bool(conflict_detected)},
+        )
+    except Exception:
+        pass
     # A-1: record the extraction decision (attempt, guardrail issues, conflict).
     _emit_stage_audit(
         {**state, **result_dict},
@@ -800,10 +840,19 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     prev_extracted = state.get("extracted_data", {})
     attempts = state.get("extraction_attempts", 0)
 
+    # Inner-context memory (iterative improvement): the specialist's retry sees
+    # what similar extractions were guarded/corrected before.
+    try:
+        from langchain_agents.memory import recent_context
+
+        memory = recent_context("contracts_specialist", doc_type=doc_type or "", k=3)
+    except Exception:
+        memory = ""
     augmented_text = (
         f"RE-EXTRACTION REQUESTED - previous extraction was low-confidence. "
         f"Please re-examine this document independently. Previous attempt found: {prev_extracted}\n\n"
         f"{doc_text[:25000]}"
+        + (f"\n\n{memory}" if memory else "")
     )
 
     dispatch = _build_specialist_dispatch()

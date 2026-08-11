@@ -101,6 +101,58 @@ class BaseAgent(ABC):
         ...
 
     # ------------------------------------------------------------------
+    # MAILROOM PATCH: per-agent skills + tools + memory context. The
+    # eval-validated prompt text (issue #10) stays byte-stable; everything
+    # below is APPENDED so the agent's working context can grow without
+    # touching the versioned prompt.
+    # ------------------------------------------------------------------
+
+    def _skill_context(self) -> str:
+        try:
+            from langchain_agents.skills import load_skills
+
+            return load_skills(self.agent_name)
+        except Exception:
+            return ""
+
+    def _tool_context(self) -> str:
+        try:
+            from langchain_agents.toolkit import render_tools
+
+            return render_tools(self.agent_name)
+        except Exception:
+            return ""
+
+    def _memory_context(self, doc_type: str = "") -> str:
+        try:
+            from langchain_agents.memory import recent_context
+
+            return recent_context(self.agent_name, doc_type, k=5)
+        except Exception:
+            return ""
+
+    def augmented_system_prompt(self, doc_type: str = "") -> str:
+        """System prompt + agent's skill files + tool descriptions + recent
+        outcome memory. Used by _call_llm/_call_structured when no explicit
+        system_prompt override is given; the base (eval-validated) prompt is
+        always the head, so the versioned behavior is preserved."""
+        parts = [self.system_prompt()]
+        skills = self._skill_context()
+        if skills:
+            parts.append(skills)
+        tools = self._tool_context()
+        if tools:
+            parts.append(tools)
+        memory = self._memory_context(doc_type)
+        if memory:
+            parts.append(memory)
+        return "\n".join(parts)
+
+    # ------------------------------------------------------------------
+    # End MAILROOM PATCH
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
     # LangChain plumbing
     # ------------------------------------------------------------------
 
@@ -335,7 +387,7 @@ class BaseAgent(ABC):
             llm = llm.bind(extra_body={"reasoning": {"effort": reasoning_effort}})
 
         self._check_deadline()  # MAILROOM PATCH
-        system = system_prompt or self.system_prompt()
+        system = system_prompt or self.augmented_system_prompt()
         # System prompts are literal text (they may legally contain curly
         # braces, e.g. embedded JSON schemas) — never template-parsed.
         messages = [
@@ -396,7 +448,7 @@ class BaseAgent(ABC):
             structured = llm.with_structured_output(json_schema, method="function_calling", include_raw=True)
 
         self._check_deadline()  # MAILROOM PATCH
-        system = system_prompt or self.system_prompt()
+        system = system_prompt or self.augmented_system_prompt()
         # Literal SystemMessage: system prompts may contain curly braces
         # (embedded JSON schemas) and must not be template-parsed.
         messages = [
