@@ -17,23 +17,29 @@ class TestRoutingLogic:
 
     def test_after_classify_medium_confidence_routes_to_review(self):
         # Medium band (low <= confidence < high): classified but not clearly
-        # confident (e.g. multi-topic memo) -> human review, never auto-archive.
+        # confident (e.g. multi-topic memo). L-9: the first medium-confidence
+        # result gets ONE re-classification pass; only after that retry does it
+        # go to human review.
         state = {
             "classification_confidence": 0.90,
             "classification_attempts": 1,
             "doc_type": "correspondence",
         }
-        assert after_classify(state) == "human_review"
+        assert after_classify(state) == "retry_classify"
+        exhausted = {**state, "classification_attempts": 2}
+        assert after_classify(exhausted) == "human_review"
 
     def test_after_classify_medium_confidence_exhausts_no_retry_budget(self):
-        # The medium band routes straight to review; it must not be treated as
-        # a sub-low failure that burns the retry budget.
+        # The medium band uses the confidence retry budget (L-9) — a fresh doc
+        # with 0 attempts gets its re-classification pass, and once the budget
+        # is spent it routes to review.
         state = {
             "classification_confidence": 0.80,
             "classification_attempts": 0,
             "doc_type": "contract",
         }
-        assert after_classify(state) == "human_review"
+        assert after_classify(state) == "retry_classify"
+        assert after_classify({**state, "classification_attempts": 2}) == "human_review"
 
     def test_after_classify_low_confidence_first_attempt_retry(self):
         state = {
@@ -149,3 +155,19 @@ class TestRoutingLogic:
     def test_after_human_review_rejected(self):
         state = {"review_decision": "rejected"}
         assert after_human_review(state) == "failed"
+
+
+class TestTransientPerNodeBudget:
+    """L-13: transient retries are budgeted per node — classify failures must
+    not exhaust the counter that extract later needs."""
+
+    def test_classify_and_extract_have_independent_budgets(self):
+        from graph.routing import after_classify, after_extraction, _transient_decision
+
+        # 2 classify transient failures: still retrying classify.
+        assert _transient_decision({"transient_retries_classify": 2}, retry_target="classify") == "retry"
+        # 3rd classify failure: review.
+        assert _transient_decision({"transient_retries_classify": 3}, retry_target="classify") == "human_review"
+        # But extract's budget is untouched — first extract failure still retries.
+        assert _transient_decision({"transient_retries_classify": 3}, retry_target="extract") == "retry"
+        assert _transient_decision({"transient_retries_extract": 3}, retry_target="extract") == "human_review"
