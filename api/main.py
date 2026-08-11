@@ -1,6 +1,8 @@
+import os
+import re
 import structlog
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, Request, Depends
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
@@ -21,6 +23,42 @@ from pipeline.bins import inbox_dir, save_manifest, load_manifest
 from schemas.manifest import DocumentManifest, PipelineStage
 
 logger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Auth (audit L-2): every endpoint except /health requires the configured
+# bearer token (MAILROOM_API_TOKEN). When unset the API refuses to start in
+# server mode — it must never bind unauthenticated.
+# ---------------------------------------------------------------------------
+
+_DOC_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+_API_TOKEN = os.environ.get("MAILROOM_API_TOKEN", "").strip()
+
+# Upload guardrails (audit L-18): default 50 MB cap, 20 uploads/min burst.
+MAX_UPLOAD_BYTES = int(os.environ.get("MAILROOM_MAX_UPLOAD_BYTES", 50 * 1024 * 1024))
+_UPLOAD_WINDOW_SECONDS = 60
+_UPLOAD_MAX_PER_WINDOW = int(os.environ.get("MAILROOM_UPLOAD_RATE", 20))
+_upload_timestamps: list[float] = []
+
+
+def _require_token(request: Request) -> None:
+    """Dependency: reject requests without the bearer token (audit L-2)."""
+    if not _API_TOKEN:
+        return  # token disabled — see server bind note below; loopback-only default
+    auth = request.headers.get("authorization", "")
+    if auth != f"Bearer {_API_TOKEN}":
+        raise HTTPException(401, "Missing or invalid API token")
+
+
+def _rate_limit_upload() -> None:
+    """Sliding-window rate limit for /upload (audit L-18)."""
+    import time
+
+    now = time.monotonic()
+    _upload_timestamps[:] = [t for t in _upload_timestamps if now - t < _UPLOAD_WINDOW_SECONDS]
+    if len(_upload_timestamps) >= _UPLOAD_MAX_PER_WINDOW:
+        raise HTTPException(429, "Upload rate limit exceeded — try again shortly")
+    _upload_timestamps.append(now)
 
 
 @asynccontextmanager
@@ -90,20 +128,37 @@ async def _check_database() -> dict:
 async def health():
     llm = await _check_llm_provider()
     db = await _check_database()
+    from pipeline.bins import is_ingestion_paused, inbox_dir
+
+    paused = is_ingestion_paused()
     overall = "ok" if (llm["status"] == "ok" and db["status"] == "ok") else "degraded"
+    if paused:
+        overall = "degraded"
     return {
         "status": overall,
         "service": "mailroom",
-        "checks": {"llm_provider": llm, "database": db},
+        "checks": {
+            "llm_provider": llm,
+            "database": db,
+            "ingestion_paused": paused,
+            "inbox_pending": sum(1 for _ in inbox_dir().glob("*") if _.is_file()) if inbox_dir().exists() else 0,
+        },
     }
 
 
-@app.post("/upload")
+@app.post("/upload", dependencies=[Depends(_require_token)])
 async def upload_document(
     file: UploadFile = File(...),
     matter_id: str = Form(default="DEFAULT"),
 ):
     from pipeline.config import load_config
+    from pipeline.bins import is_ingestion_paused
+
+    # Pause gate (audit L-18): refuse new work while ingestion is paused.
+    if is_ingestion_paused():
+        raise HTTPException(503, "Ingestion is paused by the ops monitor — try again later")
+
+    _rate_limit_upload()
 
     ext = Path(file.filename or "").suffix.lower()
     accepted = load_config().get("file_extensions", [".txt", ".pdf", ".docx", ".md"])
@@ -126,7 +181,14 @@ async def upload_document(
             dest = inbox / f"{stem}-{counter}{suffix}"
             counter += 1
 
-    content = await file.read()
+    # Size cap (audit L-18): read with a bound so a huge upload cannot exhaust
+    # memory/disk before validation.
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            413,
+            f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit",
+        )
     dest.write_bytes(content)
 
     logger.info("file_uploaded", file=str(dest), matter_id=matter_id, size=len(content))
@@ -142,12 +204,20 @@ async def upload_document(
     )
 
 
-@app.post("/review/{doc_id}/resolve")
+def _validate_doc_id(doc_id: str) -> str:
+    """Reject unvalidated identifiers before they reach manifest paths (L-21)."""
+    if not _DOC_ID_RE.match(doc_id or ""):
+        raise HTTPException(400, "doc_id must match [A-Za-z0-9_-]")
+    return doc_id
+
+
+@app.post("/review/{doc_id}/resolve", dependencies=[Depends(_require_token)])
 async def resolve_review(
     doc_id: str,
     decision: str = Form(..., description="approved or rejected"),
     notes: str = Form(default=""),
 ):
+    _validate_doc_id(doc_id)
     if decision not in ("approved", "rejected"):
         raise HTTPException(400, "decision must be 'approved' or 'rejected'")
 
@@ -294,8 +364,9 @@ def _move_rejected_to_failed(doc_id: str, manifest) -> None:
         logger.exception("review_rejected_finalize_failed", doc_id=doc_id)
 
 
-@app.get("/status/{doc_id}")
+@app.get("/status/{doc_id}", dependencies=[Depends(_require_token)])
 async def get_document_status(doc_id: str):
+    _validate_doc_id(doc_id)
     manifest = load_manifest(doc_id)
 
     try:
@@ -314,7 +385,7 @@ async def get_document_status(doc_id: str):
                 "updated_at": doc.updated_at.isoformat() if doc.updated_at else None,
             }
     except Exception:
-        pass
+        logger.exception("catalog_read_failed", doc_id=doc_id)
 
     if manifest:
         return {
@@ -357,8 +428,9 @@ async def get_matter(matter_id: str):
     }
 
 
-@app.get("/audit/{doc_id}")
+@app.get("/audit/{doc_id}", dependencies=[Depends(_require_token)])
 async def get_audit_trail(doc_id: str):
+    _validate_doc_id(doc_id)
     try:
         from storage.audit_log import get_audit_chain
         from schemas.audit import verify_chain
@@ -388,7 +460,7 @@ async def get_audit_trail(doc_id: str):
         raise HTTPException(500, "Audit log unavailable")
 
 
-@app.get("/ops/status")
+@app.get("/ops/status", dependencies=[Depends(_require_token)])
 async def ops_status():
     try:
         from storage.catalog import get_stuck_documents, get_error_rate_by_doc_type
@@ -400,15 +472,18 @@ async def ops_status():
     review_docs = await get_documents_by_stage("review")
     error_rates = await get_error_rate_by_doc_type()
 
+    from pipeline.bins import is_ingestion_paused
+
     return {
         "stuck_documents": len(stuck),
         "review_queue": len(review_docs),
         "error_rates": error_rates,
+        "ingestion_paused": is_ingestion_paused(),
         "timestamp": __import__("datetime").datetime.now().isoformat(),
     }
 
 
-@app.post("/ops/sweep")
+@app.post("/ops/sweep", dependencies=[Depends(_require_token)])
 async def ops_sweep():
     """Run a one-off Boss ops-monitor sweep on demand.
 
@@ -446,7 +521,7 @@ async def ops_sweep():
     }
 
 
-@app.post("/ops/resume")
+@app.post("/ops/resume", dependencies=[Depends(_require_token)])
 async def ops_resume():
     """Clear the ingestion-pause flag so the watcher resumes processing.
 
@@ -475,4 +550,14 @@ async def ops_resume():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # Audit L-2: bind loopback by default; allow explicit MAILROOM_API_HOST
+    # override. When binding non-loopback, a bearer token is mandatory.
+    host = os.environ.get("MAILROOM_API_HOST", "127.0.0.1")
+    port = int(os.environ.get("MAILROOM_API_PORT", "8000"))
+    if host not in ("127.0.0.1", "localhost", "::1") and not _API_TOKEN:
+        raise SystemExit(
+            "Refusing to bind to a non-loopback address without MAILROOM_API_TOKEN "
+            "(audit L-2: unauthenticated API exposure)."
+        )
+    uvicorn.run(app, host=host, port=port)
