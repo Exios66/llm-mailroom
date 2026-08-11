@@ -31,7 +31,7 @@ def archive_document(
 
     logger.info("archiving", doc_id=doc_id, matter_id=matter_id, doc_type=doc_type)
 
-    archive_path = move_to_archive(file_path, matter_id, doc_type)
+    archive_path = move_to_archive(file_path, matter_id, doc_type, doc_id=doc_id)
 
     manifest_path = save_manifest(manifest)
 
