@@ -139,7 +139,7 @@ async def _check_database() -> dict:
 async def health():
     llm = await _check_llm_provider()
     db = await _check_database()
-    from pipeline.bins import is_ingestion_paused, inbox_dir
+    from pipeline.bins import is_ingestion_paused, inbox_dir, get_pause_info
     from observability.tracing import flush_health
 
     paused = is_ingestion_paused()
@@ -154,6 +154,7 @@ async def health():
             "llm_provider": llm,
             "database": db,
             "ingestion_paused": paused,
+            "pause_info": get_pause_info(),
             "inbox_pending": sum(1 for _ in inbox_dir().glob("*") if _.is_file()) if inbox_dir().exists() else 0,
             "observability": tracing_health,
         },
@@ -490,7 +491,7 @@ async def ops_status():
     review_docs = await get_documents_by_stage("review")
     error_rates = await get_error_rate_by_doc_type()
 
-    from pipeline.bins import is_ingestion_paused
+    from pipeline.bins import is_ingestion_paused, get_pause_info
     from observability.tracing import flush_health
 
     return {
@@ -498,6 +499,7 @@ async def ops_status():
         "review_queue": len(review_docs),
         "error_rates": error_rates,
         "ingestion_paused": is_ingestion_paused(),
+        "pause_info": get_pause_info(),
         "observability": flush_health(),
         "timestamp": __import__("datetime").datetime.now().isoformat(),
     }
@@ -524,12 +526,16 @@ async def ops_sweep():
 
     if findings.get("recommended_action") in ("alert", "pause_ingestion"):
         if findings.get("recommended_action") == "pause_ingestion":
-            try:
-                monitor._pause_file.parent.mkdir(parents=True, exist_ok=True)
-                monitor._pause_file.write_text("1")
+            from pipeline.bins import set_ingestion_paused
+
+            ok = set_ingestion_paused(
+                actor="api_ops_sweep",
+                reason="; ".join(findings.get("findings", [])[:3]) or "Boss recommended pause",
+            )
+            if ok:
                 logger.critical("ops_sweep_paused_ingestion")
-            except Exception:
-                logger.exception("ops_sweep_pause_file_failed")
+            else:
+                logger.error("ops_sweep_pause_write_failed")
 
     return {
         "status": "ok",
@@ -537,6 +543,7 @@ async def ops_sweep():
         "severity": findings.get("severity"),
         "recommended_action": findings.get("recommended_action"),
         "paused_ingestion": monitor.is_paused,
+        "pause_info": monitor.pause_info,
         "timestamp": __import__("datetime").datetime.now().isoformat(),
     }
 
@@ -546,22 +553,21 @@ async def ops_resume():
     """Clear the ingestion-pause flag so the watcher resumes processing.
 
     The ops monitor (scheduled sweep or `/ops/sweep`) can pause ingestion by
-    writing `ops_monitor_paused`. This endpoint clears it — the watcher picks
-    up the change on the next file event without a restart.
+    writing `ops_monitor_paused` (JSON with actor/reason/TTL). This endpoint
+    clears it — the watcher picks up the change on the next file event
+    without a restart.
     """
     try:
-        from pipeline.ops_monitor import OpsMonitor
+        from pipeline.bins import clear_ingestion_paused, get_pause_info
 
-        monitor = OpsMonitor()
-        pause_file = monitor._pause_file
-        was_paused = pause_file.exists()
+        was_paused = get_pause_info() is not None
+        clear_ingestion_paused()
         if was_paused:
-            pause_file.unlink()
             logger.info("ops_resume_ingestion")
         return {
             "status": "ok",
             "was_paused": was_paused,
-            "paused_ingestion": monitor.is_paused,
+            "paused_ingestion": get_pause_info() is not None,
         }
     except Exception as exc:
         logger.exception("ops_resume_failed")

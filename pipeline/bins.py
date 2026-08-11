@@ -182,10 +182,25 @@ def move_to_failed(file_path: Path) -> Path:
     return dest
 
 
-def move_to_archive(file_path: Path, matter_id: str, doc_type: str) -> Path:
+def move_to_archive(file_path: Path, matter_id: str, doc_type: str, doc_id: str = "") -> Path:
+    """Move a file to the archive with a collision-safe name (audit A-20).
+
+    POSIX rename silently overwrites a same-named target — re-processing could
+    destroy a previously archived legal document. When a collision exists, the
+    incoming file gets a ``<stem>--<doc_id><suffix>`` name so nothing is ever
+    overwritten."""
     dest_dir = archive_dir(matter_id, doc_type)
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / file_path.name
+    if dest.exists():
+        stem, suffix = file_path.stem, file_path.suffix
+        if doc_id:
+            dest = dest_dir / f"{stem}--{doc_id}{suffix}"
+        else:
+            counter = 1
+            while dest.exists():
+                dest = dest_dir / f"{stem}--{counter}{suffix}"
+                counter += 1
     shutil.move(str(file_path), str(dest))
     return dest
 
@@ -220,10 +235,73 @@ def get_worker_id() -> str:
     return str(uuid.uuid4())[:8]
 
 
+PAUSE_FILE_NAME = "ops_monitor_paused"
+_PAUSE_TTL_SECONDS = int(os.environ.get("MAILROOM_PAUSE_TTL_SECONDS", "3600"))
+
+
+def _pause_file_path() -> Path:
+    return get_base_dir() / PAUSE_FILE_NAME
+
+
+def set_ingestion_paused(actor: str = "ops_monitor", reason: str = "", ttl_seconds: int | None = None) -> bool:
+    """Write the pause flag as JSON {actor, reason, expires_at, set_at} (L-4).
+
+    The pause now has a TTL: a transient incident (or an abuse-induced pause)
+    auto-expires instead of halting ingestion indefinitely. Returns True when
+    the pause was applied.
+    """
+    import time as _time
+
+    ttl = ttl_seconds if ttl_seconds is not None else _PAUSE_TTL_SECONDS
+    try:
+        payload = {
+            "actor": actor,
+            "reason": reason or "",
+            "set_at": _time.time(),
+            "expires_at": _time.time() + ttl,
+        }
+        _pause_file_path().parent.mkdir(parents=True, exist_ok=True)
+        _pause_file_path().write_text(json.dumps(payload))
+        return True
+    except Exception:
+        return False
+
+
+def get_pause_info() -> dict | None:
+    """Return the pause metadata (actor/reason/expiry) or None when not paused."""
+    import time as _time
+
+    path = _pause_file_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return {"actor": "unknown", "reason": "unreadable pause file"}
+    expires_at = data.get("expires_at", 0)
+    if expires_at and _time.time() > expires_at:
+        # L-4: TTL expired — clear the pause automatically.
+        try:
+            path.unlink()
+        except Exception:
+            pass
+        return None
+    return data
+
+
+def clear_ingestion_paused() -> bool:
+    try:
+        path = _pause_file_path()
+        if path.exists():
+            path.unlink()
+        return True
+    except Exception:
+        return False
+
+
 def is_ingestion_paused() -> bool:
-    """Check if the ops monitor has paused ingestion."""
-    pause_file = get_base_dir() / "ops_monitor_paused"
-    return pause_file.exists()
+    """Check if the ops monitor has paused ingestion (auto-expiring TTL)."""
+    return get_pause_info() is not None
 
 
 def list_inbox_files() -> list[Path]:
