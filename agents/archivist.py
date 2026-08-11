@@ -1,8 +1,9 @@
 import structlog
 import hashlib
+import json
 from pathlib import Path
 from schemas.audit import AuditLogEntry, build_audit_entry
-from pipeline.bins import move_to_archive, save_manifest
+from pipeline.bins import move_to_archive, save_manifest, archive_dir
 
 logger = structlog.get_logger(__name__)
 
@@ -35,6 +36,17 @@ def archive_document(
 
     manifest_path = save_manifest(manifest)
 
+    # A-11: the manifest is also written as an archive SIDECAR (the docs
+    # claimed sidecar but 0 JSON existed under data/archive/). The archived
+    # directory is then self-contained: file + manifest + (via the audit
+    # entry) hash chain.
+    sidecar = None
+    try:
+        sidecar = archive_dir(matter_id, doc_type) / f"{Path(archive_path).stem}.json"
+        sidecar.write_text(manifest.model_dump_json(indent=2))
+    except Exception:
+        logger.warning("archive_sidecar_failed", doc_id=doc_id)
+
     # A-7: recompute the file hash at archive so post-archive substitution is
     # detectable — the digest is chained into the audit entry.
     archived_sha256 = _file_sha256(archive_path)
@@ -47,6 +59,7 @@ def archive_document(
         detail={
             "archive_path": str(archive_path),
             "manifest_path": str(manifest_path),
+            "archive_sidecar": str(sidecar) if sidecar else None,
             "doc_type": doc_type,
             "file_sha256": archived_sha256,
             "classification_confidence": manifest.classification_confidence,

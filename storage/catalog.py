@@ -180,6 +180,23 @@ async def get_matter_documents(matter_id: str) -> list[DocumentRecord]:
         return list(result.scalars().all())
 
 
+async def touch_document_heartbeat(doc_id: str) -> None:
+    """L-5: bump `updated_at` for a document row (progress heartbeat).
+
+    Called at every graph-node boundary for an in-flight document, so stuck
+    detection (which keys on updated_at) never flags a document that is
+    actively processing through a long retry storm or transcription."""
+    try:
+        async with async_session() as session:
+            record = await session.get(DocumentRecord, doc_id)
+            if record is None:
+                return
+            record.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+    except Exception:
+        pass  # best-effort heartbeat
+
+
 async def get_stuck_documents(stale_minutes: int = 15) -> list[DocumentRecord]:
     ensure_schema()
     cutoff = datetime.now(timezone.utc)
