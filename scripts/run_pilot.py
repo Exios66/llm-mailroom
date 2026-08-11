@@ -834,10 +834,26 @@ def main() -> int:
 
     _validate_manifest_ground_truth(manifest)
 
-    rows = [run_sample(m, mock_mode, session_id=session_id, run_id=run_id) for m in manifest]
+    # L-22: one failing sample (or the cost watchdog) must not discard all
+    # collected rows — per-sample try/except records {"status": "error"}, and
+    # the report is written in a finally so partial runs still produce one.
+    rows = []
+    for m in manifest:
+        try:
+            rows.append(run_sample(m, mock_mode, session_id=session_id, run_id=run_id))
+        except Exception as exc:
+            logger.exception("sample_run_failed", sample=m.get("id"))
+            rows.append({
+                "id": m.get("id"),
+                "filename": m.get("filename"),
+                "status": "error",
+                "error": f"{type(exc).__name__}: {exc}",
+            })
 
     if scores_enabled:
         for m, r in zip(manifest, rows):
+            if r.get("status") == "error":
+                continue
             _ingest_scores(m, r)
             _attach_field_scoring(m, r)
         from observability.tracing import flush
@@ -857,6 +873,7 @@ def main() -> int:
         "summary": summary,
         "samples": rows,
         "misfile_candidates": misfile_candidates(rows, report=None),
+        "errors": [r for r in rows if r.get("status") == "error"],
     }
     if scores_enabled:
         report["scores"] = {
@@ -867,13 +884,20 @@ def main() -> int:
                     "field_scoring": r.get("field_scoring"),
                 }
                 for m, r in zip(manifest, rows)
+                if r.get("status") != "error"
             ]
         }
-    out_path = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "pilot_report.json"
+    # L-24: run-scoped report path (pilot_report_<run_id>.json) so concurrent
+    # runs never clobber each other, plus a dated baseline copy.
+    run_tag = run_id.replace(":", "").replace("+", "").replace("-", "")[:20] or "run"
+    out_path = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / f"pilot_report_{run_tag}.json"
     out_path.write_text(json.dumps(report, indent=2))
     print(f"\nReport written to {out_path}")
     if not mock_mode:
-        baseline_path = out_path.parent / "pilot_report_baseline_real.json"
+        import datetime as _dt
+
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        baseline_path = out_path.parent / f"pilot_report_baseline_real_{stamp}.json"
         baseline_path.write_text(json.dumps(report, indent=2))
         print(f"Real-run baseline copy written to {baseline_path}")
     if _RUN_COST_USD["value"] > 0:
