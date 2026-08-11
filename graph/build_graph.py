@@ -1462,7 +1462,9 @@ def _execute_run(
     # second run inherited stale state, producing output=null).
     config = {"configurable": {"thread_id": f"{seed}-run{attempt}"}}
 
-    pipeline_scores.ensure_score_configs()
+    # O-1: warm the score-config schema in a background thread (sticky-bounded
+    # 10-min retry); never block the document path on Langfuse.
+    pipeline_scores.warmup_score_configs(blocking=False)
 
     started_at = time.time()
     deadline = started_at + float(limits.get_deadline_seconds())
