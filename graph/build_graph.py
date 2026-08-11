@@ -336,7 +336,9 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         actor="pipeline",
         detail=ingest_detail,
     )
-    return {
+    # Carry the hash in state so archive verification + provenance persistence
+    # can compare against it (A-7).
+    ingest_state = {
         "doc_id": manifest.doc_id,
         "matter_id": matter_id,
         "original_filename": file_path.name,
@@ -349,7 +351,21 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         "retry_count": 0,
         "conflict_detected": False,
         "error_message": None if text_ok else f"Could not extract text from {file_path.suffix} file",
+        "file_sha256": file_hash,
+        "size_bytes": _file_size(file_path),
     }
+    _catalog_upsert(
+        {
+            "doc_id": manifest.doc_id,
+            "matter_id": matter_id,
+            "original_filename": file_path.name,
+            "doc_type": None,
+            "stage": PipelineStage.PROCESSING.value,
+            "file_sha256": file_hash,
+        },
+        stage=PipelineStage.PROCESSING.value,
+    )
+    return ingest_state
 
 
 def classify_node(state: DocumentState) -> dict[str, Any]:
@@ -1216,6 +1232,68 @@ def _persist_scores(state: dict, scores: dict):
         logger.exception("scores_persist_error")
 
 
+def _persist_provenance(state: dict, run_id: str | None = None, metrics: dict | None = None) -> None:
+    """A-10: persist doc → run → model → prompt → cost → latency provenance.
+
+    The audit found `documents.trace_id` empty 60/60 in the live DB and no
+    columns carrying run/model/prompt/cost — with tracing off, the demanded
+    provenance chain was unreconstructable. Best-effort like other catalog
+    writes (never fails the run)."""
+    if not state.get("doc_id"):
+        return
+    try:
+        from storage.catalog import update_document_provenance
+
+        async def _write():
+            await update_document_provenance(
+                state["doc_id"],
+                run_id=run_id or state.get("run_id"),
+                model=_resolved_models(state),
+                prompt_version=_prompt_versions(state),
+                cost_usd=metrics.get("estimated_cost_usd") if metrics else None,
+                latency_s=metrics.get("run_duration_seconds") if metrics else None,
+                file_sha256=state.get("file_sha256"),
+            )
+
+        _run_coro(_write)
+    except Exception:
+        logger.exception("provenance_persist_error", doc_id=state.get("doc_id"))
+
+
+def _resolved_models(state: dict) -> str:
+    """Comma-joined model names actually used by this run (best-effort)."""
+    try:
+        from pipeline.config import get_agent_config
+
+        names = []
+        for agent in ("sorter", "contracts_specialist", "reporter", "boss"):
+            cfg = get_agent_config(agent)
+            if cfg and cfg.get("model"):
+                names.append(f"{agent}={cfg['model']}")
+        return ", ".join(names)
+    except Exception:
+        return ""
+
+
+def _prompt_versions(state: dict) -> str:
+    """Prompt versions bound during the run (best-effort; Langfuse-managed
+    prompts link generations; vendored agents use their versioned prompts)."""
+    try:
+        from llm.prompts import _bound_prompt_versions
+
+        versions = _bound_prompt_versions()
+        if versions:
+            return ", ".join(f"{k}={v}" for k, v in versions.items())
+    except Exception:
+        pass
+    try:
+        from langchain_agents.prompts import PROMPT_VERSIONS
+
+        return ", ".join(f"{k}={v}" for k, v in PROMPT_VERSIONS.items())
+    except Exception:
+        return ""
+
+
 def _bounded(fn):
     """Node wrapper enforcing the per-run hard cutoff: wall-clock deadline and
     cumulative output-token budget. Raises RunDeadlineExceeded /
@@ -1657,6 +1735,13 @@ def _execute_run(
             _persist_scores(result, score_values)
         except Exception:
             logger.exception("post_run_scoring_failed", doc_id=result.get("doc_id"))
+        # A-10: persist end-to-end provenance (doc → run → trace → prompt →
+        # model → cost) to the catalog row so the chain is reconstructable even
+        # with tracing off (the live-DB audit found trace_id empty 60/60).
+        try:
+            _persist_provenance(result, run_id=run_id, metrics=metrics if "metrics" in dir() else None)
+        except Exception:
+            logger.exception("provenance_persist_failed", doc_id=result.get("doc_id"))
         # Deterministic field-type-aware scoring (issues #4/#5). Only grounded
         # runs have expected field values to compare against; the scorer gates
         # the LLM judge below: an unambiguous deterministic verdict skips the
