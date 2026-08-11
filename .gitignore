@@ -38,3 +38,6 @@ langfuse_data/
 
 # LegalBench suite derived artifacts (regenerated on demand)
 src/legalbench/reports/
+
+# Stale pre-restructure paths (defensive)
+/legalbench/
