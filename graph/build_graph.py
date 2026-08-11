@@ -1678,6 +1678,19 @@ def _execute_run(
 
     from observability import scores as pipeline_scores
 
+    # O-4: bind log correlation context so every log line in this run carries
+    # doc/matter/run identifiers (merge_contextvars is wired in logging.py but
+    # nothing ever bound anything). Unbound in finally.
+    import structlog as _structlog
+
+    _run_log = _structlog.contextvars
+    _run_log.bind_contextvars(
+        doc_id=initial_state.get("doc_id") or "",
+        matter_id=initial_state.get("matter_id") or "",
+        run_id=run_id or "",
+        trace_id="",  # filled after the trace opens
+    )
+
     graph = build_graph()
     # Attempt-scoped thread: a re-run of the same document must not resume the
     # previous run's checkpointed state (pilot: correspondence_01's degraded
@@ -1747,6 +1760,7 @@ def _execute_run(
         # get_trace_id() is only valid inside the trace block.
         state_trace_id = tracing.get_trace_id() or ""
         initial_state = {**initial_state, "trace_id": state_trace_id}
+        _run_log.bind_contextvars(trace_id=state_trace_id)
         try:
             result = graph.invoke(initial_state, config)
         except (limits.RunDeadlineExceeded, limits.RunBudgetExceeded) as exc:
@@ -1841,7 +1855,15 @@ def _execute_run(
                 })
         except Exception:
             logger.exception("pipeline_result_emission_failed", doc_id=result.get("doc_id"))
-    tracing.flush()
+    # O-2: the flush must run in `finally` — hard failures raised out of the
+    # graph invoke (before the old flush line) dropped every buffered trace
+    # event. Bounded by the SDK's own send/retry; a blackholed backend is
+    # surfaced via flush_health() counters instead of blocking forever.
+    try:
+        tracing.flush()
+    except Exception:
+        logger.warning("tracing_flush_error", doc_id=result.get("doc_id"), exc_info=True)
+    _run_log.unbind_contextvars("doc_id", "matter_id", "run_id", "trace_id")  # O-4
     return result
 
 

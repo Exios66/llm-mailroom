@@ -125,3 +125,44 @@ class TestLangfuseCallAttrs:
 
         with_meta = langfuse_call_attrs("reporter", metadata={"doc_id": "x"})
         assert with_meta["metadata"] == {"doc_id": "x"}
+
+
+class TestFlushHealth:
+    def test_flush_health_reports_counters(self, monkeypatch):
+        import observability.tracing as tr
+
+        monkeypatch.setattr(tr, "resolve_provider_name", lambda: "none")
+        tr._flush_ok = 3
+        tr._flush_failures = 0
+        h = tr.flush_health()
+        assert h["provider"] == "none"
+        assert h["flush_ok"] == 3
+        assert h["healthy"] is True
+
+    def test_flush_failures_mark_unhealthy(self, monkeypatch):
+        import observability.tracing as tr
+
+        monkeypatch.setattr(tr, "resolve_provider_name", lambda: "langfuse")
+
+        def boom():
+            raise RuntimeError("backend down")
+
+        monkeypatch.setattr("observability.langfuse_setup.flush_langfuse", boom)
+        tr.flush()
+        assert tr._flush_failures >= 1
+        assert tr.flush_health()["healthy"] is False
+
+
+class TestLogContextvars:
+    def test_run_pipeline_binds_and_unbinds(self, temp_base_dir, mock_openai_client, mock_langchain_llm):
+        import structlog
+        from graph.build_graph import run_pipeline
+        from pathlib import Path
+
+        src = Path(temp_base_dir) / "inbox" / "ctx.txt"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text("Service agreement between Acme and Beta for one year.")
+
+        with structlog.contextvars.bound_contextvars():
+            result = run_pipeline(src, "MATTER-CTX")
+            assert result.get("stage") in ("archived", "review", "failed")

@@ -41,6 +41,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from pipeline.env import load_env  # noqa: E402
+
+load_env()
+from pipeline.logging import setup_logging  # noqa: E402
+
+setup_logging()
+
 from observability.field_scoring import (  # noqa: E402
     EntityListScore,
     get_ambiguous_band,

@@ -163,8 +163,17 @@ def langfuse_call_attrs(name: str, metadata=None) -> dict:
     return attrs
 
 
+_flush_ok = 0
+_flush_failures = 0
+
+
 def flush():
-    """Flush queued events for the active backend. Safe to call anytime."""
+    """Flush queued events for the active backend. Safe to call anytime.
+
+    Tracks flush success/failure counters (O-3) so operators can distinguish
+    "pipeline healthy, observability dead" from "pipeline idle".
+    """
+    global _flush_ok, _flush_failures
     provider = resolve_provider_name()
     try:
         if provider == "langfuse":
@@ -175,8 +184,36 @@ def flush():
             from .braintrust_setup import flush_braintrust
 
             flush_braintrust()
+        _flush_ok += 1
     except Exception:
-        pass
+        _flush_failures += 1
+        logger.warning("tracing_flush_failed", provider=provider, exc_info=True)
+
+
+def flush_health() -> dict:
+    """Observability health: flush counters + backend state (O-3).
+
+    Surfaces whether events are being delivered or silently dropped, so
+    /health and /ops/status can report observability health honestly.
+    """
+    return {
+        "provider": resolve_provider_name(),
+        "flush_ok": _flush_ok,
+        "flush_failures": _flush_failures,
+        "healthy": _flush_failures == 0,
+    }
+
+
+def install_on_dropped() -> None:
+    """Wire Langfuse's on_dropped callback (O-3): when the SDK's queue
+    overflows or events are dropped, log a warning + bump a counter instead of
+    failing silently."""
+    try:
+        from .langfuse_setup import install_on_dropped as _install
+
+        _install()
+    except Exception:
+        logger.debug("on_dropped_install_failed")
 
 
 def get_trace_id():
