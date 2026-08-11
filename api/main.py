@@ -19,6 +19,9 @@ setup_logging()
 
 # O-1: kick the score-config warm-up off the document path at startup.
 from observability.scores import warmup_score_configs
+from observability.tracing import install_on_dropped
+
+install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
 
 warmup_score_configs(blocking=False)
 from observability.field_scoring import warm_embedding_model
@@ -137,10 +140,12 @@ async def health():
     llm = await _check_llm_provider()
     db = await _check_database()
     from pipeline.bins import is_ingestion_paused, inbox_dir
+    from observability.tracing import flush_health
 
     paused = is_ingestion_paused()
+    tracing_health = flush_health()
     overall = "ok" if (llm["status"] == "ok" and db["status"] == "ok") else "degraded"
-    if paused:
+    if paused or not tracing_health["healthy"]:
         overall = "degraded"
     return {
         "status": overall,
@@ -150,6 +155,7 @@ async def health():
             "database": db,
             "ingestion_paused": paused,
             "inbox_pending": sum(1 for _ in inbox_dir().glob("*") if _.is_file()) if inbox_dir().exists() else 0,
+            "observability": tracing_health,
         },
     }
 
@@ -485,12 +491,14 @@ async def ops_status():
     error_rates = await get_error_rate_by_doc_type()
 
     from pipeline.bins import is_ingestion_paused
+    from observability.tracing import flush_health
 
     return {
         "stuck_documents": len(stuck),
         "review_queue": len(review_docs),
         "error_rates": error_rates,
         "ingestion_paused": is_ingestion_paused(),
+        "observability": flush_health(),
         "timestamp": __import__("datetime").datetime.now().isoformat(),
     }
 

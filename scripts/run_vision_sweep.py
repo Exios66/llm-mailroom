@@ -37,6 +37,13 @@ logger = structlog.get_logger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from pipeline.env import load_env  # noqa: E402
+
+load_env()
+from pipeline.logging import setup_logging  # noqa: E402
+
+setup_logging()
+
 CONFIGS = [
     ("text-only", {"MAILROOM_VISION_ENABLED": "0"}),          # transcribe-only
     ("vision-10", {"MAILROOM_VISION_MAX_PAGES": "10"}),       # additive + 10 pages

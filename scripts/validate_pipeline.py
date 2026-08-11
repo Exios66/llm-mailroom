@@ -47,6 +47,9 @@ sys.path.insert(0, str(REPO_ROOT))
 from pipeline.env import load_env  # noqa: E402
 
 load_env()
+from pipeline.logging import setup_logging  # noqa: E402
+
+setup_logging()
 
 from langchain_agents.mock import (  # noqa: E402
     FakeLangChainLLM,
