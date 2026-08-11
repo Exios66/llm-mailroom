@@ -26,23 +26,23 @@ tests/
 
 ```bash
 # All tests
-pytest tests/ -v
+pytest -v
 
 # By test file
-pytest tests/test_agents/test_sorter.py -v
-pytest tests/test_agents/test_specialists.py -v
-pytest tests/test_routing.py -v
-pytest tests/test_audit_log.py -v
-pytest tests/test_pipeline_e2e.py -v
+pytesttest_agents/test_sorter.py -v
+pytesttest_agents/test_specialists.py -v
+pytesttest_routing.py -v
+pytesttest_audit_log.py -v
+pytesttest_pipeline_e2e.py -v
 
 # By test name pattern
-pytest tests/ -v -k "sorter"
+pytest -v -k "sorter"
 
 # With coverage
-pytest tests/ --cov=. --cov-report=html --cov-report=term
+pytest --cov=. --cov-report=html --cov-report=term
 
 # With verbose output
-pytest tests/ -v -s
+pytest -v -s
 ```
 
 ---
@@ -101,7 +101,7 @@ These tests spin up a complete LangGraph graph with all 11 nodes and mock the LL
 
 ### Pilot sample set
 
-For live end-to-end pilots (not the unit suite), see `examples/samples/`: 30 legal
+For live end-to-end pilots (not the unit suite), see `docs/examples/samples/`: 30 legal
 PDFs (real CC-BY-4.0 CUAD/Atticus contracts + LegalBench MAUD merger agreements +
 public-domain Pile of Law court opinions + repo-written synthetic text) with a
 ground-truth `manifest.csv`, built by `scripts/prepare_samples.py` (and
@@ -111,7 +111,7 @@ set, `--real` for actual LLM accuracy on the 21 real committed documents,
 `--baseline` to diff two runs, `--source <corpus>` to run one dataset). Real
 runs are restricted to the actual committed legal documents (CUAD/Atticus PDFs,
 LegalBench, Pile of Law); the repo-written synthetic `.txt` samples are mock-only
-and are refused by `--real`. See `examples/samples/README.md`.
+and are refused by `--real`. See `docs/examples/samples/README.md`.
 
 ### Shared Fixtures (`conftest.py`)
 
@@ -123,7 +123,7 @@ and are refused by `--real`. See `examples/samples/README.md`.
 | `sample_*_text` | Reads fixture files for each doc type |
 | `all_fixture_files` | Dictionary of all fixture file contents |
 
-### Document Fixtures (`tests/fixtures/`)
+### Document Fixtures (`src/tests/fixtures/`)
 
 | Fixture | Type | Purpose |
 |---|---|---|

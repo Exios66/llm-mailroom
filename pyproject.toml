@@ -47,9 +47,10 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["agents*", "langchain_agents*", "graph*", "llm*", "schemas*", "pipeline*", "storage*", "api*", "observability*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
-pythonpath = ["."]
+testpaths = ["src/tests"]
+pythonpath = ["src", "."]

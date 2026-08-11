@@ -286,7 +286,7 @@ The Judge is not part of the document graph. It audits pipeline output against t
 | `judge_classification` | Is the sorter's assigned class correct for the document? |
 | `judge_extraction_correctness` | Are extracted values factually accurate (no fabrication)? |
 
-Each dimension returns a score + label + reasoning, ingested as Langfuse scores on the document's trace. Run with `python scripts/run_quality_judges.py --real` (or `--mock`).
+Each dimension returns a score + label + reasoning, ingested as Langfuse scores on the document's trace. Run with `PYTHONPATH=src python src/scripts/run_quality_judges.py --real` (or `--mock`).
 
 ---
 
@@ -317,4 +317,4 @@ Each dimension returns a score + label + reasoning, ingested as Langfuse scores 
 5. Add the agent config in `config/taxonomy.yaml` under both `doc_classes` and `agents` (with `max_tokens`).
 
 6. Register the template in `llm/prompts.py:prompt_templates()` and sync:
-   `python scripts/sync_prompts.py`
+   `PYTHONPATH=src python src/scripts/sync_prompts.py`

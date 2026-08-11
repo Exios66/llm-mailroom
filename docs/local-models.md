@@ -92,20 +92,20 @@ Move agents one at a time, validating each before moving the next. This minimize
 
 ```bash
 # 1. See current assignments
-python scripts/cutover.py --list
+PYTHONPATH=src python src/scripts/cutover.py --list
 
 # 2. Move one agent to local
-python scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
+PYTHONPATH=src python src/scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
 
 # 3. Validate with tests
-python scripts/cutover.py --validate --agent sorter
+PYTHONPATH=src python src/scripts/cutover.py --validate --agent sorter
 
 # 4. If validation passes, move to the next agent
-python scripts/cutover.py --agent compliance_specialist --provider ollama --model qwen3:7b
-python scripts/cutover.py --validate --agent compliance_specialist
+PYTHONPATH=src python src/scripts/cutover.py --agent compliance_specialist --provider ollama --model qwen3:7b
+PYTHONPATH=src python src/scripts/cutover.py --validate --agent compliance_specialist
 
 # 5. If validation fails, roll back
-python scripts/cutover.py --agent sorter --provider openrouter --model openai/gpt-4o
+PYTHONPATH=src python src/scripts/cutover.py --agent sorter --provider openrouter --model openai/gpt-4o
 ```
 
 ### Manual Cutover (Direct YAML Edit)
@@ -128,7 +128,7 @@ After all agents are cut over:
 
 ```bash
 # Run the full test suite
-pytest tests/ -v
+pytest -v
 
 # Compare extraction accuracy with golden fixtures
 # This requires OpenRouter to still be available for comparison:
@@ -212,7 +212,7 @@ If the pipeline logs `APIConnectionError` or `ConnectError`:
 1. Verify the service is running:
    ```bash
    # Ollama (Docker)
-   docker compose -f config/docker/docker-compose.yml --profile local-llm ps
+   docker compose -f src/config/docker/docker-compose.yml --profile local-llm ps
    curl http://localhost:11434/v1/models
 
    # vLLM
@@ -220,7 +220,7 @@ If the pipeline logs `APIConnectionError` or `ConnectError`:
    ```
 2. Confirm `OLLAMA_BASE_URL` / `VLLM_BASE_URL` matches the service (defaults: `http://localhost:11434/v1`, `http://localhost:8000/v1`). Note the **`/v1` suffix is required** — the OpenAI SDK appends `/chat/completions`, so omitting it produces a 404/connection error.
 3. If running Ollama **on the host** (not Docker), make sure it exposes the OpenAI-compatible endpoint: `OLLAMA_HOST=0.0.0.0 ollama serve`.
-4. If agents still resolve to OpenRouter, check `DEFAULT_PROVIDER` isn't overriding: `python scripts/cutover.py --list` shows the effective provider per agent.
+4. If agents still resolve to OpenRouter, check `DEFAULT_PROVIDER` isn't overriding: `PYTHONPATH=src python src/scripts/cutover.py --list` shows the effective provider per agent.
 
 ### HTTP 404 on `/models` or `/chat/completions`
 
@@ -265,16 +265,16 @@ Page images are only attached when the agent's model matches a `vision.models` s
 
 ### Cutover validation fails
 
-`python scripts/cutover.py --validate --agent <name>` runs the unit tests against the new provider/model. If it fails:
+`PYTHONPATH=src python src/scripts/cutover.py --validate --agent <name>` runs the unit tests against the new provider/model. If it fails:
 
-1. Check the agent's `provider` and `model` values resolved correctly: `python scripts/cutover.py --list`
+1. Check the agent's `provider` and `model` values resolved correctly: `PYTHONPATH=src python src/scripts/cutover.py --list`
 2. Confirm the model is pulled: `docker exec mailroom-ollama ollama list`
-3. The tests never hit the real LLM — they validate the config plumbing, not the model's accuracy. For accuracy, run a pilot: `python scripts/run_pilot.py --real --source <corpus>`
+3. The tests never hit the real LLM — they validate the config plumbing, not the model's accuracy. For accuracy, run a pilot: `PYTHONPATH=src python src/scripts/run_pilot.py --real --source <corpus>`
 
 ### Consistent low confidence / routes to review
 
 Smaller local models are often over-confident or under-confident. If everything lands in `review`:
 
 1. Verify the agent model actually serves the taxonomy classes (a model not fine-tuned for legal text may classify poorly).
-2. Compare against OpenRouter with `scripts/run_vision_sweep.py --real` or a pilot diff: `python scripts/run_pilot.py --real --baseline data/pilot_report_baseline.json`.
+2. Compare against OpenRouter with `scripts/run_vision_sweep.py --real` or a pilot diff: `PYTHONPATH=src python src/scripts/run_pilot.py --real --baseline data/pilot_report_baseline.json`.
 3. Adjust `confidence.high` / `confidence.low` in `taxonomy.yaml` — thresholds are config, not code.
