@@ -18,6 +18,14 @@ from .logging import setup_logging
 
 setup_logging()
 
+# O-1: kick the score-config warm-up off the document path at startup.
+from observability.scores import warmup_score_configs
+
+warmup_score_configs(blocking=False)
+from observability.field_scoring import warm_embedding_model
+
+warm_embedding_model(blocking=False)  # O-10: load embeddings off the document path
+
 from .bins import (
     inbox_dir,
     ensure_dirs,
