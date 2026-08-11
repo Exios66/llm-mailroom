@@ -148,7 +148,15 @@ def classify_image(api_key: str, image_path: Path, model: str = "qwen/qwen3.7-fl
             error_body = response.json()
         except Exception:
             error_body = response.text
-        print(f"OpenRouter API error ({response.status_code}): {error_body}")
+        # O-6: never print the full provider error body (it can echo document
+        # content back); log structure + status only, keep the body for DEBUG.
+        import structlog
+
+        structlog.get_logger(__name__).warning(
+            "openrouter_api_error",
+            status_code=response.status_code,
+            error_body_truncated=str(error_body)[:120],
+        )
         raise
 
     result = response.json()
