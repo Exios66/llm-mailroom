@@ -28,6 +28,7 @@ class TestDimensionWidgets:
         assert sd.QUALITY_DASHBOARD["name"]
         assert sd.JUDGE_DASHBOARD["name"]
         assert sd.DIMENSION_DASHBOARD["name"]
+        assert sd.PERF_DASHBOARD["name"]
 
     def test_issue2_dimensions_covered(self):
         names = " ".join(w.name for w in sd.DIMENSION_WIDGETS)
@@ -36,7 +37,7 @@ class TestDimensionWidgets:
 
     def test_score_filters_reference_registered_configs(self):
         registered = _score_names()
-        for w in sd.DIMENSION_WIDGETS:
+        for w in sd.DIMENSION_WIDGETS + sd.PERF_WIDGETS:
             for f in w.filters:
                 if f["column"] == "name":
                     assert f["value"] in registered, (
@@ -48,6 +49,31 @@ class TestDimensionWidgets:
             envs = [f for f in w.filters if f["column"] == "environment"]
             assert envs, f"{w.name} has no environment filter"
             assert envs[0]["value"] == ["pilot"]
+
+    def test_models_dimension_not_provided_model_name(self):
+        """Dashboard-correctness: model widgets dimension on the requested
+        `model` string with a positive configured-models filter — never the
+        adapter's providedModelName with a negative 'not openai' filter."""
+        for w in sd.QUALITY_WIDGETS + sd.JUDGE_WIDGETS + sd.PERF_WIDGETS:
+            if "model" in w.dimensions:
+                assert "providedModelName" not in w.dimensions
+                model_filters = [f for f in w.filters if f["column"] == "model"]
+                assert model_filters, f"{w.name} dimensions by model without a model filter"
+                assert model_filters[0]["operator"] == "any of"
+        for w in sd.JUDGE_WIDGETS + sd.PERF_WIDGETS:
+            for f in w.filters:
+                assert f.get("operator") != "does not contain", (
+                    f"{w.name} uses a negative model filter (can hide real models)"
+                )
+
+    def test_score_widgets_no_trace_dimension(self):
+        """Scores attach to traces named 'document-pipeline' — dimensioning by
+        traceName collapses everything; score widgets must use no dimension or
+        the score name."""
+        for w in sd.DIMENSION_WIDGETS + sd.PERF_WIDGETS:
+            if w.view == "scores-numeric":
+                assert "traceName" not in w.dimensions, f"{w.name} dimensions by traceName"
+                assert "observationPromptName" not in w.dimensions, f"{w.name} dimensions by observationPromptName"
 
     def test_widget_signature_roundtrip(self):
         for w in sd.QUALITY_WIDGETS + sd.JUDGE_WIDGETS + sd.DIMENSION_WIDGETS:
