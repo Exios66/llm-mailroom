@@ -1,0 +1,6553 @@
+<!-- SYNCED DOCUMENT — do not hand-edit. Regenerate from the upstream repo. -->
+
+# Experiment Log
+
+> **Source (upstream):** Experiment log of **llm-entity-extraction** — the prompt-experiment loop environment for the llm-mailroom legal document pipeline.
+>
+> - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
+> - **Upstream path:** `reports/experiment_log.md`
+> - **Upstream commit:** `2df190cccfdeffbdf75f6e400cc1b5b79c75ceb0` ("Full CUAD Classification Experiment Run", 2026-08-11)
+> - **Synced into llm-mailroom:** 2026-08-10, verbatim, into `docs/reports/experiments/`
+> - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
+> - **How it relates to llm-mailroom:** the sorter and contracts-specialist agents vendored into `llm-mailroom/langchain_agents/` are the eval-validated prompts tracked here (`sorter_v5`, `contracts_specialist_v11`). This log is the evidence base for which prompt versions are in production. Re-sync to pick up newer runs.
+>
+> ---
+# Experiment Log
+
+_Generated from `reports/experiment_log.jsonl` on 2026-08-11T00:48:41.281490+00:00 — append-only, one section per run._
+
+## Index
+
+| # | Experiment | Task | Model | Prompt(s) | Headline score | Rows | Total tokens |
+|---|---|---|---|---|---|---|---|
+| 1 | qwen3.7-flash_contracts_specialist_v2_extraction | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v2 | extraction 0.6563 | 10 | 111805 |
+| 2 | qwen3.7-flash_contracts_specialist_v3_extraction | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v3 | extraction 0.9128 | 10 | 108573 |
+| 3 | qwen3.7-flash_contracts_specialist_v3_extraction | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v3 | extraction 0.9173 | 10 | 106562 |
+| 4 | qwen3.7-flash_contracts_specialist_v3_extraction | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v3 | extraction 0.7976 | 10 | 138364 |
+| 5 | qwen3.7-flash_contracts_specialist_v3_extraction | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v3 | extraction 0.7848 | 10 | 137996 |
+| 6 | qwen3.7-flash_sorter_v1+contracts_specialist_v4_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v1 + contracts_specialist_v4 | sorter 1 / extractor 0.8894 | 5 | 198097 |
+| 7 | qwen3.7-flash_sorter_v2+contracts_specialist_v5_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v2 + contracts_specialist_v5 | sorter 1 / extractor 0.9165 | 5 | 197528 |
+| 8 | qwen3.7-flash_sorter_v3+contracts_specialist_v6_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v3 + contracts_specialist_v6 | sorter 1 / extractor 0.8917 | 5 | 199716 |
+| 9 | qwen3.7-flash_sorter_v3+contracts_specialist_v7_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v3 + contracts_specialist_v7 | sorter 1 / extractor 0.6959 | 5 | 169746 |
+| 10 | qwen3.7-flash_sorter_v3+contracts_specialist_v8_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v3 + contracts_specialist_v8 | sorter 1 / extractor 0.6994 | 5 | 160698 |
+| 11 | qwen3.7-flash_sorter_v3+contracts_specialist_v8_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v3 + contracts_specialist_v8 | sorter 1 / extractor 0.8933 | 5 | 199217 |
+| 12 | qwen3.7-flash_sorter_v3_subtype | subtype_classification | qwen/qwen3.7-flash | sorter_v3 | — | 50 | 497113 |
+| 13 | qwen3.7-flash_sorter_v3_subtype | subtype_classification | qwen/qwen3.7-flash | sorter_v3 | — | 50 | 497207 |
+| 14 | qwen3.7-flash_sorter_v3_subtype | subtype_classification | qwen/qwen3.7-flash | sorter_v3 | — | 195 | 2345481 |
+| 15 | qwen3.7-flash_sorter_v3_subtype | subtype_classification | qwen/qwen3.7-flash | sorter_v3 | — | 195 | 2146666 |
+| 16 | qwen3.7-flash_sorter_v4_subtype | subtype_classification | qwen/qwen3.7-flash | sorter_v4 | — | 195 | 773083 |
+| 17 | qwen3.7-flash_sorter_v5+contracts_specialist_v10_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v5 + contracts_specialist_v10 | sorter 1 / extractor 0.8952 | 5 | 176883 |
+| 18 | qwen3.7-flash_sorter_v5+contracts_specialist_v11_chained | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v5 + contracts_specialist_v11 | sorter 1 / extractor 0.9060 | 5 | 178161 |
+| 19 | qwen3.7-flash_sorter_v5_subtype | subtype_classification | qwen/qwen3.7-flash | sorter_v5 | — | 509 | 5990357 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v2_extraction  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-09T20:39:28.310699+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v2 |
+| Git commit | `25eaddd` |
+| Rows | 10 |
+| Completed | 10 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| dataset_fingerprint | 19ead966edadf5cf02c8965dd261e0c4bf953f291ab73c91e3c6b97d62ec6028 |
+| n_samples | 10 |
+| sample_requested | 10 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 100000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| judge | ✗ |
+| manifest | data/manifests/extract_live10_v2.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 71840 | 39965 | 111805 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.6563 |
+| field_presence | 0.98 |
+| schema_valid | 1 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| effective_date | 0.8465 |
+| governing_law | 0.9443 |
+| key_obligations | 0.2663 |
+| parties | 0.5334 |
+| renewal_terms | 0.5781 |
+| term_length | 0.9441 |
+| termination_clauses | 0.2857 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.2663 |
+| parties | 0.5333 |
+| termination_clauses | 0.2857 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | document_41 | completed | 0.6296 | 1 | 1 | — | parties | — |
+| d2 | document_8 | completed | 0.5778 | 1 | 1 | — | effective_date | — |
+| d3 | document_2 | completed | 0.5433 | 0.8 | 1 | — | governing_law, parties | — |
+| d4 | document_18 | completed | 0.5788 | 1 | 1 | — | effective_date, parties, term_length | — |
+| d5 | document_16 | completed | 0.703 | 1 | 1 | — | effective_date, parties | — |
+| d6 | document_15 | completed | 0.767 | 1 | 1 | — | parties | — |
+| d7 | document_9 | completed | 0.6279 | 1 | 1 | — | — | — |
+| d8 | document_7 | completed | 0.6997 | 1 | 1 | — | parties, renewal_terms | — |
+| d9 | document_35 | completed | 0.644 | 1 | 1 | — | effective_date, parties | — |
+| d10 | document_6 | completed | 0.7917 | 1 | 1 | — | key_obligations, parties | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| effective_date | 1 | 0.6157 | 1 | 0.5899 | 0.5839 | 1 | 1 | 1 | 0.6751 | 1 | 0.8465 |
+| governing_law | — | 0.9769 | 0.8416 | 1 | 0.873 | 1 | 0.8764 | — | 0.9867 | 1 | 0.9443 |
+| key_obligations | 0.2222 | 0.2963 | 0.2083 | 0.1692 | 0.4878 | 0.1681 | 0.2632 | 0.0976 | 0.25 | 0.5 | 0.2663 |
+| parties | 0.6667 | 0.0 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.0 | 0.6667 | 0.6667 | 0.6667 | 0.5334 |
+| renewal_terms | — | — | 0.0 | — | — | — | — | 0.7342 | 1 | — | 0.5781 |
+| term_length | — | 1 | — | 0.7614 | 0.9034 | 1 | 1 | 1 | — | — | 0.9441 |
+| termination_clauses | — | — | — | 0.2857 | — | — | — | — | 0.2857 | — | 0.2857 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| key_obligations | 0.2222 | 0.2963 | 0.2083 | 0.1692 | 0.4878 | 0.1681 | 0.2632 | 0.0976 | 0.25 | 0.5 | 0.2663 |
+| parties | 0.6667 | 0.0 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.0 | 0.6667 | 0.6667 | 0.6667 | 0.5333 |
+| termination_clauses | — | — | — | 0.2857 | — | — | — | — | 0.2857 | — | 0.2857 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v3_extraction  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-09T20:51:26.683008+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v3 |
+| Git commit | `25eaddd` (dirty tree) |
+| Rows | 10 |
+| Completed | 10 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| dataset_fingerprint | 19ead966edadf5cf02c8965dd261e0c4bf953f291ab73c91e3c6b97d62ec6028 |
+| n_samples | 10 |
+| sample_requested | 10 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 100000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| judge | ✗ |
+| manifest | data/manifests/extract_live10_v3.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 73840 | 34733 | 108573 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.9128 |
+| field_presence | 0.98 |
+| schema_valid | 1 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 0.7144 |
+| parties | 1 |
+| renewal_terms | 0.6667 |
+| term_length | 0.9881 |
+| termination_clauses | 1 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.3242 |
+| parties | 0.6667 |
+| termination_clauses | 0.3095 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | document_41 | completed | 0.8333 | 1 | 1 | — | key_obligations | — |
+| d2 | document_8 | completed | 1 | 1 | 1 | — | — | — |
+| d3 | document_2 | completed | 0.7 | 0.8 | 1 | — | key_obligations | — |
+| d4 | document_18 | completed | 0.9742 | 1 | 1 | — | — | — |
+| d5 | document_16 | completed | 0.9636 | 1 | 1 | — | key_obligations | — |
+| d6 | document_15 | completed | 0.9818 | 1 | 1 | — | — | — |
+| d7 | document_9 | completed | 0.9 | 1 | 1 | — | key_obligations | — |
+| d8 | document_7 | completed | 0.9 | 1 | 1 | — | key_obligations | — |
+| d9 | document_35 | completed | 1 | 1 | 1 | — | — | — |
+| d10 | document_6 | completed | 0.875 | 1 | 1 | — | key_obligations | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | — | 1 | 1 | 1 | 1 | 1 | 1 | — | 1 | 1 | 1 |
+| key_obligations | 0.5 | 1 | 0.5 | 0.9167 | 0.8182 | 0.9091 | 0.5 | 0.5 | 1 | 0.5 | 0.7144 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | — | — | 0.0 | — | — | — | — | 1 | 1 | — | 0.6667 |
+| term_length | — | 1 | — | 0.9286 | 1 | 1 | 1 | 1 | — | — | 0.9881 |
+| termination_clauses | — | — | — | 1 | — | — | — | — | 1 | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| key_obligations | 0.25 | 0.6667 | 0.2069 | 0.2 | 0.4865 | 0.3333 | 0.24 | 0.1026 | 0.2564 | 0.5 | 0.3242 |
+| parties | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.6667 | 0.6667 |
+| termination_clauses | — | — | — | 0.2857 | — | — | — | — | 0.3333 | — | 0.3095 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v3_extraction  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-09T21:12:22.005966+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v3 |
+| Git commit | `25eaddd` (dirty tree) |
+| Rows | 10 |
+| Completed | 10 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| dataset_fingerprint | 19ead966edadf5cf02c8965dd261e0c4bf953f291ab73c91e3c6b97d62ec6028 |
+| n_samples | 10 |
+| sample_requested | 10 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 100000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| judge | ✗ |
+| manifest | data/manifests/extract_live10_v3b.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 73840 | 32722 | 106562 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.9173 |
+| field_presence | 0.98 |
+| schema_valid | 1 |
+| overall_verified_precision | 1 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 0.7311 |
+| parties | 1 |
+| renewal_terms | 0.6667 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.7311 |
+| parties | 1 |
+| termination_clauses | 1 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| key_obligations | 1 |
+| parties | 1 |
+| termination_clauses | 1 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| termination_clauses | 0.0 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | document_41 | completed | 0.8333 | 1 | 1 | — | key_obligations | — |
+| d2 | document_8 | completed | 1 | 1 | 1 | — | — | — |
+| d3 | document_2 | completed | 0.7333 | 0.8 | 1 | — | key_obligations | — |
+| d4 | document_18 | completed | 0.9861 | 1 | 1 | — | — | — |
+| d5 | document_16 | completed | 0.9636 | 1 | 1 | — | key_obligations | — |
+| d6 | document_15 | completed | 0.9818 | 1 | 1 | — | — | — |
+| d7 | document_9 | completed | 0.9 | 1 | 1 | — | key_obligations | — |
+| d8 | document_7 | completed | 0.9 | 1 | 1 | — | key_obligations | — |
+| d9 | document_35 | completed | 1 | 1 | 1 | — | — | — |
+| d10 | document_6 | completed | 0.875 | 1 | 1 | — | key_obligations | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | — | 1 | 1 | 1 | 1 | 1 | 1 | — | 1 | 1 | 1 |
+| key_obligations | 0.5 | 1 | 0.6667 | 0.9167 | 0.8182 | 0.9091 | 0.5 | 0.5 | 1 | 0.5 | 0.7311 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | — | — | 0.0 | — | — | — | — | 1 | 1 | — | 0.6667 |
+| term_length | — | 1 | — | 1 | 1 | 1 | 1 | 1 | — | — | 1 |
+| termination_clauses | — | — | — | 1 | — | — | — | — | 1 | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| key_obligations | 0.5 | 1 | 0.6667 | 0.9167 | 0.8182 | 0.9091 | 0.5 | 0.5 | 1 | 0.5 | 0.7311 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | — | — | — | 1 | — | — | — | — | 1 | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| key_obligations | 316 | 173 | 316 | 0 | 1 | 0.0 |
+| parties | 20 | 8 | 20 | 0 | 1 | 0.0 |
+| termination_clauses | 11 | 4 | 11 | 0 | 1 | 0.0 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v3_extraction  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-09T21:53:28.344141+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v3 |
+| Git commit | `25eaddd` (dirty tree) |
+| Rows | 10 |
+| Completed | 10 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | 19ead966edadf5cf02c8965dd261e0c4bf953f291ab73c91e3c6b97d62ec6028 |
+| n_samples | 10 |
+| sample_requested | 10 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 100000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| judge | ✗ |
+| manifest | data/manifests/extract_live10_v4.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 109783 | 28581 | 138364 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.7976 |
+| field_presence | 0.9333 |
+| schema_valid | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.7663 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 0.8299 |
+| governing_law | 0.6852 |
+| key_obligations | 0.7233 |
+| parties | 0.8 |
+| renewal_terms | 0.75 |
+| term_length | 0.787 |
+| termination_clauses | 0.5 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.7233 |
+| parties | 0.8 |
+| termination_clauses | 0.5 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| key_obligations | 1 |
+| parties | 1 |
+| termination_clauses | 0.75 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| termination_clauses | 0.0 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | document_41 | completed | 0.8661 | 1 | 1 | 0.8667 | — | — |
+| d2 | document_8 | completed | 1 | 1 | 1 | 1 | — | — |
+| d3 | document_2 | completed | 0.5598 | 0.8333 | 1 | 0.375 | — | — |
+| d4 | document_18 | completed | 0.8344 | 1 | 1 | 0.8 | effective_date, key_obligations | — |
+| d5 | document_16 | completed | 0.9307 | 1 | 1 | 0.8571 | effective_date | — |
+| d6 | document_15 | completed | 1 | 1 | 1 | 1 | — | — |
+| d7 | document_9 | completed | 0.7292 | 1 | 1 | 0.7143 | key_obligations | — |
+| d8 | document_7 | completed | 0.8286 | 1 | 1 | 0.8 | key_obligations | — |
+| d9 | document_35 | completed | 0.75 | 1 | 1 | 0.5 | key_obligations | — |
+| d10 | document_6 | completed | 0.4773 | 0.5 | 1 | 0.75 | key_obligations | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 0.5722 | 0.7273 | 1 | 1 | 0.0 | 1 | 1 | 0.8299 |
+| governing_law | 1 | — | 0.0 | 1 | 1 | 1 | 0.1667 | 1 | 1 | 0.0 | 0.6852 |
+| key_obligations | 0.9286 | 1 | 0.0625 | 0.6 | 0.8571 | 1 | 0.6667 | 0.8 | 0.5 | 0.8182 | 0.7233 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 0.0 | 1 | 0.0 | 1 | 0.8 |
+| renewal_terms | 1 | — | — | — | — | — | 1 | 1 | — | 0.0 | 0.75 |
+| term_length | 1 | — | 0.2963 | — | 1 | 1 | 1 | 1 | 1 | 0.0 | 0.787 |
+| termination_clauses | 0.0 | — | — | — | — | 1 | 1 | — | — | 0.0 | 0.5 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| key_obligations | 0.9286 | 1 | 0.0625 | 0.6 | 0.8571 | 1 | 0.6667 | 0.8 | 0.5 | 0.8182 | 0.7233 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 0.0 | 1 | 0.0 | 1 | 0.8 |
+| termination_clauses | 0.0 | — | — | — | — | 1 | 1 | — | — | 0.0 | 0.5 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| key_obligations | 316 | 167 | 316 | 0 | 1 | 0.0 |
+| parties | 20 | 10 | 20 | 0 | 1 | 0.0 |
+| termination_clauses | 10 | 5 | 10 | 0 | 0.75 | 0.25 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v3_extraction  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-09T22:01:06.299175+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v3 |
+| Git commit | `25eaddd` (dirty tree) |
+| Rows | 10 |
+| Completed | 10 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | 737c63e062627ccd6ef057f5e4dadd62da3241e1f4e16756550d657e6e33bfe2 |
+| n_samples | 10 |
+| sample_requested | 10 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 100000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| judge | ✗ |
+| manifest | data/manifests/extract_live10_v5.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 109783 | 28213 | 137996 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.7848 |
+| field_presence | 0.9167 |
+| schema_valid | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.768 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 0.7572 |
+| governing_law | 0.6852 |
+| key_obligations | 0.7181 |
+| parties | 0.8 |
+| renewal_terms | 0.75 |
+| term_length | 0.787 |
+| termination_clauses | 0.5 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.7181 |
+| parties | 0.8 |
+| termination_clauses | 0.5 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| key_obligations | 1 |
+| parties | 1 |
+| termination_clauses | 0.75 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| termination_clauses | 0.0 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | 0.8482 | 1 | 1 | 0.8 | key_obligations | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | 1 | 1 | 1 | 1 | — | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | 0.5598 | 0.8333 | 1 | 0.375 | — | — |
+| d4 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | 0.8344 | 1 | 1 | 0.8 | effective_date, key_obligations | — |
+| d5 | Loop Industries, Inc. - Marketing Agreement | completed | 0.8095 | 0.8333 | 1 | 0.8571 | — | — |
+| d6 | SCOUTCAMINC_05_12_2020-EX-10.22-SERVICES AGREEMENT | completed | 1 | 1 | 1 | 1 | — | — |
+| d7 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | 0.7292 | 1 | 1 | 0.7143 | key_obligations | — |
+| d8 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | 0.8286 | 1 | 1 | 0.8 | key_obligations | — |
+| d9 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | 0.75 | 1 | 1 | 0.5 | key_obligations | — |
+| d10 | PHREESIA,INC_05_28_2019-EX-10.18-STRATEGIC ALLIANCE AGREEMENT | completed | 0.4886 | 0.5 | 1 | 0.8333 | — | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 0.5721 | 0.0 | 1 | 1 | 0.0 | 1 | 1 | 0.7572 |
+| governing_law | 1 | — | 0.0 | 1 | 1 | 1 | 0.1667 | 1 | 1 | 0.0 | 0.6852 |
+| key_obligations | 0.7857 | 1 | 0.0625 | 0.6 | 0.8571 | 1 | 0.6667 | 0.8 | 0.5 | 0.9091 | 0.7181 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 0.0 | 1 | 0.0 | 1 | 0.8 |
+| renewal_terms | 1 | — | — | — | — | — | 1 | 1 | — | 0.0 | 0.75 |
+| term_length | 1 | — | 0.2963 | — | 1 | 1 | 1 | 1 | 1 | 0.0 | 0.787 |
+| termination_clauses | 0.0 | — | — | — | — | 1 | 1 | — | — | 0.0 | 0.5 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| key_obligations | 0.7857 | 1 | 0.0625 | 0.6 | 0.8571 | 1 | 0.6667 | 0.8 | 0.5 | 0.9091 | 0.7181 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 0.0 | 1 | 0.0 | 1 | 0.8 |
+| termination_clauses | 0.0 | — | — | — | — | 1 | 1 | — | — | 0.0 | 0.5 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| key_obligations | 279 | 150 | 279 | 0 | 1 | 0.0 |
+| parties | 20 | 10 | 20 | 0 | 1 | 0.0 |
+| termination_clauses | 10 | 5 | 10 | 0 | 0.75 | 0.25 |
+
+---
+
+## qwen3.7-flash_sorter_v1+contracts_specialist_v4_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-09T22:31:17.178312+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v1 · extractor: contracts_specialist_v4 |
+| Git commit | `25eaddd` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/chained_5.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 76347 | 6688 | 83035 | 0.0 | 0 |
+| extractor | 79026 | 36036 | 115062 | 0.0 | 0 |
+| total | 155373 | 42724 | 198097 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 0.6 |
+| confidence | 0.95 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8894 |
+| field_presence | 0.9667 |
+| overall_verified_precision | 1 |
+| category_presence | 0.925 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | distributor | ✗ | 0.95 | 0.875 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | other | ✗ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.6431 | 0.8333 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.989 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.94 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 0.0 | 1 | 1 | 0.75 |
+| key_obligations | 1 | 1 | 0.5625 | 0.9231 | 0.7 | 0.8371 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 0.2963 | 1 | — | 0.7654 |
+| termination_clauses | 0.0 | — | — | — | — | 0.0 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 1 | 1 | 0.5625 | 0.9231 | 0.7 | 0.8371 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 0.0 | — | — | — | — | 0.0 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| key_obligations | 193 | 134 | 193 | 0 | 1 | 0.0 |
+| parties | 10 | 6 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 15 | 0 | 15 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 4 | 0.8 |
+| Audit Rights | key_obligations | 3 | 3 | 1 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 1 | 0.5 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 2 | 2 | 1 |
+| Exclusivity | key_obligations | 4 | 4 | 1 |
+| Insurance | key_obligations | 3 | 3 | 1 |
+| Ip Ownership Assignment | key_obligations | 2 | 2 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 2 | 1 |
+| License Grant | key_obligations | 4 | 4 | 1 |
+| Liquidated Damages | key_obligations | 2 | 2 | 1 |
+| Minimum Commitment | key_obligations | 3 | 3 | 1 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 0 | 0.0 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 3 | 1 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 2 | 0.6667 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 3 | 1 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 2 | 1 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | distributor | endorsement | other |
+|---|---|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 | 0 | 0 |
+| development | 0 | 0 | **1** | 1 | 0 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | 0 | 1 |
+| other | 0 | 0 | 0 | 0 | 0 | 0 |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | distributor | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'DISTRIBUTION AND DEVELOPMENT AGREEMENT' and operates as a formal distribution contract. Evidence includes Section 2 granting exclusive distribut… |
+| d2 | contract | other | endorsement | 0.95 | ✓ | ✗ | The document is explicitly titled 'ENDORSEMENT' and functions as a contractual amendment to an existing insurance policy. It contains operative clauses modifying definitions, assi… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT' and contains operative clauses detailing joint responsibilities for clinical trials, regulatory filings, funding, gove… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and establishes a joint venture to create and operate a co-branded web portal ('Diet Center'). The operative clauses deta… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and establishes a joint partnership for product formulation, development, and commercialization between Capsugel and Ca… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Section 2.1: Qualigen hereby appoints Sekisui, and Sekisui accepts the appointment to act on an exclusive basis pursuant to the terms and conditions of this Agreement, as a distributor for the sale of the Products in th… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.98 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company), Insured(s) or Annuitant(s) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | Section: Transfer of Assets and Liabilities. All assets and related liabilities of Thrivent Life Insurance Company have been transferred to Thrivent Financial for Lutherans. That includes contracts of insurance, separat… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc., a Delaware corporation ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The Development Term means the period commencing on the Effective Date and ending on the later of (a) the latest of the Completion Dates of the Clinical Trials, and (b) the date on which all efforts in pursuit of Regula… |
+| d3 | termination_clauses | Section 2.3.3: If PB fails to complete a Clinical Trial Activity it is responsible for as outlined in an approved Timeline Remediation Plan, then SFJ has the right to withhold any quarterly fixed payments due to PB purs… |
+| d3 | governing_law | — |
+| d3 | key_obligations | Section 2.2.1: PB will be the sponsor of the Clinical Trials in the PB Territory. SFJ will be the sponsor of the Clinical Trials in the SFJ Territory. SFJ in the SFJ Territory, and PB in the PB Territory, will have all … |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Section 1.1: Women.com will name an area, in which eDiets content will be published (such area, the "Diet Center"). Links (presented as Diet Center logos) to the Diet Center will be located on three Women.com channels (… |
+| d4 | contract_value | $2,000,000 (Per Year)/$4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.98 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | Section 10.2 Termination for Breach: A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligentl… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Section 2.1 Governance Process Among the Parties: Both CARDAX and CAPSUGEL will agree upon a development plan, which shall be in writing and attached hereto as Exhibit A (the "Development Plan"), which shall describe va… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.85 |
+
+---
+
+## qwen3.7-flash_sorter_v2+contracts_specialist_v5_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-09T22:39:52.179065+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v2 · extractor: contracts_specialist_v5 |
+| Git commit | `25eaddd` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/chained_5_v2v5.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 77597 | 5351 | 82948 | 0.0 | 0 |
+| extractor | 79888 | 34692 | 114580 | 0.0 | 0 |
+| total | 157485 | 40043 | 197528 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 0.8 |
+| confidence | 0.94 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.9165 |
+| field_presence | 0.9667 |
+| overall_verified_precision | 1 |
+| category_presence | 0.925 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | distributor | ✗ | 0.9 | 1 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.6535 | 0.8333 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.989 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.94 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 0.0 | 1 | 1 | 0.75 |
+| key_obligations | 1 | 1 | 0.625 | 0.9231 | 0.7 | 0.8496 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 0.2963 | 1 | — | 0.7654 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 1 | 1 | 0.625 | 0.9231 | 0.7 | 0.8496 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| key_obligations | 194 | 128 | 194 | 0 | 1 | 0.0 |
+| parties | 10 | 6 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 10 | 1 | 10 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 4 | 0.8 |
+| Audit Rights | key_obligations | 3 | 3 | 1 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 1 | 0.5 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 2 | 2 | 1 |
+| Exclusivity | key_obligations | 4 | 4 | 1 |
+| Insurance | key_obligations | 3 | 3 | 1 |
+| Ip Ownership Assignment | key_obligations | 2 | 2 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 2 | 1 |
+| License Grant | key_obligations | 4 | 4 | 1 |
+| Liquidated Damages | key_obligations | 2 | 2 | 1 |
+| Minimum Commitment | key_obligations | 3 | 3 | 1 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 0 | 0.0 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 3 | 1 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 2 | 0.6667 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 3 | 1 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 2 | 1 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | distributor | endorsement |
+|---|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 | 0 |
+| development | 0 | 0 | **1** | 1 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | distributor | development | 0.9 | ✓ | ✗ | The document is explicitly titled a 'Distribution and Development Agreement' and contains standard operative clauses for an exclusive distribution relationship, including appointm… |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a formal rider/amendment to an existing insurance contract. It details the transfer of obligations from a dissolve… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Co-Development Agreement' and its operative provisions govern a joint pharmaceutical development program, including detailed clinical trial prot… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses detail the creation of a co-branded online center, mutual trademark licensing, joint promotiona… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT'. Its operative clauses establish a joint governance structure (Joint Project Team), outline mutual responsibilities for… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Section 2.1: Qualigen hereby appoints Sekisui, and Sekisui accepts the appointment to act on an exclusive basis pursuant to the terms and conditions of this Agreement, as a distributor for the sale of the Products in th… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.98 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company), the Insured(s) or the Annuitant(s) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | Section: Introductory Paragraph. All assets and related liabilities of Thrivent Life Insurance Company have been transferred to Thrivent Financial for Lutherans. That includes contracts of insurance, separate accounts, … |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc., a Delaware corporation ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The Development Term means the period commencing on the Effective Date and ending on the later of (a) the latest of the Completion Dates of the Clinical Trials, and (b) the date on which all efforts in pursuit of Regula… |
+| d3 | termination_clauses | Section 2.3.3: If PB fails to complete a Clinical Trial Activity it is responsible for as outlined in an approved Timeline Remediation Plan, then SFJ has the right to withhold any quarterly fixed payments due to PB purs… |
+| d3 | governing_law | — |
+| d3 | key_obligations | Section 2.2.1: PB will be the sponsor of the Clinical Trials in the PB Territory. SFJ will be the sponsor of the Clinical Trials in the SFJ Territory. SFJ in the SFJ Territory, and PB in the PB Territory, will have all … |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Section 1.1: Women.com will name an area, in which eDiets content will be published (such area, the "Diet Center"). Links (presented as Diet Center logos) to the Diet Center will be located on three Women.com channels (… |
+| d4 | contract_value | $2,000,000 (Per Year)/$4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.98 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ( "CAPSUGEL" ), Cardax, Inc. ( "CARDAX" ) |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | Section 10.2 Termination for Breach: A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligentl… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Section 2.1 Governance Process Among the Parties: Both CARDAX and CAPSUGEL will agree upon a development plan, which shall be in writing and attached hereto as Exhibit A (the "Development Plan"), which shall describe va… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.85 |
+
+---
+
+## qwen3.7-flash_sorter_v3+contracts_specialist_v6_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T03:48:54.826791+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 · extractor: contracts_specialist_v6 |
+| Git commit | `17883de` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/chained_5_v3v6.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 78237 | 5994 | 84231 | 0.0 | 0 |
+| extractor | 81203 | 34282 | 115485 | 0.0 | 0 |
+| total | 159440 | 40276 | 199716 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.93 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8917 |
+| field_presence | 0.9333 |
+| overall_verified_precision | 1 |
+| category_presence | 0.8721 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.85 | 1 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.5625 | 0.6667 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.956 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.94 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 0.0 | 1 | 1 | 0.75 |
+| key_obligations | 1 | 1 | 0.375 | 0.6923 | 0.7 | 0.7535 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 0.0 | 1 | — | 0.6667 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 1 | 1 | 0.375 | 0.6923 | 0.7 | 0.7535 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| key_obligations | 200 | 100 | 200 | 0 | 1 | 0.0 |
+| parties | 10 | 6 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| termination_clauses | 8 | 1 | 8 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 4 | 0.8 |
+| Audit Rights | key_obligations | 3 | 3 | 1 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 1 | 0.5 |
+| Competitive Restriction Exception | key_obligations | 2 | 1 | 0.5 |
+| Covenant Not To Sue | key_obligations | 2 | 2 | 1 |
+| Exclusivity | key_obligations | 4 | 3 | 0.75 |
+| Insurance | key_obligations | 3 | 2 | 0.6667 |
+| Ip Ownership Assignment | key_obligations | 2 | 2 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 2 | 1 |
+| License Grant | key_obligations | 4 | 4 | 1 |
+| Liquidated Damages | key_obligations | 2 | 2 | 1 |
+| Minimum Commitment | key_obligations | 3 | 1 | 0.3333 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 0 | 0.0 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 3 | 1 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 3 | 1 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 3 | 1 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 2 | 1 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.85 | ✓ | ✓ | The document is explicitly titled 'Distribution and Development Agreement' and contains both distribution appointments and development obligations. However, per the development pr… |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a contractual rider/amendment to an existing insurance agreement, updating party names, definitions, and administr… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT' and its operative clauses center on a joint pharmaceutical development program, including clinical trial protocols, de… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses establish a jointly branded online destination ('Diet Center'), grant reciprocal trademark lice… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and structurally establishes a joint R&D and commercialization partnership. Key operative clauses include the creation … |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Section 2.1: Qualigen hereby appoints Sekisui, and Sekisui accepts the appointment to act on an exclusive basis pursuant to the terms and conditions of this Agreement, as a distributor for the sale of the Products in th… |
+| d1 | contract_value | up to $6,200,000 of financing |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.98 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company), the Society |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | Section: Introductory Paragraph. All assets and related liabilities of Thrivent Life Insurance Company have been transferred to Thrivent Financial for Lutherans. That includes contracts of insurance, separate accounts, … |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc. ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | — |
+| d3 | termination_clauses | — |
+| d3 | governing_law | — |
+| d3 | key_obligations | Section 2.2.1: PB will be the sponsor of the Clinical Trials in the PB Territory. SFJ will be the sponsor of the Clinical Trials in the SFJ Territory., Section 2.2.2: Each Party will conduct the Phase 3 Trial within its… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.65 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Section 1.1: Women.com will name an area, in which eDiets content will be published (such area, the "Diet Center"). Links (presented as Diet Center logos) to the Diet Center will be located on three Women.com channels (… |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 1 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | Section 10.2 Termination for Breach: A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligentl… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Section 2.1 Governance Process Among the Parties: Both CARDAX and CAPSUGEL will agree upon a development plan, which shall be in writing and attached hereto as Exhibit A (the "Development Plan"), which shall describe va… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.85 |
+
+---
+
+## qwen3.7-flash_sorter_v3+contracts_specialist_v7_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T03:55:06.685913+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 · extractor: contracts_specialist_v7 |
+| Git commit | `17883de` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/chained_5_v3v7.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 78237 | 7079 | 85316 | 0.0 | 0 |
+| extractor | 58597 | 25833 | 84430 | 0.0 | 0 |
+| total | 136834 | 32912 | 169746 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.93 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.6959 |
+| field_presence | 0.7333 |
+| overall_verified_precision | 0.8 |
+| category_presence | 0.6971 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.85 | 0.0 | 0.0 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.5833 | 0.6667 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.956 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.94 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | — | 1 | 1 | 1 | 1 | 1 |
+| effective_date | — | 1 | 1 | 1 | 1 | 1 |
+| governing_law | — | — | 0.0 | 1 | 1 | 0.6667 |
+| key_obligations | — | 1 | 0.5 | 0.6923 | 0.7 | 0.7231 |
+| parties | — | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | — | — | — | 1 | — | 1 |
+| term_length | — | — | 0.0 | 1 | — | 0.5 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | — | 1 | 0.5 | 0.6923 | 0.7 | 0.7231 |
+| parties | — | 1 | 1 | 1 | 1 | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 1 | 0 | 1 | 0 | 1 | 0.0 |
+| document_name | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| effective_date | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| governing_law | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| key_obligations | 142 | 59 | 142 | 0 | 1 | 0.0 |
+| parties | 7 | 4 | 7 | 0 | 1 | 0.0 |
+| renewal_terms | 1 | 1 | 1 | 0 | 1 | 0.0 |
+| term_length | 1 | 1 | 1 | 0 | 1 | 0.0 |
+| termination_clauses | 5 | 0 | 5 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 4 | 3 | 0.75 |
+| Audit Rights | key_obligations | 2 | 2 | 1 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 1 | 0.5 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 1 | 1 | 1 |
+| Exclusivity | key_obligations | 3 | 3 | 1 |
+| Insurance | key_obligations | 2 | 1 | 0.5 |
+| Ip Ownership Assignment | key_obligations | 1 | 1 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 1 | 1 | 1 |
+| License Grant | key_obligations | 3 | 3 | 1 |
+| Liquidated Damages | key_obligations | 1 | 1 | 1 |
+| Minimum Commitment | key_obligations | 2 | 1 | 0.5 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 0 | 0 | — |
+| No-Solicit Of Employees | key_obligations | 1 | 0 | 0.0 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 2 | 2 | 1 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 2 | 1 | 0.5 |
+| Rofr/Rofo/Rofn | key_obligations | 2 | 2 | 1 |
+| Termination For Convenience | termination_clauses | 0 | 0 | — |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 2 | 1 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.85 | ✓ | ✓ | — |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and operates as a formal amendment rider attached to an existing insurance contract, transferring obligations from Thrivent Life In… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT' and its operative clauses center on pharmaceutical product development, featuring a Development Plan, Joint Steering C… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses establish a mutually branded web center ('Diet Center'), grant reciprocal licenses for content … |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and establishes a joint R&D and commercialization framework between Capsugel and Cardax. Key operative provisions creat… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | Section: MAINTENANCE OF SOLVENCY. This provision applies only to benefits provided through the General Account. If the solvency of the Society becomes impaired, you may be required to make an extra payment. The Board of… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc., a Delaware corporation, with a principal place of business at 1 Great Valley Parkway, Suite 30, Malvern, Pennsylvania 19355, USA ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | — |
+| d3 | termination_clauses | — |
+| d3 | governing_law | — |
+| d3 | key_obligations | Section 1.1.2: "Affiliate" means, with respect to a party, a business entity under common control with, or controlling or controlled by, such party, with "control" meaning direct or indirect ownership of 50% or more of … |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.45 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Section 1.1: Women.com will name an area, in which eDiets content will be published (such area, the "Diet Center"). Links (presented as Diet Center logos) to the Diet Center will be located on three Women.com channels (… |
+| d4 | contract_value | $2,000,000 (Per Year)/$4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | Section 10.2 Termination for Breach . A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligent… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Section 2.1 Governance Process Among the Parties . Both CARDAX and CAPSUGEL will agree upon a development plan, which shall be in writing and attached hereto as Exhibit A (the "Development Plan"), which shall describe v… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.85 |
+
+---
+
+## qwen3.7-flash_sorter_v3+contracts_specialist_v8_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T04:00:34.618449+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 · extractor: contracts_specialist_v8 |
+| Git commit | `17883de` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/chained_5_v3v8.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 78237 | 5852 | 84089 | 0.0 | 0 |
+| extractor | 58101 | 18508 | 76609 | 0.0 | 0 |
+| total | 136338 | 24360 | 160698 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.93 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.6994 |
+| field_presence | 0.7667 |
+| overall_verified_precision | 0.8 |
+| category_presence | 0.6846 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.85 | 0.0 | 0.0 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.581 | 0.8333 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.956 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.96 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | — | 1 | 1 | 1 | 1 | 1 |
+| effective_date | — | 1 | 1 | 1 | 1 | 1 |
+| governing_law | — | — | 0.0 | 1 | 1 | 0.6667 |
+| key_obligations | — | 1 | 0.375 | 0.6923 | 0.8 | 0.7168 |
+| parties | — | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | — | — | — | 1 | — | 1 |
+| term_length | — | — | 0.1111 | 1 | — | 0.5555 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | — | 1 | 0.375 | 0.6923 | 0.8 | 0.7168 |
+| parties | — | 1 | 1 | 1 | 1 | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 1 | 0 | 1 | 0 | 1 | 0.0 |
+| document_name | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| effective_date | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| governing_law | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| key_obligations | 142 | 58 | 142 | 0 | 1 | 0.0 |
+| parties | 8 | 5 | 8 | 0 | 1 | 0.0 |
+| renewal_terms | 1 | 1 | 1 | 0 | 1 | 0.0 |
+| term_length | 2 | 1 | 2 | 0 | 1 | 0.0 |
+| termination_clauses | 7 | 0 | 7 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 4 | 3 | 0.75 |
+| Audit Rights | key_obligations | 2 | 2 | 1 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 1 | 0.5 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 1 | 1 | 1 |
+| Exclusivity | key_obligations | 3 | 3 | 1 |
+| Insurance | key_obligations | 2 | 1 | 0.5 |
+| Ip Ownership Assignment | key_obligations | 1 | 1 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 1 | 1 | 1 |
+| License Grant | key_obligations | 3 | 3 | 1 |
+| Liquidated Damages | key_obligations | 1 | 1 | 1 |
+| Minimum Commitment | key_obligations | 2 | 0 | 0.0 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 0 | 0 | — |
+| No-Solicit Of Employees | key_obligations | 1 | 0 | 0.0 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 2 | 2 | 1 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 2 | 1 | 0.5 |
+| Rofr/Rofo/Rofn | key_obligations | 2 | 2 | 1 |
+| Termination For Convenience | termination_clauses | 0 | 0 | — |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 2 | 1 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.85 | ✓ | ✓ | — |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a rider/amendment to an existing insurance contract, updating party names, definitions, and administrative clauses… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Co-Development Agreement' and its operative clauses center on pharmaceutical product development machinery, including a defined Development Plan… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses establish a co-branded web center, mandate mutual trademark licensing for promotional use, outl… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and establishes a joint R&D partnership between Capsugel and Cardax. Operative clauses detail a Development Plan, a Joi… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company), the Insured(s) or the Annuitant(s) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | Section: Transfer of Obligations. All assets and related liabilities of Thrivent Life Insurance Company have been transferred to Thrivent Financial for Lutherans. That includes contracts of insurance, separate accounts,… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc., a Delaware corporation ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The "Term" has the meaning ascribed to such term in Section 14.1. |
+| d3 | termination_clauses | Section 14.2.1: In the event that either Party fails to complete the Clinical Trials in their respective Territory according to the Timeline and this failure is not cured as set forth in Section 14.2.1, the other Party … |
+| d3 | governing_law | — |
+| d3 | key_obligations | Section 2.2.1: PB will be the sponsor of the Clinical Trials in the PB Territory. SFJ will be the sponsor of the Clinical Trials in the SFJ Territory. SFJ in the SFJ Territory, and PB in the PB Territory, will have all … |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Section 1.1: Women.com will name an area, in which eDiets content will be published (such area, the "Diet Center"). Links (presented as Diet Center logos) to the Diet Center will be located on three Women.com channels (… |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | Section 10.2 Termination for Breach: A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligentl… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Section 2.1 Governance Process Among the Parties: Both CARDAX and CAPSUGEL will agree upon a development plan, which shall be in writing and attached hereto as Exhibit A (the "Development Plan")... The activities perfor… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.85 |
+
+---
+
+## qwen3.7-flash_sorter_v3+contracts_specialist_v8_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T04:03:40.942099+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 · extractor: contracts_specialist_v8 |
+| Git commit | `17883de` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 32768 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 78237 | 6754 | 84991 | 0.0 | 0 |
+| extractor | 80848 | 33378 | 114226 | 0.0 | 0 |
+| total | 159085 | 40132 | 199217 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.93 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8933 |
+| field_presence | 0.9667 |
+| overall_verified_precision | 1 |
+| category_presence | 0.8596 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.85 | 1 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.5706 | 0.8333 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.956 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.94 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 0.0 | 1 | 1 | 0.75 |
+| key_obligations | 1 | 1 | 0.3125 | 0.6923 | 0.7 | 0.741 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 0.1111 | 1 | — | 0.7037 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 1 | 1 | 0.3125 | 0.6923 | 0.7 | 0.741 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| key_obligations | 187 | 96 | 187 | 0 | 1 | 0.0 |
+| parties | 10 | 7 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 2 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 12 | 1 | 12 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 4 | 0.8 |
+| Audit Rights | key_obligations | 3 | 3 | 1 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 1 | 0.5 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 2 | 2 | 1 |
+| Exclusivity | key_obligations | 4 | 3 | 0.75 |
+| Insurance | key_obligations | 3 | 2 | 0.6667 |
+| Ip Ownership Assignment | key_obligations | 2 | 2 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 2 | 1 |
+| License Grant | key_obligations | 4 | 4 | 1 |
+| Liquidated Damages | key_obligations | 2 | 1 | 0.5 |
+| Minimum Commitment | key_obligations | 3 | 1 | 0.3333 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 0 | 0.0 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 3 | 1 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 2 | 0.6667 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 3 | 1 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 2 | 1 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.85 | ✓ | ✓ | The document is explicitly titled a 'Distribution and Development Agreement' and contains substantial distribution machinery (exclusive appointment, supply terms, pricing, and ord… |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a rider/amendment to an existing insurance contract. It details a corporate dissolution, transfers obligations to … |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Co-Development Agreement' and its operative clauses center on pharmaceutical product development machinery, including a defined Development Plan… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses establish a mutually branded online center, govern the exchange of content and trademark licens… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and establishes a joint framework for product formulation, R&D, and commercialization. Operative clauses detail a forma… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC and its Affiliates ("Sekisui"), Qualigen, Inc. and its Affiliates ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Section 2.1: Qualigen hereby appoints Sekisui, and Sekisui accepts the appointment to act on an exclusive basis pursuant to the terms and conditions of this Agreement, as a distributor for the sale of the Products in th… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.95 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company), the Society |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | Section: Introductory Paragraph. All assets and related liabilities of Thrivent Life Insurance Company have been transferred to Thrivent Financial for Lutherans. That includes contracts of insurance, separate accounts, … |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc., a Delaware corporation ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The "Term" has the meaning ascribed to such term in Section 14.1. |
+| d3 | termination_clauses | Section 14.2.1: In the event that either Party fails to complete the Clinical Trials in their respective Territory according to the Timeline and this failure is not cured as set forth in Section 14.2.1, the other Party … |
+| d3 | governing_law | — |
+| d3 | key_obligations | Section 2.2.1: PB will be the sponsor of the Clinical Trials in the PB Territory. SFJ will be the sponsor of the Clinical Trials in the SFJ Territory., Section 2.2.2: Each Party will conduct the Phase 3 Trial within its… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Section 1.1: Women.com will name an area, in which eDiets content will be published (such area, the "Diet Center"). Links (presented as Diet Center logos) to the Diet Center will be located on three Women.com channels (… |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | Section 10.2 Termination for Breach: A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligentl… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Section 2.1 Governance Process: Both CARDAX and CAPSUGEL will agree upon a development plan, which shall be in writing and attached hereto as Exhibit A (the "Development Plan"), which shall describe various parameters i… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.85 |
+
+---
+
+## qwen3.7-flash_sorter_v3_subtype  (subtype_classification)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T04:24:09.859126+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 |
+| Git commit | `9d5090c` (dirty tree) |
+| Rows | 50 |
+| Completed | 50 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_folder |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | 7a25eaa89c96b95329a833089b2168fdeadec003309d1694150bdcc5af4c91e4 |
+| n_samples | 50 |
+| sample_requested | 0 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 4096 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/subtype_50_v3.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | — | — | — | — | — |
+
+### Scores
+
+**Scores — sorter**
+
+| Field | Score |
+|---|---|
+| confidence | 0.945 |
+| confusion_matrix | affiliate: {'joint_venture': 1} · co_branding: {'co_branding': 4} · collaboration: {'collaboration': 3} · consulting: {'consulting': 2} · development: {'development': 3, 'license': 1} · distributor: {'distributor': 3} · endorsement: {'endorsement': 2} · franchise: {'non_compete_no_solicit': 1, 'franchise': 2} · hosting: {'hosting': 1} · ip: {'ip': 2} · joint_venture: {'joint_venture': 1, 'other': 2} · license: {'license': 6} · maintenance: {'license': 2, 'maintenance': 2} · marketing: {'marketing': 2} · reseller: {'reseller': 2, 'distributor': 1} · service: {'service': 1} · sponsorship: {'sponsorship': 2} · strategic_alliance: {'strategic_alliance': 1} · supply: {'supply': 1} · transportation: {'transportation': 2} |
+| exact_match | 0.96 |
+| failure_insights | mode_counts: {'family_confusion': 6, 'function_over_form': 2} · n_failed: 8 · failures: [{'filename': 'SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The core operative clause (Section 2) grants a non-exclusive, non-transferable license to use software and documentation. While it includes maintenance services (Section 10), the primary legal relationship is the licensing of intellectual property rights. This fits the 'license' subgroup perfectly."}, {'filename': 'PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3', 'expected': 'franchise', 'predicted': 'non_compete_no_solicit', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1) establish confidentiality obligations, and Section 2 establishes covenants not to compete, non-solicitation of customers, and non-inducement of employees. While it references a Franchise Agreement, this specific document is the restrictive covenant agreement between the franchisee and its personnel, fitting the 'non_compete_no_solicit' subtype perfectly."}, {'filename': 'LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'joint_venture', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint venturers only as to those activities that they jointly undertake for the AMR market...'. The agreement details joint development of products (Section 3.1), joint ownership of IP developed during the project, coordinated marketing and sales rights, and profit-sharing mechanisms based on net/gross proceeds. While it contains elements of development and license, the core legal structure described is a collaboration/joint venture for specific market activities, distinct from a simple affiliate referral program or pure development contract. Confidence is capped at 0.85 due to the title mismatch ('Affiliate') creating ambiguity between an affiliate agreement and a joint venture/collaboration agreement."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and functions as a formal contract between Cardlytics, Inc. and Bank of America. The operative clauses primarily establish the grant of a nonexclusive, worldwide license to use software (Section 2.0), define intellectual property ownership, and set forth terms for maintenance and support. While it includes provisions for customization (development) and maintenance (service), the core legal relationship is the licensing of existing IP/software, fitting the 'license' subtype best among the available options."}, {'filename': 'LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT', 'expected': 'reseller', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell AEIS's stored value cards ('Cards') to clients. Section 2 grants exclusivity for resale in a specific marketplace. The agreement details inventory management, ordering processes, payment terms for purchasing inventory, and marketing rights fees associated with the distribution/resale relationship. This fits the definition of a Distributor Agreement perfectly."}, {'filename': 'LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement', 'expected': 'development', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled a 'Development Agreement' but the operative clauses (Section 2) grant an exclusive license to use Intellectual Property ('Licensed IP') and Marks. The core obligation of LEA is to operate a business using this licensed IP, paying royalties based on sales. While there are development components (creating educational materials), the primary legal mechanism is the licensing of T&B's IP (name, likeness, trademarks, copyrights) to LEA for commercial exploitation. This fits the definition of a License Agreement. It is not a pure development agreement because the focus is on exploiting existing IP rather than creating new IP from scratch under a development plan, nor is it a distributor agreement as LEA is operating a branded business rather than just reselling goods."}, {'filename': 'QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'EXHIBIT 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to facilitate the joint filing of Schedule 13G with the SEC pursuant to Rule 13d-1(k) under the Securities Exchange Act of 1934. While it contains agreement language ('The undersigned hereby agree'), its substantive function is strictly tied to regulatory compliance and securities law filings, making it a compliance filing rather than a standalone commercial contract."}, {'filename': 'SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'EXHIBIT A JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its primary function is to facilitate the joint filing of a Schedule 13G (a regulatory compliance document) with the SEC. While it contains agreement language between parties, its substantive form and purpose are strictly tied to regulatory compliance filings rather than a standalone commercial contract."}] |
+| per_subtype | affiliate: {'accuracy': 0.0, 'correct': 0, 'total': 1} · co_branding: {'accuracy': 1.0, 'correct': 4, 'total': 4} · collaboration: {'accuracy': 1.0, 'correct': 3, 'total': 3} · consulting: {'accuracy': 1.0, 'correct': 2, 'total': 2} · development: {'accuracy': 0.75, 'correct': 3, 'total': 4} · distributor: {'accuracy': 1.0, 'correct': 3, 'total': 3} · endorsement: {'accuracy': 1.0, 'correct': 2, 'total': 2} · franchise: {'accuracy': 0.6667, 'correct': 2, 'total': 3} · hosting: {'accuracy': 1.0, 'correct': 1, 'total': 1} · ip: {'accuracy': 1.0, 'correct': 2, 'total': 2} · joint_venture: {'accuracy': 0.3333, 'correct': 1, 'total': 3} · license: {'accuracy': 1.0, 'correct': 6, 'total': 6} · maintenance: {'accuracy': 0.5, 'correct': 2, 'total': 4} · marketing: {'accuracy': 1.0, 'correct': 2, 'total': 2} · reseller: {'accuracy': 0.6667, 'correct': 2, 'total': 3} · service: {'accuracy': 1.0, 'correct': 1, 'total': 1} · sponsorship: {'accuracy': 1.0, 'correct': 2, 'total': 2} · strategic_alliance: {'accuracy': 1.0, 'correct': 1, 'total': 1} · supply: {'accuracy': 1.0, 'correct': 1, 'total': 1} · transportation: {'accuracy': 1.0, 'correct': 2, 'total': 2} |
+| subtype_accuracy | 0.84 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | expected subtype | doc_type ok | subtype ok | equiv ok | confidence | failure mode | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| d1 | EcoScienceSolutionsInc_20180406_8-K_EX-10.1_11135398_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | — | 0.95 | — | — |
+| d2 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | development | ✓ | ✓ | — | 0.95 | — | — |
+| d3 | PenntexMidstreamPartnersLp_20150416_S-1A_EX-10.4_9042833_EX-10.4_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | — | 0.95 | — | — |
+| d4 | BravatekSolutionsInc_20170418_8-K_EX-10.1_10205739_EX-10.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | — | 0.95 | — | — |
+| d5 | SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGRE… | completed | contract | license | maintenance | ✓ | ✗ | — | 0.95 | family_confusion | — |
+| d6 | PHREESIA,INC_05_28_2019-EX-10.18-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | — | 0.95 | — | — |
+| d7 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | — | 0.95 | — | — |
+| d8 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | endorsement | ✓ | ✓ | — | 0.95 | — | — |
+| d9 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | contract | reseller | reseller | ✓ | ✓ | — | 0.95 | — | — |
+| d10 | GALACTICOMMTECHNOLOGIESINC_11_07_1997-EX-10.46-WEB HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | — | 0.95 | — | — |
+| d11 | PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3 | completed | contract | non_compete_no_solicit | franchise | ✓ | ✗ | — | 0.95 | family_confusion | — |
+| d12 | GWG HOLDINGS, INC. - ORDERLY MARKETING AGREEMENT | completed | contract | marketing | marketing | ✓ | ✓ | — | 0.95 | — | — |
+| d13 | SLOVAKWIRELESSFINANCECOBV_03_28_2001-EX-4.(B)(II).3-Maintenance and support contract for … | completed | contract | maintenance | maintenance | ✓ | ✓ | — | 0.95 | — | — |
+| d14 | LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement | completed | contract | joint_venture | affiliate | ✓ | ✗ | — | 0.85 | family_confusion | — |
+| d15 | SCOUTCAMINC_05_12_2020-EX-10.22-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | — | 0.95 | — | — |
+| d16 | Loop Industries, Inc. - Marketing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | — | 0.95 | — | — |
+| d17 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1 | completed | contract | license | maintenance | ✓ | ✗ | — | 0.95 | family_confusion | — |
+| d18 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | — | 0.95 | — | — |
+| d19 | BUFFALOWILDWINGSINC_06_05_1998-EX-10.3-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | — | 1 | — | — |
+| d20 | FulucaiProductionsLtd_20131223_10-Q_EX-10.9_8368347_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | — | 0.95 | — | — |
+| d21 | DRIVENDELIVERIES,INC_05_22_2020-EX-10.4-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | — | 0.95 | — | — |
+| d22 | ARMSTRONGFLOORING,INC_01_07_2019-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | — | 0.95 | — | — |
+| d23 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_Amendment | completed | contract | distributor | distributor | ✓ | ✓ | — | 0.95 | — | — |
+| d24 | VERSOTECHNOLOGIESINC_12_28_2007-EX-99.3-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | — | 0.95 | — | — |
+| d25 | NOVOINTEGRATEDSCIENCES,INC_12_23_2019-EX-10.1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | — | 0.95 | — | — |
+| d26 | KENTUCKYUTILITIESCO_03_25_2003-EX-10.65-TRANSPORTATION AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | — | 0.95 | — | — |
+| d27 | EmbarkComInc_19991008_S-1A_EX-10.10_6487661_EX-10.10_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | — | 0.95 | — | — |
+| d28 | HPILHOLDING_01_07_2015-EX-99.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | — | 0.95 | — | — |
+| d29 | LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT | completed | contract | distributor | reseller | ✓ | ✗ | — | 0.95 | family_confusion | — |
+| d30 | GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.6_11951677_EX-10.6_License Agreement | completed | contract | license | license | ✓ | ✓ | — | 0.95 | — | — |
+| d31 | EuromediaHoldingsCorp_20070215_10SB12G_EX-10.B(01)_525118_EX-10.B(01)_Content License Agr… | completed | contract | license | license | ✓ | ✓ | — | 0.95 | — | — |
+| d32 | PelicanDeliversInc_20200211_S-1_EX-10.3_11975895_EX-10.3_Development Agreement1 | completed | contract | development | development | ✓ | ✓ | — | 0.95 | — | — |
+| d33 | ImpresseCorp_20000322_S-1A_EX-10.11_5199234_EX-10.11_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | — | 0.95 | — | — |
+| d34 | IntegrityMediaInc_20010329_10-K405_EX-10.17_2373875_EX-10.17_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | — | 0.85 | — | — |
+| d35 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | — | 0.95 | — | — |
+| d36 | CERES,INC_01_25_2012-EX-10.20-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | — | 0.95 | — | — |
+| d37 | LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement | completed | contract | license | development | ✓ | ✗ | — | 0.95 | family_confusion | — |
+| d38 | GRIDIRONBIONUTRIENTS,INC_02_05_2020-EX-10.3-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | — | 0.95 | — | — |
+| d39 | IPAYMENT,INC_05_14_2007-EX-10.1-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | — | 0.95 | — | — |
+| d40 | GOOSEHEADINSURANCE,INC_04_02_2018-EX-10.6-Franchise Agreement | completed | contract | franchise | franchise | ✓ | ✓ | — | 0.95 | — | — |
+| d41 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | development | ✓ | ✓ | — | 0.85 | — | — |
+| d42 | QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | — | 0.95 | function_over_form | — |
+| d43 | GridironBionutrientsInc_20171206_8-K_EX-10.2_10972556_EX-10.2_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | — | 0.95 | — | — |
+| d44 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement1 | completed | contract | license | license | ✓ | ✓ | — | 0.95 | — | — |
+| d45 | MidwestEnergyEmissionsCorp_20080604_8-K_EX-10.2_3093976_EX-10.2_Content License Agreement | completed | contract | license | license | ✓ | ✓ | — | 0.95 | — | — |
+| d46 | AzulSa_20170303_F-1A_EX-10.3_9943903_EX-10.3_Maintenance Agreement2 | completed | contract | maintenance | maintenance | ✓ | ✓ | — | 0.95 | — | — |
+| d47 | SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | — | 0.95 | function_over_form | — |
+| d48 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | — | 0.95 | — | — |
+| d49 | InnerscopeHearingTechnologiesInc_20181109_8-K_EX-10.6_11419704_EX-10.6_Distributor Agreem… | completed | contract | distributor | distributor | ✓ | ✓ | — | 0.95 | — | — |
+| d50 | LEGACYTECHNOLOGYHOLDINGS,INC_12_09_2005-EX-10.2-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | — | 0.95 | — | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | affiliate | co_branding | collaboration | consulting | development | distributor | endorsement | franchise | hosting | ip | joint_venture | license | maintenance | marketing | non_compete_no_solicit | other | reseller | service | sponsorship | strategic_alliance | supply | transportation |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| affiliate | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| co_branding | 0 | **4** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| collaboration | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| consulting | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| development | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| franchise | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| hosting | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ip | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| joint_venture | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| license | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **6** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| maintenance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| marketing | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| non_compete_no_solicit | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| other | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| reseller | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 |
+| service | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 | 0 | 0 |
+| sponsorship | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 |
+| strategic_alliance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 |
+| supply | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 |
+| transportation | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses defining the Sponsor's payment obligation ($250,000) in exchange for specific promotional … |
+| d2 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT'. The operative clauses (Article 2) detail the conduct of Clinical Trials, adherence to a Development Plan and Timeline… |
+| d3 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'GAS TRANSPORTATION AGREEMENT' and contains operative clauses where one party (Transporter) agrees to provide transportation services for natural… |
+| d4 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and contains operative clauses defining the Reseller's right to solicit orders, purchase products at a discount (Registered … |
+| d5 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The core operative clause (Section 2) grants a non-exclusive, non-transferable license to use softw… |
+| d6 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT'. The operative clauses establish a partnership where Allscripts resells and sublicenses Phreesia's software servic… |
+| d7 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSING AGREEMENT'. Section 2.3 and Section 5.3 contain operative clauses granting the licensee (plan_b) the right to produce, market,… |
+| d8 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as an amendment rider to an existing insurance/annuity contract (Thrivent Life Insurance Company). It amends definiti… |
+| d9 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'WALABOT-HOME RESELLER AGREEMENT'. The operative clauses establish a relationship where Vayyar Imaging Ltd. appoints Inde Living Holdings, Inc. a… |
+| d10 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'WEB HOSTING AGREEMENT'. The operative clauses define the provision of server access and bandwidth usage ('per access' pricing), technical suppor… |
+| d11 | contract | non_compete_no_solicit | franchise | 0.95 | ✓ | ✗ | The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1) establish confidentiality obligations, and Section 2 … |
+| d12 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Orderly Marketing Agreement' and functions as a formal contract between GWG Holdings and Trust Advisors. The operative clauses (Section 1) detai… |
+| d13 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Maintenance and support contract' and contains operative clauses detailing standard support services (hotline, remote support), incident respons… |
+| d14 | contract | joint_venture | affiliate | 0.85 | ✓ | ✗ | The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint … |
+| d15 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and establishes an engagement where one party provides services (acting as CEO) to another for compensation. While it includ… |
+| d16 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MARKETING AGREEMENT'. The operative clauses (Article 2) establish a framework where Loop retains exclusive rights to enter into sales contracts … |
+| d17 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and functions as a formal contract between Cardlytics, Inc. and Bank of America. The … |
+| d18 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT'. The operative clauses establish a joint governance structure (Joint Project Team), define specific development respons… |
+| d19 | contract | franchise | franchise | 1 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of a license to use the 'Buffalo Wild Wings' marks a… |
+| d20 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT DISTRIBUTION AND LICENSE AGREEMENT'. The core operative clause (Section 1) is a 'Grant of License and Rights', where the Producer grants… |
+| d21 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and defines the relationship between Driven Deliveries, Inc. and TruckThat LLC as an independent contractor providing 'con… |
+| d22 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT'. The operative clauses (Sections 2-6) detail the assignment of patents and trademarks, and the grant of license… |
+| d23 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'FIRST AMENDMENT TO DISTRIBUTOR AGREEMENT'. The operative clauses amend the underlying agreement by adjusting royalty advances, defining royalty … |
+| d24 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses where the Seller transfers, sells, assigns, and conveys all right, title, and in… |
+| d25 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and defines a 'Joint Venture' entity ('Company') formed by the pooling of resources between NVOS and HGF for a specific… |
+| d26 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'GAS TRANSPORTATION AGREEMENT' and contains operative clauses defining the transportation of natural gas from a 'Transporter' to a 'Shipper'. It … |
+| d27 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses (Section 2) detail the creation of 'Co-Branded Pages' featuring both parties' brand features, mutu… |
+| d28 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and the operative clauses (Section 2 and 3) define the relationship as a cooperative effort to expand projects, with obli… |
+| d29 | contract | distributor | reseller | 0.95 | ✓ | ✗ | The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell AEIS's stor… |
+| d30 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'MEDIA LICENSE AGREEMENT'. The operative clauses (Section 2) grant the Village Media Company a right and license to exploit PFHOF Works (intellec… |
+| d31 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'VIDEO-ON-DEMAND CONTENT LICENSE AGREEMENT'. Section 1 grants a non-exclusive license to distribute and exhibit content. The operative clauses fo… |
+| d32 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE DEVELOPMENT AGREEMENT' and functions as a Statement of Work (Appendix A) to that agreement. The operative clauses detail the creation o… |
+| d33 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and the operative clauses (Sections 2, 4) establish a joint online presence ('Co-Branded Site') where both parties contri… |
+| d34 | contract | co_branding | co_branding | 0.85 | ✓ | ✓ | The document is explicitly titled 'PRODUCT DEVELOPMENT AND CO-BRANDING AGREEMENT'. It involves two parties (Integrity and Time Life) jointly creating a product series ('Songs 4 Wo… |
+| d35 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and defines the relationship between a Company and a Consultant. Section 3 outlines 'Consulting Services' involving busine… |
+| d36 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and establishes a joint research program between CERES, Inc. and the Institute of Grassland and Environmental Research … |
+| d37 | contract | license | development | 0.95 | ✓ | ✗ | The document is explicitly titled a 'Development Agreement' but the operative clauses (Section 2) grant an exclusive license to use Intellectual Property ('Licensed IP') and Marks… |
+| d38 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and contains operative clauses where one party agrees to sell hemp biomass and the other agrees to purchase it. The terms focu… |
+| d39 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT'. The operative clauses (Section 2.5) define the core obligation as the Bank sponsoring the ISO for Visa/MasterCard regist… |
+| d40 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'Goosehead Insurance Agency, LLC Franchise Agreement' and contains standard franchise operative clauses, including the grant of franchise rights,… |
+| d41 | contract | development | development | 0.85 | ✓ | ✓ | The document is titled 'Distribution and Development Agreement'. While it contains significant distribution machinery (exclusive distributor appointment, purchase orders, pricing/… |
+| d42 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'EXHIBIT 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to facilitate the joint filing of Schedule 13G with the SEC pursuant to … |
+| d43 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT ADDENDUM I' and states it is enforceable under the terms of an 'Endorsement Agreement'. The content defines 'Licensed Prod… |
+| d44 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'WIRELESS CONTENT LICENSE AGREEMENT' and contains standard IP license operative clauses, including a 'Grant of Rights' (Section 1) where Fox gran… |
+| d45 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSE AGREEMENT'. Section 1 ('LICENSE') contains the primary operative clause where the Content Provider grants the Company rights to … |
+| d46 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Amendment n° 01 to the Global Maintenance Agreement' and its recitals state it amends a 'Global Maintenance Agreement (GMA)' for the purpose of … |
+| d47 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly titled 'EXHIBIT A JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its prima… |
+| d48 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses establish a joint venture of sorts where eDiets provides content and Women.com provides the platfo… |
+| d49 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT'. The operative clauses primarily establish the Distributor's rights and obligations to promote, distribute, and… |
+| d50 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT'. The operative clauses (Section 2 Appointment, Section 4 Prices and Terms, Section 9 Purchase Requirements) est… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+
+### Subtype classification accuracy by class
+
+| Subtype | Correct | Correct (equiv) | Total | Accuracy | Accuracy (equiv) |
+|---|---|---|---|---|---|
+| affiliate | 0 | — | 1 | 0.0 | — |
+| co_branding | 4 | — | 4 | 1 | — |
+| collaboration | 3 | — | 3 | 1 | — |
+| consulting | 2 | — | 2 | 1 | — |
+| development | 3 | — | 4 | 0.75 | — |
+| distributor | 3 | — | 3 | 1 | — |
+| endorsement | 2 | — | 2 | 1 | — |
+| franchise | 2 | — | 3 | 0.6667 | — |
+| hosting | 1 | — | 1 | 1 | — |
+| ip | 2 | — | 2 | 1 | — |
+| joint_venture | 1 | — | 3 | 0.3333 | — |
+| license | 6 | — | 6 | 1 | — |
+| maintenance | 2 | — | 4 | 0.5 | — |
+| marketing | 2 | — | 2 | 1 | — |
+| reseller | 2 | — | 3 | 0.6667 | — |
+| service | 1 | — | 1 | 1 | — |
+| sponsorship | 2 | — | 2 | 1 | — |
+| strategic_alliance | 1 | — | 1 | 1 | — |
+| supply | 1 | — | 1 | 1 | — |
+| transportation | 2 | — | 2 | 1 | — |
+
+### Failed classification insights
+
+The model's own reasoning on every failed row — the evidence it cited for the wrong family, and the failure mode that explains WHY it missed:
+
+| Failure mode | Count |
+|---|---|
+| family_confusion | 6 |
+| function_over_form | 2 |
+
+**1. SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The core operative clause (Section 2) grants a non-exclusive, non-transferable license to use software and documentation. While it includes maintenance services (Section 10), the primary legal relationship is the licensing of intellectual property rights. This fits the 'license' subgroup perfectly.
+
+**2. PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3** — expected `franchise` vs predicted `non_compete_no_solicit` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1) establish confidentiality obligations, and Section 2 establishes covenants not to compete, non-solicitation of customers, and non-inducement of employees. While it references a Franchise Agreement, this specific document is the restrictive covenant agreement between the franchisee and its personnel, fitting the 'non_compete_no_solicit' subtype perfectly.
+
+**3. LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement** — expected `affiliate` vs predicted `joint_venture` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint venturers only as to those activities that they jointly undertake for the AMR market...'. The agreement details joint development of products (Section 3.1), joint ownership of IP developed during the project, coordinated marketing and sales rights, and profit-sharing mechanisms based on net/gross proceeds. While it contains elements of development and license, the core legal structure described is a collaboration/joint venture for specific market activities, distinct from a simple affiliate referral program or pure development contract. Confidence is capped at 0.85 due to the title mismatch ('Affiliate') creating ambiguity between an affiliate agreement and a joint venture/collaboration agreement.
+
+**4. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and functions as a formal contract between Cardlytics, Inc. and Bank of America. The operative clauses primarily establish the grant of a nonexclusive, worldwide license to use software (Section 2.0), define intellectual property ownership, and set forth terms for maintenance and support. While it includes provisions for customization (development) and maintenance (service), the core legal relationship is the licensing of existing IP/software, fitting the 'license' subtype best among the available options.
+
+**5. LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT** — expected `reseller` vs predicted `distributor` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell AEIS's stored value cards ('Cards') to clients. Section 2 grants exclusivity for resale in a specific marketplace. The agreement details inventory management, ordering processes, payment terms for purchasing inventory, and marketing rights fees associated with the distribution/resale relationship. This fits the definition of a Distributor Agreement perfectly.
+
+**6. LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement** — expected `development` vs predicted `license` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled a 'Development Agreement' but the operative clauses (Section 2) grant an exclusive license to use Intellectual Property ('Licensed IP') and Marks. The core obligation of LEA is to operate a business using this licensed IP, paying royalties based on sales. While there are development components (creating educational materials), the primary legal mechanism is the licensing of T&B's IP (name, likeness, trademarks, copyrights) to LEA for commercial exploitation. This fits the definition of a License Agreement. It is not a pure development agreement because the focus is on exploiting existing IP rather than creating new IP from scratch under a development plan, nor is it a distributor agreement as LEA is operating a branded business rather than just reselling goods.
+
+**7. QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'EXHIBIT 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to facilitate the joint filing of Schedule 13G with the SEC pursuant to Rule 13d-1(k) under the Securities Exchange Act of 1934. While it contains agreement language ('The undersigned hereby agree'), its substantive function is strictly tied to regulatory compliance and securities law filings, making it a compliance filing rather than a standalone commercial contract.
+
+**8. SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly titled 'EXHIBIT A JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its primary function is to facilitate the joint filing of a Schedule 13G (a regulatory compliance document) with the SEC. While it contains agreement language between parties, its substantive form and purpose are strictly tied to regulatory compliance filings rather than a standalone commercial contract.
+
+---
+
+## qwen3.7-flash_sorter_v3_subtype  (subtype_classification)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T04:33:31.547973+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 |
+| Git commit | `9d5090c` (dirty tree) |
+| Rows | 50 |
+| Completed | 50 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_folder |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | 7a25eaa89c96b95329a833089b2168fdeadec003309d1694150bdcc5af4c91e4 |
+| n_samples | 50 |
+| sample_requested | 0 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 4096 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/subtype_50_v3_equiv.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | — | — | — | — | — |
+
+### Scores
+
+**Scores — sorter**
+
+| Field | Score |
+|---|---|
+| confidence | 0.947 |
+| confusion_matrix | affiliate: {'joint_venture': 1} · co_branding: {'co_branding': 4} · collaboration: {'collaboration': 3} · consulting: {'consulting': 2} · development: {'development': 3, 'license': 1} · distributor: {'distributor': 3} · endorsement: {'endorsement': 2} · franchise: {'non_compete_no_solicit': 1, 'franchise': 2} · hosting: {'hosting': 1} · ip: {'ip': 2} · joint_venture: {'joint_venture': 1, 'other': 2} · license: {'license': 6} · maintenance: {'license': 2, 'maintenance': 2} · marketing: {'marketing': 2} · reseller: {'reseller': 2, 'distributor': 1} · service: {'service': 1} · sponsorship: {'sponsorship': 2} · strategic_alliance: {'strategic_alliance': 1} · supply: {'supply': 1} · transportation: {'transportation': 2} |
+| equiv_recovered | license, joint_venture, license, distributor, license |
+| exact_match | 0.96 |
+| failure_insights | mode_counts: {'equivalent_family': 5, 'family_confusion': 1, 'function_over_form': 2} · n_failed: 8 · failures: [{'filename': 'SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. Section 2 contains the operative 'GRANT OF LICENSE' clause, granting Sparkling a non-exclusive, non-transferable license to use Garman's software. While it includes maintenance and support services (Section 10), the primary legal relationship is the licensing of intellectual property rights. The presence of source code escrow and IP indemnity further supports the classification as an IP/License agreement rather than a pure service or maintenance contract."}, {'filename': 'PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3', 'expected': 'franchise', 'predicted': 'non_compete_no_solicit', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1 and Section 2) establish obligations of confidentiality ('Confidential Information') and restrictive covenants ('Covenants Not to Compete', non-solicitation of customers/employees). While it is an appendix within a franchise context, the substantive legal instrument being classified is the NDA/Non-Compete agreement itself."}, {'filename': 'LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'joint_venture', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint venturers only as to those activities that they jointly undertake for the AMR market...'. The agreement details joint development of products (Section 3.1), joint ownership of IP developed during the project, shared marketing rights, and profit-sharing mechanisms (Section 3.3). While it contains elements of development and license, the core legal structure established is a joint venture for specific market activities, fitting the 'joint_venture' subgroup best."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Software License, Customization and Maintenance Agreement'. The operative clauses (Section 2.0) grant a nonexclusive, worldwide license to use the software. While it includes customization (development) and maintenance services, the primary legal mechanism is the licensing of intellectual property rights. The customization provisions are ancillary to the licensed product's deployment and do not constitute a standalone development agreement where the primary deliverable is new IP creation for the client. Therefore, it fits best under the 'license' subgroup."}, {'filename': 'LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT', 'expected': 'reseller', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell stored value cards provided by AEIS. Section 2 grants exclusivity for resale in a specific marketplace. Sections 3-6 detail inventory management, ordering, forecasting, and payment terms typical of a distribution/reseller relationship where the buyer takes title or assumes risk for inventory to resell to end clients. It does not fit other subgroups like license (no IP grant), manufacturing (no production), or service (core obligation is resale of goods/cards)."}, {'filename': 'LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement', 'expected': 'development', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled a 'Development Agreement' but the operative clauses (Section 2) grant an exclusive license to use Intellectual Property ('Licensed IP') to conduct a business. The core consideration is royalty payments for the use of this IP. While it contains development and marketing elements, the primary legal mechanism is the licensing of IP rights from T&B to LEA. It does not fit 'development' as the primary obligation isn't creating new IP for a fee, but rather leveraging existing IP via license. It is not a distributor agreement because LEA is operating a branded business using the licensor's IP, not just reselling goods. Therefore, 'license' is the most accurate substantive classification."}, {'filename': 'QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'EXHIBIT 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to facilitate the joint filing of Schedule 13G with the SEC pursuant to Rule 13d-1(k) under the Securities Exchange Act of 1934. While it contains agreement language ('The undersigned hereby agree'), its substantive function is strictly tied to a regulatory compliance filing (SEC submission), making 'compliance_filing' the most accurate classification over 'corporate_record' or general 'correspondence'. It does not fit the standard contract subgroups as it is a procedural mechanism for securities law compliance rather than a commercial transaction."}, {'filename': 'SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'EXHIBIT A JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its primary function is to facilitate the joint filing of a Schedule 13G (a regulatory compliance document) with the SEC. While it contains agreement language between parties, its substantive form and purpose are strictly tied to regulatory compliance filings rather than a standalone commercial contract."}] |
+| per_subtype | affiliate: {'accuracy': 0.0, 'accuracy_equiv': 1.0, 'correct': 0, 'equiv': 1, 'total': 1} · co_branding: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 4, 'equiv': 4, 'total': 4} · collaboration: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 3, 'equiv': 3, 'total': 3} · consulting: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 2, 'total': 2} · development: {'accuracy': 0.75, 'accuracy_equiv': 1.0, 'correct': 3, 'equiv': 4, 'total': 4} · distributor: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 3, 'equiv': 3, 'total': 3} · endorsement: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 2, 'total': 2} · franchise: {'accuracy': 0.6667, 'accuracy_equiv': 0.6667, 'correct': 2, 'equiv': 2, 'total': 3} · hosting: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 1, 'equiv': 1, 'total': 1} · ip: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 2, 'total': 2} · joint_venture: {'accuracy': 0.3333, 'accuracy_equiv': 0.3333, 'correct': 1, 'equiv': 1, 'total': 3} · license: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 6, 'equiv': 6, 'total': 6} · maintenance: {'accuracy': 0.5, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 4, 'total': 4} · marketing: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 2, 'total': 2} · reseller: {'accuracy': 0.6667, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 3, 'total': 3} · service: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 1, 'equiv': 1, 'total': 1} · sponsorship: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 2, 'total': 2} · strategic_alliance: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 1, 'equiv': 1, 'total': 1} · supply: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 1, 'equiv': 1, 'total': 1} · transportation: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 2, 'total': 2} |
+| subtype_accuracy | 0.84 |
+| subtype_accuracy_equiv | 0.94 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | expected subtype | doc_type ok | subtype ok | equiv ok | confidence | failure mode | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| d1 | EcoScienceSolutionsInc_20180406_8-K_EX-10.1_11135398_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d2 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d3 | PenntexMidstreamPartnersLp_20150416_S-1A_EX-10.4_9042833_EX-10.4_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d4 | BravatekSolutionsInc_20170418_8-K_EX-10.1_10205739_EX-10.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d5 | SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGRE… | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d6 | PHREESIA,INC_05_28_2019-EX-10.18-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d7 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d8 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d9 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d10 | GALACTICOMMTECHNOLOGIESINC_11_07_1997-EX-10.46-WEB HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d11 | PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3 | completed | contract | non_compete_no_solicit | franchise | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d12 | GWG HOLDINGS, INC. - ORDERLY MARKETING AGREEMENT | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d13 | SLOVAKWIRELESSFINANCECOBV_03_28_2001-EX-4.(B)(II).3-Maintenance and support contract for … | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d14 | LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement | completed | contract | joint_venture | affiliate | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d15 | SCOUTCAMINC_05_12_2020-EX-10.22-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d16 | Loop Industries, Inc. - Marketing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d17 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d18 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d19 | BUFFALOWILDWINGSINC_06_05_1998-EX-10.3-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 1 | — | — |
+| d20 | FulucaiProductionsLtd_20131223_10-Q_EX-10.9_8368347_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d21 | DRIVENDELIVERIES,INC_05_22_2020-EX-10.4-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d22 | ARMSTRONGFLOORING,INC_01_07_2019-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d23 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_Amendment | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d24 | VERSOTECHNOLOGIESINC_12_28_2007-EX-99.3-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d25 | NOVOINTEGRATEDSCIENCES,INC_12_23_2019-EX-10.1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d26 | KENTUCKYUTILITIESCO_03_25_2003-EX-10.65-TRANSPORTATION AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d27 | EmbarkComInc_19991008_S-1A_EX-10.10_6487661_EX-10.10_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d28 | HPILHOLDING_01_07_2015-EX-99.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d29 | LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT | completed | contract | distributor | reseller | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d30 | GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.6_11951677_EX-10.6_License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d31 | EuromediaHoldingsCorp_20070215_10SB12G_EX-10.B(01)_525118_EX-10.B(01)_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d32 | PelicanDeliversInc_20200211_S-1_EX-10.3_11975895_EX-10.3_Development Agreement1 | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d33 | ImpresseCorp_20000322_S-1A_EX-10.11_5199234_EX-10.11_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d34 | IntegrityMediaInc_20010329_10-K405_EX-10.17_2373875_EX-10.17_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d35 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d36 | CERES,INC_01_25_2012-EX-10.20-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d37 | LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement | completed | contract | license | development | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d38 | GRIDIRONBIONUTRIENTS,INC_02_05_2020-EX-10.3-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d39 | IPAYMENT,INC_05_14_2007-EX-10.1-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d40 | GOOSEHEADINSURANCE,INC_04_02_2018-EX-10.6-Franchise Agreement | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d41 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d42 | QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d43 | GridironBionutrientsInc_20171206_8-K_EX-10.2_10972556_EX-10.2_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d44 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement1 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d45 | MidwestEnergyEmissionsCorp_20080604_8-K_EX-10.2_3093976_EX-10.2_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d46 | AzulSa_20170303_F-1A_EX-10.3_9943903_EX-10.3_Maintenance Agreement2 | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d47 | SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d48 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d49 | InnerscopeHearingTechnologiesInc_20181109_8-K_EX-10.6_11419704_EX-10.6_Distributor Agreem… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d50 | LEGACYTECHNOLOGYHOLDINGS,INC_12_09_2005-EX-10.2-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | affiliate | co_branding | collaboration | consulting | development | distributor | endorsement | franchise | hosting | ip | joint_venture | license | maintenance | marketing | non_compete_no_solicit | other | reseller | service | sponsorship | strategic_alliance | supply | transportation |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| affiliate | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| co_branding | 0 | **4** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| collaboration | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| consulting | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| development | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| franchise | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| hosting | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ip | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| joint_venture | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| license | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **6** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| maintenance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| marketing | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| non_compete_no_solicit | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| other | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| reseller | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 | 0 | 0 |
+| service | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 | 0 | 0 |
+| sponsorship | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** | 0 | 0 | 0 |
+| strategic_alliance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 | 0 |
+| supply | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** | 0 |
+| transportation | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses defining the Sponsor's payment obligation ($250,000) in exchange for specific promotional … |
+| d2 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT'. The operative clauses detail the joint conduct of clinical trials, a 'Development Plan', 'Development Costs', and a '… |
+| d3 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'GAS TRANSPORTATION AGREEMENT' and contains operative clauses where one party ('Transporter') agrees to provide transportation services for natur… |
+| d4 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and contains operative clauses defining the Reseller's right to solicit orders, purchase products at a discount (Registered … |
+| d5 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. Section 2 contains the operative 'GRANT OF LICENSE' clause, granting Sparkling a non-exclusive, non… |
+| d6 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT'. The operative clauses establish a comprehensive partnership where Allscripts resells and sublicenses Phreesia's s… |
+| d7 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSING AGREEMENT'. Section 2.3 and Section 5.3 contain operative clauses granting the licensee (plan_b) the right to produce, market,… |
+| d8 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as an amendment rider to an existing insurance/annuity contract (Thrivent Life Insurance Company). It amends definiti… |
+| d9 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'WALABOT-HOME RESELLER AGREEMENT'. The operative clauses establish a relationship where Vayyar Imaging Ltd. appoints Inde Living Holdings, Inc. a… |
+| d10 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'WEB HOSTING AGREEMENT'. The operative clauses define the provision of server access and technical support ('correct any technical problems (Serv… |
+| d11 | contract | non_compete_no_solicit | franchise | 0.95 | ✓ | ✗ | The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1 and Section 2) establish obligations of confidentialit… |
+| d12 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Orderly Marketing Agreement' and functions as a formal contract between GWG Holdings and Trust Advisors. The operative clauses (Section 1) estab… |
+| d13 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Maintenance and support contract' and contains operative clauses detailing standard service levels (hotline, remote support), incident response … |
+| d14 | contract | joint_venture | affiliate | 0.95 | ✓ | ✗ | The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint … |
+| d15 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and functions as an executive employment contract where the Company retains Maimon to provide services as CEO. While it cont… |
+| d16 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MARKETING AGREEMENT'. The operative clauses (Article 2) establish a framework where Loop retains exclusive rights to enter into sales contracts … |
+| d17 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License, Customization and Maintenance Agreement'. The operative clauses (Section 2.0) grant a nonexclusive, worldwide license to use t… |
+| d18 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT'. The operative clauses establish a joint venture-like structure for product development and commercialization, featurin… |
+| d19 | contract | franchise | franchise | 1 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of a license to use the 'Buffalo Wild Wings' marks a… |
+| d20 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT DISTRIBUTION AND LICENSE AGREEMENT'. The core operative clause (Section 1) is a 'Grant of License and Rights', where the Producer grants… |
+| d21 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and defines the relationship between Driven Deliveries, Inc. and TruckThat LLC as an independent contractor providing 'con… |
+| d22 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT'. The operative clauses (Sections 2-6) detail the assignment of patents and trademarks, and the grant of license… |
+| d23 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'FIRST AMENDMENT TO DISTRIBUTOR AGREEMENT'. The operative clauses amend the underlying 'Distributor Agreement' by adjusting royalty definitions, … |
+| d24 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses where the Seller transfers, sells, assigns, and conveys all right, title, and in… |
+| d25 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and defines a 'Joint Venture' entity ('Company') where parties pool resources for a specific project. The operative cla… |
+| d26 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'GAS TRANSPORTATION AGREEMENT' and contains operative clauses defining the transport of natural gas from a 'Transporter' to a 'Shipper'. It detai… |
+| d27 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and contains operative clauses defining 'Co-Branded Pages', mutual licensing of brand features/marks (Snap Marks and Spon… |
+| d28 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and the operative clauses (Section 2 and 3) define the relationship as a cooperative effort to expand projects, with obli… |
+| d29 | contract | distributor | reseller | 0.95 | ✓ | ✗ | The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell stored valu… |
+| d30 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'MEDIA LICENSE AGREEMENT'. Section 2.1 contains the operative clause 'PFHOF hereby grants to the Village Media Company a worldwide... right and l… |
+| d31 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'VIDEO-ON-DEMAND CONTENT LICENSE AGREEMENT'. Section 1 grants a non-exclusive license to distribute and exhibit content. The operative clauses fo… |
+| d32 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE DEVELOPMENT AGREEMENT' and functions as a Statement of Work (Appendix A) to that agreement. The operative clauses detail the creation o… |
+| d33 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses (Sections 2 and 4) establish a joint online presence ('Co-Branded Site') where both parties' brand… |
+| d34 | contract | co_branding | co_branding | 0.85 | ✓ | ✓ | The document is explicitly titled 'PRODUCT DEVELOPMENT AND CO-BRANDING AGREEMENT'. It contains significant operative clauses for both product development (joint creation of repert… |
+| d35 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and defines the parties as a 'Company' and a 'Consultant'. Section 3 outlines 'Consulting Services' involving business dev… |
+| d36 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' between CERES, Inc. and the Institute of Grassland and Environmental Research (IGER). The operative clauses establish a… |
+| d37 | contract | license | development | 0.95 | ✓ | ✗ | The document is explicitly titled a 'Development Agreement' but the operative clauses (Section 2) grant an exclusive license to use Intellectual Property ('Licensed IP') to conduc… |
+| d38 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and contains operative clauses where one party agrees to sell hemp biomass and the other agrees to purchase it. The terms focu… |
+| d39 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT'. The operative clauses (Section 2.5) detail the core obligation of the Bank to sponsor the ISO with Visa and MasterCard a… |
+| d40 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'Goosehead Insurance Agency, LLC Franchise Agreement' and contains standard franchise operative clauses, including the grant of franchise rights,… |
+| d41 | contract | development | development | 0.85 | ✓ | ✓ | The document is titled 'Distribution and Development Agreement'. While it contains significant distribution machinery (exclusive distributor appointment, purchase orders, pricing/… |
+| d42 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'EXHIBIT 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to facilitate the joint filing of Schedule 13G with the SEC pursuant to … |
+| d43 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT ADDENDUM I' and states it is enforceable under the terms of an 'Endorsement Agreement'. The content defines 'Licensed Prod… |
+| d44 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'WIRELESS CONTENT LICENSE AGREEMENT' and functions as a formal contract between Fox (Licensor) and Sorrent, Inc. (Licensee). The operative clause… |
+| d45 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSE AGREEMENT'. Section 1 ('LICENSE') contains the primary operative clause where the Content Provider grants the Company rights to … |
+| d46 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Amendment n° 01 to the Global Maintenance Agreement' and its recitals confirm it amends a 'Global Maintenance Agreement (GMA)' for the purpose o… |
+| d47 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly titled 'EXHIBIT A JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its prima… |
+| d48 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses establish a joint venture of sorts where eDiets provides content and Women.com provides the platfo… |
+| d49 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT'. The operative clauses primarily establish the Distributor's rights and obligations to promote, distribute, and… |
+| d50 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT'. The operative clauses (Section 2 Appointment, Section 4 Prices and Terms, Section 9 Purchase Requirements) est… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+
+### Subtype classification accuracy by class
+
+| Subtype | Correct | Correct (equiv) | Total | Accuracy | Accuracy (equiv) |
+|---|---|---|---|---|---|
+| affiliate | 0 | 1 | 1 | 0.0 | 1 |
+| co_branding | 4 | 4 | 4 | 1 | 1 |
+| collaboration | 3 | 3 | 3 | 1 | 1 |
+| consulting | 2 | 2 | 2 | 1 | 1 |
+| development | 3 | 4 | 4 | 0.75 | 1 |
+| distributor | 3 | 3 | 3 | 1 | 1 |
+| endorsement | 2 | 2 | 2 | 1 | 1 |
+| franchise | 2 | 2 | 3 | 0.6667 | 0.6667 |
+| hosting | 1 | 1 | 1 | 1 | 1 |
+| ip | 2 | 2 | 2 | 1 | 1 |
+| joint_venture | 1 | 1 | 3 | 0.3333 | 0.3333 |
+| license | 6 | 6 | 6 | 1 | 1 |
+| maintenance | 2 | 4 | 4 | 0.5 | 1 |
+| marketing | 2 | 2 | 2 | 1 | 1 |
+| reseller | 2 | 3 | 3 | 0.6667 | 1 |
+| service | 1 | 1 | 1 | 1 | 1 |
+| sponsorship | 2 | 2 | 2 | 1 | 1 |
+| strategic_alliance | 1 | 1 | 1 | 1 | 1 |
+| supply | 1 | 1 | 1 | 1 | 1 |
+| transportation | 2 | 2 | 2 | 1 | 1 |
+
+### Failed classification insights
+
+The model's own reasoning on every failed row — the evidence it cited for the wrong family, and the failure mode that explains WHY it missed:
+
+| Failure mode | Count |
+|---|---|
+| equivalent_family | 5 |
+| family_confusion | 1 |
+| function_over_form | 2 |
+
+**1. SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. Section 2 contains the operative 'GRANT OF LICENSE' clause, granting Sparkling a non-exclusive, non-transferable license to use Garman's software. While it includes maintenance and support services (Section 10), the primary legal relationship is the licensing of intellectual property rights. The presence of source code escrow and IP indemnity further supports the classification as an IP/License agreement rather than a pure service or maintenance contract.
+
+**2. PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3** — expected `franchise` vs predicted `non_compete_no_solicit` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1 and Section 2) establish obligations of confidentiality ('Confidential Information') and restrictive covenants ('Covenants Not to Compete', non-solicitation of customers/employees). While it is an appendix within a franchise context, the substantive legal instrument being classified is the NDA/Non-Compete agreement itself.
+
+**3. LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement** — expected `affiliate` vs predicted `joint_venture` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint venturers only as to those activities that they jointly undertake for the AMR market...'. The agreement details joint development of products (Section 3.1), joint ownership of IP developed during the project, shared marketing rights, and profit-sharing mechanisms (Section 3.3). While it contains elements of development and license, the core legal structure established is a joint venture for specific market activities, fitting the 'joint_venture' subgroup best.
+
+**4. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Software License, Customization and Maintenance Agreement'. The operative clauses (Section 2.0) grant a nonexclusive, worldwide license to use the software. While it includes customization (development) and maintenance services, the primary legal mechanism is the licensing of intellectual property rights. The customization provisions are ancillary to the licensed product's deployment and do not constitute a standalone development agreement where the primary deliverable is new IP creation for the client. Therefore, it fits best under the 'license' subgroup.
+
+**5. LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT** — expected `reseller` vs predicted `distributor` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell stored value cards provided by AEIS. Section 2 grants exclusivity for resale in a specific marketplace. Sections 3-6 detail inventory management, ordering, forecasting, and payment terms typical of a distribution/reseller relationship where the buyer takes title or assumes risk for inventory to resell to end clients. It does not fit other subgroups like license (no IP grant), manufacturing (no production), or service (core obligation is resale of goods/cards).
+
+**6. LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement** — expected `development` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled a 'Development Agreement' but the operative clauses (Section 2) grant an exclusive license to use Intellectual Property ('Licensed IP') to conduct a business. The core consideration is royalty payments for the use of this IP. While it contains development and marketing elements, the primary legal mechanism is the licensing of IP rights from T&B to LEA. It does not fit 'development' as the primary obligation isn't creating new IP for a fee, but rather leveraging existing IP via license. It is not a distributor agreement because LEA is operating a branded business using the licensor's IP, not just reselling goods. Therefore, 'license' is the most accurate substantive classification.
+
+**7. QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'EXHIBIT 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to facilitate the joint filing of Schedule 13G with the SEC pursuant to Rule 13d-1(k) under the Securities Exchange Act of 1934. While it contains agreement language ('The undersigned hereby agree'), its substantive function is strictly tied to a regulatory compliance filing (SEC submission), making 'compliance_filing' the most accurate classification over 'corporate_record' or general 'correspondence'. It does not fit the standard contract subgroups as it is a procedural mechanism for securities law compliance rather than a commercial transaction.
+
+**8. SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly titled 'EXHIBIT A JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its primary function is to facilitate the joint filing of a Schedule 13G (a regulatory compliance document) with the SEC. While it contains agreement language between parties, its substantive form and purpose are strictly tied to regulatory compliance filings rather than a standalone commercial contract.
+
+---
+
+## qwen3.7-flash_sorter_v3_subtype  (subtype_classification)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T04:51:06.347511+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 |
+| Git commit | `9d5090c` (dirty tree) |
+| Rows | 195 |
+| Completed | 195 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts-full |
+| ground_truth | cuad_folder |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | 2e1fe4b740df85d09f2038851327996bee777eafff085bbd2b537bd3df1c33c5 |
+| n_samples | 195 |
+| sample_requested | 0 |
+| stratified | 200 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 4096 |
+| reasoning_effort | medium |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/subtype_200_v3_medium.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | — | — | — | — | — |
+
+### Scores
+
+**Scores — sorter**
+
+| Field | Score |
+|---|---|
+| confidence | 0.9343 |
+| confusion_matrix | affiliate: {'affiliate': 6, 'marketing': 1, 'collaboration': 1} · agency: {'agency': 8} · co_branding: {'co_branding': 8} · collaboration: {'collaboration': 7, 'strategic_alliance': 1} · consulting: {'consulting': 8} · development: {'development': 7, 'franchise': 1} · distributor: {'distributor': 8} · endorsement: {'endorsement': 8} · franchise: {'franchise': 7, 'non_compete_no_solicit': 1} · hosting: {'hosting': 5, 'development': 2, 'marketing': 1} · ip: {'ip': 7, 'license': 1} · joint_venture: {'other': 4, 'joint_venture': 4} · license: {'other': 1, 'license': 7} · maintenance: {'maintenance': 2, 'license': 4, 'development': 1, 'service': 1} · manufacturing: {'manufacturing': 7, 'development': 1} · marketing: {'marketing': 1, 'manufacturing': 1, 'distributor': 2, 'agency': 2, 'reseller': 1, 'development': 1} · non_compete_no_solicit: {'non_compete_no_solicit': 3} · outsourcing: {'outsourcing': 7, 'development': 1} · promotion: {'promotion': 8} · reseller: {'reseller': 7, 'license': 1} · service: {'service': 8} · sponsorship: {'sponsorship': 7, 'endorsement': 1} · strategic_alliance: {'strategic_alliance': 7, 'service': 1} · supply: {'supply': 8} · transportation: {'transportation': 8} |
+| equiv_recovered | license, license, license, license |
+| exact_match | 0.9846 |
+| failure_insights | mode_counts: {'equivalent_family': 4, 'family_confusion': 23, 'function_over_form': 3, 'other_fallback': 2} · n_failed: 32 · failures: [{'filename': 'MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contract execution language ('agreement by and among them', 'execute this Agreement', counterpart clause, and signature blocks for multiple parties). Although it functions as an exhibit to an SEC Schedule 13D filing, its substantive form is a multilateral agreement rather than a regulatory submission itself. It does not fit any specific commercial contract subgroup, so 'other' is assigned."}, {'filename': 'LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2', 'expected': 'license', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled a 'Mutual Termination Agreement' and follows standard contract formatting with recitals, operative termination language ('Agreement shall terminate and be of no further force or effect'), integration, governing law, counterparts, and signature blocks. Its sole substantive purpose is to mutually end a prior Domain Name License Agreement without establishing new ongoing commercial obligations. Because it does not create a specific recurring commercial relationship matching any of the defined subgroups, 'other' is the appropriate classification."}, {'filename': 'SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and centers on granting a non-exclusive license to use proprietary trading software. Operative clauses detail the license grant, intellectual property ownership, strict usage restrictions, field-of-use limitations, and volume-based licensing fees. Although it includes a technical support and maintenance section, the core transactional framework and majority of provisions govern the software license itself."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and its primary operative clause (Section 2.0) grants a 'nonexclusive, worldwide, irrevocable, perpetual license' to install, use, execute, and copy the software. While it includes ancillary provisions for customization and maintenance, the core substantive obligation is the licensing of software/IP, firmly placing it in the license subgroup per the provided rules."}, {'filename': 'SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Software License and Maintenance Agreement' and its operative clauses primarily establish an IP licensing framework: granting a perpetual non-exclusive worldwide license to use Licensed Technology, defining source/object code, setting runtime and development license fees, and detailing source code access conditions. Although it includes maintenance and support obligations, the substantive core and primary consideration revolve around the licensing of software technology."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SCHEDULE A Product License Schedule' and operates as an exhibit/order form to a master 'Software License, Customization and Maintenance Agreement.' Its operative clauses focus on identifying the specific software products and platforms being licensed, detailing delivery and installation terms, specifying conditions for source code delivery, and outlining maintenance service periods. This structure and content directly correspond to a software license agreement, justifying a high-confidence classification under the 'license' subtype."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2', 'expected': 'maintenance', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a 'Customization Schedule' that functions as a binding contract for software development work. Its operative clauses exclusively govern the Supplier's obligation to design, build, and deliver custom software features based on provided functional and system specifications, complete with delivery/installation timelines, project personnel assignments, and fee structures. This squarely fits the 'development' subgroup, as the substantive focus is on product/software customization and delivery rather than licensing, maintenance, or general services."}, {'filename': 'ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': 'The document is a formal First Amendment to a Management and Maintenance Agreement. It features standard contractual architecture (recitals, consideration, operative amendments) and establishes ongoing managerial obligations, including project curtailment protocols and term extensions. As it governs continuous operational and professional management services rather than a one-time transaction or IP transfer, it aligns with the service subgroup.'}, {'filename': 'FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT', 'expected': 'strategic_alliance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "Despite the 'Strategic Alliance Agreement' title, the operative clauses substantively establish a master services/subcontractor arrangement. The agreement governs the performance of specific Work (labor, materials, equipment, and construction/telecom services) through individual Purchase Orders, with standard MSA terms covering independent contractor status, insurance, warranties, indemnification, and payment. These obligations align most closely with a service agreement rather than a collaborative partnership or strategic alliance."}, {'filename': 'HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT', 'expected': 'sponsorship', 'predicted': 'endorsement', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement between a software developer and a celebrity/golfer. While the title reads 'Sponsorship and Development Agreement,' the operative clauses overwhelmingly govern a celebrity endorsement arrangement: granting rights to use Smith's likeness, establishing exclusivity for competing video games, detailing approval processes for advertising materials, and structuring compensation through royalties and equity. The 'development' aspect is limited to vague cooperation language without substantive development machinery (e.g., milestones, R&D plans, or technical deliverables), so the development preference rule does not apply. The substantive obligations align precisely with a product endorsement agreement."}, {'filename': 'ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement', 'expected': 'development', 'predicted': 'franchise', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'El Pollo Loco® Franchise Development Agreement' and governs the grant of rights to develop and open multiple franchised restaurant locations within a specific territory. Operative clauses detail a development schedule, site approval committees, development fees credited toward initial franchise fees, and mandatory execution of individual Franchise Agreements per location. These terms center on franchise rights, territorial expansion, and system compliance, firmly placing it in the franchise subgroup."}, {'filename': 'CHEETAHMOBILEINC_04_22_2014-EX-10.43-Cooperation Agreement', 'expected': 'collaboration', 'predicted': 'strategic_alliance', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Cooperation Agreement' between two internet technology companies. Section 4.1 explicitly states that the parties 'form a strategic alliance to develop their respective businesses.' The operative clauses detail mutual obligations for technical integration (embedding search engines, setting default browsers), traffic generation, marketing support, and proportional revenue sharing based on search metrics. While it includes standard ancillary provisions (IP license, confidentiality, termination), the core substantive framework and explicit terminology align directly with a strategic alliance partnership rather than a simple service, distribution, or licensing deal."}, {'filename': 'PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'Exhibit 99.1 JOINT FILING AGREEMENT' and contains standard SEC filing terminology such as 'Additional Reporting Person,' 'Designated Filer,' and 'Issuer and CUSIP.' Despite the word 'Agreement' in the title, it is a procedural attachment used for joint securities filings (typically Schedule 13D/G) rather than a substantive commercial contract. This places it firmly in the compliance_filing class."}, {'filename': 'RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is a Joint Filing Agreement explicitly designed to satisfy Rule 13d-1(k) under the Securities Exchange Act of 1934 for a Schedule 13G/A filing. Despite containing signature blocks, it lacks commercial terms and serves exclusively as a regulatory compliance instrument attached to an SEC submission, aligning directly with the compliance_filing class.'}, {'filename': 'TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is a standard 'Joint Filing Agreement' executed pursuant to the Securities Exchange Act of 1934 to coordinate a single Section 13 regulatory filing among multiple beneficial owners. Its explicit focus on SEC rules, joint filing responsibilities, and incorporation by reference places it squarely in the compliance_filing category rather than a commercial contract."}, {'filename': 'Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Website Design, Development and Hosting Agreement' containing operative clauses that establish a structured development plan, specific milestones (Stages 1-3 in Exhibit A), change order procedures, and delivery timelines. Per the hybrid agreement and development preference rules, the substantive obligations and machinery center on product/web development rather than hosting or general services, making 'development' the precise subtype."}, {'filename': 'AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Site Development and Hosting Agreement.' The operative clauses detail HDI's obligations to design, develop, implement, and launch a website within a strict 60-day milestone, bear all development costs, and subsequently host and maintain it. Per the hybrid agreement guidance and the clear presence of development milestones and machinery, it is classified as a Development Agreement rather than a pure hosting or general service contract."}, {'filename': 'BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.8, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Co-Hosting Agreement' between two technology companies. Its operative clauses primarily govern marketing considerations, including hot link placements on NAI's websites, exclusive positioning for software resale, advertising material approvals, and jointly funded marketing promotions. Although it includes a distribution addendum, the core substantive obligations focus on digital marketing visibility and promotional activities rather than traditional supply or distribution logistics, making 'marketing' the most accurate subgroup fit."}, {'filename': 'ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement', 'expected': 'outsourcing', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement between a client and an architectural firm for the planning, design, and development of a resort hotel. The operative clauses detail specific development deliverables (architectural development plans, environmental impact assessments, construction monitoring), milestone-based payment stages, and project timelines, which strongly align with a development agreement. Although titled 'Outsourcing Contract,' the substantive obligations center on project development rather than general business-process outsourcing."}, {'filename': 'Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'manufacturing', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled a 'Manufacturing, Design and Marketing Agreement' and its operative clauses overwhelmingly govern the manufacturing relationship. Key sections detail purchase orders, product costing, per-unit royalties, tooling/NRE charges, delivery terms, manufacturing warranties, and FDA regulatory compliance for production. While design and marketing are referenced in the title and recitals, they are either ancillary to the manufacturing process or explicitly deferred to separate agreements, making this a clear manufacturing agreement."}, {'filename': 'PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement'. The operative clauses predominantly establish EKR as the exclusive distributor, detailing its obligations to market, sell, warehouse, and manage sub-distributors for the Product. Financial terms are structured around net sales royalties, advance royalty offsets, and milestone payments tied to commercial launch and sales performance. Although it includes ancillary IP licensing and trademark usage provisions, these are explicitly limited to supporting the distribution rights, making distributor the clear substantive classification."}, {'filename': 'Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement', 'expected': 'marketing', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement between an insurance issuer/distributor and a broker-dealer. Although titled 'Marketing and Servicing Agreement,' the operative clauses primarily establish a sales channel: appointing registered representatives to solicit and procure applications for variable annuity contracts, setting compliance and supervision standards for sales activities, and detailing commission-based compensation schedules. These substantive obligations align with a distribution agreement granting rights to sell and market the issuer's products through a third-party channel."}, {'filename': 'MetLife, Inc. - Remarketing Agreement', 'expected': 'marketing', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Remarketing Agreement' that explicitly appoints Deutsche Bank as an agent to remarket senior component debentures on behalf of MetLife. It contains standard operative clauses for an agency relationship (appointment, duties, fees, indemnification, termination), along with extensive representations and warranties typical of capital markets mandates. While highly specific to securities remarketing, its structure and operative language align most closely with an agency agreement among the provided subgroups."}, {'filename': 'Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled an 'Exclusive Agency and Marketing Agreement.' Operative clauses, particularly Article 2, formally appoint one party as the exclusive agent to handle marketing, sales, warehousing, order processing, and distribution on behalf of the principal. Compensation is structured around commissions and expense allocations typical of agency relationships, rather than outright purchase/resale rights characteristic of a distributor. These features firmly place it within the agency subgroup."}, {'filename': 'TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement', 'expected': 'marketing', 'predicted': 'reseller', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses center on granting the counterparty exclusive rights to distribute and sell products, establishing detailed ordering, pricing, and payment procedures, setting commercialization milestones, and defining reseller-specific duties. These substantive terms align directly with the reseller subgroup rather than general marketing or distribution categories."}, {'filename': 'LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Joint Development and Marketing Agreement.' Operative clauses establish a joint market evaluation phase, assign responsibilities for product/service development and US market entry, and grant a royalty-free IP license specifically for the 'design and development of product(s).' Per the hybrid agreement classification rules, the presence of development machinery (joint steering/evaluation phase, development-stage IP provisions) takes substantive precedence over the accompanying marketing and sales obligations. Therefore, it is classified as a Development Agreement. Confidence is set at 0.85 due to the explicit dual-purpose title and balanced operative clauses, with marketing as the runner-up."}, {'filename': 'Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement', 'expected': 'manufacturing', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'Master Development and Manufacturing Agreement' containing standard contractual provisions (recitals, definitions, engagement, compensation, IP ownership, confidentiality, indemnification, term/termination). While it covers both development and manufacturing, the operative clauses explicitly define 'Development Work,' require development specifications, establish project plans with schedules and milestones, and assign 'Magenta Developed Intellectual Property.' Per the development preference rule, agreements with explicit development machinery and IP provisions are classified as Development Agreements."}, {'filename': 'PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT', 'expected': 'ip', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal multi-party agreement explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT.' Its operative clauses predominantly establish an exclusive worldwide license for patent applications and derived products, detailing licensing scope, royalty structures, IP prosecution cost reimbursements, and quarterly reporting. Although it includes a brief 'Joint Venture' section outlining development funding, the core substantive obligations and commercial mechanics align definitively with a standard intellectual property license agreement."}, {'filename': 'PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3', 'expected': 'franchise', 'predicted': 'non_compete_no_solicit', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled a 'Non-Disclosure and Non-Competition Agreement' and contains operative clauses governing confidentiality, covenants not to compete, non-solicitation of employees/customers, injunctive relief, and severability. Its substantive form is a restrictive-covenant agreement between a franchisee/employer and its personnel, which squarely fits the non_compete_no_solicit subtype. Although sourced from an SEC filing appendix, Rule 5 directs classification by substantive form rather than wrapper context."}, {'filename': 'EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement', 'expected': 'reseller', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement explicitly titled 'License and Reseller Agreement.' While Section 2 appoints CHT as a reseller, the substantive operative clauses predominantly govern intellectual property rights, grants of sublicensing authority, source code escrow, royalty calculations, and IP ownership, which are hallmarks of a software/IP license agreement. The hybrid title and dual focus justify capping confidence at 0.85, with 'reseller' as the runner-up family."}, {'filename': 'CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Marketing Affiliate Agreement' and its operative clauses center on marketing plans, promotional activities, sales quotas, training, and brand usage rights. While it includes sales and distribution mechanics, the primary obligations and explicit title align with a marketing and channel partnership agreement rather than a pure distribution or referral affiliate contract."}, {'filename': 'LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'collaboration', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formally executed agreement between two corporate entities. While titled 'Affiliate Agreement,' the substantive operative clauses govern a joint effort to develop, manufacture, market, and sell AMR product suites, featuring joint IP ownership, coordinated sales territories, and detailed revenue-sharing mechanisms. These terms align with a collaboration/partnership framework rather than a traditional affiliate referral program, making 'collaboration' the most accurate substantive subtype."}] |
+| per_subtype | affiliate: {'accuracy': 0.75, 'accuracy_equiv': 0.75, 'correct': 6, 'equiv': 6, 'total': 8} · agency: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · co_branding: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · collaboration: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · consulting: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · development: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · distributor: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · endorsement: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · franchise: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · hosting: {'accuracy': 0.625, 'accuracy_equiv': 0.625, 'correct': 5, 'equiv': 5, 'total': 8} · ip: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · joint_venture: {'accuracy': 0.5, 'accuracy_equiv': 0.5, 'correct': 4, 'equiv': 4, 'total': 8} · license: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · maintenance: {'accuracy': 0.25, 'accuracy_equiv': 0.75, 'correct': 2, 'equiv': 6, 'total': 8} · manufacturing: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · marketing: {'accuracy': 0.125, 'accuracy_equiv': 0.125, 'correct': 1, 'equiv': 1, 'total': 8} · non_compete_no_solicit: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 3, 'equiv': 3, 'total': 3} · outsourcing: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · promotion: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · reseller: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · service: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · sponsorship: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · strategic_alliance: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · supply: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · transportation: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} |
+| subtype_accuracy | 0.8359 |
+| subtype_accuracy_equiv | 0.8564 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | expected subtype | doc_type ok | subtype ok | equiv ok | confidence | failure mode | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| d1 | UsioInc_20040428_SB-2_EX-10.11_1723988_EX-10.11_Affiliate Agreement 2 | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d2 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.8 | — | — |
+| d3 | PaperexchangeComInc_20000322_S-1A_EX-10.4_5202103_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d4 | BERKELEYLIGHTS,INC_06_26_2020-EX-10.12-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d5 | MEDALISTDIVERSIFIEDREIT,INC_05_18_2020-EX-10.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d6 | Microgenics Corporation - Collaborative Development and Commercialization Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d7 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_Amendment | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d8 | EcoScienceSolutionsInc_20171117_8-K_EX-10.1_10956472_EX-10.1_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d9 | INTERNATIONALFASTFOODCORP_04_04_1997-EX-99-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d10 | BLUEFLYINC_03_27_2002-EX-10.27-e-business Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d11 | INGEVITYCORP_05_16_2016-EX-10.5-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d12 | MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d13 | LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2 | completed | contract | other | license | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d14 | VERTEXENERGYINC_08_14_2014-EX-10.24-OPERATION AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d15 | VAPOTHERM, INC. - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d16 | Loop Industries, Inc. - Marketing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d17 | WESTERN COPPER - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d18 | OASYSMOBILE,INC_07_05_2001-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d19 | VnueInc_20150914_8-K_EX-10.1_9259571_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d20 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d21 | WPPPLC_04_30_2020-EX-4.28-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d22 | GSVINC_05_15_1998-EX-10-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d23 | ENTRUSTINC_07_24_1998-EX-10.5-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d24 | BELLICUMPHARMACEUTICALS,INC_05_07_2019-EX-10.1-Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d25 | ENERGYXXILTD_05_08_2015-EX-10.13-Transportation AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d26 | SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d27 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d28 | IMAGEWARESYSTEMSINC_12_20_1999-EX-10.22-MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d29 | SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d30 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d31 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2 | completed | contract | development | maintenance | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d32 | ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT | completed | contract | service | maintenance | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d33 | ChinaRealEstateInformationCorp_20090929_F-1_EX-10.32_4771615_EX-10.32_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d34 | PalmerSquareCapitalBdcInc_20200116_10-12GA_EX-10.6_11949289_EX-10.6_Trademark License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d35 | AlliedEsportsEntertainmentInc_20190815_8-K_EX-10.19_11788293_EX-10.19_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d36 | GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.6_11951677_EX-10.6_License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d37 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d38 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement1 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d39 | FulucaiProductionsLtd_20131223_10-Q_EX-10.9_8368347_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.92 | — | — |
+| d40 | FuseMedicalInc_20190321_10-K_EX-10.43_11575454_EX-10.43_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d41 | ScansourceInc_20190822_10-K_EX-10.38_11793958_EX-10.38_Distributor Agreement1 | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d42 | LEGACYTECHNOLOGYHOLDINGS,INC_12_09_2005-EX-10.2-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d43 | VISIUMTECHNOLOGIES,INC_10_20_2004-EX-10.20-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d44 | NETGEAR,INC_04_21_2003-EX-10.16- AMENDMENT #2 TO THE DISTRIBUTION AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d45 | EUROPEANMICROHOLDINGSINC_03_06_1998-EX-10.6-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d46 | InnerscopeHearingTechnologiesInc_20181109_8-K_EX-10.6_11419704_EX-10.6_Distributor Agreem… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d47 | FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT | completed | contract | service | strategic_alliance | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d48 | REWALKROBOTICSLTD_07_10_2014-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d49 | CHIPMOSTECHNOLOGIESBERMUDALTD_04_18_2016-EX-4.72-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d50 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d51 | ICORECONNECTINC_10_13_2010-EX-7.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d52 | SUCAMPOPHARMACEUTICALS,INC_11_04_2015-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d53 | ORBSATCORP_08_17_2007-EX-7.3-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d54 | HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT | completed | contract | endorsement | sponsorship | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d55 | IVILLAGEINC_03_17_1999-EX-10.16-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d56 | DRKOOPCOMINC_04_21_1999-EX-10.28-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d57 | TICKETSCOMINC_06_22_1999-EX-10.22-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d58 | LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d59 | VITAMINSHOPPECOMINC_09_13_1999-EX-10.26-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d60 | EcoScienceSolutionsInc_20180406_8-K_EX-10.1_11135398_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d61 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d62 | ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement | completed | contract | franchise | development | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d63 | EmeraldHealthBioceuticalsInc_20200218_1-A_EX1A-6 MAT CTRCT_11987205_EX1A-6 MAT CTRCT_Deve… | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d64 | PelicanDeliversInc_20200211_S-1_EX-10.3_11975895_EX-10.3_Development Agreement1 | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d65 | EtonPharmaceuticalsInc_20191114_10-Q_EX-10.1_11893941_EX-10.1_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d66 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d67 | WARNERCHILCOTTPLC_12_31_2003-EX-4.36-DEVELOPMENT AGREEMENT | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d68 | THERAVANCEBIOPHARMA,INC_05_08_2020-EX-10.2-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d69 | BLACKSTONEGSOLONG-SHORTCREDITINCOMEFUND_05_11_2020-EX-99.(K)(1)-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d70 | OPERALTD_04_30_2020-EX-4.14-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d71 | NYLIACVARIABLEANNUITYSEPARATEACCOUNTIII_04_10_2020-EX-99.8.KK-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d72 | TALCOTTRESOLUTIONLIFEINSURANCECO-SEPARATEACCOUNTTWELVE_04_30_2020-EX-99.8(L)-SERVICE AGRE… | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d73 | ReynoldsConsumerProductsInc_20200121_S-1A_EX-10.22_11948918_EX-10.22_Service Agreement | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d74 | SOLUTIONSVENDINGINTERNATIONAL,INC_03_31_2020-EX1A-1 UNDR AGMT-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d75 | QIWI_06_16_2017-EX-99.(D)(2)-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d76 | URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d77 | LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d78 | CHEETAHMOBILEINC_04_22_2014-EX-10.43-Cooperation Agreement | completed | contract | strategic_alliance | collaboration | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d79 | SPIENERGYCO,LTD_07_10_2014-EX-10-Cooperation Agreement of 50MWp Photovoltaic Grid-connect… | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d80 | IDREAMSKYTECHNOLOGYLTD_07_03_2014-EX-10.39-Cooperation Agreement on Mobile Game Business | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d81 | CERES,INC_01_25_2012-EX-10.20-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d82 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d83 | MOSSIMOINC_04_14_2000-EX-10.14-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d84 | HOLIDAYRVSUPERSTORESINC_04_15_2002-EX-10.13-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d85 | WARNINGMANAGEMENTSERVICESINC_12_10_1999-EX-10-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d86 | MOVADOGROUPINC_04_30_2003-EX-10.28-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d87 | LifewayFoodsInc_20160316_10-K_EX-10.24_9489766_EX-10.24_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d88 | MARSHALLHOLDINGSINTERNATIONAL,INC_04_14_2004-EX-10.15-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d89 | IMPCOTECHNOLOGIESINC_04_15_2003-EX-10.65-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d90 | PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d91 | RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d92 | ACCELERATEDTECHNOLOGIESHOLDINGCORP_04_24_2003-EX-10.13-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d93 | MJBIOTECH,INC_12_06_2018-EX-99.01-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d94 | BORROWMONEYCOM,INC_06_11_2020-EX-10.1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d95 | TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d96 | TheglobeComInc_19990503_S-1A_EX-10.20_5416126_EX-10.20_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d97 | PcquoteComInc_19990721_S-1A_EX-10.11_6377149_EX-10.11_Co-Branding Agreement1 | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d98 | 2ThemartComInc_19990826_10-12G_EX-10.10_6700288_EX-10.10_Co-Branding Agreement_ Agency Ag… | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d99 | MphaseTechnologiesInc_20030911_10-K_EX-10.15_1560667_EX-10.15_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d100 | InvendaCorp_20000828_S-1A_EX-10.2_2588206_EX-10.2_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d101 | NeoformaInc_19991202_S-1A_EX-10.26_5224521_EX-10.26_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d102 | EbixInc_20010515_10-Q_EX-10.3_4049767_EX-10.3_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d103 | BANGIINC_05_25_2005-EX-10-Premium Managed Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d104 | Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d105 | AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d106 | BOLIVARMININGCORP_05_23_2003-EX-2.1-VISP WEB SITE BUILDING AND HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d107 | BNCMORTGAGEINC_05_17_1999-EX-10.4-LICENSING AND WEB SITE HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d108 | BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT | completed | contract | marketing | hosting | ✓ | ✗ | ✗ | 0.8 | family_confusion | — |
+| d109 | VitalibisInc_20180316_8-K_EX-10.2_11100168_EX-10.2_Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d110 | ASPIRITYHOLDINGSLLC_05_07_2012-EX-10.6-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d111 | NEXSTARFINANCEHOLDINGSINC_03_27_2002-EX-10.26-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d112 | CCAINDUSTRIESINC_04_14_2014-EX-10.1-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d113 | BNLFINANCIALCORP_03_30_2007-EX-10.8-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d114 | ELANDIAINTERNATIONALINC_04_25_2007-EX-10.21-Outsourcing Agreement | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d115 | ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agree… | completed | contract | development | outsourcing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d116 | DRAGONSYSTEMSINC_01_08_1999-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d117 | HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d118 | PROFOUNDMEDICALCORP_08_29_2019-EX-4.5-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d119 | MEDIWOUNDLTD_01_15_2014-EX-10.6-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d120 | FUSIONPHARMACEUTICALSINC_06_05_2020-EX-10.17-Supply Agreement - FUSION | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d121 | ULTRAGENYXPHARMACEUTICALINC_12_23_2013-EX-10.9-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d122 | VAXCYTE,INC_05_22_2020-EX-10.19-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d123 | AgapeAtpCorp_20191202_10-KA_EX-10.1_11911128_EX-10.1_Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d124 | Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT | completed | contract | manufacturing | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d125 | PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEM… | completed | contract | distributor | marketing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d126 | Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement | completed | contract | distributor | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d127 | MetLife, Inc. - Remarketing Agreement | completed | contract | agency | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d128 | Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT | completed | contract | agency | marketing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d129 | TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agre… | completed | contract | reseller | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d130 | LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT | completed | contract | development | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d131 | Apollo Endosurgery - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d132 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement4 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d133 | KitovPharmaLtd_20190326_20-F_EX-4.15_11584449_EX-4.15_Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d134 | Antares Pharma, Inc. - Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d135 | NeuroboPharmaceuticalsInc_20190903_S-4_EX-10.36_11802165_EX-10.36_Manufacturing Agreement… | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d136 | Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement | completed | contract | development | manufacturing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d137 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement2 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.92 | — | — |
+| d138 | HERTZGLOBALHOLDINGS,INC_07_07_2016-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d139 | OTISWORLDWIDECORP_04_03_2020-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT by and among UNITED … | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d140 | ZEBRATECHNOLOGIESCORP_04_16_2014-EX-10.1-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d141 | VERSOTECHNOLOGIESINC_12_28_2007-EX-99.3-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d142 | GarrettMotionInc_20181001_8-K_EX-2.4_11364532_EX-2.4_Intellectual Property Agreement | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d143 | ARMSTRONGFLOORING,INC_01_07_2019-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d144 | PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | license | ip | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d145 | JOINTCORP_09_19_2014-EX-10.15-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d146 | HOSPITALITYINVESTORSTRUST,INC_04_07_2014-EX-10.26-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d147 | BUFFALOWILDWINGSINC_06_05_1998-EX-10.3-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d148 | AIRTECHINTERNATIONALGROUPINC_05_08_2000-EX-10.4-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d149 | PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3 | completed | contract | non_compete_no_solicit | franchise | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d150 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement2 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d151 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement1 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d152 | BONTONSTORESINC_04_20_2018-EX-99.3-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d153 | BLUEHILLSBANCORP,INC_05_20_2014-EX-1.1-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d154 | BANUESTRAFINANCIALCORP_09_08_2006-EX-10.16-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d155 | ATHENSBANCSHARESCORP_11_02_2009-EX-1.2-AGENCY AGREEMENT , 2009 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d156 | AMERICANPHYSICIANSCAPITALINC_03_31_2003-EX-10.26-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d157 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT1 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d158 | BIOPURECORP_06_30_1999-EX-10.13-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d159 | ATMOSENERGYCORP_11_22_2002-EX-10.17-TRANSPORTATION SERVICE AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d160 | MARTINMIDSTREAMPARTNERSLP_01_23_2004-EX-10.3-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d161 | GRANTIERRAENERGYINC_05_07_2012-EX-10.6-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d162 | RangeResourcesLouisianaInc_20150417_8-K_EX-10.5_9045501_EX-10.5_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d163 | TcPipelinesLp_20160226_10-K_EX-99.12_9454048_EX-99.12_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d164 | MPLXLP_06_17_2015-EX-10.1-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d165 | ENTERPRISEPRODUCTSPARTNERSLP_07_08_1998-EX-10.3-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d166 | CYBERIANOUTPOSTINC_07_09_1998-EX-10.13-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d167 | SigaTechnologiesInc_20190603_8-K_EX-10.1_11695818_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d168 | KINGPHARMACEUTICALSINC_08_09_2006-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d169 | ASHWORTHINC_01_29_1999-EX-10.(D)-PROMOTION AGREEMENT AND NANTZ COMMUNICATIONS, INC. | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d170 | MIDDLEBROOKPHARMACEUTICALS,INC_03_18_2010-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d171 | GOCALLINC_03_30_2000-EX-10.7-Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d172 | DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d173 | IpassInc_20181203_8-K_EX-99.1_11445874_EX-99.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d174 | WORLDWIDESTRATEGIESINC_11_02_2005-EX-10-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d175 | LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d176 | SalesforcecomInc_20171122_10-Q_EX-10.1_10961535_EX-10.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d177 | EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement | completed | contract | license | reseller | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d178 | ASIANDRAGONGROUPINC_08_11_2005-EX-10.5-Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d179 | ADIANUTRITION,INC_04_01_2005-EX-10.D2-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d180 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d181 | KIROMICBIOPHARMA,INC_05_11_2020-EX-10.23-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d182 | SPHERE3DCORP_06_24_2020-EX-10.12-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d183 | SLINGERBAGINC_05_27_2020-EX-10.7-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d184 | ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1) | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d185 | CORALGOLDRESOURCES,LTD_05_28_2020-EX-4.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d186 | EMERALDHEALTHTHERAPEUTICSINC_06_10_2020-EX-4.5-CONSULTING AGREEMENT - DR. GAETANO MORELLO… | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d187 | CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement | completed | contract | marketing | affiliate | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d188 | UnionDentalHoldingsInc_20050204_8-KA_EX-10_3345577_EX-10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d189 | DigitalCinemaDestinationsCorp_20111220_S-1_EX-10.10_7346719_EX-10.10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.8 | — | — |
+| d190 | SouthernStarEnergyInc_20051202_SB-2A_EX-9_801890_EX-9_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d191 | CreditcardscomInc_20070810_S-1_EX-10.33_362297_EX-10.33_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d192 | LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement | completed | contract | collaboration | affiliate | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d193 | TubeMediaCorp_20060310_8-K_EX-10.1_513921_EX-10.1_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d194 | Quaker Chemical Corporation - NON COMPETITION AND NON SOLICITATION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d195 | VIVINT SOLAR, INC. - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | affiliate | agency | co_branding | collaboration | consulting | development | distributor | endorsement | franchise | hosting | ip | joint_venture | license | maintenance | manufacturing | marketing | non_compete_no_solicit | other | outsourcing | promotion | reseller | service | sponsorship | strategic_alliance | supply | transportation |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| affiliate | **6** | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| agency | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| co_branding | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| collaboration | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
+| consulting | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| development | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| franchise | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| hosting | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | **5** | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ip | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| joint_venture | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **4** | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| license | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| maintenance | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+| manufacturing | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| marketing | 0 | 2 | 0 | 0 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | **1** | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| non_compete_no_solicit | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| other | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| outsourcing | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| promotion | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 |
+| reseller | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 |
+| service | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 |
+| sponsorship | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 |
+| strategic_alliance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | **7** | 0 | 0 |
+| supply | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 |
+| transportation | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'AFFILIATE OFFICE AGREEMENT' and establishes a referral/marketing arrangement where the Affiliate markets Network 1's payment processing services… |
+| d2 | contract | agency | agency | 0.8 | ✓ | ✓ | The document is a signed Agents' Certificate functioning as an exhibit to an underlying Agency Agreement. It contains formal representations and warranties by the signing party (a… |
+| d3 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses govern the joint development, operation, and marketing of co-branded web properties (Career Cen… |
+| d4 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses center on joint R&D activities, including a Joint Review Committee (JRC), Workflow Developmen… |
+| d5 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses establish an independent contractor relationship for the provision of professional services as d… |
+| d6 | contract | development | development | 0.9 | ✓ | ✓ | The document is a formal agreement titled 'Collaborative Development and Commercialization Agreement' between Microgenics and Achaogen. It contains extensive operative clauses det… |
+| d7 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'First Amendment to Distributor Agreement' and contains operative clauses amending royalty advances, payment schedules, term, termination, and sp… |
+| d8 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses focus on engaging an individual as a spokesperson, granting rights to use their name and likene… |
+| d9 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of franchise rights to operate a Burger King Restaur… |
+| d10 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'e-business Hosting Agreement' and establishes IBM's obligation to provide web hosting and related infrastructure services to Bluefly, Inc. The o… |
+| d11 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses governing the assignment, transfer, and cross-licensing of intellectual property… |
+| d12 | contract | other | joint_venture | 0.95 | ✓ | ✗ | The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contract execution language ('agreement by and among them', 'execute this Agreement', counterpart … |
+| d13 | contract | other | license | 0.9 | ✓ | ✗ | The document is explicitly titled a 'Mutual Termination Agreement' and follows standard contract formatting with recitals, operative termination language ('Agreement shall termina… |
+| d14 | contract | maintenance | maintenance | 0.9 | ✓ | ✓ | The document is explicitly titled 'OPERATION AND MAINTENANCE AGREEMENT' and contains standard binding contractual provisions between an Owner and an Operator. The operative clause… |
+| d15 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and its operative clauses center on Medica's obligation to manufacture cartridges to Vapotherm's specificati… |
+| d16 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Marketing Agreement' and its operative provisions govern marketing and sales mechanics, including branding standards, exclusivity/marketing rest… |
+| d17 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON COMPETITION AGREEMENT AND RIGHT OF FIRST OFFER' and its operative clauses primarily establish a two-year non-competition covenant restrictin… |
+| d18 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses center on HSNS's obligation to provide 'Outsourcing Services' to third-party customers using E.… |
+| d19 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'Promotion Agreement' and its operative clauses detail the engagement of an independent contractor to provide promotion services, secure venue co… |
+| d20 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'WALABOT-HOME RESELLER AGREEMENT' and contains standard reseller agreement provisions, including the appointment of a non-exclusive reseller, ord… |
+| d21 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and governs the engagement of an executive (CFO) with detailed provisions on remuneration, duties, working hours, termination… |
+| d22 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail the sponsorship of specific web channels, promotional link placements, impression/clickt… |
+| d23 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and establishes a broad cooperative framework between Northern Telecom Limited and Entrust Technologies Inc. The o… |
+| d24 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses primarily govern the sale and purchase of physical goods ('Miltenyi Products') between the parties. … |
+| d25 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Transportation Agreement' and its operative clauses govern the nomination, scheduling, quality specifications, custody transfer, and billing for… |
+| d26 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and centers on granting a non-exclusive license to use proprietary trading software. Operative claus… |
+| d27 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and its primary operative clause (Section 2.0) grants a 'nonexclusive, worldwide, irr… |
+| d28 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AGREEMENT' and its operative clauses (Section 3, 'Software Maintenance Services') detail error correction, technical support, on-sit… |
+| d29 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License and Maintenance Agreement' and its operative clauses primarily establish an IP licensing framework: granting a perpetual non-ex… |
+| d30 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SCHEDULE A Product License Schedule' and operates as an exhibit/order form to a master 'Software License, Customization and Maintenance Agreemen… |
+| d31 | contract | development | maintenance | 0.9 | ✓ | ✗ | The document is a 'Customization Schedule' that functions as a binding contract for software development work. Its operative clauses exclusively govern the Supplier's obligation t… |
+| d32 | contract | service | maintenance | 0.9 | ✓ | ✗ | The document is a formal First Amendment to a Management and Maintenance Agreement. It features standard contractual architecture (recitals, consideration, operative amendments) a… |
+| d33 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Domain Name and Content License Agreement' and contains a clear 'Grant of Licenses' clause (Article II) granting the Licensee rights to use spec… |
+| d34 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRADEMARK LICENSE AGREEMENT' and contains operative clauses granting the licensee a right to use a specific trademark ('Licensed Mark'), along w… |
+| d35 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled a 'Joint Content License Agreement' and centers on the mutual grant of licenses to use each party's intellectual property and trademarks ('Licens… |
+| d36 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Media License Agreement' and contains standard operative language granting a license to exploit intellectual property and media assets ('PFHOF h… |
+| d37 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Content Licensing Agreement' and contains standard license operative clauses, including Section 5.3 granting the right to produce, market, and d… |
+| d38 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'WIRELESS CONTENT LICENSE AGREEMENT' and functions as a formal IP licensing contract. The operative clauses center on a 'Grant of Rights' where F… |
+| d39 | contract | license | license | 0.92 | ✓ | ✓ | The document is explicitly titled a 'Content Distribution and License Agreement' and its core operative clause (Section 1) grants the licensee the right and license to distribute,… |
+| d40 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distributorship agreement' and contains standard operative clauses for a distribution arrangement, including the appointment of a non-exclusive … |
+| d41 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Nonexclusive Value Added Distributor Agreement' between Cisco Systems, Inc. and ScanSource, Inc. The operative clauses center on the appointment… |
+| d42 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative clauses center on the appointment of ENVISION as an exclusive distributor, purchase requireme… |
+| d43 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses center on granting Power2Ship the non-exclusive right to distribute WLI's products and software… |
+| d44 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT #2 TO THE DISTRIBUTION AGREEMENT' and contains operative clauses modifying the appointed distributor's territory, exclusivity status, … |
+| d45 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses consistently establish a distribution relationship: appointing the counterparty as a nonexclusi… |
+| d46 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Exclusive Distributor Agreement' and its operative clauses center on granting exclusive distribution rights, outlining distributor obligations (… |
+| d47 | contract | service | strategic_alliance | 0.85 | ✓ | ✗ | Despite the 'Strategic Alliance Agreement' title, the operative clauses substantively establish a master services/subcontractor arrangement. The agreement governs the performance … |
+| d48 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a broad collaborative framework between two companies for product evaluation, development, commerc… |
+| d49 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses establish a long-term cooperative relationship between the parties to share resources, n… |
+| d50 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and contains standard operative provisions for this type of arrangement, including fee allocation/sharing, non-cir… |
+| d51 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its recitals state the parties are forming a 'strategic and marketing alliance.' The operative clauses outline… |
+| d52 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and Section 2.01 formally establishes a 'Strategic Business Alliance' detailing mutual cooperation in drug develop… |
+| d53 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and establishes a formal partnership between UTEK Corporation and World Energy Solutions to jointly identify, eval… |
+| d54 | contract | endorsement | sponsorship | 0.85 | ✓ | ✗ | The document is a formal agreement between a software developer and a celebrity/golfer. While the title reads 'Sponsorship and Development Agreement,' the operative clauses overwh… |
+| d55 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses typical of a sponsorship arrangement, including payment of fees for promotional placement,… |
+| d56 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses center on granting Vitamin Shoppe exclusive sponsorship rights on the drkoop.com website, inclu… |
+| d57 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard sponsorship provisions, including sponsor fees, guaranteed web impressions, portal placement on MP3… |
+| d58 | contract | sponsorship | sponsorship | 0.9 | ✓ | ✓ | Explicitly titled 'SPONSORSHIP AGREEMENT' with standard contract formatting, recitals, operative clauses, and signature blocks. Substantively functions as a tender-offer financing… |
+| d59 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses exclusively govern promotional placements, banner advertising, impression delivery metrics, and… |
+| d60 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail a $250,000 payment by Eco Science Solutions in exchange for event branding, booth space,… |
+| d61 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Co-Development Agreement' and its operative clauses center on a structured pharmaceutical development program, including clinical trial protocol… |
+| d62 | contract | franchise | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'El Pollo Loco® Franchise Development Agreement' and governs the grant of rights to develop and open multiple franchised restaurant locations wit… |
+| d63 | contract | development | development | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'Consulting and Product Development Agreement' establishing obligations between corporate entities and an expert. Although the title and … |
+| d64 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE DEVELOPMENT AGREEMENT' and operates as a Statement of Work appended to the main agreement. It details a structured development plan inc… |
+| d65 | contract | development | development | 0.9 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE LICENSE AND PRODUCT DEVELOPMENT AGREEMENT' and functions as a formal contract between two pharmaceutical companies. While it contains … |
+| d66 | contract | development | development | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'Distribution and Development Agreement' between Sekisui Diagnostics and Qualigen. While it contains standard distribution terms (exclusi… |
+| d67 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'DEVELOPMENT AGREEMENT' and its operative clauses focus on pharmaceutical development activities, including FDA clinical trial requirements, NDA/… |
+| d68 | contract | service | service | 0.85 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and governs the engagement of a senior executive, detailing duties, compensation, benefits, termination, garden leave, confid… |
+| d69 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT FOR TRANSFER AGENT SERVICES' and contains standard operative clauses for a commercial service contract, including appointment,… |
+| d70 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and establishes an engagement where Mobimagic provides system/platform maintenance and data processing services to PC Financi… |
+| d71 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and contains standard operative clauses for a service arrangement, including the scope of services (providing fund informatio… |
+| d72 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and governs the provision of administrative services (recordkeeping, reporting, processing, and transaction execution) by an … |
+| d73 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'Transition Services Agreement' and establishes a framework where one corporate entity provides ongoing operational, IT, HR, financial, and admin… |
+| d74 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and contains standard operative clauses defining platform services for securities offerings, fee structures, billing terms, … |
+| d75 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and establishes a formal framework for mutual strategic cooperation between two corporate entities. Key operative provisi… |
+| d76 | contract | collaboration | collaboration | 0.85 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and establishes mutual covenants between an activist investor (JANA Partners) and a public company (URS Corporation). Key… |
+| d77 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled 'Internet Channel Cooperation Agreement' and contains standard contractual boilerplate (definitions, representations & warranties, term, scope, f… |
+| d78 | contract | strategic_alliance | collaboration | 0.9 | ✓ | ✗ | The document is a formal 'Cooperation Agreement' between two internet technology companies. Section 4.1 explicitly states that the parties 'form a strategic alliance to develop th… |
+| d79 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is a formal bilateral agreement explicitly titled 'Cooperation Agreement' between a local government and an energy company. Its operative clauses outline mutual oblig… |
+| d80 | contract | collaboration | collaboration | 0.85 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement on Mobile Game Business' and contains standard contract structure (parties, recitals, operative articles, signatures). The… |
+| d81 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and its operative clauses establish a joint research program, a Management Committee, detailed provisions for Joint Int… |
+| d82 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a formal rider/amendment to an existing insurance/annuity contract, effecting a corporate dissolution transfer and… |
+| d83 | contract | endorsement | endorsement | 0.98 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard operative clauses for a celebrity endorsement deal, including granting the company rights to use th… |
+| d84 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses center on granting the Company the right to hold out its business as having the 'Good Sam endor… |
+| d85 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses exclusively govern the licensing of a celebrity's name, likeness, and endorsement rights for pr… |
+| d86 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and functions as an amendment and restatement of a split-dollar life insurance policy arrangement. Its operative clauses … |
+| d87 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard endorsement clauses, including granting the company rights to use the individual's name, image, and… |
+| d88 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and outlines a celebrity (Bruce Jenner) endorsing company products, speaking at seminars, and assisting with recruitment … |
+| d89 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and substantively establishes a new entity (MINDA IMPCO Limited) through equity contributions, detailed board represent… |
+| d90 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'Exhibit 99.1 JOINT FILING AGREEMENT' and contains standard SEC filing terminology such as 'Additional Reporting Person,' 'Designated Filer,' an… |
+| d91 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is a Joint Filing Agreement explicitly designed to satisfy Rule 13d-1(k) under the Securities Exchange Act of 1934 for a Schedule 13G/A filing. Despite containing sig… |
+| d92 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard joint venture operative clauses, including the formation of a specific venture ('MightyCell Batte… |
+| d93 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard joint venture operative clauses, including formation of a general joint venture, capital contribu… |
+| d94 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and its operative clauses establish a formal joint venture structure, including formation, capital contributions, manag… |
+| d95 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is a standard 'Joint Filing Agreement' executed pursuant to the Securities Exchange Act of 1934 to coordinate a single Section 13 regulatory filing among multiple ben… |
+| d96 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING Agreement' and its operative clauses consistently govern the creation, development, and operation of 'Co-Branded Pages,' including j… |
+| d97 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on PC Quote allowing AB Watley to co-brand its software and data feed on ABW's website, … |
+| d98 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AND ADVERTISING AGREEMENT' and its operative clauses center on establishing a co-branded website, mutually licensing trademarks and … |
+| d99 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses govern the permitted use of Lucent's name, logo, and trademarks by mPhase on products and marke… |
+| d100 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'E-CENTIVES - EXCITE@HOME CO-BRANDING AGREEMENT' and its operative clauses focus on creating a co-branded internet application, sharing branding … |
+| d101 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative provisions center on establishing co-branded web properties ('Co-Branded Career Center', 'Co-Branded Tr… |
+| d102 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses focus on creating a co-branded online channel, mutual licensing of trademarks/marks, joint adve… |
+| d103 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'Premium Managed Hosting Agreement' and its operative clauses focus entirely on web/application hosting services, including system administration… |
+| d104 | contract | development | hosting | 0.9 | ✓ | ✗ | The document is a formal agreement titled 'Website Design, Development and Hosting Agreement' containing operative clauses that establish a structured development plan, specific m… |
+| d105 | contract | development | hosting | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Site Development and Hosting Agreement.' The operative clauses detail HDI's obligations to design, develop, implement, and launch a webs… |
+| d106 | contract | hosting | hosting | 0.9 | ✓ | ✓ | The document is explicitly titled 'VISP WEB SITE BUILDING AND HOSTING AGREEMENT' and outlines the Provider's obligation to deliver internet connectivity, website setup, ongoing ma… |
+| d107 | contract | hosting | hosting | 0.85 | ✓ | ✓ | The document is a formal bilateral agreement titled 'LICENSING AND WEB SITE HOSTING AGREEMENT.' While Section 2 grants a software license, the primary operational focus and most d… |
+| d108 | contract | marketing | hosting | 0.8 | ✓ | ✗ | The document is a formal 'Co-Hosting Agreement' between two technology companies. Its operative clauses primarily govern marketing considerations, including hot link placements on… |
+| d109 | contract | hosting | hosting | 0.9 | ✓ | ✓ | The document is explicitly titled 'SERVICES AND HOSTING AGREEMENT' and operates as a binding contract between two corporate parties. The operative clauses predominantly govern the… |
+| d110 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and contains standard operative provisions for an outsourcing arrangement, including the appointment of a Contractor to p… |
+| d111 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail the comprehensive outsourcing of operational, managerial, sales, billing, and technical … |
+| d112 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Services Outsourcing Agreement' and its operative clauses detail the engagement of a contractor to perform logistical, administrative, accounts … |
+| d113 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses govern the outsourcing of electronic data processing (EDP) services, including system access, d… |
+| d114 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Network Management Outsourcing Agreement' and functions as a formal contract transferring the management of the bank's WAN, help desk, incident … |
+| d115 | contract | development | outsourcing | 0.85 | ✓ | ✗ | The document is a formal agreement between a client and an architectural firm for the planning, design, and development of a resort hotel. The operative clauses detail specific de… |
+| d116 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail a comprehensive turnkey arrangement where MMI manages production, supply base, inventory… |
+| d117 | contract | supply | supply | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement' between a biopharmaceutical manufacturer and a regional pharmaceutical company. Wh… |
+| d118 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses center on the manufacture, supply, purchase orders, forecasts, delivery, pricing, and warranties of … |
+| d119 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses (e.g., Sections 3.1 and 6) establish a clear obligation for CBC to manufacture, deliver, and supply … |
+| d120 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses govern the manufacture, production orders, shipping, pricing, batch testing, and quality control of … |
+| d121 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative provisions center on the purchase, delivery, pricing, and quality specifications of a chemical product (Trih… |
+| d122 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses govern the purchase, manufacture, delivery, and pricing of specific biological products (Extracts an… |
+| d123 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'ODM SUPPLY AGREEMENT' and contains standard operative clauses governing the sale and purchase of goods, including shipping terms, payment schedu… |
+| d124 | contract | manufacturing | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled a 'Manufacturing, Design and Marketing Agreement' and its operative clauses overwhelmingly govern the manufacturing relationship. Key sections de… |
+| d125 | contract | distributor | marketing | 0.9 | ✓ | ✗ | The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement'. The operative clauses predominantly establish EKR as th… |
+| d126 | contract | distributor | marketing | 0.85 | ✓ | ✗ | The document is a formal agreement between an insurance issuer/distributor and a broker-dealer. Although titled 'Marketing and Servicing Agreement,' the operative clauses primaril… |
+| d127 | contract | agency | marketing | 0.85 | ✓ | ✗ | The document is a formal 'Remarketing Agreement' that explicitly appoints Deutsche Bank as an agent to remarket senior component debentures on behalf of MetLife. It contains stand… |
+| d128 | contract | agency | marketing | 0.9 | ✓ | ✗ | The document is explicitly titled an 'Exclusive Agency and Marketing Agreement.' Operative clauses, particularly Article 2, formally appoint one party as the exclusive agent to ha… |
+| d129 | contract | reseller | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses center on granting the counterparty exclusive rights to distribute and sell products… |
+| d130 | contract | development | marketing | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Joint Development and Marketing Agreement.' Operative clauses establish a joint market evaluation phase, assign responsibilities for pro… |
+| d131 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and contains standard contractual boilerplate (term, termination, indemnification, confidentiality, governin… |
+| d132 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled as Amendment No. 3 to a 'Manufacturing Agreement' and contains standard contractual amendment language modifying a schedule. It substantively gov… |
+| d133 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Product Manufacturing Agreement' and its operative clauses detail the manufacturing, packaging, quality assurance (cGMP), forecasting, purchase … |
+| d134 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and its operative clauses extensively detail manufacturing services, quality control, cGMP compliance, batch records, a… |
+| d135 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and its operative clauses detail the production of pharmaceutical products according to strict specification… |
+| d136 | contract | development | manufacturing | 0.9 | ✓ | ✗ | The document is a formal bilateral agreement titled 'Master Development and Manufacturing Agreement' containing standard contractual provisions (recitals, definitions, engagement,… |
+| d137 | contract | manufacturing | manufacturing | 0.92 | ✓ | ✓ | The document is explicitly titled an Amendment to a Manufacturing Agreement and contains standard operative amendment language modifying purchase obligations tied to production at… |
+| d138 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative provisions (primarily Section 2) govern the ownership, licensing, assignment, and maintenance… |
+| d139 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative provisions govern the assignment and licensing of intellectual property rights among the part… |
+| d140 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses govern the assignment, license-back, and related warranties of patents, trademarks, c… |
+| d141 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'Intellectual Property Agreement' and contains operative clauses transferring, selling, assigning, and conveying all right, title, and interest i… |
+| d142 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses exclusively govern the assignment, recordation, and mutual licensing of patents, trad… |
+| d143 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses detailing the assignment and licensing of copyrights, patents, trademarks, and k… |
+| d144 | contract | license | ip | 0.9 | ✓ | ✗ | The document is a formal multi-party agreement explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT.' Its operative clauses predominantly establish an exclusive worldwide license fo… |
+| d145 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise-specific operative clauses, including the grant of franchise rights, initial franchise and … |
+| d146 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise provisions, including the grant of a license to use the Brand/System, payment of monthly pr… |
+| d147 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of franchise rights to operate a Buffalo Wild Wings … |
+| d148 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains classic franchise provisions including the grant of franchise rights, exclusive territory, initial and ongoing… |
+| d149 | contract | non_compete_no_solicit | franchise | 0.95 | ✓ | ✗ | The document is explicitly titled a 'Non-Disclosure and Non-Competition Agreement' and contains operative clauses governing confidentiality, covenants not to compete, non-solicita… |
+| d150 | contract | franchise | franchise | 0.85 | ✓ | ✓ | The document is a formal guarantee agreement explicitly titled as an attachment to a Master Franchise Agreement. It contains operative clauses detailing joint/several payment obli… |
+| d151 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER FRANCHISE AGREEMENT' and contains standard franchise provisions, including grant of franchise rights, royalty and fee payments, use of pr… |
+| d152 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes a formal agency relationship. Section 2 appoints the Agent as the exclusive representative of the Merchant to … |
+| d153 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and formally appoints Keefe, Bruyette & Woods, Inc. as the exclusive 'Agent' and financial advisor to manage a stock subscript… |
+| d154 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and contains operative clauses appointing a 'sales agent'/'placement agent' to act on a 'best efforts' basis to solicit subscr… |
+| d155 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and operates as a formal appointment of Keefe, Bruyette & Woods, Inc. as the exclusive financial advisor and marketing agent (… |
+| d156 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes an insurance distribution relationship where the Agency is authorized to solicit policies, receive commissions… |
+| d157 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and consistently uses agency terminology throughout. Operative clauses (Sections 1 and 8) formally appoint the listed financia… |
+| d158 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'Agency Agreement' and establishes a principal-agent relationship. Operative clauses appoint the counterparty as an 'authorized distributor agent… |
+| d159 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and its operative clauses govern the physical transport of natural gas between designated receipt and delivery… |
+| d160 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Marine Transportation Agreement' and its operative clauses govern the provision of marine transportation services for fuel oil, including load/d… |
+| d161 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and governs the transportation of liquid hydrocarbons via pipeline between Solana Petroleum and Ecopetrol. The operativ… |
+| d162 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Transportation Services Agreement' and its operative clauses govern the transportation of natural gas liquids via a pipeline system, detailing r… |
+| d163 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and its operative clauses govern the pipeline transportation of natural gas, detailing rate schedules, maximum… |
+| d164 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICES AGREEMENT' and its operative clauses govern the commitment to transport petroleum products via a common carrier pipeline… |
+| d165 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and establishes a carrier-shipper relationship for the movement of commodities. Operative clauses detail shipment tende… |
+| d166 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and contains operative clauses detailing CNET's obligation to provide TV spots, banner advertisements, and online retail im… |
+| d167 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and contains standard contract structure (recitals, definitions, operative articles, signatures). The substantive obligatio… |
+| d168 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses exclusively govern the joint promotion and marketing of a pharmaceutical product. Key provisions … |
+| d169 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and functions as a formal contract between Ashworth, Inc. and James W. Nantz III/Nantz Communications. The operative clause… |
+| d170 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and details the provision of advertising and promotional services for a pharmaceutical product to targeted physicians in ex… |
+| d171 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'Promotion Agreement' and contains standard contract boilerplate (recitals, term, responsibilities, payment/deposit, indemnity, dispute resolutio… |
+| d172 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-PROMOTION AGREEMENT' and functions as a formal binding contract between two pharmaceutical companies. Its operative clauses center on promoti… |
+| d173 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHANNEL PARTNER RESELLER AGREEMENT' and its operative clauses establish a reseller relationship, granting the Channel Partner the right to sell … |
+| d174 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and its operative clauses (Sections 2.1, 4.2, 6.1) establish a non-exclusive value-added reseller relationship, granting the… |
+| d175 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and establishes a formal contractual relationship where Schoolpop is granted the right to resell AEIS's stored-value product… |
+| d176 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'FORM OF SUB-RESELLER AGREEMENT' and contains operative Clause 1 appointing a sub-reseller and granting resale rights for services, which directl… |
+| d177 | contract | license | reseller | 0.85 | ✓ | ✗ | The document is a formal agreement explicitly titled 'License and Reseller Agreement.' While Section 2 appoints CHT as a reseller, the substantive operative clauses predominantly … |
+| d178 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'Reseller Agreement' and contains operative language in Section 2.1 appointing Telnet as a 'non-exclusive authorized reseller' to market, sell, a… |
+| d179 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'Reseller Agreement' and its operative clauses center on granting Detto the right to distribute and license PivX's software to third parties, alo… |
+| d180 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses define consulting services, compensation, independent contractor status, confidentiality, indemn… |
+| d181 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses center on engaging an independent contractor to perform specified consulting services for hourly… |
+| d182 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard consulting agreement provisions, including the engagement of an independent contractor/consultant, a… |
+| d183 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard consulting engagement clauses, including an engagement provision for investor relations, corporate s… |
+| d184 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting arrangement, including the provision of advice and consultation s… |
+| d185 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses focus on engaging a consultant to provide management and financial advisory services, detailing … |
+| d186 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for engaging an independent contractor, including scope of services, fee structure… |
+| d187 | contract | marketing | affiliate | 0.85 | ✓ | ✗ | The document is explicitly titled 'Marketing Affiliate Agreement' and its operative clauses center on marketing plans, promotional activities, sales quotas, training, and brand us… |
+| d188 | contract | affiliate | affiliate | 0.9 | ✓ | ✓ | The document is explicitly titled 'BUSINESS AFFILIATE AGREEMENT' and establishes a formal business affiliation between an individual and a corporation. It outlines mutual obligati… |
+| d189 | contract | affiliate | affiliate | 0.8 | ✓ | ✓ | Explicitly titled 'Network Affiliate Agreement,' the document establishes a formal affiliation/network partnership between NCM and a theater circuit. While it contains substantial… |
+| d190 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'Affiliate Program / Premium Affiliate Management General Terms and Conditions' and contains standard operative clauses governing an affiliate ma… |
+| d191 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHASE AFFILIATE AGREEMENT' and contains standard affiliate program provisions, including enrollment criteria, referral fees based on approved ac… |
+| d192 | contract | collaboration | affiliate | 0.9 | ✓ | ✗ | The document is a formally executed agreement between two corporate entities. While titled 'Affiliate Agreement,' the substantive operative clauses govern a joint effort to develo… |
+| d193 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'Charter Affiliate Affiliation Agreement' and establishes a formal affiliation relationship between a television network and a broadcasting stati… |
+| d194 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-COMPETITION AND NON-SOLICITATION AGREEMENT' and its operative provisions (Section 1) exclusively establish confidentiality, non-compete, and… |
+| d195 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-COMPETITION AGREEMENT AMENDMENT NO. 1' and its operative clauses directly amend restrictive covenants, specifically deleting and replacing n… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+
+### Subtype classification accuracy by class
+
+| Subtype | Correct | Correct (equiv) | Total | Accuracy | Accuracy (equiv) |
+|---|---|---|---|---|---|
+| affiliate | 6 | 6 | 8 | 0.75 | 0.75 |
+| agency | 8 | 8 | 8 | 1 | 1 |
+| co_branding | 8 | 8 | 8 | 1 | 1 |
+| collaboration | 7 | 7 | 8 | 0.875 | 0.875 |
+| consulting | 8 | 8 | 8 | 1 | 1 |
+| development | 7 | 7 | 8 | 0.875 | 0.875 |
+| distributor | 8 | 8 | 8 | 1 | 1 |
+| endorsement | 8 | 8 | 8 | 1 | 1 |
+| franchise | 7 | 7 | 8 | 0.875 | 0.875 |
+| hosting | 5 | 5 | 8 | 0.625 | 0.625 |
+| ip | 7 | 7 | 8 | 0.875 | 0.875 |
+| joint_venture | 4 | 4 | 8 | 0.5 | 0.5 |
+| license | 7 | 7 | 8 | 0.875 | 0.875 |
+| maintenance | 2 | 6 | 8 | 0.25 | 0.75 |
+| manufacturing | 7 | 7 | 8 | 0.875 | 0.875 |
+| marketing | 1 | 1 | 8 | 0.125 | 0.125 |
+| non_compete_no_solicit | 3 | 3 | 3 | 1 | 1 |
+| outsourcing | 7 | 7 | 8 | 0.875 | 0.875 |
+| promotion | 8 | 8 | 8 | 1 | 1 |
+| reseller | 7 | 7 | 8 | 0.875 | 0.875 |
+| service | 8 | 8 | 8 | 1 | 1 |
+| sponsorship | 7 | 7 | 8 | 0.875 | 0.875 |
+| strategic_alliance | 7 | 7 | 8 | 0.875 | 0.875 |
+| supply | 8 | 8 | 8 | 1 | 1 |
+| transportation | 8 | 8 | 8 | 1 | 1 |
+
+### Failed classification insights
+
+The model's own reasoning on every failed row — the evidence it cited for the wrong family, and the failure mode that explains WHY it missed:
+
+| Failure mode | Count |
+|---|---|
+| equivalent_family | 4 |
+| family_confusion | 23 |
+| function_over_form | 3 |
+| other_fallback | 2 |
+
+**1. MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contract execution language ('agreement by and among them', 'execute this Agreement', counterpart clause, and signature blocks for multiple parties). Although it functions as an exhibit to an SEC Schedule 13D filing, its substantive form is a multilateral agreement rather than a regulatory submission itself. It does not fit any specific commercial contract subgroup, so 'other' is assigned.
+
+**2. LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2** — expected `license` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is explicitly titled a 'Mutual Termination Agreement' and follows standard contract formatting with recitals, operative termination language ('Agreement shall terminate and be of no further force or effect'), integration, governing law, counterparts, and signature blocks. Its sole substantive purpose is to mutually end a prior Domain Name License Agreement without establishing new ongoing commercial obligations. Because it does not create a specific recurring commercial relationship matching any of the defined subgroups, 'other' is the appropriate classification.
+
+**3. SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and centers on granting a non-exclusive license to use proprietary trading software. Operative clauses detail the license grant, intellectual property ownership, strict usage restrictions, field-of-use limitations, and volume-based licensing fees. Although it includes a technical support and maintenance section, the core transactional framework and majority of provisions govern the software license itself.
+
+**4. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and its primary operative clause (Section 2.0) grants a 'nonexclusive, worldwide, irrevocable, perpetual license' to install, use, execute, and copy the software. While it includes ancillary provisions for customization and maintenance, the core substantive obligation is the licensing of software/IP, firmly placing it in the license subgroup per the provided rules.
+
+**5. SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Software License and Maintenance Agreement' and its operative clauses primarily establish an IP licensing framework: granting a perpetual non-exclusive worldwide license to use Licensed Technology, defining source/object code, setting runtime and development license fees, and detailing source code access conditions. Although it includes maintenance and support obligations, the substantive core and primary consideration revolve around the licensing of software technology.
+
+**6. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SCHEDULE A Product License Schedule' and operates as an exhibit/order form to a master 'Software License, Customization and Maintenance Agreement.' Its operative clauses focus on identifying the specific software products and platforms being licensed, detailing delivery and installation terms, specifying conditions for source code delivery, and outlining maintenance service periods. This structure and content directly correspond to a software license agreement, justifying a high-confidence classification under the 'license' subtype.
+
+**7. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2** — expected `maintenance` vs predicted `development` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a 'Customization Schedule' that functions as a binding contract for software development work. Its operative clauses exclusively govern the Supplier's obligation to design, build, and deliver custom software features based on provided functional and system specifications, complete with delivery/installation timelines, project personnel assignments, and fee structures. This squarely fits the 'development' subgroup, as the substantive focus is on product/software customization and delivery rather than licensing, maintenance, or general services.
+
+**8. ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `service` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal First Amendment to a Management and Maintenance Agreement. It features standard contractual architecture (recitals, consideration, operative amendments) and establishes ongoing managerial obligations, including project curtailment protocols and term extensions. As it governs continuous operational and professional management services rather than a one-time transaction or IP transfer, it aligns with the service subgroup.
+
+**9. FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT** — expected `strategic_alliance` vs predicted `service` (contract, conf 0.85) — mode: `family_confusion`
+
+> Despite the 'Strategic Alliance Agreement' title, the operative clauses substantively establish a master services/subcontractor arrangement. The agreement governs the performance of specific Work (labor, materials, equipment, and construction/telecom services) through individual Purchase Orders, with standard MSA terms covering independent contractor status, insurance, warranties, indemnification, and payment. These obligations align most closely with a service agreement rather than a collaborative partnership or strategic alliance.
+
+**10. HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT** — expected `sponsorship` vs predicted `endorsement` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement between a software developer and a celebrity/golfer. While the title reads 'Sponsorship and Development Agreement,' the operative clauses overwhelmingly govern a celebrity endorsement arrangement: granting rights to use Smith's likeness, establishing exclusivity for competing video games, detailing approval processes for advertising materials, and structuring compensation through royalties and equity. The 'development' aspect is limited to vague cooperation language without substantive development machinery (e.g., milestones, R&D plans, or technical deliverables), so the development preference rule does not apply. The substantive obligations align precisely with a product endorsement agreement.
+
+**11. ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement** — expected `development` vs predicted `franchise` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'El Pollo Loco® Franchise Development Agreement' and governs the grant of rights to develop and open multiple franchised restaurant locations within a specific territory. Operative clauses detail a development schedule, site approval committees, development fees credited toward initial franchise fees, and mandatory execution of individual Franchise Agreements per location. These terms center on franchise rights, territorial expansion, and system compliance, firmly placing it in the franchise subgroup.
+
+**12. CHEETAHMOBILEINC_04_22_2014-EX-10.43-Cooperation Agreement** — expected `collaboration` vs predicted `strategic_alliance` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal 'Cooperation Agreement' between two internet technology companies. Section 4.1 explicitly states that the parties 'form a strategic alliance to develop their respective businesses.' The operative clauses detail mutual obligations for technical integration (embedding search engines, setting default browsers), traffic generation, marketing support, and proportional revenue sharing based on search metrics. While it includes standard ancillary provisions (IP license, confidentiality, termination), the core substantive framework and explicit terminology align directly with a strategic alliance partnership rather than a simple service, distribution, or licensing deal.
+
+**13. PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'Exhibit 99.1 JOINT FILING AGREEMENT' and contains standard SEC filing terminology such as 'Additional Reporting Person,' 'Designated Filer,' and 'Issuer and CUSIP.' Despite the word 'Agreement' in the title, it is a procedural attachment used for joint securities filings (typically Schedule 13D/G) rather than a substantive commercial contract. This places it firmly in the compliance_filing class.
+
+**14. RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is a Joint Filing Agreement explicitly designed to satisfy Rule 13d-1(k) under the Securities Exchange Act of 1934 for a Schedule 13G/A filing. Despite containing signature blocks, it lacks commercial terms and serves exclusively as a regulatory compliance instrument attached to an SEC submission, aligning directly with the compliance_filing class.
+
+**15. TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is a standard 'Joint Filing Agreement' executed pursuant to the Securities Exchange Act of 1934 to coordinate a single Section 13 regulatory filing among multiple beneficial owners. Its explicit focus on SEC rules, joint filing responsibilities, and incorporation by reference places it squarely in the compliance_filing category rather than a commercial contract.
+
+**16. Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement** — expected `hosting` vs predicted `development` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Website Design, Development and Hosting Agreement' containing operative clauses that establish a structured development plan, specific milestones (Stages 1-3 in Exhibit A), change order procedures, and delivery timelines. Per the hybrid agreement and development preference rules, the substantive obligations and machinery center on product/web development rather than hosting or general services, making 'development' the precise subtype.
+
+**17. AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT** — expected `hosting` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Site Development and Hosting Agreement.' The operative clauses detail HDI's obligations to design, develop, implement, and launch a website within a strict 60-day milestone, bear all development costs, and subsequently host and maintain it. Per the hybrid agreement guidance and the clear presence of development milestones and machinery, it is classified as a Development Agreement rather than a pure hosting or general service contract.
+
+**18. BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT** — expected `hosting` vs predicted `marketing` (contract, conf 0.8) — mode: `family_confusion`
+
+> The document is a formal 'Co-Hosting Agreement' between two technology companies. Its operative clauses primarily govern marketing considerations, including hot link placements on NAI's websites, exclusive positioning for software resale, advertising material approvals, and jointly funded marketing promotions. Although it includes a distribution addendum, the core substantive obligations focus on digital marketing visibility and promotional activities rather than traditional supply or distribution logistics, making 'marketing' the most accurate subgroup fit.
+
+**19. ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement** — expected `outsourcing` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement between a client and an architectural firm for the planning, design, and development of a resort hotel. The operative clauses detail specific development deliverables (architectural development plans, environmental impact assessments, construction monitoring), milestone-based payment stages, and project timelines, which strongly align with a development agreement. Although titled 'Outsourcing Contract,' the substantive obligations center on project development rather than general business-process outsourcing.
+
+**20. Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT** — expected `marketing` vs predicted `manufacturing` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled a 'Manufacturing, Design and Marketing Agreement' and its operative clauses overwhelmingly govern the manufacturing relationship. Key sections detail purchase orders, product costing, per-unit royalties, tooling/NRE charges, delivery terms, manufacturing warranties, and FDA regulatory compliance for production. While design and marketing are referenced in the title and recitals, they are either ancillary to the manufacturing process or explicitly deferred to separate agreements, making this a clear manufacturing agreement.
+
+**21. PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT** — expected `marketing` vs predicted `distributor` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement'. The operative clauses predominantly establish EKR as the exclusive distributor, detailing its obligations to market, sell, warehouse, and manage sub-distributors for the Product. Financial terms are structured around net sales royalties, advance royalty offsets, and milestone payments tied to commercial launch and sales performance. Although it includes ancillary IP licensing and trademark usage provisions, these are explicitly limited to supporting the distribution rights, making distributor the clear substantive classification.
+
+**22. Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement** — expected `marketing` vs predicted `distributor` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement between an insurance issuer/distributor and a broker-dealer. Although titled 'Marketing and Servicing Agreement,' the operative clauses primarily establish a sales channel: appointing registered representatives to solicit and procure applications for variable annuity contracts, setting compliance and supervision standards for sales activities, and detailing commission-based compensation schedules. These substantive obligations align with a distribution agreement granting rights to sell and market the issuer's products through a third-party channel.
+
+**23. MetLife, Inc. - Remarketing Agreement** — expected `marketing` vs predicted `agency` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal 'Remarketing Agreement' that explicitly appoints Deutsche Bank as an agent to remarket senior component debentures on behalf of MetLife. It contains standard operative clauses for an agency relationship (appointment, duties, fees, indemnification, termination), along with extensive representations and warranties typical of capital markets mandates. While highly specific to securities remarketing, its structure and operative language align most closely with an agency agreement among the provided subgroups.
+
+**24. Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT** — expected `marketing` vs predicted `agency` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is explicitly titled an 'Exclusive Agency and Marketing Agreement.' Operative clauses, particularly Article 2, formally appoint one party as the exclusive agent to handle marketing, sales, warehousing, order processing, and distribution on behalf of the principal. Compensation is structured around commissions and expense allocations typical of agency relationships, rather than outright purchase/resale rights characteristic of a distributor. These features firmly place it within the agency subgroup.
+
+**25. TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement** — expected `marketing` vs predicted `reseller` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses center on granting the counterparty exclusive rights to distribute and sell products, establishing detailed ordering, pricing, and payment procedures, setting commercialization milestones, and defining reseller-specific duties. These substantive terms align directly with the reseller subgroup rather than general marketing or distribution categories.
+
+**26. LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT** — expected `marketing` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Joint Development and Marketing Agreement.' Operative clauses establish a joint market evaluation phase, assign responsibilities for product/service development and US market entry, and grant a royalty-free IP license specifically for the 'design and development of product(s).' Per the hybrid agreement classification rules, the presence of development machinery (joint steering/evaluation phase, development-stage IP provisions) takes substantive precedence over the accompanying marketing and sales obligations. Therefore, it is classified as a Development Agreement. Confidence is set at 0.85 due to the explicit dual-purpose title and balanced operative clauses, with marketing as the runner-up.
+
+**27. Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement** — expected `manufacturing` vs predicted `development` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'Master Development and Manufacturing Agreement' containing standard contractual provisions (recitals, definitions, engagement, compensation, IP ownership, confidentiality, indemnification, term/termination). While it covers both development and manufacturing, the operative clauses explicitly define 'Development Work,' require development specifications, establish project plans with schedules and milestones, and assign 'Magenta Developed Intellectual Property.' Per the development preference rule, agreements with explicit development machinery and IP provisions are classified as Development Agreements.
+
+**28. PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT** — expected `ip` vs predicted `license` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal multi-party agreement explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT.' Its operative clauses predominantly establish an exclusive worldwide license for patent applications and derived products, detailing licensing scope, royalty structures, IP prosecution cost reimbursements, and quarterly reporting. Although it includes a brief 'Joint Venture' section outlining development funding, the core substantive obligations and commercial mechanics align definitively with a standard intellectual property license agreement.
+
+**29. PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3** — expected `franchise` vs predicted `non_compete_no_solicit` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled a 'Non-Disclosure and Non-Competition Agreement' and contains operative clauses governing confidentiality, covenants not to compete, non-solicitation of employees/customers, injunctive relief, and severability. Its substantive form is a restrictive-covenant agreement between a franchisee/employer and its personnel, which squarely fits the non_compete_no_solicit subtype. Although sourced from an SEC filing appendix, Rule 5 directs classification by substantive form rather than wrapper context.
+
+**30. EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement** — expected `reseller` vs predicted `license` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement explicitly titled 'License and Reseller Agreement.' While Section 2 appoints CHT as a reseller, the substantive operative clauses predominantly govern intellectual property rights, grants of sublicensing authority, source code escrow, royalty calculations, and IP ownership, which are hallmarks of a software/IP license agreement. The hybrid title and dual focus justify capping confidence at 0.85, with 'reseller' as the runner-up family.
+
+**31. CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement** — expected `affiliate` vs predicted `marketing` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is explicitly titled 'Marketing Affiliate Agreement' and its operative clauses center on marketing plans, promotional activities, sales quotas, training, and brand usage rights. While it includes sales and distribution mechanics, the primary obligations and explicit title align with a marketing and channel partnership agreement rather than a pure distribution or referral affiliate contract.
+
+**32. LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement** — expected `affiliate` vs predicted `collaboration` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formally executed agreement between two corporate entities. While titled 'Affiliate Agreement,' the substantive operative clauses govern a joint effort to develop, manufacture, market, and sell AMR product suites, featuring joint IP ownership, coordinated sales territories, and detailed revenue-sharing mechanisms. These terms align with a collaboration/partnership framework rather than a traditional affiliate referral program, making 'collaboration' the most accurate substantive subtype.
+
+---
+
+## qwen3.7-flash_sorter_v3_subtype  (subtype_classification)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T05:15:15.212939+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v3 |
+| Git commit | `9d5090c` (dirty tree) |
+| Rows | 195 |
+| Completed | 195 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts-full |
+| ground_truth | cuad_folder |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | 2e1fe4b740df85d09f2038851327996bee777eafff085bbd2b537bd3df1c33c5 |
+| n_samples | 195 |
+| sample_requested | 0 |
+| stratified | 200 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 4096 |
+| reasoning_effort | none |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/subtype_200_v3_none.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | — | — | — | — | — |
+
+### Scores
+
+**Scores — sorter**
+
+| Field | Score |
+|---|---|
+| confidence | 0.9436 |
+| confusion_matrix | affiliate: {'affiliate': 6, 'distributor': 1, 'joint_venture': 1} · agency: {'other': 1, 'agency': 7} · co_branding: {'co_branding': 8} · collaboration: {'collaboration': 6, 'strategic_alliance': 2} · consulting: {'consulting': 8} · development: {'collaboration': 1, 'development': 5, 'franchise': 1, 'license': 1} · distributor: {'distributor': 8} · endorsement: {'endorsement': 8} · franchise: {'franchise': 7, 'non_compete_no_solicit': 1} · hosting: {'hosting': 5, 'development': 2, 'distributor': 1} · ip: {'ip': 7, 'license': 1} · joint_venture: {'other': 4, 'joint_venture': 4} · license: {'other': 1, 'license': 7} · maintenance: {'service': 2, 'license': 4, 'maintenance': 1, 'development': 1} · manufacturing: {'manufacturing': 8} · marketing: {'marketing': 1, 'manufacturing': 1, 'distributor': 1, 'endorsement': 1, 'other': 1, 'agency': 1, 'reseller': 1, 'collaboration': 1} · non_compete_no_solicit: {'non_compete_no_solicit': 3} · outsourcing: {'outsourcing': 7, 'consulting': 1} · promotion: {'promotion': 6, 'endorsement': 1, 'marketing': 1} · reseller: {'reseller': 6, 'distributor': 1, 'development': 1} · service: {'service': 8} · sponsorship: {'sponsorship': 7, 'other': 1} · strategic_alliance: {'strategic_alliance': 7, 'service': 1} · supply: {'supply': 6, 'distributor': 2} · transportation: {'transportation': 8} |
+| equiv_recovered | license, license, license, license, license, distributor, joint_venture |
+| exact_match | 0.9744 |
+| failure_insights | mode_counts: {'equivalent_family': 7, 'family_confusion': 26, 'function_over_form': 5, 'other_fallback': 3} · n_failed: 41 · failures: [{'filename': 'OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2', 'expected': 'agency', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'EXHIBIT I TO SCHEDULE A (COMPLIANCE WITH UNITED STATES SECURITIES LAWS)' and functions as an 'Agents' Certificate'. Its content consists of representations and warranties regarding compliance with U.S. Securities laws (Exchange Act, Securities Act, Regulation D) for the offer and sale of securities. While it references an underlying Agency Agreement, the document itself is a regulatory compliance certificate/exhibit rather than the operative agreement establishing the agency relationship."}, {'filename': 'Microgenics Corporation - Collaborative Development and Commercialization Agreement', 'expected': 'development', 'predicted': 'collaboration', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Collaborative Development and Commercialization Agreement'. The operative clauses (Section 2) establish a joint research program with specific governance structures (Joint Steering Committee, Joint Project Team), shared responsibilities for development and regulatory approval, and IP/know-how exchange. While it includes commercialization and supply elements, the primary substantive obligation is the collaborative R&D effort to develop an assay, fitting the 'collaboration' subtype under the hybrid agreement rules which prioritize the collaborative/development machinery."}, {'filename': 'MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'EXHIBIT D JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its primary function is to facilitate the joint filing of a Schedule 13D (a regulatory compliance document) with the SEC. While it contains agreement language between parties, in the context of legal document classification for corporate transactions, exhibits attached to SEC filings that govern the mechanics of that specific regulatory submission are best classified as compliance filings rather than standalone commercial contracts."}, {'filename': 'LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2', 'expected': 'license', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MUTUAL TERMINATION AGREEMENT' and contains operative clauses effectuating the termination of a prior agreement ('Original Agreement'). It does not fit into any of the specific commercial contract subgroups (such as license, service, or supply) because its primary function is to end an existing contractual relationship rather than establish new ongoing obligations like licensing, distribution, or development. Therefore, it falls under 'other'."}, {'filename': 'VERTEXENERGYINC_08_14_2014-EX-10.24-OPERATION AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'OPERATION AND MAINTENANCE AGREEMENT' and functions as a formal contract between an Owner and an Operator. The operative clauses (Article II and IV) define the engagement of the Operator to manage, operate, and maintain a specific facility ('Rail Facility') on behalf of the Owner. This constitutes a general professional/support services agreement where one party provides operational expertise and labor. It does not fit into specialized subgroups like 'maintenance' (which typically implies product warranty/repair), 'supply' (goods), or 'outsourcing' (entire business process transfer), making 'service' the most accurate classification for this facility management/operations service."}, {'filename': 'SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The operative clauses primarily focus on granting a non-exclusive license to use proprietary trading software ('Licensed Technology'), defining intellectual property rights, restricting reverse engineering and sublicensing, and establishing ownership of the IP. While it includes maintenance/support services (Article VII), the core legal relationship is the licensing of software IP, fitting the 'license' subtype perfectly."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Software License, Customization and Maintenance Agreement'. The operative clauses (Section 2.0) grant a nonexclusive, worldwide license to use the software. While it includes customization (development) and maintenance services, the primary legal mechanism is the licensing of intellectual property rights. The customization provisions are ancillary to the licensed product's deployment and do not constitute a standalone development agreement where IP ownership or R&D milestones are the primary focus over the license grant. Therefore, it fits best under the 'license' subgroup."}, {'filename': 'SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The operative clauses (Article 2) grant a perpetual non-exclusive license to use Licensed Technology in Object Code format. While it includes maintenance and support obligations (Article 6), the primary substantive obligation is the licensing of intellectual property (software). This fits the 'license' subgroup definition for licensing of technology/IP."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Product License Schedule' and states it is issued pursuant to a 'Software License, Customization and Maintenance Agreement'. The content details the specific software products licensed (Cardlytics OPS), delivery terms, and maintenance services associated with that license. While it includes maintenance elements, the primary substantive obligation defined in this schedule is the licensing of the software product."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2', 'expected': 'maintenance', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Customization Schedule' and states it is attached to a 'Software License, Customization and Maintenance Agreement'. The operative clauses focus on the delivery of functional specifications, system design, test specifications, and the actual creation/delivery of custom software features ('Supplier wishes to delivery those Customizations'). Under the provided rules, agreements involving product/software customization with defined milestones and specifications are classified as Development Agreements."}, {'filename': 'ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a 'First Amendment' to a 'Management and Maintenance Agreement'. It contains operative clauses amending the term and adding management duties (curtailment/disconnection of projects) performed by a Manager for a Partnership. This falls squarely under general professional/support services (management/maintenance). It is not a corporate record because it is an agreement between external parties (Manager and Partners), nor is it a pure maintenance agreement in the sense of equipment upkeep, but rather ongoing management services."}, {'filename': 'FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT', 'expected': 'strategic_alliance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is titled 'Strategic Alliance Agreement', but the substantive operative clauses define a master services/subcontracting arrangement. Specifically, Section 1 states FTE will 'supply labor, materials, equipment, supervision and/or services' for a 'scope of work'. Section 2 details the scope as construction and acquisition services ('Route Feasibility & Site Acquisition', 'OSP Construction'). The agreement operates via Purchase Orders for specific tasks, includes standard service contract provisions (indemnification, insurance, independent contractor status, warranty of workmanship), and lacks the strategic partnership elements (joint governance, shared IP, joint R&D) typical of a true strategic alliance or collaboration. It is best classified as a Service Agreement (specifically a subcontractor services agreement)."}, {'filename': 'LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT', 'expected': 'sponsorship', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses establishing a contractual relationship between a Purchaser and multiple Sponsors for the purpose of funding a tender offer. While the term 'Sponsorship' in corporate finance often refers to equity commitments in M&A/tender offers (which might arguably fall under 'other' or 'joint_venture' depending on interpretation), it does not fit any of the specific commercial contract subgroups listed (such as marketing sponsorship, distribution, license, etc.). The document is a formal agreement with binding obligations, consideration, and standard legal boilerplate, clearly fitting the 'contract' doc_type. Since it does not match the defined subgroups like 'endorsement' (celebrity/influencer) or 'marketing', 'other' is the correct classification."}, {'filename': 'ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement', 'expected': 'development', 'predicted': 'franchise', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'EL POLLO LOCO® FRANCHISE DEVELOPMENT AGREEMENT'. The operative clauses grant the Developer rights to establish and operate franchised restaurants under the El Pollo Loco system, subject to execution of individual Franchise Agreements. It includes standard franchise development machinery such as a Development Schedule, site approval processes (RESAC), development fees applied against initial franchise fees, and covenants not to compete. While it involves development, the substantive legal relationship is that of a franchise system expansion, making 'franchise' the correct subgroup."}, {'filename': 'EtonPharmaceuticalsInc_20191114_10-Q_EX-10.1_11893941_EX-10.1_Development Agreement', 'expected': 'development', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'EXCLUSIVE LICENSE AND PRODUCT DEVELOPMENT AGREEMENT'. The operative clauses in Section 2 ('GRANT OF RIGHTS') establish an exclusive license of intellectual property (Products, Dossiers, Background IP) from Aucta to ETON. While Section 3 outlines development and registration responsibilities, the primary legal mechanism transferring rights and establishing the commercial relationship is the license grant, supported by milestone payments and royalties typical of licensing deals. Under Rule 8 (Hybrid Agreements), since the agreement does not feature a joint steering committee or shared R&D cost/profit sharing characteristic of a 'collaboration' or 'joint_venture', and the title order places License first, it is classified as a license. The development obligations are ancillary to the exploitation of the licensed IP."}, {'filename': 'URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT', 'expected': 'collaboration', 'predicted': 'strategic_alliance', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'COOPERATION AGREEMENT' and functions as a formal contract between an activist investor (JANA Partners) and a public company (URS Corporation). The operative clauses detail a strategic arrangement involving board nominations, committee appointments (CEO Succession, Compensation, Value Creation), voting agreements, standstill provisions, and mutual non-disparagement. This fits the definition of a Strategic Alliance Agreement, which covers partnerships and collaborations between entities to achieve shared governance or strategic goals, rather than a simple service, license, or distribution deal. It is not a corporate record (like bylaws) because it is a bilateral agreement with external parties, nor is it merely correspondence."}, {'filename': 'LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT', 'expected': 'collaboration', 'predicted': 'strategic_alliance', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'INTERNET CHANNEL COOPERATION AGREEMENT' and establishes a multi-party strategic partnership between Baidu (Party A) and Leju (Party B/C). The operative clauses detail a comprehensive joint venture-like structure: Party B constructs and operates a dedicated real estate channel on Baidu's platform, while Party A provides traffic, promotional resources (RMB 10 million), and search integration. Key features include exclusivity (Article VII), shared branding ('Baidu Leju'), mutual obligations for development and operation, and significant financial consideration (RMB 200 million). This fits the definition of a Strategic Alliance Agreement, which covers broad partnerships and collaborations beyond simple licensing or distribution."}, {'filename': 'PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'Exhibit 99.1', which is the standard designation for exhibits attached to SEC filings (specifically Schedule 13D/G amendments). The content is a 'Joint Filing Agreement' used by multiple reporting persons (Merck Serono SA, Merck KGaA) to file a single beneficial ownership report for Intrexon Corporation. While it involves signatures from multiple parties, its primary function and format are regulatory compliance rather than a substantive commercial contract."}, {'filename': 'RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'Exhibit 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to authorize the joint filing of a Schedule 13G/A with the SEC pursuant to Rule 13d-1(k). While it contains an agreement between parties, its substantive form and function are strictly tied to regulatory compliance and securities law filings, making 'compliance_filing' the most accurate classification over 'contract'."}, {'filename': 'TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'Exhibit 26' and titled 'JOINT FILING AGREEMENT'. Its content governs the joint filing of reports under Section 13 of the Securities Exchange Act of 1934. While it contains agreement language between parties, its primary function and context are regulatory compliance (SEC filings), making it a compliance filing rather than a standalone commercial contract."}, {'filename': 'Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Website Design, Development and Hosting Agreement'. While it includes hosting and customer service elements, the primary operative clauses focus on the design and development of the website (Scope of Work, Change Orders, Due Dates). According to Rule 9 (Development Preference), when a hybrid agreement involves development machinery such as milestones, trial timelines, or specific development stages, it should be classified as 'development' rather than 'hosting' or general 'service'. The presence of distinct development stages in Exhibit A strongly supports this classification. Confidence is capped at 0.85 because it is a hybrid agreement involving multiple service types (design, dev, hosting)."}, {'filename': 'AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a 'Site Development and Hosting Agreement'. It contains significant operative clauses for both development (design, develop, implement, operate, maintain) and hosting (host and maintain the Site on a server). Under Rule 9 (Development Preference), when one of the named families is development and the operative clauses contain development machinery (design, implementation, operational timelines like the 60-day deadline), it should be preferred over the commercial/hosting family. The agreement focuses heavily on the creation and launch of the web presence, making 'development' the primary substantive category, though 'hosting' is a strong secondary element."}, {'filename': 'BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a 'Co-Hosting Agreement' that functions as a hybrid marketing and distribution arrangement. While Section 1 establishes 'Co-Hosting Rights' (marketing/promotion via hot links) and Section 2 covers marketing considerations, the operative core of the commercial relationship is defined in Exhibit E ('Distribution Addendum'). Exhibit E explicitly appoints Co-Host as a 'non-exclusive distributor,' details physical product ordering, pricing, inventory reporting, returns, and risk of loss. Under Rule 8 (Hybrid Agreements), since the agreement contains purchase/resale/order terms characteristic of a distributor relationship, it falls under 'distributor'. However, because the title and significant portions of the main body focus on the co-hosting/marketing aspect, there is competing signal from 'marketing' or 'co_branding', justifying a confidence cap of 0.85 rather than 0.90+."}, {'filename': 'ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement', 'expected': 'outsourcing', 'predicted': 'consulting', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Outsourcing Contract' between a developer (Party A) and an architectural office (Party B). The substantive obligations involve the provision of professional services: establishing architectural development plans, business plans, soil and water conservation plans, environmental impact assessments, and construction monitoring. These are classic consulting/engineering advisory services rather than manufacturing, distribution, or pure software development. While it involves design, it falls under professional services/consulting in standard legal taxonomies for architecture firms."}, {'filename': 'HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement', 'expected': 'supply', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement'. While it contains an IP license grant (Section II) and references clinical trials/development milestones (condition precedent for the license), the operative obligations are primarily commercial: SCIEN is obligated to purchase, market, sell, and distribute the Product in the Territory, prepare business plans, manage logistics, and provide sales forecasts. HEMISPHERX's primary obligation is to supply the Product. Under Rule 8 and 9, although 'development' machinery (clinical trials) is present as a condition precedent, the core substantive relationship is the distribution and resale of the product. The agreement functions as a distributorship where the licensee/distributor handles commercialization. It is not a pure development agreement because HEMISPHERX is not developing the drug for SCIEN; rather, SCIEN is commercializing an existing (or investigational but supplied by Hemispherx) product. Therefore, 'distributor' is the best fit among the subgroups, with confidence lowered slightly due to the hybrid nature involving licensing and regulatory approval efforts."}, {'filename': 'AgapeAtpCorp_20191202_10-KA_EX-10.1_11911128_EX-10.1_Supply Agreement', 'expected': 'supply', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'ODM - SUPPLY AGREEMENT' and functions as a formal contract between a Manufacturer and a Customer. The operative clauses (Section 13) appoint the Customer as the 'sole and exclusive agent for the promotion, sales, marketing, distribution and administration' of the products. Section 5 outlines shipping terms (Ex Works), and Schedule B sets minimum annual purchase requirements. While it contains IP provisions and an agency-like appointment, the core commercial obligation is the supply and resale/distribution of physical goods, fitting the definition of a Distributor Agreement or Supply Agreement. Given the explicit 'distribution' language and purchase quotas, 'distributor' is the most precise substantive classification among the options, though 'supply' is also strong; however, the exclusivity and broad marketing/sales mandate lean towards distributor/reseller relationships in this context."}, {'filename': 'Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'manufacturing', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT'. The operative clauses (Sections 3, 4, 7, 8) primarily establish a manufacturing relationship where the Subcontractor manufactures products for the Manufacturer based on purchase orders, defines product costs, handles tooling/NRE charges, and manages delivery/shipping terms. While it includes design services and joint marketing provisions, these are ancillary to the core obligation of producing goods. The agreement fits the definition of a Manufacturing Agreement (supply of goods/manufacturing services) rather than a pure development or supply agreement."}, {'filename': 'PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is an 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement'. It is a hybrid agreement involving licensing, distribution, and marketing. Per Rule 8 (Hybrid Agreements), we weigh the operative clauses. Section 2.1 explicitly appoints EKR as the 'exclusive distributor' and grants 'Distribution Rights' to sell, distribute, warehouse, and market the Product. The bulk of the operative sections (Sections 3, 4, 6) detail the obligations of the distributor (EKR) regarding regulatory approvals, marketing plans, sales forecasts, royalty payments, and supply chain logistics. While it contains IP license provisions, the primary commercial function is the distribution and resale of the pharmaceutical product. It does not fit the 'development' preference in Rule 9 because the core activity is commercialization/distribution of an existing approved drug, not R&D or development of new technology. Therefore, 'distributor' is the best fit among the specific subgroups."}, {'filename': 'Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement', 'expected': 'marketing', 'predicted': 'endorsement', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a 'Broker Dealer Marketing and Servicing Agreement' for variable annuity contracts. Under the contract subtype rules, endorsement riders attached to insurance/annuity agreements are classified as 'endorsement'. This agreement governs the relationship between the insurance issuer/distributor and the broker-dealer agents selling the annuities, which fits the definition of an endorsement rider/amendment in the context of insurance distribution."}, {'filename': 'MetLife, Inc. - Remarketing Agreement', 'expected': 'marketing', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'REMARKETING AGREEMENT' and contains operative clauses appointing Deutsche Bank as a Remarketing Agent to remarket debt securities on behalf of MetLife, Inc. It includes standard representations, warranties, covenants, indemnification, and governing law provisions typical of a formal agreement between parties. While it relates to a securities offering (which might suggest compliance filing context), the document itself is the underlying contractual agreement governing the remarketing process, not a regulatory filing like an SEC form. The specific subtype 'other' is used because 'Remarketing Agreement' does not fit neatly into the provided subgroups such as distributor, reseller, or service; it is a specialized financial services agreement for debt securities."}, {'filename': 'Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'EXCLUSIVE AGENCY AND MARKETING AGREEMENT'. Article 2 is titled 'EXCLUSIVE AGENCY AND DISTRIBUTORSHIP' and Section 2.1 specifically appoints Scotts as Monsanto's 'exclusive agent'. While the agreement includes significant marketing, distribution, and accounting obligations (typical of a distributor or service agreement), the primary legal relationship defined is that of an agency, where the Agent acts on behalf of the Principal (Monsanto) for sales and marketing. The operative clauses focus on the Agent's duties to promote, sell, and manage the brand as an agent, rather than purchasing goods for resale in its own name (which would characterize a pure supply/distributor agreement). Therefore, 'agency' is the most accurate substantive classification."}, {'filename': 'TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement', 'expected': 'marketing', 'predicted': 'reseller', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT'. The operative clauses (Section 1.1) grant the Reseller an exclusive right to 'distribute and sell' the Products. Section 4 outlines the duties of the Reseller to market and sell, and Section 5 details ordering, pricing, and payment procedures for the resale of goods. While it contains marketing elements, the core legal relationship is defined by the distribution and resale rights granted to the counterparty, fitting the 'reseller' subtype perfectly."}, {'filename': 'LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'collaboration', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT'. It establishes a joint team and a 'Phase 1' market evaluation study to assess opportunities and determine the structure of the relationship (Section 2). The operative clauses focus on collaboration: Leclanché supplies products/services while Oak Ridge develops sales/marketing efforts, with specific provisions for exclusivity on qualified opportunities and shared information. While it contains elements of development (market entry plan) and marketing/distribution (Oak Ridge's responsibilities), the primary substantive obligation is the collaborative effort to evaluate and enter the US market together, rather than a definitive supply or license grant. Under Rule 9, although 'development' is named, the 'development' here is limited to a preliminary market study/plan rather than product R&D milestones, making 'collaboration' the most accurate fit for this strategic partnership agreement. Confidence is capped at 0.85 due to the hybrid nature involving significant marketing/distributor-like obligations."}, {'filename': 'PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT', 'expected': 'ip', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is titled 'Intellectual Property Agreement' and functions primarily as an assignment of exclusive license rights from Premier to THI, governed by the terms of prior licensing agreements (2010/2020 Agreements). The operative clauses detail the scope of the license (make, use, sell), royalty payments, IP prosecution costs, and reversion rights, which are characteristic of a License Agreement. However, Section 3 establishes a 'Joint Venture' for the joint development of Covid-19 treatments with specific funding milestones ($750k, $1.15M, etc.). Per Rule 9 (Development Preference), when a hybrid agreement contains development machinery like milestones and joint cooperation obligations, it leans towards 'development'. Yet, the core legal mechanism transferring rights is the license, and the title explicitly references IP. Given the strong presence of both licensing mechanics (royalties, IP reversion) and development obligations (joint venture funding), this is a hybrid. I assign 'license' as the primary subtype because the transfer of IP rights is the foundational element enabling the JV, but cap confidence at 0.85 due to the significant 'development' elements in Section 3."}, {'filename': 'PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3', 'expected': 'franchise', 'predicted': 'non_compete_no_solicit', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1) establish confidentiality obligations, and Section 2 establishes covenants not to compete, non-solicitation of customers, and non-inducement of employees. While it is an appendix within a regulatory filing (10-12G), the substantive form is a restrictive covenant agreement between a franchisee and its personnel."}, {'filename': 'ASHWORTHINC_01_29_1999-EX-10.(D)-PROMOTION AGREEMENT AND NANTZ COMMUNICATIONS, INC.', 'expected': 'promotion', 'predicted': 'endorsement', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'PROMOTION AGREEMENT' but the operative clauses explicitly define and grant an 'ENDORSEMENT' right (Section 1). The core obligation of the individual (James W. Nantz III) is to allow the use of his name, likeness, and autograph for advertising and promotion, and to wear the company's products. This fits the definition of an Endorsement Agreement (celebrity/influencer deal). While it contains elements of marketing services (photography, speaking engagements), the primary legal mechanism is the license of the celebrity's persona for endorsement purposes, which takes precedence under the specific 'endorsement' subgroup classification."}, {'filename': 'DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement', 'expected': 'promotion', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'CO-PROMOTION AGREEMENT'. The operative clauses (Article 2 and Article 4) grant Valeant the right to conduct promotional activities, detailing, and sales force deployment for Dova's product in exchange for a promotion fee. This fits the definition of a Marketing Agreement (promotional services and campaigns). While it involves two parties collaborating, the primary obligation is marketing/promotion rather than R&D or joint venture creation, making 'marketing' the precise subtype over 'collaboration' or 'strategic_alliance'."}, {'filename': 'LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT', 'expected': 'reseller', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell stored value cards provided by AEIS. Section 2 grants exclusivity for resale in a specific market. Sections 3-6 detail inventory management, ordering, forecasting, and payment terms typical of a distribution/reseller relationship where the buyer takes title or assumes risk for inventory to resell to end clients. It does not fit other subgroups like license (no IP grant), manufacturing (no production), or service (primary obligation is resale of goods/cards)."}, {'filename': 'EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement', 'expected': 'reseller', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is titled 'License and Reseller Agreement' and contains significant language regarding licensing (Section 2) and reselling/marking obligations (Section 5). However, per Rule 9 (Development Preference), the operative clauses heavily feature development machinery: Section 3 is dedicated to 'Development and Implementation,' detailing a Development Plan, milestones, timelines, change control processes, acceptance testing criteria, and deployment schedules. The agreement involves customizing Ehave's platform for CHT's specific domain ('Ehave Companion Solution'). Under the CUAD convention cited in Rule 9, such hybrids are classified as Development because the core obligation is the creation/adaptation of the software product itself, not just the commercial distribution of an existing one. Confidence is capped at 0.85 due to the hybrid nature (title and substantial license/reseller terms)."}, {'filename': 'CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MARKETING AFFILIATE AGREEMENT' and functions as a formal contract between two parties. Substantively, it grants the Marketing Affiliate (MA) the right to 'advertise, market and sell' the Company's Technology to clients. The operative clauses detail purchase obligations, sales quotas, discounts based on volume, and the requirement for MA to execute client license agreements upon resale. While it uses the term 'affiliate,' the structure of buying rights to resell goods/services in a territory with specific quotas and pricing tiers aligns with the definition of a Distributor Agreement rather than a simple referral or marketing service agreement. It is not a franchise because the agreement explicitly disclaims franchise status and lacks the requisite control over business operations."}, {'filename': 'LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'joint_venture', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint venturers only as to those activities that they jointly undertake for the AMR market...'. The agreement details joint development of products (Section 3.1), joint ownership of IP developed during the project, shared marketing rights, and profit-sharing mechanisms (Section 3.3). While it contains elements of development and license, the core legal structure established is a joint venture for specific market activities, making 'joint_venture' the most accurate substantive classification over 'affiliate' or 'development'."}] |
+| per_subtype | affiliate: {'accuracy': 0.75, 'accuracy_equiv': 0.875, 'correct': 6, 'equiv': 7, 'total': 8} · agency: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · co_branding: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · collaboration: {'accuracy': 0.75, 'accuracy_equiv': 0.75, 'correct': 6, 'equiv': 6, 'total': 8} · consulting: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · development: {'accuracy': 0.625, 'accuracy_equiv': 0.75, 'correct': 5, 'equiv': 6, 'total': 8} · distributor: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · endorsement: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · franchise: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · hosting: {'accuracy': 0.625, 'accuracy_equiv': 0.625, 'correct': 5, 'equiv': 5, 'total': 8} · ip: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · joint_venture: {'accuracy': 0.5, 'accuracy_equiv': 0.5, 'correct': 4, 'equiv': 4, 'total': 8} · license: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · maintenance: {'accuracy': 0.125, 'accuracy_equiv': 0.625, 'correct': 1, 'equiv': 5, 'total': 8} · manufacturing: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · marketing: {'accuracy': 0.125, 'accuracy_equiv': 0.125, 'correct': 1, 'equiv': 1, 'total': 8} · non_compete_no_solicit: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 3, 'equiv': 3, 'total': 3} · outsourcing: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · promotion: {'accuracy': 0.75, 'accuracy_equiv': 0.75, 'correct': 6, 'equiv': 6, 'total': 8} · reseller: {'accuracy': 0.75, 'accuracy_equiv': 0.875, 'correct': 6, 'equiv': 7, 'total': 8} · service: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · sponsorship: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · strategic_alliance: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · supply: {'accuracy': 0.75, 'accuracy_equiv': 0.75, 'correct': 6, 'equiv': 6, 'total': 8} · transportation: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} |
+| subtype_accuracy | 0.7897 |
+| subtype_accuracy_equiv | 0.8256 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | expected subtype | doc_type ok | subtype ok | equiv ok | confidence | failure mode | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| d1 | UsioInc_20040428_SB-2_EX-10.11_1723988_EX-10.11_Affiliate Agreement 2 | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d2 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2 | completed | compliance_filing | other | agency | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d3 | PaperexchangeComInc_20000322_S-1A_EX-10.4_5202103_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d4 | BERKELEYLIGHTS,INC_06_26_2020-EX-10.12-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d5 | MEDALISTDIVERSIFIEDREIT,INC_05_18_2020-EX-10.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d6 | Microgenics Corporation - Collaborative Development and Commercialization Agreement | completed | contract | collaboration | development | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d7 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_Amendment | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d8 | EcoScienceSolutionsInc_20171117_8-K_EX-10.1_10956472_EX-10.1_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d9 | INTERNATIONALFASTFOODCORP_04_04_1997-EX-99-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 1 | — | — |
+| d10 | BLUEFLYINC_03_27_2002-EX-10.27-e-business Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d11 | INGEVITYCORP_05_16_2016-EX-10.5-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d12 | MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d13 | LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2 | completed | contract | other | license | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d14 | VERTEXENERGYINC_08_14_2014-EX-10.24-OPERATION AND MAINTENANCE AGREEMENT | completed | contract | service | maintenance | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d15 | VAPOTHERM, INC. - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d16 | Loop Industries, Inc. - Marketing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d17 | WESTERN COPPER - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d18 | OASYSMOBILE,INC_07_05_2001-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d19 | VnueInc_20150914_8-K_EX-10.1_9259571_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d20 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d21 | WPPPLC_04_30_2020-EX-4.28-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d22 | GSVINC_05_15_1998-EX-10-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d23 | ENTRUSTINC_07_24_1998-EX-10.5-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d24 | BELLICUMPHARMACEUTICALS,INC_05_07_2019-EX-10.1-Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d25 | ENERGYXXILTD_05_08_2015-EX-10.13-Transportation AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d26 | SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d27 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d28 | IMAGEWARESYSTEMSINC_12_20_1999-EX-10.22-MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d29 | SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d30 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d31 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2 | completed | contract | development | maintenance | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d32 | ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT | completed | contract | service | maintenance | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d33 | ChinaRealEstateInformationCorp_20090929_F-1_EX-10.32_4771615_EX-10.32_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d34 | PalmerSquareCapitalBdcInc_20200116_10-12GA_EX-10.6_11949289_EX-10.6_Trademark License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d35 | AlliedEsportsEntertainmentInc_20190815_8-K_EX-10.19_11788293_EX-10.19_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d36 | GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.6_11951677_EX-10.6_License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d37 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d38 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement1 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d39 | FulucaiProductionsLtd_20131223_10-Q_EX-10.9_8368347_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d40 | FuseMedicalInc_20190321_10-K_EX-10.43_11575454_EX-10.43_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d41 | ScansourceInc_20190822_10-K_EX-10.38_11793958_EX-10.38_Distributor Agreement1 | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d42 | LEGACYTECHNOLOGYHOLDINGS,INC_12_09_2005-EX-10.2-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d43 | VISIUMTECHNOLOGIES,INC_10_20_2004-EX-10.20-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d44 | NETGEAR,INC_04_21_2003-EX-10.16- AMENDMENT #2 TO THE DISTRIBUTION AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d45 | EUROPEANMICROHOLDINGSINC_03_06_1998-EX-10.6-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d46 | InnerscopeHearingTechnologiesInc_20181109_8-K_EX-10.6_11419704_EX-10.6_Distributor Agreem… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d47 | FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT | completed | contract | service | strategic_alliance | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d48 | REWALKROBOTICSLTD_07_10_2014-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d49 | CHIPMOSTECHNOLOGIESBERMUDALTD_04_18_2016-EX-4.72-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d50 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d51 | ICORECONNECTINC_10_13_2010-EX-7.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d52 | SUCAMPOPHARMACEUTICALS,INC_11_04_2015-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d53 | ORBSATCORP_08_17_2007-EX-7.3-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d54 | HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d55 | IVILLAGEINC_03_17_1999-EX-10.16-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d56 | DRKOOPCOMINC_04_21_1999-EX-10.28-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d57 | TICKETSCOMINC_06_22_1999-EX-10.22-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d58 | LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT | completed | contract | other | sponsorship | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d59 | VITAMINSHOPPECOMINC_09_13_1999-EX-10.26-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d60 | EcoScienceSolutionsInc_20180406_8-K_EX-10.1_11135398_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d61 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d62 | ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement | completed | contract | franchise | development | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d63 | EmeraldHealthBioceuticalsInc_20200218_1-A_EX1A-6 MAT CTRCT_11987205_EX1A-6 MAT CTRCT_Deve… | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d64 | PelicanDeliversInc_20200211_S-1_EX-10.3_11975895_EX-10.3_Development Agreement1 | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d65 | EtonPharmaceuticalsInc_20191114_10-Q_EX-10.1_11893941_EX-10.1_Development Agreement | completed | contract | license | development | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d66 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d67 | WARNERCHILCOTTPLC_12_31_2003-EX-4.36-DEVELOPMENT AGREEMENT | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d68 | THERAVANCEBIOPHARMA,INC_05_08_2020-EX-10.2-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d69 | BLACKSTONEGSOLONG-SHORTCREDITINCOMEFUND_05_11_2020-EX-99.(K)(1)-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d70 | OPERALTD_04_30_2020-EX-4.14-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d71 | NYLIACVARIABLEANNUITYSEPARATEACCOUNTIII_04_10_2020-EX-99.8.KK-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d72 | TALCOTTRESOLUTIONLIFEINSURANCECO-SEPARATEACCOUNTTWELVE_04_30_2020-EX-99.8(L)-SERVICE AGRE… | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d73 | ReynoldsConsumerProductsInc_20200121_S-1A_EX-10.22_11948918_EX-10.22_Service Agreement | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d74 | SOLUTIONSVENDINGINTERNATIONAL,INC_03_31_2020-EX1A-1 UNDR AGMT-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d75 | QIWI_06_16_2017-EX-99.(D)(2)-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d76 | URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT | completed | contract | strategic_alliance | collaboration | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d77 | LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT | completed | contract | strategic_alliance | collaboration | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d78 | CHEETAHMOBILEINC_04_22_2014-EX-10.43-Cooperation Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d79 | SPIENERGYCO,LTD_07_10_2014-EX-10-Cooperation Agreement of 50MWp Photovoltaic Grid-connect… | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d80 | IDREAMSKYTECHNOLOGYLTD_07_03_2014-EX-10.39-Cooperation Agreement on Mobile Game Business | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d81 | CERES,INC_01_25_2012-EX-10.20-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d82 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d83 | MOSSIMOINC_04_14_2000-EX-10.14-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d84 | HOLIDAYRVSUPERSTORESINC_04_15_2002-EX-10.13-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d85 | WARNINGMANAGEMENTSERVICESINC_12_10_1999-EX-10-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d86 | MOVADOGROUPINC_04_30_2003-EX-10.28-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d87 | LifewayFoodsInc_20160316_10-K_EX-10.24_9489766_EX-10.24_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d88 | MARSHALLHOLDINGSINTERNATIONAL,INC_04_14_2004-EX-10.15-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d89 | IMPCOTECHNOLOGIESINC_04_15_2003-EX-10.65-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d90 | PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d91 | RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d92 | ACCELERATEDTECHNOLOGIESHOLDINGCORP_04_24_2003-EX-10.13-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d93 | MJBIOTECH,INC_12_06_2018-EX-99.01-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d94 | BORROWMONEYCOM,INC_06_11_2020-EX-10.1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d95 | TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d96 | TheglobeComInc_19990503_S-1A_EX-10.20_5416126_EX-10.20_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d97 | PcquoteComInc_19990721_S-1A_EX-10.11_6377149_EX-10.11_Co-Branding Agreement1 | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d98 | 2ThemartComInc_19990826_10-12G_EX-10.10_6700288_EX-10.10_Co-Branding Agreement_ Agency Ag… | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d99 | MphaseTechnologiesInc_20030911_10-K_EX-10.15_1560667_EX-10.15_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d100 | InvendaCorp_20000828_S-1A_EX-10.2_2588206_EX-10.2_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d101 | NeoformaInc_19991202_S-1A_EX-10.26_5224521_EX-10.26_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d102 | EbixInc_20010515_10-Q_EX-10.3_4049767_EX-10.3_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d103 | BANGIINC_05_25_2005-EX-10-Premium Managed Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d104 | Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d105 | AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d106 | BOLIVARMININGCORP_05_23_2003-EX-2.1-VISP WEB SITE BUILDING AND HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d107 | BNCMORTGAGEINC_05_17_1999-EX-10.4-LICENSING AND WEB SITE HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d108 | BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT | completed | contract | distributor | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d109 | VitalibisInc_20180316_8-K_EX-10.2_11100168_EX-10.2_Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d110 | ASPIRITYHOLDINGSLLC_05_07_2012-EX-10.6-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d111 | NEXSTARFINANCEHOLDINGSINC_03_27_2002-EX-10.26-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d112 | CCAINDUSTRIESINC_04_14_2014-EX-10.1-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d113 | BNLFINANCIALCORP_03_30_2007-EX-10.8-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d114 | ELANDIAINTERNATIONALINC_04_25_2007-EX-10.21-Outsourcing Agreement | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d115 | ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agree… | completed | contract | consulting | outsourcing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d116 | DRAGONSYSTEMSINC_01_08_1999-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d117 | HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement | completed | contract | distributor | supply | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d118 | PROFOUNDMEDICALCORP_08_29_2019-EX-4.5-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d119 | MEDIWOUNDLTD_01_15_2014-EX-10.6-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d120 | FUSIONPHARMACEUTICALSINC_06_05_2020-EX-10.17-Supply Agreement - FUSION | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d121 | ULTRAGENYXPHARMACEUTICALINC_12_23_2013-EX-10.9-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d122 | VAXCYTE,INC_05_22_2020-EX-10.19-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d123 | AgapeAtpCorp_20191202_10-KA_EX-10.1_11911128_EX-10.1_Supply Agreement | completed | contract | distributor | supply | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d124 | Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT | completed | contract | manufacturing | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d125 | PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEM… | completed | contract | distributor | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d126 | Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement | completed | contract | endorsement | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d127 | MetLife, Inc. - Remarketing Agreement | completed | contract | other | marketing | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d128 | Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT | completed | contract | agency | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d129 | TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agre… | completed | contract | reseller | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d130 | LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT | completed | contract | collaboration | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d131 | Apollo Endosurgery - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d132 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement4 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d133 | KitovPharmaLtd_20190326_20-F_EX-4.15_11584449_EX-4.15_Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d134 | Antares Pharma, Inc. - Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d135 | NeuroboPharmaceuticalsInc_20190903_S-4_EX-10.36_11802165_EX-10.36_Manufacturing Agreement… | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d136 | Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d137 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement2 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d138 | HERTZGLOBALHOLDINGS,INC_07_07_2016-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d139 | OTISWORLDWIDECORP_04_03_2020-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT by and among UNITED … | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d140 | ZEBRATECHNOLOGIESCORP_04_16_2014-EX-10.1-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d141 | VERSOTECHNOLOGIESINC_12_28_2007-EX-99.3-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d142 | GarrettMotionInc_20181001_8-K_EX-2.4_11364532_EX-2.4_Intellectual Property Agreement | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d143 | ARMSTRONGFLOORING,INC_01_07_2019-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d144 | PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | license | ip | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d145 | JOINTCORP_09_19_2014-EX-10.15-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 1 | — | — |
+| d146 | HOSPITALITYINVESTORSTRUST,INC_04_07_2014-EX-10.26-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d147 | BUFFALOWILDWINGSINC_06_05_1998-EX-10.3-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 1 | — | — |
+| d148 | AIRTECHINTERNATIONALGROUPINC_05_08_2000-EX-10.4-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d149 | PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3 | completed | contract | non_compete_no_solicit | franchise | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d150 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement2 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d151 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement1 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d152 | BONTONSTORESINC_04_20_2018-EX-99.3-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d153 | BLUEHILLSBANCORP,INC_05_20_2014-EX-1.1-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d154 | BANUESTRAFINANCIALCORP_09_08_2006-EX-10.16-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d155 | ATHENSBANCSHARESCORP_11_02_2009-EX-1.2-AGENCY AGREEMENT , 2009 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d156 | AMERICANPHYSICIANSCAPITALINC_03_31_2003-EX-10.26-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d157 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT1 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d158 | BIOPURECORP_06_30_1999-EX-10.13-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d159 | ATMOSENERGYCORP_11_22_2002-EX-10.17-TRANSPORTATION SERVICE AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d160 | MARTINMIDSTREAMPARTNERSLP_01_23_2004-EX-10.3-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d161 | GRANTIERRAENERGYINC_05_07_2012-EX-10.6-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d162 | RangeResourcesLouisianaInc_20150417_8-K_EX-10.5_9045501_EX-10.5_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d163 | TcPipelinesLp_20160226_10-K_EX-99.12_9454048_EX-99.12_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d164 | MPLXLP_06_17_2015-EX-10.1-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d165 | ENTERPRISEPRODUCTSPARTNERSLP_07_08_1998-EX-10.3-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d166 | CYBERIANOUTPOSTINC_07_09_1998-EX-10.13-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d167 | SigaTechnologiesInc_20190603_8-K_EX-10.1_11695818_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d168 | KINGPHARMACEUTICALSINC_08_09_2006-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d169 | ASHWORTHINC_01_29_1999-EX-10.(D)-PROMOTION AGREEMENT AND NANTZ COMMUNICATIONS, INC. | completed | contract | endorsement | promotion | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d170 | MIDDLEBROOKPHARMACEUTICALS,INC_03_18_2010-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d171 | GOCALLINC_03_30_2000-EX-10.7-Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d172 | DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement | completed | contract | marketing | promotion | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d173 | IpassInc_20181203_8-K_EX-99.1_11445874_EX-99.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d174 | WORLDWIDESTRATEGIESINC_11_02_2005-EX-10-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d175 | LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT | completed | contract | distributor | reseller | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d176 | SalesforcecomInc_20171122_10-Q_EX-10.1_10961535_EX-10.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d177 | EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement | completed | contract | development | reseller | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d178 | ASIANDRAGONGROUPINC_08_11_2005-EX-10.5-Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d179 | ADIANUTRITION,INC_04_01_2005-EX-10.D2-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d180 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d181 | KIROMICBIOPHARMA,INC_05_11_2020-EX-10.23-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d182 | SPHERE3DCORP_06_24_2020-EX-10.12-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d183 | SLINGERBAGINC_05_27_2020-EX-10.7-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d184 | ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1) | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d185 | CORALGOLDRESOURCES,LTD_05_28_2020-EX-4.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d186 | EMERALDHEALTHTHERAPEUTICSINC_06_10_2020-EX-4.5-CONSULTING AGREEMENT - DR. GAETANO MORELLO… | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d187 | CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement | completed | contract | distributor | affiliate | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d188 | UnionDentalHoldingsInc_20050204_8-KA_EX-10_3345577_EX-10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d189 | DigitalCinemaDestinationsCorp_20111220_S-1_EX-10.10_7346719_EX-10.10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d190 | SouthernStarEnergyInc_20051202_SB-2A_EX-9_801890_EX-9_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d191 | CreditcardscomInc_20070810_S-1_EX-10.33_362297_EX-10.33_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d192 | LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement | completed | contract | joint_venture | affiliate | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d193 | TubeMediaCorp_20060310_8-K_EX-10.1_513921_EX-10.1_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d194 | Quaker Chemical Corporation - NON COMPETITION AND NON SOLICITATION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d195 | VIVINT SOLAR, INC. - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | affiliate | agency | co_branding | collaboration | consulting | development | distributor | endorsement | franchise | hosting | ip | joint_venture | license | maintenance | manufacturing | marketing | non_compete_no_solicit | other | outsourcing | promotion | reseller | service | sponsorship | strategic_alliance | supply | transportation |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| affiliate | **6** | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| agency | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| co_branding | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| collaboration | 0 | 0 | 0 | **6** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 |
+| consulting | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| development | 0 | 0 | 0 | 1 | 0 | **5** | 0 | 0 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| franchise | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| hosting | 0 | 0 | 0 | 0 | 0 | 2 | 1 | 0 | 0 | **5** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ip | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| joint_venture | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **4** | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| license | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| maintenance | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | **1** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 |
+| manufacturing | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| marketing | 0 | 1 | 0 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | **1** | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| non_compete_no_solicit | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| other | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| outsourcing | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| promotion | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | **6** | 0 | 0 | 0 | 0 | 0 | 0 |
+| reseller | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **6** | 0 | 0 | 0 | 0 | 0 |
+| service | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 |
+| sponsorship | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 |
+| strategic_alliance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | **7** | 0 | 0 |
+| supply | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **6** | 0 |
+| transportation | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'AFFILIATE OFFICE AGREEMENT'. The operative clauses establish an affiliate relationship where the Affiliate markets and sells Network 1's payment… |
+| d2 | compliance_filing | other | agency | 0.95 | ✗ | ✗ | The document is explicitly titled 'EXHIBIT I TO SCHEDULE A (COMPLIANCE WITH UNITED STATES SECURITIES LAWS)' and functions as an 'Agents' Certificate'. Its content consists of repr… |
+| d3 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses detail the creation of co-branded web sites (Career Center and Equipment Listings), mutual licensi… |
+| d4 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT'. The operative clauses establish a joint effort between Ginkgo Bioworks and Berkeley Lights to develop workflows on the… |
+| d5 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and establishes an independent contractor relationship where Gunston Consulting provides services to Medalist Diversified … |
+| d6 | contract | collaboration | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'Collaborative Development and Commercialization Agreement'. The operative clauses (Section 2) establish a joint research program with specific g… |
+| d7 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'FIRST AMENDMENT TO DISTRIBUTOR AGREEMENT'. The operative clauses amend the underlying Distributor Agreement by adjusting royalty advances, payme… |
+| d8 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard operative clauses for an endorsement deal, including engagement as a spokesperson, grant of rights … |
+| d9 | contract | franchise | franchise | 1 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of a license to use the 'Burger King System' and mar… |
+| d10 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'e-business Hosting Agreement' and the operative clauses (Section 2.0) state that IBM will provide 'Web hosting and related services'. The conten… |
+| d11 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT'. The operative clauses (Section 2 and Section 3) govern the transfer/assignment of IP assets between Parent and… |
+| d12 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly titled 'EXHIBIT D JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its prima… |
+| d13 | contract | other | license | 0.95 | ✓ | ✗ | The document is explicitly titled 'MUTUAL TERMINATION AGREEMENT' and contains operative clauses effectuating the termination of a prior agreement ('Original Agreement'). It does n… |
+| d14 | contract | service | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'OPERATION AND MAINTENANCE AGREEMENT' and functions as a formal contract between an Owner and an Operator. The operative clauses (Article II and … |
+| d15 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT'. The operative clauses (Articles 1, 4, 5, 6) primarily govern Medica's obligation to manufacture the Cartrid… |
+| d16 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MARKETING AGREEMENT'. The operative clauses (Article 2) establish a framework where Loop retains exclusive rights to enter into sales contracts … |
+| d17 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON COMPETITION AGREEMENT AND RIGHT OF FIRST OFFER'. The operative clauses (Part 2) primarily establish a covenant by Western Copper not to enga… |
+| d18 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and defines the core relationship as HSNS providing 'Outsourcing Services' using E.piphany's Application. The operative c… |
+| d19 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and contains operative clauses where the Promoter engages to provide 'Promotion Services' (specifically securing venue cont… |
+| d20 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'WALABOT-HOME RESELLER AGREEMENT'. The operative clauses establish a relationship where Vayyar Imaging Ltd. appoints Inde Living Holdings, Inc. a… |
+| d21 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and functions as an executive employment contract between WPP 2005 Limited and John Rogers. It contains standard employment t… |
+| d22 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT'. The operative clauses (Sections 1-5) detail the provision of promotional placements, link displays, and advertising bann… |
+| d23 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT'. The operative clauses establish a broad cooperative framework between Northern Telecom and Entrust Technologies, … |
+| d24 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and contains operative clauses (Article 2) where Miltenyi agrees to sell/supply products and Bellicum agrees to purchase them.… |
+| d25 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION AGREEMENT' and contains operative clauses detailing the transportation of Crude Petroleum via a Gathering System (Article 2), rat… |
+| d26 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The operative clauses primarily focus on granting a non-exclusive license to use proprietary tradin… |
+| d27 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License, Customization and Maintenance Agreement'. The operative clauses (Section 2.0) grant a nonexclusive, worldwide license to use t… |
+| d28 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AGREEMENT' and its primary operative clauses (Section 3) define 'Software Maintenance Services,' including error fixing, telephone s… |
+| d29 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The operative clauses (Article 2) grant a perpetual non-exclusive license to use Licensed Technolog… |
+| d30 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Product License Schedule' and states it is issued pursuant to a 'Software License, Customization and Maintenance Agreement'. The content details… |
+| d31 | contract | development | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Customization Schedule' and states it is attached to a 'Software License, Customization and Maintenance Agreement'. The operative clauses focus … |
+| d32 | contract | service | maintenance | 0.95 | ✓ | ✗ | The document is a 'First Amendment' to a 'Management and Maintenance Agreement'. It contains operative clauses amending the term and adding management duties (curtailment/disconne… |
+| d33 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Domain Name and Content License Agreement'. Article II contains the operative 'Grant of Licenses' clause, where the Licensor grants the Licensee… |
+| d34 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRADEMARK LICENSE AGREEMENT'. The operative clauses (Article 1) grant a 'personal, non-exclusive, royalty-free right and license to use the Lice… |
+| d35 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT CONTENT LICENSE AGREEMENT'. The operative clauses (Section 2 of Additional Provisions) grant reciprocal non-exclusive licenses to use each… |
+| d36 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'MEDIA LICENSE AGREEMENT'. Section 2.1 contains the operative clause 'PFHOF hereby grants to the Village Media Company a worldwide... right and l… |
+| d37 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSING AGREEMENT'. Section 2.3 and Section 5.3 contain operative clauses where the Licensor grants the Licensee (plan_b) the right to… |
+| d38 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'WIRELESS CONTENT LICENSE AGREEMENT' and contains standard IP license operative clauses, including a 'GRANT OF RIGHTS' (Section 1) where Fox gran… |
+| d39 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT DISTRIBUTION AND LICENSE AGREEMENT'. The operative clauses, specifically Section 1 ('Grant of License and Rights'), clearly establish a … |
+| d40 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distributorship agreement' and contains operative clauses appointing one party as a 'non-exclusive distributor' to promote and sell products in … |
+| d41 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'NONEXCLUSIVE VALUE ADDED DISTRIBUTOR AGREEMENT'. The operative clauses (Section 3.1) appoint ScanSource as an authorized distributor to purchase… |
+| d42 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT'. The operative clauses (Section 2 Appointment, Section 4 Prices and Terms, Section 9 Purchase Requirements) est… |
+| d43 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT'. The operative clauses (Section 1) grant Power2Ship the non-exclusive right to distribute and resell WLI's products. Sect… |
+| d44 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT #2 TO THE DISTRIBUTION AGREEMENT' and references a prior 'Distributor Agreement'. The operative clauses define the 'Distributor's' exc… |
+| d45 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains operative clauses appointing the Distributor to market and sell products to resellers in a defined territory… |
+| d46 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT'. The operative clauses (Section 1) grant the Distributor the right to promote, distribute, and sell products. S… |
+| d47 | contract | service | strategic_alliance | 0.95 | ✓ | ✗ | The document is titled 'Strategic Alliance Agreement', but the substantive operative clauses define a master services/subcontracting arrangement. Specifically, Section 1 states FT… |
+| d48 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT'. The operative clauses establish a broad framework for collaboration, including marketing, distribution (reference… |
+| d49 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and contains operative clauses establishing a long-term cooperative relationship, resource sharing, and joint effo… |
+| d50 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains operative clauses establishing a cooperative framework for investment banking business (fee sharing, … |
+| d51 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and contains standard operative clauses for such an arrangement, including mutual marketing obligations, revenue s… |
+| d52 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT'. Article II Section 2.01 specifically establishes a 'Strategic Business Alliance' between the parties to combine s… |
+| d53 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains standard operative clauses for such an arrangement, including engagement of services, independent con… |
+| d54 | contract | sponsorship | sponsorship | 0.85 | ✓ | ✓ | The document is titled 'SPONSORSHIP AND DEVELOPMENT AGREEMENT'. While it contains a recital mentioning 'development' of software products, the operative clauses (Sections 2, 3, 4)… |
+| d55 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard operative clauses for a sponsorship deal, including the provision of advertising impressions, brand… |
+| d56 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT'. The operative clauses (Article I) define the Sponsor's role as the exclusive vitamin sponsor and advertiser on the drkoo… |
+| d57 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT'. The operative clauses confirm this classification: Section 1 defines the form of sponsorship (exclusive partner status a… |
+| d58 | contract | other | sponsorship | 0.95 | ✓ | ✗ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses establishing a contractual relationship between a Purchaser and multiple Sponsors for the … |
+| d59 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT'. The operative clauses (Sections 1-3) detail the provision of 'sponsorship' placements, including preferred reseller stat… |
+| d60 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses defining the Sponsor's payment obligation ($250,000) in exchange for specific branding ben… |
+| d61 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT'. The operative clauses (Article 2) detail the conduct of Clinical Trials, adherence to a Development Plan and Timeline… |
+| d62 | contract | franchise | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'EL POLLO LOCO® FRANCHISE DEVELOPMENT AGREEMENT'. The operative clauses grant the Developer rights to establish and operate franchised restaurant… |
+| d63 | contract | development | development | 0.85 | ✓ | ✓ | The document is titled 'Consulting and Product Development Agreement' and functions as a hybrid agreement involving both consulting services and product development. According to … |
+| d64 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE DEVELOPMENT AGREEMENT' and functions as a Statement of Work (Appendix A) to that agreement. The operative clauses detail the developmen… |
+| d65 | contract | license | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'EXCLUSIVE LICENSE AND PRODUCT DEVELOPMENT AGREEMENT'. The operative clauses in Section 2 ('GRANT OF RIGHTS') establish an exclusive license of i… |
+| d66 | contract | development | development | 0.85 | ✓ | ✓ | The document is titled 'Distribution and Development Agreement' and contains both distribution machinery (appointments, purchase orders, pricing) and development machinery (Develo… |
+| d67 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'DEVELOPMENT AGREEMENT'. The operative clauses (Articles II and III) establish a clear development framework: LEO is responsible for performing c… |
+| d68 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and functions as an employment contract for a senior executive (Chief Medical Officer). It contains standard employment terms… |
+| d69 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT FOR TRANSFER AGENT SERVICES'. It establishes a contractual relationship where one party (Mellon/BNY Mellon) provides specific … |
+| d70 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and contains standard operative clauses for a general professional services contract. Specifically, Section 2 defines the sco… |
+| d71 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and outlines a formal contractual relationship where one party (FIIOC) provides specific operational services (transfer agenc… |
+| d72 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT'. The operative clauses (Section 2 and Schedule B) define the Administrator's obligation to perform specific administrative fu… |
+| d73 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSITION SERVICES AGREEMENT' and functions as a formal contract between two corporate entities (RGHI and RCP). The operative clauses (Article … |
+| d74 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and defines the core obligation as making available a platform for presenting information and managing accounts ('Services')… |
+| d75 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT'. The operative clauses (specifically Clause 2 and Clause 3) establish a framework for strategic cooperation between the p… |
+| d76 | contract | strategic_alliance | collaboration | 0.85 | ✓ | ✗ | The document is explicitly titled 'COOPERATION AGREEMENT' and functions as a formal contract between an activist investor (JANA Partners) and a public company (URS Corporation). T… |
+| d77 | contract | strategic_alliance | collaboration | 0.95 | ✓ | ✗ | The document is explicitly titled 'INTERNET CHANNEL COOPERATION AGREEMENT' and establishes a multi-party strategic partnership between Baidu (Party A) and Leju (Party B/C). The op… |
+| d78 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement' and the recitals state the parties 'wish to collaborate with each other leveraging their respective strengths.' Section 4… |
+| d79 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement' and outlines a framework for joint effort between a government entity and a private company to develop a specific infrast… |
+| d80 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement on Mobile Game Business'. It establishes a joint operational relationship where Party A provides network resources and bil… |
+| d81 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and establishes a joint research program between IGER (later IBERS) and CERES. The operative clauses focus on collabora… |
+| d82 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as an amendment to an existing insurance contract (specifically transferring obligations from Thrivent Life Insurance… |
+| d83 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT'. The operative clauses (Section 2 'Grant of Rights') grant the Company the right to use the athlete's name, fame, image, … |
+| d84 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT'. The operative clauses (Section 2) grant the Company the right to hold out its business as having the 'Good Sam endorseme… |
+| d85 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT'. The operative clauses (Section 2) grant the Company the right to use Peyton Manning's name, likeness, and endorsement fo… |
+| d86 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and functions as an amendment to a prior 'Policy Collateral Assignment And Split Dollar Agreement'. It governs the owners… |
+| d87 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains operative clauses typical of such agreements: granting rights to use name/image/likeness for marketing (Sect… |
+| d88 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and involves a celebrity (Bruce Jenner) agreeing to endorse the company's products and speak at seminars in exchange for … |
+| d89 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and its substantive operative clauses establish a new corporate entity (MINDA IMPCO Technologies Limited) with defined … |
+| d90 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'Exhibit 99.1', which is the standard designation for exhibits attached to SEC filings (specifically Schedule 13D/G amendments). The content is … |
+| d91 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'Exhibit 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to authorize the joint filing of a Schedule 13G/A with the SEC pursuant … |
+| d92 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and repeatedly refers to the parties as 'Joint Venturers'. The operative clauses establish a joint business entity ('Mi… |
+| d93 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and the recitals state that the parties wish to 'associate themselves in business'. The operative clauses establish a g… |
+| d94 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and repeatedly refers to the entity as a 'Venture' with 'Members'. The operative clauses establish a joint enterprise f… |
+| d95 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'Exhibit 26' and titled 'JOINT FILING AGREEMENT'. Its content governs the joint filing of reports under Section 13 of the Securities Exchange Ac… |
+| d96 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING Agreement'. The operative clauses focus on the co-branding of a web service, including the use of mutual trademarks ('Marks'), joint… |
+| d97 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses (Section 1) detail the core obligation: PCQ allows ABW to 'co-brand' its software and data feed ('… |
+| d98 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AND ADVERTISING AGREEMENT'. The operative clauses focus on the creation of a 'Co-Branded Site' where both parties' marks are display… |
+| d99 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses (Section 1-2) grant mPhase the right to use Lucent's name, logo, and slogan on its products ('Appr… |
+| d100 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'E-CENTIVES - EXCITE@HOME CO-BRANDING AGREEMENT'. The operative clauses focus on the creation of a 'Co-Branded Application', the mutual licensing… |
+| d101 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses focus on the creation of 'Co-Branded Sites' (Career Center and Training/Education Center), the mut… |
+| d102 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT'. The operative clauses focus on creating a joint 'Insurance Center' channel that utilizes both parties' marks ('About Mar… |
+| d103 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'Premium Managed Hosting Agreement' and contains operative clauses defining managed hosting services (system administration, server uptime guaran… |
+| d104 | contract | development | hosting | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Website Design, Development and Hosting Agreement'. While it includes hosting and customer service elements, the primary operative claus… |
+| d105 | contract | development | hosting | 0.85 | ✓ | ✗ | The document is a 'Site Development and Hosting Agreement'. It contains significant operative clauses for both development (design, develop, implement, operate, maintain) and host… |
+| d106 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'VISP WEB SITE BUILDING AND HOSTING AGREEMENT'. The operative clauses (Section 3) detail the Provider's responsibilities to provide 'website buil… |
+| d107 | contract | hosting | hosting | 0.85 | ✓ | ✓ | The document is titled 'LICENSING AND WEB SITE HOSTING AGREEMENT' and contains operative clauses for both software licensing (Section 2) and web hosting services (Section 3). Unde… |
+| d108 | contract | distributor | hosting | 0.85 | ✓ | ✗ | The document is a 'Co-Hosting Agreement' that functions as a hybrid marketing and distribution arrangement. While Section 1 establishes 'Co-Hosting Rights' (marketing/promotion vi… |
+| d109 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AND HOSTING AGREEMENT'. The operative clauses (Section 1) grant a license to access 'Services' which are defined as 'hosting and techni… |
+| d110 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and contains operative clauses where the Company retains the Contractor to perform ministerial tasks, servicing, marketin… |
+| d111 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT'. The operative clauses (Section 1) define the core obligation as Nexstar providing 'non-programming related operational a… |
+| d112 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES OUTSOURCING AGREEMENT'. The operative clauses (Article III) define the Contractor's obligation to perform logistical and administrative… |
+| d113 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and contains standard operative clauses for an outsourcing arrangement, including the provision of Electronic Data Proces… |
+| d114 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Network Management Outsourcing Agreement' and contains operative clauses where Datec agrees to provide comprehensive network management services… |
+| d115 | contract | consulting | outsourcing | 0.95 | ✓ | ✗ | The document is a formal agreement titled 'Outsourcing Contract' between a developer (Party A) and an architectural office (Party B). The substantive obligations involve the provi… |
+| d116 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT'. The operative clauses (Section 2) detail a comprehensive set of services including receipt/management of materials, prod… |
+| d117 | contract | distributor | supply | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement'. While it contains an IP license grant (Section II) and references clinical trials… |
+| d118 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT'. The operative clauses (Section 2.1) establish a binding obligation for Philips to manufacture and supply products, and for Cu… |
+| d119 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and contains operative clauses where one party (CBC) undertakes to manufacture and supply a raw material (Bromelain SP) to the… |
+| d120 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and contains operative clauses governing the manufacture and supply of pharmaceutical products (Ac-225 FPI-1434) from CPDC to … |
+| d121 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT'. The operative clauses (Article 1) establish a primary obligation for Cremer to supply the Product ('Triheptanoin') to Ultrage… |
+| d122 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and contains operative clauses governing the manufacture and supply of specific products (Extracts and Custom Reagents) from S… |
+| d123 | contract | distributor | supply | 0.95 | ✓ | ✗ | The document is explicitly titled 'ODM - SUPPLY AGREEMENT' and functions as a formal contract between a Manufacturer and a Customer. The operative clauses (Section 13) appoint the… |
+| d124 | contract | manufacturing | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT'. The operative clauses (Sections 3, 4, 7, 8) primarily establish a manufacturing relationship whe… |
+| d125 | contract | distributor | marketing | 0.85 | ✓ | ✗ | The document is an 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement'. It is a hybrid agreement involving licensing, distribution, and marketing. Per… |
+| d126 | contract | endorsement | marketing | 0.95 | ✓ | ✗ | The document is a 'Broker Dealer Marketing and Servicing Agreement' for variable annuity contracts. Under the contract subtype rules, endorsement riders attached to insurance/annu… |
+| d127 | contract | other | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'REMARKETING AGREEMENT' and contains operative clauses appointing Deutsche Bank as a Remarketing Agent to remarket debt securities on behalf of M… |
+| d128 | contract | agency | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'EXCLUSIVE AGENCY AND MARKETING AGREEMENT'. Article 2 is titled 'EXCLUSIVE AGENCY AND DISTRIBUTORSHIP' and Section 2.1 specifically appoints Scot… |
+| d129 | contract | reseller | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT'. The operative clauses (Section 1.1) grant the Reseller an exclusive right to 'distribute and sell' the Produc… |
+| d130 | contract | collaboration | marketing | 0.85 | ✓ | ✗ | The document is titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT'. It establishes a joint team and a 'Phase 1' market evaluation study to assess opportunities and determine the s… |
+| d131 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT'. The operative clauses (Section 3) obligate Establishment Labs to manufacture the Product in accordance with… |
+| d132 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT NO. 3 TO ... MANUFACTURING AGREEMENT'. It amends an existing agreement between two parties regarding the manufacturing of goods (impli… |
+| d133 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Product Manufacturing Agreement'. The operative clauses (Section 3) establish a framework where Dexcel manufactures and packages the Product for… |
+| d134 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and contains operative clauses detailing the manufacturing of pharmaceutical products (Devices, Prefilled Syringes) by … |
+| d135 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT'. The operative clauses (Section 2) detail Dong-A's obligation to manufacture Licensed Products in compliance… |
+| d136 | contract | manufacturing | manufacturing | 0.85 | ✓ | ✓ | The document is a 'Master Development and Manufacturing Agreement'. It contains operative clauses for both development (e.g., 'Development Work', 'CMC', 'feasibility Batch') and m… |
+| d137 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT NO. 1 TO ... MANUFACTURING AGREEMENT'. The operative clause (Section 1) modifies the original agreement by establishing a Minimum Annu… |
+| d138 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT'. The operative clauses (Section 2) detail the ownership retention, assignment, and licensing of trademarks, dom… |
+| d139 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT'. The operative clauses (Articles II and III) detail the assignment of solely owned intellectual property rights… |
+| d140 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and functions as a formal contract between Motorola Solutions (Seller) and Zebra Technologies (Purchaser). The … |
+| d141 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses where the Seller transfers, sells, assigns, and conveys all right, title, and in… |
+| d142 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses granting licenses ('Honeywell hereby grants... to SpinCo... a non-exclusive... l… |
+| d143 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT'. The operative clauses (Sections 2-6) detail the assignment of patents and trademarks, and the grant of license… |
+| d144 | contract | license | ip | 0.85 | ✓ | ✗ | The document is titled 'Intellectual Property Agreement' and functions primarily as an assignment of exclusive license rights from Premier to THI, governed by the terms of prior l… |
+| d145 | contract | franchise | franchise | 1 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of a franchise to operate under specific marks ('The… |
+| d146 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and identifies the parties as a Franchisor (Homewood Suites Franchise LLC) and a Franchisee. The operative clauses grant a … |
+| d147 | contract | franchise | franchise | 1 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of a license to use the 'Buffalo Wild Wings' marks a… |
+| d148 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of a franchise right (Section 1), payment of initial… |
+| d149 | contract | non_compete_no_solicit | franchise | 0.95 | ✓ | ✗ | The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1) establish confidentiality obligations, and Section 2 … |
+| d150 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'Attachment B to Master Franchise Agreement' and functions as a guarantee for that specific franchise agreement. It defines the roles of 'Franchi… |
+| d151 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER FRANCHISE AGREEMENT'. The operative clauses consistently use franchise-specific terminology such as 'Grant of Franchise', 'Franchised Bus… |
+| d152 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes an agency relationship where the Agent (GA Retail/Tiger Capital) acts as the exclusive agent for the Merchant … |
+| d153 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and appoints Keefe, Bruyette & Woods, Inc. as the 'Agent' to act as exclusive financial advisor and conversion agent for a sto… |
+| d154 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and defines the relationship between El Banco Financial Corporation (the Company) and a sales agent. Section 2 appoints the Ag… |
+| d155 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and appoints Keefe, Bruyette & Woods, Inc. as the exclusive financial advisor and marketing agent for a stock offering. Sectio… |
+| d156 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes a formal relationship where Stratton, Cheeseman & Walsh-Nevada, Inc. acts as an authorized agent for Mutual In… |
+| d157 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and contains operative clauses appointing the securities firms as 'exclusive agents' to offer shares on behalf of the Corporat… |
+| d158 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and defines the relationship between Biopure Corporation and The Butler Company as an 'Agent'. Section 1.1 appoints the Agent … |
+| d159 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and contains operative clauses where the Transporter agrees to transport natural gas for the Shipper (Article … |
+| d160 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICES AGREEMENT' and 'MARINE TRANSPORTATION AGREEMENT'. The operative clauses define the Owner's obligation to provide marine … |
+| d161 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and its operative clauses (Clause First) define the purpose as the 'Transportation Service of liquid hydrocarbons throu… |
+| d162 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICES AGREEMENT'. The operative clauses define the Carrier's obligation to design, engineer, construct, and operate a pipeline… |
+| d163 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and contains operative clauses defining the transportation of gas between a Transporter (Great Lakes Gas Trans… |
+| d164 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICES AGREEMENT'. The operative clauses define the obligations of MPL to provide pipeline transportation services for Shipper'… |
+| d165 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and establishes a carrier-shipper relationship for the movement of commodities. The operative clauses detail transporta… |
+| d166 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT'. The operative clauses (Section 2) detail CNET's obligation to provide TV spots, banner ads, and online links ('Retail Prom… |
+| d167 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT'. The operative clauses (Article 2 Grant of Rights, Article 4 Promotion and Other Commercialization) establish that SIGA gra… |
+| d168 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and contains operative clauses where Depomed grants King the right to promote and market a pharmaceutical product (Glumetza… |
+| d169 | contract | endorsement | promotion | 0.95 | ✓ | ✗ | The document is a formal agreement titled 'PROMOTION AGREEMENT' but the operative clauses explicitly define and grant an 'ENDORSEMENT' right (Section 1). The core obligation of th… |
+| d170 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT'. The operative clauses (Section 3) obligate DoctorDirectory.com to provide specific promotional services (eSampling, eLearn… |
+| d171 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'Promotion Agreement' and its substantive operative clauses focus entirely on the mechanics of a consumer promotion (offering free pagers for ser… |
+| d172 | contract | marketing | promotion | 0.95 | ✓ | ✗ | The document is explicitly titled 'CO-PROMOTION AGREEMENT'. The operative clauses (Article 2 and Article 4) grant Valeant the right to conduct promotional activities, detailing, a… |
+| d173 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHANNEL PARTNER RESELLER AGREEMENT'. The operative clauses (Section 1.2) grant the Channel Partner the right to 'sell or re-license' the License… |
+| d174 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and defines the parties as 'TouchStar Software Corporation' (Licensor/Supplier) and 'Worldwide Strategies' ('Reseller'). The… |
+| d175 | contract | distributor | reseller | 0.95 | ✓ | ✗ | The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell stored valu… |
+| d176 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'FORM OF SUB-RESELLER AGREEMENT' and contains operative clauses granting 'Resale Rights' to a sub-reseller to sell services. It amends an existin… |
+| d177 | contract | development | reseller | 0.85 | ✓ | ✗ | The document is titled 'License and Reseller Agreement' and contains significant language regarding licensing (Section 2) and reselling/marking obligations (Section 5). However, p… |
+| d178 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'Reseller Agreement'. Section 2.1 expressly appoints Telnet as a 'non-exclusive authorized reseller' of Galaxy's Products and Services. The opera… |
+| d179 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT'. The operative clauses grant Detto Technologies the right to distribute and license PivX's software to third parties ('Resel… |
+| d180 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and defines the relationship between a Company and a Consultant. Section 3 outlines 'Consulting Services' involving busine… |
+| d181 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting relationship, including engagement for services (Section 1), comp… |
+| d182 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting relationship, including the engagement of an independent contract… |
+| d183 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and defines the relationship between Slinger Bag Inc. and Aitan Zacharin as a consultant engagement for investor relations… |
+| d184 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and defines the relationship between Aduro Biotech, Inc. and a Consultant. Section 1 outlines the provision of 'advice and… |
+| d185 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains operative clauses engaging the Consultant to provide 'management and financial consulting services'. Section … |
+| d186 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT'. The operative clauses define an engagement where one party provides independent contractor services (strategic planning, … |
+| d187 | contract | distributor | affiliate | 0.95 | ✓ | ✗ | The document is explicitly titled 'MARKETING AFFILIATE AGREEMENT' and functions as a formal contract between two parties. Substantively, it grants the Marketing Affiliate (MA) the… |
+| d188 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'BUSINESS AFFILIATE AGREEMENT' and establishes a contractual relationship between Dr. George D. Green and Union Dental Corp. The operative clause… |
+| d189 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'NETWORK AFFILIATE AGREEMENT'. The operative clauses establish a relationship where NCM provides advertising and digital content services to the … |
+| d190 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'Affiliate Program / Premium Affiliate Management General Terms and Conditions'. The operative clauses define the relationship between 'Affiliate… |
+| d191 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHASE AFFILIATE AGREEMENT' and establishes a contractual relationship between Chase Bank USA and an 'Affiliate' for the 'Chase Affiliate Program… |
+| d192 | contract | joint_venture | affiliate | 0.95 | ✓ | ✗ | The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint … |
+| d193 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHARTER AFFILIATE AFFILIATION AGREEMENT'. The operative clauses define the relationship between a content provider ('Network') and broadcast sta… |
+| d194 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-COMPETITION AND NON-SOLICITATION AGREEMENT'. The operative clauses (Section 1) detail covenants restricting the Sellers from competing with … |
+| d195 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-COMPETITION AGREEMENT AMENDMENT NO. 1'. The recitals and operative clauses (Sections 2 and 3) specifically address the amendment of non-comp… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+
+### Subtype classification accuracy by class
+
+| Subtype | Correct | Correct (equiv) | Total | Accuracy | Accuracy (equiv) |
+|---|---|---|---|---|---|
+| affiliate | 6 | 7 | 8 | 0.75 | 0.875 |
+| agency | 7 | 7 | 8 | 0.875 | 0.875 |
+| co_branding | 8 | 8 | 8 | 1 | 1 |
+| collaboration | 6 | 6 | 8 | 0.75 | 0.75 |
+| consulting | 8 | 8 | 8 | 1 | 1 |
+| development | 5 | 6 | 8 | 0.625 | 0.75 |
+| distributor | 8 | 8 | 8 | 1 | 1 |
+| endorsement | 8 | 8 | 8 | 1 | 1 |
+| franchise | 7 | 7 | 8 | 0.875 | 0.875 |
+| hosting | 5 | 5 | 8 | 0.625 | 0.625 |
+| ip | 7 | 7 | 8 | 0.875 | 0.875 |
+| joint_venture | 4 | 4 | 8 | 0.5 | 0.5 |
+| license | 7 | 7 | 8 | 0.875 | 0.875 |
+| maintenance | 1 | 5 | 8 | 0.125 | 0.625 |
+| manufacturing | 8 | 8 | 8 | 1 | 1 |
+| marketing | 1 | 1 | 8 | 0.125 | 0.125 |
+| non_compete_no_solicit | 3 | 3 | 3 | 1 | 1 |
+| outsourcing | 7 | 7 | 8 | 0.875 | 0.875 |
+| promotion | 6 | 6 | 8 | 0.75 | 0.75 |
+| reseller | 6 | 7 | 8 | 0.75 | 0.875 |
+| service | 8 | 8 | 8 | 1 | 1 |
+| sponsorship | 7 | 7 | 8 | 0.875 | 0.875 |
+| strategic_alliance | 7 | 7 | 8 | 0.875 | 0.875 |
+| supply | 6 | 6 | 8 | 0.75 | 0.75 |
+| transportation | 8 | 8 | 8 | 1 | 1 |
+
+### Failed classification insights
+
+The model's own reasoning on every failed row — the evidence it cited for the wrong family, and the failure mode that explains WHY it missed:
+
+| Failure mode | Count |
+|---|---|
+| equivalent_family | 7 |
+| family_confusion | 26 |
+| function_over_form | 5 |
+| other_fallback | 3 |
+
+**1. OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2** — expected `agency` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly titled 'EXHIBIT I TO SCHEDULE A (COMPLIANCE WITH UNITED STATES SECURITIES LAWS)' and functions as an 'Agents' Certificate'. Its content consists of representations and warranties regarding compliance with U.S. Securities laws (Exchange Act, Securities Act, Regulation D) for the offer and sale of securities. While it references an underlying Agency Agreement, the document itself is a regulatory compliance certificate/exhibit rather than the operative agreement establishing the agency relationship.
+
+**2. Microgenics Corporation - Collaborative Development and Commercialization Agreement** — expected `development` vs predicted `collaboration` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'Collaborative Development and Commercialization Agreement'. The operative clauses (Section 2) establish a joint research program with specific governance structures (Joint Steering Committee, Joint Project Team), shared responsibilities for development and regulatory approval, and IP/know-how exchange. While it includes commercialization and supply elements, the primary substantive obligation is the collaborative R&D effort to develop an assay, fitting the 'collaboration' subtype under the hybrid agreement rules which prioritize the collaborative/development machinery.
+
+**3. MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly titled 'EXHIBIT D JOINT FILING AGREEMENT' and states it is filed 'In accordance with Rule 13d-1(k) under the Securities Exchange Act of 1934'. Its primary function is to facilitate the joint filing of a Schedule 13D (a regulatory compliance document) with the SEC. While it contains agreement language between parties, in the context of legal document classification for corporate transactions, exhibits attached to SEC filings that govern the mechanics of that specific regulatory submission are best classified as compliance filings rather than standalone commercial contracts.
+
+**4. LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2** — expected `license` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is explicitly titled 'MUTUAL TERMINATION AGREEMENT' and contains operative clauses effectuating the termination of a prior agreement ('Original Agreement'). It does not fit into any of the specific commercial contract subgroups (such as license, service, or supply) because its primary function is to end an existing contractual relationship rather than establish new ongoing obligations like licensing, distribution, or development. Therefore, it falls under 'other'.
+
+**5. VERTEXENERGYINC_08_14_2014-EX-10.24-OPERATION AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `service` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'OPERATION AND MAINTENANCE AGREEMENT' and functions as a formal contract between an Owner and an Operator. The operative clauses (Article II and IV) define the engagement of the Operator to manage, operate, and maintain a specific facility ('Rail Facility') on behalf of the Owner. This constitutes a general professional/support services agreement where one party provides operational expertise and labor. It does not fit into specialized subgroups like 'maintenance' (which typically implies product warranty/repair), 'supply' (goods), or 'outsourcing' (entire business process transfer), making 'service' the most accurate classification for this facility management/operations service.
+
+**6. SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The operative clauses primarily focus on granting a non-exclusive license to use proprietary trading software ('Licensed Technology'), defining intellectual property rights, restricting reverse engineering and sublicensing, and establishing ownership of the IP. While it includes maintenance/support services (Article VII), the core legal relationship is the licensing of software IP, fitting the 'license' subtype perfectly.
+
+**7. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Software License, Customization and Maintenance Agreement'. The operative clauses (Section 2.0) grant a nonexclusive, worldwide license to use the software. While it includes customization (development) and maintenance services, the primary legal mechanism is the licensing of intellectual property rights. The customization provisions are ancillary to the licensed product's deployment and do not constitute a standalone development agreement where IP ownership or R&D milestones are the primary focus over the license grant. Therefore, it fits best under the 'license' subgroup.
+
+**8. SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT'. The operative clauses (Article 2) grant a perpetual non-exclusive license to use Licensed Technology in Object Code format. While it includes maintenance and support obligations (Article 6), the primary substantive obligation is the licensing of intellectual property (software). This fits the 'license' subgroup definition for licensing of technology/IP.
+
+**9. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Product License Schedule' and states it is issued pursuant to a 'Software License, Customization and Maintenance Agreement'. The content details the specific software products licensed (Cardlytics OPS), delivery terms, and maintenance services associated with that license. While it includes maintenance elements, the primary substantive obligation defined in this schedule is the licensing of the software product.
+
+**10. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2** — expected `maintenance` vs predicted `development` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'Customization Schedule' and states it is attached to a 'Software License, Customization and Maintenance Agreement'. The operative clauses focus on the delivery of functional specifications, system design, test specifications, and the actual creation/delivery of custom software features ('Supplier wishes to delivery those Customizations'). Under the provided rules, agreements involving product/software customization with defined milestones and specifications are classified as Development Agreements.
+
+**11. ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `service` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is a 'First Amendment' to a 'Management and Maintenance Agreement'. It contains operative clauses amending the term and adding management duties (curtailment/disconnection of projects) performed by a Manager for a Partnership. This falls squarely under general professional/support services (management/maintenance). It is not a corporate record because it is an agreement between external parties (Manager and Partners), nor is it a pure maintenance agreement in the sense of equipment upkeep, but rather ongoing management services.
+
+**12. FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT** — expected `strategic_alliance` vs predicted `service` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is titled 'Strategic Alliance Agreement', but the substantive operative clauses define a master services/subcontracting arrangement. Specifically, Section 1 states FTE will 'supply labor, materials, equipment, supervision and/or services' for a 'scope of work'. Section 2 details the scope as construction and acquisition services ('Route Feasibility & Site Acquisition', 'OSP Construction'). The agreement operates via Purchase Orders for specific tasks, includes standard service contract provisions (indemnification, insurance, independent contractor status, warranty of workmanship), and lacks the strategic partnership elements (joint governance, shared IP, joint R&D) typical of a true strategic alliance or collaboration. It is best classified as a Service Agreement (specifically a subcontractor services agreement).
+
+**13. LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT** — expected `sponsorship` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses establishing a contractual relationship between a Purchaser and multiple Sponsors for the purpose of funding a tender offer. While the term 'Sponsorship' in corporate finance often refers to equity commitments in M&A/tender offers (which might arguably fall under 'other' or 'joint_venture' depending on interpretation), it does not fit any of the specific commercial contract subgroups listed (such as marketing sponsorship, distribution, license, etc.). The document is a formal agreement with binding obligations, consideration, and standard legal boilerplate, clearly fitting the 'contract' doc_type. Since it does not match the defined subgroups like 'endorsement' (celebrity/influencer) or 'marketing', 'other' is the correct classification.
+
+**14. ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement** — expected `development` vs predicted `franchise` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'EL POLLO LOCO® FRANCHISE DEVELOPMENT AGREEMENT'. The operative clauses grant the Developer rights to establish and operate franchised restaurants under the El Pollo Loco system, subject to execution of individual Franchise Agreements. It includes standard franchise development machinery such as a Development Schedule, site approval processes (RESAC), development fees applied against initial franchise fees, and covenants not to compete. While it involves development, the substantive legal relationship is that of a franchise system expansion, making 'franchise' the correct subgroup.
+
+**15. EtonPharmaceuticalsInc_20191114_10-Q_EX-10.1_11893941_EX-10.1_Development Agreement** — expected `development` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'EXCLUSIVE LICENSE AND PRODUCT DEVELOPMENT AGREEMENT'. The operative clauses in Section 2 ('GRANT OF RIGHTS') establish an exclusive license of intellectual property (Products, Dossiers, Background IP) from Aucta to ETON. While Section 3 outlines development and registration responsibilities, the primary legal mechanism transferring rights and establishing the commercial relationship is the license grant, supported by milestone payments and royalties typical of licensing deals. Under Rule 8 (Hybrid Agreements), since the agreement does not feature a joint steering committee or shared R&D cost/profit sharing characteristic of a 'collaboration' or 'joint_venture', and the title order places License first, it is classified as a license. The development obligations are ancillary to the exploitation of the licensed IP.
+
+**16. URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT** — expected `collaboration` vs predicted `strategic_alliance` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is explicitly titled 'COOPERATION AGREEMENT' and functions as a formal contract between an activist investor (JANA Partners) and a public company (URS Corporation). The operative clauses detail a strategic arrangement involving board nominations, committee appointments (CEO Succession, Compensation, Value Creation), voting agreements, standstill provisions, and mutual non-disparagement. This fits the definition of a Strategic Alliance Agreement, which covers partnerships and collaborations between entities to achieve shared governance or strategic goals, rather than a simple service, license, or distribution deal. It is not a corporate record (like bylaws) because it is a bilateral agreement with external parties, nor is it merely correspondence.
+
+**17. LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT** — expected `collaboration` vs predicted `strategic_alliance` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'INTERNET CHANNEL COOPERATION AGREEMENT' and establishes a multi-party strategic partnership between Baidu (Party A) and Leju (Party B/C). The operative clauses detail a comprehensive joint venture-like structure: Party B constructs and operates a dedicated real estate channel on Baidu's platform, while Party A provides traffic, promotional resources (RMB 10 million), and search integration. Key features include exclusivity (Article VII), shared branding ('Baidu Leju'), mutual obligations for development and operation, and significant financial consideration (RMB 200 million). This fits the definition of a Strategic Alliance Agreement, which covers broad partnerships and collaborations beyond simple licensing or distribution.
+
+**18. PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'Exhibit 99.1', which is the standard designation for exhibits attached to SEC filings (specifically Schedule 13D/G amendments). The content is a 'Joint Filing Agreement' used by multiple reporting persons (Merck Serono SA, Merck KGaA) to file a single beneficial ownership report for Intrexon Corporation. While it involves signatures from multiple parties, its primary function and format are regulatory compliance rather than a substantive commercial contract.
+
+**19. RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'Exhibit 99.1' and titled 'JOINT FILING AGREEMENT'. Its sole purpose is to authorize the joint filing of a Schedule 13G/A with the SEC pursuant to Rule 13d-1(k). While it contains an agreement between parties, its substantive form and function are strictly tied to regulatory compliance and securities law filings, making 'compliance_filing' the most accurate classification over 'contract'.
+
+**20. TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'Exhibit 26' and titled 'JOINT FILING AGREEMENT'. Its content governs the joint filing of reports under Section 13 of the Securities Exchange Act of 1934. While it contains agreement language between parties, its primary function and context are regulatory compliance (SEC filings), making it a compliance filing rather than a standalone commercial contract.
+
+**21. Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement** — expected `hosting` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Website Design, Development and Hosting Agreement'. While it includes hosting and customer service elements, the primary operative clauses focus on the design and development of the website (Scope of Work, Change Orders, Due Dates). According to Rule 9 (Development Preference), when a hybrid agreement involves development machinery such as milestones, trial timelines, or specific development stages, it should be classified as 'development' rather than 'hosting' or general 'service'. The presence of distinct development stages in Exhibit A strongly supports this classification. Confidence is capped at 0.85 because it is a hybrid agreement involving multiple service types (design, dev, hosting).
+
+**22. AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT** — expected `hosting` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a 'Site Development and Hosting Agreement'. It contains significant operative clauses for both development (design, develop, implement, operate, maintain) and hosting (host and maintain the Site on a server). Under Rule 9 (Development Preference), when one of the named families is development and the operative clauses contain development machinery (design, implementation, operational timelines like the 60-day deadline), it should be preferred over the commercial/hosting family. The agreement focuses heavily on the creation and launch of the web presence, making 'development' the primary substantive category, though 'hosting' is a strong secondary element.
+
+**23. BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT** — expected `hosting` vs predicted `distributor` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a 'Co-Hosting Agreement' that functions as a hybrid marketing and distribution arrangement. While Section 1 establishes 'Co-Hosting Rights' (marketing/promotion via hot links) and Section 2 covers marketing considerations, the operative core of the commercial relationship is defined in Exhibit E ('Distribution Addendum'). Exhibit E explicitly appoints Co-Host as a 'non-exclusive distributor,' details physical product ordering, pricing, inventory reporting, returns, and risk of loss. Under Rule 8 (Hybrid Agreements), since the agreement contains purchase/resale/order terms characteristic of a distributor relationship, it falls under 'distributor'. However, because the title and significant portions of the main body focus on the co-hosting/marketing aspect, there is competing signal from 'marketing' or 'co_branding', justifying a confidence cap of 0.85 rather than 0.90+.
+
+**24. ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement** — expected `outsourcing` vs predicted `consulting` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Outsourcing Contract' between a developer (Party A) and an architectural office (Party B). The substantive obligations involve the provision of professional services: establishing architectural development plans, business plans, soil and water conservation plans, environmental impact assessments, and construction monitoring. These are classic consulting/engineering advisory services rather than manufacturing, distribution, or pure software development. While it involves design, it falls under professional services/consulting in standard legal taxonomies for architecture firms.
+
+**25. HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement** — expected `supply` vs predicted `distributor` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement'. While it contains an IP license grant (Section II) and references clinical trials/development milestones (condition precedent for the license), the operative obligations are primarily commercial: SCIEN is obligated to purchase, market, sell, and distribute the Product in the Territory, prepare business plans, manage logistics, and provide sales forecasts. HEMISPHERX's primary obligation is to supply the Product. Under Rule 8 and 9, although 'development' machinery (clinical trials) is present as a condition precedent, the core substantive relationship is the distribution and resale of the product. The agreement functions as a distributorship where the licensee/distributor handles commercialization. It is not a pure development agreement because HEMISPHERX is not developing the drug for SCIEN; rather, SCIEN is commercializing an existing (or investigational but supplied by Hemispherx) product. Therefore, 'distributor' is the best fit among the subgroups, with confidence lowered slightly due to the hybrid nature involving licensing and regulatory approval efforts.
+
+**26. AgapeAtpCorp_20191202_10-KA_EX-10.1_11911128_EX-10.1_Supply Agreement** — expected `supply` vs predicted `distributor` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'ODM - SUPPLY AGREEMENT' and functions as a formal contract between a Manufacturer and a Customer. The operative clauses (Section 13) appoint the Customer as the 'sole and exclusive agent for the promotion, sales, marketing, distribution and administration' of the products. Section 5 outlines shipping terms (Ex Works), and Schedule B sets minimum annual purchase requirements. While it contains IP provisions and an agency-like appointment, the core commercial obligation is the supply and resale/distribution of physical goods, fitting the definition of a Distributor Agreement or Supply Agreement. Given the explicit 'distribution' language and purchase quotas, 'distributor' is the most precise substantive classification among the options, though 'supply' is also strong; however, the exclusivity and broad marketing/sales mandate lean towards distributor/reseller relationships in this context.
+
+**27. Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT** — expected `marketing` vs predicted `manufacturing` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT'. The operative clauses (Sections 3, 4, 7, 8) primarily establish a manufacturing relationship where the Subcontractor manufactures products for the Manufacturer based on purchase orders, defines product costs, handles tooling/NRE charges, and manages delivery/shipping terms. While it includes design services and joint marketing provisions, these are ancillary to the core obligation of producing goods. The agreement fits the definition of a Manufacturing Agreement (supply of goods/manufacturing services) rather than a pure development or supply agreement.
+
+**28. PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT** — expected `marketing` vs predicted `distributor` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is an 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement'. It is a hybrid agreement involving licensing, distribution, and marketing. Per Rule 8 (Hybrid Agreements), we weigh the operative clauses. Section 2.1 explicitly appoints EKR as the 'exclusive distributor' and grants 'Distribution Rights' to sell, distribute, warehouse, and market the Product. The bulk of the operative sections (Sections 3, 4, 6) detail the obligations of the distributor (EKR) regarding regulatory approvals, marketing plans, sales forecasts, royalty payments, and supply chain logistics. While it contains IP license provisions, the primary commercial function is the distribution and resale of the pharmaceutical product. It does not fit the 'development' preference in Rule 9 because the core activity is commercialization/distribution of an existing approved drug, not R&D or development of new technology. Therefore, 'distributor' is the best fit among the specific subgroups.
+
+**29. Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement** — expected `marketing` vs predicted `endorsement` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is a 'Broker Dealer Marketing and Servicing Agreement' for variable annuity contracts. Under the contract subtype rules, endorsement riders attached to insurance/annuity agreements are classified as 'endorsement'. This agreement governs the relationship between the insurance issuer/distributor and the broker-dealer agents selling the annuities, which fits the definition of an endorsement rider/amendment in the context of insurance distribution.
+
+**30. MetLife, Inc. - Remarketing Agreement** — expected `marketing` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is explicitly titled 'REMARKETING AGREEMENT' and contains operative clauses appointing Deutsche Bank as a Remarketing Agent to remarket debt securities on behalf of MetLife, Inc. It includes standard representations, warranties, covenants, indemnification, and governing law provisions typical of a formal agreement between parties. While it relates to a securities offering (which might suggest compliance filing context), the document itself is the underlying contractual agreement governing the remarketing process, not a regulatory filing like an SEC form. The specific subtype 'other' is used because 'Remarketing Agreement' does not fit neatly into the provided subgroups such as distributor, reseller, or service; it is a specialized financial services agreement for debt securities.
+
+**31. Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT** — expected `marketing` vs predicted `agency` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'EXCLUSIVE AGENCY AND MARKETING AGREEMENT'. Article 2 is titled 'EXCLUSIVE AGENCY AND DISTRIBUTORSHIP' and Section 2.1 specifically appoints Scotts as Monsanto's 'exclusive agent'. While the agreement includes significant marketing, distribution, and accounting obligations (typical of a distributor or service agreement), the primary legal relationship defined is that of an agency, where the Agent acts on behalf of the Principal (Monsanto) for sales and marketing. The operative clauses focus on the Agent's duties to promote, sell, and manage the brand as an agent, rather than purchasing goods for resale in its own name (which would characterize a pure supply/distributor agreement). Therefore, 'agency' is the most accurate substantive classification.
+
+**32. TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement** — expected `marketing` vs predicted `reseller` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT'. The operative clauses (Section 1.1) grant the Reseller an exclusive right to 'distribute and sell' the Products. Section 4 outlines the duties of the Reseller to market and sell, and Section 5 details ordering, pricing, and payment procedures for the resale of goods. While it contains marketing elements, the core legal relationship is defined by the distribution and resale rights granted to the counterparty, fitting the 'reseller' subtype perfectly.
+
+**33. LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT** — expected `marketing` vs predicted `collaboration` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT'. It establishes a joint team and a 'Phase 1' market evaluation study to assess opportunities and determine the structure of the relationship (Section 2). The operative clauses focus on collaboration: Leclanché supplies products/services while Oak Ridge develops sales/marketing efforts, with specific provisions for exclusivity on qualified opportunities and shared information. While it contains elements of development (market entry plan) and marketing/distribution (Oak Ridge's responsibilities), the primary substantive obligation is the collaborative effort to evaluate and enter the US market together, rather than a definitive supply or license grant. Under Rule 9, although 'development' is named, the 'development' here is limited to a preliminary market study/plan rather than product R&D milestones, making 'collaboration' the most accurate fit for this strategic partnership agreement. Confidence is capped at 0.85 due to the hybrid nature involving significant marketing/distributor-like obligations.
+
+**34. PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT** — expected `ip` vs predicted `license` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is titled 'Intellectual Property Agreement' and functions primarily as an assignment of exclusive license rights from Premier to THI, governed by the terms of prior licensing agreements (2010/2020 Agreements). The operative clauses detail the scope of the license (make, use, sell), royalty payments, IP prosecution costs, and reversion rights, which are characteristic of a License Agreement. However, Section 3 establishes a 'Joint Venture' for the joint development of Covid-19 treatments with specific funding milestones ($750k, $1.15M, etc.). Per Rule 9 (Development Preference), when a hybrid agreement contains development machinery like milestones and joint cooperation obligations, it leans towards 'development'. Yet, the core legal mechanism transferring rights is the license, and the title explicitly references IP. Given the strong presence of both licensing mechanics (royalties, IP reversion) and development obligations (joint venture funding), this is a hybrid. I assign 'license' as the primary subtype because the transfer of IP rights is the foundational element enabling the JV, but cap confidence at 0.85 due to the significant 'development' elements in Section 3.
+
+**35. PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3** — expected `franchise` vs predicted `non_compete_no_solicit` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT'. The operative clauses (Section 1) establish confidentiality obligations, and Section 2 establishes covenants not to compete, non-solicitation of customers, and non-inducement of employees. While it is an appendix within a regulatory filing (10-12G), the substantive form is a restrictive covenant agreement between a franchisee and its personnel.
+
+**36. ASHWORTHINC_01_29_1999-EX-10.(D)-PROMOTION AGREEMENT AND NANTZ COMMUNICATIONS, INC.** — expected `promotion` vs predicted `endorsement` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'PROMOTION AGREEMENT' but the operative clauses explicitly define and grant an 'ENDORSEMENT' right (Section 1). The core obligation of the individual (James W. Nantz III) is to allow the use of his name, likeness, and autograph for advertising and promotion, and to wear the company's products. This fits the definition of an Endorsement Agreement (celebrity/influencer deal). While it contains elements of marketing services (photography, speaking engagements), the primary legal mechanism is the license of the celebrity's persona for endorsement purposes, which takes precedence under the specific 'endorsement' subgroup classification.
+
+**37. DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement** — expected `promotion` vs predicted `marketing` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'CO-PROMOTION AGREEMENT'. The operative clauses (Article 2 and Article 4) grant Valeant the right to conduct promotional activities, detailing, and sales force deployment for Dova's product in exchange for a promotion fee. This fits the definition of a Marketing Agreement (promotional services and campaigns). While it involves two parties collaborating, the primary obligation is marketing/promotion rather than R&D or joint venture creation, making 'marketing' the precise subtype over 'collaboration' or 'strategic_alliance'.
+
+**38. LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT** — expected `reseller` vs predicted `distributor` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'RESELLER AGREEMENT' and defined as a 'Distribution Agreement'. The operative clauses (Section 1) grant Schoolpop the right to resell stored value cards provided by AEIS. Section 2 grants exclusivity for resale in a specific market. Sections 3-6 detail inventory management, ordering, forecasting, and payment terms typical of a distribution/reseller relationship where the buyer takes title or assumes risk for inventory to resell to end clients. It does not fit other subgroups like license (no IP grant), manufacturing (no production), or service (primary obligation is resale of goods/cards).
+
+**39. EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement** — expected `reseller` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is titled 'License and Reseller Agreement' and contains significant language regarding licensing (Section 2) and reselling/marking obligations (Section 5). However, per Rule 9 (Development Preference), the operative clauses heavily feature development machinery: Section 3 is dedicated to 'Development and Implementation,' detailing a Development Plan, milestones, timelines, change control processes, acceptance testing criteria, and deployment schedules. The agreement involves customizing Ehave's platform for CHT's specific domain ('Ehave Companion Solution'). Under the CUAD convention cited in Rule 9, such hybrids are classified as Development because the core obligation is the creation/adaptation of the software product itself, not just the commercial distribution of an existing one. Confidence is capped at 0.85 due to the hybrid nature (title and substantial license/reseller terms).
+
+**40. CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement** — expected `affiliate` vs predicted `distributor` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MARKETING AFFILIATE AGREEMENT' and functions as a formal contract between two parties. Substantively, it grants the Marketing Affiliate (MA) the right to 'advertise, market and sell' the Company's Technology to clients. The operative clauses detail purchase obligations, sales quotas, discounts based on volume, and the requirement for MA to execute client license agreements upon resale. While it uses the term 'affiliate,' the structure of buying rights to resell goods/services in a territory with specific quotas and pricing tiers aligns with the definition of a Distributor Agreement rather than a simple referral or marketing service agreement. It is not a franchise because the agreement explicitly disclaims franchise status and lacks the requisite control over business operations.
+
+**41. LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement** — expected `affiliate` vs predicted `joint_venture` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'AFFILIATE AGREEMENT', but the substantive operative clauses define a joint venture relationship. Section 4.1 states: 'The parties will be joint venturers only as to those activities that they jointly undertake for the AMR market...'. The agreement details joint development of products (Section 3.1), joint ownership of IP developed during the project, shared marketing rights, and profit-sharing mechanisms (Section 3.3). While it contains elements of development and license, the core legal structure established is a joint venture for specific market activities, making 'joint_venture' the most accurate substantive classification over 'affiliate' or 'development'.
+
+---
+
+## qwen3.7-flash_sorter_v4_subtype  (subtype_classification)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T05:15:15.504518+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v4 |
+| Git commit | `9d5090c` (dirty tree) |
+| Rows | 195 |
+| Completed | 195 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts-full |
+| ground_truth | cuad_folder |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | 2e1fe4b740df85d09f2038851327996bee777eafff085bbd2b537bd3df1c33c5 |
+| n_samples | 195 |
+| sample_requested | 0 |
+| stratified | 200 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 4096 |
+| reasoning_effort | medium |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/subtype_200_v4_medium.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | — | — | — | — | — |
+
+### Scores
+
+**Scores — sorter**
+
+| Field | Score |
+|---|---|
+| confidence | 0.9354 |
+| confusion_matrix | affiliate: {'affiliate': 6, 'marketing': 1, 'collaboration': 1} · agency: {'other': 1, 'agency': 7} · co_branding: {'co_branding': 8} · collaboration: {'collaboration': 5, 'strategic_alliance': 2, 'distributor': 1} · consulting: {'consulting': 8} · development: {'development': 7, 'franchise': 1} · distributor: {'distributor': 8} · endorsement: {'endorsement': 8} · franchise: {'franchise': 6, 'non_compete_no_solicit': 1, 'other': 1} · hosting: {'hosting': 5, 'development': 2, 'marketing': 1} · ip: {'ip': 8} · joint_venture: {'other': 4, 'joint_venture': 4} · license: {'other': 1, 'license': 7} · maintenance: {'maintenance': 2, 'license': 4, 'development': 1, 'service': 1} · manufacturing: {'manufacturing': 7, 'development': 1} · marketing: {'supply': 1, 'manufacturing': 1, 'distributor': 1, 'marketing': 1, 'other': 1, 'agency': 1, 'reseller': 1, 'development': 1} · non_compete_no_solicit: {'non_compete_no_solicit': 3} · outsourcing: {'outsourcing': 7, 'consulting': 1} · promotion: {'promotion': 7, 'marketing': 1} · reseller: {'reseller': 7, 'license': 1} · service: {'service': 8} · sponsorship: {'sponsorship': 6, 'development': 1, 'other': 1} · strategic_alliance: {'strategic_alliance': 7, 'service': 1} · supply: {'supply': 8} · transportation: {'transportation': 8} |
+| equiv_recovered | license, license, license, license |
+| exact_match | 0.9795 |
+| failure_insights | mode_counts: {'equivalent_family': 4, 'family_confusion': 24, 'function_over_form': 4, 'other_fallback': 5} · n_failed: 37 · failures: [{'filename': 'OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2', 'expected': 'agency', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.85, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is an 'Agents' Certificate' explicitly structured as a regulatory compliance attestation regarding U.S. securities laws. Its content consists entirely of formal representations and certifications concerning broker-dealer registration, Regulation D Rule 506(b) eligibility, accredited investor verification, and the absence of general solicitation. Because it functions as a compliance certification rather than establishing mutual contractual obligations or governing ongoing commercial "}, {'filename': 'MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.9, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is a Joint Filing Agreement executed pursuant to SEC Rule 13d-1(k) to authorize the joint filing of a Schedule 13D. Its sole function is procedural and regulatory, serving as a standard exhibit to an SEC filing rather than containing substantive commercial obligations. Therefore, it aligns best with compliance_filing.'}, {'filename': 'LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2', 'expected': 'license', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': 'The document is a formal bilateral Mutual Termination Agreement containing standard contractual elements: recitals identifying the prior agreement, operative termination clauses, mutual covenants, governing law, and signature blocks. Because its sole substantive purpose is to dissolve a prior license agreement rather than establish a new ongoing commercial relationship (e.g., distribution, licensing, or services), it does not align with any of the specific commercial families and correctly falls'}, {'filename': 'Loop Industries, Inc. - Marketing Agreement', 'expected': 'marketing', 'predicted': 'supply', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is formally titled a 'Marketing Agreement,' but its operative clauses (primarily Article 2) govern the assignment of third-party sales contracts, manufacturing obligations, and product supply requirements between Loop Industries and its JV company. The substantive focus is on the supply and fulfillment of physical goods rather than promotional or advertising services. Therefore, 'supply' is the most accurate substantive classification despite the title."}, {'filename': 'SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and its core operative clauses grant a non-exclusive license to use proprietary trading software, define intellectual property rights, establish usage restrictions, and outline licensing fees. While it includes maintenance and technical support provisions, the primary substantive obligation and structure revolve around the licensing of technology, making 'license' the precise fit."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and functions as a binding contract between Bank of America and Cardlytics. Section 2.0 contains explicit software license grant language ('Supplier hereby grants Bank of America a nonexclusive, worldwide, irrevocable, perpetual license...'), establishing the licensing of technology/IP as the primary substantive obligation. Although it covers maintenance and customization, the core framework and operati"}, {'filename': 'SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Software License and Maintenance Agreement' and centers on granting a perpetual, non-exclusive license to software technology ('Licensed Technology') in exchange for development and runtime license fees. Operative clauses cover IP ownership, source code access conditions, end-user licensing requirements, and warranty/indemnification for IP infringement. Although it includes a maintenance article, the primary substantive framework and commercial obligations are "}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SCHEDULE A Product License Schedule' and states it is issued pursuant to a 'Software License, Customization and Maintenance Agreement.' The operative clauses focus on granting software usage rights, detailing source code delivery timelines, specifying maintenance periods, and outlining associated payment terms, which squarely aligns with a software license agreement."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2', 'expected': 'maintenance', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a 'Customization Schedule' that sets forth binding obligations for the design, specification, delivery, and payment of customized software features. Its operative clauses focus on fulfilling functional requirements, establishing delivery/installation timelines, and defining project personnel, which substantively aligns with a software development agreement. Although formatted as an exhibit/schedule to a broader license and maintenance agreement, it contains independent contractua"}, {'filename': 'ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a First Amendment to a Management and Maintenance Agreement, containing operative clauses that extend the term and add operational management provisions regarding partner project curtailment. While titled as a management/maintenance agreement, it substantively governs ongoing administrative and operational services for the partnership, making 'service' the closest matching subtype. The 'Exhibit 10.17(b)' prefix indicates an SEC filing attachment, but classification follows the su"}, {'filename': 'FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT', 'expected': 'strategic_alliance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document establishes a master service and subcontractor relationship where FTE provides labor, materials, equipment, and services to EDGE via individual purchase orders. Despite the title 'Strategic Alliance Agreement,' the operative clauses focus on scope of work, independent contractor status, compensation, warranties, indemnification, and termination rights, which substantively define a general service agreement rather than a strategic partnership or joint venture."}, {'filename': 'HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT', 'expected': 'sponsorship', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'Sponsorship and Development Agreement.' While the operative clauses heavily feature endorsement and sponsorship mechanics (grant of likeness rights, exclusivity periods, royalty-based compensation, and audit rights), Section 1 explicitly obligates the individual to 'cooperate, consult with and aid TDA in connection with the development' of the software product. Per the hybrid agreement and development preference rules, the explicit dual-family"}, {'filename': 'LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT', 'expected': 'sponsorship', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal multi-party agreement titled 'Sponsorship Agreement,' but its operative clauses govern financial sponsors pooling capital for a tender offer, detailing equity commitments, voting rights, default mechanisms, and expense allocation. This substantive focus on investment coordination and M&A financing does not match the 'sponsorship' family (event/content) or other standard commercial categories, making 'other' the most accurate fit."}, {'filename': 'ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement', 'expected': 'development', 'predicted': 'franchise', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'El Pollo Loco Franchise Development Agreement' and operates as a formal agreement granting the Developer rights to establish multiple franchised locations within a defined territory. Key operative clauses detail development schedules, franchise fees, site approval processes, and the requirement to execute individual Franchise Agreements for each unit, which are hallmark features of a franchise agreement. Therefore, it fits squarely into the franchise subgroup."}, {'filename': 'URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT', 'expected': 'collaboration', 'predicted': 'strategic_alliance', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Cooperation Agreement' between an institutional investor (JANA Partners) and a public company (URS Corporation). It establishes a structured partnership covering board nominations, committee appointments, voting commitments, standstill obligations, and a joint strategic/value-creation review process. These operative clauses define a collaborative corporate governance and strategic alignment arrangement, fitting the strategic alliance family. Confidence is moderated slig"}, {'filename': 'LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT', 'expected': 'collaboration', 'predicted': 'strategic_alliance', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Internet Channel Cooperation Agreement' establishing a multi-year partnership between Baidu and Leju. Operative clauses detail mutual resource sharing, exclusive channel operation rights, joint promotional efforts, and a fixed cooperation fee, which substantively constitute a strategic business alliance rather than a standalone service, license, or distribution contract."}, {'filename': 'IDREAMSKYTECHNOLOGYLTD_07_03_2014-EX-10.39-Cooperation Agreement on Mobile Game Business', 'expected': 'collaboration', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'Cooperation Agreement on Mobile Game Business.' The operative clauses establish a commercial channel relationship: Party A provides network portals, billing infrastructure, and fee collection services, while Party B supplies mobile game content and technical support. Revenue from end-user charges is explicitly split between the parties according to defined percentages and deduction rules. This platform-access and revenue-sharing structure subs"}, {'filename': 'PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'Exhibit 99.1' and references an 'Issuer and CUSIP,' which are definitive markers of an SEC filing exhibit. Its substantive function is a 'Joint Filing Agreement' used by multiple reporting persons to satisfy SEC regulatory disclosure obligations, placing it firmly within the compliance_filing category rather than a standalone commercial contract."}, {'filename': 'RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is an SEC exhibit (Exhibit 99.1) explicitly referencing Schedule 13G/A, Rule 13d-1(k), and the Securities Exchange Act of 1934. Its sole purpose is to authorize joint regulatory filing compliance, making it a standard compliance filing rather than a commercial contract. contract_subtype is null accordingly.'}, {'filename': 'TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual mechanics: mutual promises ('hereby agree'), liability allocation, a revocation provision, a counterparts clause, and executed signature blocks for multiple parties. Although it facilitates SEC Section 13 reporting, its substantive form is a binding agreement between private parties rather than a regulatory submission itself. It lacks the commercial focus of any specific contract family, warranting the '"}, {'filename': 'Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Website Design, Development and Hosting Agreement.' Its operative clauses center on a structured development plan, including specific project stages/milestones, change order procedures, delivery timelines, and content submission protocols. Per the hybrid agreement preference rules, the presence of explicit development machinery and obligations takes precedence over the brief hosting/customer service references, making 'development' the most accurate sub"}, {'filename': 'AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'Site Development and Hosting Agreement' containing standard contract recitals, mutual covenants, fee structures, term/termination provisions, confidentiality, and general boilerplate. The operative clauses heavily emphasize HDI's obligations to design, develop, implement, and launch a website, including a clear 60-day operational milestone. Per the development preference rule, the presence of explicit development machinery and timelines classi"}, {'filename': 'BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Co-Hosting Agreement' governing the placement of promotional hot links on NAI's website in exchange for a fixed fee and joint marketing initiatives. Operative clauses focus on marketing placements, advertising materials, trademark licensing for promotion, and marketing promotions. Although Exhibit E adds distribution terms, the primary substantive obligations center on marketing and promotional services, making 'marketing' the best fit. Confidence is moderated to accoun"}, {'filename': 'ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement', 'expected': 'outsourcing', 'predicted': 'consulting', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement between a resort developer and an architectural firm outlining planning, design, environmental assessment, and construction monitoring services. The operative clauses detail professional deliverables, milestone-based payments, and standard service obligations, which substantively align with a consulting agreement. Although titled 'Outsourcing Contract on Development,' the core obligations are architectural and planning advisory services rather than product deve"}, {'filename': 'Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'manufacturing', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT'. Although the title includes design and marketing, the operative clauses predominantly establish an OEM manufacturing framework: detailed purchase order procedures, manufacturing-cost-based pricing, tooling and NRE charges, delivery/shipping terms, warranties for nonconforming manufactured goods, and FDA regulatory compliance for production facilities. Provisions for design engineering and joint marketing a"}, {'filename': 'PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement.' The operative clauses predominantly establish an exclusive distribution framework, including EKR's appointment as exclusive distributor, obligations for marketing and sales, purchase requirements, royalty calculations based on net sales, and a commercialization committee. Although it contains IP licensing provisions, the substantive commercial machinery centers on distribut"}, {'filename': 'MetLife, Inc. - Remarketing Agreement', 'expected': 'marketing', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Remarketing Agreement' executed between MetLife, Inc. and Deutsche Bank Securities Inc. outlining the appointment, obligations, representations, warranties, covenants, and indemnification related to the remarketing of senior debentures. Its substantive form is a binding commercial agreement. Because it is a specialized securities transaction/underwriting-style agreement that does not align with the specific commercial families provided (e.g., distribution, licensing, em"}, {'filename': 'Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled an 'Exclusive Agency and Marketing Agreement' and establishes a formal principal-agent relationship. Article 2 details the appointment of Scotts as Monsanto's exclusive agent, outlining specific agency duties including marketing, sales, warehousing, order processing, and commission-based compensation. The operative clauses consistently frame the relationship around agency obligations rather than a standalone distribution or marketing services contract, making 'a"}, {'filename': 'TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement', 'expected': 'marketing', 'predicted': 'reseller', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses center on granting exclusive rights to distribute and sell products, establishing ordering, pricing, and delivery procedures, and defining the reseller's commercialization duties. These substantive obligations align precisely with the reseller agreement family."}, {'filename': 'LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT' establishing a partnership between Leclanché SA and Oak Ridge Energy Technologies. Operative clauses outline a joint market evaluation phase, grant royalty-free licenses specifically for the 'design and development of product(s),' and assign responsibilities for customized battery system design. Per the hybrid agreement guidelines, the presence of development machinery and development-stage IP provisions takes "}, {'filename': 'Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement', 'expected': 'manufacturing', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'Master Development and Manufacturing Agreement' containing standard contract operative clauses (engagement, project plans, compensation, warranties, IP assignment, confidentiality, termination). Although it covers both development and manufacturing, the recitals and Section 1.7 explicitly define 'Development Work' for clinical trials, and Rule 9 mandates preferring 'development' for hybrid agreements containing development machinery. Thus, it "}, {'filename': 'PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3', 'expected': 'franchise', 'predicted': 'non_compete_no_solicit', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT' and contains operative clauses detailing confidentiality obligations, covenants not to compete during and after the term, injunctive relief for breaches, and third-party beneficiary rights. These features squarely match the restrictive-covenant family, making non_compete_no_solicit the precise fit."}, {'filename': 'SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement2', 'expected': 'franchise', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal guarantee agreement executed by third-party guarantors to secure payment and performance obligations under a Master Franchise Agreement. Its substantive form consists entirely of standard guarantee provisions (joint/several liability, indemnification, waiver of exhaustion/notice, survival clauses), which do not align with any of the specified commercial contract families. Therefore, 'other' is the correct subtype. The clear contractual structure and binding obligations confirm the 'contract' doc_type."}, {'filename': 'DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement', 'expected': 'promotion', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'CO-PROMOTION AGREEMENT' and contains standard contractual elements including recitals, definitions, grant of promotional rights, financial provisions (promotion fees/milestones), governance (Joint Steering Committee), indemnification, and termination clauses. The substantive obligations center on one party conducting marketing, detailing, and promotional activities for the other party's pharmaceutical product in exchange for compensation, which aligns precisely with the marketing/promotion services category."}, {'filename': 'EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement', 'expected': 'reseller', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'License and Reseller Agreement' containing standard contract structure, recitals, definitions, and operative clauses. It grants CHT the right to sublicense and resell Ehave's software platform, features extensive intellectual property provisions, source code escrow, royalty structures, and technical implementation terms. While the title and Section 2(a) include reseller appointment language, the substantive operative clauses heavily emphasize software licensing, IP ownership, sublicensing rights, and technical specifications, making 'license' the most accurate subtype per the weighting guidance. The hybrid nature of the title justifies a slightly reduced confidence score."}, {'filename': 'DigitalCinemaDestinationsCorp_20111220_S-1_EX-10.10_7346719_EX-10.10_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Network Affiliate Agreement' establishing a business relationship for the distribution and display of advertising content in movie theatres. The operative clauses primarily govern the provision of 'Advertising Services,' including digital carousels, pre-feature programs, lobby promotions, and branded slots, along with advertising revenue sharing and exclusivity obligations. While it contains ancillary provisions for equipment installation, software licensing, and confidentiality, the substantive focus on advertising campaigns, promotional inventory, and marketing revenue aligns best with a marketing agreement."}, {'filename': 'LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement', 'expected': 'affiliate', 'predicted': 'collaboration', 'doc_type': 'contract', 'confidence': 0.8, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "Although explicitly titled an 'Affiliate Agreement,' the operative clauses substantively establish a cooperative R&D, manufacturing, and commercialization framework for AMR product suites, including joint IP ownership, coordinated marketing rights, and revenue-splitting mechanisms. Section 4 explicitly limits any joint venture status to specific activities while preserving independent contractor relationships, which aligns with a collaboration agreement rather than a traditional affiliate/referral program or formal joint venture."}] |
+| per_subtype | affiliate: {'accuracy': 0.75, 'accuracy_equiv': 0.75, 'correct': 6, 'equiv': 6, 'total': 8} · agency: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · co_branding: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · collaboration: {'accuracy': 0.625, 'accuracy_equiv': 0.625, 'correct': 5, 'equiv': 5, 'total': 8} · consulting: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · development: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · distributor: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · endorsement: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · franchise: {'accuracy': 0.75, 'accuracy_equiv': 0.75, 'correct': 6, 'equiv': 6, 'total': 8} · hosting: {'accuracy': 0.625, 'accuracy_equiv': 0.625, 'correct': 5, 'equiv': 5, 'total': 8} · ip: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · joint_venture: {'accuracy': 0.5, 'accuracy_equiv': 0.5, 'correct': 4, 'equiv': 4, 'total': 8} · license: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · maintenance: {'accuracy': 0.25, 'accuracy_equiv': 0.75, 'correct': 2, 'equiv': 6, 'total': 8} · manufacturing: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · marketing: {'accuracy': 0.125, 'accuracy_equiv': 0.125, 'correct': 1, 'equiv': 1, 'total': 8} · non_compete_no_solicit: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 3, 'equiv': 3, 'total': 3} · outsourcing: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · promotion: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · reseller: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · service: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · sponsorship: {'accuracy': 0.75, 'accuracy_equiv': 0.75, 'correct': 6, 'equiv': 6, 'total': 8} · strategic_alliance: {'accuracy': 0.875, 'accuracy_equiv': 0.875, 'correct': 7, 'equiv': 7, 'total': 8} · supply: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} · transportation: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 8, 'equiv': 8, 'total': 8} |
+| subtype_accuracy | 0.8103 |
+| subtype_accuracy_equiv | 0.8308 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | expected subtype | doc_type ok | subtype ok | equiv ok | confidence | failure mode | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| d1 | UsioInc_20040428_SB-2_EX-10.11_1723988_EX-10.11_Affiliate Agreement 2 | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d2 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2 | completed | compliance_filing | other | agency | ✗ | ✗ | ✗ | 0.85 | function_over_form | — |
+| d3 | PaperexchangeComInc_20000322_S-1A_EX-10.4_5202103_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d4 | BERKELEYLIGHTS,INC_06_26_2020-EX-10.12-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d5 | MEDALISTDIVERSIFIEDREIT,INC_05_18_2020-EX-10.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d6 | Microgenics Corporation - Collaborative Development and Commercialization Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d7 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_Amendment | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d8 | EcoScienceSolutionsInc_20171117_8-K_EX-10.1_10956472_EX-10.1_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d9 | INTERNATIONALFASTFOODCORP_04_04_1997-EX-99-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d10 | BLUEFLYINC_03_27_2002-EX-10.27-e-business Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d11 | INGEVITYCORP_05_16_2016-EX-10.5-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d12 | MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.9 | function_over_form | — |
+| d13 | LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2 | completed | contract | other | license | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d14 | VERTEXENERGYINC_08_14_2014-EX-10.24-OPERATION AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d15 | VAPOTHERM, INC. - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d16 | Loop Industries, Inc. - Marketing Agreement | completed | contract | supply | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d17 | WESTERN COPPER - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d18 | OASYSMOBILE,INC_07_05_2001-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d19 | VnueInc_20150914_8-K_EX-10.1_9259571_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d20 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d21 | WPPPLC_04_30_2020-EX-4.28-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d22 | GSVINC_05_15_1998-EX-10-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d23 | ENTRUSTINC_07_24_1998-EX-10.5-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d24 | BELLICUMPHARMACEUTICALS,INC_05_07_2019-EX-10.1-Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d25 | ENERGYXXILTD_05_08_2015-EX-10.13-Transportation AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d26 | SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d27 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d28 | IMAGEWARESYSTEMSINC_12_20_1999-EX-10.22-MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d29 | SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d30 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d31 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2 | completed | contract | development | maintenance | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d32 | ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT | completed | contract | service | maintenance | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d33 | ChinaRealEstateInformationCorp_20090929_F-1_EX-10.32_4771615_EX-10.32_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d34 | PalmerSquareCapitalBdcInc_20200116_10-12GA_EX-10.6_11949289_EX-10.6_Trademark License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d35 | AlliedEsportsEntertainmentInc_20190815_8-K_EX-10.19_11788293_EX-10.19_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d36 | GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.6_11951677_EX-10.6_License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d37 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d38 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement1 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d39 | FulucaiProductionsLtd_20131223_10-Q_EX-10.9_8368347_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d40 | FuseMedicalInc_20190321_10-K_EX-10.43_11575454_EX-10.43_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d41 | ScansourceInc_20190822_10-K_EX-10.38_11793958_EX-10.38_Distributor Agreement1 | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d42 | LEGACYTECHNOLOGYHOLDINGS,INC_12_09_2005-EX-10.2-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d43 | VISIUMTECHNOLOGIES,INC_10_20_2004-EX-10.20-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d44 | NETGEAR,INC_04_21_2003-EX-10.16- AMENDMENT #2 TO THE DISTRIBUTION AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d45 | EUROPEANMICROHOLDINGSINC_03_06_1998-EX-10.6-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d46 | InnerscopeHearingTechnologiesInc_20181109_8-K_EX-10.6_11419704_EX-10.6_Distributor Agreem… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d47 | FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT | completed | contract | service | strategic_alliance | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d48 | REWALKROBOTICSLTD_07_10_2014-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d49 | CHIPMOSTECHNOLOGIESBERMUDALTD_04_18_2016-EX-4.72-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d50 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d51 | ICORECONNECTINC_10_13_2010-EX-7.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d52 | SUCAMPOPHARMACEUTICALS,INC_11_04_2015-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d53 | ORBSATCORP_08_17_2007-EX-7.3-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d54 | HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT | completed | contract | development | sponsorship | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d55 | IVILLAGEINC_03_17_1999-EX-10.16-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d56 | DRKOOPCOMINC_04_21_1999-EX-10.28-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d57 | TICKETSCOMINC_06_22_1999-EX-10.22-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d58 | LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT | completed | contract | other | sponsorship | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d59 | VITAMINSHOPPECOMINC_09_13_1999-EX-10.26-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d60 | EcoScienceSolutionsInc_20180406_8-K_EX-10.1_11135398_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d61 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d62 | ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement | completed | contract | franchise | development | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d63 | EmeraldHealthBioceuticalsInc_20200218_1-A_EX1A-6 MAT CTRCT_11987205_EX1A-6 MAT CTRCT_Deve… | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d64 | PelicanDeliversInc_20200211_S-1_EX-10.3_11975895_EX-10.3_Development Agreement1 | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d65 | EtonPharmaceuticalsInc_20191114_10-Q_EX-10.1_11893941_EX-10.1_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d66 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d67 | WARNERCHILCOTTPLC_12_31_2003-EX-4.36-DEVELOPMENT AGREEMENT | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d68 | THERAVANCEBIOPHARMA,INC_05_08_2020-EX-10.2-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d69 | BLACKSTONEGSOLONG-SHORTCREDITINCOMEFUND_05_11_2020-EX-99.(K)(1)-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d70 | OPERALTD_04_30_2020-EX-4.14-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d71 | NYLIACVARIABLEANNUITYSEPARATEACCOUNTIII_04_10_2020-EX-99.8.KK-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d72 | TALCOTTRESOLUTIONLIFEINSURANCECO-SEPARATEACCOUNTTWELVE_04_30_2020-EX-99.8(L)-SERVICE AGRE… | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d73 | ReynoldsConsumerProductsInc_20200121_S-1A_EX-10.22_11948918_EX-10.22_Service Agreement | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d74 | SOLUTIONSVENDINGINTERNATIONAL,INC_03_31_2020-EX1A-1 UNDR AGMT-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d75 | QIWI_06_16_2017-EX-99.(D)(2)-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d76 | URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT | completed | contract | strategic_alliance | collaboration | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d77 | LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT | completed | contract | strategic_alliance | collaboration | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d78 | CHEETAHMOBILEINC_04_22_2014-EX-10.43-Cooperation Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d79 | SPIENERGYCO,LTD_07_10_2014-EX-10-Cooperation Agreement of 50MWp Photovoltaic Grid-connect… | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d80 | IDREAMSKYTECHNOLOGYLTD_07_03_2014-EX-10.39-Cooperation Agreement on Mobile Game Business | completed | contract | distributor | collaboration | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d81 | CERES,INC_01_25_2012-EX-10.20-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d82 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d83 | MOSSIMOINC_04_14_2000-EX-10.14-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d84 | HOLIDAYRVSUPERSTORESINC_04_15_2002-EX-10.13-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d85 | WARNINGMANAGEMENTSERVICESINC_12_10_1999-EX-10-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d86 | MOVADOGROUPINC_04_30_2003-EX-10.28-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d87 | LifewayFoodsInc_20160316_10-K_EX-10.24_9489766_EX-10.24_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d88 | MARSHALLHOLDINGSINTERNATIONAL,INC_04_14_2004-EX-10.15-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d89 | IMPCOTECHNOLOGIESINC_04_15_2003-EX-10.65-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d90 | PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d91 | RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d92 | ACCELERATEDTECHNOLOGIESHOLDINGCORP_04_24_2003-EX-10.13-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d93 | MJBIOTECH,INC_12_06_2018-EX-99.01-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d94 | BORROWMONEYCOM,INC_06_11_2020-EX-10.1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d95 | TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.85 | other_fallback | — |
+| d96 | TheglobeComInc_19990503_S-1A_EX-10.20_5416126_EX-10.20_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d97 | PcquoteComInc_19990721_S-1A_EX-10.11_6377149_EX-10.11_Co-Branding Agreement1 | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d98 | 2ThemartComInc_19990826_10-12G_EX-10.10_6700288_EX-10.10_Co-Branding Agreement_ Agency Ag… | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d99 | MphaseTechnologiesInc_20030911_10-K_EX-10.15_1560667_EX-10.15_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d100 | InvendaCorp_20000828_S-1A_EX-10.2_2588206_EX-10.2_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d101 | NeoformaInc_19991202_S-1A_EX-10.26_5224521_EX-10.26_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d102 | EbixInc_20010515_10-Q_EX-10.3_4049767_EX-10.3_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d103 | BANGIINC_05_25_2005-EX-10-Premium Managed Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d104 | Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d105 | AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d106 | BOLIVARMININGCORP_05_23_2003-EX-2.1-VISP WEB SITE BUILDING AND HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d107 | BNCMORTGAGEINC_05_17_1999-EX-10.4-LICENSING AND WEB SITE HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d108 | BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT | completed | contract | marketing | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d109 | VitalibisInc_20180316_8-K_EX-10.2_11100168_EX-10.2_Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d110 | ASPIRITYHOLDINGSLLC_05_07_2012-EX-10.6-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d111 | NEXSTARFINANCEHOLDINGSINC_03_27_2002-EX-10.26-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d112 | CCAINDUSTRIESINC_04_14_2014-EX-10.1-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d113 | BNLFINANCIALCORP_03_30_2007-EX-10.8-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d114 | ELANDIAINTERNATIONALINC_04_25_2007-EX-10.21-Outsourcing Agreement | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d115 | ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agree… | completed | contract | consulting | outsourcing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d116 | DRAGONSYSTEMSINC_01_08_1999-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d117 | HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d118 | PROFOUNDMEDICALCORP_08_29_2019-EX-4.5-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d119 | MEDIWOUNDLTD_01_15_2014-EX-10.6-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d120 | FUSIONPHARMACEUTICALSINC_06_05_2020-EX-10.17-Supply Agreement - FUSION | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d121 | ULTRAGENYXPHARMACEUTICALINC_12_23_2013-EX-10.9-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d122 | VAXCYTE,INC_05_22_2020-EX-10.19-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d123 | AgapeAtpCorp_20191202_10-KA_EX-10.1_11911128_EX-10.1_Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.92 | — | — |
+| d124 | Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT | completed | contract | manufacturing | marketing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d125 | PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEM… | completed | contract | distributor | marketing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d126 | Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d127 | MetLife, Inc. - Remarketing Agreement | completed | contract | other | marketing | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d128 | Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT | completed | contract | agency | marketing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d129 | TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agre… | completed | contract | reseller | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d130 | LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT | completed | contract | development | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d131 | Apollo Endosurgery - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d132 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement4 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d133 | KitovPharmaLtd_20190326_20-F_EX-4.15_11584449_EX-4.15_Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d134 | Antares Pharma, Inc. - Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d135 | NeuroboPharmaceuticalsInc_20190903_S-4_EX-10.36_11802165_EX-10.36_Manufacturing Agreement… | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d136 | Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement | completed | contract | development | manufacturing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d137 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement2 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d138 | HERTZGLOBALHOLDINGS,INC_07_07_2016-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d139 | OTISWORLDWIDECORP_04_03_2020-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT by and among UNITED … | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d140 | ZEBRATECHNOLOGIESCORP_04_16_2014-EX-10.1-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d141 | VERSOTECHNOLOGIESINC_12_28_2007-EX-99.3-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d142 | GarrettMotionInc_20181001_8-K_EX-2.4_11364532_EX-2.4_Intellectual Property Agreement | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d143 | ARMSTRONGFLOORING,INC_01_07_2019-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d144 | PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d145 | JOINTCORP_09_19_2014-EX-10.15-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d146 | HOSPITALITYINVESTORSTRUST,INC_04_07_2014-EX-10.26-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d147 | BUFFALOWILDWINGSINC_06_05_1998-EX-10.3-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d148 | AIRTECHINTERNATIONALGROUPINC_05_08_2000-EX-10.4-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d149 | PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3 | completed | contract | non_compete_no_solicit | franchise | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d150 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement2 | completed | contract | other | franchise | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d151 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement1 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d152 | BONTONSTORESINC_04_20_2018-EX-99.3-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d153 | BLUEHILLSBANCORP,INC_05_20_2014-EX-1.1-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d154 | BANUESTRAFINANCIALCORP_09_08_2006-EX-10.16-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d155 | ATHENSBANCSHARESCORP_11_02_2009-EX-1.2-AGENCY AGREEMENT , 2009 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d156 | AMERICANPHYSICIANSCAPITALINC_03_31_2003-EX-10.26-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d157 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT1 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d158 | BIOPURECORP_06_30_1999-EX-10.13-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d159 | ATMOSENERGYCORP_11_22_2002-EX-10.17-TRANSPORTATION SERVICE AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d160 | MARTINMIDSTREAMPARTNERSLP_01_23_2004-EX-10.3-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d161 | GRANTIERRAENERGYINC_05_07_2012-EX-10.6-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d162 | RangeResourcesLouisianaInc_20150417_8-K_EX-10.5_9045501_EX-10.5_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d163 | TcPipelinesLp_20160226_10-K_EX-99.12_9454048_EX-99.12_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d164 | MPLXLP_06_17_2015-EX-10.1-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d165 | ENTERPRISEPRODUCTSPARTNERSLP_07_08_1998-EX-10.3-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d166 | CYBERIANOUTPOSTINC_07_09_1998-EX-10.13-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d167 | SigaTechnologiesInc_20190603_8-K_EX-10.1_11695818_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d168 | KINGPHARMACEUTICALSINC_08_09_2006-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d169 | ASHWORTHINC_01_29_1999-EX-10.(D)-PROMOTION AGREEMENT AND NANTZ COMMUNICATIONS, INC. | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d170 | MIDDLEBROOKPHARMACEUTICALS,INC_03_18_2010-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d171 | GOCALLINC_03_30_2000-EX-10.7-Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d172 | DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement | completed | contract | marketing | promotion | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d173 | IpassInc_20181203_8-K_EX-99.1_11445874_EX-99.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d174 | WORLDWIDESTRATEGIESINC_11_02_2005-EX-10-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d175 | LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d176 | SalesforcecomInc_20171122_10-Q_EX-10.1_10961535_EX-10.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d177 | EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement | completed | contract | license | reseller | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d178 | ASIANDRAGONGROUPINC_08_11_2005-EX-10.5-Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d179 | ADIANUTRITION,INC_04_01_2005-EX-10.D2-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d180 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d181 | KIROMICBIOPHARMA,INC_05_11_2020-EX-10.23-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d182 | SPHERE3DCORP_06_24_2020-EX-10.12-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d183 | SLINGERBAGINC_05_27_2020-EX-10.7-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d184 | ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1) | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d185 | CORALGOLDRESOURCES,LTD_05_28_2020-EX-4.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d186 | EMERALDHEALTHTHERAPEUTICSINC_06_10_2020-EX-4.5-CONSULTING AGREEMENT - DR. GAETANO MORELLO… | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d187 | CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d188 | UnionDentalHoldingsInc_20050204_8-KA_EX-10_3345577_EX-10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d189 | DigitalCinemaDestinationsCorp_20111220_S-1_EX-10.10_7346719_EX-10.10_Affiliate Agreement | completed | contract | marketing | affiliate | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d190 | SouthernStarEnergyInc_20051202_SB-2A_EX-9_801890_EX-9_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d191 | CreditcardscomInc_20070810_S-1_EX-10.33_362297_EX-10.33_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d192 | LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement | completed | contract | collaboration | affiliate | ✓ | ✗ | ✗ | 0.8 | family_confusion | — |
+| d193 | TubeMediaCorp_20060310_8-K_EX-10.1_513921_EX-10.1_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d194 | Quaker Chemical Corporation - NON COMPETITION AND NON SOLICITATION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d195 | VIVINT SOLAR, INC. - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | affiliate | agency | co_branding | collaboration | consulting | development | distributor | endorsement | franchise | hosting | ip | joint_venture | license | maintenance | manufacturing | marketing | non_compete_no_solicit | other | outsourcing | promotion | reseller | service | sponsorship | strategic_alliance | supply | transportation |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| affiliate | **6** | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| agency | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| co_branding | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| collaboration | 0 | 0 | 0 | **5** | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 |
+| consulting | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| development | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| franchise | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **6** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| hosting | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | **5** | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ip | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| joint_venture | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **4** | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| license | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| maintenance | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 4 | **2** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |
+| manufacturing | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| marketing | 0 | 1 | 0 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | **1** | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 | 0 |
+| non_compete_no_solicit | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| other | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| outsourcing | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| promotion | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 | 0 |
+| reseller | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **7** | 0 | 0 | 0 | 0 | 0 |
+| service | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 | 0 | 0 | 0 |
+| sponsorship | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | **6** | 0 | 0 | 0 |
+| strategic_alliance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | **7** | 0 | 0 |
+| supply | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** | 0 |
+| transportation | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **8** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'AFFILIATE OFFICE AGREEMENT' and establishes a formal referral/affiliate relationship where the Affiliate markets payment processing services and… |
+| d2 | compliance_filing | other | agency | 0.85 | ✗ | ✗ | The document is an 'Agents' Certificate' explicitly structured as a regulatory compliance attestation regarding U.S. securities laws. Its content consists entirely of formal repre… |
+| d3 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on creating co-branded web properties (Career Center and Equipment Listings), sharing in… |
+| d4 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses establish a joint R&D framework featuring a Joint Review Committee (JRC), Workflow Developmen… |
+| d5 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting relationship, including the retention of an independent contracto… |
+| d6 | contract | development | development | 0.9 | ✓ | ✓ | The document is a formal agreement titled 'Collaborative Development and Commercialization Agreement' between Microgenics and Achaogen. Operative clauses heavily feature R&D colla… |
+| d7 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'First Amendment to Distributor Agreement' and its operative clauses directly modify the original distribution arrangement, including changing th… |
+| d8 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard operative clauses for a celebrity/influencer endorsement deal, including engagement as a spokespers… |
+| d9 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of franchise rights, initial franchise fees, ongoing… |
+| d10 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'e-business Hosting Agreement' and its operative clauses detail IBM's obligation to provide web hosting infrastructure, internet bandwidth, and r… |
+| d11 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses governing the assignment/transfer of IP assets, cross-licensing of IP between Pa… |
+| d12 | compliance_filing | other | joint_venture | 0.9 | ✗ | ✗ | The document is a Joint Filing Agreement executed pursuant to SEC Rule 13d-1(k) to authorize the joint filing of a Schedule 13D. Its sole function is procedural and regulatory, se… |
+| d13 | contract | other | license | 0.9 | ✓ | ✗ | The document is a formal bilateral Mutual Termination Agreement containing standard contractual elements: recitals identifying the prior agreement, operative termination clauses, … |
+| d14 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'OPERATION AND MAINTENANCE AGREEMENT' and functions as a formal contract between an Owner and an Operator. Its operative clauses detail the ongoi… |
+| d15 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and contains operative clauses detailing the production, quality control, manufacturing processes, and purch… |
+| d16 | contract | supply | marketing | 0.85 | ✓ | ✗ | The document is formally titled a 'Marketing Agreement,' but its operative clauses (primarily Article 2) govern the assignment of third-party sales contracts, manufacturing obliga… |
+| d17 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON COMPETITION AGREEMENT AND RIGHT OF FIRST OFFER' and contains operative covenants restricting Western Copper from engaging in mining activiti… |
+| d18 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and contains standard contractual provisions (licensing, payment, warranties, indemnification, term/termination). The ope… |
+| d19 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and contains standard contractual boilerplate (recitals, independent contractor clause, compensation structure, term, indem… |
+| d20 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'WALABOT-HOME RESELLER AGREEMENT' and contains standard operative clauses appointing the Reseller to sell Products in a defined Territory, along … |
+| d21 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and sets forth the terms under which an executive provides professional services to the company. It includes standard operati… |
+| d22 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses (Sections 1-4) detail the sponsorship of specific web channels, promotional link placements, im… |
+| d23 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains standard operative clauses for a strategic alliance, including patent cross-licensing, coordinated co… |
+| d24 | contract | supply | supply | 0.98 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and contains standard supply contract provisions, including obligations to sell and purchase specific products ('Miltenyi Prod… |
+| d25 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Transportation Agreement' and its operative clauses govern the nomination, scheduling, and physical transportation of crude petroleum via a gath… |
+| d26 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and its core operative clauses grant a non-exclusive license to use proprietary trading software, de… |
+| d27 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and functions as a binding contract between Bank of America and Cardlytics. Section 2… |
+| d28 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AGREEMENT' and its operative clauses (Sections 3-4) detail software maintenance services, error correction, on-site intervention, te… |
+| d29 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License and Maintenance Agreement' and centers on granting a perpetual, non-exclusive license to software technology ('Licensed Technol… |
+| d30 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SCHEDULE A Product License Schedule' and states it is issued pursuant to a 'Software License, Customization and Maintenance Agreement.' The oper… |
+| d31 | contract | development | maintenance | 0.85 | ✓ | ✗ | The document is a 'Customization Schedule' that sets forth binding obligations for the design, specification, delivery, and payment of customized software features. Its operative … |
+| d32 | contract | service | maintenance | 0.85 | ✓ | ✗ | The document is a First Amendment to a Management and Maintenance Agreement, containing operative clauses that extend the term and add operational management provisions regarding … |
+| d33 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Domain Name and Content License Agreement' and its operative clauses (Article II Grant of License, Article IV Ownership, Article V Enforcement) … |
+| d34 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRADEMARK LICENSE AGREEMENT' and contains a clear 'LICENSE GRANT' clause in Article 1 granting the licensee rights to use a specific trademark. … |
+| d35 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT CONTENT LICENSE AGREEMENT' and contains operative clauses granting mutual licenses to use each party's trademarks and intellectual propert… |
+| d36 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'MEDIA LICENSE AGREEMENT' and contains a 'GRANT OF RIGHTS' clause (Section 2) where PFHOF grants the Village Media Company a license to exploit i… |
+| d37 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Content Licensing Agreement' and its operative clauses center on an intellectual property grant. Section 5 details the Licensor's ownership of I… |
+| d38 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'WIRELESS CONTENT LICENSE AGREEMENT' and centers on a 'GRANT OF RIGHTS' clause where Fox licenses its intellectual property (movie properties/PSM… |
+| d39 | contract | license | license | 0.95 | ✓ | ✓ | The document is a formal agreement titled 'Content Distribution and License Agreement.' Section 1 explicitly operates as a 'Grant of License and Rights,' conveying intellectual pr… |
+| d40 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distributorship agreement' and contains operative clauses appointing one party as a non-exclusive distributor to promote and sell products withi… |
+| d41 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Nonexclusive Value Added Distributor Agreement' between Cisco Systems, Inc. and ScanSource, Inc. The operative clauses govern the appointment of… |
+| d42 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative clauses center on distribution obligations: Section 2 appoints ENVISION as the exclusive dist… |
+| d43 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses center on granting non-exclusive distribution rights, establishing purchase order procedures, s… |
+| d44 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is a formal amendment to an existing Distributor Agreement between NETGEAR and Ingram Micro. The operative clauses explicitly modify territorial rights, define exclus… |
+| d45 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses establish a nonexclusive distribution relationship, detailing guaranteed minimum purchases, pri… |
+| d46 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Exclusive Distributor Agreement' and its operative clauses focus on granting exclusive distribution rights, establishing minimum performance goa… |
+| d47 | contract | service | strategic_alliance | 0.85 | ✓ | ✗ | The document establishes a master service and subcontractor relationship where FTE provides labor, materials, equipment, and services to EDGE via individual purchase orders. Despi… |
+| d48 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and establishes a broad collaborative framework between Yaskawa Electric Corporation and Argo Medical Technologies… |
+| d49 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses (Article 1) detail the formation of a long-term cooperative relationship, resource shari… |
+| d50 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses establish a cooperative framework for investment banking business, including fee sharing… |
+| d51 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its recitals state the parties are forming a 'strategic and marketing alliance.' The operative clauses outline… |
+| d52 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and follows a standard contract structure with definitions, representations, covenants, indemnification, and termi… |
+| d53 | contract | strategic_alliance | strategic_alliance | 0.9 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and establishes a mutual partnership framework between UTEK and AVDU for technology scouting and acquisition suppo… |
+| d54 | contract | development | sponsorship | 0.85 | ✓ | ✗ | The document is a formal bilateral agreement titled 'Sponsorship and Development Agreement.' While the operative clauses heavily feature endorsement and sponsorship mechanics (gra… |
+| d55 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail a sponsorship arrangement where Ford Motor Media pays iVillage to host branded web conte… |
+| d56 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses center on granting sponsorship rights, defining sponsorship placements and impression metrics o… |
+| d57 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses typical of this family, including 'Sponsor Fees,' promotional placement requirements (a br… |
+| d58 | contract | other | sponsorship | 0.9 | ✓ | ✗ | The document is a formal multi-party agreement titled 'Sponsorship Agreement,' but its operative clauses govern financial sponsors pooling capital for a tender offer, detailing eq… |
+| d59 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail sponsorship placements, promotional opportunities, impression delivery metrics, and asso… |
+| d60 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses detailing the Sponsor's payment ($250,000) in exchange for event sponsorship rights and pr… |
+| d61 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Co-Development Agreement' and its operative clauses center on pharmaceutical product development, including a Development Plan, Clinical Trial t… |
+| d62 | contract | franchise | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'El Pollo Loco Franchise Development Agreement' and operates as a formal agreement granting the Developer rights to establish multiple franchised… |
+| d63 | contract | development | development | 0.85 | ✓ | ✓ | The document is a formal agreement between corporate entities and an individual outlining responsibilities for product development, scientific validation, and compensation tied to… |
+| d64 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE DEVELOPMENT AGREEMENT' and serves as a Statement of Work (Appendix A) detailing the creation of iOS and web applications. It contains c… |
+| d65 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE LICENSE AND PRODUCT DEVELOPMENT AGREEMENT' and contains standard contract structure (recitals, definitions, operative clauses). While … |
+| d66 | contract | development | development | 0.9 | ✓ | ✓ | The document is titled 'Distribution and Development Agreement' and contains extensive operative clauses for both distribution and product development. Per the development prefere… |
+| d67 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'DEVELOPMENT AGREEMENT' and its operative clauses focus on pharmaceutical development activities, including a referenced development plan, clinic… |
+| d68 | contract | service | service | 0.9 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and functions as a formal executive employment contract. It contains standard operative clauses governing an employment relat… |
+| d69 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT FOR TRANSFER AGENT SERVICES' and contains standard operative clauses for a commercial engagement, including appointment, detai… |
+| d70 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and contains standard operative provisions for a service engagement, including the scope of services (system/platform mainten… |
+| d71 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and outlines a bilateral arrangement where FIIOC provides informational and transfer agency services to the Company in exchan… |
+| d72 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and contains standard contractual provisions including recitals, operative clauses, indemnification, and termination. The sub… |
+| d73 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSITION SERVICES AGREEMENT' and functions as a formal agreement governing the provision of operational support services (IT, HR, finance, tax… |
+| d74 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and contains standard operative clauses for a service contract, including the provision of platform access for securities of… |
+| d75 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement' and contains standard contractual operative clauses (definitions, confidentiality, termination, governing law, arbitratio… |
+| d76 | contract | strategic_alliance | collaboration | 0.85 | ✓ | ✗ | The document is a formal 'Cooperation Agreement' between an institutional investor (JANA Partners) and a public company (URS Corporation). It establishes a structured partnership … |
+| d77 | contract | strategic_alliance | collaboration | 0.9 | ✓ | ✗ | The document is a formal 'Internet Channel Cooperation Agreement' establishing a multi-year partnership between Baidu and Leju. Operative clauses detail mutual resource sharing, e… |
+| d78 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement' and establishes mutual obligations for integrating search technologies, sharing revenues based on web traffic, and operat… |
+| d79 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled a 'Cooperation Agreement' and establishes mutual commitments between a local government and a private energy company for the investment and devel… |
+| d80 | contract | distributor | collaboration | 0.85 | ✓ | ✗ | The document is a formal bilateral agreement titled 'Cooperation Agreement on Mobile Game Business.' The operative clauses establish a commercial channel relationship: Party A pro… |
+| d81 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and contains standard collaborative research provisions, including joint research projects, a management committee, sha… |
+| d82 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a rider/amendment to an existing insurance contract. It details the dissolution of one corporate entity and transf… |
+| d83 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses center on granting the company the right to use a professional golfer's name, image, and likene… |
+| d84 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its core operative provision (Section 2) grants the Company the right to hold out its business as having the Licensor… |
+| d85 | contract | endorsement | endorsement | 0.98 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses exclusively govern a celebrity endorsement arrangement. Key provisions include the grant of rig… |
+| d86 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and operates as an amendment and restatement of a split-dollar life insurance policy arrangement. Its operative clauses g… |
+| d87 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard operative clauses for a personal endorsement deal, including granting rights to use the individual'… |
+| d88 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard contract boilerplate (termination, indemnification, governing law, etc.). The operative clauses cen… |
+| d89 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and its operative clauses establish a new corporate entity (the JVC) with shared capital contributions, defined board r… |
+| d90 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'Exhibit 99.1' and references an 'Issuer and CUSIP,' which are definitive markers of an SEC filing exhibit. Its substantive function is a 'Joint… |
+| d91 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is an SEC exhibit (Exhibit 99.1) explicitly referencing Schedule 13G/A, Rule 13d-1(k), and the Securities Exchange Act of 1934. Its sole purpose is to authorize joint… |
+| d92 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard joint venture operative clauses, including the formation of a named entity ('MightyCell Batteries… |
+| d93 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard operative clauses establishing a joint venture between two corporate participants. Key provisions… |
+| d94 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard joint venture operative clauses, including formation of a Venture, capital contributions, managem… |
+| d95 | contract | other | joint_venture | 0.85 | ✓ | ✗ | The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual mechanics: mutual promises ('hereby agree'), liability allocation, a revocation provis… |
+| d96 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'Co-Branding Agreement' and its operative clauses govern the joint branding of web pages, shared trademark licenses, co-branded advertising inven… |
+| d97 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses focus on co-branding PC Quote's software and market data feed for deployment on AB Watley's web… |
+| d98 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AND ADVERTISING AGREEMENT' and its operative clauses center on creating a co-branded website, mutually licensing marks and content f… |
+| d99 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses govern the permitted use of Lucent's name, logo, and trademarks by mPhase on products and marke… |
+| d100 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'E-CENTIVES - EXCITE@HOME CO-BRANDING AGREEMENT' and its operative clauses focus on establishing a 'Co-Branded Application,' defining shared bran… |
+| d101 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on co-branded websites (Career Center, Training & Education), cross-promotional marketin… |
+| d102 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses establish a joint venture to create a co-branded online channel, grant mutual licenses to use e… |
+| d103 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'Premium Managed Hosting Agreement' and contains standard contract elements (parties, term, fees, signatures). Its operative clauses focus exclus… |
+| d104 | contract | development | hosting | 0.9 | ✓ | ✗ | The document is a formal agreement titled 'Website Design, Development and Hosting Agreement.' Its operative clauses center on a structured development plan, including specific pr… |
+| d105 | contract | development | hosting | 0.85 | ✓ | ✗ | The document is a formal bilateral agreement titled 'Site Development and Hosting Agreement' containing standard contract recitals, mutual covenants, fee structures, term/terminat… |
+| d106 | contract | hosting | hosting | 0.9 | ✓ | ✓ | The document is explicitly titled a 'Web Site Building and Hosting Agreement' and its operative clauses detail the provision of web hosting infrastructure, internet connectivity, … |
+| d107 | contract | hosting | hosting | 0.85 | ✓ | ✓ | Formal agreement combining software access and web hosting. While it contains a license grant for the Interface, Section 3 dedicates substantial operative clauses to hosting-speci… |
+| d108 | contract | marketing | hosting | 0.85 | ✓ | ✗ | The document is a formal 'Co-Hosting Agreement' governing the placement of promotional hot links on NAI's website in exchange for a fixed fee and joint marketing initiatives. Oper… |
+| d109 | contract | hosting | hosting | 0.9 | ✓ | ✓ | The document is a formal agreement titled 'Services and Hosting Agreement' that outlines the provision of web/mobile application hosting, technical infrastructure, SLAs, uptime gu… |
+| d110 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and details the engagement of Redwater LLC to perform administrative, marketing, and servicing tasks for the Company's no… |
+| d111 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail Nexstar assuming comprehensive operational, managerial, administrative, sales, and maint… |
+| d112 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES OUTSOURCING AGREEMENT' and details the engagement of one party to perform logistical and administrative services for another. Its struc… |
+| d113 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail the outsourcing of electronic data processing (EDP) and insurance policy administration … |
+| d114 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Network Management Outsourcing Agreement' and contains standard contractual clauses (term, pricing, termination, indemnities, SLAs, subcontracto… |
+| d115 | contract | consulting | outsourcing | 0.85 | ✓ | ✗ | The document is a formal agreement between a resort developer and an architectural firm outlining planning, design, environmental assessment, and construction monitoring services.… |
+| d116 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail turnkey production, supply base management, delivery, inventory management, and financia… |
+| d117 | contract | supply | supply | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement' between two pharmaceutical entities. While it contains license grants and commerci… |
+| d118 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and contains standard operative clauses governing the purchase, manufacture, delivery, pricing, and quality control of medical… |
+| d119 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses center on the purchase, manufacturing specifications, pricing, delivery schedules, and quality contr… |
+| d120 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses (e.g., Section 3 'Manufacture and Supply of Products', Production Orders, Shipping terms, Pricing, B… |
+| d121 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses center on the sale and delivery of a specific chemical product (Triheptanoin), including purchase or… |
+| d122 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses (primarily Article 2) govern the manufacture, work orders, purchase orders, delivery terms, pricing,… |
+| d123 | contract | supply | supply | 0.92 | ✓ | ✓ | The document is explicitly titled 'ODM SUPPLY AGREEMENT' and its operative clauses center on the supply and purchase of physical goods. Key provisions include product schedules, m… |
+| d124 | contract | manufacturing | marketing | 0.9 | ✓ | ✗ | The document is a formal agreement titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT'. Although the title includes design and marketing, the operative clauses predominantly es… |
+| d125 | contract | distributor | marketing | 0.9 | ✓ | ✗ | The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement.' The operative clauses predominantly establish an exclus… |
+| d126 | contract | marketing | marketing | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'Broker Dealer Marketing and Servicing Agreement' that establishes the terms under which a broker-dealer will solicit sales and provide s… |
+| d127 | contract | other | marketing | 0.95 | ✓ | ✗ | The document is a formal 'Remarketing Agreement' executed between MetLife, Inc. and Deutsche Bank Securities Inc. outlining the appointment, obligations, representations, warranti… |
+| d128 | contract | agency | marketing | 0.9 | ✓ | ✗ | The document is explicitly titled an 'Exclusive Agency and Marketing Agreement' and establishes a formal principal-agent relationship. Article 2 details the appointment of Scotts … |
+| d129 | contract | reseller | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses center on granting exclusive rights to distribute and sell products, establishing or… |
+| d130 | contract | development | marketing | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT' establishing a partnership between Leclanché SA and Oak Ridge Energy Technologies. Operative … |
+| d131 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and contains standard contractual provisions (recitals, definitions, term, termination, indemnification, con… |
+| d132 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled an 'Amendment No. 3' to a 'Manufacturing Agreement' and contains standard amendment operative clauses modifying a schedule within that underlying… |
+| d133 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Product Manufacturing Agreement' and its operative clauses center on Dexcel's obligation to manufacture, package, and supply pharmaceutical prod… |
+| d134 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and its operative clauses (Articles 2 and 3) detail the manufacturing of pharmaceutical devices and products, including… |
+| d135 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and its operative clauses (Sections 2-4) detail the manufacturing of licensed pharmaceutical products, quali… |
+| d136 | contract | development | manufacturing | 0.9 | ✓ | ✗ | The document is a formal bilateral agreement titled 'Master Development and Manufacturing Agreement' containing standard contract operative clauses (engagement, project plans, com… |
+| d137 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is a formal amendment to an explicitly titled 'Manufacturing Agreement'. The operative clauses modify minimum annual order volume commitments contingent on commercial… |
+| d138 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses (Section 2) govern the ownership, assignment, and licensing of trademarks, domain nam… |
+| d139 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative provisions for the assignment and licensing of intellectual property rights among the pa… |
+| d140 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses governing the assignment, licensing, and related warranties of patents, trademar… |
+| d141 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains clear operative assignment language transferring 'all right, title and interest in, to and under t… |
+| d142 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative provisions exclusively govern the assignment, licensing, and covenants related to patents, tr… |
+| d143 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative provisions exclusively govern the assignment and licensing of copyrights, patents, trademarks… |
+| d144 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'Intellectual Property Agreement' and contains standard contractual elements including recitals, binding covenants, confidentiality, governing la… |
+| d145 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchisor-franchisee operative clauses, including the grant of franchise rights, initial and royalty… |
+| d146 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including franchisor/franchisee roles, brand/system licensing, mandatory… |
+| d147 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of franchise rights to operate a Buffalo Wild Wings … |
+| d148 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'AIRSOPURE FRANCHISE AGREEMENT' and contains standard franchise provisions including the grant of franchise rights, initial and ongoing royalty/a… |
+| d149 | contract | non_compete_no_solicit | franchise | 0.95 | ✓ | ✗ | The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT' and contains operative clauses detailing confidentiality obligations, covenants not to c… |
+| d150 | contract | other | franchise | 0.9 | ✓ | ✗ | The document is a formal guarantee agreement executed by third-party guarantors to secure payment and performance obligations under a Master Franchise Agreement. Its substantive f… |
+| d151 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER FRANCHISE AGREEMENT' and contains standard franchise provisions, including the grant of franchise rights, royalty and fee structures, sys… |
+| d152 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes a formal agency relationship where the Agent is appointed as the exclusive representative to market, sell, and… |
+| d153 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes a formal agency relationship where Keefe, Bruyette & Woods, Inc. is appointed as the exclusive 'Agent' to soli… |
+| d154 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and contains operative clauses appointing a sales agent to solicit subscriptions for the company's shares on a 'best efforts' … |
+| d155 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and operates to appoint Keefe, Bruyette & Woods, Inc. as the exclusive financial advisor and marketing 'Agent' for a stock sub… |
+| d156 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and contains standard operative clauses defining an insurance agency relationship, including solicitation authority, commissio… |
+| d157 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes an agency relationship where financial institutions are appointed as exclusive agents to sell corporate shares… |
+| d158 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'Agency Agreement' and establishes a principal-agent relationship where the Agent promotes, sells, and collects payment for the Company's product… |
+| d159 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and its operative clauses detail the transport of natural gas between designated receipt and delivery points, … |
+| d160 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Marine Transportation Agreement' and contains operative clauses detailing the provision of marine transportation services for fuel oil and diese… |
+| d161 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and governs the shipment of crude oil via pipelines between designated entrance and exit points. It contains standard o… |
+| d162 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Transportation Services Agreement' and its operative clauses govern the design, construction, and operation of a pipeline system to transport na… |
+| d163 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and contains operative clauses typical of a transportation contract, including parties designated as Transport… |
+| d164 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICES AGREEMENT' and its operative clauses govern the movement of petroleum products via a common carrier pipeline, including … |
+| d165 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and identifies the parties as a 'Carrier' and a 'Shipper'. The operative clauses detail the motor contract carriage of … |
+| d166 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses detail CNET's obligations to deliver TV spots, banner advertisements, and retail impressions to p… |
+| d167 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and establishes a contractual relationship where Meridian Medical Technologies agrees to promote, market, and commercialize… |
+| d168 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses center on the promotion and marketing of a pharmaceutical product, including the establishment of… |
+| d169 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and establishes a formal contractual relationship for promotional services, including brand endorsement, apparel usage, pho… |
+| d170 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and details the provision of advertising and promotional services (e.g., eSampling, direct mail, coupon promotions, search … |
+| d171 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'Promotion Agreement' and its operative clauses govern a specific joint promotional campaign, detailing responsibilities for advertising material… |
+| d172 | contract | marketing | promotion | 0.95 | ✓ | ✗ | The document is explicitly titled 'CO-PROMOTION AGREEMENT' and contains standard contractual elements including recitals, definitions, grant of promotional rights, financial provi… |
+| d173 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHANNEL PARTNER RESELLER AGREEMENT' and contains operative provisions granting the Channel Partner the right to sell and re-license iPass's soft… |
+| d174 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and its operative clauses center on appointing a party as a non-exclusive value-added reseller, outlining duties to market, … |
+| d175 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and self-identifies in the preamble as a 'Distribution Agreement'. The operative clauses establish a commercial relationship… |
+| d176 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'FORM OF SUB-RESELLER AGREEMENT' and contains operative language granting resale rights ('SFDC hereby appoints SUB-RESELLER... to whom Reseller m… |
+| d177 | contract | license | reseller | 0.85 | ✓ | ✗ | The document is a formal bilateral agreement titled 'License and Reseller Agreement' containing standard contract structure, recitals, definitions, and operative clauses. It grant… |
+| d178 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'Reseller Agreement' and contains standard reseller operative clauses, including Section 2.1 appointing Telnet as a 'non-exclusive authorized res… |
+| d179 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and contains standard reseller provisions, including a grant of distribution rights to third parties, per-copy fees, sales f… |
+| d180 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and outlines the retention of an individual to provide advisory, transactional, and management services for a fee. It cont… |
+| d181 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting engagement, including defined services, hourly compensation, inde… |
+| d182 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting arrangement, including the engagement of an independent contracto… |
+| d183 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard consulting provisions, including engagement for professional advisory services (investor relations, … |
+| d184 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting arrangement, including hourly compensation for advice and consult… |
+| d185 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting arrangement, including engagement of the consultant, provision of… |
+| d186 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for an independent contractor arrangement, including scope of engagement, compensa… |
+| d187 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'MARKETING AFFILIATE AGREEMENT' and establishes a formal commercial relationship where one party markets, sells, and distributes the other's tech… |
+| d188 | contract | affiliate | affiliate | 0.9 | ✓ | ✓ | The document is explicitly titled 'Business Affiliate Agreement' and establishes a formal contractual relationship between a business affiliate and a corporation. The operative pr… |
+| d189 | contract | marketing | affiliate | 0.85 | ✓ | ✗ | The document is a formal 'Network Affiliate Agreement' establishing a business relationship for the distribution and display of advertising content in movie theatres. The operativ… |
+| d190 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'Affiliate Program / Premium Affiliate Management General Terms and Conditions' and contains operative clauses governing an affiliate marketing r… |
+| d191 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHASE AFFILIATE AGREEMENT' and governs an affiliate/referral program where the affiliate earns commissions for directing traffic to Chase's webs… |
+| d192 | contract | collaboration | affiliate | 0.8 | ✓ | ✗ | Although explicitly titled an 'Affiliate Agreement,' the operative clauses substantively establish a cooperative R&D, manufacturing, and commercialization framework for AMR produc… |
+| d193 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'Charter Affiliate Affiliation Agreement' and establishes a formal affiliation relationship between a television network ('The TUBE Music Network… |
+| d194 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'Non-Competition and Non-Solicitation Agreement' and contains operative covenants in Section 1 that restrict the Sellers from competing with the … |
+| d195 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-COMPETITION AGREEMENT AMENDMENT NO. 1' and contains operative clauses amending non-competition and non-solicitation restrictive covenants be… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+
+### Subtype classification accuracy by class
+
+| Subtype | Correct | Correct (equiv) | Total | Accuracy | Accuracy (equiv) |
+|---|---|---|---|---|---|
+| affiliate | 6 | 6 | 8 | 0.75 | 0.75 |
+| agency | 7 | 7 | 8 | 0.875 | 0.875 |
+| co_branding | 8 | 8 | 8 | 1 | 1 |
+| collaboration | 5 | 5 | 8 | 0.625 | 0.625 |
+| consulting | 8 | 8 | 8 | 1 | 1 |
+| development | 7 | 7 | 8 | 0.875 | 0.875 |
+| distributor | 8 | 8 | 8 | 1 | 1 |
+| endorsement | 8 | 8 | 8 | 1 | 1 |
+| franchise | 6 | 6 | 8 | 0.75 | 0.75 |
+| hosting | 5 | 5 | 8 | 0.625 | 0.625 |
+| ip | 8 | 8 | 8 | 1 | 1 |
+| joint_venture | 4 | 4 | 8 | 0.5 | 0.5 |
+| license | 7 | 7 | 8 | 0.875 | 0.875 |
+| maintenance | 2 | 6 | 8 | 0.25 | 0.75 |
+| manufacturing | 7 | 7 | 8 | 0.875 | 0.875 |
+| marketing | 1 | 1 | 8 | 0.125 | 0.125 |
+| non_compete_no_solicit | 3 | 3 | 3 | 1 | 1 |
+| outsourcing | 7 | 7 | 8 | 0.875 | 0.875 |
+| promotion | 7 | 7 | 8 | 0.875 | 0.875 |
+| reseller | 7 | 7 | 8 | 0.875 | 0.875 |
+| service | 8 | 8 | 8 | 1 | 1 |
+| sponsorship | 6 | 6 | 8 | 0.75 | 0.75 |
+| strategic_alliance | 7 | 7 | 8 | 0.875 | 0.875 |
+| supply | 8 | 8 | 8 | 1 | 1 |
+| transportation | 8 | 8 | 8 | 1 | 1 |
+
+### Failed classification insights
+
+The model's own reasoning on every failed row — the evidence it cited for the wrong family, and the failure mode that explains WHY it missed:
+
+| Failure mode | Count |
+|---|---|
+| equivalent_family | 4 |
+| family_confusion | 24 |
+| function_over_form | 4 |
+| other_fallback | 5 |
+
+**1. OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2** — expected `agency` vs predicted `other` (compliance_filing, conf 0.85) — mode: `function_over_form`
+
+> The document is an 'Agents' Certificate' explicitly structured as a regulatory compliance attestation regarding U.S. securities laws. Its content consists entirely of formal representations and certifications concerning broker-dealer registration, Regulation D Rule 506(b) eligibility, accredited investor verification, and the absence of general solicitation. Because it functions as a compliance certification rather than establishing mutual contractual obligations or governing ongoing commercial 
+
+**2. MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.9) — mode: `function_over_form`
+
+> The document is a Joint Filing Agreement executed pursuant to SEC Rule 13d-1(k) to authorize the joint filing of a Schedule 13D. Its sole function is procedural and regulatory, serving as a standard exhibit to an SEC filing rather than containing substantive commercial obligations. Therefore, it aligns best with compliance_filing.
+
+**3. LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2** — expected `license` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is a formal bilateral Mutual Termination Agreement containing standard contractual elements: recitals identifying the prior agreement, operative termination clauses, mutual covenants, governing law, and signature blocks. Because its sole substantive purpose is to dissolve a prior license agreement rather than establish a new ongoing commercial relationship (e.g., distribution, licensing, or services), it does not align with any of the specific commercial families and correctly falls
+
+**4. Loop Industries, Inc. - Marketing Agreement** — expected `marketing` vs predicted `supply` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is formally titled a 'Marketing Agreement,' but its operative clauses (primarily Article 2) govern the assignment of third-party sales contracts, manufacturing obligations, and product supply requirements between Loop Industries and its JV company. The substantive focus is on the supply and fulfillment of physical goods rather than promotional or advertising services. Therefore, 'supply' is the most accurate substantive classification despite the title.
+
+**5. SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and its core operative clauses grant a non-exclusive license to use proprietary trading software, define intellectual property rights, establish usage restrictions, and outline licensing fees. While it includes maintenance and technical support provisions, the primary substantive obligation and structure revolve around the licensing of technology, making 'license' the precise fit.
+
+**6. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and functions as a binding contract between Bank of America and Cardlytics. Section 2.0 contains explicit software license grant language ('Supplier hereby grants Bank of America a nonexclusive, worldwide, irrevocable, perpetual license...'), establishing the licensing of technology/IP as the primary substantive obligation. Although it covers maintenance and customization, the core framework and operati
+
+**7. SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Software License and Maintenance Agreement' and centers on granting a perpetual, non-exclusive license to software technology ('Licensed Technology') in exchange for development and runtime license fees. Operative clauses cover IP ownership, source code access conditions, end-user licensing requirements, and warranty/indemnification for IP infringement. Although it includes a maintenance article, the primary substantive framework and commercial obligations are 
+
+**8. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SCHEDULE A Product License Schedule' and states it is issued pursuant to a 'Software License, Customization and Maintenance Agreement.' The operative clauses focus on granting software usage rights, detailing source code delivery timelines, specifying maintenance periods, and outlining associated payment terms, which squarely aligns with a software license agreement.
+
+**9. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2** — expected `maintenance` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a 'Customization Schedule' that sets forth binding obligations for the design, specification, delivery, and payment of customized software features. Its operative clauses focus on fulfilling functional requirements, establishing delivery/installation timelines, and defining project personnel, which substantively aligns with a software development agreement. Although formatted as an exhibit/schedule to a broader license and maintenance agreement, it contains independent contractua
+
+**10. ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `service` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a First Amendment to a Management and Maintenance Agreement, containing operative clauses that extend the term and add operational management provisions regarding partner project curtailment. While titled as a management/maintenance agreement, it substantively governs ongoing administrative and operational services for the partnership, making 'service' the closest matching subtype. The 'Exhibit 10.17(b)' prefix indicates an SEC filing attachment, but classification follows the su
+
+**11. FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT** — expected `strategic_alliance` vs predicted `service` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document establishes a master service and subcontractor relationship where FTE provides labor, materials, equipment, and services to EDGE via individual purchase orders. Despite the title 'Strategic Alliance Agreement,' the operative clauses focus on scope of work, independent contractor status, compensation, warranties, indemnification, and termination rights, which substantively define a general service agreement rather than a strategic partnership or joint venture.
+
+**12. HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT** — expected `sponsorship` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'Sponsorship and Development Agreement.' While the operative clauses heavily feature endorsement and sponsorship mechanics (grant of likeness rights, exclusivity periods, royalty-based compensation, and audit rights), Section 1 explicitly obligates the individual to 'cooperate, consult with and aid TDA in connection with the development' of the software product. Per the hybrid agreement and development preference rules, the explicit dual-family
+
+**13. LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT** — expected `sponsorship` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is a formal multi-party agreement titled 'Sponsorship Agreement,' but its operative clauses govern financial sponsors pooling capital for a tender offer, detailing equity commitments, voting rights, default mechanisms, and expense allocation. This substantive focus on investment coordination and M&A financing does not match the 'sponsorship' family (event/content) or other standard commercial categories, making 'other' the most accurate fit.
+
+**14. ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement** — expected `development` vs predicted `franchise` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'El Pollo Loco Franchise Development Agreement' and operates as a formal agreement granting the Developer rights to establish multiple franchised locations within a defined territory. Key operative clauses detail development schedules, franchise fees, site approval processes, and the requirement to execute individual Franchise Agreements for each unit, which are hallmark features of a franchise agreement. Therefore, it fits squarely into the franchise subgroup.
+
+**15. URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT** — expected `collaboration` vs predicted `strategic_alliance` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal 'Cooperation Agreement' between an institutional investor (JANA Partners) and a public company (URS Corporation). It establishes a structured partnership covering board nominations, committee appointments, voting commitments, standstill obligations, and a joint strategic/value-creation review process. These operative clauses define a collaborative corporate governance and strategic alignment arrangement, fitting the strategic alliance family. Confidence is moderated slig
+
+**16. LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT** — expected `collaboration` vs predicted `strategic_alliance` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal 'Internet Channel Cooperation Agreement' establishing a multi-year partnership between Baidu and Leju. Operative clauses detail mutual resource sharing, exclusive channel operation rights, joint promotional efforts, and a fixed cooperation fee, which substantively constitute a strategic business alliance rather than a standalone service, license, or distribution contract.
+
+**17. IDREAMSKYTECHNOLOGYLTD_07_03_2014-EX-10.39-Cooperation Agreement on Mobile Game Business** — expected `collaboration` vs predicted `distributor` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'Cooperation Agreement on Mobile Game Business.' The operative clauses establish a commercial channel relationship: Party A provides network portals, billing infrastructure, and fee collection services, while Party B supplies mobile game content and technical support. Revenue from end-user charges is explicitly split between the parties according to defined percentages and deduction rules. This platform-access and revenue-sharing structure subs
+
+**18. PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'Exhibit 99.1' and references an 'Issuer and CUSIP,' which are definitive markers of an SEC filing exhibit. Its substantive function is a 'Joint Filing Agreement' used by multiple reporting persons to satisfy SEC regulatory disclosure obligations, placing it firmly within the compliance_filing category rather than a standalone commercial contract.
+
+**19. RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is an SEC exhibit (Exhibit 99.1) explicitly referencing Schedule 13G/A, Rule 13d-1(k), and the Securities Exchange Act of 1934. Its sole purpose is to authorize joint regulatory filing compliance, making it a standard compliance filing rather than a commercial contract. contract_subtype is null accordingly.
+
+**20. TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.85) — mode: `other_fallback`
+
+> The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual mechanics: mutual promises ('hereby agree'), liability allocation, a revocation provision, a counterparts clause, and executed signature blocks for multiple parties. Although it facilitates SEC Section 13 reporting, its substantive form is a binding agreement between private parties rather than a regulatory submission itself. It lacks the commercial focus of any specific contract family, warranting the '
+
+**21. Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement** — expected `hosting` vs predicted `development` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Website Design, Development and Hosting Agreement.' Its operative clauses center on a structured development plan, including specific project stages/milestones, change order procedures, delivery timelines, and content submission protocols. Per the hybrid agreement preference rules, the presence of explicit development machinery and obligations takes precedence over the brief hosting/customer service references, making 'development' the most accurate sub
+
+**22. AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT** — expected `hosting` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'Site Development and Hosting Agreement' containing standard contract recitals, mutual covenants, fee structures, term/termination provisions, confidentiality, and general boilerplate. The operative clauses heavily emphasize HDI's obligations to design, develop, implement, and launch a website, including a clear 60-day operational milestone. Per the development preference rule, the presence of explicit development machinery and timelines classi
+
+**23. BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT** — expected `hosting` vs predicted `marketing` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal 'Co-Hosting Agreement' governing the placement of promotional hot links on NAI's website in exchange for a fixed fee and joint marketing initiatives. Operative clauses focus on marketing placements, advertising materials, trademark licensing for promotion, and marketing promotions. Although Exhibit E adds distribution terms, the primary substantive obligations center on marketing and promotional services, making 'marketing' the best fit. Confidence is moderated to accoun
+
+**24. ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement** — expected `outsourcing` vs predicted `consulting` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement between a resort developer and an architectural firm outlining planning, design, environmental assessment, and construction monitoring services. The operative clauses detail professional deliverables, milestone-based payments, and standard service obligations, which substantively align with a consulting agreement. Although titled 'Outsourcing Contract on Development,' the core obligations are architectural and planning advisory services rather than product deve
+
+**25. Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT** — expected `marketing` vs predicted `manufacturing` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT'. Although the title includes design and marketing, the operative clauses predominantly establish an OEM manufacturing framework: detailed purchase order procedures, manufacturing-cost-based pricing, tooling and NRE charges, delivery/shipping terms, warranties for nonconforming manufactured goods, and FDA regulatory compliance for production facilities. Provisions for design engineering and joint marketing a
+
+**26. PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT** — expected `marketing` vs predicted `distributor` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement.' The operative clauses predominantly establish an exclusive distribution framework, including EKR's appointment as exclusive distributor, obligations for marketing and sales, purchase requirements, royalty calculations based on net sales, and a commercialization committee. Although it contains IP licensing provisions, the substantive commercial machinery centers on distribut
+
+**27. MetLife, Inc. - Remarketing Agreement** — expected `marketing` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is a formal 'Remarketing Agreement' executed between MetLife, Inc. and Deutsche Bank Securities Inc. outlining the appointment, obligations, representations, warranties, covenants, and indemnification related to the remarketing of senior debentures. Its substantive form is a binding commercial agreement. Because it is a specialized securities transaction/underwriting-style agreement that does not align with the specific commercial families provided (e.g., distribution, licensing, em
+
+**28. Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT** — expected `marketing` vs predicted `agency` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is explicitly titled an 'Exclusive Agency and Marketing Agreement' and establishes a formal principal-agent relationship. Article 2 details the appointment of Scotts as Monsanto's exclusive agent, outlining specific agency duties including marketing, sales, warehousing, order processing, and commission-based compensation. The operative clauses consistently frame the relationship around agency obligations rather than a standalone distribution or marketing services contract, making 'a
+
+**29. TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement** — expected `marketing` vs predicted `reseller` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses center on granting exclusive rights to distribute and sell products, establishing ordering, pricing, and delivery procedures, and defining the reseller's commercialization duties. These substantive obligations align precisely with the reseller agreement family.
+
+**30. LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT** — expected `marketing` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT' establishing a partnership between Leclanché SA and Oak Ridge Energy Technologies. Operative clauses outline a joint market evaluation phase, grant royalty-free licenses specifically for the 'design and development of product(s),' and assign responsibilities for customized battery system design. Per the hybrid agreement guidelines, the presence of development machinery and development-stage IP provisions takes 
+
+**31. Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement** — expected `manufacturing` vs predicted `development` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'Master Development and Manufacturing Agreement' containing standard contract operative clauses (engagement, project plans, compensation, warranties, IP assignment, confidentiality, termination). Although it covers both development and manufacturing, the recitals and Section 1.7 explicitly define 'Development Work' for clinical trials, and Rule 9 mandates preferring 'development' for hybrid agreements containing development machinery. Thus, it 
+
+**32. PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3** — expected `franchise` vs predicted `non_compete_no_solicit` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'SAMPLE OF NON-DISCLOSURE AND NON-COMPETITION AGREEMENT' and contains operative clauses detailing confidentiality obligations, covenants not to compete during and after the term, injunctive relief for breaches, and third-party beneficiary rights. These features squarely match the restrictive-covenant family, making non_compete_no_solicit the precise fit.
+
+**33. SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement2** — expected `franchise` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is a formal guarantee agreement executed by third-party guarantors to secure payment and performance obligations under a Master Franchise Agreement. Its substantive form consists entirely of standard guarantee provisions (joint/several liability, indemnification, waiver of exhaustion/notice, survival clauses), which do not align with any of the specified commercial contract families. Therefore, 'other' is the correct subtype. The clear contractual structure and binding obligations confirm the 'contract' doc_type.
+
+**34. DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement** — expected `promotion` vs predicted `marketing` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'CO-PROMOTION AGREEMENT' and contains standard contractual elements including recitals, definitions, grant of promotional rights, financial provisions (promotion fees/milestones), governance (Joint Steering Committee), indemnification, and termination clauses. The substantive obligations center on one party conducting marketing, detailing, and promotional activities for the other party's pharmaceutical product in exchange for compensation, which aligns precisely with the marketing/promotion services category.
+
+**35. EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement** — expected `reseller` vs predicted `license` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'License and Reseller Agreement' containing standard contract structure, recitals, definitions, and operative clauses. It grants CHT the right to sublicense and resell Ehave's software platform, features extensive intellectual property provisions, source code escrow, royalty structures, and technical implementation terms. While the title and Section 2(a) include reseller appointment language, the substantive operative clauses heavily emphasize software licensing, IP ownership, sublicensing rights, and technical specifications, making 'license' the most accurate subtype per the weighting guidance. The hybrid nature of the title justifies a slightly reduced confidence score.
+
+**36. DigitalCinemaDestinationsCorp_20111220_S-1_EX-10.10_7346719_EX-10.10_Affiliate Agreement** — expected `affiliate` vs predicted `marketing` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal 'Network Affiliate Agreement' establishing a business relationship for the distribution and display of advertising content in movie theatres. The operative clauses primarily govern the provision of 'Advertising Services,' including digital carousels, pre-feature programs, lobby promotions, and branded slots, along with advertising revenue sharing and exclusivity obligations. While it contains ancillary provisions for equipment installation, software licensing, and confidentiality, the substantive focus on advertising campaigns, promotional inventory, and marketing revenue aligns best with a marketing agreement.
+
+**37. LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement** — expected `affiliate` vs predicted `collaboration` (contract, conf 0.8) — mode: `family_confusion`
+
+> Although explicitly titled an 'Affiliate Agreement,' the operative clauses substantively establish a cooperative R&D, manufacturing, and commercialization framework for AMR product suites, including joint IP ownership, coordinated marketing rights, and revenue-splitting mechanisms. Section 4 explicitly limits any joint venture status to specific activities while preserving independent contractor relationships, which aligns with a collaboration agreement rather than a traditional affiliate/referral program or formal joint venture.
+
+---
+
+## qwen3.7-flash_sorter_v5+contracts_specialist_v10_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T05:25:23.635602+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v5 · extractor: contracts_specialist_v10 |
+| Git commit | `9d5090c` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 32768 |
+| reasoning_effort | none |
+| sorter_reasoning_effort | medium |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/chained_5_v5v10.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 81731 | 5887 | 87618 | 0.0 | 0 |
+| extractor | 83527 | 5738 | 89265 | 0.0 | 0 |
+| total | 165258 | 11625 | 176883 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.944 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8952 |
+| field_presence | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.6655 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.92 | 0.9196 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.7554 | 1 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.9011 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.9 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 |
+| key_obligations | 0.3571 | 1 | 0.125 | 0.3077 | 0.5 | 0.458 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 0.4074 | 1 | — | 0.8025 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.3571 | 1 | 0.125 | 0.3077 | 0.5 | 0.458 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| key_obligations | 20 | 18 | 20 | 0 | 1 | 0.0 |
+| parties | 9 | 7 | 9 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 14 | 1 | 14 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 4 | 0.8 |
+| Audit Rights | key_obligations | 3 | 2 | 0.6667 |
+| Cap On Liability | key_obligations | 3 | 0 | 0.0 |
+| Change Of Control | key_obligations | 2 | 0 | 0.0 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 2 | 1 | 0.5 |
+| Exclusivity | key_obligations | 4 | 3 | 0.75 |
+| Insurance | key_obligations | 3 | 1 | 0.3333 |
+| Ip Ownership Assignment | key_obligations | 2 | 1 | 0.5 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 2 | 1 |
+| License Grant | key_obligations | 4 | 3 | 0.75 |
+| Liquidated Damages | key_obligations | 2 | 1 | 0.5 |
+| Minimum Commitment | key_obligations | 3 | 1 | 0.3333 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 1 | 1 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 1 | 0.3333 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 1 | 0.3333 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 2 | 0.6667 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 0 | 0.0 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.92 | ✓ | ✓ | The document is titled 'DISTRIBUTION AND DEVELOPMENT AGREEMENT' and contains standard distribution terms (exclusive appointment, supply orders, pricing/margin splits). However, pe… |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and operates as a formal rider/amendment to an existing insurance contract. It details the dissolution and asset transfer of the is… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT' and its operative clauses center on a joint pharmaceutical development program, featuring a Development Plan, clinical… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and establishes a partnership to create a custom co-branded web center featuring mutual branding, logo placement, cross-p… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and establishes a joint framework for product development and commercialization. Key operative clauses include a Joint … |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC and its Affiliates ("Sekisui"), Qualigen, Inc. and its Affiliates ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen hereby agrees that during the Exclusivity Period, Qualigen shall not, directly or indirectly, through its affiliates, agents, stockholders, officers, directors or otherwise solicit, initiate, participate in dis… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.95 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If the solvency of the Society becomes impaired, you may be required to make an extra payment. The Board of Directors will determine the amount of any extra payment. It will be based on each member's fair share of the d… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc. ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The term of this Agreement will commence on the Effective Date and continue until the later of (a) the latest of the Completion Dates of the Clinical Trials, and (b) the date on which all efforts in pursuit of Regulator… |
+| d3 | termination_clauses | Either Party may terminate this Agreement upon written notice to the other Party if (a) the independent data monitoring committee for the Phase 3 Trial recommends termination of the Phase 3 Trial for reasons pertaining … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | Without the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreemen… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | During the Term, (a) Women.com will not buy, sell, display, distribute advertising from (including, but not limited to, banner ads, buttons, badges, text links, hyperlinks or editorial mentions) or otherwise promote a C… |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ( "CAPSUGEL" ), Cardax, Inc. ( "CARDAX" ) |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Neither Party may assign this Agreement without the prior written consent of the other Party; provided, however that either Party may assign in connection with a merger or sale of all or substantially all of its stock o… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.75 |
+
+---
+
+## qwen3.7-flash_sorter_v5+contracts_specialist_v11_chained  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-10T05:29:55.621312+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v5 · extractor: contracts_specialist_v11 |
+| Git commit | `9d5090c` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | mailroom-eval/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 32768 |
+| reasoning_effort | none |
+| sorter_reasoning_effort | medium |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| manifest | data/manifests/chained_5_v5v11.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 81731 | 5118 | 86849 | 0.0 | 0 |
+| extractor | 84277 | 7035 | 91312 | 0.0 | 0 |
+| total | 166008 | 12153 | 178161 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.94 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.906 |
+| field_presence | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.7226 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.9 | 0.9196 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.7164 | 1 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.9341 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.96 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 |
+| key_obligations | 0.3571 | 1 | 0.1875 | 0.5385 | 0.8 | 0.5766 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 0.1111 | 1 | — | 0.7037 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.3571 | 1 | 0.1875 | 0.5385 | 0.8 | 0.5766 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| key_obligations | 37 | 28 | 37 | 0 | 1 | 0.0 |
+| parties | 10 | 7 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 2 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 14 | 1 | 14 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 4 | 0.8 |
+| Audit Rights | key_obligations | 3 | 2 | 0.6667 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 0 | 0.0 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 2 | 1 | 0.5 |
+| Exclusivity | key_obligations | 4 | 3 | 0.75 |
+| Insurance | key_obligations | 3 | 1 | 0.3333 |
+| Ip Ownership Assignment | key_obligations | 2 | 1 | 0.5 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 2 | 1 |
+| License Grant | key_obligations | 4 | 3 | 0.75 |
+| Liquidated Damages | key_obligations | 2 | 1 | 0.5 |
+| Minimum Commitment | key_obligations | 3 | 1 | 0.3333 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 1 | 1 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 2 | 0.6667 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 1 | 0.3333 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 1 | 0.3333 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 1 | 0.5 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.9 | ✓ | ✓ | The document is a formal agreement titled 'DISTRIBUTION AND DEVELOPMENT AGREEMENT' between Sekisui Diagnostics and Qualigen. While it contains substantial distribution, supply, an… |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a formal rider/amendment to an existing insurance contract. It details corporate name changes, updates definitions… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT' and its operative clauses center on a joint pharmaceutical development program. Key provisions include a Development P… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses establish a mutually branded online content center, mandate cross-promotional advertising inven… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and establishes a joint working framework featuring a Joint Project Team (JPT), a formal Development Plan, shared R&D a… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC and its Affiliates ("Sekisui"), Qualigen, Inc. and its Affiliates ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen hereby agrees that during the Exclusivity Period, Qualigen shall not, directly or indirectly, through its affiliates, agents, stockholders, officers, directors or otherwise solicit, initiate, participate in dis… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.98 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company), the Society |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If the solvency of the Society becomes impaired, you may be required to make an extra payment. The Board of Directors will determine the amount of any extra payment. It will be based on each member's fair share of the d… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc. ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The "Term" has the meaning ascribed to such term in Section 14.1. |
+| d3 | termination_clauses | Either Party may terminate this Agreement upon written notice to the other Party if (a) the independent data monitoring committee for the Phase 3 Trial recommends termination of the Phase 3 Trial for reasons pertaining … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | Without the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreemen… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Except as set forth in Section 1.2 [Women], eDiets will have sole responsibility for providing and maintaining at its own expense the Diet Center beneath the Gateway Page., eDiets hereby grants to Women.com, subject to … |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ( "CAPSUGEL" ), Cardax, Inc. ( "CARDAX" ) |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Neither Party may assign this Agreement without the prior written consent of the other Party; provided, however that either Party may assign in connection with a merger or sale of all or substantially all of its stock o… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.75 |
+
+---
+
+## qwen3.7-flash_sorter_v5_subtype  (subtype_classification)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-11T00:47:49.441715+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v5 |
+| Git commit | `3a03d5c` |
+| Rows | 509 |
+| Completed | 509 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts-full |
+| ground_truth | cuad_folder |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c23419572d4fafefbb2fb8c8141275c9d857d4a1a801fc0ee6a61d605e324406 |
+| n_samples | 509 |
+| sample_requested | 0 |
+| stratified | 0 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 4096 |
+| reasoning_effort | medium |
+| max_input_chars | 100000 |
+| max_concurrency | 8 |
+| bt_scores | none |
+| manifest | data/manifests/subtype_cuad_full.jsonl |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | — | — | — | — | — |
+
+### Scores
+
+**Scores — sorter**
+
+| Field | Score |
+|---|---|
+| confidence | 0.9404 |
+| confusion_matrix | affiliate: {'affiliate': 10} · agency: {'other': 1, 'agency': 12} · co_branding: {'co_branding': 21, 'endorsement': 1} · collaboration: {'collaboration': 25, 'development': 1} · consulting: {'consulting': 11} · development: {'development': 26, 'collaboration': 1, 'franchise': 1} · distributor: {'distributor': 31, 'license': 1} · endorsement: {'endorsement': 24} · franchise: {'franchise': 14, 'non_compete_no_solicit': 1} · hosting: {'hosting': 12, 'license': 3, 'other': 1, 'development': 3, 'marketing': 1} · ip: {'ip': 17} · joint_venture: {'joint_venture': 10, 'other': 13} · license: {'license': 30, 'development': 1, 'supply': 1, 'other': 1} · maintenance: {'service': 2, 'maintenance': 17, 'other': 5, 'license': 7, 'collaboration': 1, 'joint_venture': 1, 'development': 1} · manufacturing: {'manufacturing': 16, 'development': 1} · marketing: {'agency': 3, 'other': 1, 'marketing': 7, 'development': 1, 'manufacturing': 1, 'distributor': 1, 'supply': 1, 'reseller': 1, 'co_branding': 1} · non_compete_no_solicit: {'non_compete_no_solicit': 3} · outsourcing: {'outsourcing': 15, 'other': 1, 'manufacturing': 1, 'consulting': 1} · promotion: {'promotion': 10, 'distributor': 1, 'marketing': 1} · reseller: {'reseller': 11, 'license': 1} · service: {'service': 23, 'marketing': 1, 'agency': 1, 'other': 1, 'distributor': 1, 'sponsorship': 1} · sponsorship: {'sponsorship': 30, 'endorsement': 1} · strategic_alliance: {'strategic_alliance': 32} · supply: {'supply': 17, 'distributor': 1} · transportation: {'transportation': 13} |
+| equiv_recovered | license, license, license, license, development, license, license, license |
+| exact_match | 0.9843 |
+| failure_insights | mode_counts: {'equivalent_family': 8, 'family_confusion': 40, 'function_over_form': 8, 'other_fallback': 16} · n_failed: 72 · failures: [{'filename': 'Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled an 'Exclusive Agency and Marketing Agreement.' Operative provisions (Article 2) appoint Scotts as Monsanto's exclusive agent to perform marketing, sales, warehousing, and distribution services on Monsanto's behalf, with compensation structured as a commission rather than a purchase/resale margin. The principal-agent framework, service obligations, steering committee governance, and commission-based pay model strongly align with an agency agreement."}, {'filename': 'MetLife, Inc. - Remarketing Agreement', 'expected': 'marketing', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'REMARKETING AGREEMENT' and follows a standard contract structure with sections for appointment of agents, representations and warranties, covenants, indemnification, termination, and governing law. It governs the remarketing of corporate senior component debentures, a specialized financial transaction that does not align with the standard commercial families listed (e.g., distribution, license, service, agency). Thus, 'other' is the correct subtype. High confidence based on the explicit title and conventional contractual framework."}, {'filename': 'LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.8, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT' establishing obligations for market evaluation, product/service development, and commercial promotion. While it contains substantial marketing and sales setup provisions, the operative clauses include development machinery such as a joint steering team, a defined Phase 1 market entry plan, and an IP license granted specifically for the 'design and development of product(s).' Per Rule 10, this triggers the development preference for the hybrid title. Confidence is moderated to 0.80 due to the equal weight given to marketing and market-entry activities alongside development."}, {'filename': 'Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement', 'expected': 'manufacturing', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Master Development and Manufacturing Agreement' and operates as a formal contract between Magenta Therapeutics and Bachem Americas. Operative clauses contain heavy development machinery, including definitions for 'Development Work' and 'Development Specifications,' references to clinical trials and IND filings, project plans with timelines/milestones, and specific IP assignment provisions for 'Magenta Developed Intellectual Property.' Per the development preference rule, this hybrid agreement is classified under the development family."}, {'filename': 'ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'First Amendment to Sagebrush Management and Maintenance Agreement' and follows a standard contract format with recitals, operative amendment clauses (extending term, adding curtailment provisions), and multi-party signature blocks. It constitutes a binding modification to an existing management arrangement, which falls under general professional/support services. No competing document types are present."}, {'filename': 'VARIABLESEPARATEACCOUNT_04_30_2014-EX-13.C-UNCONDITIONAL CAPITAL MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.92, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled an 'Amended and Restated Unconditional Capital Maintenance Agreement' and contains standard contractual structure including recitals, mutual covenants, numbered operative clauses (capital contributions, timing, funding mechanics, termination, governing law), and execution blocks. It clearly qualifies as a contract. Because it governs a parent-subsidiary capital maintenance obligation for insurance regulatory compliance rather than a standard commercial transaction (e.g., licensing, distribution, or professional services), it does not fit any of the predefined contract families and is correctly assigned to 'other'."}, {'filename': 'TELKOMSALTD_01_30_2003-EX-10-LICENCE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'LICENCE AND MAINTENANCE AGREEMENT' and its operative clauses primarily establish a software license grant (Clause 3), along with standard IP ownership, usage restrictions, warranty, indemnity, and maintenance fee provisions. The core substantive machinery aligns definitively with a software license agreement."}, {'filename': 'TELEGLOBEINTERNATIONALHOLDINGSLTD_03_29_2004-EX-10.10-CONSTRUCTION AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'collaboration', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': 'The document is a formal multi-party agreement establishing a consortium to jointly finance, construct, and operate a telecommunications network. Key operative clauses establish a shared Management Committee with defined voting interests, proportional allocation of capital and O&M costs, joint ownership of network segments, and collaborative decision-making mechanisms. This peer-to-peer governance and resource-sharing structure aligns substantively with a collaboration/joint venture agreement rather than a standard vendor-client service, maintenance, or supply contract.'}, {'filename': 'SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and contains a clear grant of license in Section 2.2 ('D2 hereby grants LICENSEE a perpetual non-exclusive, worldwide license...'). The operative clauses focus on intellectual property rights, runtime/development license fees, source code access conditions, and end-user licensing requirements. While it includes maintenance and support provisions (Article 6), these are ancillary to the primary software licensing framework, firmly placing it in the 'license' family."}, {'filename': 'STARTECGLOBALCOMMUNICATIONSCORP_11_16_1998-EX-10.30-CONSTRUCTION AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'joint_venture', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal multi-party agreement titled 'Construction and Maintenance Agreement' for the TAT-14 submarine cable network. Its operative clauses establish shared ownership interests, voting rights, a joint Managing Group and General Committee, collective procurement, and pro-rata cost-sharing mechanisms. These features strongly align with the substantive machinery of a joint venture or project collaboration, despite a standard contractual disclaimer in Section 26 regarding partnership status."}, {'filename': 'SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and centers on a clear 'GRANT OF LICENSE' (Section 2) for software and documentation. It contains standard licensing machinery including restrictions on use, IP ownership/indemnity, source code escrow, and acceptance testing. Although maintenance and support services are included, the primary substantive obligation is the licensing of software rights, firmly placing it in the license category."}, {'filename': 'SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and its operative clauses center on granting a non-exclusive license to use proprietary trading software, defining intellectual property rights, setting usage restrictions, and establishing license fees. Although it includes a technical support/maintenance article, the core obligations and structure are characteristic of a software license agreement."}, {'filename': 'WELLSFARGOMORTGAGEBACKEDSECURITIES2006-6TRUST_05_11_2006-EX-10.3-Yield Maintenance Agreement', 'expected': 'maintenance', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal ISDA Confirmation for an interest rate cap transaction, detailing financial terms, payment obligations, governing law, tax representations, and standard derivative market provisions. It functions as a binding bilateral agreement between UBS AG and Wells Fargo Bank. Because it is a specialized financial/derivative contract that does not align with any of the specified commercial families (e.g., distribution, licensing, employment, or general services), 'other' is the precise subtype. The format, recitals, and operative clauses unequivocally establish it as a contract."}, {'filename': 'REGANHOLDINGCORP_03_31_2008-EX-10-LICENSE AND HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'LICENSE AND HOSTING AGREEMENT' containing standard contract recitals, definitions, and operative clauses. Article II explicitly grants a worldwide, nonexclusive license to use software tools, documentation, and source code, establishing intellectual property rights as the core transaction. Article III supplements this with hosting and support services. Due to the combined software licensing and hosting obligations, the classification leans toward 'license' based on the primary grant of IP rights, with reduced confidence reflecting the hybrid nature."}, {'filename': 'HEALTHGATEDATACORP_11_24_1999-EX-10.1-HOSTING AND MANAGEMENT AGREEMENT - Escrow Agreement', 'expected': 'hosting', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal Escrow Agreement between an Owner, a Licensee, and a third-party escrow agent (NCC). It outlines operative clauses for depositing, verifying, and conditionally releasing software source code/materials upon specified trigger events, along with fee structures, confidentiality obligations, and dispute resolution mechanisms. This constitutes a binding contract. Since 'escrow' is not among the predefined contract families in the taxonomy, it correctly falls under 'other'."}, {'filename': 'HEALTHGATEDATACORP_11_24_1999-EX-10.1-HOSTING AND MANAGEMENT AGREEMENT (1)', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.92, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Electronic Journal Soft Ware Development, Hosting and Management Agreement.' Its operative clauses heavily feature development machinery, including a defined Development Timetable, System Completion Date, Milestones and Deliverables, Project Management protocols, acceptance testing procedures, and source code escrow. Under the development preference rule, these substantive obligations clearly categorize it as a Development Agreement over the accompanying hosting or service components."}, {'filename': 'OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2', 'expected': 'agency', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.85, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is an 'Agents' Certificate' explicitly titled for compliance with U.S. Securities Laws. It contains representations and certifications regarding broker-dealer registration, accredited investor status, and adherence to Regulation D (Rule 506(b)). While it references an underlying Agency Agreement, its substantive purpose is to certify regulatory compliance for a securities offering, making compliance_filing the strongest match among the available categories."}, {'filename': 'HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement', 'expected': 'supply', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement' governing the territorial sale and resale of a pharmaceutical product. Operative clauses grant exclusive rights to sell, market, and distribute the product in the GCC region, outline purchase orders, transfer pricing, sales forecasts, and marketing budgets for end-user resale. Although it includes license and supply provisions, the core commercial obligations center on distribution and resale rights, making 'distributor' the best fit. Confidence is moderated due to the hybrid nature of the agreement."}, {'filename': 'UNITEDNATIONALBANCORP_03_03_1999-EX-99-Outsourcing Agreement with the BISYS Group, Inc.', 'expected': 'outsourcing', 'predicted': 'other', 'doc_type': 'correspondence', 'confidence': 0.9, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is a corporate press release announcing the execution of an agreement. It lacks formal operative clauses, recitals, consideration, or signature blocks characteristic of a binding contract instrument. Its structure and content function as a public notice/corporate communication, aligning with the correspondence category.'}, {'filename': 'NICELTD_06_26_2003-EX-4.5-OUTSOURCING AGREEMENT', 'expected': 'outsourcing', 'predicted': 'manufacturing', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MANUFACTURING OUTSOURCING AGREEMENT' and follows a standard contract format with recitals, definitions, and detailed operative clauses. The substantive obligations focus on the production, assembly, testing, component purchasing, and delivery of physical goods, which aligns directly with the manufacturing agreement family."}, {'filename': 'Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'manufacturing', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT' and its operative clauses predominantly govern the manufacturing of hearing aids, including purchase orders, product costing, tooling/NRE charges, delivery terms, warranties, and FDA regulatory compliance. While design and joint marketing are mentioned, the core obligations and machinery revolve around manufacturing services and production, firmly placing it in the manufacturing family."}, {'filename': 'Reinsurance Group of America, Incorporated - A_R REMARKETING  AGREEMENT', 'expected': 'marketing', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.8, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is titled 'Amended and Restated Remarketing Agreement' and explicitly appoints Barclays Capital Inc. as the exclusive 'Remarketing Agent' to market and distribute securities on behalf of the issuers. Its operative clauses detail the agent's appointment, duties, compensation, indemnification, and termination, which substantively align with an agency agreement framework, albeit within a specialized securities/financial context."}, {'filename': 'PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement.' Operative clauses (Sections 2.1, 2.2, 4.17) explicitly appoint EKR as the exclusive distributor, grant 'Distribution Rights,' mandate that EKR purchase all product requirements from PPI, and establish royalty structures based on net sales. While the title and certain sections cover licensing and marketing/promotion, the substantive commercial machinery and primary obligations center on distribution and resale rights. Following the hybrid agreement guidance, 'distributor' is selected as the best fit, with 'marketing' noted as the runner-up family; confidence is capped at 0.85 per rule 11."}, {'filename': 'NUVEEN - REMARKETING AGREEMENT', 'expected': 'marketing', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal 'REMARKETING AGREEMENT' that explicitly appoints a third-party entity as the 'Remarketing Agent' to perform specific operational and financial duties on behalf of the Fund (e.g., calculating dividend rates, remarketing shares, handling tenders). The extensive use of agency terminology ('Appointment and Obligations of the Remarketing Agent,' acting as agent for beneficial owners, indemnification, and resignation/removal procedures) substantively aligns with an agency agreement framework. While specialized to municipal fund securities, its core structure and obligations fit the agency family best among the available options."}, {'filename': 'STWRESOURCESHOLDINGCORP_08_06_2014-EX-10.1-COOPERATION AGREEMENT', 'expected': 'collaboration', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Cooperation Agreement' but its substantive operative clauses focus entirely on the exploration, drilling, feasibility studies, and construction of water wells. These provisions contain clear development machinery (post-well studies, drilling/deepening obligations, construction standards, and milestone-based production options), which triggers the development preference rule. The classification leans toward development over collaboration/cooperation due to the heavy operational focus on well development and feasibility, though the title creates a slight hybrid signal."}, {'filename': 'HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT', 'expected': 'sponsorship', 'predicted': 'endorsement', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement granting a celebrity/golfer's name, likeness, and expertise for use in a software product, alongside exclusivity for competing titles, advertising approval rights, and royalty/equity compensation. These operative clauses are definitive characteristics of a celebrity endorsement deal. Although the title references 'Sponsorship and Development,' the substantive machinery centers entirely on product endorsement and publicity rights, making 'endorsement' the most accurate classification."}, {'filename': 'KUBIENT,INC_07_02_2020-EX-10.14-MASTER SERVICES AGREEMENT_Part2', 'expected': 'service', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.8, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is an exhibit to a Master Services Agreement that substantively operates as an advertising revenue-sharing and consultation agreement. Operative clauses explicitly state Kubient will provide 'advertising and related business revenue consultation' to monetize the Customer's digital content, with compensation structured as a percentage-based revenue share from various ad inventory types (programmatic, video, native, etc.). While it contains prominent non-circumvention and non-solicitation covenants, the core commercial machinery and revenue model align directly with marketing/advertising services. Confidence is moderated slightly due to its format as an MSA exhibit and the inclusion of ancillary restrictive covenants."}, {'filename': 'FEDERATEDGOVERNMENTINCOMESECURITIESINC_04_28_2020-EX-99.SERV AGREE-SERVICES AGREEMENT_POWEROF', 'expected': 'service', 'predicted': 'agency', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a Limited Power of Attorney that formally appoints one entity as the agent and attorney-in-fact for another, detailing the scope of authority, indemnification, liability limitations, and governing law. These operative provisions establish a principal-agent relationship, making 'agency' the best substantive fit among the available subtypes. Confidence is moderated slightly because the instrument follows a traditional POA format rather than a comprehensive commercial agency contract."}, {'filename': 'WHITESMOKE,INC_11_08_2011-EX-10.26-PROMOTION AND DISTRIBUTION AGREEMENT', 'expected': 'promotion', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Promotion and Distribution Agreement' and formally designates Whitesmoke Inc. as the 'Distributor.' The operative clauses predominantly govern distribution mechanics, including bundling rights, third-party distribution permissions, installation tracking/reporting, compliance guidelines for bundled software, and compensation tied directly to distribution metrics. These features align squarely with the distributor agreement family."}, {'filename': 'VerizonAbsLlc_20200123_8-K_EX-10.4_11952335_EX-10.4_Service Agreement', 'expected': 'service', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal 'Transfer and Servicing Agreement' governing an asset-backed securities (ABS) securitization transaction. It outlines the transfer of device payment plan receivables to a trust and establishes ongoing servicing, collection, and custodial obligations. While it contains extensive servicing provisions, its highly specialized financial/trust structure does not align with the standard commercial contract families listed (e.g., general service, agency, or supply), making 'other' the most accurate subtype classification."}, {'filename': 'IntegrityFunds_20200121_485BPOS_EX-99.E UNDR CONTR_11948727_EX-99.E UNDR CONTR_Service Agreement', 'expected': 'service', 'predicted': 'distributor', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'DISTRIBUTION AND SERVICES AGREEMENT' and functions as a formal contract appointing a principal underwriter/distributor for the Fund's shares. Operative clauses detail distribution mechanics, including soliciting purchase orders, managing distribution expenses, setting sales commissions, and compensating the distributor based on share sales and NAV differentials. These substantive obligations firmly align with the distributor agreement family, overriding the SEC filing context per classification rules."}, {'filename': 'GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.8_11951679_EX-10.8_Service Agreement', 'expected': 'service', 'predicted': 'sponsorship', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SPONSORSHIP AND SERVICES AGREEMENT' and its operative clauses center on granting sponsorship rights, advertising benefits, and branding usage in exchange for defined sponsorship fees and activation funds (Article 3). Although it includes service delivery and product supply components, the title explicitly names the sponsorship family, and the core commercial mechanism revolves around sponsorship rights and promotional activations, directly matching the sponsorship agreement subtype."}, {'filename': 'EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement', 'expected': 'reseller', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled a 'LICENSE AND RESELLER AGREEMENT' and its core operative clauses establish a software platform license grant, including rights to sub-license and use the solution (Section 2). While it contains substantial development and implementation machinery (Section 3) and reseller appointment terms, the primary legal relationship revolves around IP licensing and channel distribution. Following Rule 9's guidance to weigh operative clauses against the title, the license grant language and title ordering make 'license' the strongest fit. Hybrid signals from development/reseller provisions cap confidence at 0.85."}, {'filename': 'DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement', 'expected': 'promotion', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'CO-PROMOTION AGREEMENT' and its operative clauses grant Valeant the right to detail and promote Dova's pharmaceutical product, establish a Marketing Sub-Committee, and outline promotion fees and detailing metrics. These terms clearly define a marketing and promotion services arrangement, fitting the marketing subtype."}, {'filename': 'ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement', 'expected': 'outsourcing', 'predicted': 'consulting', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement between a resort developer and an architectural firm detailing planning, design, environmental assessment, and professional coordination services. It includes standard contractual provisions such as scope of work, fixed and percentage-based fees, staged payment terms, project timeline, party duties, and dispute resolution. Although titled 'Outsourcing Contract,' the substantive obligations revolve around professional advisory and design planning rather than business-process outsourcing, making 'consulting' the precise fit."}, {'filename': 'VertexEnergyInc_20200113_8-K_EX-10.1_11943624_EX-10.1_Marketing Agreement', 'expected': 'marketing', 'predicted': 'supply', 'doc_type': 'contract', 'confidence': 0.92, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Joint Supply and Marketing Agreement' and centers on Vertex's obligation to source, produce, and sell a specific product to Bunker One, with Bunker One purchasing, blending, and reselling it. Operative clauses detail supply mechanics including FOB Incoterms pricing, inventory tracking, purchase commitments, and delivery terms. While it includes marketing coordination and profit-sharing structures, Section 10.1 explicitly disclaims a joint venture or partnership, confirming the substantive form is a commercial supply agreement. Per Rule 8, the title naming 'Supply' dictates the subtype assignment."}, {'filename': 'TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement', 'expected': 'marketing', 'predicted': 'reseller', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses grant the counterparty exclusive rights to market, distribute, and sell products within a defined territory. Standard reseller provisions are present throughout, including purchase orders, pricing, territorial restrictions, annual commercialization milestones, laboratory setup requirements, and post-sale support duties, firmly aligning it with the reseller agreement family."}, {'filename': 'AudibleInc_20001113_10-Q_EX-10.32_2599586_EX-10.32_Co-Branding Agreement_ Marketing Agreement_ Investment Distribution Agreement', 'expected': 'marketing', 'predicted': 'co_branding', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'CO-BRANDING, MARKETING AND DISTRIBUTION AGREEMENT' and functions as a formal contract between Amazon and Audible. Operative clauses center on creating a jointly branded subsection on Amazon's website, cross-licensing trademarks and intellectual property for co-branded use, issuing joint press releases, running coordinated advertising campaigns, and sharing revenues via royalties. These mechanisms strongly match the co-branding family rather than pure distribution or standalone marketing services."}, {'filename': 'ArtaraTherapeuticsInc_20200110_8-K_EX-10.5_11943350_EX-10.5_License Agreement', 'expected': 'license', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is a formal agreement titled 'Sponsored Research and License Agreement' between a pharmaceutical company and a university. Its operative clauses detail a structured multi-phase clinical and regulatory development plan, milestone-based payments, royalty obligations, and IP/data licensing provisions. Per the hybrid agreement rules, the presence of explicit development machinery (project phases, FDA filing milestones, development funding) dictates classifying it as 'development', while the concurrent grant of data usage rights and dual-title naming make 'license' a strong runner-up, capping confidence at 0.85."}, {'filename': 'GALERATHERAPEUTICS,INC_02_14_2020-EX-99.A-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual mechanics: mutual promises ('hereby agree'), allocation of filing responsibilities, revocation terms, counterpart execution clause, and formal signature blocks. While it serves a regulatory purpose under the Securities Exchange Act, its substantive form is a binding multilateral agreement between private parties, placing it squarely in the contract class. It does not fit any of the defined commercial contract families, so 'other' is assigned."}, {'filename': 'Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Website Design, Development and Hosting Agreement.' The operative clauses and Exhibit A focus heavily on design/development milestones, change orders, delivery timelines, and a multi-stage Scope of Work. Per Rule 10, the presence of development machinery (milestones, trial/delivery timelines, stage-based scope) dictates classifying it as a Development Agreement over the hosting or general service elements mentioned in the title."}, {'filename': 'PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3', 'expected': 'franchise', 'predicted': 'non_compete_no_solicit', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'NON-DISCLOSURE AND NON-COMPETITION AGREEMENT' and contains operative clauses detailing confidentiality obligations, covenants not to compete, non-solicitation restrictions, injunctive relief, and severability. These provisions align directly with the restrictive-covenant family of agreements."}, {'filename': 'SEPARATEACCOUNTIIOFAGL_05_02_2011-EX-99.(J)(4)-UNCONDITIONAL CAPITAL MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal bilateral agreement titled 'Unconditional Capital Maintenance Agreement' between a parent corporation and its wholly-owned subsidiary, detailing financial obligations to maintain minimum capital levels and declare dividends. While it is clearly a binding contract, its subject matter (intercompany capital support and regulatory capital maintenance) does not align with any of the specified commercial contract families (e.g., distribution, license, service, or maintenance of services). Thus, 'other' is the precise classification."}, {'filename': 'SECURIANFUNDSTRUST_05_01_2012-EX-99.28.H.9-NET INVESTMENT INCOME MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document follows a standard contract format with recitals, operative clauses, numbered sections, and signature blocks. It is a specialized investment fund agreement governing fee waivers and expense reimbursements by an investment adviser and underwriter to maintain net investment income at or above zero under the 1940 Act. Although titled a 'Maintenance Agreement,' its substance is financial/accounting maintenance rather than the technical or software maintenance/support services defined in the 'maintenance' subtype. It lacks the operative machinery of any other listed commercial family, making 'other' the precise fit."}, {'filename': 'PRIMEENERGYRESOURCESCORP_04_02_2007-EX-10.28-COMPLETION AND LIQUIDITY MAINTENANCE AGREEMENT', 'expected': 'maintenance', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a formal, signed agreement titled 'Completion and Liquidity Maintenance Agreement' with an effective date, governing law clause, and binding obligations between a parent company, its subsidiary, and a lending bank. Its operative clauses establish a funding warranty for project completion costs and require the parent to maintain specified liquidity levels to support a separate credit facility. Because it functions as a financial guarantee/credit support agreement rather than a standard commercial arrangement (e.g., license, distribution, service, or development), it does not align with any of the predefined contract families and is best classified as 'other'. The clear contractual format and enforceable terms justify a high confidence for the contract classification, while the specialized financial nature lowers subtype confidence slightly."}, {'filename': 'VIRGINGALACTICHOLDINGS,INC_04_08_2020-EX-99.1-JOINT FILING STATEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is explicitly titled and formatted as an SEC Schedule 13G Joint Filing Statement pursuant to Rule 13d-1(k). Its content consists of standard regulatory acknowledgment language regarding joint filing responsibilities and information accuracy, which aligns perfectly with the compliance_filing class. As this is a regulatory submission rather than a contractual agreement, contract_subtype is set to null.'}, {'filename': 'TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual elements including mutual covenants, revocation terms, counterpart execution clauses, and multiple signature blocks. Its substantive form is a formal agreement between parties to coordinate SEC filings under the Exchange Act. As 'joint filing agreement' does not correspond to any of the specified contract family keys, it is classified under 'other'."}, {'filename': 'SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.9, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is an exhibit to a Schedule 13G regulatory submission, explicitly citing SEC Rule 13d-1(k) and the Securities Exchange Act of 1934. Its sole substantive purpose is to authorize joint filing and amendments for a securities disclosure, lacking commercial contract machinery. This aligns directly with the compliance_filing category.'}, {'filename': 'RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is an Exhibit 99.1 Joint Filing Agreement explicitly tied to SEC regulatory requirements (Schedule 13G/A, Securities Exchange Act of 1934, Rule 13d-1(k)). Its sole purpose is to coordinate the joint submission of a beneficial ownership filing, making it a regulatory compliance document rather than a commercial contract.'}, {'filename': 'QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'EXHIBIT 99.1' and governs the joint filing of a Schedule 13G under SEC Rule 13d-1(k). Its sole purpose is procedural compliance with securities regulations, making it a standard regulatory submission exhibit rather than a substantive commercial contract."}, {'filename': 'PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': "The document is explicitly labeled 'Exhibit 99.1 JOINT FILING AGREEMENT' and contains standard SEC regulatory terminology such as 'Additional Reporting Person,' 'Designated Filer,' and 'Issuer and CUSIP.' Its format and content are characteristic of a regulatory submission exhibit attached to a Schedule 13D/G filing, making it a compliance filing rather than a commercial contract."}, {'filename': 'ONEMAINHOLDINGS,INC_02_20_2020-EX-99.D-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.8, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is a multi-party 'JOINT FILING AGREEMENT' containing operative confirmation language and extensive signature blocks for various investment vehicles and their managers. Its sole purpose is to permit a joint Schedule 13D submission under SEC Rule 13d-1(k). While intrinsically linked to a regulatory submission, its substantive form is a formal agreement between parties rather than the regulatory filing itself. It does not fit any of the 25 specific commercial contract families, justifying the 'other' subtype."}, {'filename': 'NELNETINC_04_08_2020-EX-1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'JOINT FILING AGREEMENT' and contains clear operative clauses establishing mutual obligations between the undersigned parties to jointly prepare and file SEC Schedules 13G/13D. Its substantive form is a bilateral agreement rather than a standalone regulatory submission or corporate record. Because it addresses a specific SEC procedural mechanism and does not align with any of the 25 enumerated commercial contract families, 'other' is the appropriate subtype."}, {'filename': 'MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual language, including an agreement 'by and among' the signatories, a counterparts execution clause, and multiple signature blocks. While it facilitates a regulatory obligation (jointly filing a Schedule 13D under Rule 13d-1(k)), its substantive form is a formal multi-party agreement rather than a regulatory submission or corporate record itself. It does not align with any of the specified commercial contract families, making 'other' the correct subtype."}, {'filename': 'MACY_S,INC_05_11_2020-EX-99.4-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'compliance_filing', 'confidence': 0.95, 'mode': 'function_over_form', 'equiv_recovered': False, 'reasoning': 'The document is explicitly structured as an SEC exhibit (Exhibit 99.4) governing the joint filing of Schedule 13D/13G statements pursuant to Rule 13d-1(k)(1) of the Securities Exchange Act of 1934. Its sole operative purpose is to satisfy a mandatory regulatory reporting obligation, placing it squarely within the compliance_filing category rather than a substantive commercial contract.'}, {'filename': 'BLACKROCKMUNIHOLDINGSINVESTMENTQUALITYFUND_04_07_2020-EX-99.01-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual elements: mutual promises ('each party hereto hereby agrees'), an effective date, and signature blocks for two corporate entities. Its substantive form is a formal agreement governing the joint submission of SEC reports under the Exchange Act. Because it serves a procedural compliance function rather than fitting any of the 25 defined commercial agreement families, it is classified as 'other' within the contract category."}, {'filename': 'ATENTOSA_07_06_2020-EX-99.1-JOINT FILING AGREEMENT', 'expected': 'joint_venture', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is titled 'JOINT FILING AGREEMENT' and contains clear operative language ('the undersigned hereby agree to the joint filing...') executed by multiple parties. Its substantive form is a formal agreement between entities, placing it squarely in the contract class. Although it references SEC Rule 13d-1(k)(1) and appears as Exhibit 99.1 to an SEC filing package, the document itself is a binding agreement rather than a regulatory submission or report. It does not align with any specific commercial contract family, warranting the 'other' subtype."}, {'filename': 'CORIOINC_07_20_2000-EX-10.5-LICENSE AND HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'LICENSE AND HOSTING AGREEMENT' and its operative clauses predominantly establish a software licensing framework. Section 2 details the grant of rights (Hosting, Internal Use, Demonstration, and Distribution Licenses), while subsequent sections cover standard IP license mechanics including IP warranties, infringement indemnification, source code escrow, restrictions on reverse engineering, and fee structures tied to license usage. Although it includes ancillary provisions for hosting infrastructure, maintenance/support, and joint marketing, the substantive core and primary obligations revolve around the licensing of proprietary software, making 'license' the most accurate subtype."}, {'filename': 'CHANGEPOINTCORP_03_08_2000-EX-10.6-LICENSE AND HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'LICENSE AND HOSTING AGREEMENT' and its operative clauses center on the grant of software intellectual property rights, including detailed provisions for reproduction, installation, sublicensing, and internal use licenses. Standard IP license machinery such as ownership retention, restrictions on reverse engineering, IP warranties, and infringement indemnification further confirm it as a License Agreement."}, {'filename': 'BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'marketing', 'doc_type': 'contract', 'confidence': 0.8, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Co-Hosting Agreement' and functions as a formal contract. Its operative clauses primarily govern the placement of hot links on NAI's websites, marketing considerations, joint marketing programs, and associated co-hosting fees. While it includes a distribution addendum (Exhibit E), the dominant substantive obligations and commercial purpose revolve around web-based promotional placements and marketing activities, making 'marketing' the most accurate subtype."}, {'filename': 'AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT', 'expected': 'hosting', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.85, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Site Development and Hosting Agreement' between two corporations. Operative clauses detail HDI's obligations to design, develop, implement, and launch a website within a strict 60-day milestone, with HDI bearing all development costs. Per the development preference rule, the presence of development machinery and milestones dictates classifying it as a development agreement. However, because the title and Sections 1.3/1.4 also impose significant hosting and maintenance obligations, it is a hybrid agreement; `hosting` is the runner-up family, capping confidence at 0.85 per Rule 11."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Product License Schedule' and issued pursuant to a 'Software License, Customization and Maintenance Agreement.' Its operative clauses govern software licensing terms, source code delivery milestones, installation, warranty periods, and maintenance services. The primary substantive focus is the grant and administration of a software license, aligning directly with the license subtype per the explicit title and core obligations."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement3', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is an addendum/schedule to a 'Software License, Customization and Maintenance Agreement' that formally incorporates terms for the provision and use of specific software ('Supplier Offer Placement System Software') between Cardlytics, Inc. and Bank of America. Its explicit title and operative language establishing software rights and usage squarely align with the license subtype, with no competing contract family signals."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2', 'expected': 'maintenance', 'predicted': 'development', 'doc_type': 'contract', 'confidence': 0.9, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a 'Customization Schedule' governing software modification work. Operative clauses detail specification delivery, customization requirements, pricing (T&M or fixed), and installation timelines, which squarely align with the development family (product/software services development). Although attached to a broader license/maintenance agreement, this schedule's substantive obligations are purely developmental."}, {'filename': 'CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1', 'expected': 'maintenance', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'equivalent_family', 'equiv_recovered': True, 'reasoning': "The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and its primary operative provision is Section 2.0, which grants a nonexclusive, worldwide, irrevocable, perpetual license to install, use, execute, and copy the software. While it includes ancillary customization and maintenance schedules, the core transactional mechanism and governing framework revolve around the licensing of technology/IP, squarely fitting the 'license' subtype."}, {'filename': 'AtnInternationalInc_20191108_10-Q_EX-10.1_11878541_EX-10.1_Maintenance Agreement', 'expected': 'maintenance', 'predicted': 'service', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is a formal agreement titled 'Network Build and Maintenance Agreement' between Commnet Wireless, LLC and AT&T Mobility LLC. It establishes the vendor's obligations to build, install, deploy, and maintain a radio access network, supported by detailed operational, payment, indemnity, and independent contractor clauses. The substantive focus on deploying infrastructure and providing ongoing technical support aligns with a general Service Agreement."}, {'filename': 'PlayboyEnterprisesInc_20090220_10-QA_EX-10.2_4091580_EX-10.2_Content License Agreement_ Marketing Agreement_ Sales-Purchase Agreement2', 'expected': 'license', 'predicted': 'supply', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'SUPPLIER/SUBCONTRACTOR CONTRACT' and contains operative clauses governing the production, delivery, and sale of merchandise based on purchaser orders, including indemnification for workmanship defects, IP acknowledgment, and mold destruction. These terms align directly with a supply agreement framework."}, {'filename': 'LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2', 'expected': 'license', 'predicted': 'other', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'other_fallback', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'MUTUAL TERMINATION AGREEMENT' and contains standard operative provisions for mutually ending a prior Domain Name License Agreement. It does not establish ongoing commercial relationships or obligations characteristic of the specific contract families (e.g., license, service, supply), making 'other' the most accurate classification."}, {'filename': 'ScansourceInc_20190822_10-K_EX-10.38_11793958_EX-10.38_Distributor Agreement2', 'expected': 'distributor', 'predicted': 'license', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'Software License Agreement' and its operative clauses center on granting a nonexclusive, nontransferable license to use software, alongside standard license-specific provisions such as usage limitations, upgrade/backup copy rules, intellectual property protections, term/termination, and software warranty/disclaimers. These features definitively align with the license contract family."}, {'filename': 'RevolutionMedicinesInc_20200117_S-1_EX-10.1_11948417_EX-10.1_Development Agreement', 'expected': 'development', 'predicted': 'collaboration', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'COLLABORATIVE RESEARCH, DEVELOPMENT AND COMMERCIALIZATION AGREEMENT' and functions as a formal partnership between two pharmaceutical companies. Operative clauses establish joint governance bodies (JSC, JRDC, JCC), outline shared R&D planning and clinical trial oversight, define IP ownership for program inventions, and detail profit/loss sharing and co-promotion mechanisms. These features strongly align with the collaboration family, making the classification unambiguous."}, {'filename': 'ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement', 'expected': 'development', 'predicted': 'franchise', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'El Pollo Loco® Franchise Development Agreement' and operates as a formal agreement between a franchisor and a developer to establish multiple restaurant locations within a defined territory. Operative clauses heavily reference the franchise system, require execution of individual Franchise Agreements for each site, mandate payment of franchise fees and royalties, and incorporate the Franchise Disclosure Document, clearly aligning it with the franchise agreement family."}, {'filename': 'MusclepharmCorp_20170208_10-KA_EX-10.38_9893581_EX-10.38_Co-Branding Agreement', 'expected': 'co_branding', 'predicted': 'endorsement', 'doc_type': 'contract', 'confidence': 0.95, 'mode': 'family_confusion', 'equiv_recovered': False, 'reasoning': "The document is explicitly titled 'ENDORSEMENT LICENSING AND CO-BRANDING AGREEMENT' and contains standard operative clauses for a celebrity endorsement deal, including personal appearance obligations, advertising and right-of-publicity licensing, FTC-compliant endorsement guidelines, performance-based royalties/stock compensation, and exclusivity restrictions for competing dietary supplements. These provisions squarely align with the 'endorsement' contract subtype."}] |
+| per_subtype | affiliate: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 10, 'equiv': 10, 'total': 10} · agency: {'accuracy': 0.9231, 'accuracy_equiv': 0.9231, 'correct': 12, 'equiv': 12, 'total': 13} · co_branding: {'accuracy': 0.9545, 'accuracy_equiv': 0.9545, 'correct': 21, 'equiv': 21, 'total': 22} · collaboration: {'accuracy': 0.9615, 'accuracy_equiv': 0.9615, 'correct': 25, 'equiv': 25, 'total': 26} · consulting: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 11, 'equiv': 11, 'total': 11} · development: {'accuracy': 0.9286, 'accuracy_equiv': 0.9286, 'correct': 26, 'equiv': 26, 'total': 28} · distributor: {'accuracy': 0.9688, 'accuracy_equiv': 0.9688, 'correct': 31, 'equiv': 31, 'total': 32} · endorsement: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 24, 'equiv': 24, 'total': 24} · franchise: {'accuracy': 0.9333, 'accuracy_equiv': 0.9333, 'correct': 14, 'equiv': 14, 'total': 15} · hosting: {'accuracy': 0.6, 'accuracy_equiv': 0.6, 'correct': 12, 'equiv': 12, 'total': 20} · ip: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 17, 'equiv': 17, 'total': 17} · joint_venture: {'accuracy': 0.4348, 'accuracy_equiv': 0.4348, 'correct': 10, 'equiv': 10, 'total': 23} · license: {'accuracy': 0.9091, 'accuracy_equiv': 0.9394, 'correct': 30, 'equiv': 31, 'total': 33} · maintenance: {'accuracy': 0.5, 'accuracy_equiv': 0.7059, 'correct': 17, 'equiv': 24, 'total': 34} · manufacturing: {'accuracy': 0.9412, 'accuracy_equiv': 0.9412, 'correct': 16, 'equiv': 16, 'total': 17} · marketing: {'accuracy': 0.4118, 'accuracy_equiv': 0.4118, 'correct': 7, 'equiv': 7, 'total': 17} · non_compete_no_solicit: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 3, 'equiv': 3, 'total': 3} · outsourcing: {'accuracy': 0.8333, 'accuracy_equiv': 0.8333, 'correct': 15, 'equiv': 15, 'total': 18} · promotion: {'accuracy': 0.8333, 'accuracy_equiv': 0.8333, 'correct': 10, 'equiv': 10, 'total': 12} · reseller: {'accuracy': 0.9167, 'accuracy_equiv': 0.9167, 'correct': 11, 'equiv': 11, 'total': 12} · service: {'accuracy': 0.8214, 'accuracy_equiv': 0.8214, 'correct': 23, 'equiv': 23, 'total': 28} · sponsorship: {'accuracy': 0.9677, 'accuracy_equiv': 0.9677, 'correct': 30, 'equiv': 30, 'total': 31} · strategic_alliance: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 32, 'equiv': 32, 'total': 32} · supply: {'accuracy': 0.9444, 'accuracy_equiv': 0.9444, 'correct': 17, 'equiv': 17, 'total': 18} · transportation: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 13, 'equiv': 13, 'total': 13} |
+| subtype_accuracy | 0.8585 |
+| subtype_accuracy_equiv | 0.8743 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | expected subtype | doc_type ok | subtype ok | equiv ok | confidence | failure mode | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| d1 | Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT | completed | contract | agency | marketing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d2 | MetLife, Inc. - Remarketing Agreement | completed | contract | other | marketing | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d3 | Loop Industries, Inc. - Marketing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d4 | LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT | completed | contract | development | marketing | ✓ | ✗ | ✗ | 0.8 | family_confusion | — |
+| d5 | GWG HOLDINGS, INC. - ORDERLY MARKETING AGREEMENT | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d6 | VAPOTHERM, INC. - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d7 | Sonos, Inc. - Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d8 | Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement | completed | contract | development | manufacturing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d9 | ELECTRAMECCANICA VEHICLES CORP. - Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d10 | Columbia Laboratories, (Bermuda) Ltd. - AMEND NO. 2 TO MANUFACTURING AND SUPPLY AGREEMENT | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d11 | Cerus Corporation - FIRST AMEND TO SUPPLY AND MANUFACTURING AGREEMENT | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d12 | Apollo Endosurgery - Manufacturing and Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d13 | Antares Pharma, Inc. - Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d14 | ADMA BioManufacturing, LLC -  Amendment #3 to Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d15 | ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT | completed | contract | service | maintenance | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d16 | VERTICALNETINC_04_01_2002-EX-10.19-MAINTENANCE AND SUPPORT AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d17 | VERTEXENERGYINC_08_14_2014-EX-10.24-OPERATION AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d18 | VARIABLESEPARATEACCOUNT_04_30_2014-EX-13.C-UNCONDITIONAL CAPITAL MAINTENANCE AGREEMENT | completed | contract | other | maintenance | ✓ | ✗ | ✗ | 0.92 | other_fallback | — |
+| d19 | UAGHINC_04_14_2004-EX-10.18-MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d20 | TRIZETTOGROUPINC_08_18_1999-EX-10.17-TECHNICAL INFRASTRUCTURE MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d21 | TELKOMSALTD_01_30_2003-EX-10-LICENCE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d22 | TELEGLOBEINTERNATIONALHOLDINGSLTD_03_29_2004-EX-10.10-CONSTRUCTION AND MAINTENANCE AGREEM… | completed | contract | collaboration | maintenance | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d23 | SUNTRONCORP_05_17_2006-EX-10.22-MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d24 | SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d25 | STARTECGLOBALCOMMUNICATIONSCORP_11_16_1998-EX-10.30-CONSTRUCTION AND MAINTENANCE AGREEMENT | completed | contract | joint_venture | maintenance | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d26 | SPIENERGYCO,LTD_03_09_2011-EX-99.5-OPERATIONS AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d27 | SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGRE… | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d28 | SMITHELECTRICVEHICLESCORP_04_04_2012-EX-10.26-FLEET MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d29 | SLOVAKWIRELESSFINANCECOBV_03_28_2001-EX-4.(B)(II).3-Maintenance and support contract for … | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d30 | SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d31 | IMMUNOMEDICSINC_08_07_2019-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d32 | GOCALLINC_03_30_2000-EX-10.7-Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d33 | ASHWORTHINC_01_29_1999-EX-10.(D)-PROMOTION AGREEMENT AND NANTZ COMMUNICATIONS, INC. | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d34 | TRICITYBANKSHARESCORP_05_15_1998-EX-10-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d35 | SYKESHEALTHPLANSERVICESINC_04_24_1998-EX-10.14-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d36 | CCAINDUSTRIESINC_04_14_2014-EX-10.1-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d37 | BNLFINANCIALCORP_03_30_2007-EX-10.8-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d38 | ASPIRITYHOLDINGSLLC_05_07_2012-EX-10.6-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d39 | XACCT Technologies, Inc.SUPPORT AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d40 | WELLSFARGOMORTGAGEBACKEDSECURITIES2006-6TRUST_05_11_2006-EX-10.3-Yield Maintenance Agreem… | completed | contract | other | maintenance | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d41 | NETZEEINC_11_14_2002-EX-10.3-MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d42 | IMAGEWARESYSTEMSINC_12_20_1999-EX-10.22-MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d43 | PREMIERBIOMEDICALINC_05_14_2020-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d44 | KNOWLABS,INC_08_15_2005-EX-10-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d45 | INGEVITYCORP_05_16_2016-EX-10.5-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d46 | BABCOCK_WILCOXENTERPRISES,INC_08_04_2015-EX-10.17-INTELLECTUAL PROPERTY AGREEMENT between… | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d47 | WEBHELPCOMINC_03_22_2000-EX-10.8-HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d48 | REGANHOLDINGCORP_03_31_2008-EX-10-LICENSE AND HOSTING AGREEMENT | completed | contract | license | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d49 | HEALTHGATEDATACORP_11_24_1999-EX-10.1-HOSTING AND MANAGEMENT AGREEMENT - Escrow Agreement | completed | contract | other | hosting | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d50 | HEALTHGATEDATACORP_11_24_1999-EX-10.1-HOSTING AND MANAGEMENT AGREEMENT (1) | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.92 | family_confusion | — |
+| d51 | DYNTEKINC_07_30_1999-EX-10-ONLINE HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d52 | CENTRACKINTERNATIONALINC_10_29_1999-EX-10.3-WEB SITE HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d53 | BANGIINC_05_25_2005-EX-10-Premium Managed Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d54 | MRSFIELDSORIGINALCOOKIESINC_01_29_1998-EX-10-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d55 | BUFFALOWILDWINGSINC_06_05_1998-EX-10.3-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d56 | WOMENSGOLFUNLIMITEDINC_03_29_2000-EX-10.13-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d57 | WOMENSGOLFUNLIMITEDINC_03_29_2000-EX-10.13-ENDORSEMENT AGREEMENT - Intellectual Property … | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d58 | NETGEAR,INC_04_21_2003-EX-10.16-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d59 | NETGEAR,INC_04_21_2003-EX-10.16-AMENDMENT TO THE DISTRIBUTOR AGREEMENT BETWEEN INGRAM MIC… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d60 | NETGEAR,INC_04_21_2003-EX-10.16- AMENDMENT #2 TO THE DISTRIBUTION AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d61 | BIOAMBERINC_04_10_2013-EX-10.34-DEVELOPMENT AGREEMENT - First Amendment | completed | contract | development | development | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d62 | BIOAMBERINC_04_10_2013-EX-10.34-DEVELOPMENT AGREEMENT (1) | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d63 | SPHERE3DCORP_06_24_2020-EX-10.12-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d64 | SLINGERBAGINC_05_27_2020-EX-10.7-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d65 | PANDIONTHERAPEUTICSHOLDCOLLC_05_22_2020-EX-10.17-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d66 | MEDALISTDIVERSIFIEDREIT,INC_05_18_2020-EX-10.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d67 | KIROMICBIOPHARMA,INC_05_11_2020-EX-10.23-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d68 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d69 | PHLVARIABLEINSURANCECOCT_08_17_2009-EX-10.1-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d70 | ORBSATCORP_08_17_2007-EX-7.3-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d71 | MANAKOASERVICESCORP_11_21_2007-EX-7.5-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d72 | LIGHTBRIDGECORP_11_23_2015-EX-10.26-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d73 | KALLOINC_11_03_2011-EX-10.1-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d74 | IOVANCEBIOTHERAPEUTICS,INC_08_03_2017-EX-10.1-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d75 | INTRICONCORP_03_10_2009-EX-10.22-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d76 | INTELLIGENTHIGHWAYSOLUTIONS,INC_01_18_2018-EX-10.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d77 | ICORECONNECTINC_10_13_2010-EX-7.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d78 | GOLDRESOURCECORP_12_11_2008-EX-10.1-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d79 | GIGGLESN_HUGS,INC_06_23_2016-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.8 | — | — |
+| d80 | FTENETWORKS,INC_02_18_2016-EX-99.4-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d81 | ENTRUSTINC_07_24_1998-EX-10.5-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d82 | DUOSTECHNOLOGIESGROUP,INC_04_21_2009-EX-10.1-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d83 | COOLTECHNOLOGIES,INC_10_25_2017-EX-10.71-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d84 | CHERRYHILLMORTGAGEINVESTMENTCORP_09_26_2013-EX-10.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d85 | AURASYSTEMSINC_06_16_2010-EX-10.25-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d86 | ADAPTIMMUNETHERAPEUTICSPLC_04_06_2017-EX-10.11-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d87 | XLITECHNOLOGIES,INC_12_11_2015-EX-10.1-Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d88 | VNUE,INC_07_10_2015-EX-10.1-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d89 | VITAMINSHOPPECOMINC_09_13_1999-EX-10.26-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d90 | TICKETSCOMINC_06_22_1999-EX-10.22-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d91 | SONUSCORP_03_12_1997-EX-10.11-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d92 | RUBIOSRESTAURANTSINC_03_31_2008-EX-10.75-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d93 | PROLONGINTERNATIONALCORP_03_23_1998-EX-10.16-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d94 | PACIFICSYSTEMSCONTROLTECHNOLOGYINC_08_24_2000-EX-10.53-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d95 | NETGROCERINC_07_31_1998-EX-10.15-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d96 | NATIONALPROCESSINGINC_07_18_1996-EX-10.4-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d97 | N2KINC_10_16_1997-EX-10.16-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d98 | MERCATAINC_03_09_2000-EX-10.21-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d99 | LOOKSMARTLTD_07_20_2012-EX-99.(D)(I)-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d100 | LOGANSROADHOUSEINC_03_27_1998-EX-10.17-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d101 | IVILLAGEINC_03_17_1999-EX-10.16-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d102 | IPAYMENT,INC_05_14_2007-EX-10.1-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d103 | HYDRONTECHNOLOGIESINC_03_31_1997-EX-10.47-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d104 | GSVINC_05_15_1998-EX-10-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d105 | DRKOOPCOMINC_04_21_1999-EX-10.28-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d106 | DOMINIADVISORTRUST_02_18_2005-EX-99.(H)(2)-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d107 | CURAEGISTECHNOLOGIES,INC_05_26_2010-EX-1-CORPORATE SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d108 | WPPPLC_04_30_2020-EX-4.28-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d109 | TRANSMONTAIGNEPARTNERSLLC_03_13_2020-EX-10.9-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d110 | THERAVANCEBIOPHARMA,INC_05_08_2020-EX-10.2-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d111 | TALCOTTRESOLUTIONLIFEINSURANCECO-SEPARATEACCOUNTTWELVE_04_30_2020-EX-99.8(L)-SERVICE AGRE… | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d112 | SOLUTIONSVENDINGINTERNATIONAL,INC_03_31_2020-EX1A-1 UNDR AGMT-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d113 | EMERALDHEALTHTHERAPEUTICSINC_06_10_2020-EX-4.5-CONSULTING AGREEMENT - DR. GAETANO MORELLO… | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d114 | DRIVENDELIVERIES,INC_05_22_2020-EX-10.4-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d115 | CORALGOLDRESOURCES,LTD_05_28_2020-EX-4.1-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d116 | ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d117 | ADUROBIOTECH,INC_06_02_2020-EX-10.7-CONSULTING AGREEMENT(1) | completed | contract | consulting | consulting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d118 | XENCORINC_10_25_2013-EX-10.24-COLLABORATION AGREEMENT (3) | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d119 | TUNIUCORP_03_06_2014-EX-10-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d120 | SENMIAOTECHNOLOGYLTD_02_19_2019-EX-10.5-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d121 | MACROGENICSINC_08_02_2013-EX-10-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d122 | INNOVIVA,INC_08_07_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d123 | IDREAMSKYTECHNOLOGYLTD_07_03_2014-EX-10.39-Cooperation Agreement on Mobile Game Business | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d124 | CHINARECYCLINGENERGYCORP_11_14_2013-EX-10.6-Cooperation Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d125 | BERKELEYLIGHTS,INC_06_26_2020-EX-10.12-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d126 | ALLISONTRANSMISSIONHOLDINGSINC_12_15_2014-EX-99.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d127 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2 | completed | compliance_filing | other | agency | ✗ | ✗ | ✗ | 0.85 | function_over_form | — |
+| d128 | OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT1 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d129 | BONTONSTORESINC_04_20_2018-EX-99.3-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d130 | ATHENSBANCSHARESCORP_11_02_2009-EX-1.2-AGENCY AGREEMENT , 2009 | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d131 | ZtoExpressCaymanInc_20160930_F-1_EX-10.10_9752871_EX-10.10_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d132 | TcPipelinesLp_20160226_10-K_EX-99.12_9454048_EX-99.12_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d133 | RangeResourcesLouisianaInc_20150417_8-K_EX-10.5_9045501_EX-10.5_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d134 | PenntexMidstreamPartnersLp_20150416_S-1A_EX-10.4_9042833_EX-10.4_Transportation Agreement | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d135 | WestPharmaceuticalServicesInc_20200116_8-K_EX-10.1_11947529_EX-10.1_Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d136 | ReynoldsConsumerProductsInc_20191115_S-1_EX-10.18_11896469_EX-10.18_Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d137 | LohaCompanyltd_20191209_F-1_EX-10.16_11917878_EX-10.16_Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d138 | AgapeAtpCorp_20191202_10-KA_EX-10.1_11911128_EX-10.1_Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d139 | SIBANNAC,INC_12_04_2017-EX-2.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d140 | PLAYAHOTELS_RESORTSNV_03_14_2017-EX-10.22-STRATEGIC ALLIANCE AGREEMENT (Hyatt Ziva Cancun) | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d141 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d142 | MARTINMIDSTREAMPARTNERSLP_01_23_2004-EX-10.3-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d143 | ENTERPRISEPRODUCTSPARTNERSLP_07_08_1998-EX-10.3-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d144 | ENERGYXXILTD_05_08_2015-EX-10.13-Transportation AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d145 | VERICELCORP_08_06_2019-EX-10.10-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d146 | VAXCYTE,INC_05_22_2020-EX-10.19-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d147 | ULTRAGENYXPHARMACEUTICALINC_12_23_2013-EX-10.9-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d148 | INTERSECTENT,INC_05_11_2020-EX-10.1-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d149 | HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement | completed | contract | distributor | supply | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d150 | FUSIONPHARMACEUTICALSINC_06_05_2020-EX-10.17-Supply Agreement - FUSION | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d151 | BIOFRONTERAAG_04_29_2019-EX-4.17-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d152 | BELLRINGBRANDS,INC_02_07_2020-EX-10.18-MASTER SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d153 | XLITECHNOLOGIES,INC_12_02_2015-EX-10.02-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d154 | WASTE2ENERGYHOLDINGS,INC_06_03_2010-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d155 | VIRTUALSCOPICS,INC_11_12_2010-EX-10.1-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d156 | USASYNTHETICFUELCORP_10_21_2010-EX-10.10-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d157 | TURNKEYCAPITAL,INC_07_20_2017-EX-1.1-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d158 | SUCAMPOPHARMACEUTICALS,INC_11_04_2015-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d159 | ROCKYMOUNTAINCHOCOLATEFACTORY,INC_12_23_2019-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d160 | REWALKROBOTICSLTD_07_10_2014-EX-10.2-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d161 | PHREESIA,INC_05_28_2019-EX-10.18-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d162 | SCOUTCAMINC_05_12_2020-EX-10.22-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d163 | RISEEDUCATIONCAYMANLTD_04_17_2020-EX-4.23-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d164 | PFSFUNDS_06_26_2020-EX-99.H OTH MAT CONT-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d165 | OPERALTD_04_30_2020-EX-4.14-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d166 | OAKTREECAPITALGROUP,LLC_03_02_2020-EX-10.8-Services Agreement | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d167 | NYLIACVARIABLEANNUITYSEPARATEACCOUNTIII_04_10_2020-EX-99.8.KK-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d168 | MERITLIFEINSURANCECO_06_19_2020-EX-10.(XIV)-MASTER SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d169 | BICYCLETHERAPEUTICSPLC_03_10_2020-EX-10.11-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d170 | ABILITYINC_06_15_2020-EX-4.25-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d171 | WORLDWIDESTRATEGIESINC_11_02_2005-EX-10-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d172 | DIVERSINETCORP_03_01_2012-EX-4-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d173 | ADIANUTRITION,INC_04_01_2005-EX-10.D2-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d174 | KINGPHARMACEUTICALSINC_08_09_2006-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d175 | CYBERIANOUTPOSTINC_07_09_1998-EX-10.13-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d176 | UNITEDNATIONALBANCORP_03_03_1999-EX-99-Outsourcing Agreement with the BISYS Group, Inc. | completed | correspondence | other | outsourcing | ✗ | ✗ | ✗ | 0.9 | function_over_form | — |
+| d177 | OFGBANCORP_03_28_2007-EX-10.23-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d178 | OASYSMOBILE,INC_07_05_2001-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d179 | NICELTD_06_26_2003-EX-4.5-OUTSOURCING AGREEMENT | completed | contract | manufacturing | outsourcing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d180 | NEXSTARFINANCEHOLDINGSINC_03_27_2002-EX-10.26-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d181 | MANUFACTURERSSERVICESLTD_06_05_2000-EX-10.14-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d182 | HUBEIMINKANGPHARMACEUTICALLTD_09_19_2006-EX-10.1-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d183 | ELANDIAINTERNATIONALINC_04_25_2007-EX-10.21-Outsourcing Agreement | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d184 | DRAGONSYSTEMSINC_01_08_1999-EX-10.17-OUTSOURCING AGREEMENT | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d185 | Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT | completed | contract | manufacturing | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d186 | SightLife Surgical, Inc. - STRATEGIC SALES _ MARKETING AGREEMENT | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d187 | Reinsurance Group of America, Incorporated - A_R REMARKETING  AGREEMENT | completed | contract | agency | marketing | ✓ | ✗ | ✗ | 0.8 | family_confusion | — |
+| d188 | Principal Life Insurance Company - Broker Dealer Marketing and Servicing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d189 | PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEM… | completed | contract | distributor | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d190 | NUVEEN - REMARKETING AGREEMENT | completed | contract | agency | marketing | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d191 | URSCORPNEW_03_17_2014-EX-99-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d192 | STWRESOURCESHOLDINGCORP_08_06_2014-EX-10.1-COOPERATION AGREEMENT | completed | contract | development | collaboration | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d193 | SPOKHOLDINGS,INC_06_19_2020-EX-10.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d194 | SPIENERGYCO,LTD_07_10_2014-EX-10-Cooperation Agreement of 50MWp Photovoltaic Grid-connect… | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d195 | QIWI_06_16_2017-EX-99.(D)(2)-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d196 | MEETGROUP,INC_06_29_2017-EX-10.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d197 | LEJUHOLDINGSLTD_03_12_2014-EX-10.34-INTERNET CHANNEL COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d198 | HPILHOLDING_01_07_2015-EX-99.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d199 | HC2HOLDINGS,INC_05_14_2020-EX-10.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d200 | FOUNDATIONMEDICINE,INC_02_02_2015-EX-10.2-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d201 | FIBROGENINC_10_01_2014-EX-10.11-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d202 | ELFBEAUTY,INC_07_02_2020-EX-10.1-COOPERATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d203 | CHEETAHMOBILEINC_04_22_2014-EX-10.43-Cooperation Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d204 | CERES,INC_01_25_2012-EX-10.20-Collaboration Agreement | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d205 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d206 | BIOCEPTINC_08_19_2013-EX-10-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d207 | ANIXABIOSCIENCESINC_06_09_2020-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | collaboration | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d208 | BLUEROCKRESIDENTIALGROWTHREIT,INC_06_01_2016-EX-1.1-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d209 | BLUEHILLSBANCORP,INC_05_20_2014-EX-1.1-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d210 | BIOPURECORP_06_30_1999-EX-10.13-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d211 | BANUESTRAFINANCIALCORP_09_08_2006-EX-10.16-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d212 | AMERICANPHYSICIANSCAPITALINC_03_31_2003-EX-10.26-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d213 | ALLIANCEBANCORPINCOFPENNSYLVANIA_10_18_2006-EX-1.2-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d214 | ALCOSTORESINC_12_14_2005-EX-10.26-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d215 | ALAMOGORDOFINANCIALCORP_12_16_1999-EX-1-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d216 | AFSALABANCORPINC_08_01_1996-EX-1.1-AGENCY AGREEMENT | completed | contract | agency | agency | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d217 | GULFSOUTHMEDICALSUPPLYINC_12_24_1997-EX-4-AFFILIATE AGREEMENT | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d218 | MPLXLP_06_17_2015-EX-10.1-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d219 | KENTUCKYUTILITIESCO_03_25_2003-EX-10.65-TRANSPORTATION AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d220 | GRANTIERRAENERGYINC_05_07_2012-EX-10.6-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d221 | DYNAMEXINC_06_06_1996-EX-10.4-TRANSPORTATION SERVICES AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d222 | CHAPARRALRESOURCESINC_03_30_2000-EX-10.66-TRANSPORTATION CONTRACT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d223 | ATMOSENERGYCORP_11_22_2002-EX-10.17-TRANSPORTATION SERVICE AGREEMENT | completed | contract | transportation | transportation | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d224 | SEASPINEHOLDINGSCORP_10_10_2018-EX-10.1-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d225 | PROFOUNDMEDICALCORP_08_29_2019-EX-4.5-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d226 | MEDIWOUNDLTD_01_15_2014-EX-10.6-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d227 | GRIDIRONBIONUTRIENTS,INC_02_05_2020-EX-10.3-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d228 | FLOTEKINDUSTRIESINCCN_05_09_2019-EX-10.1-SUPPLY AGREEMENT | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d229 | BELLICUMPHARMACEUTICALS,INC_05_07_2019-EX-10.1-Supply Agreement | completed | contract | supply | supply | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d230 | XYBERNAUTCORP_07_12_2002-EX-4-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d231 | VIOLINMEMORYINC_12_12_2012-EX-10.14-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d232 | STAMPSCOMINC_06_24_1999-EX-10.18-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d233 | HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT | completed | contract | endorsement | sponsorship | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d234 | GAINSCOINC_01_21_2010-EX-10.41-SPONSORSHIP AGREEMENT | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d235 | CANOPETROLEUM,INC_12_13_2007-EX-10.1-Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d236 | PAXMEDICA,INC_07_02_2020-EX-10.12-Master Service Agreement | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d237 | KUBIENT,INC_07_02_2020-EX-10.14-MASTER SERVICES AGREEMENT_Part2 | completed | contract | marketing | service | ✓ | ✗ | ✗ | 0.8 | family_confusion | — |
+| d238 | KUBIENT,INC_07_02_2020-EX-10.14-MASTER SERVICES AGREEMENT_Part1 | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d239 | FEDERATEDGOVERNMENTINCOMESECURITIESINC_04_28_2020-EX-99.SERV AGREE-SERVICES AGREEMENT_SEC… | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d240 | FEDERATEDGOVERNMENTINCOMESECURITIESINC_04_28_2020-EX-99.SERV AGREE-SERVICES AGREEMENT_POW… | completed | contract | agency | service | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d241 | FEDERATEDGOVERNMENTINCOMESECURITIESINC_04_28_2020-EX-99.SERV AGREE-SERVICES AGREEMENT_AME… | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d242 | FEDERATEDGOVERNMENTINCOMESECURITIESINC_04_28_2020-EX-99.SERV AGREE-SERVICES AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d243 | CUROGROUPHOLDINGSCORP_05_04_2020-EX-10.3-SERVICING AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d244 | BLACKSTONEGSOLONG-SHORTCREDITINCOMEFUND_05_11_2020-EX-99.(K)(1)-SERVICE AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d245 | AULAMERICANUNITTRUST_04_24_2020-EX-99.8.77-SERVICING AGREEMENT | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d246 | OMINTO,INC_03_29_2004-EX-10-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d247 | MTITECHNOLOGYCORP_11_16_2004-EX-10.102-Reseller Agreement Premier Addendum | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d248 | LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d249 | ASIANDRAGONGROUPINC_08_11_2005-EX-10.5-Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d250 | WHITESMOKE,INC_11_08_2011-EX-10.26-PROMOTION AND DISTRIBUTION AGREEMENT | completed | contract | distributor | promotion | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d251 | ON4COMMUNICATIONSINC_07_02_2009-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d252 | MIDDLEBROOKPHARMACEUTICALS,INC_03_18_2010-EX-10.1-PROMOTION AGREEMENT | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d253 | ENERGOUSCORP_03_16_2017-EX-10.24-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d254 | CHIPMOSTECHNOLOGIESBERMUDALTD_04_18_2016-EX-4.72-Strategic Alliance Agreement | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d255 | FreezeTagInc_20180411_8-K_EX-10.1_11139603_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d256 | EcoScienceSolutionsInc_20180406_8-K_EX-10.1_11135398_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d257 | ArcGroupInc_20171211_8-K_EX-10.1_10976103_EX-10.1_Sponsorship Agreement | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d258 | AlliedEsportsEntertainmentInc_20190815_8-K_EX-10.34_11788308_EX-10.34_Sponsorship Agreeme… | completed | contract | sponsorship | sponsorship | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d259 | VerizonAbsLlc_20200123_8-K_EX-10.4_11952335_EX-10.4_Service Agreement | completed | contract | other | service | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d260 | ReynoldsConsumerProductsInc_20200121_S-1A_EX-10.22_11948918_EX-10.22_Service Agreement | completed | contract | service | service | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d261 | IntegrityFunds_20200121_485BPOS_EX-99.E UNDR CONTR_11948727_EX-99.E UNDR CONTR_Service Ag… | completed | contract | distributor | service | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d262 | GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.8_11951679_EX-10.8_Service Agreement | completed | contract | sponsorship | service | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d263 | SalesforcecomInc_20171122_10-Q_EX-10.1_10961535_EX-10.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d264 | IpassInc_20181203_8-K_EX-99.1_11445874_EX-99.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d265 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d266 | EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement | completed | contract | license | reseller | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d267 | BravatekSolutionsInc_20170418_8-K_EX-10.1_10205739_EX-10.1_Reseller Agreement | completed | contract | reseller | reseller | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d268 | VnueInc_20150914_8-K_EX-10.1_9259571_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d269 | SigaTechnologiesInc_20190603_8-K_EX-10.1_11695818_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d270 | ExactSciencesCorp_20180822_8-K_EX-10.1_11331629_EX-10.1_Promotion Agreement | completed | contract | promotion | promotion | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d271 | DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement | completed | contract | marketing | promotion | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d272 | PhotronicsInc_20171219_10-QA_EX-10.28_10982650_EX-10.28_Outsourcing Agreement | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d273 | ParatekPharmaceuticalsInc_20170505_10-KA_EX-10.29_10323872_EX-10.29_Outsourcing Agreement | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d274 | ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agree… | completed | contract | consulting | outsourcing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d275 | FerroglobePlc_20150624_F-4A_EX-10.20_9154746_EX-10.20_Outsourcing Agreement | completed | contract | outsourcing | outsourcing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d276 | WESTERN COPPER - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d277 | VIVINT SOLAR, INC. - NON-COMPETITION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d278 | Quaker Chemical Corporation - NON COMPETITION AND NON SOLICITATION AGREEMENT | completed | contract | non_compete_no_solicit | non_compete_no_solicit | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d279 | XpresspaGroupInc_20190401_10-K_EX-10.28_11599457_EX-10.28_Marketing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d280 | VertexEnergyInc_20200113_8-K_EX-10.1_11943624_EX-10.1_Marketing Agreement | completed | contract | supply | marketing | ✓ | ✗ | ✗ | 0.92 | family_confusion | — |
+| d281 | TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agre… | completed | contract | reseller | marketing | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d282 | EmmisCommunicationsCorp_20191125_8-K_EX-10.6_11906433_EX-10.6_Marketing Agreement | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d283 | CcRealEstateIncomeFundadv_20181205_POS 8C_EX-99.(H)(3)_11447739_EX-99.(H)(3)_Marketing Ag… | completed | contract | marketing | marketing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d284 | AudibleInc_20001113_10-Q_EX-10.32_2599586_EX-10.32_Co-Branding Agreement_ Marketing Agree… | completed | contract | co_branding | marketing | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d285 | GopageCorp_20140221_10-K_EX-10.1_8432966_EX-10.1_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d286 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement4 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d287 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement3 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d288 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement2 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d289 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement1 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d290 | GlobalTechnologiesGroupInc_20050928_10KSB_EX-10.9_4148808_EX-10.9_Content License Agreeme… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d291 | FulucaiProductionsLtd_20131223_10-Q_EX-10.9_8368347_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d292 | EuromediaHoldingsCorp_20070215_10SB12G_EX-10.B(01)_525118_EX-10.B(01)_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d293 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d294 | CytodynInc_20200109_10-Q_EX-10.5_11941634_EX-10.5_License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d295 | ChinaRealEstateInformationCorp_20090929_F-1_EX-10.32_4771615_EX-10.32_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d296 | ArtaraTherapeuticsInc_20200110_8-K_EX-10.5_11943350_EX-10.5_License Agreement | completed | contract | development | license | ✓ | ✗ | ✓ | 0.85 | equivalent_family | — |
+| d297 | ArconicRolledProductsCorp_20191217_10-12B_EX-2.7_11923804_EX-2.7_Trademark License Agreem… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d298 | AlliedEsportsEntertainmentInc_20190815_8-K_EX-10.19_11788293_EX-10.19_Content License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.92 | — | — |
+| d299 | VEONEER,INC_02_21_2020-EX-10.11-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d300 | VALENCETECHNOLOGYINC_02_14_2003-EX-10-JOINT VENTURE CONTRACT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d301 | TRANSPHORM,INC_02_14_2020-EX-10.12(1)-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d302 | NOVOINTEGRATEDSCIENCES,INC_12_23_2019-EX-10.1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d303 | KIROMICBIOPHARMA,INC_04_08_2020-EX-10.28-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d304 | IMPCOTECHNOLOGIESINC_04_15_2003-EX-10.65-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d305 | GALERATHERAPEUTICS,INC_02_14_2020-EX-99.A-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d306 | BORROWMONEYCOM,INC_06_11_2020-EX-10.1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d307 | ACCELERATEDTECHNOLOGIESHOLDINGCORP_04_24_2003-EX-10.13-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d308 | RareElementResourcesLtd_20171019_SC 13D_EX-99.4_10897534_EX-99.4_Intellectual Property Ag… | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d309 | GarrettMotionInc_20181001_8-K_EX-2.4_11364532_EX-2.4_Intellectual Property Agreement | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d310 | CerenceInc_20191002_8-K_EX-10.4_11827494_EX-10.4_Intellectual Property Agreement | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d311 | ArmstrongFlooringInc_20190107_8-K_EX-10.2_11471795_EX-10.2_Intellectual Property Agreement | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d312 | VitalibisInc_20180316_8-K_EX-10.2_11100168_EX-10.2_Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d313 | QuantumGroupIncFl_20090120_8-K_EX-99.2_3672910_EX-99.2_Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d314 | PareteumCorp_20081001_8-K_EX-99.1_2654808_EX-99.1_Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d315 | Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d316 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement4 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d317 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement3 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d318 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement2 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d319 | SoupmanInc_20150814_8-K_EX-10.1_9230148_EX-10.1_Franchise Agreement1 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d320 | SimplicityEsportsGamingCompany_20181130_8-K_EX-10.1_11444071_EX-10.1_Franchise Agreement | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d321 | RgcResourcesInc_20151216_8-K_EX-10.3_9372751_EX-10.3_Franchise Agreement | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d322 | PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3 | completed | contract | non_compete_no_solicit | franchise | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d323 | PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement1 | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d324 | SEPARATEACCOUNTIIOFAGL_05_02_2011-EX-99.(J)(4)-UNCONDITIONAL CAPITAL MAINTENANCE AGREEMENT | completed | contract | other | maintenance | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d325 | SECURIANFUNDSTRUST_05_01_2012-EX-99.28.H.9-NET INVESTMENT INCOME MAINTENANCE AGREEMENT | completed | contract | other | maintenance | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d326 | SANDRIDGEENERGYINC_08_06_2009-EX-10.6-OPERATIONS AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d327 | PRIMEENERGYRESOURCESCORP_04_02_2007-EX-10.28-COMPLETION AND LIQUIDITY MAINTENANCE AGREEME… | completed | contract | other | maintenance | ✓ | ✗ | ✗ | 0.85 | other_fallback | — |
+| d328 | ON2TECHNOLOGIES,INC_11_17_2006-EX-10.3-SUPPORT AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d329 | VIRGINGALACTICHOLDINGS,INC_04_08_2020-EX-99.1-JOINT FILING STATEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d330 | TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d331 | SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.9 | function_over_form | — |
+| d332 | RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d333 | QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d334 | PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d335 | ONEMAINHOLDINGS,INC_02_20_2020-EX-99.D-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.8 | other_fallback | — |
+| d336 | NELNETINC_04_08_2020-EX-1-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d337 | MJBIOTECH,INC_12_06_2018-EX-99.01-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d338 | MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d339 | MACY_S,INC_05_11_2020-EX-99.4-JOINT FILING AGREEMENT | completed | compliance_filing | other | joint_venture | ✗ | ✗ | ✗ | 0.95 | function_over_form | — |
+| d340 | IGENEBIOTECHNOLOGYINC_05_13_2003-EX-1-JOINT VENTURE AGREEMENT | completed | contract | joint_venture | joint_venture | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d341 | BLACKROCKMUNIHOLDINGSINVESTMENTQUALITYFUND_04_07_2020-EX-99.01-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.9 | other_fallback | — |
+| d342 | ATENTOSA_07_06_2020-EX-99.1-JOINT FILING AGREEMENT | completed | contract | other | joint_venture | ✓ | ✗ | ✗ | 0.85 | other_fallback | — |
+| d343 | ZEBRATECHNOLOGIESCORP_04_16_2014-EX-10.1-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d344 | VERSOTECHNOLOGIESINC_12_28_2007-EX-99.3-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d345 | OTISWORLDWIDECORP_04_03_2020-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT by and among UNITED … | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.98 | — | — |
+| d346 | MSCIINC_02_28_2008-EX-10.10- | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d347 | JINGWEIINTERNATIONALLTD_10_04_2007-EX-10.7-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d348 | HERTZGLOBALHOLDINGS,INC_07_07_2016-EX-10.4-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d349 | GSITECHNOLOGYINC_11_16_2009-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT between SONY ELECTRON… | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d350 | FIDELITYNATIONALINFORMATIONSERVICES,INC_08_05_2009-EX-10.3-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d351 | ARMSTRONGFLOORING,INC_01_07_2019-EX-10.2-INTELLECTUAL PROPERTY AGREEMENT | completed | contract | ip | ip | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d352 | INKTOMICORP_06_08_1998-EX-10.14-SOFTWARE HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d353 | GALACTICOMMTECHNOLOGIESINC_11_07_1997-EX-10.46-WEB HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d354 | CORIOINC_07_20_2000-EX-10.5-LICENSE AND HOSTING AGREEMENT | completed | contract | license | hosting | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d355 | CHANGEPOINTCORP_03_08_2000-EX-10.6-LICENSE AND HOSTING AGREEMENT | completed | contract | license | hosting | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d356 | BOLIVARMININGCORP_05_23_2003-EX-2.1-VISP WEB SITE BUILDING AND HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d357 | BNCMORTGAGEINC_05_17_1999-EX-10.4-LICENSING AND WEB SITE HOSTING AGREEMENT | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.8 | — | — |
+| d358 | BLUEFLYINC_03_27_2002-EX-10.27-e-business Hosting Agreement | completed | contract | hosting | hosting | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d359 | BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT | completed | contract | marketing | hosting | ✓ | ✗ | ✗ | 0.8 | family_confusion | — |
+| d360 | AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT | completed | contract | development | hosting | ✓ | ✗ | ✗ | 0.85 | family_confusion | — |
+| d361 | JOINTCORP_09_19_2014-EX-10.15-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d362 | INTERNATIONALFASTFOODCORP_04_04_1997-EX-99-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d363 | HOSPITALITYINVESTORSTRUST,INC_04_07_2014-EX-10.26-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d364 | GOOSEHEADINSURANCE,INC_04_02_2018-EX-10.6-Franchise Agreement | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d365 | AIRTECHINTERNATIONALGROUPINC_05_08_2000-EX-10.4-FRANCHISE AGREEMENT | completed | contract | franchise | franchise | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d366 | WARNINGMANAGEMENTSERVICESINC_12_10_1999-EX-10-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d367 | TEARDROPGOLFCO_10_23_1996-EX-10.12-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d368 | SPORTHALEYINC_09_29_1997-EX-10.2-10-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d369 | MOVADOGROUPINC_04_30_2003-EX-10.28-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d370 | MOSSIMOINC_04_14_2000-EX-10.14-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d371 | MARSHALLHOLDINGSINTERNATIONAL,INC_04_14_2004-EX-10.15-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d372 | HOLIDAYRVSUPERSTORESINC_04_15_2002-EX-10.13-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d373 | AMBASSADOREYEWEARGROUPINC_11_17_1997-EX-10.28-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d374 | ADAMSGOLFINC_03_21_2005-EX-10.17-ENDORSEMENT AGREEMENT | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d375 | VISIUMTECHNOLOGIES,INC_10_20_2004-EX-10.20-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d376 | OPTIMIZEDTRANSPORTATIONMANAGEMENT,INC_07_26_2000-EX-6.6-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d377 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_New | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d378 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_Amendment | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d379 | NEOMEDIATECHNOLOGIESINC_12_15_2005-EX-16.1-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d380 | NANOPHASETECHNOLOGIESCORP_11_01_2005-EX-99.1-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d381 | LUCIDINC_04_15_2011-EX-10.9-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d382 | LIMEENERGYCO_09_09_1999-EX-10-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d383 | LEGACYTECHNOLOGYHOLDINGS,INC_12_09_2005-EX-10.2-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d384 | HYPERIONSOFTWARECORP_09_28_1994-EX-10.47-EXCLUSIVE DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d385 | EUROPEANMICROHOLDINGSINC_03_06_1998-EX-10.6-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d386 | ETELOS,INC_03_09_2004-EX-10.8-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d387 | ENTERTAINMENTGAMINGASIAINC_02_15_2005-EX-10.5-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d388 | BLACKBOXSTOCKSINC_08_05_2014-EX-10.1-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d389 | AIRSPANNETWORKSINC_04_11_2000-EX-10.5-Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d390 | ACCURAYINC_09_01_2010-EX-10.31-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d391 | WARNERCHILCOTTPLC_12_31_2003-EX-4.36-DEVELOPMENT AGREEMENT | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d392 | TRUENORTHENERGYCORP_02_08_2007-EX-10.1-DEVELOPMENT AGREEMENT | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d393 | Microgenics Corporation - Collaborative Development and Commercialization Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d394 | Array BioPharma Inc. - LICENSE, DEVELOPMENT AND COMMERCIALIZATION AGREEMENT | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d395 | UpjohnInc_20200121_10-12G_EX-2.6_11948692_EX-2.6_Manufacturing Agreement_ Supply Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d396 | NeuroboPharmaceuticalsInc_20190903_S-4_EX-10.36_11802165_EX-10.36_Manufacturing Agreement… | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d397 | KitovPharmaLtd_20190326_20-F_EX-4.15_11584449_EX-4.15_Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d398 | InmodeLtd_20190729_F-1A_EX-10.9_11743243_EX-10.9_Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d399 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement4 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d400 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement3 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d401 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement2 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d402 | BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement1 | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d403 | HerImports_20161018_8-KA_EX-10.14_9765707_EX-10.14_Maintenance Agreement | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d404 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d405 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement3 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d406 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2 | completed | contract | development | maintenance | ✓ | ✗ | ✗ | 0.9 | family_confusion | — |
+| d407 | CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1 | completed | contract | license | maintenance | ✓ | ✗ | ✓ | 0.95 | equivalent_family | — |
+| d408 | BloomEnergyCorp_20180321_DRSA (on S-1)_EX-10_11240356_EX-10_Maintenance Agreement | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d409 | AzulSa_20170303_F-1A_EX-10.3_9943903_EX-10.3_Maintenance Agreement2 | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d410 | AzulSa_20170303_F-1A_EX-10.3_9943903_EX-10.3_Maintenance Agreement1 | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d411 | AtnInternationalInc_20191108_10-Q_EX-10.1_11878541_EX-10.1_Maintenance Agreement | completed | contract | service | maintenance | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d412 | XinhuaSportsEntertainmentLtd_20070221_F-1_EX-99.4_645553_EX-99.4_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d413 | WebmdHealthCorp_20050908_S-1A_EX-10.7_1027007_EX-10.7_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d414 | WatchitMediaInc_20061201_8-K_EX-10.1_4148672_EX-10.1_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d415 | VirtuosoSurgicalInc_20191227_1-A_EX1A-6 MAT CTRCT_11933379_EX1A-6 MAT CTRCT_License Agree… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d416 | RemarkHoldingsInc_20081114_10-Q_EX-10.24_2895649_EX-10.24_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d417 | PlayboyEnterprisesInc_20090220_10-QA_EX-10.2_4091580_EX-10.2_Content License Agreement_ M… | completed | contract | supply | license | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d418 | PlayboyEnterprisesInc_20090220_10-QA_EX-10.2_4091580_EX-10.2_Content License Agreement_ M… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d419 | PhoenixNewMediaLtd_20110421_F-1_EX-10.17_6958322_EX-10.17_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d420 | PalmerSquareCapitalBdcInc_20200116_10-12GA_EX-10.6_11949289_EX-10.6_Trademark License Agr… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d421 | PacificapEntertainmentHoldingsInc_20051115_8-KA_EX-1.01_4300894_EX-1.01_Content License A… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d422 | NmfSlfIInc_20200115_10-12GA_EX-10.5_11946987_EX-10.5_Trademark License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d423 | MorganStanleyDirectLendingFund_20191119_10-12GA_EX-10.5_11898508_EX-10.5_Trademark Licens… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d424 | MidwestEnergyEmissionsCorp_20080604_8-K_EX-10.2_3093976_EX-10.2_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d425 | LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2 | completed | contract | other | license | ✓ | ✗ | ✗ | 0.95 | other_fallback | — |
+| d426 | LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement1 | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d427 | IdeanomicsInc_20160330_10-K_EX-10.26_9512211_EX-10.26_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d428 | IdeanomicsInc_20151124_8-K_EX-10.2_9354744_EX-10.2_Content License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d429 | HertzGroupRealtyTrustInc_20190920_S-11A_EX-10.8_11816941_EX-10.8_Trademark License Agreem… | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d430 | GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.6_11951677_EX-10.6_License Agreement | completed | contract | license | license | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d431 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d432 | PrudentialBancorpInc_20170606_8-K_EX-10.4_10474434_EX-10.4_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d433 | PharmagenInc_20120803_8-KA_EX-10.1_7693204_EX-10.1_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d434 | PerformanceSportsBrandsInc_20110909_S-1_EX-10.10_7220214_EX-10.10_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d435 | PapaJohnsInternationalInc_20190617_8-K_EX-10.1_11707365_EX-10.1_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d436 | NakedBrandGroupInc_20150731_POS AM (on S-1)_EX-10.75_9196027_EX-10.75_Endorsement Agreeme… | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d437 | LifewayFoodsInc_20160316_10-K_EX-10.24_9489766_EX-10.24_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d438 | LegacyEducationAllianceInc_20141110_8-K_EX-10.9_8828866_EX-10.9_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d439 | GridironBionutrientsInc_20171206_8-K_EX-10.2_10972556_EX-10.2_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d440 | GridironBionutrientsInc_20171206_8-K_EX-10.1_10972555_EX-10.1_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d441 | EcoScienceSolutionsInc_20171117_8-K_EX-10.1_10956472_EX-10.1_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d442 | BizzingoInc_20120322_8-K_EX-10.17_7504499_EX-10.17_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d443 | BerkshireHillsBancorpInc_20120809_10-Q_EX-10.16_7708169_EX-10.16_Endorsement Agreement | completed | contract | endorsement | endorsement | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d444 | ZogenixInc_20190509_10-Q_EX-10.2_11663313_EX-10.2_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d445 | WaterNowInc_20191120_10-Q_EX-10.12_11900227_EX-10.12_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d446 | StaarSurgicalCompany_20180801_10-Q_EX-10.37_11289449_EX-10.37_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d447 | SmartRxSystemsInc_20180914_1-A_EX1A-6 MAT CTRCT_11351705_EX1A-6 MAT CTRCT_Distributor Agr… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d448 | ScansourceInc_20190822_10-K_EX-10.39_11793959_EX-10.39_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d449 | ScansourceInc_20190822_10-K_EX-10.38_11793958_EX-10.38_Distributor Agreement2 | completed | contract | license | distributor | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d450 | ScansourceInc_20190822_10-K_EX-10.38_11793958_EX-10.38_Distributor Agreement1 | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d451 | ScansourceInc_20190509_10-Q_EX-10.2_11661422_EX-10.2_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d452 | PrecheckHealthServicesInc_20200320_8-K_EX-99.2_12070169_EX-99.2_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d453 | InnerscopeHearingTechnologiesInc_20181109_8-K_EX-10.6_11419704_EX-10.6_Distributor Agreem… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d454 | ImineCorp_20180725_S-1_EX-10.5_11275970_EX-10.5_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d455 | GentechHoldingsInc_20190808_1-A_EX1A-6 MAT CTRCT_11776814_EX1A-6 MAT CTRCT_Distributor Ag… | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d456 | FuseMedicalInc_20190321_10-K_EX-10.43_11575454_EX-10.43_Distributor Agreement | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d457 | VgrabCommunicationsInc_20200129_10-K_EX-10.33_11958828_EX-10.33_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d458 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d459 | RevolutionMedicinesInc_20200117_S-1_EX-10.1_11948417_EX-10.1_Development Agreement | completed | contract | collaboration | development | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d460 | ReedsInc_20191113_10-Q_EX-10.4_11888303_EX-10.4_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d461 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d462 | PelicanDeliversInc_20200211_S-1_EX-10.3_11975895_EX-10.3_Development Agreement2 | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d463 | PelicanDeliversInc_20200211_S-1_EX-10.3_11975895_EX-10.3_Development Agreement1 | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d464 | NlsPharmaceuticsLtd_20200228_F-1_EX-10.14_12029046_EX-10.14_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d465 | LiquidmetalTechnologiesInc_20200205_8-K_EX-10.1_11968198_EX-10.1_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d466 | LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d467 | IbioInc_20200313_8-K_EX-10.1_12052678_EX-10.1_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d468 | HfEnterprisesInc_20191223_S-1_EX-10.22_11931299_EX-10.22_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d469 | FuelcellEnergyInc_20191106_8-K_EX-10.1_11868007_EX-10.1_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d470 | EtonPharmaceuticalsInc_20191114_10-Q_EX-10.1_11893941_EX-10.1_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d471 | EmeraldHealthBioceuticalsInc_20200218_1-A_EX1A-6 MAT CTRCT_11987205_EX1A-6 MAT CTRCT_Deve… | completed | contract | development | development | ✓ | ✓ | ✓ | 0.85 | — | — |
+| d472 | ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement | completed | contract | franchise | development | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d473 | ConformisInc_20191101_10-Q_EX-10.6_11861402_EX-10.6_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d474 | CoherusBiosciencesInc_20200227_10-K_EX-10.29_12021376_EX-10.29_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d475 | CnsPharmaceuticalsInc_20200326_8-K_EX-10.1_12079626_EX-10.1_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d476 | ClickstreamCorp_20200330_1-A_EX1A-6 MAT CTRCT_12089935_EX1A-6 MAT CTRCT_Development Agree… | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d477 | ArcaUsTreasuryFund_20200207_N-2_EX-99.K5_11971930_EX-99.K5_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d478 | AimmuneTherapeuticsInc_20200205_8-K_EX-10.3_11967170_EX-10.3_Development Agreement | completed | contract | development | development | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d479 | TomOnlineInc_20060501_20-F_EX-4.46_749700_EX-4.46_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d480 | TheglobeComInc_19990503_S-1A_EX-10.20_5416126_EX-10.20_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d481 | StampscomInc_20001114_10-Q_EX-10.47_2631630_EX-10.47_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d482 | RandWorldwideInc_20010402_8-KA_EX-10.2_2102464_EX-10.2_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d483 | RaeSystemsInc_20001114_10-Q_EX-10.57_2631790_EX-10.57_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d484 | PcquoteComInc_19990721_S-1A_EX-10.11_6377149_EX-10.11_Co-Branding Agreement3 | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d485 | PcquoteComInc_19990721_S-1A_EX-10.11_6377149_EX-10.11_Co-Branding Agreement2 | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d486 | PcquoteComInc_19990721_S-1A_EX-10.11_6377149_EX-10.11_Co-Branding Agreement1 | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d487 | PaperexchangeComInc_20000322_S-1A_EX-10.4_5202103_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d488 | NeoformaInc_19991202_S-1A_EX-10.26_5224521_EX-10.26_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d489 | MusclepharmCorp_20170208_10-KA_EX-10.38_9893581_EX-10.38_Co-Branding Agreement | completed | contract | endorsement | co_branding | ✓ | ✗ | ✗ | 0.95 | family_confusion | — |
+| d490 | MphaseTechnologiesInc_20030911_10-K_EX-10.15_1560667_EX-10.15_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d491 | LeadersonlineInc_20000427_S-1A_EX-10.8_4991089_EX-10.8_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d492 | InvendaCorp_20000828_S-1A_EX-10.2_2588206_EX-10.2_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d493 | IntegrityMediaInc_20010329_10-K405_EX-10.17_2373875_EX-10.17_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d494 | ImpresseCorp_20000322_S-1A_EX-10.11_5199234_EX-10.11_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d495 | HealthcentralCom_19991108_S-1A_EX-10.27_6623292_EX-10.27_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d496 | EmbarkComInc_19991008_S-1A_EX-10.10_6487661_EX-10.10_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d497 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d498 | EbixInc_20010515_10-Q_EX-10.3_4049767_EX-10.3_Co-Branding Agreement | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d499 | DeltathreeInc_19991102_S-1A_EX-10.19_6227850_EX-10.19_Co-Branding Agreement_ Service Agre… | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d500 | 2ThemartComInc_19990826_10-12G_EX-10.10_6700288_EX-10.10_Co-Branding Agreement_ Agency Ag… | completed | contract | co_branding | co_branding | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d501 | UsioInc_20040428_SB-2_EX-10.11_1723988_EX-10.11_Affiliate Agreement 2 | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d502 | UnionDentalHoldingsInc_20050204_8-KA_EX-10_3345577_EX-10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d503 | TubeMediaCorp_20060310_8-K_EX-10.1_513921_EX-10.1_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d504 | SteelVaultCorp_20081224_10-K_EX-10.16_3074935_EX-10.16_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d505 | SouthernStarEnergyInc_20051202_SB-2A_EX-9_801890_EX-9_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d506 | LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d507 | DigitalCinemaDestinationsCorp_20111220_S-1_EX-10.10_7346719_EX-10.10_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d508 | CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.9 | — | — |
+| d509 | CreditcardscomInc_20070810_S-1_EX-10.33_362297_EX-10.33_Affiliate Agreement | completed | contract | affiliate | affiliate | ✓ | ✓ | ✓ | 0.95 | — | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | affiliate | agency | co_branding | collaboration | consulting | development | distributor | endorsement | franchise | hosting | ip | joint_venture | license | maintenance | manufacturing | marketing | non_compete_no_solicit | other | outsourcing | promotion | reseller | service | sponsorship | strategic_alliance | supply | transportation |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| affiliate | **10** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| agency | 0 | **12** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| co_branding | 0 | 0 | **21** | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| collaboration | 0 | 0 | 0 | **25** | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| consulting | 0 | 0 | 0 | 0 | **11** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| development | 0 | 0 | 0 | 1 | 0 | **26** | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| distributor | 0 | 0 | 0 | 0 | 0 | 0 | **31** | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| endorsement | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **24** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| franchise | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **14** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| hosting | 0 | 0 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | **12** | 0 | 0 | 3 | 0 | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ip | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **17** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| joint_venture | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **10** | 0 | 0 | 0 | 0 | 0 | 13 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| license | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | **30** | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 |
+| maintenance | 0 | 0 | 0 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | **17** | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 0 |
+| manufacturing | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **16** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| marketing | 0 | 3 | 1 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | **7** | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 1 | 0 |
+| non_compete_no_solicit | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **3** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| other | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| outsourcing | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 | **15** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| promotion | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | **10** | 0 | 0 | 0 | 0 | 0 | 0 |
+| reseller | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **11** | 0 | 0 | 0 | 0 | 0 |
+| service | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 1 | 0 | 0 | 0 | **23** | 1 | 0 | 0 | 0 |
+| sponsorship | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **30** | 0 | 0 | 0 |
+| strategic_alliance | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **32** | 0 | 0 |
+| supply | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **17** | 0 |
+| transportation | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **13** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | agency | marketing | 0.9 | ✓ | ✗ | The document is explicitly titled an 'Exclusive Agency and Marketing Agreement.' Operative provisions (Article 2) appoint Scotts as Monsanto's exclusive agent to perform marketing… |
+| d2 | contract | other | marketing | 0.9 | ✓ | ✗ | The document is explicitly titled 'REMARKETING AGREEMENT' and follows a standard contract structure with sections for appointment of agents, representations and warranties, covena… |
+| d3 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MARKETING AGREEMENT'. Its operative clauses govern the assignment of sales contracts, product branding, exclusivity, and marketing/sale restrict… |
+| d4 | contract | development | marketing | 0.8 | ✓ | ✗ | The document is a formal bilateral agreement titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT' establishing obligations for market evaluation, product/service development, and co… |
+| d5 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Orderly Marketing Agreement' and its operative clauses detail the marketing and distribution strategy for selling shares, including retaining in… |
+| d6 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and its operative clauses center on Medica manufacturing cartridges to Vapotherm's specifications, covering … |
+| d7 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and its operative clauses center on a contract manufacturing relationship: IAC's obligation to procure components, asse… |
+| d8 | contract | development | manufacturing | 0.95 | ✓ | ✗ | The document is explicitly titled 'Master Development and Manufacturing Agreement' and operates as a formal contract between Magenta Therapeutics and Bachem Americas. Operative cl… |
+| d9 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AGREEMENT' and its operative clauses predominantly govern the production, quality control, tooling investment, and purchase order … |
+| d10 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT NO. 2 TO MANUFACTURING AND SUPPLY AGREEMENT' and its operative clauses govern the manufacture, raw materials, production schedules, qu… |
+| d11 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'First Amendment to Supply and Manufacturing Agreement' and contains operative clauses modifying manufacturing specifications, production capacit… |
+| d12 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and its operative clauses (Sections 3, 4, 5) govern the contract manufacturing, quality control, tooling, fo… |
+| d13 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and its operative provisions govern the manufacturing, assembly, quality control, and supply of pharmaceutical products… |
+| d14 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Amendment #3 to the Manufacturing Agreement' and its operative clauses govern the production of specific biological products (Rabies Fraction II… |
+| d15 | contract | service | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'First Amendment to Sagebrush Management and Maintenance Agreement' and follows a standard contract format with recitals, operative amendment cla… |
+| d16 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AND SUPPORT AGREEMENT' and its operative clauses detail software maintenance obligations, including problem reporting procedures, se… |
+| d17 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'OPERATION AND MAINTENANCE AGREEMENT' and follows a standard contract structure with recitals, definitions, and operative provisions. The core ob… |
+| d18 | contract | other | maintenance | 0.92 | ✓ | ✗ | The document is explicitly titled an 'Amended and Restated Unconditional Capital Maintenance Agreement' and contains standard contractual structure including recitals, mutual cove… |
+| d19 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AGREEMENT' and its operative clauses detail the provision of ongoing maintenance, monitoring, emergency response, and splicing servi… |
+| d20 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Technical Infrastructure Maintenance Agreement' and its operative clauses detail ongoing hardware repair, exchange, technical support retainer, … |
+| d21 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'LICENCE AND MAINTENANCE AGREEMENT' and its operative clauses primarily establish a software license grant (Clause 3), along with standard IP own… |
+| d22 | contract | collaboration | maintenance | 0.85 | ✓ | ✗ | The document is a formal multi-party agreement establishing a consortium to jointly finance, construct, and operate a telecommunications network. Key operative clauses establish a… |
+| d23 | contract | maintenance | maintenance | 0.9 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AGREEMENT' and follows a standard formal contract structure with defined terms, operative obligations, representations and warrantie… |
+| d24 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and contains a clear grant of license in Section 2.2 ('D2 hereby grants LICENSEE a perpetual non-exc… |
+| d25 | contract | joint_venture | maintenance | 0.85 | ✓ | ✗ | The document is a formal multi-party agreement titled 'Construction and Maintenance Agreement' for the TAT-14 submarine cable network. Its operative clauses establish shared owner… |
+| d26 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'OPERATIONS AND MAINTENANCE AGREEMENT' and contains standard contract structure (recitals, operative articles covering responsibilities, compensa… |
+| d27 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and centers on a clear 'GRANT OF LICENSE' (Section 2) for software and documentation. It contains st… |
+| d28 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'FLEET MAINTENANCE AGREEMENT' and its operative clauses detail the provision of vehicle servicing, inspections, repairs, and related support serv… |
+| d29 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Maintenance and support contract' and its operative clauses detail standard support services, hotline procedures, response times, change managem… |
+| d30 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and its operative clauses center on granting a non-exclusive license to use proprietary trading soft… |
+| d31 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses (primarily Article III) engage one party to perform detailing and promotional activities for a ph… |
+| d32 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'Promotion Agreement' and contains standard contractual provisions (recitals, term, mutual responsibilities, deposit/payment, indemnity, dispute … |
+| d33 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and operates as a formal binding agreement between Ashworth, Inc. and James W. Nantz III/Nantz Communications. Its operativ… |
+| d34 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and contains standard outsourcing machinery, including long-term service provision for data processing and IT operations,… |
+| d35 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses clearly establish an outsourcing arrangement where HPS transfers the provision of Care Manageme… |
+| d36 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES OUTSOURCING AGREEMENT' and details the engagement of one party to perform logistical and administrative services for another. The opera… |
+| d37 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail the provision of electronic data processing (EDP) services, system maintenance, data han… |
+| d38 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses engage a contractor to perform specific business processes on behalf of the company, including … |
+| d39 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPORT AND MAINTENANCE AGREEMENT' and its operative clauses exclusively govern the provision of software maintenance releases, minor/major vers… |
+| d40 | contract | other | maintenance | 0.95 | ✓ | ✗ | The document is a formal ISDA Confirmation for an interest rate cap transaction, detailing financial terms, payment obligations, governing law, tax representations, and standard d… |
+| d41 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AGREEMENT' and contains operative clauses detailing the provision of maintenance, software upgrades, call-in support, and uptime SLA… |
+| d42 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'MAINTENANCE AGREEMENT' and its operative clauses detail software maintenance services, error correction, on-site intervention, annual maintenanc… |
+| d43 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and follows standard contract formatting with parties, recitals, consideration, and binding covenants. The oper… |
+| d44 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses focus entirely on intellectual property matters: defining 'Work Product' and 'Intelle… |
+| d45 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses govern the assignment, transfer, and cross-licensing of intellectual property assets … |
+| d46 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses governing the assignment, ownership, cross-licensing of know-how and software, t… |
+| d47 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'HOSTING AGREEMENT' and its operative clauses center on providing web-based software access, server-side infrastructure maintenance, uptime/downt… |
+| d48 | contract | license | hosting | 0.85 | ✓ | ✗ | The document is a formal bilateral agreement titled 'LICENSE AND HOSTING AGREEMENT' containing standard contract recitals, definitions, and operative clauses. Article II explicitl… |
+| d49 | contract | other | hosting | 0.9 | ✓ | ✗ | The document is a formal Escrow Agreement between an Owner, a Licensee, and a third-party escrow agent (NCC). It outlines operative clauses for depositing, verifying, and conditio… |
+| d50 | contract | development | hosting | 0.92 | ✓ | ✗ | The document is a formal agreement titled 'Electronic Journal Soft Ware Development, Hosting and Management Agreement.' Its operative clauses heavily feature development machinery… |
+| d51 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'ONLINE HOSTING AGREEMENT' and Section 1 obligates Tadeo to provide 'Online Hosting Services' as detailed in Exhibit A. The operative clauses foc… |
+| d52 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'WEB SITE HOSTING AGREEMENT' and its operative clauses detail web hosting services, including server maintenance, uptime commitments, storage all… |
+| d53 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'Premium Managed Hosting Agreement' and its operative clauses center on web/application hosting services, including system administration, uptime… |
+| d54 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise machinery throughout, including the grant of franchise rights, initial and royalty fees, te… |
+| d55 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise-specific operative clauses, including the grant of rights to use the 'Buffalo Wild Wings' s… |
+| d56 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard endorsement provisions, including granting the company exclusive rights to use the professional's n… |
+| d57 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is an exhibit (Exhibit A) containing intellectual property, confidentiality, and non-use obligations explicitly stated to be 'part of the Endorsement Agreement' betwe… |
+| d58 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses center on distribution mechanics: appointing Ingram Micro as the distributor, granting rights t… |
+| d59 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distributor Agreement' and its operative clauses govern the purchase, resale, and distribution of products. Key provisions include territorial r… |
+| d60 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT #2 TO THE DISTRIBUTION AGREEMENT' and modifies the territory and exclusivity provisions of an existing distribution agreement between … |
+| d61 | contract | development | development | 0.9 | ✓ | ✓ | The document is an amendment to a Development Agreement (with ancillary amendments to a Commercial License Agreement). The operative clauses focus on funding a research project in… |
+| d62 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'DEVELOPMENT AGREEMENT' and contains standard development agreement machinery, including a defined Work Plan, specific milestones with target dat… |
+| d63 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting relationship, including engagement as an independent contractor, … |
+| d64 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for an engagement of professional advisory services, including term, compensation … |
+| d65 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting arrangement, including scope of advisory services, compensation v… |
+| d66 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses center on retaining an independent contractor to provide consulting services per a Statement of … |
+| d67 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses center on retaining an individual to perform consulting services for hourly compensation, classi… |
+| d68 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses center on retaining an individual to provide advisory and transactional consulting services, out… |
+| d69 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a cooperative business relationship between an insurance company and a broker-dealer for the joint… |
+| d70 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a mutual partnership framework between UTEK Corporation and World Energy Solutions. It contains st… |
+| d71 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses establish a mutual partnership framework for technology acquisition services, compensati… |
+| d72 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a cooperative framework for the parties to jointly pursue projects and share expertise in nuclear … |
+| d73 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a multi-party partnership for the exclusive distribution and marketing of Kallo's mobile medical p… |
+| d74 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains standard operative clauses for this family, including a Joint Steering Committee, collaborative resea… |
+| d75 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and the recitals state the parties agree to collaborate as a Strategic Alliance. While it contains license grant, … |
+| d76 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and contains standard contract boilerplate (indemnification, confidentiality, term, governing law). The operative … |
+| d77 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses establish a mutual business partnership focused on network integration, joint marketing,… |
+| d78 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains operative clauses characteristic of this family, including equity purchase options, board nomination … |
+| d79 | contract | strategic_alliance | strategic_alliance | 0.8 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement,' which directly maps to the strategic_alliance subtype. Although the operative clauses feature standard consulting… |
+| d80 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a formal partnership framework between EDGE Communications Solutions, LLC and FTE Networks, Inc. f… |
+| d81 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and its operative provisions establish a cooperative framework between Northern Telecom Limited and Entrust Techno… |
+| d82 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains standard alliance machinery, including mutual distribution/reseller rights, cross-provision of develo… |
+| d83 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses outline a mutual marketing and service referral arrangement between two corporations, co… |
+| d84 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and contains standard contract provisions including definitions, representations and warranties, term/termination,… |
+| d85 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and outlines a broad partnership framework between two companies, covering mutual appointments, joint sales and ma… |
+| d86 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a formal partnership between MD Anderson and Adaptimmune to conduct joint preclinical and clinical… |
+| d87 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'Sponsorship Agreement' and its operative clauses center on sponsorship mechanics: granting trademark licenses for promotional use, defining 'Spo… |
+| d88 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail the exchange of a $75,000 sponsorship fee for branding rights, event activation space, a… |
+| d89 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative provisions govern promotional placements, impression delivery metrics, and fee structures for sponsorin… |
+| d90 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains operative clauses detailing sponsor fees, guaranteed web impressions, and promotional portal placement on MP… |
+| d91 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard bilateral contract provisions including appointment of the sponsor, duties, compensation, represent… |
+| d92 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'Sponsorship Agreement' and contains standard sponsorship machinery, detailing an exchange of annual payments for signage, promotional, and hospi… |
+| d93 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail a sponsorship arrangement where one party pays fees in exchange for advertising space on… |
+| d94 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard sponsorship operative clauses: the Sponsor pays $400,000 in exchange for specific branding and disp… |
+| d95 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail sponsorship fees, promotional placements, banner advertising, click-through guarantees, … |
+| d96 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled "SPONSORSHIP AGREEMENT" and contains standard formal contract provisions including recitals, operative appointment clauses, term/termination, ind… |
+| d97 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses center on sponsorship obligations, including exclusivity as the 'exclusive retail music store s… |
+| d98 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses center on granting specific sponsorship rights and benefits (television commercials, billboards… |
+| d99 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard contractual architecture including recitals, detailed operative covenants (unanimous consent for of… |
+| d100 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses center on sponsorship obligations: designating Logan's as the primary sponsor, granting brandin… |
+| d101 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses align precisely with a sponsorship arrangement: iVillage provides promotional placement, brandi… |
+| d102 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail the sponsorship of a merchant processing program by acquiring banks for an independent s… |
+| d103 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail standard sponsorship obligations, including payment for sponsorship rights, promotional … |
+| d104 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses consistently detail sponsorship placements, promotional link rotations across various channels,… |
+| d105 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses center on granting sponsorship placement rights, defining sponsorship advertising content, trac… |
+| d106 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard contractual provisions detailing duties, compensation, liability, and termination. Per the explicit… |
+| d107 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'CORPORATE SPONSORSHIP AGREEMENT' and its operative clauses center on sponsorship obligations: granting primary sponsorship rights, approving veh… |
+| d108 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and governs an executive appointment, detailing duties, remuneration, benefits, termination, garden leave, IP assignment, and… |
+| d109 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and contains operative clauses where EmployeeCo agrees to provide management, operational, and administrative services to th… |
+| d110 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and governs the engagement between a company and an executive, detailing duties, compensation, confidentiality, IP assignment… |
+| d111 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and its operative clauses detail the provision of administrative, recordkeeping, reporting, and processing services by the Ad… |
+| d112 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and contains standard operative clauses for a general services contract, including the scope of services (online account man… |
+| d113 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative provisions for engaging an independent contractor to provide advisory and executive servic… |
+| d114 | contract | consulting | consulting | 0.98 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative provisions for a consulting arrangement, including defined services, monthly compensation,… |
+| d115 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and contains standard operative clauses for a consulting arrangement, including engagement of the consultant, provision of… |
+| d116 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses center on the provision of advisory and consultation services, hourly compensation, independent … |
+| d117 | contract | consulting | consulting | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONSULTING AGREEMENT' and its operative clauses center on providing advisory/consultation services, hourly compensation, independent contractor … |
+| d118 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and establishes a joint R&D and manufacturing partnership. Operative clauses detail a Steering Committee, project plans… |
+| d119 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and establishes a long-term partnership for technical services, business consultancy, and platform development. Operative… |
+| d120 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and establishes a cooperative framework between Didi Chuxing and a financial leasing company to facilitate vehicle leas… |
+| d121 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and establishes joint governance structures (Joint Steering Committee and Joint Development Committee), outlines collab… |
+| d122 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and contains standard contract structure with operative clauses establishing joint governance (Joint Steering and Proje… |
+| d123 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement on Mobile Game Business' and functions as a formal bilateral contract. The recitals and Article 1 establish a 'cooperation… |
+| d124 | contract | collaboration | collaboration | 0.85 | ✓ | ✓ | The document establishes mutual obligations, consideration, warranties, and dispute resolution between two corporate parties, confirming it as a contract. The title explicitly ide… |
+| d125 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses establish a joint research and development framework, including a Joint Review Committee (JRC… |
+| d126 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and establishes mutual covenants between a shareholder group and a public company regarding board nomination, standstill … |
+| d127 | compliance_filing | other | agency | 0.85 | ✗ | ✗ | The document is an 'Agents' Certificate' explicitly titled for compliance with U.S. Securities Laws. It contains representations and certifications regarding broker-dealer registr… |
+| d128 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and contains clear operative language appointing the financial institutions as exclusive agents to sell shares on behalf of th… |
+| d129 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and its operative clauses appoint the Agent as the exclusive representative to market, sell, assign, and designate purchasers … |
+| d130 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and its operative clauses appoint Keefe, Bruyette & Woods, Inc. as the exclusive 'Agent' and financial/marketing advisor for a… |
+| d131 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Road Transportation Agreement' and contains standard operative clauses for a carrier-shipper relationship, including freight rates, line-haul ro… |
+| d132 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and contains standard contractual elements including parties (Transporter and Shipper), term, rates, points of… |
+| d133 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'Transportation Services Agreement' and its operative clauses govern the transportation of natural gas liquids via a pipeline system, detailing c… |
+| d134 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'GAS TRANSPORTATION AGREEMENT' and its operative clauses govern the receipt, transportation, and delivery of natural gas via a dedicated system, … |
+| d135 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'GLOBAL MASTER SUPPLY AGREEMENT' and contains standard commercial operative clauses governing the sale and purchase of chemical products, includi… |
+| d136 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER SUPPLY AGREEMENT' and its operative clauses establish the framework for the sale and purchase of physical products between a Seller and B… |
+| d137 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY CONTRACT' and functions as a framework agreement governing the purchase and delivery of goods. Operative clauses detail product specifica… |
+| d138 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'ODM SUPPLY AGREEMENT' and its operative clauses focus on the manufacture, shipping, payment terms, rejection of defective goods, and minimum ann… |
+| d139 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses establish a mutual business partnership involving joint strategy development, cross-prom… |
+| d140 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a mutual framework for rights of first offer on development properties and introductions to third-… |
+| d141 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains standard operative provisions for this family, including forming a strategic alliance, fee allocation… |
+| d142 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICES AGREEMENT' and governs the provision of marine transportation services for fuel oil using the Owner's vessels. Operative… |
+| d143 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and establishes a carrier-shipper relationship for the movement of commodities. Operative clauses detail freight rates,… |
+| d144 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION AGREEMENT' and its operative clauses govern the nomination, scheduling, quality specifications, custody transfer, and billing for… |
+| d145 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses (e.g., Article 2 'Supply of Products', Section 2.1 on manufacturing and supplying products, Section … |
+| d146 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses center on the purchase, manufacture, delivery, pricing, and quality control of specific goods (Extra… |
+| d147 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses center on the commercial sale and delivery of a specific chemical product (Triheptanoin). Key provis… |
+| d148 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses (e.g., Section 2.1) detail the purchase, manufacture, and delivery of Active Pharmaceutical Ingredie… |
+| d149 | contract | distributor | supply | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement' governing the territorial sale and resale of a pharmaceutical product. Operative c… |
+| d150 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses govern the manufacture, production ordering, shipping, pricing, and delivery of specific pharmaceuti… |
+| d151 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and contains operative clauses centered on the manufacture, forecasting, purchase orders, delivery, and pricing of pharmaceuti… |
+| d152 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER SUPPLY AGREEMENT' and its core operative clauses (Section 1) establish a framework for the Supplier to provide raw materials ('Ingredient… |
+| d153 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a formal partnership between two independent entities, outlining mutual rights, distribution licen… |
+| d154 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and its operative clauses establish a cooperative framework between two parties for joint marketing, technology in… |
+| d155 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and contains standard operative clauses for a strategic alliance, including joint service offerings ('Joint Soluti… |
+| d156 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and its operative provisions establish a formal strategic alliance between the parties, including preferred suppli… |
+| d157 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses detail a collaborative partnership to combine resources, establish a joint holding compa… |
+| d158 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and Section 2.01 establishes a formal strategic business alliance between the parties. Although it incorporates a … |
+| d159 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and its operative clauses center on establishing a strategic partnership through an equity purchase, board nominat… |
+| d160 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and establishes a broad cross-party framework for collaboration, including a Joint Steering Committee, shared R&D … |
+| d161 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and its operative clauses establish a mutual partnership framework covering co-marketing, integrated software lice… |
+| d162 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and contains operative clauses retaining an individual to perform executive services (CEO and board member duties), detailin… |
+| d163 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and features standard operative clauses for a general professional services contract, including a broad scope of operation su… |
+| d164 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and details the engagement of an investment adviser to perform administrative, compliance, and advisory services for a serie… |
+| d165 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and outlines the engagement of Mobimagic to provide system/platform maintenance and data processing services to PC Financial.… |
+| d166 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'Services Agreement' and contains standard operative clauses appointing one party to provide investment management, sub-advisory, and marketing s… |
+| d167 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and contains standard operative clauses for a service arrangement, including the scope of services (providing fund informatio… |
+| d168 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'Master Services Agreement' and functions as a formal contract between two entities. Its operative clauses establish a framework for engaging a c… |
+| d169 | contract | service | service | 0.9 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT' and contains standard operative clauses for an executive employment relationship, including commencement, remuneration, benef… |
+| d170 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and contains standard operative clauses governing the provision of general professional/support services, including service … |
+| d171 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and its operative clauses center on appointing a non-exclusive value-added reseller, granting rights to promote, market, dis… |
+| d172 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and its operative clauses focus on granting the counterparty the right to market, sell, and distribute the company's product… |
+| d173 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and its operative clauses center on granting distribution and resale rights, establishing per-copy fees, mandating sales for… |
+| d174 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative provisions govern the co-promotion and marketing of a pharmaceutical product, including launch plans, pro… |
+| d175 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses detail CNET's obligations to provide TV spots, banner advertisements, and retail impressions to p… |
+| d176 | correspondence | other | outsourcing | 0.9 | ✗ | ✗ | The document is a corporate press release announcing the execution of an agreement. It lacks formal operative clauses, recitals, consideration, or signature blocks characteristic … |
+| d177 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'TECHNOLOGY OUTSOURCING AGREEMENT' and contains standard outsourcing machinery, including a Conversion Plan for transitioning banking operations,… |
+| d178 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and operates as an Application Service Provider (ASP) contract. Its operative clauses focus on HSNS delivering outsourced… |
+| d179 | contract | manufacturing | outsourcing | 0.95 | ✓ | ✗ | The document is explicitly titled 'MANUFACTURING OUTSOURCING AGREEMENT' and follows a standard contract format with recitals, definitions, and detailed operative clauses. The subs… |
+| d180 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail Nexstar's obligation to provide comprehensive operational, managerial, sales, accounting… |
+| d181 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and contains standard outsourcing machinery, including transition services, transfer of assets and personnel, manufacturi… |
+| d182 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'PHOTO RETOUCHING OUTSOURCING AGREEMENT' and its operative clauses detail the outsourcing of digital photo-editing services, including beta testi… |
+| d183 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Network Management Outsourcing Agreement' and contains standard contractual provisions including scope of services, SLAs, pricing, termination, … |
+| d184 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and contains standard bilateral contractual provisions. Section 2 outlines comprehensive turnkey services performed by MM… |
+| d185 | contract | manufacturing | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT' and its operative clauses predominantly govern the manufacturing of hearing aids, including purch… |
+| d186 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Sales & Marketing Agreement.' Its operative provisions establish a relationship where one party provides sales representation, promoti… |
+| d187 | contract | agency | marketing | 0.8 | ✓ | ✗ | The document is titled 'Amended and Restated Remarketing Agreement' and explicitly appoints Barclays Capital Inc. as the exclusive 'Remarketing Agent' to market and distribute sec… |
+| d188 | contract | marketing | marketing | 0.9 | ✓ | ✓ | The document is a formal agreement titled 'Broker Dealer Marketing and Servicing Agreement' that establishes the terms under which a broker dealer will solicit sales and provide s… |
+| d189 | contract | distributor | marketing | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement.' Operative clauses (Sections 2.1, 2.2, 4.17) explicitly … |
+| d190 | contract | agency | marketing | 0.85 | ✓ | ✗ | The document is a formal 'REMARKETING AGREEMENT' that explicitly appoints a third-party entity as the 'Remarketing Agent' to perform specific operational and financial duties on b… |
+| d191 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and establishes mutual covenants between an activist investor (JANA) and a public company (URS) regarding board nominatio… |
+| d192 | contract | development | collaboration | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Cooperation Agreement' but its substantive operative clauses focus entirely on the exploration, drilling, feasibility studies, and const… |
+| d193 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and follows a standard formal contract structure with recitals, mutual covenants, representations, warranties, and boiler… |
+| d194 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement' and outlines mutual commitments between a local government and a private company for project investment, policy support, … |
+| d195 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and its operative clauses establish a framework for strategic cooperation between the parties, including the creation of … |
+| d196 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and establishes binding covenants between a public company and its investors regarding board appointments, voting commitm… |
+| d197 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Internet Channel Cooperation Agreement' and contains standard contractual provisions including recitals, definitions, term, scope of cooperation… |
+| d198 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and establishes a mutual framework for the parties to work together, share information, and pursue common project goals. … |
+| d199 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and contains standard contractual elements including recitals, mutual covenants (board appointments, standstill, voting c… |
+| d200 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and contains standard R&D collaboration machinery, including joint working groups (JMC, JRDC), detailed R&D plans, mile… |
+| d201 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and contains standard collaboration machinery, including a Joint Development Committee (JDC), detailed development plan… |
+| d202 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled 'COOPERATION AGREEMENT' and contains standard contractual elements including recitals, mutual covenants, representations, warranties, and executi… |
+| d203 | contract | collaboration | collaboration | 0.9 | ✓ | ✓ | The document is explicitly titled 'Cooperation Agreement' and follows a standard bilateral contract structure with definitions, term, mutual obligations, revenue-sharing mechanics… |
+| d204 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'Collaboration Agreement' and establishes a joint research program between IGER and CERES. The operative clauses detail collaborative research pr… |
+| d205 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses establish a joint governance structure (Joint Project Team), a formal Development Plan, share… |
+| d206 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses center on joint development, promotion, and commercialization of diagnostic tests, governed b… |
+| d207 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses establish a joint research program for drug discovery, detailing shared IP ownership/assignme… |
+| d208 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and formally appoints Compass Point Research & Trading, LLC as the Sales Agent to distribute the Company's preferred stock. It… |
+| d209 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and operates as a formal contract appointing Keefe, Bruyette & Woods, Inc. as the exclusive financial and conversion agent for… |
+| d210 | contract | agency | agency | 0.98 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and establishes a representative relationship where the Agent promotes, sells, and collects payment for the Company's products… |
+| d211 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and its operative clauses appoint a sales/placement agent to act on a 'best efforts' basis to solicit subscriptions for the co… |
+| d212 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and its operative clauses establish an insurance distribution relationship, detailing the Agency's authority to solicit busine… |
+| d213 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and consistently designates Sandler O'Neill & Partners as the 'Agent' to consult, advise, and assist with the solicitation and… |
+| d214 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and its operative clauses appoint one party as the agent of the other to order, receive, and accept equipment on their behalf.… |
+| d215 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and its operative clauses establish a principal-agent relationship. Section 2 ('Retention of Agent') appoints Charles Webb & C… |
+| d216 | contract | agency | agency | 0.95 | ✓ | ✓ | The document is explicitly titled 'AGENCY AGREEMENT' and Section 2 formally appoints Capital Resources, Inc. as an agent to advise and assist the Company and Association with a st… |
+| d217 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'AFFILIATE AGREEMENT' and contains operative provisions defining the signatory's status as an SEC 'affiliate,' restricting the disposition and tr… |
+| d218 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICES AGREEMENT' and its operative clauses govern the shipment of petroleum products via pipeline, detailing volume commitment… |
+| d219 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'GAS TRANSPORTATION AGREEMENT' and its operative clauses detail the firm transportation of natural gas between specified receipt and delivery poi… |
+| d220 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and details an agreement between a Sender and a Shipper (ECOPETROL) for the transportation of liquid hydrocarbons via p… |
+| d221 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is a formal agreement titled 'MARKETING AND TRANSPORTATION SERVICES AGREEMENT' between two courier companies. The operative clauses heavily govern the exchange of fre… |
+| d222 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION CONTRACT' and its operative clauses (Sections 1, 4, 6) detail the arrangement of crude oil export logistics, transit routing thro… |
+| d223 | contract | transportation | transportation | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRANSPORTATION SERVICE AGREEMENT' and its operative clauses detail the transport of natural gas between designated receipt and delivery points, … |
+| d224 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses center on production runs, converting Integra's devices using PcoMed's proprietary technology, run f… |
+| d225 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses govern the manufacture, supply, and purchase of specific medical devices. Key provisions include cus… |
+| d226 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses center on the purchase and supply of raw materials (Bromelain SP). Section 3.1 establishes CBC's obl… |
+| d227 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and contains operative clauses detailing the purchase and sale of specific goods (30,000 lbs of hemp biomass), including prici… |
+| d228 | contract | supply | supply | 0.98 | ✓ | ✓ | The document is explicitly titled 'SUPPLY AGREEMENT' and its operative clauses center on the purchase and sale of goods, including order placement, delivery terms, pricing formula… |
+| d229 | contract | supply | supply | 0.95 | ✓ | ✓ | The document is explicitly titled 'Supply Agreement' and its operative clauses center on the sale and purchase of goods (Miltenyi Products), including provisions for forecasts, pr… |
+| d230 | contract | sponsorship | sponsorship | 0.98 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail standard sponsorship obligations, including logo placement on racing vehicles, promotion… |
+| d231 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail the grant of sponsorship rights, exclusivity, annual sponsorship fees, term, termination… |
+| d232 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and its operative clauses detail promotional placements, banner advertisements, impression targets, and fixed sponsorship… |
+| d233 | contract | endorsement | sponsorship | 0.9 | ✓ | ✗ | The document is a formal agreement granting a celebrity/golfer's name, likeness, and expertise for use in a software product, alongside exclusivity for competing titles, advertisi… |
+| d234 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard sponsorship machinery, including a defined sponsorship fee ($750,000), promotional and branding ben… |
+| d235 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'Sponsorship Agreement' and its operative clauses center on sponsorship obligations: lead sponsor identification, promotional placements (commerc… |
+| d236 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'Master Service Agreement' and establishes a framework where one party performs clinical research services for the other. Operative clauses detai… |
+| d237 | contract | marketing | service | 0.8 | ✓ | ✗ | The document is an exhibit to a Master Services Agreement that substantively operates as an advertising revenue-sharing and consultation agreement. Operative clauses explicitly st… |
+| d238 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER SERVICES AGREEMENT' and its operative clauses establish Kubient's obligation to provide ad-serving and revenue-generation services to the… |
+| d239 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'Second Amendment to Services Agreement' and operates to modify an existing services agreement by adding specific administrative, analytical, and… |
+| d240 | contract | agency | service | 0.85 | ✓ | ✗ | The document is a Limited Power of Attorney that formally appoints one entity as the agent and attorney-in-fact for another, detailing the scope of authority, indemnification, lia… |
+| d241 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT TO SERVICES AGREEMENT' and operates to modify the scope of administrative, risk management, and portfolio support services provided by… |
+| d242 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AGREEMENT' and contains standard operative provisions for a service arrangement, including a defined scope of services (Exhibit A), a f… |
+| d243 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICING AGREEMENT' and establishes a formal contractual relationship where one party provides administration and servicing of receivables/asse… |
+| d244 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICE AGREEMENT FOR TRANSFER AGENT SERVICES' and contains standard contractual provisions (appointment, term, duties, compensation, indemnific… |
+| d245 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICING AGREEMENT' and contains standard contractual boilerplate (indemnification, compensation, termination, governing law, acceptance signat… |
+| d246 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and its operative clauses govern the authorization to market and resell software portals, detailing commission structures, w… |
+| d247 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'Reseller Agreement' and its operative clauses establish a non-exclusive appointment for the Reseller to purchase, market, sell, and incorporate … |
+| d248 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and self-identifies in the preamble as a 'Distribution Agreement'. The operative clauses (Sections 1 through 6) establish a … |
+| d249 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'Reseller Agreement' and Section 2.1 expressly appoints Telnet as a 'non-exclusive authorized reseller' of Galaxy's VoIP products and services. T… |
+| d250 | contract | distributor | promotion | 0.95 | ✓ | ✗ | The document is explicitly titled 'Promotion and Distribution Agreement' and formally designates Whitesmoke Inc. as the 'Distributor.' The operative clauses predominantly govern d… |
+| d251 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses detail a consumer promotional campaign, including pin code distribution mechanics, designated spo… |
+| d252 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses detail the obligation of DoctorDirectory.com to provide various promotional services (e.g., eSamp… |
+| d253 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and its operative clauses establish a broad strategic partnership framework, including joint product commercializa… |
+| d254 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its recitals and operative clauses focus on establishing a long-term cooperative relationship, sharing resourc… |
+| d255 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'Corporate Sponsorship Agreement' and its operative clauses center on a cash sponsorship fee ($150,000), sponsor recognition/benefits (logo place… |
+| d256 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'SPONSORSHIP AGREEMENT' and contains standard sponsorship operative clauses, including payment of $250,000 in exchange for event branding rights,… |
+| d257 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'Jacksonville Jaguars Sponsorship Agreement' and its operative clauses grant sponsorship rights and benefits (stadium signage, radio/digital adve… |
+| d258 | contract | sponsorship | sponsorship | 0.95 | ✓ | ✓ | The document is explicitly titled 'EVENT SPONSORSHIP AGREEMENT' and its operative clauses center on Newegg providing financial sponsorship and benefits in exchange for branding, a… |
+| d259 | contract | other | service | 0.9 | ✓ | ✗ | The document is a formal 'Transfer and Servicing Agreement' governing an asset-backed securities (ABS) securitization transaction. It outlines the transfer of device payment plan … |
+| d260 | contract | service | service | 0.95 | ✓ | ✓ | The document is explicitly titled 'Transition Services Agreement' and functions as a formal contract outlining the provision of administrative, IT, HR, financial, and other operat… |
+| d261 | contract | distributor | service | 0.9 | ✓ | ✗ | The document is explicitly titled 'DISTRIBUTION AND SERVICES AGREEMENT' and functions as a formal contract appointing a principal underwriter/distributor for the Fund's shares. Op… |
+| d262 | contract | sponsorship | service | 0.95 | ✓ | ✗ | The document is explicitly titled 'SPONSORSHIP AND SERVICES AGREEMENT' and its operative clauses center on granting sponsorship rights, advertising benefits, and branding usage in… |
+| d263 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'Form of Sub-Reseller Agreement' and contains operative provisions appointing a sub-reseller and granting resale rights for services. The title a… |
+| d264 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHANNEL PARTNER RESELLER AGREEMENT' and contains standard reseller provisions, including granting the Channel Partner the right to sell or re-li… |
+| d265 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'WALABOT-HOME RESELLER AGREEMENT' and its operative clauses establish a reseller relationship, including the appointment of the Reseller to marke… |
+| d266 | contract | license | reseller | 0.85 | ✓ | ✗ | The document is explicitly titled a 'LICENSE AND RESELLER AGREEMENT' and its core operative clauses establish a software platform license grant, including rights to sub-license an… |
+| d267 | contract | reseller | reseller | 0.95 | ✓ | ✓ | The document is explicitly titled 'RESELLER AGREEMENT' and its operative clauses establish a reseller relationship, granting the Reseller the right to solicit orders for Company P… |
+| d268 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its operative clauses detail the provision of promotional services to secure venue contracts, along with milestone-base… |
+| d269 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'PROMOTION AGREEMENT' and its substantive provisions grant the counterparty the exclusive right to promote, market, advertise, and sell a specifi… |
+| d270 | contract | promotion | promotion | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLOGUARD® PROMOTION AGREEMENT' and functions as a formal contract between Exact Sciences and Pfizer. Its operative clauses center on joint mark… |
+| d271 | contract | marketing | promotion | 0.95 | ✓ | ✗ | The document is explicitly titled 'CO-PROMOTION AGREEMENT' and its operative clauses grant Valeant the right to detail and promote Dova's pharmaceutical product, establish a Marke… |
+| d272 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses govern an outsource model for manufacturing/production, detailing purchase orders, supplier all… |
+| d273 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Outsourcing Agreement' and follows a standard bilateral contract structure. The operative clauses govern the outsourcing of pharmaceutical manuf… |
+| d274 | contract | consulting | outsourcing | 0.9 | ✓ | ✗ | The document is a formal agreement between a resort developer and an architectural firm detailing planning, design, environmental assessment, and professional coordination service… |
+| d275 | contract | outsourcing | outsourcing | 0.95 | ✓ | ✓ | The document is explicitly titled 'OUTSOURCING AGREEMENT' and its operative clauses detail the comprehensive transfer of IT infrastructure management, network monitoring, server m… |
+| d276 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON COMPETITION AGREEMENT AND RIGHT OF FIRST OFFER' and its operative clauses (Part 2) impose a clear two-year restriction on Western Copper fro… |
+| d277 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-COMPETITION AGREEMENT AMENDMENT NO. 1' and contains operative clauses that amend and replace the non-competition and non-solicitation sectio… |
+| d278 | contract | non_compete_no_solicit | non_compete_no_solicit | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-COMPETITION AND NON-SOLICITATION AGREEMENT' and its operative Section 1 contains standard restrictive covenant provisions prohibiting the Se… |
+| d279 | contract | marketing | marketing | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'Product Sale and Marketing Agreement.' While it includes product sale and supply mechanics, the operative clauses heavily emphasize in-s… |
+| d280 | contract | supply | marketing | 0.92 | ✓ | ✗ | The document is explicitly titled 'Joint Supply and Marketing Agreement' and centers on Vertex's obligation to source, produce, and sell a specific product to Bunker One, with Bun… |
+| d281 | contract | reseller | marketing | 0.95 | ✓ | ✗ | The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses grant the counterparty exclusive rights to market, distribute, and sell products wit… |
+| d282 | contract | marketing | marketing | 0.9 | ✓ | ✓ | The document is explicitly titled 'Local Programming and Marketing Agreement' and operates as a formal, binding contract between a radio station licensee and a programmer. The ope… |
+| d283 | contract | marketing | marketing | 0.95 | ✓ | ✓ | The document is explicitly titled 'WHOLESALE MARKETING AGREEMENT' and its operative clauses center on S2K's obligations to market investment funds to financial intermediaries, inc… |
+| d284 | contract | co_branding | marketing | 0.9 | ✓ | ✗ | The document is explicitly titled 'CO-BRANDING, MARKETING AND DISTRIBUTION AGREEMENT' and functions as a formal contract between Amazon and Audible. Operative clauses center on cr… |
+| d285 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Website Content License Agreement' and contains standard license grant provisions in Section 3 ('License Grants'), which authorize the Licensee … |
+| d286 | contract | license | license | 0.95 | ✓ | ✓ | The document is Amendment No. 3 to a 'Wireless Content License Agreement,' containing operative modification clauses (term extension and notice updates) and execution blocks. It f… |
+| d287 | contract | license | license | 0.95 | ✓ | ✓ | The document is Amendment No. 2 to a 'Wireless Content License Agreement.' Its operative clauses explicitly grant a 'limited, non-exclusive right and license' to distribute specif… |
+| d288 | contract | license | license | 0.95 | ✓ | ✓ | The document is Amendment No. 1 to a 'Wireless Content License Agreement.' It modifies the original license by adding new intellectual properties ('In Her Shoes,' 'Idiocracy,' 'Ic… |
+| d289 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'WIRELESS CONTENT LICENSE AGREEMENT' and centers on a 'GRANT OF RIGHTS' clause where Fox licenses its trademarks, copyrights, and creative elemen… |
+| d290 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Content License Agreement' and contains a clear 'Grant of License' provision (Section 3.1) granting non-exclusive rights to copy, store, host, s… |
+| d291 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT DISTRIBUTION AND LICENSE AGREEMENT' and Section 1 ('Grant of License and Rights') details the producer granting ConvergTV a right and li… |
+| d292 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'VIDEO-ON-DEMAND CONTENT LICENSE AGREEMENT' and its operative clauses (e.g., Section 1 'Rights Granted') establish a non-exclusive license for di… |
+| d293 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Content Licensing Agreement' and Section 5 contains unambiguous license grant language ('LICENSOR grants to plan_b a license to produce, use, di… |
+| d294 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Commercialization and License Agreement' and contains standard operative clauses in Article 2 granting an exclusive, royalty-bearing license to … |
+| d295 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Domain Name and Content License Agreement' and contains a clear 'Grant of License' clause (Article II) granting the Licensee rights to use speci… |
+| d296 | contract | development | license | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Sponsored Research and License Agreement' between a pharmaceutical company and a university. Its operative clauses detail a structured m… |
+| d297 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'FORM OF TRADEMARK LICENSE AGREEMENT' and its operative clauses, particularly Section 1 ('Grant and Scope of License'), clearly establish a licen… |
+| d298 | contract | license | license | 0.92 | ✓ | ✓ | The document is explicitly titled 'JOINT CONTENT LICENSE AGREEMENT' and its operative clauses center on mutual grants of rights to use trademarks and intellectual property ('Licen… |
+| d299 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'Amendment and Termination of Joint Venture Agreement' and contains operative clauses that modify, terminate, and release obligations under an ex… |
+| d300 | contract | joint_venture | joint_venture | 0.98 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE CONTRACT' and its operative provisions detail the formation, registered capital contributions, governance structure (Board of Dire… |
+| d301 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains operative clauses establishing a new corporate entity, defining board composition, capital accounts, mutua… |
+| d302 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard joint venture provisions, including the formation of a separate JV entity ('Company'), pooled res… |
+| d303 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and its operative clauses establish a formal joint venture structure, including a Steering Committee, dedicated JV Fund… |
+| d304 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and its operative clauses establish a new entity (the JVC), define equity contributions and shareholding percentages, o… |
+| d305 | contract | other | joint_venture | 0.9 | ✓ | ✗ | The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual mechanics: mutual promises ('hereby agree'), allocation of filing responsibilities, re… |
+| d306 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard joint venture operative clauses, including formation of a Venture, capital contributions by Membe… |
+| d307 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and contains standard joint venture operative clauses, including the formal association of parties to form a joint vent… |
+| d308 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'IP Rights Agreement' and its operative provisions govern the ownership, prosecution, and licensing of patents and technical information between … |
+| d309 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative provisions govern the assignment, licensing, and covenants surrounding patents, trademarks, c… |
+| d310 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and operates as a formal contract between Nuance Communications and Cerence Inc. Its core operative clauses (Ar… |
+| d311 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses exclusively govern the assignment and licensing of copyrights, know-how, patents, and… |
+| d312 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'SERVICES AND HOSTING AGREEMENT' and its operative clauses center on VOTOCAST providing web/mobile application hosting, technical services, maint… |
+| d313 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'e-business Hosting Agreement' and its operative clauses detail the provision of hosting infrastructure, managed servers, bandwidth allocation, s… |
+| d314 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'Mobile Virtual Network Enabler Hosting Agreement' and its operative clauses (Sections 3, 4, 6) detail the provision of network hosting services,… |
+| d315 | contract | development | hosting | 0.9 | ✓ | ✗ | The document is a formal agreement titled 'Website Design, Development and Hosting Agreement.' The operative clauses and Exhibit A focus heavily on design/development milestones, … |
+| d316 | contract | franchise | franchise | 0.85 | ✓ | ✓ | The document is an executed addendum to a franchise disclosure document, containing standard franchise-specific litigation and bankruptcy representations. Bilateral signature bloc… |
+| d317 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled as an addendum/appendix to a 'Master Franchise Agreement' and contains statutory disclosures and operational warnings specific to California fran… |
+| d318 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled as an attachment to a 'Master Franchise Agreement' and contains guarantee provisions directly tied to the obligations of the Franchisor and Maste… |
+| d319 | contract | franchise | franchise | 0.98 | ✓ | ✓ | The document is explicitly titled 'MASTER FRANCHISE AGREEMENT' and contains standard franchise-specific operative clauses, including the grant of franchise rights, royalty and con… |
+| d320 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER FRANCHISE AGREEMENT' and its operative clauses consistently use franchise-specific terminology and machinery, including the 'Grant of Fra… |
+| d321 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'GAS FRANCHISE AGREEMENT' and its operative clauses consistently use franchise terminology, including the grant of franchise rights to construct … |
+| d322 | contract | non_compete_no_solicit | franchise | 0.95 | ✓ | ✗ | The document is explicitly titled 'NON-DISCLOSURE AND NON-COMPETITION AGREEMENT' and contains operative clauses detailing confidentiality obligations, covenants not to compete, no… |
+| d323 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FORM OF FRANCHISE AGREEMENT' and 'Pizza Fusion Holdings, Inc. Franchise Agreement'. Its operative clauses detail the grant of franchise rights, … |
+| d324 | contract | other | maintenance | 0.9 | ✓ | ✗ | The document is a formal bilateral agreement titled 'Unconditional Capital Maintenance Agreement' between a parent corporation and its wholly-owned subsidiary, detailing financial… |
+| d325 | contract | other | maintenance | 0.9 | ✓ | ✗ | The document follows a standard contract format with recitals, operative clauses, numbered sections, and signature blocks. It is a specialized investment fund agreement governing … |
+| d326 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'OPERATIONS AND MAINTENANCE AGREEMENT' and its operative clauses (particularly Articles II and IV) detail the Operator's ongoing duties to manage… |
+| d327 | contract | other | maintenance | 0.85 | ✓ | ✗ | The document is a formal, signed agreement titled 'Completion and Liquidity Maintenance Agreement' with an effective date, governing law clause, and binding obligations between a … |
+| d328 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPORT AND MAINTENANCE AGREEMENT' and its operative clauses detail software support, transition services, bug resolution, technical assistance,… |
+| d329 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly titled and formatted as an SEC Schedule 13G Joint Filing Statement pursuant to Rule 13d-1(k). Its content consists of standard regulatory acknowledgment… |
+| d330 | contract | other | joint_venture | 0.9 | ✓ | ✗ | The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual elements including mutual covenants, revocation terms, counterpart execution clauses, … |
+| d331 | compliance_filing | other | joint_venture | 0.9 | ✗ | ✗ | The document is an exhibit to a Schedule 13G regulatory submission, explicitly citing SEC Rule 13d-1(k) and the Securities Exchange Act of 1934. Its sole substantive purpose is to… |
+| d332 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is an Exhibit 99.1 Joint Filing Agreement explicitly tied to SEC regulatory requirements (Schedule 13G/A, Securities Exchange Act of 1934, Rule 13d-1(k)). Its sole pu… |
+| d333 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'EXHIBIT 99.1' and governs the joint filing of a Schedule 13G under SEC Rule 13d-1(k). Its sole purpose is procedural compliance with securities… |
+| d334 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly labeled 'Exhibit 99.1 JOINT FILING AGREEMENT' and contains standard SEC regulatory terminology such as 'Additional Reporting Person,' 'Designated Filer,… |
+| d335 | contract | other | joint_venture | 0.8 | ✓ | ✗ | The document is a multi-party 'JOINT FILING AGREEMENT' containing operative confirmation language and extensive signature blocks for various investment vehicles and their managers… |
+| d336 | contract | other | joint_venture | 0.9 | ✓ | ✗ | The document is explicitly titled 'JOINT FILING AGREEMENT' and contains clear operative clauses establishing mutual obligations between the undersigned parties to jointly prepare … |
+| d337 | contract | joint_venture | joint_venture | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and its operative provisions consistently establish a joint venture structure, detailing capital contributions, profit … |
+| d338 | contract | other | joint_venture | 0.95 | ✓ | ✗ | The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual language, including an agreement 'by and among' the signatories, a counterparts execut… |
+| d339 | compliance_filing | other | joint_venture | 0.95 | ✗ | ✗ | The document is explicitly structured as an SEC exhibit (Exhibit 99.4) governing the joint filing of Schedule 13D/13G statements pursuant to Rule 13d-1(k)(1) of the Securities Exc… |
+| d340 | contract | joint_venture | joint_venture | 0.98 | ✓ | ✓ | The document is explicitly titled 'JOINT VENTURE AGREEMENT' and its operative clauses establish a formal joint venture structure, including the creation of separate legal entities… |
+| d341 | contract | other | joint_venture | 0.9 | ✓ | ✗ | The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual elements: mutual promises ('each party hereto hereby agrees'), an effective date, and … |
+| d342 | contract | other | joint_venture | 0.85 | ✓ | ✗ | The document is titled 'JOINT FILING AGREEMENT' and contains clear operative language ('the undersigned hereby agree to the joint filing...') executed by multiple parties. Its sub… |
+| d343 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses detailing the assignment, licensing, and warranty of patents, trademarks, copyri… |
+| d344 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative assignment language transferring all right, title, and interest in trademarks and patent… |
+| d345 | contract | ip | ip | 0.98 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative provisions govern the assignment and licensing of patents, copyrights, trade secrets, and tra… |
+| d346 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses in Section 2 granting reciprocal, perpetual, royalty-free licenses for defined '… |
+| d347 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and contains operative clauses granting a non-exclusive license to use specified intellectual property (softwar… |
+| d348 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses (Sections 2 through 5) govern the ownership, transfer, licensing, protection, mainten… |
+| d349 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'Intellectual Property Agreement' and its operative clauses center on the assignment of patents, granting of worldwide licenses for SRAM-related … |
+| d350 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'Intellectual Property Agreement' and its operative provisions govern the transfer, assignment, and licensing of intellectual property assets, so… |
+| d351 | contract | ip | ip | 0.95 | ✓ | ✓ | The document is explicitly titled 'INTELLECTUAL PROPERTY AGREEMENT' and its operative clauses exclusively govern the assignment and licensing of copyrights, patents, trademarks, a… |
+| d352 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE HOSTING AGREEMENT' and its operative provisions (Sections 2 and 3) obligate Inktomi to deploy, host, and maintain Microsoft's search en… |
+| d353 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled "WEB HOSTING AGREEMENT" and its operative clauses govern bandwidth and software usage fees, server accessibility, and 24/7 technical support for … |
+| d354 | contract | license | hosting | 0.9 | ✓ | ✗ | The document is explicitly titled 'LICENSE AND HOSTING AGREEMENT' and its operative clauses predominantly establish a software licensing framework. Section 2 details the grant of … |
+| d355 | contract | license | hosting | 0.95 | ✓ | ✗ | The document is explicitly titled 'LICENSE AND HOSTING AGREEMENT' and its operative clauses center on the grant of software intellectual property rights, including detailed provis… |
+| d356 | contract | hosting | hosting | 0.9 | ✓ | ✓ | The document is explicitly titled 'VISP WEB SITE BUILDING AND HOSTING AGREEMENT' and its operative clauses detail the provision of web hosting setup, ongoing maintenance, technica… |
+| d357 | contract | hosting | hosting | 0.8 | ✓ | ✓ | The document is a formal agreement titled 'Licensing and Web Site Hosting Agreement' establishing mutual obligations between two commercial entities. It contains operative clauses… |
+| d358 | contract | hosting | hosting | 0.95 | ✓ | ✓ | The document is explicitly titled 'e-business Hosting Agreement' and its operative clauses detail IBM's obligation to provide web hosting and related infrastructure services, incl… |
+| d359 | contract | marketing | hosting | 0.8 | ✓ | ✗ | The document is explicitly titled 'Co-Hosting Agreement' and functions as a formal contract. Its operative clauses primarily govern the placement of hot links on NAI's websites, m… |
+| d360 | contract | development | hosting | 0.85 | ✓ | ✗ | The document is a formal agreement titled 'Site Development and Hosting Agreement' between two corporations. Operative clauses detail HDI's obligations to design, develop, impleme… |
+| d361 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of franchise rights, initial and royalty fees, use o… |
+| d362 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise operative clauses, including the grant of a license to operate a Burger King Restaurant, pa… |
+| d363 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise machinery, including a Franchisor/Franchisee relationship, grant of license to use the Bran… |
+| d364 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'Goosehead Insurance Agency, LLC Franchise Agreement' and contains standard franchise agreement provisions, including the grant of franchise righ… |
+| d365 | contract | franchise | franchise | 0.95 | ✓ | ✓ | The document is explicitly titled 'FRANCHISE AGREEMENT' and contains standard franchise machinery throughout its operative clauses, including the grant of franchise rights, exclus… |
+| d366 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses grant the company the exclusive right to use Peyton Manning's name, likeness, and endorsement f… |
+| d367 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard celebrity endorsement machinery: granting the company exclusive rights to use the athlete's name, l… |
+| d368 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard endorsement provisions, including the professional's obligation to exclusively use and endorse the … |
+| d369 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and follows a standard contract format with recitals, mutual covenants, and operative clauses. It governs the transfer of… |
+| d370 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses center on granting the company the right to use the athlete's name, image, and likeness for pro… |
+| d371 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and outlines a celebrity's obligations to endorse company products, speak at seminars, and assist with marketing/recruiti… |
+| d372 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses grant the company the right to use a specific name and logo for vehicle sales and to publicly r… |
+| d373 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard celebrity endorsement provisions, including grants of rights to use a public figure's name and like… |
+| d374 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard operative clauses granting Adams Golf the exclusive right to use Tom Watson's name, likeness, and i… |
+| d375 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses center on purchasing, stocking, and reselling hardware/software to end-users. Key provisions in… |
+| d376 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor machinery, including exclusive rights to purchase and resell products, tiered discount … |
+| d377 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains operative clauses granting the Licensee the right to market, sublicense, and distribute software products wi… |
+| d378 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'FIRST AMENDMENT TO DISTRIBUTOR AGREEMENT' and its operative clauses directly amend the terms of an existing distributor agreement, including roy… |
+| d379 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor machinery, including territorial appointment, purchase/resale obligations, sales target… |
+| d380 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses grant ALFA AESAR the exclusive right to market, sell, and distribute NTC's products, require AL… |
+| d381 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor operative clauses, including the appointment of an exclusive authorized distributor, ri… |
+| d382 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses establish an exclusive distribution relationship, detailing minimum purchase quotas, ordering p… |
+| d383 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative clauses center on the appointment of an exclusive distributor, purchase requirements, pricing… |
+| d384 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative clauses center on granting the Distributor exclusive rights to market and sell Products in a … |
+| d385 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor-specific operative clauses, including the appointment of a nonexclusive distributor, gu… |
+| d386 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor machinery: appointment of a non-exclusive distributor for designated territory, obligat… |
+| d387 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses center on granting exclusive distribution rights, imposing purchase obligations on the Distribu… |
+| d388 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses establish an exclusive distribution relationship, granting the Distributor the right to sell Co… |
+| d389 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distributor Agreement' and its operative clauses center on the appointment of an exclusive distributor, purchase and resale obligations, orderin… |
+| d390 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Multiple LINAC and Multi-Modality Distributor Agreement' and its operative clauses consistently establish a distributor relationship: Accuray ap… |
+| d391 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'DEVELOPMENT AGREEMENT' and its operative clauses center on pharmaceutical development machinery: LEO's obligation to conduct preclinical/clinica… |
+| d392 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'DEVELOPMENT AGREEMENT' and its operative clauses detail drilling operations, completion milestones (e.g., Casing Point), cost-sharing for well d… |
+| d393 | contract | development | development | 0.9 | ✓ | ✓ | The document is explicitly titled a 'Collaborative Development and Commercialization Agreement' and operates as a binding contract between Microgenics and Achaogen. The operative … |
+| d394 | contract | development | development | 0.95 | ✓ | ✓ | The document is a formal agreement titled 'LICENSE, DEVELOPMENT AND COMMERCIALIZATION AGREEMENT' between Array BioPharma and Ono Pharmaceutical. Although it encompasses licensing … |
+| d395 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing and Supply Agreement' and contains standard operative provisions for the manufacturing and supply of pharmaceutical products, incl… |
+| d396 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AND SUPPLY AGREEMENT' and its operative clauses detail the production of licensed pharmaceutical products, quality control testing… |
+| d397 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Product Manufacturing Agreement' and sets forth the mutual covenants for Dexcel to manufacture, package, and supply pharmaceutical products to K… |
+| d398 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Turn-Key Manufacturing Agreement' and its operative clauses govern manufacturing services, including material procurement, assembly, testing, fi… |
+| d399 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT NO. 3 TO ... MANUFACTURING AGREEMENT' and functions to modify schedules within the original Manufacturing Agreement. Per Rule 8, the t… |
+| d400 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Amendment No. 2 to ... Manufacturing Agreement' and contains operative clauses modifying production quantities, product specifications, ingredie… |
+| d401 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'AMENDMENT NO. 1 TO ... MANUFACTURING AGREEMENT' and operates to modify the terms of an existing manufacturing agreement. The operative clauses e… |
+| d402 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'MANUFACTURING AGREEMENT' and its operative clauses detail the production of goods by one party for another, including manufacturing schedules, m… |
+| d403 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE MAINTENANCE AGREEMENT' and its primary operative clause extends a software maintenance obligation for an additional five years in excha… |
+| d404 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Product License Schedule' and issued pursuant to a 'Software License, Customization and Maintenance Agreement.' Its operative clauses govern sof… |
+| d405 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is an addendum/schedule to a 'Software License, Customization and Maintenance Agreement' that formally incorporates terms for the provision and use of specific softwa… |
+| d406 | contract | development | maintenance | 0.9 | ✓ | ✗ | The document is a 'Customization Schedule' governing software modification work. Operative clauses detail specification delivery, customization requirements, pricing (T&M or fixed… |
+| d407 | contract | license | maintenance | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and its primary operative provision is Section 2.0, which grants a nonexclusive, worl… |
+| d408 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Master Operation and Maintenance Agreement' and its operative provisions (particularly Article 2) detail the Operator's ongoing duties to operat… |
+| d409 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Amendment n° 01 to the Global Maintenance Agreement' and contains standard contract structure (parties, recitals, operative amendment clauses, c… |
+| d410 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'GLOBAL MAINTENANCE AGREEMENT' and its operative clauses detail the provision of scheduled and unscheduled aircraft maintenance, repair, overhaul… |
+| d411 | contract | service | maintenance | 0.95 | ✓ | ✗ | The document is a formal agreement titled 'Network Build and Maintenance Agreement' between Commnet Wireless, LLC and AT&T Mobility LLC. It establishes the vendor's obligations to… |
+| d412 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSE AGREEMENT' and its operative Clause 2 ('Grant of Rights') grants an exclusive license to use, adapt, reproduce, and distribute c… |
+| d413 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Content License Agreement' and contains clear grant-of-license language ('WebMD agrees to grant, and Emdeon agrees to accept, a license to use t… |
+| d414 | contract | license | license | 0.85 | ✓ | ✓ | The document is explicitly titled a 'Content and License Agreement' and contains operative clauses granting Watchit the right to provide media content for broadcast on a specific … |
+| d415 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-EXCLUSIVE LICENSE AGREEMENT' and contains standard intellectual property licensing provisions, including a grant of license under patent rig… |
+| d416 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSE AGREEMENT' and features a prominent 'LICENSE GRANT' section (Section 2) where World Book grants HSWI rights to use, copy, distri… |
+| d417 | contract | supply | license | 0.95 | ✓ | ✗ | The document is explicitly titled 'SUPPLIER/SUBCONTRACTOR CONTRACT' and contains operative clauses governing the production, delivery, and sale of merchandise based on purchaser o… |
+| d418 | contract | license | license | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'CONTENT LICENSE, MARKETING AND SALES AGREEMENT' between eFashion Solutions and Playboy.com. While it details extensive marketing, fulfil… |
+| d419 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Program Content License Agreement' and its operative clauses consistently govern the licensing of television program content from Party A to Par… |
+| d420 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRADEMARK LICENSE AGREEMENT' and contains standard operative clauses for an intellectual property license, including Article 1 'LICENSE GRANT' w… |
+| d421 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSE AGREEMENT' and formally designates the parties as 'Licensor' and 'Licensee'. The primary operative clause is a 'GRANT OF LICENSE… |
+| d422 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRADEMARK LICENSE AGREEMENT' and contains a clear 'LICENSE GRANT' clause in Article 1 granting the Licensee rights to use the Licensed Mark. The… |
+| d423 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'TRADEMARK LICENSE AGREEMENT' and its operative provisions (Section 1.1 License Grant, Section 2 Ownership, Section 3 Quality Control and Prior A… |
+| d424 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSE AGREEMENT' and Section 1 ('LICENSE') grants the COMPANY the right to use, reproduce, distribute, transmit, and publicly display … |
+| d425 | contract | other | license | 0.95 | ✓ | ✗ | The document is explicitly titled 'MUTUAL TERMINATION AGREEMENT' and contains standard operative provisions for mutually ending a prior Domain Name License Agreement. It does not … |
+| d426 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Domain Name and Content License Agreement' and contains a clear 'Grant of License' clause (Article II) granting the Licensee rights to use speci… |
+| d427 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'CONTENT LICENSE AGREEMENT' and its primary operative provision (Section 2) grants a non-exclusive license to exhibit, distribute, reproduce, and… |
+| d428 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Content License Agreement' and its core operative clause (Section 2(a)) grants the Licensee a non-exclusive license to exhibit, distribute, repr… |
+| d429 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'FORM OF TRADEMARK LICENSE AGREEMENT' and contains operative clauses granting a nonexclusive, nontransferable license to use a licensed mark and … |
+| d430 | contract | license | license | 0.95 | ✓ | ✓ | The document is explicitly titled 'Media License Agreement' and its primary operative clause (Section 2, Grant of Rights) grants the Village Media Company a license to reproduce, … |
+| d431 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a formal rider/amendment to an existing life insurance contract. It details the dissolution and asset transfer of … |
+| d432 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is a formal agreement between an employer and employee titled 'Split-Dollar Endorsement Agreement.' Its operative clauses detail premium allocation, policy ownership … |
+| d433 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains operative clauses engaging the individual to endorse a specific product ('Clotamin'), granting rights to use… |
+| d434 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses center on granting the company rights to use the individual's name and likeness, specifying pro… |
+| d435 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses center on granting rights to use a celebrity's name, image, and likeness ('Celebrity Endorsemen… |
+| d436 | contract | endorsement | endorsement | 0.9 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION & ENDORSEMENT AGREEMENT' and operates substantively as a celebrity endorsement deal. The operative clauses predominantly establish… |
+| d437 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard operative clauses for an endorsement deal, including granting rights to use the individual's name, … |
+| d438 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'TALENT ENDORSEMENT AGREEMENT' and its operative clauses center on granting the Company the right to use the Talent's name, likeness, and brand f… |
+| d439 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT ADDENDUM I' and functions as an amendment to an existing endorsement agreement. It outlines the use of the NFL Alumni logo… |
+| d440 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard endorsement machinery: granting the Company rights to use the NFLA's name and logo for product prom… |
+| d441 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and its operative clauses center on engaging an individual as a spokesperson/talent to endorse products, granting rights … |
+| d442 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'CELEBRITY ENDORSEMENT AGREEMENT' and its operative clauses center on granting the company the right to use the individual's name, likeness, and … |
+| d443 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT AGREEMENT' and contains standard endorsement provisions, including the grant of rights to use the individual's name and likeness, ex… |
+| d444 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distributorship Agreement' and its operative provisions grant exclusive rights to promote, market, sell, and distribute a pharmaceutical product… |
+| d445 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative provisions focus on appointing a distributor, granting territorial exclusivity, setting perfo… |
+| d446 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTORSHIP AGREEMENT' and contains standard operative clauses for a distribution relationship, including the appointment of a distributor t… |
+| d447 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative clauses center on appointing the Distributor for a specific territory, marketing obligations,… |
+| d448 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Amendment No. 3 to the Nonexclusive Value Added Distributor Agreement' and governs the relationship between Cisco Systems and ScanSource (identi… |
+| d449 | contract | license | distributor | 0.95 | ✓ | ✗ | The document is explicitly titled 'Software License Agreement' and its operative clauses center on granting a nonexclusive, nontransferable license to use software, alongside stan… |
+| d450 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Nonexclusive Value Added Distributor Agreement' and contains standard distributor machinery, including Section 3.0 'Appointment of Distributor,'… |
+| d451 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is an addendum to a 'PartnerConnect Distributor Agreement' that authorizes the Distributor to purchase and resell additional product lines (Xplore Products). Operativ… |
+| d452 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor operative clauses, including the appointment of a non-exclusive distributor, grant of t… |
+| d453 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative clauses center on granting exclusive distribution rights, outlining distributor sales and mar… |
+| d454 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'NON-EXCLUSIVE DISTRIBUTOR AGREEMENT' and its operative clauses consistently establish a distribution relationship, including the appointment of … |
+| d455 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses center on the Company appointing the Distributor as an exclusive reseller of specific products … |
+| d456 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distributorship agreement' and contains operative clauses establishing a non-exclusive distribution relationship, including distributor appointm… |
+| d457 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Mobile Application Development Agreement' and contains standard development contract provisions: engagement for designing a mobile app and backe… |
+| d458 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Distribution and Development Agreement' and contains extensive operative clauses governing product development, including a detailed Development… |
+| d459 | contract | collaboration | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'COLLABORATIVE RESEARCH, DEVELOPMENT AND COMMERCIALIZATION AGREEMENT' and functions as a formal partnership between two pharmaceutical companies.… |
+| d460 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Recipe Development Agreement' and its operative provisions focus on establishing a Development Committee, setting development milestones, formul… |
+| d461 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Co-Development Agreement' and its operative provisions center on joint clinical trial execution, a defined Development Plan, milestone timelines… |
+| d462 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE DEVELOPMENT AGREEMENT' and contains standard development machinery throughout its operative clauses, including a Statement of Work for … |
+| d463 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'SOFTWARE DEVELOPMENT AGREEMENT' and functions as a Statement of Work appended to it. Operative clauses detail custom software development scope,… |
+| d464 | contract | development | development | 0.85 | ✓ | ✓ | The document is a formal 'License and Development Agreement' between two pharmaceutical entities. While it grants IP rights and outlines commercialization/supply terms, Sections 5… |
+| d465 | contract | development | development | 0.85 | ✓ | ✓ | The document is explicitly titled 'BUSINESS DEVELOPMENT AGREEMENT' and contains extensive operative clauses governing joint R&D, new technology ownership, development planning, an… |
+| d466 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Real Estate Education Training Program Development Agreement' and contains operative clauses focused on program development, including a brand d… |
+| d467 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'MASTER JOINT DEVELOPMENT AGREEMENT' and its operative clauses center on joint R&D projects, Statements of Work, development milestones, manufact… |
+| d468 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Outsource Technology Development Agreement' and its operative clauses center on software development services, including specific deliverables, … |
+| d469 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'JOINT DEVELOPMENT AGREEMENT' and its operative clauses center on collaborative R&D activities, including a Steering Committee governance structu… |
+| d470 | contract | development | development | 0.9 | ✓ | ✓ | The document is explicitly titled 'Exclusive License and Product Development Agreement' and constitutes a formal contract between Eton and Aucta. While it includes licensing and c… |
+| d471 | contract | development | development | 0.85 | ✓ | ✓ | The document is a formal agreement titled 'Consulting and Product Development Agreement.' Its operative clauses detail Dr. Murray's obligations to lead initiatives for product dev… |
+| d472 | contract | franchise | development | 0.95 | ✓ | ✗ | The document is explicitly titled 'El Pollo Loco® Franchise Development Agreement' and operates as a formal agreement between a franchisor and a developer to establish multiple re… |
+| d473 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'DEVELOPMENT AGREEMENT' and its operative clauses center on an R&D Work Plan, milestone-based payments, deliverables with acceptance criteria, an… |
+| d474 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'LICENSE AND DEVELOPMENT AGREEMENT' and functions as a formal contract between Bioeq IP AG and Coherus BioSciences, Inc. Although it grants an ex… |
+| d475 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'Development Agreement' and its operative clauses (Article 2) establish obligations for research, clinical trial milestones (e.g., Phase II Miles… |
+| d476 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'APPLICATION DEVELOPMENT AGREEMENT' and contains standard development machinery, including a detailed development plan, weekly milestones, a comp… |
+| d477 | contract | development | development | 0.95 | ✓ | ✓ | The document is a formal agreement explicitly titled 'Blockchain Administration and Development Agreement.' Its operative clauses detail the provider's obligations to furnish codi… |
+| d478 | contract | development | development | 0.95 | ✓ | ✓ | The document is a formal bilateral agreement titled 'License, Development and Commercialization Agreement.' It contains standard contract structure and operative clauses focusing … |
+| d479 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on creating, marketing, and distributing a co-branded version of Skype software in the P… |
+| d480 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING Agreement' and its operative clauses center on co-branding obligations, including mutual licensing of trademarks/marks, development … |
+| d481 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manifest System Services and Co-Branding Agreement.' It contains standard contractual boilerplate and operative clauses specifically governing c… |
+| d482 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses govern the joint branding, development, hosting, and revenue sharing of a web service between D… |
+| d483 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on mutual branding exchanges, joint marketing efforts, shared advertising revenue based … |
+| d484 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'SECOND AMENDMENT TO CO-BRANDING AGREEMENT' and references a prior Co-Branding Agreement between the parties. Its operative clauses contain stand… |
+| d485 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled as an amendment to a Co-Branding Agreement and contains standard signature blocks for the contracting parties. Per Rule 8, documents whose titles… |
+| d486 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on allowing one party to co-brand the other's software for a value-added web service, in… |
+| d487 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses govern the joint development, operation, and marketing of co-branded web properties (Career Cen… |
+| d488 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on creating co-branded websites (Career Center, Training and Education Center), cross-pr… |
+| d489 | contract | endorsement | co_branding | 0.95 | ✓ | ✗ | The document is explicitly titled 'ENDORSEMENT LICENSING AND CO-BRANDING AGREEMENT' and contains standard operative clauses for a celebrity endorsement deal, including personal ap… |
+| d490 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses govern the use of one party's logo, name, and trademarks by the other on products and marketing… |
+| d491 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses detail mutual branding efforts, cross-promotional banner ads, employer spotlights, revenue shar… |
+| d492 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'E-CENTIVES - EXCITE@HOME CO-BRANDING AGREEMENT' and its operative clauses establish a co-branded internet application, dictate shared branding g… |
+| d493 | contract | co_branding | co_branding | 0.9 | ✓ | ✓ | The document is explicitly titled 'PRODUCT DEVELOPMENT AND CO-BRANDING AGREEMENT' and features operative clauses centered on mutual branding, co-marketing, shared mailing lists, j… |
+| d494 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on creating a joint 'Co-Branded Site', granting reciprocal rights to use each other's ma… |
+| d495 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING CONTENT AGREEMENT'. Its operative clauses focus on jointly integrating content onto a co-branded website, sharing advertising and e-… |
+| d496 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on mutual licensing of brand features, development of co-branded web pages, reciprocal p… |
+| d497 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses focus on establishing a mutually branded web center, cross-licensing trademarks for promotional… |
+| d498 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses establish a co-branded online insurance channel, grant mutual licenses to use each party's mark… |
+| d499 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AND SERVICES AGREEMENT' and its primary operative provisions (Article II) govern the joint development, branding, and marketing of a… |
+| d500 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AND ADVERTISING AGREEMENT' and its operative clauses center on creating a 'Co-Branded Site,' mutually granting rights to use each pa… |
+| d501 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'AFFILIATE OFFICE AGREEMENT' and establishes a referral-based relationship where the Affiliate markets services, locates contractors, and earns r… |
+| d502 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'BUSINESS AFFILIATE AGREEMENT' and establishes a formal contractual relationship between a business affiliate and a corporate entity. Its operati… |
+| d503 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'Charter Affiliate Affiliation Agreement' and contains standard operative clauses for an affiliate relationship, including a grant of broadcast r… |
+| d504 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'MARKETING AFFILIATE AGREEMENT' and contains standard contractual provisions (recitals, terms, compensation, termination, indemnification, govern… |
+| d505 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'Affiliate Program / Premium Affiliate Management General Terms and Conditions' and contains standard affiliate agreement provisions, including c… |
+| d506 | contract | affiliate | affiliate | 0.9 | ✓ | ✓ | The document is explicitly titled 'AFFILIATE AGREEMENT' and establishes a cooperative commercial relationship between Link Plus Corporation and Axiometric, LLC for joint developme… |
+| d507 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'NETWORK AFFILIATE AGREEMENT' and follows a standard formal contract structure with recitals, detailed definitions, mutual covenants, IP licenses… |
+| d508 | contract | affiliate | affiliate | 0.9 | ✓ | ✓ | The document is explicitly titled 'MARKETING AFFILIATE AGREEMENT' and functions as a formal bilateral contract. Operative clauses grant the Marketing Affiliate the right to market… |
+| d509 | contract | affiliate | affiliate | 0.95 | ✓ | ✓ | The document is explicitly titled 'CHASE AFFILIATE AGREEMENT' and contains standard affiliate program provisions, including enrollment criteria, referral fee structures, link plac… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+
+### Subtype classification accuracy by class
+
+| Subtype | Correct | Correct (equiv) | Total | Accuracy | Accuracy (equiv) |
+|---|---|---|---|---|---|
+| affiliate | 10 | 10 | 10 | 1 | 1 |
+| agency | 12 | 12 | 13 | 0.9231 | 0.9231 |
+| co_branding | 21 | 21 | 22 | 0.9545 | 0.9545 |
+| collaboration | 25 | 25 | 26 | 0.9615 | 0.9615 |
+| consulting | 11 | 11 | 11 | 1 | 1 |
+| development | 26 | 26 | 28 | 0.9286 | 0.9286 |
+| distributor | 31 | 31 | 32 | 0.9688 | 0.9688 |
+| endorsement | 24 | 24 | 24 | 1 | 1 |
+| franchise | 14 | 14 | 15 | 0.9333 | 0.9333 |
+| hosting | 12 | 12 | 20 | 0.6 | 0.6 |
+| ip | 17 | 17 | 17 | 1 | 1 |
+| joint_venture | 10 | 10 | 23 | 0.4348 | 0.4348 |
+| license | 30 | 31 | 33 | 0.9091 | 0.9394 |
+| maintenance | 17 | 24 | 34 | 0.5 | 0.7059 |
+| manufacturing | 16 | 16 | 17 | 0.9412 | 0.9412 |
+| marketing | 7 | 7 | 17 | 0.4118 | 0.4118 |
+| non_compete_no_solicit | 3 | 3 | 3 | 1 | 1 |
+| outsourcing | 15 | 15 | 18 | 0.8333 | 0.8333 |
+| promotion | 10 | 10 | 12 | 0.8333 | 0.8333 |
+| reseller | 11 | 11 | 12 | 0.9167 | 0.9167 |
+| service | 23 | 23 | 28 | 0.8214 | 0.8214 |
+| sponsorship | 30 | 30 | 31 | 0.9677 | 0.9677 |
+| strategic_alliance | 32 | 32 | 32 | 1 | 1 |
+| supply | 17 | 17 | 18 | 0.9444 | 0.9444 |
+| transportation | 13 | 13 | 13 | 1 | 1 |
+
+### Failed classification insights
+
+The model's own reasoning on every failed row — the evidence it cited for the wrong family, and the failure mode that explains WHY it missed:
+
+| Failure mode | Count |
+|---|---|
+| equivalent_family | 8 |
+| family_confusion | 40 |
+| function_over_form | 8 |
+| other_fallback | 16 |
+
+**1. Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT** — expected `marketing` vs predicted `agency` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is explicitly titled an 'Exclusive Agency and Marketing Agreement.' Operative provisions (Article 2) appoint Scotts as Monsanto's exclusive agent to perform marketing, sales, warehousing, and distribution services on Monsanto's behalf, with compensation structured as a commission rather than a purchase/resale margin. The principal-agent framework, service obligations, steering committee governance, and commission-based pay model strongly align with an agency agreement.
+
+**2. MetLife, Inc. - Remarketing Agreement** — expected `marketing` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is explicitly titled 'REMARKETING AGREEMENT' and follows a standard contract structure with sections for appointment of agents, representations and warranties, covenants, indemnification, termination, and governing law. It governs the remarketing of corporate senior component debentures, a specialized financial transaction that does not align with the standard commercial families listed (e.g., distribution, license, service, agency). Thus, 'other' is the correct subtype. High confidence based on the explicit title and conventional contractual framework.
+
+**3. LECLANCHÉ S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT** — expected `marketing` vs predicted `development` (contract, conf 0.8) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'JOINT DEVELOPMENT AND MARKETING AGREEMENT' establishing obligations for market evaluation, product/service development, and commercial promotion. While it contains substantial marketing and sales setup provisions, the operative clauses include development machinery such as a joint steering team, a defined Phase 1 market entry plan, and an IP license granted specifically for the 'design and development of product(s).' Per Rule 10, this triggers the development preference for the hybrid title. Confidence is moderated to 0.80 due to the equal weight given to marketing and market-entry activities alongside development.
+
+**4. Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement** — expected `manufacturing` vs predicted `development` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'Master Development and Manufacturing Agreement' and operates as a formal contract between Magenta Therapeutics and Bachem Americas. Operative clauses contain heavy development machinery, including definitions for 'Development Work' and 'Development Specifications,' references to clinical trials and IND filings, project plans with timelines/milestones, and specific IP assignment provisions for 'Magenta Developed Intellectual Property.' Per the development preference rule, this hybrid agreement is classified under the development family.
+
+**5. ZONDWINDSYSTEMPARTNERSLTDSERIES85-B_04_03_2006-EX-10-MANAGEMENT AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `service` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'First Amendment to Sagebrush Management and Maintenance Agreement' and follows a standard contract format with recitals, operative amendment clauses (extending term, adding curtailment provisions), and multi-party signature blocks. It constitutes a binding modification to an existing management arrangement, which falls under general professional/support services. No competing document types are present.
+
+**6. VARIABLESEPARATEACCOUNT_04_30_2014-EX-13.C-UNCONDITIONAL CAPITAL MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `other` (contract, conf 0.92) — mode: `other_fallback`
+
+> The document is explicitly titled an 'Amended and Restated Unconditional Capital Maintenance Agreement' and contains standard contractual structure including recitals, mutual covenants, numbered operative clauses (capital contributions, timing, funding mechanics, termination, governing law), and execution blocks. It clearly qualifies as a contract. Because it governs a parent-subsidiary capital maintenance obligation for insurance regulatory compliance rather than a standard commercial transaction (e.g., licensing, distribution, or professional services), it does not fit any of the predefined contract families and is correctly assigned to 'other'.
+
+**7. TELKOMSALTD_01_30_2003-EX-10-LICENCE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'LICENCE AND MAINTENANCE AGREEMENT' and its operative clauses primarily establish a software license grant (Clause 3), along with standard IP ownership, usage restrictions, warranty, indemnity, and maintenance fee provisions. The core substantive machinery aligns definitively with a software license agreement.
+
+**8. TELEGLOBEINTERNATIONALHOLDINGSLTD_03_29_2004-EX-10.10-CONSTRUCTION AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `collaboration` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal multi-party agreement establishing a consortium to jointly finance, construct, and operate a telecommunications network. Key operative clauses establish a shared Management Committee with defined voting interests, proportional allocation of capital and O&M costs, joint ownership of network segments, and collaborative decision-making mechanisms. This peer-to-peer governance and resource-sharing structure aligns substantively with a collaboration/joint venture agreement rather than a standard vendor-client service, maintenance, or supply contract.
+
+**9. SUMMAFOURINC_06_19_1998-EX-10.3-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and contains a clear grant of license in Section 2.2 ('D2 hereby grants LICENSEE a perpetual non-exclusive, worldwide license...'). The operative clauses focus on intellectual property rights, runtime/development license fees, source code access conditions, and end-user licensing requirements. While it includes maintenance and support provisions (Article 6), these are ancillary to the primary software licensing framework, firmly placing it in the 'license' family.
+
+**10. STARTECGLOBALCOMMUNICATIONSCORP_11_16_1998-EX-10.30-CONSTRUCTION AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `joint_venture` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal multi-party agreement titled 'Construction and Maintenance Agreement' for the TAT-14 submarine cable network. Its operative clauses establish shared ownership interests, voting rights, a joint Managing Group and General Committee, collective procurement, and pro-rata cost-sharing mechanisms. These features strongly align with the substantive machinery of a joint venture or project collaboration, despite a standard contractual disclaimer in Section 26 regarding partnership status.
+
+**11. SPARKLINGSPRINGWATERHOLDINGSLTD_07_03_2002-EX-10.13-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and centers on a clear 'GRANT OF LICENSE' (Section 2) for software and documentation. It contains standard licensing machinery including restrictions on use, IP ownership/indemnity, source code escrow, and acceptance testing. Although maintenance and support services are included, the primary substantive obligation is the licensing of software rights, firmly placing it in the license category.
+
+**12. SFGFINANCIALCORP_05_12_2009-EX-10.1-SOFTWARE LICENSE AND MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'SOFTWARE LICENSE AND MAINTENANCE AGREEMENT' and its operative clauses center on granting a non-exclusive license to use proprietary trading software, defining intellectual property rights, setting usage restrictions, and establishing license fees. Although it includes a technical support/maintenance article, the core obligations and structure are characteristic of a software license agreement.
+
+**13. WELLSFARGOMORTGAGEBACKEDSECURITIES2006-6TRUST_05_11_2006-EX-10.3-Yield Maintenance Agreement** — expected `maintenance` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is a formal ISDA Confirmation for an interest rate cap transaction, detailing financial terms, payment obligations, governing law, tax representations, and standard derivative market provisions. It functions as a binding bilateral agreement between UBS AG and Wells Fargo Bank. Because it is a specialized financial/derivative contract that does not align with any of the specified commercial families (e.g., distribution, licensing, employment, or general services), 'other' is the precise subtype. The format, recitals, and operative clauses unequivocally establish it as a contract.
+
+**14. REGANHOLDINGCORP_03_31_2008-EX-10-LICENSE AND HOSTING AGREEMENT** — expected `hosting` vs predicted `license` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal bilateral agreement titled 'LICENSE AND HOSTING AGREEMENT' containing standard contract recitals, definitions, and operative clauses. Article II explicitly grants a worldwide, nonexclusive license to use software tools, documentation, and source code, establishing intellectual property rights as the core transaction. Article III supplements this with hosting and support services. Due to the combined software licensing and hosting obligations, the classification leans toward 'license' based on the primary grant of IP rights, with reduced confidence reflecting the hybrid nature.
+
+**15. HEALTHGATEDATACORP_11_24_1999-EX-10.1-HOSTING AND MANAGEMENT AGREEMENT - Escrow Agreement** — expected `hosting` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is a formal Escrow Agreement between an Owner, a Licensee, and a third-party escrow agent (NCC). It outlines operative clauses for depositing, verifying, and conditionally releasing software source code/materials upon specified trigger events, along with fee structures, confidentiality obligations, and dispute resolution mechanisms. This constitutes a binding contract. Since 'escrow' is not among the predefined contract families in the taxonomy, it correctly falls under 'other'.
+
+**16. HEALTHGATEDATACORP_11_24_1999-EX-10.1-HOSTING AND MANAGEMENT AGREEMENT (1)** — expected `hosting` vs predicted `development` (contract, conf 0.92) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Electronic Journal Soft Ware Development, Hosting and Management Agreement.' Its operative clauses heavily feature development machinery, including a defined Development Timetable, System Completion Date, Milestones and Deliverables, Project Management protocols, acceptance testing procedures, and source code escrow. Under the development preference rule, these substantive obligations clearly categorize it as a Development Agreement over the accompanying hosting or service components.
+
+**17. OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2** — expected `agency` vs predicted `other` (compliance_filing, conf 0.85) — mode: `function_over_form`
+
+> The document is an 'Agents' Certificate' explicitly titled for compliance with U.S. Securities Laws. It contains representations and certifications regarding broker-dealer registration, accredited investor status, and adherence to Regulation D (Rule 506(b)). While it references an underlying Agency Agreement, its substantive purpose is to certify regulatory compliance for a securities offering, making compliance_filing the strongest match among the available categories.
+
+**18. HEMISPHERX - Sales, Marketing, Distribution, and Supply Agreement** — expected `supply` vs predicted `distributor` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Sales, Marketing, Distribution, and Supply Agreement' governing the territorial sale and resale of a pharmaceutical product. Operative clauses grant exclusive rights to sell, market, and distribute the product in the GCC region, outline purchase orders, transfer pricing, sales forecasts, and marketing budgets for end-user resale. Although it includes license and supply provisions, the core commercial obligations center on distribution and resale rights, making 'distributor' the best fit. Confidence is moderated due to the hybrid nature of the agreement.
+
+**19. UNITEDNATIONALBANCORP_03_03_1999-EX-99-Outsourcing Agreement with the BISYS Group, Inc.** — expected `outsourcing` vs predicted `other` (correspondence, conf 0.9) — mode: `function_over_form`
+
+> The document is a corporate press release announcing the execution of an agreement. It lacks formal operative clauses, recitals, consideration, or signature blocks characteristic of a binding contract instrument. Its structure and content function as a public notice/corporate communication, aligning with the correspondence category.
+
+**20. NICELTD_06_26_2003-EX-4.5-OUTSOURCING AGREEMENT** — expected `outsourcing` vs predicted `manufacturing` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MANUFACTURING OUTSOURCING AGREEMENT' and follows a standard contract format with recitals, definitions, and detailed operative clauses. The substantive obligations focus on the production, assembly, testing, component purchasing, and delivery of physical goods, which aligns directly with the manufacturing agreement family.
+
+**21. Zounds Hearing, Inc. - MANUFACTURING DESIGN MARKETING AGREEMENT** — expected `marketing` vs predicted `manufacturing` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MANUFACTURING, DESIGN AND MARKETING AGREEMENT' and its operative clauses predominantly govern the manufacturing of hearing aids, including purchase orders, product costing, tooling/NRE charges, delivery terms, warranties, and FDA regulatory compliance. While design and joint marketing are mentioned, the core obligations and machinery revolve around manufacturing services and production, firmly placing it in the manufacturing family.
+
+**22. Reinsurance Group of America, Incorporated - A_R REMARKETING  AGREEMENT** — expected `marketing` vs predicted `agency` (contract, conf 0.8) — mode: `family_confusion`
+
+> The document is titled 'Amended and Restated Remarketing Agreement' and explicitly appoints Barclays Capital Inc. as the exclusive 'Remarketing Agent' to market and distribute securities on behalf of the issuers. Its operative clauses detail the agent's appointment, duties, compensation, indemnification, and termination, which substantively align with an agency agreement framework, albeit within a specialized securities/financial context.
+
+**23. PACIRA PHARMACEUTICALS, INC. - A_R STRATEGIC LICENSING, DISTRIBUTION AND MARKETING AGREEMENT** — expected `marketing` vs predicted `distributor` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Amended and Restated Strategic Licensing, Distribution and Marketing Agreement.' Operative clauses (Sections 2.1, 2.2, 4.17) explicitly appoint EKR as the exclusive distributor, grant 'Distribution Rights,' mandate that EKR purchase all product requirements from PPI, and establish royalty structures based on net sales. While the title and certain sections cover licensing and marketing/promotion, the substantive commercial machinery and primary obligations center on distribution and resale rights. Following the hybrid agreement guidance, 'distributor' is selected as the best fit, with 'marketing' noted as the runner-up family; confidence is capped at 0.85 per rule 11.
+
+**24. NUVEEN - REMARKETING AGREEMENT** — expected `marketing` vs predicted `agency` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal 'REMARKETING AGREEMENT' that explicitly appoints a third-party entity as the 'Remarketing Agent' to perform specific operational and financial duties on behalf of the Fund (e.g., calculating dividend rates, remarketing shares, handling tenders). The extensive use of agency terminology ('Appointment and Obligations of the Remarketing Agent,' acting as agent for beneficial owners, indemnification, and resignation/removal procedures) substantively aligns with an agency agreement framework. While specialized to municipal fund securities, its core structure and obligations fit the agency family best among the available options.
+
+**25. STWRESOURCESHOLDINGCORP_08_06_2014-EX-10.1-COOPERATION AGREEMENT** — expected `collaboration` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Cooperation Agreement' but its substantive operative clauses focus entirely on the exploration, drilling, feasibility studies, and construction of water wells. These provisions contain clear development machinery (post-well studies, drilling/deepening obligations, construction standards, and milestone-based production options), which triggers the development preference rule. The classification leans toward development over collaboration/cooperation due to the heavy operational focus on well development and feasibility, though the title creates a slight hybrid signal.
+
+**26. HALITRON,INC_03_01_2005-EX-10.15-SPONSORSHIP AND DEVELOPMENT AGREEMENT** — expected `sponsorship` vs predicted `endorsement` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement granting a celebrity/golfer's name, likeness, and expertise for use in a software product, alongside exclusivity for competing titles, advertising approval rights, and royalty/equity compensation. These operative clauses are definitive characteristics of a celebrity endorsement deal. Although the title references 'Sponsorship and Development,' the substantive machinery centers entirely on product endorsement and publicity rights, making 'endorsement' the most accurate classification.
+
+**27. KUBIENT,INC_07_02_2020-EX-10.14-MASTER SERVICES AGREEMENT_Part2** — expected `service` vs predicted `marketing` (contract, conf 0.8) — mode: `family_confusion`
+
+> The document is an exhibit to a Master Services Agreement that substantively operates as an advertising revenue-sharing and consultation agreement. Operative clauses explicitly state Kubient will provide 'advertising and related business revenue consultation' to monetize the Customer's digital content, with compensation structured as a percentage-based revenue share from various ad inventory types (programmatic, video, native, etc.). While it contains prominent non-circumvention and non-solicitation covenants, the core commercial machinery and revenue model align directly with marketing/advertising services. Confidence is moderated slightly due to its format as an MSA exhibit and the inclusion of ancillary restrictive covenants.
+
+**28. FEDERATEDGOVERNMENTINCOMESECURITIESINC_04_28_2020-EX-99.SERV AGREE-SERVICES AGREEMENT_POWEROF** — expected `service` vs predicted `agency` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a Limited Power of Attorney that formally appoints one entity as the agent and attorney-in-fact for another, detailing the scope of authority, indemnification, liability limitations, and governing law. These operative provisions establish a principal-agent relationship, making 'agency' the best substantive fit among the available subtypes. Confidence is moderated slightly because the instrument follows a traditional POA format rather than a comprehensive commercial agency contract.
+
+**29. WHITESMOKE,INC_11_08_2011-EX-10.26-PROMOTION AND DISTRIBUTION AGREEMENT** — expected `promotion` vs predicted `distributor` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'Promotion and Distribution Agreement' and formally designates Whitesmoke Inc. as the 'Distributor.' The operative clauses predominantly govern distribution mechanics, including bundling rights, third-party distribution permissions, installation tracking/reporting, compliance guidelines for bundled software, and compensation tied directly to distribution metrics. These features align squarely with the distributor agreement family.
+
+**30. VerizonAbsLlc_20200123_8-K_EX-10.4_11952335_EX-10.4_Service Agreement** — expected `service` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is a formal 'Transfer and Servicing Agreement' governing an asset-backed securities (ABS) securitization transaction. It outlines the transfer of device payment plan receivables to a trust and establishes ongoing servicing, collection, and custodial obligations. While it contains extensive servicing provisions, its highly specialized financial/trust structure does not align with the standard commercial contract families listed (e.g., general service, agency, or supply), making 'other' the most accurate subtype classification.
+
+**31. IntegrityFunds_20200121_485BPOS_EX-99.E UNDR CONTR_11948727_EX-99.E UNDR CONTR_Service Agreement** — expected `service` vs predicted `distributor` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is explicitly titled 'DISTRIBUTION AND SERVICES AGREEMENT' and functions as a formal contract appointing a principal underwriter/distributor for the Fund's shares. Operative clauses detail distribution mechanics, including soliciting purchase orders, managing distribution expenses, setting sales commissions, and compensating the distributor based on share sales and NAV differentials. These substantive obligations firmly align with the distributor agreement family, overriding the SEC filing context per classification rules.
+
+**32. GpaqAcquisitionHoldingsInc_20200123_S-4A_EX-10.8_11951679_EX-10.8_Service Agreement** — expected `service` vs predicted `sponsorship` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'SPONSORSHIP AND SERVICES AGREEMENT' and its operative clauses center on granting sponsorship rights, advertising benefits, and branding usage in exchange for defined sponsorship fees and activation funds (Article 3). Although it includes service delivery and product supply components, the title explicitly names the sponsorship family, and the core commercial mechanism revolves around sponsorship rights and promotional activations, directly matching the sponsorship agreement subtype.
+
+**33. EhaveInc_20190515_20-F_EX-4.44_11678816_EX-4.44_License Agreement_ Reseller Agreement** — expected `reseller` vs predicted `license` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is explicitly titled a 'LICENSE AND RESELLER AGREEMENT' and its core operative clauses establish a software platform license grant, including rights to sub-license and use the solution (Section 2). While it contains substantial development and implementation machinery (Section 3) and reseller appointment terms, the primary legal relationship revolves around IP licensing and channel distribution. Following Rule 9's guidance to weigh operative clauses against the title, the license grant language and title ordering make 'license' the strongest fit. Hybrid signals from development/reseller provisions cap confidence at 0.85.
+
+**34. DovaPharmaceuticalsInc_20181108_10-Q_EX-10.2_11414857_EX-10.2_Promotion Agreement** — expected `promotion` vs predicted `marketing` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'CO-PROMOTION AGREEMENT' and its operative clauses grant Valeant the right to detail and promote Dova's pharmaceutical product, establish a Marketing Sub-Committee, and outline promotion fees and detailing metrics. These terms clearly define a marketing and promotion services arrangement, fitting the marketing subtype.
+
+**35. ImperialGardenResortInc_20161028_DRS (on F-1)_EX-10.13_9963189_EX-10.13_Outsourcing Agreement** — expected `outsourcing` vs predicted `consulting` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement between a resort developer and an architectural firm detailing planning, design, environmental assessment, and professional coordination services. It includes standard contractual provisions such as scope of work, fixed and percentage-based fees, staged payment terms, project timeline, party duties, and dispute resolution. Although titled 'Outsourcing Contract,' the substantive obligations revolve around professional advisory and design planning rather than business-process outsourcing, making 'consulting' the precise fit.
+
+**36. VertexEnergyInc_20200113_8-K_EX-10.1_11943624_EX-10.1_Marketing Agreement** — expected `marketing` vs predicted `supply` (contract, conf 0.92) — mode: `family_confusion`
+
+> The document is explicitly titled 'Joint Supply and Marketing Agreement' and centers on Vertex's obligation to source, produce, and sell a specific product to Bunker One, with Bunker One purchasing, blending, and reselling it. Operative clauses detail supply mechanics including FOB Incoterms pricing, inventory tracking, purchase commitments, and delivery terms. While it includes marketing coordination and profit-sharing structures, Section 10.1 explicitly disclaims a joint venture or partnership, confirming the substantive form is a commercial supply agreement. Per Rule 8, the title naming 'Supply' dictates the subtype assignment.
+
+**37. TodosMedicalLtd_20190328_20-F_EX-4.10_11587157_EX-4.10_Marketing Agreement_ Reseller Agreement** — expected `marketing` vs predicted `reseller` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'MARKETING AND RESELLER AGREEMENT' and its operative clauses grant the counterparty exclusive rights to market, distribute, and sell products within a defined territory. Standard reseller provisions are present throughout, including purchase orders, pricing, territorial restrictions, annual commercialization milestones, laboratory setup requirements, and post-sale support duties, firmly aligning it with the reseller agreement family.
+
+**38. AudibleInc_20001113_10-Q_EX-10.32_2599586_EX-10.32_Co-Branding Agreement_ Marketing Agreement_ Investment Dis…** — expected `marketing` vs predicted `co_branding` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is explicitly titled 'CO-BRANDING, MARKETING AND DISTRIBUTION AGREEMENT' and functions as a formal contract between Amazon and Audible. Operative clauses center on creating a jointly branded subsection on Amazon's website, cross-licensing trademarks and intellectual property for co-branded use, issuing joint press releases, running coordinated advertising campaigns, and sharing revenues via royalties. These mechanisms strongly match the co-branding family rather than pure distribution or standalone marketing services.
+
+**39. ArtaraTherapeuticsInc_20200110_8-K_EX-10.5_11943350_EX-10.5_License Agreement** — expected `license` vs predicted `development` (contract, conf 0.85) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is a formal agreement titled 'Sponsored Research and License Agreement' between a pharmaceutical company and a university. Its operative clauses detail a structured multi-phase clinical and regulatory development plan, milestone-based payments, royalty obligations, and IP/data licensing provisions. Per the hybrid agreement rules, the presence of explicit development machinery (project phases, FDA filing milestones, development funding) dictates classifying it as 'development', while the concurrent grant of data usage rights and dual-title naming make 'license' a strong runner-up, capping confidence at 0.85.
+
+**40. GALERATHERAPEUTICS,INC_02_14_2020-EX-99.A-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual mechanics: mutual promises ('hereby agree'), allocation of filing responsibilities, revocation terms, counterpart execution clause, and formal signature blocks. While it serves a regulatory purpose under the Securities Exchange Act, its substantive form is a binding multilateral agreement between private parties, placing it squarely in the contract class. It does not fit any of the defined commercial contract families, so 'other' is assigned.
+
+**41. Freecook_20180605_S-1_EX-10.3_11233807_EX-10.3_Hosting Agreement** — expected `hosting` vs predicted `development` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Website Design, Development and Hosting Agreement.' The operative clauses and Exhibit A focus heavily on design/development milestones, change orders, delivery timelines, and a multi-stage Scope of Work. Per Rule 10, the presence of development machinery (milestones, trial/delivery timelines, stage-based scope) dictates classifying it as a Development Agreement over the hosting or general service elements mentioned in the title.
+
+**42. PfHospitalityGroupInc_20150923_10-12G_EX-10.1_9266710_EX-10.1_Franchise Agreement3** — expected `franchise` vs predicted `non_compete_no_solicit` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'NON-DISCLOSURE AND NON-COMPETITION AGREEMENT' and contains operative clauses detailing confidentiality obligations, covenants not to compete, non-solicitation restrictions, injunctive relief, and severability. These provisions align directly with the restrictive-covenant family of agreements.
+
+**43. SEPARATEACCOUNTIIOFAGL_05_02_2011-EX-99.(J)(4)-UNCONDITIONAL CAPITAL MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is a formal bilateral agreement titled 'Unconditional Capital Maintenance Agreement' between a parent corporation and its wholly-owned subsidiary, detailing financial obligations to maintain minimum capital levels and declare dividends. While it is clearly a binding contract, its subject matter (intercompany capital support and regulatory capital maintenance) does not align with any of the specified commercial contract families (e.g., distribution, license, service, or maintenance of services). Thus, 'other' is the precise classification.
+
+**44. SECURIANFUNDSTRUST_05_01_2012-EX-99.28.H.9-NET INVESTMENT INCOME MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document follows a standard contract format with recitals, operative clauses, numbered sections, and signature blocks. It is a specialized investment fund agreement governing fee waivers and expense reimbursements by an investment adviser and underwriter to maintain net investment income at or above zero under the 1940 Act. Although titled a 'Maintenance Agreement,' its substance is financial/accounting maintenance rather than the technical or software maintenance/support services defined in the 'maintenance' subtype. It lacks the operative machinery of any other listed commercial family, making 'other' the precise fit.
+
+**45. PRIMEENERGYRESOURCESCORP_04_02_2007-EX-10.28-COMPLETION AND LIQUIDITY MAINTENANCE AGREEMENT** — expected `maintenance` vs predicted `other` (contract, conf 0.85) — mode: `other_fallback`
+
+> The document is a formal, signed agreement titled 'Completion and Liquidity Maintenance Agreement' with an effective date, governing law clause, and binding obligations between a parent company, its subsidiary, and a lending bank. Its operative clauses establish a funding warranty for project completion costs and require the parent to maintain specified liquidity levels to support a separate credit facility. Because it functions as a financial guarantee/credit support agreement rather than a standard commercial arrangement (e.g., license, distribution, service, or development), it does not align with any of the predefined contract families and is best classified as 'other'. The clear contractual format and enforceable terms justify a high confidence for the contract classification, while the specialized financial nature lowers subtype confidence slightly.
+
+**46. VIRGINGALACTICHOLDINGS,INC_04_08_2020-EX-99.1-JOINT FILING STATEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly titled and formatted as an SEC Schedule 13G Joint Filing Statement pursuant to Rule 13d-1(k). Its content consists of standard regulatory acknowledgment language regarding joint filing responsibilities and information accuracy, which aligns perfectly with the compliance_filing class. As this is a regulatory submission rather than a contractual agreement, contract_subtype is set to null.
+
+**47. TALLGRASSENERGY,LP_02_20_2020-EX-99.26-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual elements including mutual covenants, revocation terms, counterpart execution clauses, and multiple signature blocks. Its substantive form is a formal agreement between parties to coordinate SEC filings under the Exchange Act. As 'joint filing agreement' does not correspond to any of the specified contract family keys, it is classified under 'other'.
+
+**48. SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.9) — mode: `function_over_form`
+
+> The document is an exhibit to a Schedule 13G regulatory submission, explicitly citing SEC Rule 13d-1(k) and the Securities Exchange Act of 1934. Its sole substantive purpose is to authorize joint filing and amendments for a securities disclosure, lacking commercial contract machinery. This aligns directly with the compliance_filing category.
+
+**49. RMRGROUPINC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is an Exhibit 99.1 Joint Filing Agreement explicitly tied to SEC regulatory requirements (Schedule 13G/A, Securities Exchange Act of 1934, Rule 13d-1(k)). Its sole purpose is to coordinate the joint submission of a beneficial ownership filing, making it a regulatory compliance document rather than a commercial contract.
+
+**50. QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'EXHIBIT 99.1' and governs the joint filing of a Schedule 13G under SEC Rule 13d-1(k). Its sole purpose is procedural compliance with securities regulations, making it a standard regulatory submission exhibit rather than a substantive commercial contract.
+
+**51. PRECIGEN,INC_01_22_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly labeled 'Exhibit 99.1 JOINT FILING AGREEMENT' and contains standard SEC regulatory terminology such as 'Additional Reporting Person,' 'Designated Filer,' and 'Issuer and CUSIP.' Its format and content are characteristic of a regulatory submission exhibit attached to a Schedule 13D/G filing, making it a compliance filing rather than a commercial contract.
+
+**52. ONEMAINHOLDINGS,INC_02_20_2020-EX-99.D-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.8) — mode: `other_fallback`
+
+> The document is a multi-party 'JOINT FILING AGREEMENT' containing operative confirmation language and extensive signature blocks for various investment vehicles and their managers. Its sole purpose is to permit a joint Schedule 13D submission under SEC Rule 13d-1(k). While intrinsically linked to a regulatory submission, its substantive form is a formal agreement between parties rather than the regulatory filing itself. It does not fit any of the 25 specific commercial contract families, justifying the 'other' subtype.
+
+**53. NELNETINC_04_08_2020-EX-1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is explicitly titled 'JOINT FILING AGREEMENT' and contains clear operative clauses establishing mutual obligations between the undersigned parties to jointly prepare and file SEC Schedules 13G/13D. Its substantive form is a bilateral agreement rather than a standalone regulatory submission or corporate record. Because it addresses a specific SEC procedural mechanism and does not align with any of the 25 enumerated commercial contract families, 'other' is the appropriate subtype.
+
+**54. MFAFINANCIAL,INC_07_06_2020-EX-99.D-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual language, including an agreement 'by and among' the signatories, a counterparts execution clause, and multiple signature blocks. While it facilitates a regulatory obligation (jointly filing a Schedule 13D under Rule 13d-1(k)), its substantive form is a formal multi-party agreement rather than a regulatory submission or corporate record itself. It does not align with any of the specified commercial contract families, making 'other' the correct subtype.
+
+**55. MACY_S,INC_05_11_2020-EX-99.4-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (compliance_filing, conf 0.95) — mode: `function_over_form`
+
+> The document is explicitly structured as an SEC exhibit (Exhibit 99.4) governing the joint filing of Schedule 13D/13G statements pursuant to Rule 13d-1(k)(1) of the Securities Exchange Act of 1934. Its sole operative purpose is to satisfy a mandatory regulatory reporting obligation, placing it squarely within the compliance_filing category rather than a substantive commercial contract.
+
+**56. BLACKROCKMUNIHOLDINGSINVESTMENTQUALITYFUND_04_07_2020-EX-99.01-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.9) — mode: `other_fallback`
+
+> The document is explicitly titled 'JOINT FILING AGREEMENT' and contains standard contractual elements: mutual promises ('each party hereto hereby agrees'), an effective date, and signature blocks for two corporate entities. Its substantive form is a formal agreement governing the joint submission of SEC reports under the Exchange Act. Because it serves a procedural compliance function rather than fitting any of the 25 defined commercial agreement families, it is classified as 'other' within the contract category.
+
+**57. ATENTOSA_07_06_2020-EX-99.1-JOINT FILING AGREEMENT** — expected `joint_venture` vs predicted `other` (contract, conf 0.85) — mode: `other_fallback`
+
+> The document is titled 'JOINT FILING AGREEMENT' and contains clear operative language ('the undersigned hereby agree to the joint filing...') executed by multiple parties. Its substantive form is a formal agreement between entities, placing it squarely in the contract class. Although it references SEC Rule 13d-1(k)(1) and appears as Exhibit 99.1 to an SEC filing package, the document itself is a binding agreement rather than a regulatory submission or report. It does not align with any specific commercial contract family, warranting the 'other' subtype.
+
+**58. CORIOINC_07_20_2000-EX-10.5-LICENSE AND HOSTING AGREEMENT** — expected `hosting` vs predicted `license` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is explicitly titled 'LICENSE AND HOSTING AGREEMENT' and its operative clauses predominantly establish a software licensing framework. Section 2 details the grant of rights (Hosting, Internal Use, Demonstration, and Distribution Licenses), while subsequent sections cover standard IP license mechanics including IP warranties, infringement indemnification, source code escrow, restrictions on reverse engineering, and fee structures tied to license usage. Although it includes ancillary provisions for hosting infrastructure, maintenance/support, and joint marketing, the substantive core and primary obligations revolve around the licensing of proprietary software, making 'license' the most accurate subtype.
+
+**59. CHANGEPOINTCORP_03_08_2000-EX-10.6-LICENSE AND HOSTING AGREEMENT** — expected `hosting` vs predicted `license` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'LICENSE AND HOSTING AGREEMENT' and its operative clauses center on the grant of software intellectual property rights, including detailed provisions for reproduction, installation, sublicensing, and internal use licenses. Standard IP license machinery such as ownership retention, restrictions on reverse engineering, IP warranties, and infringement indemnification further confirm it as a License Agreement.
+
+**60. BEYONDCOMCORP_08_03_2000-EX-10.2-CO-HOSTING AGREEMENT** — expected `hosting` vs predicted `marketing` (contract, conf 0.8) — mode: `family_confusion`
+
+> The document is explicitly titled 'Co-Hosting Agreement' and functions as a formal contract. Its operative clauses primarily govern the placement of hot links on NAI's websites, marketing considerations, joint marketing programs, and associated co-hosting fees. While it includes a distribution addendum (Exhibit E), the dominant substantive obligations and commercial purpose revolve around web-based promotional placements and marketing activities, making 'marketing' the most accurate subtype.
+
+**61. AMERICASSHOPPINGMALLINC_12_10_1999-EX-10.2-SITE DEVELOPMENT AND HOSTING AGREEMENT** — expected `hosting` vs predicted `development` (contract, conf 0.85) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Site Development and Hosting Agreement' between two corporations. Operative clauses detail HDI's obligations to design, develop, implement, and launch a website within a strict 60-day milestone, with HDI bearing all development costs. Per the development preference rule, the presence of development machinery and milestones dictates classifying it as a development agreement. However, because the title and Sections 1.3/1.4 also impose significant hosting and maintenance obligations, it is a hybrid agreement; `hosting` is the runner-up family, capping confidence at 0.85 per Rule 11.
+
+**62. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement4** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Product License Schedule' and issued pursuant to a 'Software License, Customization and Maintenance Agreement.' Its operative clauses govern software licensing terms, source code delivery milestones, installation, warranty periods, and maintenance services. The primary substantive focus is the grant and administration of a software license, aligning directly with the license subtype per the explicit title and core obligations.
+
+**63. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement3** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is an addendum/schedule to a 'Software License, Customization and Maintenance Agreement' that formally incorporates terms for the provision and use of specific software ('Supplier Offer Placement System Software') between Cardlytics, Inc. and Bank of America. Its explicit title and operative language establishing software rights and usage squarely align with the license subtype, with no competing contract family signals.
+
+**64. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement2** — expected `maintenance` vs predicted `development` (contract, conf 0.9) — mode: `family_confusion`
+
+> The document is a 'Customization Schedule' governing software modification work. Operative clauses detail specification delivery, customization requirements, pricing (T&M or fixed), and installation timelines, which squarely align with the development family (product/software services development). Although attached to a broader license/maintenance agreement, this schedule's substantive obligations are purely developmental.
+
+**65. CardlyticsInc_20180112_S-1_EX-10.16_11002987_EX-10.16_Maintenance Agreement1** — expected `maintenance` vs predicted `license` (contract, conf 0.95) — mode: `equivalent_family` — RECOVERED by family equivalence
+
+> The document is explicitly titled 'Software License, Customization and Maintenance Agreement' and its primary operative provision is Section 2.0, which grants a nonexclusive, worldwide, irrevocable, perpetual license to install, use, execute, and copy the software. While it includes ancillary customization and maintenance schedules, the core transactional mechanism and governing framework revolve around the licensing of technology/IP, squarely fitting the 'license' subtype.
+
+**66. AtnInternationalInc_20191108_10-Q_EX-10.1_11878541_EX-10.1_Maintenance Agreement** — expected `maintenance` vs predicted `service` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is a formal agreement titled 'Network Build and Maintenance Agreement' between Commnet Wireless, LLC and AT&T Mobility LLC. It establishes the vendor's obligations to build, install, deploy, and maintain a radio access network, supported by detailed operational, payment, indemnity, and independent contractor clauses. The substantive focus on deploying infrastructure and providing ongoing technical support aligns with a general Service Agreement.
+
+**67. PlayboyEnterprisesInc_20090220_10-QA_EX-10.2_4091580_EX-10.2_Content License Agreement_ Marketing Agreement_ …** — expected `license` vs predicted `supply` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'SUPPLIER/SUBCONTRACTOR CONTRACT' and contains operative clauses governing the production, delivery, and sale of merchandise based on purchaser orders, including indemnification for workmanship defects, IP acknowledgment, and mold destruction. These terms align directly with a supply agreement framework.
+
+**68. LejuHoldingsLtd_20140121_DRS (on F-1)_EX-10.26_8473102_EX-10.26_Content License Agreement2** — expected `license` vs predicted `other` (contract, conf 0.95) — mode: `other_fallback`
+
+> The document is explicitly titled 'MUTUAL TERMINATION AGREEMENT' and contains standard operative provisions for mutually ending a prior Domain Name License Agreement. It does not establish ongoing commercial relationships or obligations characteristic of the specific contract families (e.g., license, service, supply), making 'other' the most accurate classification.
+
+**69. ScansourceInc_20190822_10-K_EX-10.38_11793958_EX-10.38_Distributor Agreement2** — expected `distributor` vs predicted `license` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'Software License Agreement' and its operative clauses center on granting a nonexclusive, nontransferable license to use software, alongside standard license-specific provisions such as usage limitations, upgrade/backup copy rules, intellectual property protections, term/termination, and software warranty/disclaimers. These features definitively align with the license contract family.
+
+**70. RevolutionMedicinesInc_20200117_S-1_EX-10.1_11948417_EX-10.1_Development Agreement** — expected `development` vs predicted `collaboration` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'COLLABORATIVE RESEARCH, DEVELOPMENT AND COMMERCIALIZATION AGREEMENT' and functions as a formal partnership between two pharmaceutical companies. Operative clauses establish joint governance bodies (JSC, JRDC, JCC), outline shared R&D planning and clinical trial oversight, define IP ownership for program inventions, and detail profit/loss sharing and co-promotion mechanisms. These features strongly align with the collaboration family, making the classification unambiguous.
+
+**71. ElPolloLocoHoldingsInc_20200306_10-K_EX-10.16_12041700_EX-10.16_Development Agreement** — expected `development` vs predicted `franchise` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'El Pollo Loco® Franchise Development Agreement' and operates as a formal agreement between a franchisor and a developer to establish multiple restaurant locations within a defined territory. Operative clauses heavily reference the franchise system, require execution of individual Franchise Agreements for each site, mandate payment of franchise fees and royalties, and incorporate the Franchise Disclosure Document, clearly aligning it with the franchise agreement family.
+
+**72. MusclepharmCorp_20170208_10-KA_EX-10.38_9893581_EX-10.38_Co-Branding Agreement** — expected `co_branding` vs predicted `endorsement` (contract, conf 0.95) — mode: `family_confusion`
+
+> The document is explicitly titled 'ENDORSEMENT LICENSING AND CO-BRANDING AGREEMENT' and contains standard operative clauses for a celebrity endorsement deal, including personal appearance obligations, advertising and right-of-publicity licensing, FTC-compliant endorsement guidelines, performance-based royalties/stock compensation, and exclusivity restrictions for competing dietary supplements. These provisions squarely align with the 'endorsement' contract subtype.
+
+---
+## pilot_langfuse_sorter_v5  (subtype_classification)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v5 |
+| Git commit | `2df190c` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts-full |
+| ground_truth | cuad_folder |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c9c0877f9509b632b11a165796981c62b8168bf88c372a4eed81ce80515fa85d |
+| n_samples | 5 |
+| sample_requested | 5 |
+| stratified | 0 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 4096 |
+| reasoning_effort | medium |
+| max_input_chars | 100000 |
+| max_concurrency | 4 |
+| bt_scores | none |
+| manifest | data/manifests/subtype_langfuse_pilot.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-mailroom-experiments · environment: llm-mailroom-experiments · base_url: https://us.cloud.langfuse.com · session_id: pilot_langfuse_sorter_v5 · trace_name: subtype_classification · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | — | — | — | — | — |
+
+### Scores
+
+**Scores — sorter**
+
+| Field | Score |
+|---|---|
+| confidence | 0.95 |
+| confusion_matrix | distributor: {'distributor': 2} · maintenance: {'maintenance': 1} · manufacturing: {'manufacturing': 1} · strategic_alliance: {'strategic_alliance': 1} |
+| equiv_recovered | — |
+| exact_match | 1 |
+| failure_insights | mode_counts: {} · n_failed: 0 · failures: [] |
+| per_subtype | distributor: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 2, 'equiv': 2, 'total': 2} · maintenance: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 1, 'equiv': 1, 'total': 1} · manufacturing: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 1, 'equiv': 1, 'total': 1} · strategic_alliance: {'accuracy': 1.0, 'accuracy_equiv': 1.0, 'correct': 1, 'equiv': 1, 'total': 1} |
+| subtype_accuracy | 1 |
+| subtype_accuracy_equiv | 1 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | expected subtype | doc_type ok | subtype ok | equiv ok | confidence | failure mode | error |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| d1 | ON2TECHNOLOGIES,INC_11_17_2006-EX-10.3-SUPPORT AND MAINTENANCE AGREEMENT | completed | contract | maintenance | maintenance | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d2 | NETGEAR,INC_04_21_2003-EX-10.16-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d3 | Antares Pharma, Inc. - Manufacturing Agreement | completed | contract | manufacturing | manufacturing | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d4 | NANOPHASETECHNOLOGIESCORP_11_01_2005-EX-99.1-DISTRIBUTOR AGREEMENT | completed | contract | distributor | distributor | ✓ | ✓ | ✓ | 0.95 | — | — |
+| d5 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | strategic_alliance | ✓ | ✓ | ✓ | 0.95 | — | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | distributor | maintenance | manufacturing | strategic_alliance |
+|---|---|---|---|---|
+| distributor | **2** | 0 | 0 | 0 |
+| maintenance | 0 | **1** | 0 | 0 |
+| manufacturing | 0 | 0 | **1** | 0 |
+| strategic_alliance | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPORT AND MAINTENANCE AGREEMENT' and its operative clauses focus on providing software support, resolving program errors, delivering transitio… |
+| d2 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses govern the purchase, resale, territory, orders, pricing, shipment, and distributor responsibili… |
+| d3 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and its operative clauses heavily focus on manufacturing services, cGMP compliance, batch records, quality control, ass… |
+| d4 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses establish an exclusive distribution relationship, granting ALFA AESAR the right to market, sell… |
+| d5 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative clauses establish a cooperative framework for investment banking business, including fee sharing… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+
+### Subtype classification accuracy by class
+
+| Subtype | Correct | Correct (equiv) | Total | Accuracy | Accuracy (equiv) |
+|---|---|---|---|---|---|
+| distributor | 2 | 2 | 2 | 1 | 1 |
+| maintenance | 1 | 1 | 1 | 1 | 1 |
+| manufacturing | 1 | 1 | 1 | 1 | 1 |
+| strategic_alliance | 1 | 1 | 1 | 1 | 1 |
+

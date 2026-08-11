@@ -24,7 +24,7 @@ from observability.field_scoring import warm_embedding_model
 
 warm_embedding_model(blocking=False)  # O-10: load embeddings off the document path
 
-from pipeline.bins import review_dir, failed_dir, get_base_dir
+from pipeline.bins import review_dir, failed_dir, get_base_dir, set_ingestion_paused, clear_ingestion_paused, is_ingestion_paused
 
 logger = structlog.get_logger(__name__)
 
@@ -78,9 +78,15 @@ class OpsMonitor:
                 findings=findings.get("findings", []),
             )
             if findings.get("recommended_action") == "pause_ingestion":
-                self._pause_file.parent.mkdir(parents=True, exist_ok=True)
-                self._pause_file.write_text("1")
-                logger.critical("ops_monitor_paused_ingestion")
+                # L-4/O-13: pause with actor+reason+TTL (auto-expires).
+                ok = set_ingestion_paused(
+                    actor="ops_monitor",
+                    reason="; ".join(findings.get("findings", [])[:3]) or "Boss recommended pause",
+                )
+                if ok:
+                    logger.critical("ops_monitor_paused_ingestion")
+                else:
+                    logger.error("ops_monitor_pause_write_failed")
 
     async def _gather_metrics(self) -> dict:
         metrics = {
@@ -140,6 +146,13 @@ class OpsMonitor:
     @property
     def is_paused(self) -> bool:
         return self._pause_file.exists()
+
+    @property
+    def pause_info(self) -> dict | None:
+        """Pause metadata (actor/reason/expiry) via the TTL-aware helper."""
+        from pipeline.bins import get_pause_info
+
+        return get_pause_info()
 
 
 async def run_ops_monitor(sweep_interval: int | None = None):
