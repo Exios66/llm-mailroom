@@ -22,6 +22,8 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 _configs_ensured: set[str] = set()
+_last_warmup_attempt: float = 0.0
+_WARMUP_RETRY_SECONDS = 600.0  # sticky-bounded retry (O-1): at most once per 10 min
 
 # Canonical scoring schema, mirrored as Langfuse score configs by
 # `ensure_score_configs()`. Keys: name, data_type, optional min/max/categories.
@@ -142,6 +144,41 @@ def ensure_score_configs() -> list[str]:
         logger.warning("score_config_creation_failed", exc_info=True)
     _configs_ensured.update(created)
     return created
+
+
+def warmup_score_configs(blocking: bool = False) -> None:
+    """Warm the score-config schema OFF the document path (O-1).
+
+    ``ensure_score_configs()`` previously ran inside the first per-document
+    run — a synchronous 29-call Langfuse storm that stalled every document
+    when Langfuse was down-but-hanging, and re-stormed on every document when
+    connection was refused (the cache stayed empty). This variant:
+      - never blocks the document path (background thread unless blocking),
+      - is sticky-bounded: at most one attempt per 10 minutes regardless of
+        outcome, so a dead backend cannot churn on every document,
+      - failure ⇒ skip: the document proceeds untraced rather than stalling.
+    """
+    import threading
+    import time
+
+    global _last_warmup_attempt
+    if _configs_ensured:
+        return
+    now = time.monotonic()
+    if now - _last_warmup_attempt < _WARMUP_RETRY_SECONDS:
+        return  # sticky backoff — last attempt too recent (success or failure)
+    _last_warmup_attempt = now
+
+    def _run():
+        try:
+            ensure_score_configs()
+        except Exception:
+            logger.warning("score_config_warmup_failed", exc_info=True)
+
+    if blocking:
+        _run()
+    else:
+        threading.Thread(target=_run, name="score-config-warmup", daemon=True).start()
 
 
 def score_trace(

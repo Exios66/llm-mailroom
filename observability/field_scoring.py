@@ -485,12 +485,44 @@ class _EmbeddingMatcher:
             return None
 
 
+def warm_embedding_model(blocking: bool = False) -> None:
+    """Load the embedding model OFF the document path (O-10).
+
+    The first grounded run that needs a name/free-text embedding used to
+    trigger a synchronous multi-minute SentenceTransformer download inside run
+    finalization — hanging the router thread behind the run deadline. This
+    kicks the load into a background thread at process start instead.
+
+    Failures are logged (previously silent — ``similarity`` swallowed every
+    exception and returned None); scoring simply keeps the string-only score.
+    """
+    import threading
+
+    if not embedding_enabled():
+        return
+
+    def _run():
+        try:
+            matcher = _EmbeddingMatcher.get()
+            matcher._load()
+            logger.info("embedding_model_loaded", model=get_embedding_model())
+        except Exception:
+            logger.warning("embedding_model_load_failed",
+                           model=get_embedding_model(), exc_info=True)
+
+    if blocking:
+        _run()
+    else:
+        threading.Thread(target=_run, name="embedding-model-warmup", daemon=True).start()
+
+
 def _get_embedding() -> "_EmbeddingMatcher | None":
     if not embedding_enabled():
         return None
     try:
         return _EmbeddingMatcher.get()
     except Exception:
+        logger.warning("embedding_matcher_unavailable", exc_info=True)
         return None
 
 
