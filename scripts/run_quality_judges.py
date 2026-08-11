@@ -127,7 +127,7 @@ def _raw_text_for(sample: dict) -> str:
         return ""
 
 
-def _ingest(sample: dict, verdict: dict) -> None:
+def _ingest(sample: dict, verdict: dict, run_id: str = "") -> None:
     from observability.langfuse_setup import _NoopLangfuse, get_langfuse_client
     from observability.scores import create_trace_score, ensure_score_configs, is_enabled
 
@@ -137,7 +137,13 @@ def _ingest(sample: dict, verdict: dict) -> None:
     if isinstance(client, _NoopLangfuse):
         return
     try:
-        trace_id = client.create_trace_id(seed=Path(sample["filename"]).stem)
+        # L-26: run-scoped judge seed — the deterministic filename-stem seed
+        # collided with the run's own trace id, so re-judging merged new
+        # context into the FIRST run's immutable trace (misattribution, broken
+        # before/after comparison). A judge run now gets its own trace id.
+        stem = Path(sample["filename"]).stem
+        seed = f"{stem}-judge-{run_id}" if run_id else f"{stem}-judge"
+        trace_id = client.create_trace_id(seed=seed)
     except Exception:
         logger.error("judge_trace_id_failed", filename=sample["filename"])
         return
@@ -329,11 +335,14 @@ def main() -> int:
         logger.info("real_judge_sample_filter", remaining=len(samples))
 
     results = []
+    judge_run_id = datetime.now(timezone.utc).isoformat().replace(":", "").replace("+", "").replace("-", "")[:20]
+    dimension_error_count = 0
     for s in samples:
         verdict = judge_one(s, mock_mode, judges)
         results.append(verdict)
         if verdict["status"] == "judged" and not mock_mode:
-            _ingest(s, verdict)
+            _ingest(s, verdict, run_id=judge_run_id)  # L-26: run-scoped judge trace seed
+        dimension_error_count += len(verdict.get("errors") or {})
 
     if not mock_mode:
         from observability.tracing import flush
@@ -348,11 +357,12 @@ def main() -> int:
     print_summary(stats)
 
     evaluation_run = {
-        "run_id": datetime.now(timezone.utc).isoformat(),
+        "run_id": judge_run_id,
         "mode": "mock" if mock_mode else "real",
         "judges": judges,
         "summary": stats,
         "results": results,
+        "dimension_errors": dimension_error_count,
     }
     evaluation = report.setdefault("evaluation", {})
     # Preserve every independent scoring iteration. `run` remains the latest
@@ -362,6 +372,12 @@ def main() -> int:
     args.report.write_text(json.dumps(report, indent=2))
     print(f"\nEvaluation report written to {args.report}")
 
+    # L-25: dimension errors used to be collected and ignored (exit 0 always).
+    # A judge that failed on every sample is a failed run — surface it.
+    if dimension_error_count:
+        print(f"\nWARNING: {dimension_error_count} judge dimension(s) failed — "
+              "see per-sample errors in the report.")
+        return 1
     return 0
 
 
