@@ -1,4 +1,5 @@
 import os
+import signal
 import time
 import threading
 import structlog
@@ -24,6 +25,8 @@ from .bins import (
     get_worker_id,
     claim_file,
     is_ingestion_paused,
+    list_stale_processing_files,
+    requeue_stale_processing,
 )
 from graph.build_graph import build_graph, run_pipeline
 
@@ -37,6 +40,10 @@ _active_files: set[str] = set()
 _active_lock = threading.Lock()
 
 TERMINAL_STAGES = ("archived", "failed", "review")
+
+# Stale-claim cutoff for startup reconciliation (L-1/A-18): claims older than
+# this are presumed orphaned by a crashed process and re-queued.
+STALE_CLAIM_MINUTES = int(os.environ.get("WATCHER_STALE_CLAIM_MINUTES", "60"))
 
 
 def _mark_active(name: str) -> bool:
@@ -150,6 +157,8 @@ class Watcher:
         ensure_dirs(inbox)
         logger.info("watcher_starting", inbox=str(inbox), worker_id=self.worker_id)
 
+        self._reconcile_stale_claims()
+
         for f in list_inbox_files():
             logger.info("existing_inbox_file", file=str(f))
             threading.Thread(
@@ -167,6 +176,17 @@ class Watcher:
         # appeared between watchdog events. Cheap and idempotent — already-
         # processed files are skipped by `_is_already_processed`.
         threading.Thread(target=self._rescan_loop, daemon=True).start()
+
+    def _reconcile_stale_claims(self) -> None:
+        """Re-queue processing/<worker_id>/ files orphaned by a crashed
+        process (L-1/A-18). Runs once at startup before the inbox scan."""
+        stale = list_stale_processing_files(stale_minutes=STALE_CLAIM_MINUTES)
+        for f in stale:
+            try:
+                requeue_stale_processing(f)
+                logger.warning("stale_claim_requeued", file=str(f))
+            except Exception:
+                logger.exception("stale_claim_requeue_failed", file=str(f))
 
     def _rescan_loop(self):
         import time as _time
@@ -215,10 +235,29 @@ class Watcher:
 
 
 if __name__ == "__main__":
+    import atexit
+
+    from observability.tracing import register_atexit_flush
+
     watcher = Watcher()
+    _shutdown = threading.Event()
+
+    def _signal_handler(signum, frame):
+        logger.info("watcher_signal_received", signal=signum)
+        _shutdown.set()
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+
     try:
         watcher.start()
-        while True:
+        register_atexit_flush()
+        while not _shutdown.is_set():
             time.sleep(1)
     except KeyboardInterrupt:
+        pass
+    finally:
         watcher.stop()
+        from observability.tracing import flush
+
+        flush()
