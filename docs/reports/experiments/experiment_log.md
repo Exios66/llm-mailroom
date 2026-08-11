@@ -6,7 +6,7 @@
 >
 > - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
 > - **Upstream path:** `reports/experiment_log.md`
-> - **Upstream commit:** `0769f32 Add scoring UI, trace view, and data fields (2026-08-10)`
+> - **Upstream commit:** `36cf070 SITE: render LegalBench suite runs (llm-mailroom/legalbench) in the experiment-log site + md index (2026-08-10)`
 > - **Synced into llm-mailroom:** 2026-08-10, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
 > - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
@@ -14,7 +14,7 @@
 >
 > ---
 
-_Generated from `reports/experiment_log.jsonl` on 2026-08-11T02:30:39.178428+00:00 — append-only, one section per run._
+_Generated from `reports/experiment_log.jsonl` on 2026-08-11T02:32:59.327581+00:00 — append-only, one section per run._
 
 ## Index
 
