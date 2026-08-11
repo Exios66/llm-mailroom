@@ -6,7 +6,7 @@
 >
 > - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
 > - **Upstream path:** `reports/experiment_log.md`
-> - **Upstream commit:** `36cf070 SITE: render LegalBench suite runs (llm-mailroom/legalbench) in the experiment-log site + md index (2026-08-10)`
+> - **Upstream commit:** `625f8a8 v0.13.0: chained extraction regression diagnosed + fixed (date scorer tiers, specialist v12, truncation auditability) (2026-08-10)`
 > - **Synced into llm-mailroom:** 2026-08-10, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
 > - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
@@ -14,7 +14,7 @@
 >
 > ---
 
-_Generated from `reports/experiment_log.jsonl` on 2026-08-11T02:32:59.327581+00:00 — append-only, one section per run._
+_Generated from `reports/experiment_log.jsonl` on 2026-08-11T03:01:24.970026+00:00 — append-only, one section per run._
 
 ## Index
 
@@ -52,6 +52,12 @@ _Generated from `reports/experiment_log.jsonl` on 2026-08-11T02:32:59.327581+00:
 | 30 | pilot_langfuse_extraction_v11_2 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v11 | extraction 0.8012 | 3 | 52957 |
 | 31 | pilot_langfuse_classification_v6_2 | sorter_classification | qwen/qwen3.7-flash | sorter_v6 | exact_match 1.0000 | 3 | 52876 |
 | 32 | qwen3.7-flash_sorter_v6_subtype_langfuse | subtype_classification | qwen/qwen3.7-flash | sorter_v6 | — | 509 | 6305231 |
+| 33 | diag_chained_v6_v11_subtype_surface50 | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v6 + contracts_specialist_v11 | sorter 1 / extractor 0.9460 | 5 | 214465 |
+| 34 | diag_chained_v6_v11_none_surface50 | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v6 + contracts_specialist_v11 | sorter 1 / extractor 0.9388 | 5 | 213163 |
+| 35 | diag_extraction_v11_surface50 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v11 | extraction 0.9399 | 5 | 106866 |
+| 36 | pilot_langfuse_chained_v6_v12 | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v6 + contracts_specialist_v12 | sorter 1 / extractor 0.8818 | 5 | 196202 |
+| 37 | pilot_langfuse_chained_v6_v12b | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v6 + contracts_specialist_v12 | sorter 1 / extractor 0.8882 | 5 | 195971 |
+| 38 | pilot_langfuse_extraction_v12 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v12 | extraction 0.8831 | 5 | 99172 |
 
 ---
 
@@ -11139,5 +11145,1309 @@ The model's own reasoning on every failed row — the evidence it cited for the 
 **35. CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement** — expected `affiliate` vs predicted `marketing` (contract, conf 0.95) — mode: `family_confusion`
 
 > The document is explicitly titled 'MARKETING AFFILIATE AGREEMENT' and its operative provisions focus on marketing obligations, sales quotas, marketing plans, advertising rights, and promotional activities. Although it includes resale and distribution mechanics, Rule 16 specifies that a marketing-titled agreement with a marketing/promotional core remains classified as marketing. The substantive form aligns directly with the marketing family.
+
+---
+
+## diag_chained_v6_v11_subtype_surface50  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-11T02:47:11.322116+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v6 · extractor: contracts_specialist_v11 |
+| Git commit | `3b74ef2` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 32768 |
+| reasoning_effort | none |
+| sorter_reasoning_effort | medium |
+| max_input_chars | 150000 |
+| max_concurrency | 4 |
+| bt_scores | none |
+| handoff_scope | subtype |
+| manifest | data/manifests/diag_surface50_subtype.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-mailroom-experiments · environment: llm-mailroom-experiments · base_url: https://us.cloud.langfuse.com · session_id: diag_chained_v6_v11_subtype_surface50 · trace_name: chained_sorter_extractor · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 100405 | 4596 | 105001 | 0.0 | 0 |
+| extractor | 100888 | 8576 | 109464 | 0.0 | 0 |
+| total | 201293 | 13172 | 214465 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.95 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.946 |
+| field_presence | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.913 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.9375 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.8854 | 1 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.967 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.94 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 |
+| key_obligations | 0.5 | 1 | 0.3125 | 0.7692 | 0.7 | 0.6563 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 1 | 1 | — | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.5 | 1 | 0.3125 | 0.7692 | 0.7 | 0.6563 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| key_obligations | 36 | 33 | 36 | 0 | 1 | 0.0 |
+| parties | 9 | 7 | 9 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 20 | 1 | 20 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 5 | 1 |
+| Audit Rights | key_obligations | 3 | 3 | 1 |
+| Cap On Liability | key_obligations | 3 | 3 | 1 |
+| Change Of Control | key_obligations | 2 | 2 | 1 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 2 | 1 | 0.5 |
+| Exclusivity | key_obligations | 4 | 4 | 1 |
+| Insurance | key_obligations | 3 | 2 | 0.6667 |
+| Ip Ownership Assignment | key_obligations | 2 | 2 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 2 | 1 |
+| License Grant | key_obligations | 4 | 4 | 1 |
+| Liquidated Damages | key_obligations | 2 | 2 | 1 |
+| Minimum Commitment | key_obligations | 3 | 2 | 0.6667 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 1 | 1 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 2 | 0.6667 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 2 | 0.6667 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 3 | 1 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 2 | 1 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.95 | ✓ | ✓ | The document is titled 'Distribution and Development Agreement' and contains extensive development machinery, including a detailed Development Plan (Exhibit C) with specific miles… |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and functions as a rider/amendment to an existing life insurance and annuity contract, updating the issuing entity, definitions, an… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT' and its operative clauses focus entirely on a joint pharmaceutical development program, including clinical trial execu… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses center on establishing a co-branded online portal, mutual licensing of trademarks and logos, jo… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses establish a joint framework for product formulation, development, and commercialization. Key … |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC and its Affiliates ("Sekisui"), Qualigen, Inc. and its Affiliates ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen hereby agrees that during the Exclusivity Period, Qualigen shall not, directly or indirectly, through its affiliates, agents, stockholders, officers, directors or otherwise solicit, initiate, participate in dis… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.95 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly known as Lutheran Brotherhood Variable Insurance Products Company, formerly Thrivent Life Insurance Company) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If the solvency of the Society becomes impaired, you may be required to make an extra payment. The Board of Directors will determine the amount of any extra payment. It will be based on each member's fair share of the d… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.45 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc. ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The term of this Agreement (the "Term") will commence on the Effective Date and will expire upon the earliest of (i) termination of this Agreement in accordance with Section 14.2, or (ii) the date of payment of the last… |
+| d3 | termination_clauses | Either Party may terminate this Agreement immediately in the event of a material breach of this Agreement by the other Party provided that the breaching Party has received written notice from the non-breaching Party of … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | Without the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreemen… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | In the event of a material breach of this Agreement by either party, the non-breaching party may terminate this Agreement if such breach is not cured within thirty (30) days from receipt of written notice of such breach… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | During the Term, (a) Women.com will not buy, sell, display, distribute advertising from (including, but not limited to, banner ads, buttons, badges, text links, hyperlinks or editorial mentions) or otherwise promote a C… |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ( "CAPSUGEL" ), Cardax, Inc. ( "CARDAX" ) |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Neither Party may assign this Agreement without the prior written consent of the other Party; provided, however that either Party may assign in connection with a merger or sale of all or substantially all of its stock o… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.75 |
+
+---
+
+## diag_chained_v6_v11_none_surface50  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-11T02:48:03.688838+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v6 · extractor: contracts_specialist_v11 |
+| Git commit | `3b74ef2` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 32768 |
+| reasoning_effort | none |
+| sorter_reasoning_effort | medium |
+| max_input_chars | 150000 |
+| max_concurrency | 4 |
+| bt_scores | none |
+| handoff_scope | none |
+| manifest | data/manifests/diag_surface50_none.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-mailroom-experiments · environment: llm-mailroom-experiments · base_url: https://us.cloud.langfuse.com · session_id: diag_chained_v6_v11_none_surface50 · trace_name: chained_sorter_extractor · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 100405 | 5766 | 106171 | 0.0 | 0 |
+| extractor | 99586 | 7406 | 106992 | 0.0 | 0 |
+| total | 199991 | 13172 | 213163 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.95 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.9388 |
+| field_presence | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.8755 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.9554 | 1 | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | contract | endorsement | ✓ | 0.95 | 1 | 1 | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | contract | development | ✓ | 0.95 | 0.8646 | 1 | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | contract | co_branding | ✓ | 0.95 | 0.9341 | 1 | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | contract | collaboration | ✓ | 0.95 | 0.94 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 |
+| key_obligations | 0.6429 | 1 | 0.1875 | 0.5385 | 0.7 | 0.6138 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 1 | 1 | — | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.6429 | 1 | 0.1875 | 0.5385 | 0.7 | 0.6138 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| key_obligations | 29 | 27 | 29 | 0 | 1 | 0.0 |
+| parties | 10 | 6 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 21 | 1 | 21 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 5 | 1 |
+| Audit Rights | key_obligations | 3 | 3 | 1 |
+| Cap On Liability | key_obligations | 3 | 2 | 0.6667 |
+| Change Of Control | key_obligations | 2 | 2 | 1 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 2 | 1 | 0.5 |
+| Exclusivity | key_obligations | 4 | 4 | 1 |
+| Insurance | key_obligations | 3 | 2 | 0.6667 |
+| Ip Ownership Assignment | key_obligations | 2 | 1 | 0.5 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 2 | 1 | 0.5 |
+| License Grant | key_obligations | 4 | 4 | 1 |
+| Liquidated Damages | key_obligations | 2 | 2 | 1 |
+| Minimum Commitment | key_obligations | 3 | 2 | 0.6667 |
+| Most Favored Nation | key_obligations | 0 | 0 | — |
+| No-Solicit Of Customers | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 1 | 1 |
+| Non-Compete | key_obligations | 2 | 1 | 0.5 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 3 | 3 | 1 |
+| Price Restrictions | key_obligations | 1 | 1 | 1 |
+| Revenue/Profit Sharing | key_obligations | 3 | 2 | 0.6667 |
+| Rofr/Rofo/Rofn | key_obligations | 3 | 3 | 1 |
+| Termination For Convenience | termination_clauses | 1 | 1 | 1 |
+| Third Party Beneficiary | key_obligations | 0 | 0 | — |
+| Uncapped Liability | key_obligations | 2 | 1 | 0.5 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 0 | 0 | — |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | co_branding | collaboration | development | endorsement |
+|---|---|---|---|---|
+| co_branding | **1** | 0 | 0 | 0 |
+| collaboration | 0 | **1** | 0 | 0 |
+| development | 0 | 0 | **2** | 0 |
+| endorsement | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | development | development | 0.95 | ✓ | ✓ | The document is titled 'Distribution and Development Agreement' and contains extensive development machinery: an attached Development Plan with specific milestones, milestone-trig… |
+| d2 | contract | endorsement | endorsement | 0.95 | ✓ | ✓ | The document is explicitly titled 'ENDORSEMENT' and operates as an amendment rider to an existing insurance/annuity contract, updating corporate names, solvency provisions, divide… |
+| d3 | contract | development | development | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-DEVELOPMENT AGREEMENT' and its operative clauses center on joint clinical trial execution, a Joint Development Committee (JDC), a formal Deve… |
+| d4 | contract | co_branding | co_branding | 0.95 | ✓ | ✓ | The document is explicitly titled 'CO-BRANDING AGREEMENT' and its operative clauses focus on establishing a mutually branded web portal ('Diet Center'), granting reciprocal tradem… |
+| d5 | contract | collaboration | collaboration | 0.95 | ✓ | ✓ | The document is explicitly titled 'COLLABORATION AGREEMENT' and its operative clauses establish a joint governance structure (Joint Project Team), a jointly administered Developme… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen hereby agrees that during the Exclusivity Period, Qualigen shall not, directly or indirectly, through its affiliates, agents, stockholders, officers, directors or otherwise solicit, initiate, participate in dis… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.98 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company), the Society |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If the solvency of the Society becomes impaired, you may be required to make an extra payment. The Board of Directors will determine the amount of any extra payment. It will be based on each member's fair share of the d… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc. ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The term of this Agreement (the "Term") will commence on the Effective Date and will expire upon the earliest of (i) termination of this Agreement in accordance with Section 14.2, or (ii) the date of payment of the last… |
+| d3 | termination_clauses | Either Party may terminate this Agreement immediately in the event of a material breach of this Agreement by the other Party provided that the breaching Party has received written notice from the non-breaching Party of … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | Without the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreemen… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | During the Term, (a) Women.com will not buy, sell, display, distribute advertising from (including, but not limited to, banner ads, buttons, badges, text links, hyperlinks or editorial mentions) or otherwise promote a C… |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ( "CAPSUGEL" ), Cardax, Inc. ( "CARDAX" ) |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Neither Party may assign this Agreement without the prior written consent of the other Party; provided, however that either Party may assign in connection with a merger or sale of all or substantially all of its stock o… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.75 |
+
+---
+
+## diag_extraction_v11_surface50  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-11T02:48:39.285382+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v11 |
+| Git commit | `3b74ef2` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 150000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | none |
+| judge | ✗ |
+| manifest | data/manifests/diag_surface50_ext.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-mailroom-experiments · environment: llm-mailroom-experiments · base_url: https://us.cloud.langfuse.com · session_id: diag_extraction_v11_surface50 · trace_name: contract_entity_extraction · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 99425 | 7441 | 106866 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.9399 |
+| field_presence | 1 |
+| schema_valid | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.8755 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 0.6045 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.6045 |
+| parties | 1 |
+| termination_clauses | 1 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 1 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| document_name | 0.0 |
+| effective_date | 0.0 |
+| governing_law | 0.0 |
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| renewal_terms | 0.0 |
+| term_length | 0.0 |
+| termination_clauses | 0.0 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | 0.9196 | 1 | 1 | 0.7333 | — | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | 1 | 1 | 1 | 1 | — | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | 0.875 | 1 | 1 | 0.875 | — | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | 0.9451 | 1 | 1 | 0.7692 | key_obligations | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | 0.96 | 1 | 1 | 1 | key_obligations | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 |
+| key_obligations | 0.3571 | 1 | 0.25 | 0.6154 | 0.8 | 0.6045 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 1 | 1 | — | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.3571 | 1 | 0.25 | 0.6154 | 0.8 | 0.6045 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| key_obligations | 31 | 28 | 31 | 0 | 1 | 0.0 |
+| parties | 9 | 6 | 9 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 21 | 1 | 21 | 0 | 1 | 0.0 |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen hereby agrees that during the Exclusivity Period, Qualigen shall not, directly or indirectly, through its affiliates, agents, stockholders, officers, directors or otherwise solicit, initiate, participate in dis… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.98 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly known as Lutheran Brotherhood Variable Insurance Products Company, formerly Thrivent Life Insurance Company) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If the solvency of the Society becomes impaired, you may be required to make an extra payment. The Board of Directors will determine the amount of any extra payment. It will be based on each member's fair share of the d… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc. ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The term of this Agreement (the "Term") will commence on the Effective Date and will expire upon the earliest of (i) termination of this Agreement in accordance with Section 14.2, or (ii) the date of payment of the last… |
+| d3 | termination_clauses | Either Party may terminate this Agreement immediately in the event of a material breach of this Agreement by the other Party provided that the breaching Party has received written notice from the non-breaching Party of … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | Without the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreemen… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.95 |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d4 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Except as set forth in Section 1.2 [Women], eDiets will have sole responsibility for providing and maintaining at its own expense the Diet Center beneath the Gateway Page., eDiets hereby grants to Women.com, subject to … |
+| d4 | contract_value | $2,000,000 (Per Year)/$4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | document_name | COLLABORATION AGREEMENT |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Neither Party may assign this Agreement without the prior written consent of the other Party; provided, however that either Party may assign in connection with a merger or sale of all or substantially all of its stock o… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.95 |
+
+---
+
+## pilot_langfuse_chained_v6_v12  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-11T02:50:01.052622+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v6 · extractor: contracts_specialist_v12 |
+| Git commit | `3b74ef2` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts-full |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c9c0877f9509b632b11a165796981c62b8168bf88c372a4eed81ce80515fa85d |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 32768 |
+| reasoning_effort | none |
+| sorter_reasoning_effort | medium |
+| max_input_chars | 150000 |
+| max_concurrency | 4 |
+| bt_scores | none |
+| handoff_scope | subtype |
+| manifest | data/manifests/chained_v12_pilot.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-mailroom-experiments · environment: llm-mailroom-experiments · base_url: https://us.cloud.langfuse.com · session_id: pilot_langfuse_chained_v6_v12 · trace_name: chained_sorter_extractor · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 91772 | 4776 | 96548 | 0.0 | 0 |
+| extractor | 93532 | 6122 | 99654 | 0.0 | 0 |
+| total | 185304 | 10898 | 196202 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.956 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8818 |
+| field_presence | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.7926 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | ON2TECHNOLOGIES,INC_11_17_2006-EX-10.3-SUPPORT AND MAINTENANCE AGREEMENT | completed | contract | maintenance | ✓ | 0.95 | 0.899 | 1 | — |
+| d2 | NETGEAR,INC_04_21_2003-EX-10.16-DISTRIBUTOR AGREEMENT | completed | contract | distributor | ✓ | 0.95 | 0.8277 | 1 | — |
+| d3 | Antares Pharma, Inc. - Manufacturing Agreement | completed | contract | manufacturing | ✓ | 0.98 | 0.9286 | 1 | — |
+| d4 | NANOPHASETECHNOLOGIESCORP_11_01_2005-EX-99.1-DISTRIBUTOR AGREEMENT | completed | contract | distributor | ✓ | 0.95 | 0.8993 | 1 | — |
+| d5 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | ✓ | 0.95 | 0.8542 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 0.7273 | 0.33 | 1 | 1 | 0.0 | 0.6115 |
+| governing_law | 1 | 0.3913 | 1 | 1 | 1 | 0.8783 |
+| key_obligations | 0.6667 | 0.9 | 0.5714 | 0.5455 | 0.8333 | 0.7034 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | — | 1 | — | 0.6486 | 1 | 0.8829 |
+| term_length | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | — | 1 | — | 1 | 1 | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.6667 | 0.9 | 0.5714 | 0.5455 | 0.8333 | 0.7034 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | — | 1 | — | 1 | 1 | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 1 | 0 | 1 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 3 | 5 | 0 | 1 | 0.0 |
+| governing_law | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| key_obligations | 41 | 39 | 41 | 0 | 1 | 0.0 |
+| parties | 12 | 6 | 12 | 0 | 1 | 0.0 |
+| renewal_terms | 3 | 2 | 3 | 0 | 1 | 0.0 |
+| term_length | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| termination_clauses | 11 | 5 | 11 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 3 | 0.6 |
+| Audit Rights | key_obligations | 4 | 3 | 0.75 |
+| Cap On Liability | key_obligations | 4 | 3 | 0.75 |
+| Change Of Control | key_obligations | 1 | 0 | 0.0 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 0 | 0 | — |
+| Exclusivity | key_obligations | 3 | 3 | 1 |
+| Insurance | key_obligations | 3 | 3 | 1 |
+| Ip Ownership Assignment | key_obligations | 1 | 1 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 0 | 0 | — |
+| License Grant | key_obligations | 2 | 2 | 1 |
+| Liquidated Damages | key_obligations | 0 | 0 | — |
+| Minimum Commitment | key_obligations | 3 | 3 | 1 |
+| Most Favored Nation | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Customers | key_obligations | 2 | 2 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 1 | 1 |
+| Non-Compete | key_obligations | 1 | 1 | 1 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 1 | 1 | 1 |
+| Price Restrictions | key_obligations | 0 | 0 | — |
+| Revenue/Profit Sharing | key_obligations | 2 | 2 | 1 |
+| Rofr/Rofo/Rofn | key_obligations | 1 | 1 | 1 |
+| Source Code Escrow | key_obligations | 0 | 0 | — |
+| Termination For Convenience | termination_clauses | 3 | 3 | 1 |
+| Third Party Beneficiary | key_obligations | 1 | 1 | 1 |
+| Uncapped Liability | key_obligations | 2 | 1 | 0.5 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 2 | 0 | 0.0 |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | distributor | maintenance | manufacturing | strategic_alliance |
+|---|---|---|---|---|
+| distributor | **2** | 0 | 0 | 0 |
+| maintenance | 0 | **1** | 0 | 0 |
+| manufacturing | 0 | 0 | **1** | 0 |
+| strategic_alliance | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPORT AND MAINTENANCE AGREEMENT'. Its operative clauses focus on software error resolution, technical support, transition services, and delive… |
+| d2 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and its operative clauses center on the appointment of Ingram Micro as a distributor, purchase and resale obligations, te… |
+| d3 | contract | manufacturing | manufacturing | 0.98 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and its operative provisions govern the manufacturing of pharmaceutical devices and products, including cGMP compliance… |
+| d4 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor operative clauses, including the appointment of an exclusive distributor, purchase and … |
+| d5 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'Strategic Alliance Agreement' and its operative provisions establish a cooperative framework for investment banking business, including fee allo… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | SUPPORT AND MAINTENANCE AGREEMENT |
+| d1 | parties | On2 Technologies, Inc. ("On2"), Wildform, Inc. ("Wildform") |
+| d1 | effective_date | 2005-04-04 |
+| d1 | term_length | Except as otherwise set forth in Sections 9.2 and 9.3 or Exhibit A hereof, the term of this Agreement shall be eighteen (18) months ("Term"). |
+| d1 | termination_clauses | Either of Wildform or On2 may terminate this Agreement if the other Party is in material breach of this Agreement and fails to cure such breach within thirty (30) days after written notice., Either of On2 or Wildform ma… |
+| d1 | governing_law | This Agreement shall be governed by and construed in accordance with the laws of the State of New York, without giving effect to any choice of law or conflict of law provision or rule whether such provision or rule is t… |
+| d1 | key_obligations | Neither party will have the right to assign, pledge or transfer all or any part of this Agreement without the prior written consent of the other, and any such purported assignment, pledge or transfer by a party without … |
+| d1 | contract_value | $160,000 payable as follows: (a) $22,500 per month for each of the four (4) months following the Effective Date and $10,000 per month for each of the fifth and sixth months following the Effective Date with the first pa… |
+| d1 | renewal_terms | — |
+| d1 | confidence | 0.95 |
+| d2 | document_name | DISTRIBUTOR AGREEMENT |
+| d2 | parties | Ingram Micro ("Distributor"), NETGEAR, Inc. ("NETGEAR") |
+| d2 | effective_date | 1996-03-01 |
+| d2 | term_length | This Agreement will be in effect for one year from the Effective Date and will automatically renew for successive one (1) year periods unless terminated as provided below. |
+| d2 | termination_clauses | This Agreement may be canceled at any time without cause, by either party upon ninety (90) days written notice to the other party., Either party may terminate this Agreement immediately if (i) the other party becomes in… |
+| d2 | governing_law | is governed by the laws of the State of California except that body of law dealing with conflicts of law. |
+| d2 | key_obligations | During the initial one (1) year term of this Agreement. Distributor shall be the only distributor appointed by NETGEAR in the Territory, subject to Distributor conducting mutually agreed to marketing activities as descr… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | This Agreement will be in effect for one year from the Effective Date and will automatically renew for successive one (1) year periods unless terminated as provided below. |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Manufacturing Agreement |
+| d3 | parties | Antares Pharma, Inc. ("Antares"), AMAG Pharmaceuticals, Inc. ("AMAG") |
+| d3 | effective_date | 2018-03-20 |
+| d3 | term_length | Subject to early termination of this Agreement pursuant to Sections 7.2, 7.3 or 7.4, this Agreement shall become effective as of the Effective Date and shall continue until the expiration or earlier termination of the D… |
+| d3 | termination_clauses | This Agreement may be terminated in its entirety by AMAG, upon AMAG's prior written notice to Antares: (a) Subject to Sections 11.1 and 12.4, if Antares commits a material breach of this Agreement and such material brea… |
+| d3 | governing_law | This Agreement shall be governed by and interpreted in accordance with the substantive laws of the State of New York, without regard to its conflict of law provisions. |
+| d3 | key_obligations | Starting on the Effective Date, Antares or its Subcontractor shall provide the Manufacturing Services in order to manufacture Devices, Products, sample Products and Trainers exclusively for AMAG for the Territory, all i… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.95 |
+| d4 | document_name | DISTRIBUTOR AGREEMENT |
+| d4 | parties | JOHNSON MATTHEY CATALOG COMPANY, INC., a Delaware corporation, d/b/a ALFA AESAR, Nanophase Technologies Corporation |
+| d4 | effective_date | 2005-10-24 |
+| d4 | term_length | The initial term of this Agreement shall be for a period of five (5) years from the date first set forth above and shall thereafter automatically renew for additional two (2) year terms unless a party provides the other… |
+| d4 | termination_clauses | In the event of material breach, the non-breaching party shall give the breaching party sixty (60) days written notice of such breach. If substantial efforts to cure the breach are not taken within the sixty (60) day no… |
+| d4 | governing_law | This Agreement shall be governed by and interpreted under and in accordance with the laws of the State of Delaware without regard to principles of conflicts of laws. |
+| d4 | key_obligations | NTC hereby grants to ALFA AESAR, and its subsidiaries and affiliates, the exclusive right to market, sell and distribute Research Quantities of the Products within the Territory, ALFA AESAR hereby accepts such right and… |
+| d4 | contract_value | — |
+| d4 | renewal_terms | shall thereafter automatically renew for additional two (2) year terms unless a party provides the other party with notice of non-renewal no less than 6 months prior to the expiration of the initial term or any renewal … |
+| d4 | confidence | 0.95 |
+| d5 | document_name | STRATEGIC ALLIANCE AGREEMENT |
+| d5 | parties | SUMITOMO MITSUI BANKING CORPORATION ("SMBC"), SMBC NIKKO SECURITIES INC. ("Nikko"), MOELIS & COMPANY HOLDINGS LP ("Moelis Holdings"), MOELIS & COMPANY HOLDINGS GP LLC ("Moelis General Partner") |
+| d5 | effective_date | 2012-01-01 |
+| d5 | term_length | The initial term of this Agreement shall begin on the Effective Date and continue for three (3) years, subject to the prior termination rights provided below. |
+| d5 | termination_clauses | This Agreement may be terminated as follows: (a) effective immediately upon mutual agreement of each of the parties; (b) immediately by a non-breaching party, if either SMBC or Nikko, on the one hand, or Moelis Holdings… |
+| d5 | governing_law | This Agreement shall be governed by, and construed in accordance with, the laws of the State of New York without regard to principles of conflict of laws. |
+| d5 | key_obligations | Each of SMBC/Nikko and Moelis Holdings agrees not to solicit or hire any employee of the other party during the term of this Agreement and for a period of 12 months thereafter; provided, however, that the foregoing rest… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | At the end of such initial term, and any renewed term, as applicable, this Agreement shall automatically renew for an additional one (1) year term, unless a party provides written notice to the other parties at least si… |
+| d5 | confidence | 0.95 |
+
+---
+
+## pilot_langfuse_chained_v6_v12b  (chained_sorter_extractor)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-11T02:52:41.286634+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | sorter: sorter_v6 · extractor: contracts_specialist_v12 |
+| Git commit | `3b74ef2` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts-full |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c9c0877f9509b632b11a165796981c62b8168bf88c372a4eed81ce80515fa85d |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 32768 |
+| reasoning_effort | none |
+| sorter_reasoning_effort | medium |
+| max_input_chars | 150000 |
+| max_concurrency | 4 |
+| bt_scores | none |
+| handoff_scope | subtype |
+| manifest | data/manifests/chained_v12_pilot_b.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-mailroom-experiments · environment: llm-mailroom-experiments · base_url: https://us.cloud.langfuse.com · session_id: pilot_langfuse_chained_v6_v12b · trace_name: chained_sorter_extractor · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| sorter | 91772 | 4839 | 96611 | 0.0 | 0 |
+| extractor | 93532 | 5828 | 99360 | 0.0 | 0 |
+| total | 185304 | 10667 | 195971 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| exact_match | 1 |
+| subtype_accuracy | 1 |
+| confidence | 0.956 |
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8882 |
+| field_presence | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.7773 |
+
+
+### Per-document results
+
+| # | Document | Status | doc_type | subtype | subtype ok | confidence | extraction score | field presence | error |
+|---|---|---|---|---|---|---|---|---|---|
+| d1 | ON2TECHNOLOGIES,INC_11_17_2006-EX-10.3-SUPPORT AND MAINTENANCE AGREEMENT | completed | contract | maintenance | ✓ | 0.95 | 0.8903 | 1 | — |
+| d2 | NETGEAR,INC_04_21_2003-EX-10.16-DISTRIBUTOR AGREEMENT | completed | contract | distributor | ✓ | 0.98 | 0.8277 | 1 | — |
+| d3 | Antares Pharma, Inc. - Manufacturing Agreement | completed | contract | manufacturing | ✓ | 0.95 | 0.9286 | 1 | — |
+| d4 | NANOPHASETECHNOLOGIESCORP_11_01_2005-EX-99.1-DISTRIBUTOR AGREEMENT | completed | contract | distributor | ✓ | 0.95 | 0.8879 | 1 | — |
+| d5 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | contract | strategic_alliance | ✓ | 0.95 | 0.9067 | 1 | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 0.6749 | 0.33 | 1 | 1 | 0.67 | 0.735 |
+| governing_law | 1 | 0.3913 | 1 | 1 | 1 | 0.8783 |
+| key_obligations | 0.6667 | 0.9 | 0.5714 | 0.4545 | 0.5833 | 0.6352 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | — | 1 | — | 0.6486 | 1 | 0.8829 |
+| term_length | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | — | 1 | — | 1 | 1 | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.6667 | 0.9 | 0.5714 | 0.4545 | 0.5833 | 0.6352 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | — | 1 | — | 1 | 1 | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 1 | 0 | 1 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 4 | 5 | 0 | 1 | 0.0 |
+| governing_law | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| key_obligations | 34 | 32 | 34 | 0 | 1 | 0.0 |
+| parties | 12 | 7 | 12 | 0 | 1 | 0.0 |
+| renewal_terms | 3 | 2 | 3 | 0 | 1 | 0.0 |
+| term_length | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| termination_clauses | 11 | 5 | 11 | 0 | 1 | 0.0 |
+
+**CUAD category presence (aggregated over documents)**
+
+| category | field | expected (docs) | matched (docs) | presence |
+|---|---|---|---|---|
+| Affiliate License-Licensee | key_obligations | 0 | 0 | — |
+| Affiliate License-Licensor | key_obligations | 0 | 0 | — |
+| Anti-Assignment | key_obligations | 5 | 3 | 0.6 |
+| Audit Rights | key_obligations | 4 | 3 | 0.75 |
+| Cap On Liability | key_obligations | 4 | 3 | 0.75 |
+| Change Of Control | key_obligations | 1 | 0 | 0.0 |
+| Competitive Restriction Exception | key_obligations | 2 | 2 | 1 |
+| Covenant Not To Sue | key_obligations | 0 | 0 | — |
+| Exclusivity | key_obligations | 3 | 3 | 1 |
+| Insurance | key_obligations | 3 | 3 | 1 |
+| Ip Ownership Assignment | key_obligations | 1 | 1 | 1 |
+| Irrevocable Or Perpetual License | key_obligations | 0 | 0 | — |
+| Joint Ip Ownership | key_obligations | 0 | 0 | — |
+| License Grant | key_obligations | 2 | 2 | 1 |
+| Liquidated Damages | key_obligations | 0 | 0 | — |
+| Minimum Commitment | key_obligations | 3 | 3 | 1 |
+| Most Favored Nation | key_obligations | 1 | 1 | 1 |
+| No-Solicit Of Customers | key_obligations | 2 | 2 | 1 |
+| No-Solicit Of Employees | key_obligations | 1 | 1 | 1 |
+| Non-Compete | key_obligations | 1 | 1 | 1 |
+| Non-Disparagement | key_obligations | 0 | 0 | — |
+| Non-Transferable License | key_obligations | 1 | 1 | 1 |
+| Post-Termination Services | key_obligations | 1 | 1 | 1 |
+| Price Restrictions | key_obligations | 0 | 0 | — |
+| Revenue/Profit Sharing | key_obligations | 2 | 2 | 1 |
+| Rofr/Rofo/Rofn | key_obligations | 1 | 1 | 1 |
+| Source Code Escrow | key_obligations | 0 | 0 | — |
+| Termination For Convenience | termination_clauses | 3 | 3 | 1 |
+| Third Party Beneficiary | key_obligations | 1 | 0 | 0.0 |
+| Uncapped Liability | key_obligations | 2 | 1 | 0.5 |
+| Unlimited/All-You-Can-Eat-License | key_obligations | 0 | 0 | — |
+| Volume Restriction | key_obligations | 2 | 0 | 0.0 |
+
+**Sorter contract-subtype confusion matrix (expected x predicted)**
+
+| expected \ predicted | distributor | maintenance | manufacturing | strategic_alliance |
+|---|---|---|---|---|
+| distributor | **2** | 0 | 0 | 0 |
+| maintenance | 0 | **1** | 0 | 0 |
+| manufacturing | 0 | 0 | **1** | 0 |
+| strategic_alliance | 0 | 0 | 0 | **1** |
+
+### Sorter outputs
+
+| # | doc_type | subtype | expected subtype | confidence | doc_type ok | subtype ok | reasoning |
+|---|---|---|---|---|---|---|---|
+| d1 | contract | maintenance | maintenance | 0.95 | ✓ | ✓ | The document is explicitly titled 'SUPPORT AND MAINTENANCE AGREEMENT'. Its operative clauses detail transition services, program error resolution, technical support, and delivery … |
+| d2 | contract | distributor | distributor | 0.98 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains standard distributor machinery: appointment of a distributor to purchase products for resale within a define… |
+| d3 | contract | manufacturing | manufacturing | 0.95 | ✓ | ✓ | The document is explicitly titled 'Manufacturing Agreement' and its operative clauses center on manufacturing services, quality control, production specifications, supply commitme… |
+| d4 | contract | distributor | distributor | 0.95 | ✓ | ✓ | The document is explicitly titled 'DISTRIBUTOR AGREEMENT' and contains core distributor operative clauses: appointment of an exclusive distributor, obligations to purchase require… |
+| d5 | contract | strategic_alliance | strategic_alliance | 0.95 | ✓ | ✓ | The document is explicitly titled 'STRATEGIC ALLIANCE AGREEMENT' and its operative clauses establish a cooperative framework for investment banking business, fee allocation, joint… |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | SUPPORT AND MAINTENANCE AGREEMENT |
+| d1 | parties | On2 Technologies, Inc. ("On2"), Wildform, Inc. ("Wildform") |
+| d1 | effective_date | 2005-04-01 |
+| d1 | term_length | Except as otherwise set forth in Sections 9.2 and 9.3 or Exhibit A hereof, the term of this Agreement shall be eighteen (18) months ("Term"). |
+| d1 | termination_clauses | Either of Wildform or On2 may terminate this Agreement if the other Party is in material breach of this Agreement and fails to cure such breach within thirty (30) days after written notice., Either of On2 or Wildform ma… |
+| d1 | governing_law | This Agreement shall be governed by and construed in accordance with the laws of the State of New York, without giving effect to any choice of law or conflict of law provision or rule whether such provision or rule is t… |
+| d1 | key_obligations | Neither party will have the right to assign, pledge or transfer all or any part of this Agreement without the prior written consent of the other, and any such purported assignment, pledge or transfer by a party without … |
+| d1 | contract_value | $160,000 payable as follows: (a) $22,500 per month for each of the four (4) months following the Effective Date and $10,000 per month for each of the fifth and sixth months following the Effective Date with the first pa… |
+| d1 | renewal_terms | — |
+| d1 | confidence | 0.95 |
+| d2 | document_name | DISTRIBUTOR AGREEMENT |
+| d2 | parties | Ingram Micro ("Distributor"), NETGEAR, Inc. ("NETGEAR") |
+| d2 | effective_date | 1996-03-01 |
+| d2 | term_length | This Agreement will be in effect for one year from the Effective Date and will automatically renew for successive one (1) year periods unless terminated as provided below. |
+| d2 | termination_clauses | This Agreement may be canceled at any time without cause, by either party upon ninety (90) days written notice to the other party., Either party may terminate this Agreement immediately if (i) the other party becomes in… |
+| d2 | governing_law | is governed by the laws of the State of California except that body of law dealing with conflicts of law. |
+| d2 | key_obligations | During the initial one (1) year term of this Agreement. Distributor shall be the only distributor appointed by NETGEAR in the Territory, subject to Distributor conducting mutually agreed to marketing activities as descr… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | This Agreement will be in effect for one year from the Effective Date and will automatically renew for successive one (1) year periods unless terminated as provided below. |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Manufacturing Agreement |
+| d3 | parties | Antares Pharma, Inc. ("Antares"), AMAG Pharmaceuticals, Inc. ("AMAG") |
+| d3 | effective_date | 2018-03-20 |
+| d3 | term_length | Subject to early termination of this Agreement pursuant to Sections 7.2, 7.3 or 7.4, this Agreement shall become effective as of the Effective Date and shall continue until the expiration or earlier termination of the D… |
+| d3 | termination_clauses | This Agreement may be terminated in its entirety by AMAG, upon AMAG's prior written notice to Antares: (a) Subject to Sections 11.1 and 12.4, if Antares commits a material breach of this Agreement and such material brea… |
+| d3 | governing_law | This Agreement shall be governed by and interpreted in accordance with the substantive laws of the State of New York, without regard to its conflict of law provisions. |
+| d3 | key_obligations | Starting on the Effective Date, Antares or its Subcontractor shall provide the Manufacturing Services in order to manufacture Devices, Products, sample Products and Trainers exclusively for AMAG for the Territory, all i… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.95 |
+| d4 | document_name | DISTRIBUTOR AGREEMENT |
+| d4 | parties | JOHNSON MATTHEY CATALOG COMPANY, INC., a Delaware corporation, d/b/a ALFA AESAR ("ALFA AESAR"), Nanophase Technologies Corporation, a Delaware corporation ("NTC") |
+| d4 | effective_date | 2005-10-24 |
+| d4 | term_length | The initial term of this Agreement shall be for a period of five (5) years from the date first set forth above and shall thereafter automatically renew for additional two (2) year terms unless a party provides the other… |
+| d4 | termination_clauses | In the event of material breach, the non-breaching party shall give the breaching party sixty (60) days written notice of such breach. If substantial efforts to cure the breach are not taken within the sixty (60) day no… |
+| d4 | governing_law | This Agreement shall be governed by and interpreted under and in accordance with the laws of the State of Delaware without regard to principles of conflicts of laws. |
+| d4 | key_obligations | NTC hereby grants to ALFA AESAR, and its subsidiaries and affiliates, the exclusive right to market, sell and distribute Research Quantities of the Products within the Territory, ALFA AESAR hereby accepts such right and… |
+| d4 | contract_value | — |
+| d4 | renewal_terms | shall thereafter automatically renew for additional two (2) year terms unless a party provides the other party with notice of non-renewal no less than 6 months prior to the expiration of the initial term or any renewal … |
+| d4 | confidence | 0.95 |
+| d5 | document_name | STRATEGIC ALLIANCE AGREEMENT |
+| d5 | parties | SUMITOMO MITSUI BANKING CORPORATION ("SMBC"), SMBC NIKKO SECURITIES INC. ("Nikko"), MOELIS & COMPANY HOLDINGS LP ("Moelis Holdings"), MOELIS & COMPANY HOLDINGS GP LLC ("Moelis General Partner") |
+| d5 | effective_date | 2012-01-01 |
+| d5 | term_length | The initial term of this Agreement shall begin on the Effective Date and continue for three (3) years, subject to the prior termination rights provided below. |
+| d5 | termination_clauses | This Agreement may be terminated as follows: (a) effective immediately upon mutual agreement of each of the parties; (b) immediately by a non-breaching party, if either SMBC or Nikko, on the one hand, or Moelis Holdings… |
+| d5 | governing_law | This Agreement shall be governed by, and construed in accordance with, the laws of the State of New York without regard to principles of conflict of laws. |
+| d5 | key_obligations | Each of the parties acknowledge and agree that each other party may, and at the reasonable request from another party, shall, cause one or more of such party's affiliates to act on behalf of such party in the performanc… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | At the end of such initial term, and any renewed term, as applicable, this Agreement shall automatically renew for an additional one (1) year term, unless a party provides written notice to the other parties at least si… |
+| d5 | confidence | 0.95 |
+
+---
+
+## pilot_langfuse_extraction_v12  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-11T02:53:15.024257+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v12 |
+| Git commit | `3b74ef2` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts-full |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c9c0877f9509b632b11a165796981c62b8168bf88c372a4eed81ce80515fa85d |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 150000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | none |
+| judge | ✗ |
+| manifest | data/manifests/extraction_v12_pilot.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-mailroom-experiments · environment: llm-mailroom-experiments · base_url: https://us.cloud.langfuse.com · session_id: pilot_langfuse_extraction_v12 · trace_name: contract_entity_extraction · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 92052 | 7120 | 99172 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8831 |
+| field_presence | 1 |
+| schema_valid | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.7773 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| document_name | 0.9756 |
+| effective_date | 0.735 |
+| governing_law | 0.8783 |
+| key_obligations | 0.6185 |
+| parties | 1 |
+| renewal_terms | 0.8829 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.6185 |
+| parties | 1 |
+| termination_clauses | 1 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 1 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| document_name | 0.0 |
+| effective_date | 0.0 |
+| governing_law | 0.0 |
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| renewal_terms | 0.0 |
+| term_length | 0.0 |
+| termination_clauses | 0.0 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | ON2TECHNOLOGIES,INC_11_17_2006-EX-10.3-SUPPORT AND MAINTENANCE AGREEMENT | completed | 0.8903 | 1 | 1 | 0.6667 | effective_date, key_obligations | — |
+| d2 | NETGEAR,INC_04_21_2003-EX-10.16-DISTRIBUTOR AGREEMENT | completed | 0.8124 | 1 | 1 | 0.9091 | — | — |
+| d3 | Antares Pharma, Inc. - Manufacturing Agreement | completed | 0.9286 | 1 | 1 | 0.7143 | key_obligations | — |
+| d4 | NANOPHASETECHNOLOGIESCORP_11_01_2005-EX-99.1-DISTRIBUTOR AGREEMENT | completed | 0.8879 | 1 | 1 | 0.75 | renewal_terms | — |
+| d5 | MOELIS_CO_03_24_2014-EX-10.19-STRATEGIC ALLIANCE AGREEMENT | completed | 0.8962 | 1 | 1 | 0.8462 | effective_date, key_obligations | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 0.8778 | 1 | 1 | 1 | 0.9756 |
+| effective_date | 0.6749 | 0.33 | 1 | 1 | 0.67 | 0.735 |
+| governing_law | 1 | 0.3913 | 1 | 1 | 1 | 0.8783 |
+| key_obligations | 0.6667 | 0.9 | 0.5714 | 0.4545 | 0.5 | 0.6185 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | — | 1 | — | 0.6486 | 1 | 0.8829 |
+| term_length | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | — | 1 | — | 1 | 1 | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.6667 | 0.9 | 0.5714 | 0.4545 | 0.5 | 0.6185 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | — | 1 | — | 1 | 1 | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 1 | 0 | 1 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 4 | 5 | 0 | 1 | 0.0 |
+| governing_law | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| key_obligations | 57 | 42 | 57 | 0 | 1 | 0.0 |
+| parties | 12 | 7 | 12 | 0 | 1 | 0.0 |
+| renewal_terms | 3 | 2 | 3 | 0 | 1 | 0.0 |
+| term_length | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| termination_clauses | 12 | 6 | 12 | 0 | 1 | 0.0 |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | SUPPORT AND MAINTENANCE AGREEMENT |
+| d1 | parties | On2 Technologies, Inc. ("On2"), Wildform, Inc. ("Wildform") |
+| d1 | effective_date | 2005-04-01 |
+| d1 | term_length | Except as otherwise set forth in Sections 9.2 and 9.3 or Exhibit A hereof, the term of this Agreement shall be eighteen (18) months ("Term"). |
+| d1 | termination_clauses | Either of Wildform or On2 may terminate this Agreement if the other Party is in material breach of this Agreement and fails to cure such breach within thirty (30) days after written notice., Either of On2 or Wildform ma… |
+| d1 | governing_law | This Agreement shall be governed by and construed in accordance with the laws of the State of New York, without giving effect to any choice of law or conflict of law provision or rule whether such provision or rule is t… |
+| d1 | key_obligations | Neither party will have the right to assign, pledge or transfer all or any part of this Agreement without the prior written consent of the other, and any such purported assignment, pledge or transfer by a party without … |
+| d1 | contract_value | $160,000 payable as follows: (a) $22,500 per month for each of the four (4) months following the Effective Date and $10,000 per month for each of the fifth and sixth months following the Effective Date with the first pa… |
+| d1 | renewal_terms | — |
+| d1 | confidence | 0.95 |
+| d2 | document_name | DISTRIBUTOR AGREEMENT BETWEEN INGRAM MICRO AND NETGEAR |
+| d2 | parties | Ingram Micro ("Distributor"), NETGEAR, Inc. ("NETGEAR") |
+| d2 | effective_date | 1996-03-01 |
+| d2 | term_length | This Agreement will be in effect for one year from the Effective Date and will automatically renew for successive one (1) year periods unless terminated as provided below. |
+| d2 | termination_clauses | This Agreement may be canceled at any time without cause, by either party upon ninety (90) days written notice to the other party., Either party may terminate this Agreement immediately if (i) the other party becomes in… |
+| d2 | governing_law | is governed by the laws of the State of California except that body of law dealing with conflicts of law. |
+| d2 | key_obligations | During the initial one (1) year term of this Agreement. Distributor shall be the only distributor appointed by NETGEAR in the Territory, subject to Distributor conducting mutually agreed to marketing activities as descr… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | This Agreement will be in effect for one year from the Effective Date and will automatically renew for successive one (1) year periods unless terminated as provided below. |
+| d2 | confidence | 0.95 |
+| d3 | document_name | Manufacturing Agreement |
+| d3 | parties | Antares Pharma, Inc. ("Antares"), AMAG Pharmaceuticals, Inc. ("AMAG") |
+| d3 | effective_date | 2018-03-20 |
+| d3 | term_length | Subject to early termination of this Agreement pursuant to Sections 7.2, 7.3 or 7.4, this Agreement shall become effective as of the Effective Date and shall continue until the expiration or earlier termination of the D… |
+| d3 | termination_clauses | This Agreement may be terminated in its entirety by AMAG, upon AMAG's prior written notice to Antares: (a) Subject to Sections 11.1 and 12.4, if Antares commits a material breach of this Agreement and such material brea… |
+| d3 | governing_law | This Agreement shall be governed by and interpreted in accordance with the substantive laws of the State of New York, without regard to its conflict of law provisions. |
+| d3 | key_obligations | Starting on the Effective Date, Antares or its Subcontractor shall provide the Manufacturing Services in order to manufacture Devices, Products, sample Products and Trainers exclusively for AMAG for the Territory, all i… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.95 |
+| d4 | document_name | DISTRIBUTOR AGREEMENT |
+| d4 | parties | JOHNSON MATTHEY CATALOG COMPANY, INC., a Delaware corporation, d/b/a ALFA AESAR ("ALFA AESAR"), Nanophase Technologies Corporation, a Delaware corporation ("NTC") |
+| d4 | effective_date | 2005-10-24 |
+| d4 | term_length | The initial term of this Agreement shall be for a period of five (5) years from the date first set forth above and shall thereafter automatically renew for additional two (2) year terms unless a party provides the other… |
+| d4 | termination_clauses | In the event of material breach, the non-breaching party shall give the breaching party sixty (60) days written notice of such breach. If substantial efforts to cure the breach are not taken within the sixty (60) day no… |
+| d4 | governing_law | This Agreement shall be governed by and interpreted under and in accordance with the laws of the State of Delaware without regard to principles of conflicts of laws. |
+| d4 | key_obligations | NTC agrees that the Product Prices, benefits and allowances offered to ALFA AESAR shall not be less favorable than those offered on Products provided to agents, distributors or marketed directly by NTC to any customers,… |
+| d4 | contract_value | — |
+| d4 | renewal_terms | shall thereafter automatically renew for additional two (2) year terms unless a party provides the other party with notice of non-renewal no less than 6 months prior to the expiration of the initial term or any renewal … |
+| d4 | confidence | 0.95 |
+| d5 | document_name | STRATEGIC ALLIANCE AGREEMENT |
+| d5 | parties | SUMITOMO MITSUI BANKING CORPORATION ("SMBC"), SMBC NIKKO SECURITIES INC. ("Nikko"), MOELIS & COMPANY HOLDINGS LP ("Moelis Holdings"), MOELIS & COMPANY HOLDINGS GP LLC ("Moelis General Partner") |
+| d5 | effective_date | 2012-01-01 |
+| d5 | term_length | This Agreement shall be effective as of January 1, 2012 (the "Effective Date"). The initial term of this Agreement shall begin on the Effective Date and continue for three (3) years, subject to the prior termination rig… |
+| d5 | termination_clauses | This Agreement may be terminated as follows: (a) effective immediately upon mutual agreement of each of the parties; (b) immediately by a non-breaching party, if either SMBC or Nikko, on the one hand, or Moelis Holdings… |
+| d5 | governing_law | This Agreement shall be governed by, and construed in accordance with, the laws of the State of New York without regard to principles of conflict of laws. |
+| d5 | key_obligations | The Strategic Alliance shall continue to be non-exclusive., Each of SMBC/Nikko and Moelis Holdings agrees not to solicit or hire any employee of the other party during the term of this Agreement and for a period of 12 m… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | At the end of such initial term, and any renewed term, as applicable, this Agreement shall automatically renew for an additional one (1) year term, unless a party provides written notice to the other parties at least si… |
+| d5 | confidence | 0.95 |
 
 ---

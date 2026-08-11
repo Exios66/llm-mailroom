@@ -59,7 +59,7 @@ state) appear after the first document is processed.
 If you opted for Postgres, start it and initialize:
 
 ```bash
-docker compose -f config/docker/docker-compose.yml up -d postgres
+docker compose -f src/config/docker/docker-compose.yml up -d postgres
 python -c "import asyncio; from storage.db import init_db; asyncio.run(init_db())"
 ```
 
@@ -71,13 +71,13 @@ Start all services (each in its own terminal or use a process manager):
 
 ```bash
 # Terminal 1: Pipeline Watcher (processes documents from inbox)
-python pipeline/watcher.py
+PYTHONPATH=src python -m pipeline.watcher
 
 # Terminal 2: API Server
-python api/main.py
+PYTHONPATH=src python -m api.main
 
 # Terminal 3 (optional): Ops Monitor (system health sweeps)
-python pipeline/ops_monitor.py
+PYTHONPATH=src python -m pipeline.ops_monitor
 ```
 
 ---
@@ -87,7 +87,7 @@ python pipeline/ops_monitor.py
 ```bash
 # Upload a test document
 curl -X POST http://localhost:8000/upload \
-  -F "file=@tests/fixtures/contract/sample_msa.txt" \
+  -F "file=@src/tests/fixtures/contract/sample_msa.txt" \
   -F "matter_id=TEST-001"
 
 # Check status (use the doc_id from upload response)
@@ -121,9 +121,9 @@ Every LLM call (classification, extraction, reports, Boss) is auto-traced; no pe
 Use `systemd`, `supervisord`, or Docker to manage the three processes:
 
 ```
-[Service] pipeline-watcher  → python pipeline/watcher.py
-[Service] mailroom-api      → uvicorn api.main:app --host 0.0.0.0 --port 8000
-[Service] ops-monitor       → python pipeline/ops_monitor.py
+[Service] pipeline-watcher  → PYTHONPATH=src python -m pipeline.watcher
+[Service] mailroom-api      → PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
+[Service] ops-monitor       → PYTHONPATH=src python -m pipeline.ops_monitor
 ```
 
 ### Database
@@ -169,7 +169,7 @@ A production Docker setup would include the application as a service:
 services:
   mailroom-api:
     build: .
-    command: python api/main.py
+    command: PYTHONPATH=src python -m api.main
     ports:
       - "8000:8000"
     environment:
@@ -275,7 +275,7 @@ The pipeline emits **structured logs to stdout** (structlog, `LOG_FORMAT=json|pr
 
 ```ini
 [Service]
-ExecStart=/usr/bin/python pipeline/watcher.py
+ExecStart=/usr/bin/PYTHONPATH=src python -m pipeline.watcher
 StandardOutput=journal
 StandardError=journal
 ```
@@ -284,7 +284,7 @@ StandardError=journal
 
 ```ini
 [program:watcher]
-command=/usr/bin/python pipeline/watcher.py
+command=/usr/bin/PYTHONPATH=src python -m pipeline.watcher
 stdout_logfile=/var/log/mailroom/watcher.log
 stdout_logfile_maxbytes=100MB
 stdout_logfile_backups=14
@@ -322,7 +322,7 @@ stderr_logfile_backups=14
 ### Database errors
 
 - **SQLite:** verify the `data/` directory is writable; the DB files are created automatically. If the DB was created by a different `MAILROOM_BASE_DIR`, point it back or delete the old files.
-- **Postgres:** verify `DATABASE_URL` in `.env` and that Postgres is running: `docker compose -f config/docker/docker-compose.yml ps`
+- **Postgres:** verify `DATABASE_URL` in `.env` and that Postgres is running: `docker compose -f src/config/docker/docker-compose.yml ps`
 
 ### Langfuse not showing traces
 

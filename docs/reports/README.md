@@ -19,11 +19,11 @@ Use the scaffolder so every report lands in the right place with a consistent
 header:
 
 ```bash
-python scripts/new_report.py audits "MY AUDIT TITLE"
+PYTHONPATH=src python src/scripts/new_report.py audits "MY AUDIT TITLE"
 # -> creates docs/reports/audits/<date>-my-audit-title.md
-python scripts/new_report.py pilots "Vision tradeoff" --date 2026-08-10
+PYTHONPATH=src python src/scripts/new_report.py pilots "Vision tradeoff" --date 2026-08-10
 # -> creates docs/reports/pilots/2026-08-10-vision-tradeoff.md
-python scripts/new_report.py evaluations "CUAD subclass sweep"
+PYTHONPATH=src python src/scripts/new_report.py evaluations "CUAD subclass sweep"
 # -> creates docs/reports/evaluations/<date>-cuad-subclass-sweep.md
 ```
 

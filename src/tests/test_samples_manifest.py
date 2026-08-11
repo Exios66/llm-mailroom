@@ -1,0 +1,90 @@
+import csv
+import json
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent.parent  # repo root
+MANIFEST = ROOT / "docs" / "examples" / "samples" / "manifest.csv"
+SOURCES_DIR = ROOT / "docs" / "examples" / "sources"
+CUAD_DIR = ROOT / "docs" / "examples" / "samples" / "contract"
+EXTERNAL_DIR = ROOT / "docs" / "examples" / "external"
+
+
+def _rows():
+    with MANIFEST.open() as fh:
+        return list(csv.DictReader(fh))
+
+
+def test_manifest_has_rows_and_unique_ids():
+    rows = _rows()
+    assert len(rows) >= 30
+    ids = [r["id"] for r in rows]
+    assert len(ids) == len(set(ids)), "duplicate sample ids"
+    for r in rows:
+        assert r["filename"].endswith(".pdf")
+        assert r.get("dataset") in ("original", "legalbench", "atticus", "pileoflaw")
+
+
+def test_manifest_has_six_samples_per_external_source():
+    from collections import Counter
+
+    counts = Counter(r.get("dataset") or "original" for r in _rows())
+    assert counts["legalbench"] == 6
+    assert counts["atticus"] == 6
+    assert counts["pileoflaw"] == 6
+
+
+def test_manifest_expected_classes_are_valid_taxonomy():
+    from pipeline.config import load_config
+
+    valid = {c["key"] for c in load_config()["doc_classes"]}
+    for r in _rows():
+        assert r["expected_doc_class"] in valid, r["id"]
+
+
+def test_manifest_expected_stages_valid():
+    for r in _rows():
+        assert r["expected_stage"] in ("archived", "review", "failed"), r["id"]
+
+
+def test_manifest_has_schema_compatible_field_ground_truth():
+    from schemas.documents import get_extraction_schema
+
+    for row in _rows():
+        raw = row.get("expected_fields", "").strip()
+        assert raw, f"missing expected_fields: {row['id']}"
+        fields = json.loads(raw)
+        assert isinstance(fields, dict), row["id"]
+        schema = get_extraction_schema(row["expected_doc_class"])
+        assert schema is not None, row["id"]
+        unknown = set(fields) - set(schema.model_fields)
+        assert not unknown, f"unknown expected_fields for {row['id']}: {unknown}"
+
+
+def test_manifest_referenced_sources_exist():
+    for r in _rows():
+        if r["source"].startswith("CUAD"):
+            assert (CUAD_DIR / r["filename"]).exists(), f"missing CUAD pdf: {r['id']}"
+        elif r["source"].startswith("external/"):
+            assert (EXTERNAL_DIR / r["source"].removeprefix("external/")).exists(), (
+                f"missing external source: {r['id']}"
+            )
+        else:
+            assert (SOURCES_DIR / r["source"]).exists(), f"missing source: {r['id']}"
+
+
+def test_manifest_committed_cuad_pdfs():
+    # 3 original CUAD PDFs + 6 Atticus samples fetched by
+    # scripts/fetch_external_samples.py.
+    pdfs = list(CUAD_DIR.glob("*.pdf"))
+    assert len(pdfs) == 9
+    for p in pdfs:
+        assert p.stat().st_size > 0
+
+
+def test_court_opinion_samples_map_to_court_opinion_class():
+    for r in _rows():
+        if (r.get("dataset") or "") == "pileoflaw":
+            assert r["expected_doc_class"] == "court_opinion", r["id"]
+            assert r["expected_stage"] == "archived"

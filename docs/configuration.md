@@ -284,7 +284,7 @@ DEFAULT_PROVIDER=openrouter
 
 ```bash
 # Start Ollama + pull a model
-docker compose -f config/docker/docker-compose.yml --profile local-llm up -d ollama
+docker compose -f src/config/docker/docker-compose.yml --profile local-llm up -d ollama
 docker exec mailroom-ollama ollama pull qwen3:7b
 
 # Configure
@@ -328,8 +328,8 @@ agents:
 Or use the cutover utility:
 
 ```bash
-python scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
-python scripts/cutover.py --validate --agent sorter
+PYTHONPATH=src python src/scripts/cutover.py --agent sorter --provider ollama --model qwen3:7b
+PYTHONPATH=src python src/scripts/cutover.py --validate --agent sorter
 ```
 
 See [Local Models](local-models.md) for the full cutover guide.
