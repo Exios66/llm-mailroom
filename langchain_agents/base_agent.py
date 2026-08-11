@@ -38,6 +38,27 @@ from langchain_agents.openrouter_utils import OPENROUTER_BASE_URL
 logger = structlog.get_logger(__name__)
 
 
+def _is_retryable_error(exc: Exception) -> bool:
+    """Same retryable classification as llm/retry.py: connection errors,
+    timeouts, 429 rate limits, and 5xx server errors are retried; 4xx (incl.
+    the Alibaba/Qwen 400 json marker) are never retried."""
+    try:
+        from llm.retry import _is_retryable
+
+        return _is_retryable(exc)
+    except ImportError:
+        import openai
+
+        return isinstance(
+            exc,
+            (
+                openai.APIConnectionError,
+                openai.APITimeoutError,
+                openai.RateLimitError,
+            ),
+        ) or (getattr(exc, "status_code", None) in (500, 502, 503, 504))
+
+
 def build_structured_schema(
     properties: dict,
     required: list[str] | None = None,
@@ -93,6 +114,11 @@ class BaseAgent(ABC):
             from langchain_agents.env_utils import load_env
 
             load_env()
+            # MAILROOM PATCH (L-16/L-17): max_retries=0 — the SDK's internal
+            # retry layer is disabled so the mailroom's shared retry contract
+            # (llm/retry.py) is the SINGLE retry layer. Upstream used
+            # max_retries=3, which combined with the wrapper's 3 attempts and
+            # the graph's retry loop produced a ~27-call cascade per node.
             self._llm = ChatOpenAI(
                 model=self.model,
                 api_key=self.api_key or os.environ.get("OPENROUTER_API_KEY") or None,
@@ -100,11 +126,74 @@ class BaseAgent(ABC):
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
                 timeout=120,
-                max_retries=3,
+                max_retries=0,
             )
             if self._reasoning_effort:
                 self._llm.extra_body = {"reasoning": {"effort": self._reasoning_effort}}
         return self._llm
+
+    # ------------------------------------------------------------------
+    # MAILROOM PATCH (L-16/L-17): route LangChain invokes through the
+    # mailroom's shared retry contract — retryable-exception filtering,
+    # exponential backoff + jitter from taxonomy `llm_retry:`, deadline
+    # re-checks between attempts, and the same `llm_retry` event shape as
+    # llm/retry.py so observability sees the LangChain agents' retries.
+    # ------------------------------------------------------------------
+
+    def _invoke_with_retry(self, fn, *, what: str = "invoke"):
+        """Call ``fn()`` retrying transient failures with backoff + jitter.
+
+        Mirrors ``llm/retry.py:retry_chat_completion`` semantics: only
+        retryable errors (connection errors, timeouts, 429, 5xx) are retried;
+        the run deadline is re-checked before every attempt; backoff/jitter
+        come from taxonomy.yaml ``llm_retry:``; the ``llm_retry`` log event
+        has the same shape as the native path.
+        """
+        import random
+        import time as _time
+
+        from pipeline.limits import get_call_timeout_seconds
+
+        def _retry_config():
+            try:
+                from pipeline.config import load_config
+
+                return load_config().get("llm_retry", {}) or {}
+            except Exception:
+                return {}
+
+        cfg = _retry_config()
+        max_attempts = int(cfg.get("max_attempts", 3))
+        base_delay = float(cfg.get("base_delay", 1.0))
+        max_delay = float(cfg.get("max_delay", 30.0))
+        jitter = float(cfg.get("jitter", 0.3))
+
+        attempt = 0
+        while True:
+            attempt += 1
+            self._check_deadline()
+            try:
+                return fn()
+            except Exception as exc:  # noqa: BLE001 — inspected below
+                if not _is_retryable_error(exc) or attempt >= max_attempts:
+                    raise
+                delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+                delay = delay * (1 + random.uniform(-jitter, jitter))
+                logger.warning(
+                    "llm_retry",
+                    agent=self.agent_name,
+                    model=self.model,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    error=type(exc).__name__,
+                    backoff_s=round(delay, 2),
+                    what=what,
+                )
+                _time.sleep(delay)
+
+    # ------------------------------------------------------------------
+    # End MAILROOM PATCH (L-16/L-17)
+    # ------------------------------------------------------------------
 
     # Share of the input budget kept from the document's TAIL when truncation
     # fires: deal-critical sections (term, termination, renewal, governing law,
@@ -256,7 +345,7 @@ class BaseAgent(ABC):
 
         logger.info("llm_call", agent=self.agent_name, model=self.model,
                     pages=len(pages) if pages else None)  # MAILROOM PATCH
-        response = llm.invoke(messages)  # MAILROOM PATCH: direct invoke to capture usage
+        response = self._invoke_with_retry(lambda: llm.invoke(messages), what="llm")  # MAILROOM PATCH (L-16/L-17)
         content = response.content if isinstance(response.content, str) else str(response.content)
         self._last_usage = {  # MAILROOM PATCH: usage accounting parity with _call_structured
             "prompt_tokens": self._usage_from_message(response).get("input_tokens")
@@ -317,7 +406,9 @@ class BaseAgent(ABC):
 
         logger.info("llm_structured_call", agent=self.agent_name, model=self.model,
                     pages=len(pages) if pages else None)  # MAILROOM PATCH
-        raw_out: Any = structured.invoke(messages)  # MAILROOM PATCH: direct message invoke
+        raw_out: Any = self._invoke_with_retry(  # MAILROOM PATCH (L-16/L-17)
+            lambda: structured.invoke(messages), what="structured"
+        )
 
         # include_raw=True returns {"raw": AIMessage, "parsed": ..., "parsing_error": ...}
         if isinstance(raw_out, dict):
@@ -430,7 +521,7 @@ class BaseAgent(ABC):
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=content)]
 
         logger.info("llm_vision_call", agent=self.agent_name, model=self.model, pages=len(images))
-        response = llm.invoke(messages)
+        response = self._invoke_with_retry(lambda: llm.invoke(messages), what="vision")  # MAILROOM PATCH (L-16/L-17)
         raw_content = response.content if isinstance(response.content, str) else str(response.content)
 
         usage = getattr(response, "usage_metadata", None) or (response.response_metadata or {}).get("usage") or {}
