@@ -17,11 +17,16 @@ def _transient_decision(state: dict, *, retry_target: str) -> Literal["retry", "
     """Route a transient-error flag: retry the same node up to
     `_TRANSIENT_MAX_RETRIES`, then human review.
 
+    L-13: the transient budget is PER NODE — classify failures must not
+    exhaust the counter that extract later needs. Each node tracks its own
+    `transient_retries_<node>` key, reset on success.
+
     The node keeps `classification_attempts`/`extraction_attempts` unchanged on
     transient failures, so a flaky provider never burns the confidence retry
     budget (which is reserved for genuinely low-quality model output).
     """
-    retries = state.get("transient_retries", 0)
+    counter_key = f"transient_retries_{retry_target}"
+    retries = state.get(counter_key, 0)
     if retries <= _TRANSIENT_MAX_RETRIES:
         logger.warning(
             "transient_retry",
@@ -64,8 +69,19 @@ def after_classify(state: dict) -> Literal["classify", "retry_classify", "extrac
 
     # Medium band (low <= confidence < high): classified, but the model is not
     # clearly confident (e.g. multi-topic/ambiguous documents whose form still
-    # fits a class). Route to human review instead of silently archiving.
+    # fits a class). L-9: run ONE re-classification pass first — the retry
+    # prompt ("re-evaluate") often resolves medium-confidence ambiguity — then
+    # route to human review if it stays medium. Previously the band went
+    # straight to review, skipping the retry budget entirely.
     if confidence is not None and confidence >= low:
+        if attempts <= retry_max:
+            logger.info(
+                "medium_confidence_retry",
+                confidence=confidence,
+                attempts=attempts,
+                doc_type=doc_type,
+            )
+            return "retry_classify"
         logger.info(
             "medium_confidence_review",
             confidence=confidence,

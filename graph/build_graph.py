@@ -404,7 +404,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
             # Provider-side transient failure (connection/timeout/rate-limit/
             # 5xx). Do NOT increment the confidence retry budget; routing
             # retries this same node via the `classify` self-loop.
-            transient = state.get("transient_retries", 0) + 1
+            transient = state.get("transient_retries_classify", 0) + 1
             logger.warning(
                 "classify_transient_error",
                 doc_id=state.get("doc_id"),
@@ -413,7 +413,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
             )
             return {
                 "transient_error": True,
-                "transient_retries": transient,
+                "transient_retries_classify": transient,
                 "classification_attempts": attempts,
                 "stage": PipelineStage.CLASSIFIED.value,
                 "error_message": f"transient provider error: {str(exc)[:200]}",
@@ -681,7 +681,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         if is_transient_error(exc):
             # Transient provider failure: retry the same node without burning
             # the extraction retry budget (routed via the `extract` self-loop).
-            transient = state.get("transient_retries", 0) + 1
+            transient = state.get("transient_retries_extract", 0) + 1
             logger.warning(
                 "extract_transient_error",
                 doc_id=state.get("doc_id"),
@@ -690,7 +690,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
             )
             return {
                 "transient_error": True,
-                "transient_retries": transient,
+                "transient_retries_extract": transient,
                 "extraction_attempts": attempts,
                 "extraction_confidence": 0.0,
                 "extracted_data": None,
@@ -1900,7 +1900,8 @@ def run_pipeline(
         "error_message": None,
         "messages": [],
         "transient_error": False,
-        "transient_retries": 0,
+        "transient_retries_classify": 0,
+        "transient_retries_extract": 0,
         "run_attempt": attempt,
     }
 
@@ -1968,7 +1969,8 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "messages": [],
         "resume_extraction": True,
         "transient_error": False,
-        "transient_retries": 0,
+        "transient_retries_classify": 0,
+        "transient_retries_extract": 0,
         "run_attempt": 0,
     }
 
