@@ -4,15 +4,46 @@ Mailroom: a LangGraph state machine that processes legal documents through speci
 
 ## Skills (all agents)
 
-Project skills under `.opencode/skills/` are available to every agent
-(langfuse from github.com/langfuse/skills; langchain-*/langgraph-* from
-github.com/langchain-ai/langchain-skills): `langfuse` (CLI API access, docs,
-prompt migration), `langchain-fundamentals`/`langchain-python-quickstart`/
-`langchain-dependencies`/`langchain-middleware`, `langgraph-fundamentals`/
-`langgraph-python-quickstart`/`langgraph-cli`/`langgraph-persistence`
-(checkpointers — this repo uses SqliteSaver)/`langgraph-human-in-the-loop`
-(review/interrupt nodes), `ecosystem-primer`. Invoke the matching skill
-before writing or changing agent/graph/tracing code.
+Project skills under `.opencode/skills/` are available to every agent:
+
+- **langfuse** (github.com/langfuse/skills) — CLI API access, docs,
+  instrumentation/prompt-migration/prompt-engineering references, judge
+  calibration, error analysis, v4 migration.
+- **braintrust** (github.com/braintrustdata/braintrust-skills) — the
+  agent-auto-improvement loop: production traces -> failure taxonomy ->
+  remote Braintrust dataset -> scorers -> offline eval file -> iterate, then
+  push online scorers. Matches this repo's eval discipline (Braintrust
+  datasets, Eval loops, deterministic local scoring, experiment log).
+- **openrouter-*** (github.com/OpenRouterTeam/skills) — `openrouter-models`
+  (catalog, pricing, context, provider latency/uptime — grounds the
+  `taxonomy.yaml` model registry + cost prices), `openrouter-generations`
+  (per-request cost/latency/tokens/provider routing — debug unexpected
+  generations), `openrouter-analytics` (spend/usage queries), and
+  `openrouter-benchmarks` (live benchmark data for model selection).
+- **langchain-*/langgraph-*** (github.com/langchain-ai/langchain-skills) —
+  fundamentals, python quickstarts, dependencies, middleware,
+  langgraph-fundamentals/persistence (checkpointers — SqliteSaver)/
+  human-in-the-loop (review/interrupt nodes)/cli, ecosystem-primer.
+
+Invoke the matching skill before writing or changing agent/graph/tracing
+code.
+
+### Langfuse best-practices compliance (verified 2026-08-12)
+
+The observability layer satisfies the langfuse instrumentation baseline:
+model name + token usage on every generation (auto-traced via
+`langfuse.openai`), descriptive stable trace name `document-pipeline`,
+verb-first node spans with correct types (spans for steps, generations for
+LLM calls — never a generic tool/span), PII masked via curated input/output
+(file metadata, not raw payloads), `session_id` grouping (matter/run),
+tag taxonomy (environment/run/source), environments on every trace,
+`langfuse_prompt=` linking, auto-created score configs, native LLM-as-a-
+judge evaluators, synced dashboards, flush health + `on_dropped`, and the
+mandatory self-audit loop (run end-to-end, fetch the trace fresh, audit
+against https://langfuse.com/docs/observability/best-practices — documented
+in the Langfuse section above). Running on langfuse 4.14.3 with the v4-
+compatible API surface (`create_trace_id`, `propagate_attributes`,
+score-config categories).
 
 ## Commands
 

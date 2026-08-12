@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Braintrust + OpenRouter skills for all agents**: `braintrust`
+  (github.com/braintrustdata/braintrust-skills — the agent-auto-improvement
+  loop: production traces -> failure taxonomy -> dataset -> scorers ->
+  offline evals) and `openrouter-models` / `openrouter-generations` /
+  `openrouter-analytics` / `openrouter-benchmarks`
+  (github.com/OpenRouterTeam/skills — catalog/pricing/provider latency,
+  per-generation cost/latency debugging, spend analytics, benchmark data)
+  join the langfuse/langchain/langgraph skill stack under
+  `.opencode/skills/`. AGENTS.md documents the full set.
+- **Langfuse best-practices compliance verified** against the langfuse
+  instrumentation baseline: model/tokens on every generation, stable trace
+  naming, verb-first spans + correct observation types, curated (PII-masked)
+  IO, sessions, tag taxonomy, environments, prompt linking, score configs,
+  evaluators, dashboards, flush health, and the self-audit loop — on langfuse
+  4.14.3 with the v4 API surface.
 - **LangGraph + Langfuse best-practices audit of the processing pipeline**
   (`docs/reports/audits/2026-08-12-langgraph-langfuse-best-practices-audit-of-the-processing-pipeline.md`):
   skill-grounded review of every agent's behavior when running the full
