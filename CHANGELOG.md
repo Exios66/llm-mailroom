@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **LangChain + LangGraph skills for all agents** (from
+  github.com/langchain-ai/langchain-skills): langchain-fundamentals, python
+  quickstart, dependencies, middleware + langgraph-fundamentals, python
+  quickstart, cli, persistence, human-in-the-loop, ecosystem-primer —
+  project skills under `.opencode/skills/`, alongside the existing langfuse
+  skill. AGENTS.md documents the set.
+
 ### Changed
 
 - **Repository root restructured to the essentials**: all Python code now
