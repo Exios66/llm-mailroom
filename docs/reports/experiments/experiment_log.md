@@ -6,7 +6,7 @@
 >
 > - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
 > - **Upstream path:** `reports/experiment_log.md`
-> - **Upstream commit:** `5890b36 Regenerate experiment log + site data (post-restructure sync) (2026-08-10)`
+> - **Upstream commit:** `93b4fee ISSUE #1: bootstrap CIs, chained error-propagation ablation, judge-calibration tracker, cross-model matrix + site trends/diff/failure-mode/scatter views (2026-08-11)`
 > - **Synced into llm-mailroom:** 2026-08-11, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
 > - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
@@ -14,7 +14,7 @@
 >
 > ---
 
-_Generated from `reports/experiment_log.jsonl` on 2026-08-12T03:01:06.343509+00:00 — append-only, one section per run._
+_Generated from `reports/experiment_log.jsonl` on 2026-08-12T03:24:15.722621+00:00 — append-only, one section per run._
 
 ## Index
 
