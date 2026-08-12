@@ -6,15 +6,15 @@
 >
 > - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
 > - **Upstream path:** `reports/experiment_log.md`
-> - **Upstream commit:** `393807b v0.14.0: issue #1 scoring suite (bootstrap CIs, chained ablation, judge calibration, cross-model matrix), cost scoring for every run, and the interactive visualization site (2026-08-11)`
-> - **Synced into llm-mailroom:** 2026-08-11, verbatim, into `docs/reports/experiments/`
+> - **Upstream commit:** `3e70fee RELEASE WORKFLOW: scripts/release.py automation + AGENTS.md changelog/docs/version/tag/sync discipline (2026-08-12)`
+> - **Synced into llm-mailroom:** 2026-08-12, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
 > - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
 > - **How it relates to llm-mailroom:** the sorter and contracts-specialist agents vendored into `llm-mailroom/langchain_agents/` are the eval-validated prompts tracked here (`sorter_v5`, `contracts_specialist_v11`). The **LegalBench suite** (`llm-mailroom/legalbench/`) appends its runs to this same log and rebuilds it on completion.
 >
 > ---
 
-_Generated from `reports/experiment_log.jsonl` on 2026-08-12T04:53:23.425702+00:00 — append-only, one section per run._
+_Generated from `reports/experiment_log.jsonl` on 2026-08-12T05:03:13.137924+00:00 — append-only, one section per run._
 
 ## Index
 
