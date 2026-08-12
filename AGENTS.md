@@ -2,6 +2,18 @@
 
 Mailroom: a LangGraph state machine that processes legal documents through specialist LLM agents (classify → extract → report → archive) with filesystem bins, a SQLite catalog/audit log, and optional Langfuse/Braintrust tracing. Python 3.11+, no build step.
 
+## Skills (all agents)
+
+Project skills under `.opencode/skills/` are available to every agent
+(langfuse from github.com/langfuse/skills; langchain-*/langgraph-* from
+github.com/langchain-ai/langchain-skills): `langfuse` (CLI API access, docs,
+prompt migration), `langchain-fundamentals`/`langchain-python-quickstart`/
+`langchain-dependencies`/`langchain-middleware`, `langgraph-fundamentals`/
+`langgraph-python-quickstart`/`langgraph-cli`/`langgraph-persistence`
+(checkpointers — this repo uses SqliteSaver)/`langgraph-human-in-the-loop`
+(review/interrupt nodes), `ecosystem-primer`. Invoke the matching skill
+before writing or changing agent/graph/tracing code.
+
 ## Commands
 
 ```bash
