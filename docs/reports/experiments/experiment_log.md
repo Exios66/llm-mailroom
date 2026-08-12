@@ -6,7 +6,7 @@
 >
 > - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
 > - **Upstream path:** `reports/experiment_log.md`
-> - **Upstream commit:** `a0fbc7e COST SCORING + SITE POLISH: every run scored with deterministic token x price estimates; headless render audit; dynamic nav; sorted confusion matrices (2026-08-11)`
+> - **Upstream commit:** `393807b v0.14.0: issue #1 scoring suite (bootstrap CIs, chained ablation, judge calibration, cross-model matrix), cost scoring for every run, and the interactive visualization site (2026-08-11)`
 > - **Synced into llm-mailroom:** 2026-08-11, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
 > - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
@@ -14,7 +14,7 @@
 >
 > ---
 
-_Generated from `reports/experiment_log.jsonl` on 2026-08-12T04:40:59.575839+00:00 — append-only, one section per run._
+_Generated from `reports/experiment_log.jsonl` on 2026-08-12T04:53:23.425702+00:00 — append-only, one section per run._
 
 ## Index
 
