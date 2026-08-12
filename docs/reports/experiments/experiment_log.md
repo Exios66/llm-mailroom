@@ -6,7 +6,7 @@
 >
 > - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
 > - **Upstream path:** `reports/experiment_log.md`
-> - **Upstream commit:** `3e70fee RELEASE WORKFLOW: scripts/release.py automation + AGENTS.md changelog/docs/version/tag/sync discipline (2026-08-12)`
+> - **Upstream commit:** `7c49c0a LANGFUSE SKILL + EXPERIMENT: langfuse skill available to all agents; new specialist_v12 extraction run logged + site regenerated (2026-08-12)`
 > - **Synced into llm-mailroom:** 2026-08-12, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
 > - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
@@ -14,7 +14,7 @@
 >
 > ---
 
-_Generated from `reports/experiment_log.jsonl` on 2026-08-12T05:03:13.137924+00:00 — append-only, one section per run._
+_Generated from `reports/experiment_log.jsonl` on 2026-08-12T17:50:20.985112+00:00 — append-only, one section per run._
 
 ## Index
 
@@ -58,6 +58,7 @@ _Generated from `reports/experiment_log.jsonl` on 2026-08-12T05:03:13.137924+00:
 | 36 | pilot_langfuse_chained_v6_v12 | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v6 + contracts_specialist_v12 | sorter 1 / extractor 0.8818 | 5 | 196202 |
 | 37 | pilot_langfuse_chained_v6_v12b | chained_sorter_extractor | qwen/qwen3.7-flash | sorter_v6 + contracts_specialist_v12 | sorter 1 / extractor 0.8882 | 5 | 195971 |
 | 38 | pilot_langfuse_extraction_v12 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v12 | extraction 0.8831 | 5 | 99172 |
+| 39 | qwen3.7-flash_contracts_specialist_v12_extraction_langfuse | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v12 | extraction 0.8947 | 30 | 389624 |
 
 ---
 
@@ -12449,5 +12450,499 @@ The model's own reasoning on every failed row — the evidence it cited for the 
 | d5 | contract_value | — |
 | d5 | renewal_terms | At the end of such initial term, and any renewed term, as applicable, this Agreement shall automatically renew for an additional one (1) year term, unless a party provides written notice to the other parties at least si… |
 | d5 | confidence | 0.95 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v12_extraction_langfuse  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-12T17:47:52.474951+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v12 |
+| Git commit | `2f9a647` (dirty tree) |
+| Rows | 30 |
+| Completed | 30 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| dataset_fingerprint | c14b86c9f0f01384cff37ddefaf672757e84d309064682685f44393f795bcc10 |
+| n_samples | 30 |
+| sample_requested | 30 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 150000 |
+| reasoning_effort | none |
+| max_concurrency | 8 |
+| bt_scores | none |
+| judge | ✗ |
+| manifest | data/manifests/extraction_ab_v12_30.jsonl |
+| tracing_backend | langfuse |
+| tracing | project: llm-dojo · environment: llm-dojo · base_url: https://us.cloud.langfuse.com · session_id: qwen3.7-flash_contracts_specialist_v12_extraction_langfuse · trace_name: contract_entity_extraction · disabled: False |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 354451 | 35173 | 389624 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.8947 |
+| field_presence | 0.9905 |
+| schema_valid | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.8326 |
+
+**Scores — overall_extraction_score_ci**
+
+| Field | Score |
+|---|---|
+| half | 0.0257 |
+| hi | 0.9201 |
+| lo | 0.8686 |
+| method | percentile-bootstrap |
+| n | 30 |
+| n_boot | 2000 |
+| seed | 42 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| document_name | 0.9733 |
+| effective_date | 0.9447 |
+| governing_law | 0.9113 |
+| key_obligations | 0.6073 |
+| parties | 0.9333 |
+| renewal_terms | 0.8517 |
+| term_length | 0.9664 |
+| termination_clauses | 0.9 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.6073 |
+| parties | 0.9333 |
+| termination_clauses | 0.9 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 1 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| document_name | 0.0 |
+| effective_date | 0.0 |
+| governing_law | 0.0 |
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| renewal_terms | 0.0 |
+| term_length | 0.0 |
+| termination_clauses | 0.0 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | 0.9196 | 1 | 1 | 0.7333 | — | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | 1 | 1 | 1 | 1 | — | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | 0.8646 | 1 | 1 | 0.875 | — | — |
+| d4 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | 0.94 | 1 | 1 | 1 | key_obligations | — |
+| d5 | Loop Industries, Inc. - Marketing Agreement | completed | 0.9545 | 1 | 1 | 1 | effective_date | — |
+| d6 | SCOUTCAMINC_05_12_2020-EX-10.22-SERVICES AGREEMENT | completed | 0.8929 | 1 | 1 | 1 | key_obligations, term_length | — |
+| d7 | HealthcareIntegratedTechnologiesInc_20190812_8-K_EX-10.1_11776966_EX-10.1_Reseller Agreem… | completed | 0.75 | 1 | 1 | 0.8571 | key_obligations | — |
+| d8 | DataCallTechnologies_20060918_SB-2A_EX-10.9_944510_EX-10.9_Content License Agreement | completed | 0.9429 | 1 | 1 | 0.8 | key_obligations | — |
+| d9 | GLOBALTECHNOLOGIESLTD_06_08_2020-EX-10.16-CONSULTING AGREEMENT | completed | 0.8333 | 1 | 1 | 1 | — | — |
+| d10 | PHREESIA,INC_05_28_2019-EX-10.18-STRATEGIC ALLIANCE AGREEMENT | completed | 0.8409 | 1 | 1 | 0.8333 | key_obligations | — |
+| d11 | GRIDIRONBIONUTRIENTS,INC_02_05_2020-EX-10.3-SUPPLY AGREEMENT | completed | 0.9137 | 1 | 1 | 1 | effective_date, governing_law | — |
+| d12 | HPILHOLDING_01_07_2015-EX-99.1-COOPERATION AGREEMENT | completed | 0.9286 | 1 | 1 | 0.6667 | key_obligations | — |
+| d13 | PenntexMidstreamPartnersLp_20150416_S-1A_EX-10.4_9042833_EX-10.4_Transportation Agreement | completed | 0.7755 | 0.8571 | 1 | 0.4286 | — | — |
+| d14 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | 0.9011 | 1 | 1 | 0.7692 | — | — |
+| d15 | LEGACYTECHNOLOGYHOLDINGS,INC_12_09_2005-EX-10.2-DISTRIBUTOR AGREEMENT | completed | 0.8612 | 1 | 1 | 0.8571 | renewal_terms | — |
+| d16 | LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement | completed | 0.9041 | 1 | 1 | 0.5 | — | — |
+| d17 | MidwestEnergyEmissionsCorp_20080604_8-K_EX-10.2_3093976_EX-10.2_Content License Agreement | completed | 0.9643 | 1 | 1 | 0.875 | key_obligations | — |
+| d18 | ImpresseCorp_20000322_S-1A_EX-10.11_5199234_EX-10.11_Co-Branding Agreement | completed | 0.8889 | 1 | 1 | 0.75 | — | — |
+| d19 | LegacyEducationAllianceInc_20200330_10-K_EX-10.18_12090678_EX-10.18_Development Agreement | completed | 0.8313 | 1 | 1 | 0.5625 | — | — |
+| d20 | SPRINGBANKPHARMACEUTICALS,INC_04_08_2020-EX-99.A-JOINT FILING AGREEMENT | completed | 0.9383 | 1 | 1 | 1 | document_name | — |
+| d21 | GridironBionutrientsInc_20171206_8-K_EX-10.2_10972556_EX-10.2_Endorsement Agreement | completed | 1 | 1 | 1 | 1 | — | — |
+| d22 | NEONSYSTEMSINC_03_01_1999-EX-10.5-DISTRIBUTOR AGREEMENT_Amendment | completed | 0.9429 | 1 | 1 | 0.8 | key_obligations | — |
+| d23 | DRIVENDELIVERIES,INC_05_22_2020-EX-10.4-CONSULTING AGREEMENT | completed | 0.9683 | 1 | 1 | 1 | key_obligations | — |
+| d24 | LOYALTYPOINTINC_11_16_2004-EX-10.2-RESELLER AGREEMENT | completed | 0.7804 | 1 | 1 | 0.7778 | document_name, governing_law, key_obligations | — |
+| d25 | EuromediaHoldingsCorp_20070215_10SB12G_EX-10.B(01)_525118_EX-10.B(01)_Content License Agr… | completed | 0.8373 | 1 | 1 | 0.8 | key_obligations | — |
+| d26 | QBIOMEDINC_04_08_2020-EX-99.1-JOINT FILING AGREEMENT | completed | 1 | 1 | 1 | 1 | — | — |
+| d27 | InnerscopeHearingTechnologiesInc_20181109_8-K_EX-10.6_11419704_EX-10.6_Distributor Agreem… | completed | 0.8833 | 1 | 1 | 0.7 | — | — |
+| d28 | IntegrityMediaInc_20010329_10-K405_EX-10.17_2373875_EX-10.17_Co-Branding Agreement | completed | 0.9549 | 1 | 1 | 1 | key_obligations | — |
+| d29 | BUFFALOWILDWINGSINC_06_05_1998-EX-10.3-FRANCHISE AGREEMENT | completed | 0.6915 | 0.8571 | 1 | 0.5789 | — | — |
+| d30 | GluMobileInc_20070319_S-1A_EX-10.09_436630_EX-10.09_Content License Agreement1 | completed | 0.9375 | 1 | 1 | 0.8125 | key_obligations | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | d11 | d12 | d13 | d14 | d15 | d16 | d17 | d18 | d19 | d20 | d21 | d22 | d23 | d24 | d25 | d26 | d27 | d28 | d29 | d30 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 0.9 | 1 | 1 | 1 | 0.8148 | 1 | 1 | 1 | 0.5554 | 1 | 1 | 1 | 0.9292 | 1 | 1 | 0.9733 |
+| effective_date | 1 | 1 | 1 | 1 | 0.7273 | 1 | 1 | 1 | 1 | 1 | 0.67 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | — | 1 | 0.0 | 1 | 0.9447 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 | 0.1667 | 1 | 1 | 1 | 0.8125 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | — | — | 1 | 1 | 0.5714 | 0.1429 | — | 1 | 1 | 1 | 1 | 0.9113 |
+| key_obligations | 0.3571 | 1 | 0.1875 | 0.7 | 1 | 0.5 | 0.8333 | 0.6 | 1 | 0.7273 | 1 | 0.5 | 0.4286 | 0.3077 | 0.4286 | 0.4286 | 0.7143 | 0.3333 | 0.375 | — | 1 | 0.6 | 0.7778 | 0.5556 | 0.5556 | — | 0.3 | 0.8 | 0.3684 | 0.625 | 0.6073 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 0.0 | 1 | 0.0 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 0.9333 |
+| renewal_terms | 1 | — | — | — | — | — | 1 | 1 | — | 1 | — | — | 0.0 | 1 | 0.6 | — | 1 | — | 1 | — | — | 1 | — | — | 1 | — | 1 | — | 0.4722 | — | 0.8517 |
+| term_length | 1 | — | 1 | — | 1 | 0.75 | 1 | 1 | 1 | 1 | — | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 0.4444 | — | — | 1 | 1 | 1 | 1 | — | 1 | 1 | 1 | 1 | 0.9664 |
+| termination_clauses | 1 | — | — | — | — | 1 | 1 | — | — | 0.0 | 1 | 1 | — | — | — | 1 | 1 | — | — | — | — | — | 1 | — | 1 | — | — | — | — | — | 0.9 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | d6 | d7 | d8 | d9 | d10 | d11 | d12 | d13 | d14 | d15 | d16 | d17 | d18 | d19 | d20 | d21 | d22 | d23 | d24 | d25 | d26 | d27 | d28 | d29 | d30 | mean |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| key_obligations | 0.3571 | 1 | 0.1875 | 0.7 | 1 | 0.5 | 0.8333 | 0.6 | 1 | 0.7273 | 1 | 0.5 | 0.4286 | 0.3077 | 0.4286 | 0.4286 | 0.7143 | 0.3333 | 0.375 | — | 1 | 0.6 | 0.7778 | 0.5556 | 0.5556 | — | 0.3 | 0.8 | 0.3684 | 0.625 | 0.6073 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 | 0.0 | 1 | 0.0 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 0.9333 |
+| termination_clauses | 1 | — | — | — | — | 1 | 1 | — | — | 0.0 | 1 | 1 | — | — | — | 1 | 1 | — | — | — | — | — | 1 | — | 1 | — | — | — | — | — | 0.9 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 10 | 0 | 10 | 0 | 1 | 0.0 |
+| document_name | 30 | 29 | 30 | 0 | 1 | 0.0 |
+| effective_date | 28 | 28 | 26 | 0 | 1 | 0.0 |
+| governing_law | 26 | 26 | 26 | 0 | 1 | 0.0 |
+| key_obligations | 231 | 155 | 231 | 0 | 1 | 0.0 |
+| parties | 78 | 36 | 78 | 0 | 1 | 0.0 |
+| renewal_terms | 13 | 12 | 13 | 0 | 1 | 0.0 |
+| term_length | 24 | 24 | 24 | 0 | 1 | 0.0 |
+| termination_clauses | 81 | 16 | 81 | 0 | 1 | 0.0 |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). The initial term of this Ag… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen hereby agrees that during the Exclusivity Period, Qualigen shall not, directly or indirectly, through its affiliates, agents, stockholders, officers, directors or otherwise solicit, initiate, participate in dis… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.98 |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Financial for Lutherans (formerly Thrivent Life Insurance Company, formerly Lutheran Brotherhood Variable Insurance Products Company) |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If the solvency of the Society becomes impaired, you may be required to make an extra payment. The Board of Directors will determine the amount of any extra payment. It will be based on each member's fair share of the d… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | PhaseBio Pharmaceuticals Inc. ("PB"), SFJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The term of this Agreement (the "Term") will commence on the Effective Date and will expire upon the earliest of (i) termination of this Agreement in accordance with Section 14.2, or (ii) the date of payment of the last… |
+| d3 | termination_clauses | Either Party may terminate this Agreement immediately in the event of a material breach of this Agreement by the other Party provided that the breaching Party has received written notice from the non-breaching Party of … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | Without the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreemen… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.95 |
+| d4 | document_name | COLLABORATION AGREEMENT |
+| d4 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d4 | effective_date | 2014-08-18 |
+| d4 | term_length | — |
+| d4 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d4 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d4 | key_obligations | Neither Party may assign this Agreement without the prior written consent of the other Party; provided, however that either Party may assign in connection with a merger or sale of all or substantially all of its stock o… |
+| d4 | contract_value | — |
+| d4 | renewal_terms | — |
+| d4 | confidence | 0.75 |
+| d5 | document_name | Marketing Agreement |
+| d5 | parties | Loop Industries, Inc. ("Loop"), Indorama Loop Technologies, LLC ("Joint Venture Company") |
+| d5 | effective_date | 2018-09-__ |
+| d5 | term_length | This Agreement begins on the Effective Date and shall continue indefinitely unless sooner terminated as provided in this Article 5. |
+| d5 | termination_clauses | If a Party commits a material breach of this Agreement, the non-breaching Party shall be entitled to terminate this Agreement if the breaching party does not cure the breach within thirty (30) days after the non- breach… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance with the laws of the State of Delaware, United States of America, without reference to conflict-of-laws principles. |
+| d5 | key_obligations | As between the Parties, subject to Section 2.7, Loop shall have the sole and exclusive right to enter into agreements for the sale of Loop-branded Products or any Products produced using Licensed Subject Matter, and the… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.95 |
+| d6 | document_name | SERVICES AGREEMENT |
+| d6 | parties | Idan Maimon ("Maimon"), Intellisense Solutions, Inc., a Nevada corporation ("Company") |
+| d6 | effective_date | 2019-04-01 |
+| d6 | term_length | the term of this Agreement shall commence on the date hereof (the "Effective Date") and shall continue for a minimum period of 12 months (the "Minimum Period") and thereafter upon the mutual agreement of the Company and… |
+| d6 | termination_clauses | If Maimon should become unable to serve as CEO, or should fail to perform any of the obligations hereunder for any cause including death or disability, always in the sole judgment and decision of the Company, then the C… |
+| d6 | governing_law | This Agreement shall be governed by and construed in accordance with the law of the State of New York without giving effect to the principles of conflicts of law thereof. |
+| d6 | key_obligations | Neither of the parties hereto may assign its or his rights hereunder without the prior written consent of the other party hereto, and any such attempted assignment without such consent shall be null and void and without… |
+| d6 | contract_value | $1,000 during the Minimum Period |
+| d6 | renewal_terms | — |
+| d6 | confidence | 0.95 |
+| d7 | document_name | WALABOT-HOME RESELLER AGREEMENT |
+| d7 | parties | Vayyar Imaging Ltd. ("Supplier"), Inde Living Holdings, Inc. ("Reseller") |
+| d7 | effective_date | 2019-07-31 |
+| d7 | term_length | This Agreement shall become effective on the Effective Date and shall remain in effect for an initial period of 1 year ("Initial Term"). Thereafter, this Agreement shall automatically be renewed for successive 1-year te… |
+| d7 | termination_clauses | Following the Initial Term, either Party may terminate this Agreement without cause upon written notice to the other Party of at least 3 months., Without derogating from any other remedies that any Party may have under … |
+| d7 | governing_law | This Agreement shall be governed by the laws of the State of New York |
+| d7 | key_obligations | Supplier hereby (i) appoints Reseller, and Reseller accepts the appointment, as a non‐ exclusive reseller of the Products in the Territory., In connection with the foregoing appointment, Supplier hereby grants Reseller … |
+| d7 | contract_value | $*** per Product unit + $*** for shipment and tax (subject to any tax changes) |
+| d7 | renewal_terms | Thereafter, this Agreement shall automatically be renewed for successive 1-year terms (each a "Renewal Term", and together with the Initial Term, the "Term"). |
+| d7 | confidence | 0.95 |
+| d8 | document_name | CONTENT LICENSING AGREEMENT |
+| d8 | parties | Data Call Technologies, Inc. ("Licensor"), PLAN_B MEDIA AG ("plan_b") |
+| d8 | effective_date | 2006-03-24 |
+| d8 | term_length | Unless otherwise stated in the Appendix the term of this letter Agreement shall continue for twenty-four (24) months with the effective date unless terminated sooner or extended pursuant to the terms hereof ("Initial Te… |
+| d8 | termination_clauses | Either Party shall be entitled to cancel this Agreement if the other Party is materially in breach of the terms of this Agreement. If the breach of contract is capable of being remedied, this Agreement can be cancelled … |
+| d8 | governing_law | This Agreement shall be governed and construed in accordance with the laws of the United States of America. |
+| d8 | key_obligations | LICENSOR grants plan_b for the term of this Agreement the right to produce, market and distribute Content to End Users (in the territory specified in appendix 2) through its own and its partner's platform., LICENSOR sha… |
+| d8 | contract_value | — |
+| d8 | renewal_terms | The Initial Term shall automatically be extended for an additional period of half a year unless either party provides the other party with written notification of termination of the letter Agreement at least 60 days pri… |
+| d8 | confidence | 0.95 |
+| d9 | document_name | CONSULTING AGREEMENT |
+| d9 | parties | Global Technologies, Ltd ("Company"), Timothy Cabrera ("Consultant") |
+| d9 | effective_date | 2020-01-02 |
+| d9 | term_length | This Agreement shall be in full force and effect commencing on January 2, 2020 and shall remain in effect for one (1) year or until Consultant completes the services requested. |
+| d9 | termination_clauses | Either Party shall have the right to terminate this Agreement without notice in the event of the bankruptcy, insolvency, or assignment for the benefit of creditors of the other Party., Either Party shall have the right … |
+| d9 | governing_law | This Agreement and the legal relations among the Parties hereto shall be governed by and construed in accordance with the laws of the State of Florida, without regard to its conflict of law doctrine. |
+| d9 | key_obligations | The Company shall be truthful with Consultant in regard to any relevant material regarding the Company, verbally or otherwise, or this entire Agreement will terminate and all consideration paid shall be forfeited withou… |
+| d9 | contract_value | $250,000,00 cash compensation |
+| d9 | renewal_terms | — |
+| d9 | confidence | 0.95 |
+| d10 | document_name | STRATEGIC ALLIANCE AGREEMENT |
+| d10 | parties | Allscripts Healthcare, LLC ("Allscripts"), Phreesia, Inc. ("Company" or "Phreesia") |
+| d10 | effective_date | 2015-12-10 |
+| d10 | term_length | The initial term of this Agreement commences on the Effective Date and will continue in effect until five (5) year(s) from such date (the "Initial Term") unless terminated earlier pursuant to Section 25. |
+| d10 | termination_clauses | Either Party may terminate this Agreement, immediately upon written notice to the other Party, if the other Party materially breaches this Agreement and such breach (a) is incapable of cure or (b) being capable of cure,… |
+| d10 | governing_law | This Agreement will be governed by and construed in accordance with the Laws of the State of Illinois applicable to agreements made and to be performed wholly within that State without regard to its conflicts of laws pr… |
+| d10 | key_obligations | Neither Party may assign or otherwise transfer any of its rights, or delegate or otherwise transfer any of its obligations or performance, under this Agreement, in each case whether voluntarily or involuntarily, without… |
+| d10 | contract_value | — |
+| d10 | renewal_terms | Unless this Agreement is terminated pursuant to Section 25, this Agreement will automatically renew for additional successive [***] terms (each a "Renewal Term" and together with the Initial Term, the "Term") unless and… |
+| d10 | confidence | 0.95 |
+| d11 | document_name | SUPPLY AGREEMENT |
+| d11 | parties | EWSD 1, LLC, d/b/a/ SHI FARMS ("Shi Farms"), Gridiron BioNutrients, Inc ("Gridiron") |
+| d11 | effective_date | 2020-01-26 |
+| d11 | term_length | — |
+| d11 | termination_clauses | Either Party may terminate this Agreement at any time prior to delivery of the Product. |
+| d11 | governing_law | This Agreement and any amendments thereto shall be construed according to the laws of the State of Colorado without regard to conflicts of law principles |
+| d11 | key_obligations | This Agreement may not be waived, amended or assigned without an agreed written and signed document, signed by both Parties., Shi Farms agrees to sell Product and Gridiron agrees to purchase 30,000 lbs. of hemp biomass … |
+| d11 | contract_value | $150,000 |
+| d11 | renewal_terms | — |
+| d11 | confidence | 0.95 |
+| d12 | document_name | COOPERATION AGREEMENT |
+| d12 | parties | HPIL ENERGYTECH Inc. ("HPIL ET"), GINARES GROUP AG ("GINARES") |
+| d12 | effective_date | 2015-01-05 |
+| d12 | term_length | The term of this Agreement shall be one (1) year unless terminated earlier in accordance with the terms of this Agreement (the "Term"). |
+| d12 | termination_clauses | The Parties may terminate its performance of related obligations under this Agreement within thirty (30) days of receipt by the Party of written termination notice. |
+| d12 | governing_law | This Agreement and its application and interpretation will be governed exclusively by its terms and the laws of the State of Nevada (USA), and excluding any conflicts of law provisions which would require the applicatio… |
+| d12 | key_obligations | The rights and obligations provided by this Agreement shall not be assignable by any Party., Except as expressly provided herein, nothing herein is intended to confer upon any person, other than the Parties and their su… |
+| d12 | contract_value | — |
+| d12 | renewal_terms | — |
+| d12 | confidence | 0.95 |
+| d13 | document_name | Gas Transportation Agreement |
+| d13 | parties | PennTex North Louisiana Operating, LLC ("Transporter"), MRD Operating LLC ("Customer") |
+| d13 | effective_date | 2015-04-14 |
+| d13 | term_length | This Agreement shall commence on the Effective Date and continue in full force and effect until the end of the fifteenth (15th) Contract Year, and shall continue in full force and effect thereafter until terminated by e… |
+| d13 | termination_clauses | This Agreement shall commence on the Effective Date and continue in full force and effect until the end of the fifteenth (15th) Contract Year, and shall continue in full force and effect thereafter until terminated by e… |
+| d13 | governing_law | This Agreement is entered into in the State of Texas and shall be governed, interpreted and construed in accordance with the laws of the State of Texas without regard to the conflicts of laws provisions thereof. |
+| d13 | key_obligations | This Agreement may not be assigned, disposed of, alienated or otherwise transferred by either Party, in whole or in part, without the prior written consent of the other Party, which consent shall not be unreasonably wit… |
+| d13 | contract_value | — |
+| d13 | renewal_terms | — |
+| d13 | confidence | 0.95 |
+| d14 | document_name | CO-BRANDING AGREEMENT |
+| d14 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d14 | effective_date | 2000-05-22 |
+| d14 | term_length | This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for two (2) years… |
+| d14 | termination_clauses | If Women.com does not deliver the shortfall within sixty (60) days of the end of the applicable quarter, eDiets may terminate this Agreement in its entirety immediately or authorize Women.com to deliver the shortfall wi… |
+| d14 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d14 | key_obligations | During the Term, (a) Women.com will not buy, sell, display, distribute advertising from (including, but not limited to, banner ads, buttons, badges, text links, hyperlinks or editorial mentions) or otherwise promote a C… |
+| d14 | contract_value | $4,000,000 (Two Years) |
+| d14 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d14 | confidence | 0.95 |
+| d15 | document_name | EXCLUSIVE DISTRIBUTOR AGREEMENT |
+| d15 | parties | LifeUSA/ Envision Health, Inc. ("ENVISION"), Sierra Mountain Minerals, Inc. ("SIERRA") |
+| d15 | effective_date | 2005-12-08 |
+| d15 | term_length | The term of this Agreement shall be two (2) years from the Effective Date with automatic annual renewals thereafter provided either party does not provide sixty (60) days notice of termination prior to the renewal date … |
+| d15 | termination_clauses | Upon the occurrence of a material breach or default as to any obligation, term or provision contained herein by either party and the failure of the breaching party to promptly pursue (within thirty (30) days after recei… |
+| d15 | governing_law | This Agreement is deemed to have been entered into in the State of Colorado, and its interpretation, construction, and the remedies for its enforcement or breach are to be applied pursuant to and in accordance with the … |
+| d15 | key_obligations | SIERRA shall cease making sales to any customer or distributor who, during the term of this Agreement, violates ENVISION's exclusivity., ENVISION shall not resell the Product alone., During the term of this Agreement, E… |
+| d15 | contract_value | — |
+| d15 | renewal_terms | automatic annual renewals thereafter provided either party does not provide sixty (60) days notice of termination prior to the renewal date |
+| d15 | confidence | 0.95 |
+| d16 | document_name | AFFILIATE AGREEMENT DATED JULY 15, 2005 |
+| d16 | parties | Link Plus Corporation ("LKPL"), Axiometric, LLC ("Axiometric") |
+| d16 | effective_date | 2005-07-15 |
+| d16 | term_length | This Agreement will remain in force for perpetuity or until and unless otherwise mutually agreed or amended in writing by both parties. |
+| d16 | termination_clauses | If Axiometric does not then wish to rent office space from LKPL, then LKPL may terminate Axiometric's license to use work space in LKPL's facility upon 60 days notice., Axiometric will have the right to terminate the li… |
+| d16 | governing_law | This Agreement shall be construed and governed in accordance with the laws of the State of Maryland regardless of the place or places of its physical execution and performance. |
+| d16 | key_obligations | Axiometric shall have the exclusive right to market and sell AMR Product Suites to entities whose corporate headquarters are physically located in the United States and U.S. territories with the exception of Datamatic a… |
+| d16 | contract_value | — |
+| d16 | renewal_terms | — |
+| d16 | confidence | 0.95 |
+| d17 | document_name | CONTENT LICENSE AGREEMENT |
+| d17 | parties | Digicorp, Inc. ("COMPANY"), New China Media LLC (a/k/a New China Media Limited) ("NCM"), YGP, LLC ("YGP"), TWK Holdings, LLC ("TWK") |
+| d17 | effective_date | 2008-06-02 |
+| d17 | term_length | This Agreement and the provisions hereof, except as otherwise provided, shall be in full force and effect commencing on the date of execution by both Parties and shall extend for an initial term of two (2) years. This A… |
+| d17 | termination_clauses | This Agreement may be terminated by either party upon thirty (30) days written notice to the other in the event of a breach of a material provision hereof unless, during that thirty (30) day period, the party receiving … |
+| d17 | governing_law | This Agreement is to be governed by and construed in accordance with the Laws of the State of California applicable to contracts made and to be performed wholly within such State, and without regard to the conflicts of … |
+| d17 | key_obligations | CONTENT PROVIDER will not during the Term of this Agreement take any action to exploit or otherwise use, reproduce, distribute, transmit and publicly display any of the Content via the internet to Universities and Colle… |
+| d17 | contract_value | $16,200 in the aggregate; NCM 3,000 of its Series A Convertible Preferred Stock for which NCM will pay COMPANY the sum of $1.00 per share or $3,000 in the aggregate and TWK 12,000 of its Series A Convertible Preferred S… |
+| d17 | renewal_terms | This Agreement shall be automatically renewed for additional extended terms each of two (2) years duration unless either party notifies the other in writing of its intention not to renew the Agreement, such notification… |
+| d17 | confidence | 0.95 |
+| d18 | document_name | CO-BRANDING AGREEMENT |
+| d18 | parties | VerticalNet, Inc. ("VerticalNet"), Impresse Corporation ("Impresse") |
+| d18 | effective_date | 2000-03-03 |
+| d18 | term_length | The Term of this Agreement shall begin on the Effective Date and shall end fifteen months therefrom. |
+| d18 | termination_clauses | Either party may terminate this Agreement immediately upon written notice to the other party in the event of any material breach of a term of this Agreement by such other party that remains uncured 30 days after written… |
+| d18 | governing_law | This Agreement shall be governed by and interpreted under the laws of the State of Delaware without regard to its conflicts of law provisions. |
+| d18 | key_obligations | Beginning on the Launch Date and continuing during the Term, VerticalNet shall not place advertising relating to the commercial printing entities listed on Exhibit "A," or other such entities subsequently identified by … |
+| d18 | contract_value | — |
+| d18 | renewal_terms | — |
+| d18 | confidence | 0.95 |
+| d19 | document_name | REAL ESTATE EDUCATION TRAINING PROGRAM DEVELOPMENT AGREEMENT |
+| d19 | parties | T&B Seminars, Inc., a California corporation f/s/o Tarek El Moussa ("T&B"), Legacy Education Alliance Holdings, Inc., a Colorado corporation ("LEA") |
+| d19 | effective_date | 2019-12-23 |
+| d19 | term_length | The Term shall commence upon the Effective Date and shall continue for an initial term of five (5) years. The Term shall automatically renew thereafter for successive 5-year terms unless either party provides prior writ… |
+| d19 | termination_clauses | The Agreement may be terminated: (i) immediately by either party in the event of a breach of this Agreement by the other party that is susceptible of cure and such breach is not cured within the 30-day period after writ… |
+| d19 | governing_law | This Agreement will be governed by and construed in accordance with the laws of the State of New York without regard to its provisions concerning the applicability of the laws of other jurisdictions, and specifically ex… |
+| d19 | key_obligations | During the Term, the LEA shall not use the Licensed Intellectual Property other than as permitted by this Agreement., T&B shall not, during the Term, grant any third party a license to use the Licensed Intellectual Prop… |
+| d19 | contract_value | — |
+| d19 | renewal_terms | The Term shall automatically renew thereafter for successive 5-year terms unless either party provides prior written notice of termination not less than 90 days prior to the end of such five-year term. |
+| d19 | confidence | 0.95 |
+| d20 | document_name | EXHIBIT A JOINT FILING AGREEMENT |
+| d20 | parties | UBS ONCOLOGY IMPACT FUND L.P., ONCOLOGY IMPACT FUND (CAYMAN) MANAGEMENT L.P., MPM ONCOLOGY IMPACT MANAGEMENT LP, MPM ONCOLOGY IMPACT MANAGEMENT GP LLC |
+| d20 | effective_date | 2020-04-07 |
+| d20 | term_length | — |
+| d20 | termination_clauses | — |
+| d20 | governing_law | — |
+| d20 | key_obligations | the undersigned agree to the joint filing on behalf of each of them of a statement on Schedule 13G (including amendments thereto) with respect to the Common Stock of Spring Bank Pharmaceuticals, Inc. and further agree t… |
+| d20 | contract_value | — |
+| d20 | renewal_terms | — |
+| d20 | confidence | 0.85 |
+| d21 | document_name | ENDORSEMENT AGREEMENT ADDENDUM I |
+| d21 | parties | National Football League Alumni - Northern California Chapter ("NFLA-NC"), National Football League Alumni, Inc. ("NFLA"), Food For Athletes, Inc., Gridiron BioNutrients™ |
+| d21 | effective_date | 2017-11-07 |
+| d21 | term_length | — |
+| d21 | termination_clauses | — |
+| d21 | governing_law | — |
+| d21 | key_obligations | The NFLA, NFLA-NC and the Company (collectively the "Parties") agree that this Addendum I shall be affixed and be enforceable under the terms of the Endorsement Agreement executed by the Parties on October 30, 2017., Pa… |
+| d21 | contract_value | $0.05 per Unit sold of Licensed Products within the Contract Territory |
+| d21 | renewal_terms | — |
+| d21 | confidence | 0.85 |
+| d22 | document_name | FIRST AMENDMENT TO DISTRIBUTOR AGREEMENT |
+| d22 | parties | Peregrine/Bridge Transfer Corporation, a Delaware corporation ("Licensor"), NEON Systems, Inc., a Delaware corporation ("Licensee"), Skunkware, Inc., a Delaware corporation |
+| d22 | effective_date | 1999-01-01 |
+| d22 | term_length | This Agreement shall be effective through and including March 31, 2004. Upon the expiration of such term, this Agreement will renew automatically for successive terms of one (1) year each unless either party to this Agr… |
+| d22 | termination_clauses | Immediately upon written notice if the other party defaults in the performance of any obligation under this Agreement, including failure to promptly pay any amount due hereunder, and fails to cure such default within th… |
+| d22 | governing_law | This Amendment shall be governed by and construed under the law governing the Distributor Agreement. |
+| d22 | key_obligations | Licensor and Licensee do hereby agree that this Amendment shall effect a change in the nature of the distributorship granted to Licensee pursuant to the Distributor Agreement from a non-exclusive to an exclusive distrib… |
+| d22 | contract_value | — |
+| d22 | renewal_terms | Upon the expiration of such term, this Agreement will renew automatically for successive terms of one (1) year each unless either party to this Agreement delivers written notice of termination to the other party to this… |
+| d22 | confidence | 0.95 |
+| d23 | document_name | CONSULTING AGREEMENT |
+| d23 | parties | Driven Deliveries, Inc. ("Company"), TruckThat LLC ("Consultant") |
+| d23 | effective_date | 2019-05-01 |
+| d23 | term_length | The initial term of this Agreement shall be the sooner of six (6) months from the Effective Date, or replacement of this Agreement with a subsequent agreement between the Parties. |
+| d23 | termination_clauses | Either Party may terminate this Agreement, with or without cause, upon giving the other party thirty (30) days prior written notice of such termination pursuant to Section 12.7 of this Agreement., The Company may termin… |
+| d23 | governing_law | This Agreement shall be governed by the laws of the State of California, without regard to the conflicts of law provisions of any jurisdiction. |
+| d23 | key_obligations | Consultant does not presently perform or intend to perform, during the term of this Agreement, consulting or other services for, or engage in or intend to engage in an employment relationship with, companies who busines… |
+| d23 | contract_value | $18,000 per month |
+| d23 | renewal_terms | — |
+| d23 | confidence | 0.95 |
+| d24 | document_name | AMERICAN EXPRESS INCENTIVE SERVICES STORED VALUE PRODUCTS RESELLER AGREEMENT |
+| d24 | parties | American Express Incentive Services, L.L.C. ("AEIS"), Schoolpop, Inc., a Delaware corporation ("Schoolpop") |
+| d24 | effective_date | 2004-08-01 |
+| d24 | term_length | This Agreement is effective as of August 1, 2004, (the "Effective Date") and shall terminate on July 31, 2009, (the "Termination Date") unless earlier terminated or extended as provided for herein. |
+| d24 | termination_clauses | Should either party (1) admit in writing its inability to pay its debts generally as they become due; (2) make a general assignment for the benefit of creditors; (3) institute proceedings to be adjudicated a voluntary b… |
+| d24 | governing_law | This Agreement shall be deemed to have been made and executed in the State of Missouri and any dispute arising thereunder shall be resolved in accordance with the laws of the State of Missouri, without reference to its … |
+| d24 | key_obligations | Schoolpop shall have the exclusive right to resell Cards in the NPO Marketplace., Notwithstanding the foregoing, Schoolpop shall fund from AEIS a minimum of $52,000,000 of Cards (the "Guaranteed Minimum") in each Contra… |
+| d24 | contract_value | $1,250,000 |
+| d24 | renewal_terms | — |
+| d24 | confidence | 0.95 |
+| d25 | document_name | VIDEO-ON-DEMAND CONTENT LICENSE AGREEMENT |
+| d25 | parties | Rogers Cable Communications Inc. ("Rogers"), EuroMedia Holdings Corp. ("Licensor") |
+| d25 | effective_date | 2006-07-11 |
+| d25 | term_length | The term of this Agreement (the "Initial Term") shall commence as of the Effective Date and, unless earlier terminated in accordance with this Agreement, shall terminate on June 30, 2010. |
+| d25 | termination_clauses | Notwithstanding any other provision of this Agreement, Rogers may terminate this Agreement, at any time, upon sixty (60) days' prior written notice to Licensor., Either Rogers or Licensor may, at its option and without … |
+| d25 | governing_law | This Agreement shall be governed by laws of the Province of Ontario and the federal laws of Canada applicable therein. |
+| d25 | key_obligations | If Licensor enters, or has entered, into an agreement or series of agreements (including side letters, understandings or arrangements, whether oral or written, whether formal or informal, whether now or hereafter effect… |
+| d25 | contract_value | — |
+| d25 | renewal_terms | At Rogers' option, this Agreement shall renew for a subsequent term of two (2) years on the terms and conditions herein (the "Renewal Term"). |
+| d25 | confidence | 0.95 |
+| d26 | document_name | JOINT FILING AGREEMENT |
+| d26 | parties | YA II PN, Ltd., YA Global Investments II (U.S.), Ltd., Yorkville Advisors Global, LP, Yorkville Advisors Global II, LLC, YAII GP, LP, Yorkville Advisors GP, LLC, D-Beta One EQ, Ltd., Delta Beta Advisors, LLC, D-Beta One… |
+| d26 | effective_date | 2020-04-08 |
+| d26 | term_length | — |
+| d26 | termination_clauses | — |
+| d26 | governing_law | — |
+| d26 | key_obligations | The undersigned hereby agree that the statement on Schedule 13G with respect to the equity securities of Q Biomed, Inc. is, and any amendment thereto signed by each of the undersigned shall be, filed on behalf of each o… |
+| d26 | contract_value | — |
+| d26 | renewal_terms | — |
+| d26 | confidence | 0.85 |
+| d27 | document_name | EXCLUSIVE DISTRIBUTOR AGREEMENT |
+| d27 | parties | Erchonia Corporation ("Erchonia"), InnerScope Hearing Technologies Inc, ("Distributor") |
+| d27 | effective_date | — |
+| d27 | term_length | Unless terminated earlier as provided in this agreement, this Agreement shall have an initial term of three (3) years. |
+| d27 | termination_clauses | Either party may terminate this Agreement in the event of a material breach by the other party, provided the breaching party is first given reasonably detailed, written notice of the breach. If the breach is not cured w… |
+| d27 | governing_law | This Agreement shall be governed in all respects by the laws of the United States and the State of Florida, except for conflict of laws provisions. |
+| d27 | key_obligations | Subject to the terms set forth in this agreement, Erchonia grants Distributor the exclusive, non- transferable right and license to promote, distribute and sell the Products identified in Exhibit A to those type of cust… |
+| d27 | contract_value | — |
+| d27 | renewal_terms | This agreement shall automatically renew for a period of three (3) years and upon the parties mutual agreement on new minimum performance goals for the renewal period. |
+| d27 | confidence | 0.85 |
+| d28 | document_name | PRODUCT DEVELOPMENT AND CO-BRANDING AGREEMENT "SONGS 4 WORSHIP SERIES" |
+| d28 | parties | INTEGRITY INCORPORATED ("Integrity"), TIME LIFE, INC. ("TL") |
+| d28 | effective_date | 2000-01-10 |
+| d28 | term_length | This agreement shall commence as of date first above written, and shall Continue through December 31, 2004 ("the Term"). |
+| d28 | termination_clauses | In the event of a suspension owing to a "force majeure," which suspension exceeds six (6) consecutive months, the non-suspending party may terminate this Agreement upon ten (10) days written notice to other, but only if… |
+| d28 | governing_law | This Agreement has been entered into in the State of Tennessee, and the validity, interpretation and legal effect of this Agreement will be governed by the laws of the State of Tennessee applicable to contracts entered … |
+| d28 | key_obligations | TL will hold exclusive worldwide rights to promote and sell the product through the following distribution channels: Outgoing telemarketing, General Market retail, and General Market catalogs, and exclusive rights withi… |
+| d28 | contract_value | — |
+| d28 | renewal_terms | Thereafter, the parties must mutually agree in writing to extend the term for additional periods of time. |
+| d28 | confidence | 0.95 |
+| d29 | document_name | FRANCHISE AGREEMENT |
+| d29 | parties | bw-3 FRANCHISE SYSTEMS, INC. ("we" or "us"), __________________________ ("you") |
+| d29 | effective_date | — |
+| d29 | term_length | The term of this Agreement is for ten (10) years commencing on the date of this Agreement, unless terminated as provided by this Agreement. |
+| d29 | termination_clauses | If you are in substantial compliance with this Agreement and we materially breach this Agreement and fail to cure such breach within a reasonable time after written notice thereof is delivered to us, you may terminate t… |
+| d29 | governing_law | THIS AGREEMENT TAKES EFFECT UPON ITS ACCEPTANCE AND EXECUTION BY US, AND SHALL BE INTERPRETED AND CONSTRUED UNDER THE LAWS OF THE STATE IN WHICH THE FRANCHISED RESTAURANT IS LOCATED, EXCEPT TO THE EXTENT GOVERNED BY THE… |
+| d29 | key_obligations | You receive a Designated Area within which we and our affiliates shall not operate or grant to anyone else a franchise to operate a Buffalo Wild Wings or bw-3 Restaurant so long as this Agreement is in force and effect.… |
+| d29 | contract_value | — |
+| d29 | renewal_terms | You have the right to renew the franchise for two (2) successive terms equal to five (5) years each, providing you meet all of the following conditions: 1. You have, during the entire term, complied with all the provisi… |
+| d29 | confidence | 0.85 |
+| d30 | document_name | WIRELESS CONTENT LICENSE AGREEMENT |
+| d30 | parties | TWENTIETH CENTURY FOX LICENSING & MERCHANDISING, a division of Fox Entertainment Group, Inc. ("Fox"), Sorrent, Inc. ("Licensee") |
+| d30 | effective_date | 2004-12-16 |
+| d30 | term_length | The rights granted hereunder shall be effective as of the Effective Date and shall expire on December 31, 2006 (the "Term"); provided, however, that with respect to each Property, all rights and licenses granted herein … |
+| d30 | termination_clauses | If Licensee's liabilities exceed its assets, or if Licensee becomes unable to pay its debts as they become due, or files or has filed against Licensee a petition in bankruptcy, reorganization or for the adoption of an a… |
+| d30 | governing_law | This Agreement shall be construed in accordance with the laws of the State of California applicable to agreements executed and to be wholly performed therein. |
+| d30 | key_obligations | Fox grants to Licensee a limited, exclusive (except as otherwise may be provided in this Agreement), non-transferable (except as permitted in Paragraph 17(d)) right and license to use, make, have made (as set forth in P… |
+| d30 | contract_value | — |
+| d30 | renewal_terms | — |
+| d30 | confidence | 0.95 |
 
 ---
