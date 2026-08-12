@@ -1763,10 +1763,6 @@ def _execute_run(
     )
 
     graph = build_graph()
-    # Attempt-scoped thread: a re-run of the same document must not resume the
-    # previous run's checkpointed state (pilot: correspondence_01's degraded
-    # second run inherited stale state, producing output=null).
-    config = {"configurable": {"thread_id": f"{seed}-run{attempt}"}}
 
     # O-1: warm the score-config schema in a background thread (sticky-bounded
     # 10-min retry); never block the document path on Langfuse.
@@ -1816,6 +1812,18 @@ def _execute_run(
         trace_metadata["source"] = source
     if run_id:
         trace_metadata["run_id"] = run_id
+
+    # Native LangGraph RunnableConfig: thread-scoped attempt (a re-run of the
+    # same document must not resume the previous run's checkpointed state —
+    # pilot: correspondence_01's degraded second run inherited stale state)
+    # plus run-level tags/metadata. LangGraph propagates these natively to any
+    # callback/instrumentation attached to the run, so the graph-level run
+    # carries the same classification dimensions as the Langfuse trace.
+    config = {
+        "configurable": {"thread_id": f"{seed}-run{attempt}"},
+        "tags": tags,
+        "metadata": trace_metadata,
+    }
 
     with tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc

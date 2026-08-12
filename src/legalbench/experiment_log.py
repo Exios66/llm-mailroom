@@ -181,6 +181,7 @@ def regenerate(log_path: Optional[Path] = None) -> dict[str, Any]:
         and _inside(sibling, log_path)
     )
 
+    local_md = SRC_DIR / "legalbench" / "reports" / "experiment_log.md"
     if can_rebuild_sibling:
         render = sibling / "scripts" / "reporting" / "render_experiment_log.py"
         build_site = sibling / "scripts" / "site" / "build_site.py"
@@ -211,7 +212,6 @@ def regenerate(log_path: Optional[Path] = None) -> dict[str, Any]:
                 touched["synced_md"] = str(_sync_markdown(sibling, sibling_md))
         except Exception as exc:  # regeneration is best-effort; the append stands
             print(f"  WARN: experiment-log regeneration failed: {exc}", file=sys.stderr)
-        local_md = SRC_DIR / "legalbench" / "reports" / "experiment_log.md"
     _write_local_markdown(log_path, local_md)
     if touched["log_md"] is None:
         touched["log_md"] = str(local_md)
