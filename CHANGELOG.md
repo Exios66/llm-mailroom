@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **LangGraph + Langfuse best-practices audit of the processing pipeline**
+  (`docs/reports/audits/2026-08-12-langgraph-langfuse-best-practices-audit-of-the-processing-pipeline.md`):
+  skill-grounded review of every agent's behavior when running the full
+  pipeline. Verified compliant: attempt-scoped `thread_id` + checkpointer
+  selection, partial-update state nodes, conditional routing with explicit
+  END, deadline/budget-guarded transient-retry loop (a documented superset
+  of native `RetryPolicy`), manifest-based human review (deliberate
+  durability pattern vs native `interrupt()`), and the Langfuse scaffold
+  (deterministic trace ids, sessions, tags, environments, verb-first spans,
+  auto-created score configs) — the native LangChain/LangGraph callback
+  handler cannot provide those, so the hand-rolled layer is not a
+  reinvention.
+- **Native LangGraph RunnableConfig tags/metadata on the graph invoke**:
+  `graph.build_graph.run_pipeline` now passes the same environment/run/source
+  tags and pipeline/run_deadline/attempt/run_id metadata natively in the
+  invoke config (in addition to the Langfuse trace), so any callback or
+  LangGraph-native instrumentation sees the run's classification dimensions
+  without duplication.
 - **LangChain + LangGraph skills for all agents** (from
   github.com/langchain-ai/langchain-skills): langchain-fundamentals, python
   quickstart, dependencies, middleware + langgraph-fundamentals, python
