@@ -97,6 +97,29 @@ PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mo
 - Tests run without Docker: conftest auto-sets `OPENROUTER_API_KEY` and `MAILROOM_BASE_DIR` to a tmpdir (`temp_base_dir` fixture). E2E tests build the full graph with mocked LLM and the SQLite checkpointer.
 - `asyncio_mode = "auto"` is set; graph nodes are sync. Fixtures are plain-text files in `src/tests/fixtures/<doc_type>/`.
 
+## Experiment-log sync (mirror of the extraction-pipeline repo)
+
+The experiment log at `docs/reports/experiments/experiment_log.md` is a
+**SYNCED MIRROR** of the `llm-entity-extraction` repo's
+`reports/experiment_log.md` — never hand-edit it. It syncs naturally whenever
+the upstream repo pushes new experiment runs or releases:
+
+```bash
+PYTHONPATH=src python -c "from legalbench.experiment_log import regenerate, default_log_path; regenerate(default_log_path())"
+git add docs/reports/experiments/experiment_log.md
+git commit -m "DOCS SYNC: experiment log re-synced"
+git push origin main
+```
+
+`regenerate()` rebuilds the upstream markdown log + the GH Pages site data,
+then refreshes this synced copy (SYNCED-DOCUMENT header carries the upstream
+commit). **Direct access to the interactive site:** the synced log's header
+links https://exios66.github.io/llm-entity-extraction/ — the filterable,
+searchable experiment-log viewer (trend charts, cost-vs-quality scatter,
+failure-mode bars, prompt diffs) served from the upstream repo's `docs/`
+folder on `main`. Run the sync after every upstream push; the upstream repo's
+own release workflow (`scripts/release.py`) also ends with this mirror step.
+
 ## Documentation layout
 
 - `docs/` is the single source of truth for repository documentation (architecture, agents, configuration, deployment, testing, local models, reports). Do not duplicate its content anywhere else in the repo.
