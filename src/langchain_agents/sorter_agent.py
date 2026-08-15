@@ -197,8 +197,9 @@ class SorterAgent(BaseAgent):
         model: str | None = None,
         api_key: str | None = None,
         prompt_version: str = "sorter",
+        callbacks: list | None = None,
     ):
-        super().__init__(model=model, api_key=api_key)
+        super().__init__(model=model, api_key=api_key, callbacks=callbacks)
         self.prompt_version = prompt_version
         # The sorter classifies 25 near-synonymous contract families where
         # title-vs-operatives conflicts are common (reseller/distributor,

@@ -130,10 +130,16 @@ class TestRoutingLogic:
 
     def test_after_extraction_schema_valid_high_confidence_ignores_extra_keys(self):
         # Specialists embed instructions in the prompt; pydantic ignores extra
-        # keys like `_unsupported` / `reasoning` — must still route to report.
+        # keys like `_unsupported` / an unknown blob — must still route to
+        # report. `reasoning` is now a real schema field (v24+ trace dict).
         state = {
             "doc_type": "contract",
-            "extracted_data": {"parties": ["Acme"], "_unsupported": True, "reasoning": "x"},
+            "extracted_data": {
+                "parties": ["Acme"],
+                "_unsupported": True,
+                "reasoning": {"summary": "s", "entries": []},
+                "unknown_blob": "ignored",
+            },
             "extraction_confidence": 0.90,
             "extraction_attempts": 1,
             "conflict_detected": False,

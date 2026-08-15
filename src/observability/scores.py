@@ -86,6 +86,11 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "extraction_needs_judge_review", "data_type": "BOOLEAN"},
     {"name": "entity_list_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "entity_list_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    # Factuality audit (every reported value must match a GT label or be
+    # grounded in the source document) + category presence.
+    {"name": "extraction_overall_verified_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "extraction_hallucination_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "extraction_category_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     # --- LegalBench evaluation suite (legalbench/) ----------------------
     # Run-level scores attached to the per-run Langfuse trace by the suite's
     # runner; deterministic, computed locally (never LLM-graded).

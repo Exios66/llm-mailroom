@@ -42,7 +42,7 @@ FIELD_SCORE_CONFIGS = [
         "max_value": 1.0,
         "description": (
             "Deterministic per-field similarity score (date/money/id exact-after-normalize, "
-            "name fuzzy match, free-text token F1, entity-list bipartite F1)."
+            "name fuzzy match, free-text token F1, containment, entity-list bipartite)."
         ),
     },
     {
@@ -74,6 +74,30 @@ FIELD_SCORE_CONFIGS = [
         "max_value": 1.0,
         "description": "Recall of an entity-list field after optimal bipartite matching.",
     },
+    {
+        "name": "extraction_overall_verified_precision",
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "description": (
+            "Mean verified_precision across every audited content field — each reported value "
+            "must match a GT label or be grounded in the source document (factuality guard)."
+        ),
+    },
+    {
+        "name": "extraction_hallucination_rate",
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "description": "Mean hallucination_rate across every audited content field.",
+    },
+    {
+        "name": "extraction_category_presence",
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0,
+        "description": "Share of expected-True presence categories whose clause text is matched.",
+    },
 ]
 
 
@@ -98,9 +122,17 @@ def score_and_log_extraction(
     *,
     observation_id: str | None = None,
     matter_id: str | None = None,
+    doc_text: str | None = None,
+    presence_expectations: dict | None = None,
 ) -> ExtractionScoreResult:
     """Score one extraction deterministically and push every score to Langfuse,
     attached to the given trace.
+
+    ``doc_text`` enables the factuality audit (every reported value must match
+    a ground-truth label or be grounded in the source document) —
+    ``extraction_overall_verified_precision`` / ``extraction_hallucination_rate``
+    are emitted from it. ``presence_expectations`` (CUAD-style presence
+    categories) enables ``extraction_category_presence`` when provided.
 
     No-ops (without crashing) when Langfuse is not the active backend — the
     result is still returned so callers can gate on ``needs_judge_review``
@@ -108,7 +140,9 @@ def score_and_log_extraction(
     """
     from observability.scores import create_trace_score, is_enabled
 
-    result = score_extraction(doc_class, field_types, predicted, expected)
+    result = score_extraction(
+        doc_class, field_types, predicted, expected, doc_text=doc_text
+    )
     if not is_enabled():
         return result
 
@@ -153,6 +187,38 @@ def score_and_log_extraction(
             name="entity_list_recall",
             value=el_score.recall,
             comment=f"field={field_name}",
+            **common_kwargs,
+        )
+
+    # Factuality audit: mean verified_precision / hallucination_rate over every
+    # audited content field (list items + scalars the model actually reported).
+    if result.overall_verified_precision is not None:
+        create_trace_score(
+            name="extraction_overall_verified_precision",
+            value=result.overall_verified_precision,
+            comment=f"doc_class={doc_class} n_audited={sum(1 for a in result.entity_list_audit.values() if a.get('n_predicted'))}",
+            **common_kwargs,
+        )
+    audited = [
+        a["hallucination_rate"] for a in result.entity_list_audit.values()
+        if a.get("n_predicted")
+    ]
+    if audited:
+        create_trace_score(
+            name="extraction_hallucination_rate",
+            value=round(sum(audited) / len(audited), 4),
+            comment=f"doc_class={doc_class} n_audited={len(audited)}",
+            **common_kwargs,
+        )
+
+    if presence_expectations:
+        from observability.field_scoring import score_category_presence
+
+        cat_score, _ = score_category_presence(predicted, presence_expectations, field_types)
+        create_trace_score(
+            name="extraction_category_presence",
+            value=cat_score,
+            comment=f"doc_class={doc_class}",
             **common_kwargs,
         )
 

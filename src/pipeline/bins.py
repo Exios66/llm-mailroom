@@ -316,3 +316,97 @@ def list_inbox_files() -> list[Path]:
         p for p in inbox.iterdir()
         if p.is_file() and p.suffix.lower() in extensions
     )
+
+
+def accepted_extensions() -> list[str]:
+    """Accepted inbox file extensions from taxonomy.yaml (with defaults)."""
+    cfg = _get_config()
+    extensions = cfg.get("file_extensions", None)
+    if extensions is None:
+        extensions = [".txt", ".pdf", ".docx", ".md"]
+    return [str(e).lower() for e in extensions]
+
+
+def inbox_meta_path(file_path: Path) -> Path:
+    """Path of the upload-metadata sidecar for an inbox file.
+
+    The sidecar carries the metadata the API accepted on `/upload`
+    (matter_id, upload_id, uploaded_at, ...) so the watcher can file the
+    document under the submitted matter instead of inferring it from the
+    filename. `<file>.meta` never matches `accepted_extensions()`, so it is
+    never claimed or processed as a document itself.
+    """
+    return Path(str(file_path) + ".meta")
+
+
+def write_inbox_meta(file_path: Path, **meta) -> Path | None:
+    """Write the upload-metadata sidecar for an inbox file (best-effort).
+
+    Only meaningful while the file is still in the inbox: once claimed the
+    sidecar is left behind (harmless — it is not a processable extension) and
+    the metadata has already been read. Returns the sidecar path on success.
+    """
+    try:
+        path = inbox_meta_path(file_path)
+        path.write_text(json.dumps(meta, default=str))
+        return path
+    except Exception:
+        return None
+
+
+def read_inbox_meta(file_path: Path) -> dict | None:
+    """Read the upload-metadata sidecar for an inbox file (or None)."""
+    try:
+        path = inbox_meta_path(file_path)
+        if not path.exists():
+            return None
+        return json.loads(path.read_text())
+    except Exception:
+        return None
+
+
+HEARTBEAT_FILE_NAME = "watcher_heartbeat"
+_HEARTBEAT_FILE_PATH = None
+
+
+def _heartbeat_file_path() -> Path:
+    global _HEARTBEAT_FILE_PATH
+    if _HEARTBEAT_FILE_PATH is None:
+        _HEARTBEAT_FILE_PATH = get_base_dir() / HEARTBEAT_FILE_NAME
+    return _HEARTBEAT_FILE_PATH
+
+
+def touch_watcher_heartbeat() -> None:
+    """Liveness beacon: the watcher touches this file every rescan cycle.
+
+    `/health` reports how stale the heartbeat is so an operator can tell
+    whether uploads are actually being drained (a missing/stale heartbeat
+    means files will pile up in the inbox). Best-effort, never raises.
+    """
+    import time as _time
+
+    try:
+        path = _heartbeat_file_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ts": _time.time()}))
+    except Exception:
+        pass
+
+
+def watcher_heartbeat_age() -> float | None:
+    """Seconds since the watcher last beat, or None when no heartbeat exists.
+
+    A missing heartbeat means the watcher has never run (uploads will sit in
+    the inbox). The value is only meaningful when the watcher is alive enough
+    to keep touching the file.
+    """
+    import time as _time
+
+    try:
+        path = _heartbeat_file_path()
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        return max(0.0, _time.time() - float(data.get("ts", 0)))
+    except Exception:
+        return None
