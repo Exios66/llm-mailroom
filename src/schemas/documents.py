@@ -13,6 +13,10 @@ class ContractExtraction(BaseModel):
     key_obligations: list[str] = Field(default_factory=list)
     contract_value: str | None = None
     renewal_terms: str | None = None
+    # Per-field reasoning trace (v24+ vendored schema): how each value was
+    # found. A TRACE artifact, not clause content — excluded from scoring,
+    # judge input, and the client-facing report.
+    reasoning: dict | None = None
 
 
 class CorporateRecordExtraction(BaseModel):

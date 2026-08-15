@@ -31,6 +31,18 @@ run_limits:
   # models that keep generating past the point of usefulness.
   max_total_output_tokens: 20000
 
+# Chunked extraction (vendored v15+ pass, contracts specialist only): long
+# agreements are split on paragraph boundaries into overlapping windows,
+# each window extracted in its own call, and merged deterministically (list
+# fields union with normalized dedupe, scalars keep the first non-null value,
+# confidence takes the max) — nothing is truncated. Documents that fit in a
+# single window take the plain single-pass path, so small documents are
+# unaffected. The per-run deadline/token budget still bounds the extra calls.
+chunking:
+  enabled: true
+  chunk_chars: 90000     # window size (chars) for long contracts
+  overlap_chars: 8000    # trailing overlap so clauses crossing a cut are seen twice
+
 # Approximate per-1M-token pricing used for estimated_cost_usd scoring and
 # synced to the Langfuse model registry via scripts/sync_models.py.
 # Update from the OpenRouter model page; unknown models estimate cost as 0.
@@ -82,6 +94,22 @@ field_scoring:
   embedding_enabled: true
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
   embedding_rescue_below: 0.7  # only consult embeddings when string score is below this
+  # Fields whose expected value is a containment match: share of the EXPECTED
+  # text's (stopword-filtered) tokens covered by the prediction. For verbatim-
+  # clause fields whose label is one sentence of a longer passage.
+  containment_fields: [governing_law, term_length, renewal_terms]
+  # Fields whose ground-truth label set is a PARTIAL sample (not exhaustive):
+  # the reported list score becomes ground-truth coverage (recall), not F1 —
+  # extra correct extractions don't cut the score.
+  partial_gt_fields: [parties, key_obligations, termination_clauses]
+  # Factuality audit: every predicted list item / scalar value is verified
+  # against the source document (normalized token coverage; dates parsed from
+  # candidates in any format) — items that neither match a ground-truth label
+  # nor appear in the document are hallucinations, reported as
+  # verified_precision / hallucination_rate.
+  factuality_verification:
+    enabled: true
+    token_coverage: 0.7
 
 # Vision-mode ingestion (issue: vision-capable models can read PDFs page-by-page
 # as images; text-only models still get the transcription). When a document's

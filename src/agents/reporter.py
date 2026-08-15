@@ -38,7 +38,10 @@ def compile_matter_record(
     classification_confidence = manifest_data.get("classification_confidence")
     extraction_confidence = manifest_data.get("extraction_confidence")
 
-    cleaned_extracted = {k: v for k, v in (extracted or {}).items() if k != "confidence"}
+    cleaned_extracted = {
+        k: v for k, v in (extracted or {}).items()
+        if k not in ("confidence", "reasoning")
+    }
 
     user_message = f"""Document type: {doc_type}
 Contract subtype: {contract_subtype}

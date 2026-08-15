@@ -570,7 +570,10 @@ def _attach_field_scoring(sample: dict, row: dict) -> None:
         row["field_scoring"] = None
         return
     try:
-        result = score_extraction(doc_class, get_field_types(doc_class), extracted, expected)
+        result = score_extraction(
+            doc_class, get_field_types(doc_class), extracted, expected,
+            doc_text=row.get("doc_text"),
+        )
         row["field_scoring"] = {
             "doc_class": doc_class,
             "field_scores": result.field_scores,
@@ -588,6 +591,11 @@ def _attach_field_scoring(sample: dict, row: dict) -> None:
                 }
                 for name, el in result.entity_list_scores.items()
             },
+            # Factuality audit (verified_precision / hallucination_rate per
+            # populated field) + overall verified precision, for the report.
+            "entity_list_audit": result.entity_list_audit,
+            "overall_verified_precision": result.overall_verified_precision,
+            "expected_fields": expected,
         }
     except Exception:
         logger.exception("field_scoring_failed", filename=sample.get("filename"))

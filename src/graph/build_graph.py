@@ -273,6 +273,40 @@ def _build_specialist_dispatch():
     return dispatch
 
 
+def _chunk_config() -> dict:
+    """Chunked-extraction config from taxonomy.yaml (`chunking:` block).
+
+    Chunking (v15+ vendored architecture) splits documents longer than
+    ``chunk_chars`` into overlapping windows, extracts each window, and merges
+    deterministically — nothing is truncated. Documents that fit in a single
+    window take the plain single-pass path, so small documents are unaffected.
+    """
+    try:
+        from pipeline.config import load_config
+
+        return load_config().get("chunking", {}) or {}
+    except Exception:
+        return {}
+
+
+def _run_chunked_extraction(agent_fn, doc_text, pages, handoff_context):
+    """Run a specialist extraction, chunking long documents (v15+ pass).
+
+    ``extract_chunked`` falls through to the plain single-pass ``extract``
+    when the document fits in one window, so this never changes small-document
+    output. ``pages`` (MAILROOM PATCH) are attached to the first chunk only.
+    """
+    cfg = _chunk_config()
+    chunk_chars = int(cfg.get("chunk_chars", 90_000))
+    overlap_chars = int(cfg.get("overlap_chars", 8_000))
+    agent = agent_fn(handoff_context=handoff_context)
+    if cfg.get("enabled", True):
+        return agent.extract_chunked(
+            doc_text, chunk_chars=chunk_chars, overlap_chars=overlap_chars, pages=pages
+        )
+    return agent.extract(doc_text, pages=pages)
+
+
 def ingest_node(state: DocumentState) -> dict[str, Any]:
     _ensure_dirs()
     worker_id = get_worker_id()
@@ -795,7 +829,7 @@ def _extract_contracts(
     doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
 ) -> dict:
     from agents.contracts_specialist import ContractsSpecialist
-    return ContractsSpecialist(handoff_context=handoff_context).extract(doc_text, pages=pages)
+    return _run_chunked_extraction(ContractsSpecialist, doc_text, pages, handoff_context)
 
 
 def _extract_corporate_records(
@@ -1670,9 +1704,12 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
     extracted_data = result.get("extracted_data") or {}
     # `_report` is a derived catalog summary and may contain a full recursive
     # copy of the extraction. It is not part of any specialist schema and must
-    # never be sent to the evaluator.
+    # never be sent to the evaluator. `reasoning` is the v24+ per-field TRACE
+    # artifact — it describes HOW values were found (never the values
+    # themselves) and is likewise excluded from the evaluator's input.
     judge_extracted_data = {
-        key: value for key, value in extracted_data.items() if not key.startswith("_")
+        key: value for key, value in extracted_data.items()
+        if not key.startswith("_") and key != "reasoning"
     }
     output = {
         "stage": result.get("stage"),
@@ -1897,6 +1934,7 @@ def _execute_run(
                         predicted=extracted,
                         expected=expected_fields,
                         matter_id=initial_state.get("matter_id"),
+                        doc_text=initial_state.get("doc_text"),
                     )
                     judge_required = field_result.needs_judge_review
                     # A wrong classification must ALWAYS reach the LLM judge:
