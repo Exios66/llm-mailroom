@@ -38,6 +38,9 @@ from .bins import (
     is_ingestion_paused,
     list_stale_processing_files,
     requeue_stale_processing,
+    accepted_extensions,
+    read_inbox_meta,
+    touch_watcher_heartbeat,
 )
 from graph.build_graph import build_graph, run_pipeline
 
@@ -105,12 +108,26 @@ class InboxHandler(FileSystemEventHandler):
         self.worker_id = worker_id
         self._debounce: dict[str, float] = {}
 
+    def _is_processable(self, path: Path) -> bool:
+        """Only processable documents enter the conveyor.
+
+        Without this filter, watchdog fires for anything written into the
+        inbox — including the upload-metadata `.meta` sidecar written by
+        `/upload`, which would otherwise be claimed and processed as a
+        document. The periodic rescan already restricts to
+        `accepted_extensions()`.
+        """
+        return path.suffix.lower() in accepted_extensions()
+
     def on_created(self, event):
         if event.is_directory:
             return
         path = Path(event.src_path)
         cfg = inbox_dir()
         if not str(path).startswith(str(cfg)):
+            return
+        if not self._is_processable(path):
+            logger.debug("inbox_file_ignored_extension", file=str(path))
             return
         now = time.time()
         if path.name in self._debounce and (now - self._debounce[path.name]) < 1.0:
@@ -147,6 +164,13 @@ class InboxHandler(FileSystemEventHandler):
             _unmark_active(path.name)
 
     def _infer_matter_id(self, path: Path) -> str:
+        # Upload metadata wins: `/upload` writes a `<file>.meta` sidecar
+        # carrying the submitted matter_id, so the document is filed under the
+        # matter the caller chose instead of a filename heuristic. The sidecar
+        # is read while the file is still in the inbox (before claim moves it).
+        meta = read_inbox_meta(path)
+        if meta and meta.get("matter_id"):
+            return str(meta["matter_id"])
         parent_matter = path.parent.name
         if parent_matter and parent_matter != inbox_dir().name:
             return parent_matter
@@ -180,6 +204,7 @@ class Watcher:
         self.observer.schedule(handler, str(inbox), recursive=False)
         self.observer.start()
         self._running = True
+        touch_watcher_heartbeat()  # immediate liveness beacon before the first rescan
         logger.info("watcher_running", inbox=str(inbox))
 
         # Periodic inbox rescan: catches files skipped while ingestion was
@@ -205,6 +230,9 @@ class Watcher:
         poll = float(os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", "5"))
         while self._running:
             _time.sleep(poll)
+            # Liveness beacon for /health: proves the watcher is alive and
+            # draining the inbox (uploads only move once this process runs).
+            touch_watcher_heartbeat()
             if is_ingestion_paused():
                 continue
             for f in list_inbox_files():

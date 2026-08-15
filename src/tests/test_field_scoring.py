@@ -69,11 +69,32 @@ class TestDateField:
         assert score_date_field("March 3rd, 2024", "2024-03-03") == 1.0
 
     def test_wrong_date_scores_zero(self):
-        assert score_date_field("2024-03-04", "2024-03-03") == 0.0
+        # Genuinely different date (year+month differ, outside the 45-day
+        # near-miss cluster): still a decisive 0.0.
+        assert score_date_field("2024-03-04", "2023-06-01") == 0.0
+
+    def test_day_shift_within_cluster_is_near_miss(self):
+        # A day-shifted date within ~45 days is the same agreement's date pair
+        # (execution vs defined effective date) — partial credit, not a miss.
+        assert score_date_field("2024-03-04", "2024-03-03") == 0.67
+
+    def test_null_expectation_rule(self):
+        # A blank-template / label-only expected date holds no real date: a
+        # null prediction is CORRECT (1.0), any fabricated date is wrong (0.0).
+        assert score_date_field("", "_____ day of ________, 19____") == 1.0
+        assert score_date_field("", "Effective Date:") == 1.0
+        assert score_date_field("March 3, 2024", "Effective Date:") == 0.0
+
+    def test_date_phrase_containment_scores_one(self):
+        # A multi-date prediction quoting the label's date phrase is contained.
+        assert score_date_field(
+            "Executed March 1, 1996; Effective November 5, 1996", "November 5, 1996"
+        ) == 1.0
 
     def test_unparseable_falls_back_to_fuzzy(self):
-        # Both unparseable: fuzzy string comparison, not a hard 0.
-        s = score_date_field("see renewal schedule", "renewal schedule")
+        # Both unparseable but date-evidence-bearing (not null-expectation):
+        # fuzzy string comparison, not a hard 0.
+        s = score_date_field("renewal in the spring", "March renewal schedule")
         assert 0.0 < s <= 1.0
 
 
@@ -244,8 +265,15 @@ class TestScoreExtraction:
         assert result.needs_judge_review is False  # clearly wrong, not ambiguous
 
     def test_ambiguous_band_triggers_judge_review(self):
-        expected = {"governing_law": "Delaware", "term_length": "one year"}
-        predicted = {"governing_law": "Delaware", "term_length": "one (1) year"}
+        # An entity-list field whose coverage lands in the [0.5, 1.0) band
+        # escalates to the LLM judge (partial list match). Note: the contract
+        # schema's governing_law/term_length/renewal_terms are containment
+        # fields now, so exact clause matches are decisive (never ambiguous).
+        expected = {"termination_clauses": [
+            "termination for convenience upon thirty days' notice",
+            "termination on change of control",
+        ]}
+        predicted = {"termination_clauses": ["termination for convenience upon thirty days' notice"]}
         result = score_extraction("contract", get_field_types("contract"), predicted, expected)
         assert result.ambiguous_fields
         assert result.needs_judge_review is True

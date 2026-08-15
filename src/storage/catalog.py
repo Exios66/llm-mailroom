@@ -226,6 +226,16 @@ async def get_documents_by_stage(stage: str) -> list[DocumentRecord]:
         return list(result.scalars().all())
 
 
+async def get_recent_documents(limit: int = 20) -> list[DocumentRecord]:
+    """Most recently updated document records (for the /queue recent view)."""
+    ensure_schema()
+    async with async_session() as session:
+        result = await session.execute(
+            select(DocumentRecord).order_by(DocumentRecord.updated_at.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
+
+
 async def get_error_rate_by_doc_type() -> dict[str, dict]:
     ensure_schema()
     async with async_session() as session:

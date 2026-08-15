@@ -36,12 +36,18 @@ Checks the API plus best-effort dependency health: LLM provider connectivity (re
         "database": {
             "status": "ok",
             "detail": "database reachable"
-        }
+        },
+        "ingestion_paused": false,
+        "pause_info": null,
+        "inbox_pending": 3,
+        "watcher_heartbeat_seconds_ago": 2
     }
 }
 ```
 
 `status` is `"ok"` when all checks pass, `"degraded"` when any dependency is unreachable (e.g. provider resolution fails, missing API key, or the models endpoint is down). Dependency checks are best-effort and never block the response.
+
+`watcher_heartbeat_seconds_ago` is the age of the watcher's liveness beacon — how recently the watcher process touched its heartbeat file. Uploads only drain (leave the inbox) while the watcher is running, so a `null`/growing value here means files will pile up in the inbox.
 
 ---
 
@@ -51,7 +57,9 @@ Checks the API plus best-effort dependency health: LLM provider connectivity (re
 POST /upload
 ```
 
-Upload a document to the pipeline inbox. The watcher will pick it up automatically.
+Upload a document to the pipeline inbox. The watcher picks it up automatically and runs the pipeline — no new pipeline run needs to be initialized per upload; the inbox is the queue.
+
+The uploaded file is written to the inbox and a small `<file>.meta` sidecar persists the upload metadata (the submitted `matter_id`, a tracking `upload_id`, upload time, size). The watcher reads the sidecar so the document is filed under the matter you submitted. `matter_id` is honored directly — it does **not** fall back to the filename heuristic when provided.
 
 **Form Data:**
 | Field | Type | Required | Description |
@@ -64,10 +72,13 @@ Upload a document to the pipeline inbox. The watcher will pick it up automatical
 {
     "status": "accepted",
     "file": "contract.pdf",
+    "upload_id": "1f2a3b4c5d6e",
     "matter_id": "MATTER-001",
     "message": "File queued for processing — watcher will pick it up."
 }
 ```
+
+`upload_id` is the tracking id for this upload — it appears in the `GET /queue` listing until the file is claimed. The pipeline's `doc_id` (for `GET /status/{doc_id}`) is minted when the watcher starts processing, so poll `GET /queue` or watch the watcher logs for it.
 
 **Example:**
 ```bash
@@ -75,6 +86,47 @@ curl -X POST http://localhost:8000/upload \
   -F "file=@contract.pdf" \
   -F "matter_id=MATTER-001"
 ```
+
+---
+
+### View the Queue
+
+```
+GET /queue
+```
+
+Live view of the inbox → processing queue: files currently queued in the inbox (with their `/upload` metadata, including the `upload_id`), files currently being processed by watcher workers, and the most recently updated documents from the catalog.
+
+**Response:**
+```json
+{
+    "queued": [
+        {
+            "file": "contract.pdf",
+            "size": 2048,
+            "upload_id": "1f2a3b4c5d6e",
+            "matter_id": "MATTER-001",
+            "uploaded_at": "2026-08-15T17:00:00+00:00"
+        }
+    ],
+    "queued_count": 1,
+    "processing": [{"file": "other.pdf", "worker": "a1b2c3d4"}],
+    "processing_count": 1,
+    "recent": [
+        {
+            "doc_id": "550e8400-e29b-41d4-a716-446655440000",
+            "file": "done.pdf",
+            "matter_id": "MATTER-001",
+            "stage": "archived",
+            "doc_type": "contract",
+            "updated_at": "2026-08-15T17:05:00+00:00"
+        }
+    ],
+    "timestamp": "2026-08-15T17:06:00+00:00"
+}
+```
+
+Auth-gated like the other management endpoints.
 
 ---
 
@@ -355,6 +407,7 @@ When versioning ships, routes will move under a prefix:
 ```
 GET  /v1/health
 POST /v1/upload
+GET  /v1/queue
 POST /v1/review/{doc_id}/resolve
 GET  /v1/status/{doc_id}
 GET  /v1/matters/{matter_id}

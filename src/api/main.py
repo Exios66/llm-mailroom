@@ -1,5 +1,7 @@
 import os
 import re
+import uuid
+import datetime
 import structlog
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, Request, Depends
@@ -140,6 +142,7 @@ async def health():
     llm = await _check_llm_provider()
     db = await _check_database()
     from pipeline.bins import is_ingestion_paused, inbox_dir, get_pause_info
+    from pipeline.bins import watcher_heartbeat_age
     from observability.tracing import flush_health
 
     paused = is_ingestion_paused()
@@ -147,6 +150,7 @@ async def health():
     overall = "ok" if (llm["status"] == "ok" and db["status"] == "ok") else "degraded"
     if paused or not tracing_health["healthy"]:
         overall = "degraded"
+    heartbeat_age = watcher_heartbeat_age()
     return {
         "status": overall,
         "service": "mailroom",
@@ -156,6 +160,7 @@ async def health():
             "ingestion_paused": paused,
             "pause_info": get_pause_info(),
             "inbox_pending": sum(1 for _ in inbox_dir().glob("*") if _.is_file()) if inbox_dir().exists() else 0,
+            "watcher_heartbeat_seconds_ago": heartbeat_age,
             "observability": tracing_health,
         },
     }
@@ -167,7 +172,7 @@ async def upload_document(
     matter_id: str = Form(default="DEFAULT"),
 ):
     from pipeline.config import load_config
-    from pipeline.bins import is_ingestion_paused
+    from pipeline.bins import is_ingestion_paused, write_inbox_meta
 
     # Pause gate (audit L-18): refuse new work while ingestion is paused.
     if is_ingestion_paused():
@@ -206,17 +211,110 @@ async def upload_document(
         )
     dest.write_bytes(content)
 
-    logger.info("file_uploaded", file=str(dest), matter_id=matter_id, size=len(content))
+    # Persist the upload metadata (matter_id, tracking id, ...) as a `<file>.meta`
+    # sidecar so the watcher files the document under the submitted matter and
+    # the upload is trackable via `GET /queue`. Best-effort: a failed sidecar
+    # write must not fail the upload (the watcher falls back to filename-derived
+    # matter inference).
+    upload_id = uuid.uuid4().hex[:12]
+    write_inbox_meta(
+        dest,
+        upload_id=upload_id,
+        matter_id=matter_id,
+        uploaded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        size=len(content),
+        original_filename=file.filename,
+    )
+
+    logger.info("file_uploaded", file=str(dest), matter_id=matter_id, upload_id=upload_id, size=len(content))
 
     return JSONResponse(
         status_code=202,
         content={
             "status": "accepted",
             "file": dest.name,
+            "upload_id": upload_id,
             "matter_id": matter_id,
             "message": "File queued for processing — watcher will pick it up.",
         },
     )
+
+
+@app.get("/queue", dependencies=[Depends(_require_token)])
+async def get_queue():
+    """Live view of the inbox → processing queue.
+
+    The inbox bin IS the queue: files land there via `/upload` (or a direct
+    drop) and the always-on watcher claims and processes them. This endpoint
+    shows what is queued (with the `/upload` metadata, incl. the upload_id
+    used for tracking), what is currently being processed, and the most recent
+    terminal documents — so a specific upload is observable from accepted →
+    archived/review/failed without digging through logs.
+    """
+    from pipeline.bins import (
+        inbox_dir,
+        processing_dir,
+        accepted_extensions,
+        read_inbox_meta,
+    )
+
+    queued = []
+    inbox = inbox_dir()
+    if inbox.exists():
+        for p in sorted(inbox.iterdir()):
+            if not p.is_file() or p.suffix.lower() not in accepted_extensions():
+                continue
+            meta = read_inbox_meta(p) or {}
+            try:
+                size = p.stat().st_size
+            except OSError:
+                size = None
+            queued.append(
+                {
+                    "file": p.name,
+                    "size": size,
+                    "upload_id": meta.get("upload_id"),
+                    "matter_id": meta.get("matter_id", "DEFAULT"),
+                    "uploaded_at": meta.get("uploaded_at"),
+                }
+            )
+
+    processing = []
+    proc_root = processing_dir()
+    if proc_root.exists():
+        for worker_dir in sorted(proc_root.iterdir()):
+            if not worker_dir.is_dir():
+                continue
+            for p in sorted(worker_dir.iterdir()):
+                if p.is_file():
+                    processing.append({"file": p.name, "worker": worker_dir.name})
+
+    recent = []
+    try:
+        from storage.catalog import get_recent_documents
+
+        for d in await get_recent_documents(limit=20):
+            recent.append(
+                {
+                    "doc_id": d.doc_id,
+                    "file": d.original_filename,
+                    "matter_id": d.matter_id,
+                    "stage": d.stage,
+                    "doc_type": d.doc_type,
+                    "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+                }
+            )
+    except Exception:
+        logger.exception("queue_recent_fetch_failed")
+
+    return {
+        "queued": queued,
+        "queued_count": len(queued),
+        "processing": processing,
+        "processing_count": len(processing),
+        "recent": recent,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
 
 
 def _validate_doc_id(doc_id: str) -> str:

@@ -1,4 +1,6 @@
-# VENDORED from github.com/Exios66/llm-entity-extraction (verified against commit 3a03d5c, 2026-08-10).
+# VENDORED from github.com/Exios66/llm-entity-extraction (re-vendored to the
+# sibling's current HEAD, 2026-08-15 — adds the optional ``callbacks``
+# LangChain callback-handler support since the 3a03d5c pin).
 # Imported verbatim (import paths rewritten to ``langchain_agents.*``) so the
 # eval-validated LangChain sorter/contracts-specialist agents run inside the
 # mailroom. Local adaptations (pages/vision, usage/deadline hooks) are marked
@@ -84,9 +86,19 @@ class BaseAgent(ABC):
 
     agent_name: str
 
-    def __init__(self, model: str | None = None, api_key: str | None = None):
+    def __init__(
+        self,
+        model: str | None = None,
+        api_key: str | None = None,
+        callbacks: list | None = None,
+    ):
         self.model = model or "qwen/qwen3.7-flash"
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+        # Optional LangChain callback handlers (e.g. the Langfuse
+        # CallbackHandler) attached to every invoke; None keeps the default
+        # (langfuse.openai auto-tracing) path unchanged. Upstream feature,
+        # kept aligned with the sibling repo.
+        self._callbacks = list(callbacks) if callbacks else None
         self._max_tokens = 4096
         self._max_input_chars = 100_000  # full-document budget; only a hard safety cap
         self._temperature = 0.1
@@ -397,7 +409,10 @@ class BaseAgent(ABC):
 
         logger.info("llm_call", agent=self.agent_name, model=self.model,
                     pages=len(pages) if pages else None)  # MAILROOM PATCH
-        response = self._invoke_with_retry(lambda: llm.invoke(messages), what="llm")  # MAILROOM PATCH (L-16/L-17)
+        response = self._invoke_with_retry(  # MAILROOM PATCH (L-16/L-17)
+            lambda: llm.invoke(messages, config={"callbacks": self._callbacks} if self._callbacks else None),
+            what="llm",
+        )
         content = response.content if isinstance(response.content, str) else str(response.content)
         self._last_usage = {  # MAILROOM PATCH: usage accounting parity with _call_structured
             "prompt_tokens": self._usage_from_message(response).get("input_tokens")
@@ -459,7 +474,8 @@ class BaseAgent(ABC):
         logger.info("llm_structured_call", agent=self.agent_name, model=self.model,
                     pages=len(pages) if pages else None)  # MAILROOM PATCH
         raw_out: Any = self._invoke_with_retry(  # MAILROOM PATCH (L-16/L-17)
-            lambda: structured.invoke(messages), what="structured"
+            lambda: structured.invoke(messages, config={"callbacks": self._callbacks} if self._callbacks else None),
+            what="structured"
         )
 
         # include_raw=True returns {"raw": AIMessage, "parsed": ..., "parsing_error": ...}
@@ -573,7 +589,10 @@ class BaseAgent(ABC):
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=content)]
 
         logger.info("llm_vision_call", agent=self.agent_name, model=self.model, pages=len(images))
-        response = self._invoke_with_retry(lambda: llm.invoke(messages), what="vision")  # MAILROOM PATCH (L-16/L-17)
+        response = self._invoke_with_retry(  # MAILROOM PATCH (L-16/L-17)
+            lambda: llm.invoke(messages, config={"callbacks": self._callbacks} if self._callbacks else None),
+            what="vision",
+        )
         raw_content = response.content if isinstance(response.content, str) else str(response.content)
 
         usage = getattr(response, "usage_metadata", None) or (response.response_metadata or {}).get("usage") or {}

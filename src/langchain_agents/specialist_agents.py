@@ -1,7 +1,6 @@
-# VENDORED from github.com/Exios66/llm-entity-extraction (verified against
-# commit 3a03d5c, 2026-08-10 — issue #10 alignment check: the
-# contracts_specialist_v11 prompt is byte-identical to upstream; only the
-# MAILROOM PATCHes below diverge).
+# VENDORED from github.com/Exios66/llm-entity-extraction (re-vendored to the
+# sibling's current HEAD, 2026-08-15 — adds the v24+ per-field ``reasoning``
+# trace schema and the v15+ chunked-extraction pass since the 3a03d5c pin).
 # Imported verbatim (import paths rewritten to ``langchain_agents.*``) so the
 # eval-validated LangChain sorter/contracts-specialist agents run inside the
 # mailroom. Local adaptations (pages/vision, usage/deadline hooks) are marked
@@ -22,6 +21,41 @@ from langchain_agents.base_agent import BaseAgent, build_structured_schema
 from langchain_agents.prompts import get_prompt
 
 logger = structlog.get_logger(__name__)
+
+
+def _norm(text: str) -> str:
+    """Normalize clause text for dedupe: whitespace-collapse + casefold.
+
+    The chunk overlap window re-quotes a clause verbatim, so a
+    whitespace/case-insensitive comparison makes the duplicate a no-op.
+    """
+    if text is None:
+        return ""
+    return " ".join(str(text).split()).casefold()
+
+
+def _merge_reasoning(acc, chunk_reasoning) -> dict:
+    """Union two per-chunk reasoning traces into one.
+
+    Entries dedupe by field name (first-witness evidence + section reference
+    win — the chunk that first located the value holds its evidence); the
+    summaries join in chunk order with a marker so the merged trace covers
+    every window. A missing side degrades gracefully (None-safe).
+    """
+    acc = acc if isinstance(acc, dict) else {}
+    chunk_reasoning = chunk_reasoning if isinstance(chunk_reasoning, dict) else {}
+
+    entries: dict[str, dict] = {}
+    for entry in list(acc.get("entries") or []) + list(chunk_reasoning.get("entries") or []):
+        if not isinstance(entry, dict) or not entry.get("field"):
+            continue
+        entries.setdefault(entry["field"], entry)
+
+    summaries = [s for s in (acc.get("summary"), chunk_reasoning.get("summary")) if s]
+    return {
+        "summary": "\n\n".join(summaries) if summaries else "",
+        "entries": list(entries.values()),
+    }
 
 
 def _nullable_string(description: str = "") -> dict:
@@ -61,6 +95,33 @@ def normalize_extraction(result: dict, schema: dict) -> dict:
 # =============================================================================
 
 CONTRACTS_SCHEMA = build_structured_schema({
+    "reasoning": {
+        "type": "object",
+        "description": "Per-field reasoning trace, produced BEFORE finalizing the "
+                       "extraction: a summary of the scan plus one entry per populated "
+                       "field naming the field, its evidence (short verbatim quote or "
+                       "definition/alias note), and the section reference where it was "
+                       "found. Describes HOW each value was found — never part of the "
+                       "clause text and never replaces an extracted value.",
+        "properties": {
+            "summary": {"type": "string"},
+            "entries": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field": {"type": "string"},
+                        "evidence": {"type": "string"},
+                        "section_ref": {"type": ["string", "null"]},
+                    },
+                    "required": ["field", "evidence"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["summary", "entries"],
+        "additionalProperties": False,
+    },
     "document_name": _nullable_string("The name of the contract (e.g. 'Web Hosting Agreement')"),
     "parties": _string_array("The names of the contracting parties"),
     "effective_date": _nullable_string("YYYY-MM-DD (ISO)"),
@@ -161,9 +222,177 @@ class _SpecialistBase(BaseAgent):
     schema: dict
     handoff_context: str | None = None
 
+    # ------------------------------------------------------------------
+    # Chunked extraction pass (v15+ architectural layer)
+    # ------------------------------------------------------------------
+    # Contracts up to 335k chars exceed any single-call input budget, and
+    # head+tail truncation drops the MIDDLE — exactly where obligation
+    # families concentrate. Chunked mode splits the document on paragraph
+    # boundaries into overlapping windows, extracts each window in its own
+    # call, and merges: list fields union with normalized dedupe (overlap
+    # re-quotes the same clause), scalars keep the first non-null value,
+    # confidence takes the max. Nothing is truncated; the merge is the
+    # completeness guarantee.
+    # ------------------------------------------------------------------
+
+    def extract_chunked(
+        self,
+        doc_text: str,
+        chunk_chars: int = 90_000,
+        overlap_chars: int = 8_000,
+        pages: list[str] | None = None,  # MAILROOM PATCH: page-image data-URIs
+    ) -> dict:
+        """Extract a long document in overlapping chunks and merge the passes.
+
+        Documents that fit in a single window take the plain single-pass
+        path (``extract``) — identical behavior to non-chunked mode, so
+        chunking can never change small-document output. Longer documents
+        are split, each window extracted in its own call, and merged: list
+        fields union with normalized dedupe, scalars keep the first non-null
+        value, confidence takes the max. A chunk that fails to parse (or
+        raises) is skipped, not fatal — the surviving chunks still merge.
+
+        MAILROOM PATCH: page-image data-URIs are attached only to the FIRST
+        chunk — the model sees the full document pages once plus every text
+        window (the additive vision guarantee at bounded cost instead of
+        multiplying image attachments per chunk).
+        """
+        chunks = self._split_chunks(doc_text, chunk_chars, overlap_chars)
+        self._last_n_chunks = len(chunks)
+        if len(chunks) == 1:
+            return self.extract(doc_text, pages=pages)
+        merged: dict | None = None
+        total_usage: dict | None = None
+        failed = 0
+        for index, chunk in enumerate(chunks, start=1):
+            header = (f"EXTRACTION CHUNK {index} OF {len(chunks)} — this is one "
+                      f"window of the agreement; extract every family occurrence "
+                      f"present in THIS chunk (see the system prompt's chunk duty).\n")
+            user_message = (
+                f"{header}Extract fields from this {self._doc_label} document (chunk "
+                f"{index} of {len(chunks)}):\n\n{chunk}"
+            )
+            if self.handoff_context:
+                user_message = f"{self.handoff_context}\n\n{user_message}"
+            try:
+                result = self._call_structured(
+                    user_message,
+                    json_schema=self.schema,
+                    temperature=0.1,
+                    pages=pages if index == 1 else None,  # MAILROOM PATCH
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort
+                logger.warning("chunk_call_failed", agent=self.agent_name,
+                               chunk=index, total=len(chunks), error=str(exc)[:200])
+                failed += 1
+                continue
+            if self._last_usage:
+                total_usage = self._sum_usage(total_usage, self._last_usage)
+            if result.get("_parse_error"):
+                failed += 1
+                continue
+            if self._confidence_missing(result):
+                result["confidence"] = round(self._evidence_confidence(result), 4)
+            result = normalize_extraction(result, self.schema)
+            merged = result if merged is None else self._merge_extractions(merged, result)
+        self._last_usage = total_usage
+        self._last_truncated = False
+        self._last_chunked = True
+        if merged is None:
+            return {"_parse_error": True}
+        return merged
+
+    @staticmethod
+    def _sum_usage(acc: dict | None, usage: dict) -> dict:
+        """Sum per-chunk usage dicts (prompt/completion/total tokens, cost)."""
+        merged = dict(acc or {})
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            merged[key] = (merged.get(key) or 0) + int(usage.get(key) or 0)
+        cost = usage.get("cost")
+        if cost is not None:
+            merged["cost"] = (merged.get("cost") or 0.0) + float(cost)
+        return merged
+
+    @staticmethod
+    def _split_chunks(text: str, chunk_chars: int,
+                      overlap_chars: int) -> list[str]:
+        """Paragraph-aware chunking with a trailing overlap window.
+
+        Paragraphs (``\\n\\n``) are kept intact; a single paragraph larger
+        than the budget is hard-split on sentence-ish boundaries. Every chunk
+        after the first is prepended with the previous chunk's tail so a
+        clause crossing the cut is visible on both sides (the merge dedupes).
+        """
+        if len(text) <= chunk_chars:
+            return [text]
+        paragraphs = [p for p in text.split("\n\n") if p.strip()]
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for para in paragraphs:
+            while len(para) > chunk_chars:  # pathological single paragraph
+                chunks.append(para[:chunk_chars])
+                para = para[chunk_chars:]
+            if current and current_len + len(para) + 2 > chunk_chars:
+                chunks.append("\n\n".join(current))
+                current, current_len = [], 0
+            current.append(para)
+            current_len += len(para) + 2
+        if current:
+            chunks.append("\n\n".join(current))
+        if len(chunks) > 1 and overlap_chars > 0:
+            overlapped = [chunks[0]]
+            for i in range(1, len(chunks)):
+                tail = chunks[i - 1][-overlap_chars:]
+                if "\n\n" in tail:
+                    tail = tail[tail.find("\n\n") + 2:]
+                overlapped.append(f"{tail}\n\n{chunks[i]}")
+            chunks = overlapped
+        return chunks
+
+    @staticmethod
+    def _merge_extractions(acc: dict, chunk: dict) -> dict:
+        """Union the per-chunk extractions into one composite output.
+
+        List fields union with normalized dedupe (case/whitespace-insensitive,
+        so the overlap window re-quoting a clause is a no-op); scalar fields
+        keep the FIRST non-null value in document order; confidence takes the
+        max across chunks (a clause seen in one window is real evidence).
+        ``reasoning`` is a TRACE: its entries union across chunks (dedupe by
+        field, the first-witness evidence + section reference wins — the chunk
+        that first located the value holds the evidence) and the summaries
+        join with chunk markers, so the merged trace covers the whole
+        document instead of only the first window.
+        """
+        merged = dict(acc)
+        for key, value in chunk.items():
+            if key == "confidence":
+                merged["confidence"] = max(
+                    float(merged.get("confidence") or 0.0), float(value or 0.0))
+                continue
+            if key == "_parse_error":
+                continue
+            if key == "reasoning":
+                merged["reasoning"] = _merge_reasoning(
+                    merged.get("reasoning"), value)
+                continue
+            if isinstance(value, list):
+                seen = {_norm(item) for item in merged.get(key) or []}
+                for item in value:
+                    if _norm(item) not in seen:
+                        merged.setdefault(key, []).append(item)
+                        seen.add(_norm(item))
+            elif value not in (None, ""):
+                # first NON-NULL value in document order wins (the accumulator
+                # may hold a present-but-null key from an earlier chunk)
+                if merged.get(key) in (None, ""):
+                    merged[key] = value
+        return merged
+
     def extract(
         self, doc_text: str, pages: list[str] | None = None  # MAILROOM PATCH: pages
     ) -> dict:
+        self._last_chunked = False
         truncated = self.truncate_input(doc_text)
         # When the sorter hands this document off, its classification is
         # prefixed to the extraction call so the specialist extracts with the
@@ -206,7 +435,7 @@ class _SpecialistBase(BaseAgent):
         total = 0
         found = 0
         for key, spec in properties.items():
-            if key == "confidence":
+            if key in ("confidence", "reasoning"):
                 continue
             value = result.get(key)
             type_spec = spec.get("type")
@@ -229,9 +458,11 @@ class ContractsSpecialist(_SpecialistBase):
     schema = CONTRACTS_SCHEMA
 
     def __init__(self, model: str | None = None, api_key: str | None = None,
-                 prompt_version: str = "contracts_specialist"):
-        super().__init__(model=model, api_key=api_key)
+                 prompt_version: str = "contracts_specialist", callbacks: list | None = None):
+        super().__init__(model=model, api_key=api_key, callbacks=callbacks)
         self.prompt_version = prompt_version
+        self._last_chunked = False
+        self._last_n_chunks = 0
 
     def system_prompt(self) -> str:
         return get_prompt(self.prompt_version)

@@ -116,9 +116,9 @@ def prompt_templates() -> dict[str, str]:
     return {
         # The sorter/contracts specialist are the vendored LangChain agents
         # (llm-entity-extraction); their local templates are the eval-validated
-        # versioned prompts (sorter_v5 / contracts_specialist_v11).
-        "sorter": _langchain_prompt("sorter_v5"),
-        "contracts_specialist": _langchain_prompt("contracts_specialist_v11"),
+        # versioned prompts (sorter_v12 / contracts_specialist_v31).
+        "sorter": _langchain_prompt("sorter_v12"),
+        "contracts_specialist": _langchain_prompt("contracts_specialist_v31"),
         "corporate_records_specialist": corporate_records_specialist.SYSTEM_PROMPT,
         "due_diligence_specialist": due_diligence_specialist.SYSTEM_PROMPT,
         "correspondence_specialist": correspondence_specialist.SYSTEM_PROMPT,

@@ -80,18 +80,28 @@ PYTHONPATH=src python -m api.main
 PYTHONPATH=src python -m pipeline.ops_monitor
 ```
 
+Uploads are accepted by the API but only **drain** (leave the inbox and get
+processed) while the watcher is running — the inbox is the queue and the
+watcher is its consumer. `GET /health` reports `watcher_heartbeat_seconds_ago`
+(the age of the watcher's liveness beacon): if it is `null` or growing, the
+watcher is down and files will pile up in the inbox.
+
 ---
 
 ## 5. Verify Pipeline
 
 ```bash
-# Upload a test document
+# Upload a test document (returns upload_id; the watcher mints the doc_id
+# once processing starts — see it in /queue or the watcher logs)
 curl -X POST http://localhost:8000/upload \
   -F "file=@src/tests/fixtures/contract/sample_msa.txt" \
   -F "matter_id=TEST-001"
 
-# Check status (use the doc_id from upload response)
+# Check status (use the doc_id once processing has started)
 curl http://localhost:8000/status/<doc_id>
+
+# View the queue (uploaded/processing/recent docs, incl. upload_id tracking)
+curl http://localhost:8000/queue
 
 # View audit trail
 curl http://localhost:8000/audit/<doc_id>

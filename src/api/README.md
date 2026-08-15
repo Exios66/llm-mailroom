@@ -6,12 +6,13 @@ This is the **front door** to Mailroom. It's a small web server (FastAPI) that l
 
 You use it to:
 
-- Upload a document (`POST /upload`) — drops it in the inbox for the watcher to process.
+- Upload a document (`POST /upload`) — drops it in the inbox for the watcher to process. The upload carries a tracking `upload_id` and honors the submitted `matter_id` via a `<file>.meta` sidecar the watcher reads.
+- See the live inbox → processing queue (`GET /queue`) — queued uploads (with their metadata), in-flight worker claims, and recent documents.
 - Check where a document is in the pipeline (`GET /status/{doc_id}`).
 - Approve/reject documents that landed in human review (`POST /review/{doc_id}/resolve`).
 - See the tamper-proof audit trail (`GET /audit/{doc_id}`).
 - List everything in a matter (`GET /matters/{matter_id}`).
-- See pipeline health/metrics (`GET /ops/status`, `GET /health`).
+- See pipeline health/metrics (`GET /ops/status`, `GET /health` — `/health` reports how recently the watcher heartbeat was touched, i.e. whether uploads are actually being drained).
 
 ## Getting started
 
@@ -25,7 +26,8 @@ Then open `http://localhost:8000/docs` for an interactive test page (Swagger UI)
 
 - Single module: `main.py` defines `app = FastAPI(...)`. `python api/main.py` runs `uvicorn.run(app, host="0.0.0.0", port=8000)`. Equivalent: `uvicorn api.main:app --port 8000`.
 - `lifespan` calls `_ensure_dirs()` on startup so the pipeline bins exist.
-- `POST /upload` writes bytes straight into the inbox bin — it does NOT run the pipeline itself. Processing happens asynchronously in the watcher process. Response is `202 Accepted`.
+- `POST /upload` writes bytes straight into the inbox bin — it does NOT run the pipeline itself. Processing happens asynchronously in the watcher process. Response is `202 Accepted`, with an `upload_id` and the accepted `matter_id`. It also writes a `<file>.meta` sidecar (matter_id, upload_id, uploaded_at, size) that the watcher reads to file the document under the submitted matter.
+- `GET /queue` lists queued inbox files (with sidecar metadata), in-flight `processing/<worker>/` claims, and recent catalog documents.
 - `GET /status` and `GET /matters` read from the Postgres/SQLite catalog via `storage/catalog.py`, falling back to the JSON manifest on DB failure.
 - `GET /audit/{doc_id}` returns the hash chain from `storage/audit_log.py` plus a `chain_valid` bool from `schemas/audit.py:verify_chain`.
 - `POST /ops/pause` / `POST /ops/resume` — manual ingestion pause/resume (mirrors the scheduled `pipeline/ops_monitor.py` sweep); `GET /ops/status` reports `paused_ingestion`.
