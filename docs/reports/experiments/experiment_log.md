@@ -6,7 +6,7 @@
 >
 > - **Upstream repo:** https://github.com/Exios66/llm-entity-extraction
 > - **Upstream path:** `reports/experiment_log.md`
-> - **Upstream commit:** `fdaa009 v0.17.0: extraction regression diagnostics (MAE + R² vs master labels, span-count drift), specialist v24 reasoning trace, inter-agent workflow, full-corpus EDA, sorter scale-up (2026-08-15)`
+> - **Upstream commit:** `536e89d KANBAN-017: contracts_specialist_v26 — term_length containment fix (additive prefix, no template leakage) (2026-08-15)`
 > - **Synced into llm-mailroom:** 2026-08-15, verbatim, into `docs/reports/experiments/`
 > - **How it is produced upstream:** derived (rendered) from the append-only `reports/experiment_log.jsonl` via `python scripts/reporting/render_experiment_log.py` in that repo — **never hand-edited**.
 > - **Interactive viewer:** the same log is browsable as a clean static site (filterable runs index + per-run detail pages) at https://exios66.github.io/llm-entity-extraction/ — the associated GitHub Pages website for the upstream repo, served from its `docs/` folder (no Actions runners), rebuilt with `python scripts/site/build_site.py`.
@@ -14,7 +14,7 @@
 >
 > ---
 
-_Generated from `reports/experiment_log.jsonl` on 2026-08-15T17:16:29.593830+00:00 — append-only, one section per run._
+_Generated from `reports/experiment_log.jsonl` on 2026-08-15T17:25:51.223349+00:00 — append-only, one section per run._
 
 ## Index
 
@@ -86,6 +86,8 @@ _Generated from `reports/experiment_log.jsonl` on 2026-08-15T17:16:29.593830+00:
 | 64 | pilot_diag_v22_sample2 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v22 | extraction 0.9910 | 2 | 42681 |
 | 65 | qwen3.7-flash_contracts_specialist_v23_sample5 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v23 | extraction 0.9366 | 5 | 134823 |
 | 66 | qwen3.7-flash_contracts_specialist_v24_sample5 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v24 | extraction 0.9336 | 5 | 138135 |
+| 67 | qwen3.7-flash_contracts_specialist_v25_sample5 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v25 | extraction 0.9154 | 5 | 137103 |
+| 68 | qwen3.7-flash_contracts_specialist_v26_sample5 | contract_entity_extraction | qwen/qwen3.7-flash | contracts_specialist_v26 | extraction 0.9447 | 5 | 138258 |
 
 ---
 
@@ -32080,6 +32082,590 @@ The model's own reasoning on every failed row — the evidence it cited for the 
 | d5 | key_obligations | CAPSUGEL shall pay to CARDAX a royalty equal to [***] of the Adjusted Net Sales, CARDAX shall have the right to audit CAPSUGEL's facilities, quality systems and records from time to time upon reasonable notice, During t… |
 | d5 | contract_value | — |
 | d5 | renewal_terms | [***] |
+| d5 | confidence | 0.95 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v25_sample5  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-15T17:19:50.438337+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v25 |
+| Git commit | `fdaa009` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| master_labels | ../llm-mailroom/data/cuad/master_clauses.csv |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 150000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| judge | ✗ |
+| chunked | ✗ |
+| manifest | data/manifests/v25_sample5.jsonl |
+| tracing_backend | braintrust |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 127290 | 9813 | 137103 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.9154 |
+| field_presence | 1 |
+| schema_valid | 1 |
+| overall_verified_precision | 1 |
+| category_presence | 0.758 |
+
+**Scores — overall_extraction_score_ci**
+
+| Field | Score |
+|---|---|
+| half | 0.0807 |
+| hi | 0.9793 |
+| lo | 0.8179 |
+| method | percentile-bootstrap |
+| n | 5 |
+| n_boot | 2000 |
+| seed | 42 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 0.6806 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 0.6427 |
+| termination_clauses | 1 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.6806 |
+| parties | 1 |
+| termination_clauses | 1 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 1 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| document_name | 0.0 |
+| effective_date | 0.0 |
+| governing_law | 0.0 |
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| renewal_terms | 0.0 |
+| term_length | 0.0 |
+| termination_clauses | 0.0 |
+
+
+### Run-level diagnostics
+
+**List quality — raw precision/recall/F1 (bipartite match ≥ 0.6); GT-coverage fields score recall-of-labels, these are the raw matched-item ratios**
+
+| Metric | Value |
+|---|---|
+| Precision (macro, key_obligations) | 0.6319 |
+| Recall (macro) | 0.6806 |
+| F1 (macro) | 0.6288 |
+| Precision (micro, span-pooled) | 0.6379 |
+| Recall (micro) | 0.6167 |
+| F1 (micro) | 0.6271 |
+| Pooled items (predicted/expected/matched) | 58 / 60 / 37 |
+
+| Field | Precision | Recall | F1 (raw) |
+|---|---|---|---|
+| key_obligations | 0.6319 | 0.6806 | 0.6288 |
+| parties | 0.5 | 1 | 0.6667 |
+| termination_clauses | 0.3333 | 1 | 0.5 |
+
+**Regression error vs ground truth** — MAE/R² computed only over (predicted, expected) pairs where both sides parse; R² = 1 − SS_res/SS_tot (1.0 perfect, 0.0 = predicting the mean, negative = worse than the mean); n pairs shows the evidence behind each row
+
+| Domain | MAE | Median AE | R² | n pairs |
+|---|---|---|---|---|
+| Date | 0.0 | 0.0 | 1 | 5 |
+| Duration | 245 | 245 | — | 2 |
+
+| Field | Domain | MAE | R² |
+|---|---|---|---|
+| effective_date | date | 0.0 | 1 |
+| renewal_terms | duration | 245 | — |
+
+**Span-count drift (list fields)** — how far the model's item counts drift from the annotator's, in items
+
+| Metric | Value |
+|---|---|
+| MAE (items per document) | 2 |
+| Signed mean (positive = over-extraction) | -0.1818 |
+| Documents | 11 |
+
+| Field | MAE | Signed mean |
+|---|---|---|
+| key_obligations | 3 | -1.8 |
+| parties | 1 | 1 |
+| termination_clauses | 2 | 2 |
+
+**Field-level error decomposition** — per-field content scores binned into exact / partial / miss
+
+| Band | Share |
+|---|---|
+| Exact (score = 1.0) | 0.8 |
+| Partial (0 < score < 1) | 0.2 |
+| Miss (score = 0.0) | 0.0 |
+| Scored (doc, field) pairs | 30 |
+
+| Field | exact | partial | miss | presence |
+|---|---|---|---|---|
+| document_name | 1 | 0.0 | 0.0 | 1 |
+| effective_date | 1 | 0.0 | 0.0 | 1 |
+| governing_law | 1 | 0.0 | 0.0 | 0.8 |
+| key_obligations | 0.2 | 0.8 | 0.0 | 1 |
+| parties | 1 | 0.0 | 0.0 | 1 |
+| renewal_terms | 1 | 0.0 | 0.0 | 0.4 |
+| term_length | 0.3333 | 0.6667 | 0.0 | 0.6 |
+| termination_clauses | 1 | 0.0 | 0.0 | 0.8 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | 0.9365 | 1 | 1 | 0.9333 | key_obligations, term_length | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | 1 | 1 | 1 | 1 | — | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | 0.7245 | 1 | 1 | 0.1875 | — | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | 0.956 | 1 | 1 | 0.7692 | key_obligations | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | 0.96 | 1 | 1 | 0.9 | key_obligations | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 |
+| key_obligations | 0.7857 | 1 | 0.125 | 0.6923 | 0.8 | 0.6806 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 0.7059 | — | 0.2222 | 1 | — | 0.6427 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.7857 | 1 | 0.125 | 0.6923 | 0.8 | 0.6806 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| key_obligations | 45 | 37 | 45 | 0 | 1 | 0.0 |
+| parties | 10 | 7 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 3 | 3 | 3 | 0 | 1 | 0.0 |
+| termination_clauses | 16 | 1 | 16 | 0 | 1 | 0.0 |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | reasoning | summary: The document is a Distribution and Development Agreement between Sekisui Diagnostics, LLC and Qualigen, Inc., dated May 1, 2016. Key obligations include exclusivity in distribution, supply commitments, financin… |
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | five (5) years This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 or 10.2, shall remain effective for five (5) years from and after the Effective Date (t… |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen shall supply Sekisui with all of Sekisui's commercial requirements for the Product in the Applicable Markets., Qualigen shall assign to Sekisui Qualigen's agreements with Qualigen's current distributors..., Sek… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.95 |
+| d2 | reasoning | summary: The document is an endorsement to an insurance contract effecting a transfer of assets and liabilities from Thrivent Life Insurance Company (formerly Lutheran Brotherhood Variable Insurance Products Company) to… |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Life Insurance Company, Thrivent Financial for Lutherans |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If you do not make the extra payment within 60 days from the date we notify you of your share of the deficiency, the amount will be charged as an indebtedness against the contract with interest compounded at the rate of… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | reasoning | summary: The document is a Co-Development Agreement between PhaseBio Pharmaceuticals Inc. and SFJ Pharmaceuticals X, Ltd., effective January 9, 2020. The agreement governs the co-development of a product (PB2452) for th… |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | P haseBio Pharmaceuticals Inc. ("PB"), S FJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | two (2) years This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 or 10.2, shall remain effective for two (2) years from and after the Effective Date (the… |
+| d3 | termination_clauses | Either Party may terminate this Agreement immediately in the event of a material breach of this Agreement by the other Party provided that the breaching Party has received written notice from the non-breaching Party of … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | W ithout the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreeme… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.85 |
+| d4 | reasoning | summary: The document is a Co-Branding Agreement between Women.com Networks, Inc. and eDiets.com, Inc., dated May 22, 2000. It establishes a 'Diet Center' on the Women.com sites. Key obligations include content licensin… |
+| d4 | document_name | Co-Branding Agreement |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | two (2) years This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for… |
+| d4 | termination_clauses | In the event of a material breach of this Agreement by either party, the non-breaching party may terminate this Agreement if such breach is not cured within thirty (30) days from receipt of written notice of such breach… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | eDiets hereby grants to Women.com ... a non-exclusive, nontransferable, worldwide, royalty-free license to use, copy, reproduce and display the editorial content ... on the Women.com Sites, Women.com will not buy, sell,… |
+| d4 | contract_value | $4,000,000 |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 1 |
+| d5 | reasoning | summary: The document is a Collaboration Agreement between Capsugel US, LLC and Cardax, Inc., dated August 18, 2014. The agreement covers product development, manufacture, and commercialization of an astaxanthin-based p… |
+| d5 | document_name | Collaboration Agreement |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | — |
+| d5 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | CAPSUGEL shall pay to CARDAX a royalty equal to [***] of the Adjusted Net Sales, CARDAX shall have the right to audit CAPSUGEL's facilities, quality systems and records from time to time upon reasonable notice, Neither … |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
+| d5 | confidence | 0.95 |
+
+---
+
+## qwen3.7-flash_contracts_specialist_v26_sample5  (contract_entity_extraction)
+
+### Run metadata
+
+| Key | Value |
+|---|---|
+| Timestamp | 2026-08-15T17:23:26.179137+00:00 |
+| Model | qwen/qwen3.7-flash |
+| Prompt version | contracts_specialist_v26 |
+| Git commit | `fdaa009` (dirty tree) |
+| Rows | 5 |
+| Completed | 5 |
+| Errors | 0 |
+
+### Data source
+
+| Key | Value |
+|---|---|
+| project | llm-mailroom/mailroom-cuad-contracts |
+| ground_truth | cuad_v1_clause_labels |
+| ground_truth_mode | cuad_type_aware |
+| master_labels | ../llm-mailroom/data/cuad/master_clauses.csv |
+| dataset_fingerprint | c2aa4180d9137a380152aec710441fc4108dccdff32bcc4d52879fc9e853bee7 |
+| n_samples | 5 |
+| sample_requested | 5 |
+| seed | 42 |
+
+### Parameters
+
+| Key | Value |
+|---|---|
+| temperature | 0.1 |
+| max_tokens | 16384 |
+| max_input_chars | 150000 |
+| reasoning_effort | none |
+| max_concurrency | 4 |
+| bt_scores | overall |
+| judge | ✗ |
+| chunked | ✗ |
+| manifest | data/manifests/v26_sample5.jsonl |
+| tracing_backend | braintrust |
+
+### Token usage
+
+| Stage | Prompt | Completion | Total | Mean cost $ | Total cost $ |
+|---|---|---|---|---|---|
+| all | 127135 | 11123 | 138258 | 0.0 | 0 |
+
+### Scores
+
+| Score | Value |
+|---|---|
+| overall_extraction_score | 0.9447 |
+| field_presence | 1 |
+| schema_valid | 1 |
+| overall_verified_precision | 0.9714 |
+| category_presence | 0.7409 |
+
+**Scores — overall_extraction_score_ci**
+
+| Field | Score |
+|---|---|
+| half | 0.0439 |
+| hi | 0.9831 |
+| lo | 0.8953 |
+| method | percentile-bootstrap |
+| n | 5 |
+| n_boot | 2000 |
+| seed | 42 |
+
+**Scores — per_field**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 0.6413 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 1 |
+| termination_clauses | 1 |
+
+**Scores — entity_list_f1**
+
+| Field | Score |
+|---|---|
+| key_obligations | 0.6413 |
+| parties | 1 |
+| termination_clauses | 1 |
+
+**Scores — verified_precision**
+
+| Field | Score |
+|---|---|
+| document_name | 1 |
+| effective_date | 1 |
+| governing_law | 1 |
+| key_obligations | 1 |
+| parties | 1 |
+| renewal_terms | 1 |
+| term_length | 0.75 |
+| termination_clauses | 1 |
+
+**Scores — hallucination_rate**
+
+| Field | Score |
+|---|---|
+| document_name | 0.0 |
+| effective_date | 0.0 |
+| governing_law | 0.0 |
+| key_obligations | 0.0 |
+| parties | 0.0 |
+| renewal_terms | 0.0 |
+| term_length | 0.25 |
+| termination_clauses | 0.0 |
+
+
+### Run-level diagnostics
+
+**List quality — raw precision/recall/F1 (bipartite match ≥ 0.6); GT-coverage fields score recall-of-labels, these are the raw matched-item ratios**
+
+| Metric | Value |
+|---|---|
+| Precision (macro, key_obligations) | 0.6353 |
+| Recall (macro) | 0.6413 |
+| F1 (macro) | 0.5813 |
+| Precision (micro, span-pooled) | 0.6538 |
+| Recall (micro) | 0.5667 |
+| F1 (micro) | 0.6071 |
+| Pooled items (predicted/expected/matched) | 52 / 60 / 34 |
+
+| Field | Precision | Recall | F1 (raw) |
+|---|---|---|---|
+| key_obligations | 0.6353 | 0.6413 | 0.5813 |
+| parties | 0.5 | 1 | 0.6667 |
+| termination_clauses | 0.3333 | 1 | 0.5 |
+
+**Regression error vs ground truth** — MAE/R² computed only over (predicted, expected) pairs where both sides parse; R² = 1 − SS_res/SS_tot (1.0 perfect, 0.0 = predicting the mean, negative = worse than the mean); n pairs shows the evidence behind each row
+
+| Domain | MAE | Median AE | R² | n pairs |
+|---|---|---|---|---|
+| Date | 0.0 | 0.0 | 1 | 5 |
+| Duration | 245 | 245 | — | 2 |
+
+| Field | Domain | MAE | R² |
+|---|---|---|---|
+| effective_date | date | 0.0 | 1 |
+| renewal_terms | duration | 245 | — |
+
+**Span-count drift (list fields)** — how far the model's item counts drift from the annotator's, in items
+
+| Metric | Value |
+|---|---|
+| MAE (items per document) | 2.5455 |
+| Signed mean (positive = over-extraction) | -0.7273 |
+| Documents | 11 |
+
+| Field | MAE | Signed mean |
+|---|---|---|
+| key_obligations | 4.2 | -3 |
+| parties | 1 | 1 |
+| termination_clauses | 2 | 2 |
+
+**Field-level error decomposition** — per-field content scores binned into exact / partial / miss
+
+| Band | Share |
+|---|---|
+| Exact (score = 1.0) | 0.8667 |
+| Partial (0 < score < 1) | 0.1333 |
+| Miss (score = 0.0) | 0.0 |
+| Scored (doc, field) pairs | 30 |
+
+| Field | exact | partial | miss | presence |
+|---|---|---|---|---|
+| document_name | 1 | 0.0 | 0.0 | 1 |
+| effective_date | 1 | 0.0 | 0.0 | 1 |
+| governing_law | 1 | 0.0 | 0.0 | 0.8 |
+| key_obligations | 0.2 | 0.8 | 0.0 | 1 |
+| parties | 1 | 0.0 | 0.0 | 1 |
+| renewal_terms | 1 | 0.0 | 0.0 | 0.4 |
+| term_length | 1 | 0.0 | 0.0 | 0.8 |
+| termination_clauses | 1 | 0.0 | 0.0 | 0.8 |
+
+
+### Per-document results
+
+| # | Document | Status | Overall | Field presence | Schema valid | Category presence | Ambiguous | Error |
+|---|---|---|---|---|---|---|---|---|
+| d1 | RitterPharmaceuticalsInc_20200313_S-4A_EX-10.54_12055220_EX-10.54_Development Agreement | completed | 0.9554 | 1 | 1 | 0.7333 | key_obligations | — |
+| d2 | ThriventVariableInsuranceAccountB_20190701_N-6_EX-99.D(IV)_11720968_EX-99.D(IV)_Endorseme… | completed | 1 | 1 | 1 | 1 | — | — |
+| d3 | PhasebioPharmaceuticalsInc_20200330_10-K_EX-10.21_12086810_EX-10.21_Development Agreement | completed | 0.8542 | 1 | 1 | 0.125 | — | — |
+| d4 | EdietsComInc_20001030_10QSB_EX-10.4_2606646_EX-10.4_Co-Branding Agreement | completed | 0.9341 | 1 | 1 | 0.8462 | key_obligations | — |
+| d5 | CARDAX,INC_08_19_2014-EX-10.1-COLLABORATION AGREEMENT | completed | 0.98 | 1 | 1 | 1 | — | — |
+
+**Per-field content scores (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| document_name | 1 | 1 | 1 | 1 | 1 | 1 |
+| effective_date | 1 | 1 | 1 | 1 | 1 | 1 |
+| governing_law | 1 | — | 1 | 1 | 1 | 1 |
+| key_obligations | 0.6429 | 1 | 0.125 | 0.5385 | 0.9 | 0.6413 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| renewal_terms | 1 | — | — | 1 | — | 1 |
+| term_length | 1 | — | 1 | 1 | — | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Entity-list F1 / ground-truth coverage (document x field)**
+
+| Field | d1 | d2 | d3 | d4 | d5 | mean |
+|---|---|---|---|---|---|---|
+| key_obligations | 0.6429 | 1 | 0.125 | 0.5385 | 0.9 | 0.6413 |
+| parties | 1 | 1 | 1 | 1 | 1 | 1 |
+| termination_clauses | 1 | — | — | — | — | 1 |
+
+**Factuality audit (aggregated over documents)**
+
+| field | n_predicted | matched_gt | verified_in_doc | hallucinated | verified_precision | hallucination_rate |
+|---|---|---|---|---|---|---|
+| contract_value | 2 | 0 | 2 | 0 | 1 | 0.0 |
+| document_name | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| effective_date | 5 | 5 | 5 | 0 | 1 | 0.0 |
+| governing_law | 4 | 4 | 4 | 0 | 1 | 0.0 |
+| key_obligations | 39 | 30 | 39 | 0 | 1 | 0.0 |
+| parties | 10 | 7 | 10 | 0 | 1 | 0.0 |
+| renewal_terms | 2 | 2 | 2 | 0 | 1 | 0.0 |
+| term_length | 4 | 3 | 3 | 1 | 0.75 | 0.25 |
+| termination_clauses | 18 | 1 | 18 | 0 | 1 | 0.0 |
+
+### Predicted extractions (specialist output per document)
+
+| # | Field | Extracted value |
+|---|---|---|
+| d1 | reasoning | summary: The document is a Distribution and Development Agreement between Sekisui Diagnostics, LLC and Qualigen, Inc., dated May 1, 2016. Key obligations include exclusivity in distribution, supply commitments, financin… |
+| d1 | document_name | DISTRIBUTION AND DEVELOPMENT AGREEMENT |
+| d1 | parties | Sekisui Diagnostics, LLC ("Sekisui"), Qualigen, Inc. ("Qualigen") |
+| d1 | effective_date | 2016-05-01 |
+| d1 | term_length | five (5) years The initial term of this Agreement shall commence on the Effective Date and shall continue for a period of five (5) years unless earlier terminated pursuant to Section 14 hereof (the "Term"). |
+| d1 | termination_clauses | Either Party may terminate this Agreement (i) immediately upon written notice in the event of the closing of a Sale Transaction; or (ii) immediately upon written notice if the other files a voluntary bankruptcy petition… |
+| d1 | governing_law | This Agreement shall be governed by, and construed and interpreted in accordance with, the laws of the State of Delaware, without reference to its conflicts of laws principles. |
+| d1 | key_obligations | Qualigen hereby appoints Sekisui, and Sekisui accepts the appointment to act on an exclusive basis pursuant to the terms and conditions of this Agreement, as a distributor for the sale of the Products in the Territory.,… |
+| d1 | contract_value | $6,200,000 |
+| d1 | renewal_terms | The initial term of this Agreement and any renewal term thereof shall be automatically extended at the end of the initial term and any renewal term thereof for an additional one (1) year period unless either Party notif… |
+| d1 | confidence | 0.95 |
+| d2 | reasoning | summary: The document is an Endorsement to a Thrivent Life Insurance Company contract, effecting a transfer of assets and liabilities from the dissolved Thrivent Life Insurance Company (formerly Lutheran Brotherhood Var… |
+| d2 | document_name | ENDORSEMENT |
+| d2 | parties | Thrivent Life Insurance Company, Thrivent Financial for Lutherans |
+| d2 | effective_date | 2019-07-01 |
+| d2 | term_length | — |
+| d2 | termination_clauses | — |
+| d2 | governing_law | — |
+| d2 | key_obligations | If you do not make the extra payment within 60 days from the date we notify you of your share of the deficiency, the amount will be charged as an indebtedness against the contract with interest compounded at the rate of… |
+| d2 | contract_value | — |
+| d2 | renewal_terms | — |
+| d2 | confidence | 0.85 |
+| d3 | reasoning | summary: The document is a Co-Development Agreement between PhaseBio Pharmaceuticals Inc. and SFJ Pharmaceuticals X, Ltd., effective January 9, 2020. The agreement covers the co-development of a product (PB2452) for the… |
+| d3 | document_name | Co-Development Agreement |
+| d3 | parties | P haseBio Pharmaceuticals Inc. ("PB"), S FJ Pharmaceuticals X, Ltd. ("SFJ") |
+| d3 | effective_date | 2020-01-09 |
+| d3 | term_length | The term of this Agreement (the "Term") will commence on the Effective Date and will expire upon the earliest of (i) termination of this Agreement in accordance with Section 14.2, or (ii) the date of payment of the last… |
+| d3 | termination_clauses | Either Party may terminate this Agreement immediately in the event of a material breach of this Agreement by the other Party provided that the breaching Party has received written notice from the non-breaching Party of … |
+| d3 | governing_law | The construction and validity of this Agreement and the provisions hereof, and the rights and obligations of the Parties hereunder, will be governed by the internal laws of the State of Delaware, USA, and, to the extent… |
+| d3 | key_obligations | W ithout the prior written consent of the other Party hereto, neither Party will sell, transfer, assign, pledge or otherwise dispose of, whether voluntarily, involuntarily, by operation of law or otherwise, this Agreeme… |
+| d3 | contract_value | — |
+| d3 | renewal_terms | — |
+| d3 | confidence | 0.95 |
+| d4 | reasoning | summary: The document is a Co-Branding Agreement between Women.com Networks, Inc. and eDiets.com, Inc., dated May 22, 2000. It establishes a 'Diet Center' on the Women.com sites. Key obligations include content licensin… |
+| d4 | document_name | CO-BRANDING AGREEMENT |
+| d4 | parties | WOMEN.COM NETWORKS, INC. ("Women.com"), EDIETS.COM, INC. ("eDiets") |
+| d4 | effective_date | 2000-05-22 |
+| d4 | term_length | two (2) years This Agreement will become effective as of the Effective Date and, unless sooner terminated pursuant to Sections 3.1 [Advertising and Promotion] or 10.2 [Termination for Breach], shall remain effective for… |
+| d4 | termination_clauses | In the event of a material breach of this Agreement by either party, the non-breaching party may terminate this Agreement if such breach is not cured within thirty (30) days from receipt of written notice of such breach… |
+| d4 | governing_law | This Agreement shall be interpreted and enforced in accordance with the laws of the State of California as applied to agreements made, entered into and performed entirely in California by California residents, notwithst… |
+| d4 | key_obligations | Neither party may assign this Agreement, in whole or in part, without the other party's written consent, "Change in Control" means a merger or consolidation of the party with, or any sale of all or substantially all of … |
+| d4 | contract_value | $4,000,000 (Two Years) |
+| d4 | renewal_terms | This agreement shall automatically renew for additional successive terms of twelve (12) months each at the end of the Initial Term ("Renewal Terms"), unless either party notifies the other in writing at least sixty (60)… |
+| d4 | confidence | 0.95 |
+| d5 | reasoning | summary: The document is a Collaboration Agreement between Capsugel US, LLC and Cardax, Inc., dated August 18, 2014. The agreement covers product development, manufacture, and commercialization of an astaxanthin-based p… |
+| d5 | document_name | Collaboration Agreement |
+| d5 | parties | Capsugel US, LLC ("CAPSUGEL"), Cardax, Inc. ("CARDAX") |
+| d5 | effective_date | 2014-08-18 |
+| d5 | term_length | [***] |
+| d5 | termination_clauses | A material breach that is subject to cure that is not cured within [***] of written notice of breach shall be cause for termination, provided that if the breaching party is diligently pursuing in good faith the remedy o… |
+| d5 | governing_law | This Agreement shall be governed by and interpreted in accordance under the laws of the State of New York. |
+| d5 | key_obligations | Neither Party may assign this Agreement without the prior written consent of the other Party, either Party may assign in connection with a merger or sale of all or substantially all of its stock or assets, CAPSUGEL shal… |
+| d5 | contract_value | — |
+| d5 | renewal_terms | — |
 | d5 | confidence | 0.95 |
 
 ---
