@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.1] - 2026-08-19
+
+### Changed
+- **`AGENTS.md`** — the tracing paragraph now documents the `auto` chain
+  (`langfuse → braintrust → phoenix → none`), the new `src/observability/phoenix_setup.py`
+  local cost-free Phoenix backend, and the OpenInference OpenAI instrumentation,
+  matching the v0.3.0 code.
+
 ## [v0.3.0] - 2026-08-19
 
 ### Added
