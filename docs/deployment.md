@@ -28,13 +28,18 @@ OPENROUTER_API_KEY=sk-or-v1-your-key-here
 # To use Postgres instead, uncomment:
 # DATABASE_URL=postgresql+asyncpg://mailroom:mailroom@localhost:5432/mailroom
 
-# Observability (optional) — Langfuse cloud, Langfuse self-hosted, or Braintrust.
-# OBSERVABILITY_PROVIDER=auto picks Langfuse when a secret key is set.
+# Observability (optional) — Langfuse cloud, Langfuse self-hosted, Braintrust,
+# or the local cost-free Arize Phoenix backend.
+# OBSERVABILITY_PROVIDER=auto picks Langfuse when a secret key is set, else
+# Braintrust when its key is set, else the local Phoenix backend (no cloud, no
+# tokens — the default fallback).
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 # Cloud: LANGFUSE_HOST=https://us.cloud.langfuse.com
 # Self-hosted: LANGFUSE_HOST=http://localhost:3000 (LANGFUSE_BASE_URL is an alias)
-# Alternative backend: set OBSERVABILITY_PROVIDER=braintrust + BRAINTRUST_API_KEY
+# Alternative backends:
+#   OBSERVABILITY_PROVIDER=braintrust + BRAINTRUST_API_KEY
+#   OBSERVABILITY_PROVIDER=phoenix  (local; PHOENIX_ENDPOINT, run `phoenix serve`)
 
 # Pipeline
 MAILROOM_BASE_DIR=./data
@@ -119,6 +124,8 @@ curl http://localhost:8000/ops/status
 **Langfuse self-hosted:** open `http://localhost:3000` in your browser. Set up your first user account, generate API keys, and put them in `.env` (`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`LANGFUSE_HOST`).
 
 **Braintrust:** set `OBSERVABILITY_PROVIDER=braintrust` + `BRAINTRUST_API_KEY` and check your Braintrust project's logs.
+
+**Arize Phoenix (local, cost-free):** start it with `phoenix serve` (or `python -m phoenix.server.main serve`), then open `http://localhost:6006` and confirm traces appear as documents flow. This is the default fallback in `auto` mode — no cloud subscription, no quota, nothing spent on top of the LLM API calls. The Phoenix SQLite DB can be deleted when a batch is done (pour-in, poke-around, discard).
 
 Every LLM call (classification, extraction, reports, Boss) is auto-traced; no per-node wiring is needed.
 
@@ -345,6 +352,15 @@ stderr_logfile_backups=14
 
 - Check `OBSERVABILITY_PROVIDER=braintrust` and `BRAINTRUST_API_KEY`/`BRAINTRUST_PROJECT` are set
 - Braintrust is a no-op until the API key is present
+
+### No traces in `auto` mode after dropping cloud keys
+
+With no `LANGFUSE_SECRET_KEY` or `BRAINTRUST_API_KEY`, `auto` falls through to the
+local Arize Phoenix backend (cost-free). To see traces:
+- Start Phoenix: `phoenix serve`, then open `http://localhost:6006`
+- Verify `PHOENIX_TRACING` is not `disabled` and `PHOENIX_ENDPOINT` matches Phoenix
+- Set `OBSERVABILITY_PROVIDER=phoenix` explicitly if you want to force it
+- Set `OBSERVABILITY_PROVIDER=none` only if you want tracing fully off
 
 ### LLM provider errors
 

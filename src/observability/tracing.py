@@ -3,18 +3,26 @@
 Backend selection (env `OBSERVABILITY_PROVIDER`):
 
   auto        (default) langfuse if LANGFUSE_SECRET_KEY is set, else braintrust
-              if BRAINTRUST_API_KEY is set, else none
+              if BRAINTRUST_API_KEY is set, else phoenix (local, free)
   langfuse    force Langfuse
   braintrust  force Braintrust
+  phoenix     force Arize Phoenix (local OpenTelemetry, cost-free)
   none        disable tracing entirely
+
+The ``auto`` chain is aligned with ``llm-entity-extraction``'s architecture:
+cloud backends (Langfuse/Braintrust) win when their keys are set, otherwise
+tracing falls through to the **local, cost-free Arize Phoenix** backend instead
+of silently disabling. This keeps every LLM call traced with zero spend on top
+of the API calls.
 
 Two integration points:
 
 - `instrument_openai_client` wraps the OpenAI client built in
   `llm/client.py:get_llm`, so every LLM call becomes a traced generation.
 - `pipeline_trace` / `traced_node` add structured, nested observations around
-  document runs and graph nodes (currently Langfuse-only; both backends keep
-  working for LLM calls). All helpers no-op safely when tracing is disabled.
+  document runs and graph nodes (Langfuse-only structured spans; the
+  Phoenix/Braintrust backends still trace LLM calls). All helpers no-op safely
+  when tracing is disabled.
 """
 
 import functools
@@ -26,17 +34,23 @@ logger = structlog.get_logger(__name__)
 
 
 def resolve_provider_name() -> str:
-    """Return one of: 'langfuse', 'braintrust', 'none'."""
+    """Return one of: 'langfuse', 'braintrust', 'phoenix', 'none'."""
     choice = os.environ.get("OBSERVABILITY_PROVIDER", "auto").strip().lower()
 
-    if choice in ("langfuse", "braintrust", "none"):
+    if choice in ("langfuse", "braintrust", "phoenix", "none"):
         return choice
 
-    # auto: prefer langfuse, then braintrust, then disable
+    # auto: prefer langfuse, then braintrust, then the local cost-free phoenix,
+    # and only then disable (aligned with llm-entity-extraction's local-first
+    # fallback so tracing never silently turns off).
     if os.environ.get("LANGFUSE_SECRET_KEY"):
         return "langfuse"
     if os.environ.get("BRAINTRUST_API_KEY"):
         return "braintrust"
+    if os.environ.get("PHOENIX_TRACING", "enabled").strip().lower() in (
+        "1", "true", "enabled", "yes", "on"
+    ):
+        return "phoenix"
     return "none"
 
 
@@ -56,6 +70,10 @@ def instrument_openai_client(client):
             from .braintrust_setup import instrument_openai_client as _braintrust_instrument
 
             return _braintrust_instrument(client)
+        if provider == "phoenix":
+            from .phoenix_setup import instrument_openai_client as _phoenix_instrument
+
+            return _phoenix_instrument(client)
     except Exception:
         logger.warning("tracing_instrumentation_failed", provider=provider, exc_info=True)
     return client
@@ -184,6 +202,10 @@ def flush():
             from .braintrust_setup import flush_braintrust
 
             flush_braintrust()
+        elif provider == "phoenix":
+            from .phoenix_setup import flush_phoenix
+
+            flush_phoenix()
         _flush_ok += 1
     except Exception:
         _flush_failures += 1

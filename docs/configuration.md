@@ -253,7 +253,7 @@ See `.env.example` for the complete list:
 | `GENERIC_BASE_URL` | No | — | Generic provider base URL |
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` | Async database URL. SQLite by default; set a Postgres URL to switch |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
-| `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `none` |
+| `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `phoenix` \| `none`. `auto` = Langfuse if key → Braintrust if key → local Arize Phoenix (cost-free) → `none` |
 | `LOG_LEVEL` | No | `INFO` | Structured log level (`DEBUG`, `INFO`, `WARNING`, ...) |
 | `LOG_FORMAT` | No | `pretty` | Log renderer: `pretty` (console) or `json` (machine-readable) |
 | `LOG_FILE` | No | — | Optional rotating file sink: every structlog event is appended here as a JSON line (audit item 10.3 — no unbounded log files) |
@@ -264,6 +264,10 @@ See `.env.example` for the complete list:
 | `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server URL (`LANGFUSE_BASE_URL` accepted as alias) |
 | `BRAINTRUST_API_KEY` | No | — | Braintrust API key (present ⇒ `auto` picks Braintrust) |
 | `BRAINTRUST_PROJECT` | No | `mailroom` | Braintrust project name |
+| `PHOENIX_TRACING` | No | `enabled` | Enable the local Arize Phoenix OTel backend (default fallback in `auto`) |
+| `PHOENIX_ENDPOINT` | No | `http://localhost:6006/v1/traces` | Phoenix OTLP HTTP endpoint |
+| `PHOENIX_SERVICE_NAME` | No | `mailroom` | OTel service name |
+| `PHOENIX_PROJECT` | No | `mailroom` | Phoenix openinference project name |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `2` | Watcher poll interval |
 | `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |

@@ -15,14 +15,23 @@ def _clear_observability_env(monkeypatch):
     monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
     monkeypatch.delenv("BRAINTRUST_API_KEY", raising=False)
     monkeypatch.delenv("BRAINTRUST_PROJECT", raising=False)
+    monkeypatch.delenv("PHOENIX_TRACING", raising=False)
+    monkeypatch.delenv("PHOENIX_ENDPOINT", raising=False)
+    monkeypatch.delenv("PHOENIX_SERVICE_NAME", raising=False)
+    monkeypatch.delenv("PHOENIX_PROJECT", raising=False)
     monkeypatch.setattr(langfuse_setup, "_langfuse_client", None)
     monkeypatch.setattr(braintrust_setup, "_configured", False)
 
 
 class TestProviderResolution:
-    def test_defaults_to_none_without_keys(self):
+    def test_defaults_to_phoenix_without_keys(self):
+        # Local-first fallback: no cloud keys set -> the cost-free local Phoenix
+        # backend (default enabled), not silence.
+        assert tracing.resolve_provider_name() == "phoenix"
+
+    def test_phoenix_disabled_without_keys_means_none(self, monkeypatch):
+        monkeypatch.setenv("PHOENIX_TRACING", "disabled")
         assert tracing.resolve_provider_name() == "none"
-        assert tracing.is_enabled() is False
 
     def test_auto_prefers_langfuse_when_keys_present(self, monkeypatch):
         monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
@@ -37,6 +46,8 @@ class TestProviderResolution:
         assert tracing.resolve_provider_name() == "braintrust"
         monkeypatch.setenv("OBSERVABILITY_PROVIDER", "langfuse")
         assert tracing.resolve_provider_name() == "langfuse"
+        monkeypatch.setenv("OBSERVABILITY_PROVIDER", "phoenix")
+        assert tracing.resolve_provider_name() == "phoenix"
         monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
         assert tracing.resolve_provider_name() == "none"
 
