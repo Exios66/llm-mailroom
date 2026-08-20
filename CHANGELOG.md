@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0] - 2026-08-19
+
+### Added
+- **Arize Phoenix tracing backend** (`src/observability/phoenix_setup.py`),
+  aligned with the `llm-entity-extraction` architecture: a local,
+  cost-free OpenTelemetry-native sink. `observability/tracing.py` now
+  resolves `OBSERVABILITY_PROVIDER=auto` as `langfuse` → `braintrust` →
+  `phoenix` → `none`, so with no cloud keys set tracing falls through to
+  local Phoenix instead of turning off silently. `instrument_openai_client`
+  and `flush` route to Phoenix via the same facade; LLM calls are traced
+  with the OpenInference OpenAI instrumentor.
+- **`phoenix` / `arize-phoenix` + `opentelemetry` runtime deps** and the
+  `postgres` optional extra (see pyproject).
+- **Optional-extra dependency split** in `pyproject.toml`: the heavy
+  `sentence-transformers` + `scipy` embedding/scoring stack moved out of the
+  core install into `pip install -e ".[embeddings]"`; `psycopg[binary]`
+  moved into `.[postgres]` (SQLite is the default). Both degrade gracefully
+  when not installed.
+
+### Removed
+- **`apscheduler`** runtime dependency — no code used it (the ops monitor
+  uses `asyncio.sleep`/`wait_for`).
+- **`sentence-transformers` / `scipy` from the core install** — now optional;
+  dropped the ~500MB torch chain from a default install.
+
+### Changed
+- **`observability/tracing.py`** docstring + `resolve_provider_name`:
+  the `auto` chain now falls back to local Phoenix (cost-free) before
+  `none`, matching `llm-entity-extraction`'s local-first fallback.
+- **`.env.example`** — documented the new `auto` chain and added the
+  `PHOENIX_TRACING` / `PHOENIX_ENDPOINT` / `PHOENIX_SERVICE_NAME` /
+  `PHOENIX_PROJECT` knobs.
+- **`docs/configuration.md` / `docs/deployment.md`** — documented Phoenix,
+  the `auto` fallback, and troubleshooting for post-cloud-key tracing.
+- **`src/tests/test_observability.py`** — the no-key default now asserts
+  `phoenix` (with `PHOENIX_TRACING=disabled` → `none`), and explicit
+  `phoenix` provider selection is covered.
+
 ## [Unreleased]
 
 ### Added

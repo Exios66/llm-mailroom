@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mailroom"
-version = "0.2.2"
+version = "0.3.0"
 description = "Multi-Agent Legal Document Processing Pipeline"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,7 +18,6 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.19",
-    "psycopg[binary]>=3.1",
     "openai>=1.30",
     "pypdf>=4.0",
     "pdfplumber>=0.11",
@@ -31,14 +30,30 @@ dependencies = [
     "structlog>=24.0",
     "httpx>=0.27",
     "python-dotenv>=1.0",
-    "apscheduler>=3.10",
     "jellyfish>=1.0",
     "python-dateutil>=2.8",
-    "scipy>=1.10",
-    "sentence-transformers>=3.0",
+    # Arize Phoenix — local, cost-free OpenTelemetry tracing (default fallback
+    # in `observability/tracing.py`; aligned with llm-entity-extraction).
+    "arize-phoenix>=4.0",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-http>=1.20",
 ]
 
 [project.optional-dependencies]
+# Heavy embedding & numerical deps pulled OUT of the core install. They are
+# only used by the optional embedding cosine second signal and the scipy
+# Hungarian matcher in observability/field_scoring.py — both degrade
+# gracefully (pure string scoring / greedy match) when not installed. Install
+# with:  pip install -e ".[embeddings]"
+embeddings = [
+    "scipy>=1.10",
+    "sentence-transformers>=3.0",
+]
+# Postgres storage engine (SQLite is the default; the checkpointer always
+# falls back to MemorySaver). Install with:  pip install -e ".[postgres]"
+postgres = [
+    "psycopg[binary]>=3.1",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
