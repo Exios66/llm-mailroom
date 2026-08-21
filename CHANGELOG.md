@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Vendored Graphify agent skill → `.opencode/skills/graphify/` (KANBAN-065, [#30](https://github.com/Exios66/llm-entity-extraction/issues/30)):** the official opencode agent skill from [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) (upstream `v8` @ `b2cd362`, Apache-2.0/MIT) copied verbatim — `SKILL.md` + 8 `references/` sidecars — with a PROVENANCE.md (source ref, license, re-sync steps). Future-use tooling for any coding agent working in this repo: deterministic knowledge-graph build/query over the codebase, no runtime dependency until the `graphifyy` CLI is actually installed. Network-free consistency tests (`src/tests/test_graphify_skill.py`, 5 passed) pin the structure and keep the llm-entity-extraction copy byte-identical.
+
 ## [v0.4.1] - 2026-08-21
 
 ### Added
