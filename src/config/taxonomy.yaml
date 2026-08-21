@@ -264,6 +264,26 @@ agents:
     # with medium reasoning); explicitly declared for config completeness.
     reasoning_effort: medium
 
+  # KANBAN-062 (Lane A): independent second-opinion classification reviewer.
+  # Fires only on medium-band classifications that survive retry_classify.
+  sorter_reviewer:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 2048
+    max_input_chars: 12000
+    reasoning_effort: medium
+
+  # KANBAN-063 (Lane B): judgment arbitration on failed judge verdicts.
+  # Sees the specialist extraction + judge findings; bounded decisions only.
+  arbiter:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 4096
+    max_input_chars: 100000
+    reasoning_effort: none
+
   contracts_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash

@@ -43,4 +43,26 @@ class DocumentState(TypedDict, total=False):
     # Attempt number of this pipeline run for a document (observability: trace
     # tags/metadata + seed suffix beyond the first run).
     run_attempt: int
+    # KANBAN-062 (Lane A): independent second opinion from the sorter_reviewer
+    # agent on medium-band classifications. The original sorter answer is
+    # preserved untouched; `review_verdict` records the lane outcome
+    # (reviewer_agrees | reviewer_overrides | escalated).
+    reviewer_doc_type: str | None
+    reviewer_contract_subtype: str | None
+    reviewer_confidence: float | None
+    review_verdict: str | None
+    # KANBAN-063 (Lane B): in-pipeline judge verification + arbiter
+    # arbitration. The judge fires only when gated in (needs_judge_review /
+    # ambiguous-band extraction confidence); the arbiter only on a failed
+    # verdict.
+    judge_verdict: str | None
+    judge_score: float | None
+    judge_findings: list[str]
+    arbiter_decision: str | None
+    arbiter_reasoning: str | None
+    arbiter_handoff: str | None
+    # Bound on arbiter-driven re-extractions (mirrors the retry budget idea;
+    # separate counter so extraction retries and arbitration retries never
+    # alias each other).
+    arbiter_retry_count: int
     messages: Annotated[list, add_messages]

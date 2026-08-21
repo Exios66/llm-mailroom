@@ -88,8 +88,15 @@ class TestPipelineE2E:
     def test_graph_routes_medium_confidence_to_review(
         self, temp_base_dir, mock_openai_client, mock_langchain_llm
     ):
-        # Classified but not clearly confident (low <= confidence < high):
-        # must route to human review instead of archiving (ambiguous_01 case).
+        # Classified but not clearly confident (low <= confidence < high).
+        # KANBAN-062 (Lane A): the medium band no longer goes straight to
+        # human review — it gets an INDEPENDENT agent second opinion
+        # (review_classify). With the mocked reviewer confident (contract @
+        # 0.95 via mock_openai_client), the lane resolves the ambiguity
+        # automatically: the reviewer's winning label is applied and the
+        # document proceeds through extraction to archive. A still-ambiguous
+        # reviewer would escalate to human review with both opinions
+        # preserved (covered at node level in test_lanes_062_063.py).
         mock_langchain_llm.classification = {
             "doc_type": "correspondence",
             "contract_subtype": None,
@@ -129,7 +136,14 @@ class TestPipelineE2E:
         }
 
         result = graph.invoke(initial_state, config)
-        assert result.get("stage") == "review"
+        # The lane fired and the confident reviewer won:
+        assert result.get("review_verdict") == "reviewer_overrides"
+        assert result.get("reviewer_doc_type") == "contract"
+        assert result.get("reviewer_confidence") is not None
+        # The reviewer's winning label was APPLIED to the live state:
+        assert result.get("doc_type") == "contract"
+        # ...and the document flowed on through extraction to archive:
+        assert result.get("stage") == "archived"
 
     def test_ingest_node_creates_manifest(self, temp_base_dir):
         from graph.build_graph import ingest_node, _ensure_dirs
