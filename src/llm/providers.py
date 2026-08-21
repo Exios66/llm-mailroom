@@ -78,8 +78,15 @@ def _build_providers() -> Dict[str, ProviderConfig]:
         ),
         "vllm": ProviderConfig(
             name="vllm",
+            # Self-hosted vLLM (local GPU box) or a Modal-deployed vLLM — see
+            # deploy/modal_vllm.py + deploy/README.md. KANBAN-064: this is a
+            # configuration CAPABILITY; OpenRouter remains the primary path
+            # unless DEFAULT_PROVIDER=vllm is set explicitly.
             base_url=os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1"),
-            api_key_env=None,
+            # Optional: unset => keyless local server ("not-needed"); set =>
+            # sent as Bearer token (the Modal app enforces one when deployed
+            # with MAILROOM_VLLM_API_TOKEN).
+            api_key_env="VLLM_API_KEY",
             default_model="*",
             available_models=DEFAULT_MODELS["vllm"],
         ),
