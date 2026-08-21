@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.1] - 2026-08-21
+
+### Added
+
+- **Modal+vLLM offline serving capability (KANBAN-064) — framework-in-place:** the pipeline can now be pointed at a Modal-deployed vLLM server for local/offline operation later, with zero behavior change today (OpenRouter stays primary unless `DEFAULT_PROVIDER=vllm`). Pieces: `deploy/modal_vllm.py` (vLLM's own OpenAI-compatible `/v1` server behind Modal `web_server`; env-configured MODEL / GPU / quantization / max-model-len / required bearer token baked in at deploy time via `modal.Secret.from_local`; persistent HF-weights volume for warm restarts; `modal serve` smoke-test mode), optional `VLLM_API_KEY` bearer support in the existing `vllm` provider (keyless local servers unchanged — client falls back to `"not-needed"`), `[deploy]` install extra (deploy-time only; runtime never imports modal), `deploy/README.md` runbook (deploy → flip `.env` → flip back), `.env.example` guidance. Tests: 12 network-free tests loading the app with a stubbed modal module + exercising the provider seam (DEFAULT_PROVIDER precedence, base-URL override, keyless-vs-bearer end-to-end through `get_llm`).
+
 ## [v0.4.0] - 2026-08-21
 
 ### Added
