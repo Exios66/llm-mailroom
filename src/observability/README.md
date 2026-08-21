@@ -1,57 +1,39 @@
-# `observability/` — Tracing every LLM call
+# observability/
 
-## What this folder is (plain English)
+Tracing, scoring, and evaluation plumbing for the mailroom pipeline.
 
-This logs every AI call the pipeline makes — classification, extraction, reports, the Boss — so you can see exactly what prompt went out, what the model answered, how long it took, and how many tokens it cost. Two backends are supported; you pick one with a single env var.
+## Where things live (post KANBAN-061)
 
-- **Langfuse** — the default. Works with their cloud (`us.cloud.langfuse.com`) or a self-hosted instance. Dashboard at the Langfuse UI.
-- **Braintrust** — an alternative. Add your `BRAINTRUST_API_KEY`, flip one env var, and the same calls appear in Braintrust instead.
+The field-scoring implementation is **owned by the shared package**
+[`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) (v0.5.1+).
+This repo keeps only a backward-compatibility shim.
 
-**It's completely optional and safe.** If no backend is configured (or the keys are missing/wrong), everything no-ops and the pipeline runs exactly as if tracing were off.
+| Module | Status |
+| --- | --- |
+| `tracing.py`, `langfuse_setup.py`, `phoenix_setup.py` | local — tracing facade/backends |
+| `scores.py` | local — Langfuse score configs; names validated against the dojo metric registry at import |
+| `field_scoring.py` | **deprecated shim** over `llm_dojo_scoring.field_scoring` |
 
-## Configuration
+## `field_scoring.py` shim
 
-```bash
-# .env
-OBSERVABILITY_PROVIDER=auto     # auto | langfuse | braintrust | none
+Importing it emits a `DeprecationWarning` and re-exports everything from
+`llm_dojo_scoring.field_scoring`. Mailroom-specific behavior that stayed local:
 
-# Langfuse (cloud example)
-LANGFUSE_PUBLIC_KEY=pk-lf-...
-LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_HOST=https://us.cloud.langfuse.com   # LANGFUSE_BASE_URL is an alias
+- `get_type_bands()` / `field_is_ambiguous()` / `warm_embedding_model()` —
+  taxonomy-driven glue (`field_scoring.type_bands` in `config/taxonomy.yaml`)
+- `get_field_types()` auto-loads `config/taxonomy.yaml`; the package version
+  requires an explicit taxonomy dict
+- taxonomy wiring runs at import via the package's `configure(**overrides)`
+  (values set verbatim; YAML lists are coerced to the tuple/set forms the
+  package stores)
 
-# Braintrust (alternative)
-BRAINTRUST_API_KEY=
-BRAINTRUST_PROJECT=mailroom
-```
+New code should import from `llm_dojo_scoring.field_scoring` directly.
+Tests that patch internals (`_get_embedding`) must patch
+`llm_dojo_scoring.field_scoring`, not this shim.
 
-`auto` picks Langfuse if `LANGFUSE_SECRET_KEY` is set, else Braintrust if `BRAINTRUST_API_KEY` is set, else nothing.
+## Score schema governance
 
-## Technical reference
-
-- **`tracing.py`** — the facade the rest of the app uses.
-  - `resolve_provider_name()` → `langfuse` | `braintrust` | `none` (reads `OBSERVABILITY_PROVIDER`, default `auto`).
-  - `instrument_openai_client(client)` — wrap the OpenAI client with the active backend, or return it unchanged. This is the only integration point; it's called from `llm/client.py:get_llm` (`instrument_client`).
-  - `flush()` — push queued events to the backend.
-  - `register_atexit_flush()` — optional; flushes on process exit.
-- **`scores.py`** — task-spec score configs: self-evident per-run scores (`parse_error`, `schema_valid`, `stage_completed`, `guardrail_triggered`, confidence values) and pilot ground-truth scores (`class_correct`, `stage_correct`, `confidence_calibration_error`, `expected_field_presence`). Configs are auto-created via `ensure_score_configs()` (29 score configs).
-- **`field_scoring.py`** — deterministic field-type-aware extraction scoring (issues #4/#5): `id`/`date`/`money` exact-after-normalize, `name` Jaro-Winkler + token-set ratio, `free_text` SQuAD token F1, `entity_list` optimal bipartite matching (scipy Hungarian) → precision/recall/F1. Optional sentence-transformers embedding cosine rescue for lexically-distant-but-semantically-equal fields. Per-field-type judge-escalation bands come from `field_scoring.type_bands` in `config/taxonomy.yaml` (calibrated by `scripts/calibrate_field_scoring.py`): `date`/`id` are decisive (`never`), `money`/`free_text` have calibrated cutoffs, `name`/`entity_list` trust only perfect scores and escalate the rest.
-- **`langfuse_field_scoring.py`** — wires `field_scoring.py` results into Langfuse: registers the `extraction_field_score` / `extraction_overall_score` / `extraction_needs_judge_review` / `entity_list_precision` / `entity_list_recall` score configs and attaches them to the document trace via `score_and_log_extraction()`.
-- **`langfuse_setup.py`** — Langfuse backend (langfuse ≥ 4.x).
-  - `get_langfuse_client()` — lazily builds `Langfuse(public_key, secret_key, host)` from env; returns `_NoopLangfuse` when there's no `LANGFUSE_SECRET_KEY` or init fails. `_resolve_host()` prefers `LANGFUSE_HOST`, falls back to `LANGFUSE_BASE_URL`.
-  - `instrument_openai_client(client)` — inits the client then imports `langfuse.openai`. langfuse 4.x instruments by monkeypatching `openai.resources.chat.completions.Completions.create` at import time, so the **original client is returned unchanged** and every OpenAI call in the process is traced. (The old `client.trace()` API was removed in langfuse 4.x — this module was rewritten for it.)
-- **`braintrust_setup.py`** — Braintrust backend.
-  - `configure()` — `braintrust.init(project=..., api_key=...)`; idempotent; no-op without `BRAINTRUST_API_KEY`.
-  - `instrument_openai_client(client)` — `braintrust.wrap_openai(client)` (keeps the same interface).
-  - `flush_braintrust()` — `braintrust.flush()`.
-- **How it connects to the pipeline:**
-  - **Every LLM call** gets its client from `get_llm(agent_name)`, which passes it through `instrument_client` → `tracing.instrument_openai_client`. So sorter, specialists, reporter, boss, and image/PDF extraction are all traced with zero changes to agent code.
-  - **Structured, nested traces per document** (Langfuse best practices — see the installed `langfuse` skill under `.opencode/skills/langfuse/`):
-    - One trace per document run, named `document-pipeline`, with a **deterministic trace id** seeded from the file name (correlates the trace with the document in our own DB). Reprocessing the same file reuses the same trace id, so all attempts on one document appear in a single trace.
-    - `session_id = matter_id` — every document of a matter groups into one Langfuse session.
-    - Root span input = `{filename, matter_id}`; output = `{stage, doc_type, confidence}`.
-    - Each graph node is wrapped in a stable, verb-first span (`ingest-document`, `classify-document`, `extract-fields`, `compile-report`, `write-catalog`, `archive-document`, ...) with curated input (identifiers, never raw document text) and output (stage/confidence). LLM generations nest under the node span that issued them.
-    - `tags=["mailroom"]`, `environment` from `OBSERVABILITY_ENVIRONMENT` (optional).
-    - Traces are flushed after every document run so they appear promptly.
-- **Security note:** traces contain full prompts/responses (the legal document content) — deliberate, for auditability. Access-control the Langfuse UI (root README → Security).
-- Tests: `tests/test_observability.py` (provider resolution, env aliasing, noop-safe trace helpers). Tests never hit the network.
+`scores.py::SCORE_CONFIGS` is checked against `load_registry().metrics` at
+import time. Adding a score name here without registering it upstream fails
+fast with a `RuntimeError` naming the drifted entries — register new metrics
+in llm-dojo-scoring first, then use them here.

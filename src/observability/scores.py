@@ -101,6 +101,32 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "legalbench_task", "data_type": "TEXT"},
 ]
 
+# KANBAN-061: SCORE_CONFIGS is validated against llm-dojo-scoring's metric
+# registry (single source of truth). A name here but not in the registry
+# means the schema has drifted — fail loudly at import rather than silently
+# emitting unregistered metrics.
+try:
+    from llm_dojo_scoring import load_registry as _load_registry
+
+    _unregistered = [
+        c["name"] for c in SCORE_CONFIGS if c["name"] not in _load_registry().metrics
+    ]
+    if _unregistered:
+        raise RuntimeError(
+            "SCORE_CONFIGS contains names missing from the llm-dojo-scoring "
+            f"registry: {_unregistered}. Register them upstream or remove "
+            "them here."
+        )
+    logger.debug(
+        "score_configs_validated",
+        count=len(SCORE_CONFIGS),
+        registry="llm-dojo-scoring",
+    )
+except ImportError:
+    # Package not importable in this environment (e.g. docs builds);
+    # skip validation rather than block module import.
+    pass
+
 
 def is_enabled() -> bool:
     from observability.tracing import resolve_provider_name

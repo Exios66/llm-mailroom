@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mailroom"
-version = "0.3.1"
+version = "0.3.2"
 description = "Multi-Agent Legal Document Processing Pipeline"
 requires-python = ">=3.11"
 dependencies = [
@@ -37,6 +37,9 @@ dependencies = [
     "arize-phoenix>=4.0",
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp-proto-http>=1.20",
+    # Unified scoring engine (KANBAN-061): observability.field_scoring is a
+    # deprecated shim over this package since v0.5.0.
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.5.0",
 ]
 
 [project.optional-dependencies]

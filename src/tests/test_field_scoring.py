@@ -15,6 +15,10 @@ from unittest.mock import patch
 import pytest
 
 from observability import field_scoring
+
+# KANBAN-061: patch target for internals (_get_embedding) that moved into the
+# llm-dojo-scoring package with the de-duplication.
+from llm_dojo_scoring import field_scoring as _dojo_field_scoring  # noqa: E402
 from observability.field_scoring import (
     FIELD_SCORERS,
     EntityListScore,
@@ -139,7 +143,8 @@ class TestNameField:
         assert score_name_field("Acme Corp", "Northwind Logistics") < 0.5
 
     def test_embedding_rescues_lexically_distant(self):
-        with patch.object(field_scoring, "_get_embedding", return_value=FakeEmbedding(0.92)):
+        # KANBAN-061: the implementation lives in llm_dojo_scoring — patch there.
+        with patch.object(_dojo_field_scoring, "_get_embedding", return_value=FakeEmbedding(0.92)):
             assert score_name_field("Acme Corp", "Northwind Logistics") == 0.92
 
     def test_embedding_never_overrides_strong_string_score(self):
@@ -165,7 +170,8 @@ class TestFreeTextField:
         assert score_free_text_field("termination at will", "quarterly compliance reports") == 0.0
 
     def test_embedding_rescues_paraphrase(self):
-        with patch.object(field_scoring, "_get_embedding", return_value=FakeEmbedding(0.88)):
+        # KANBAN-061: the implementation lives in llm_dojo_scoring — patch there.
+        with patch.object(_dojo_field_scoring, "_get_embedding", return_value=FakeEmbedding(0.88)):
             assert score_free_text_field("terminate for convenience", "termination without cause") == 0.88
 
 
