@@ -41,3 +41,6 @@ src/legalbench/reports/
 
 # Stale pre-restructure paths (defensive)
 /legalbench/
+
+# graphify knowledge-graph build artifacts (KANBAN-065 follow-on; rebuild with `graphify .`)
+graphify-out/
