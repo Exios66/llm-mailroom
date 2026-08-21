@@ -11,10 +11,16 @@ from graph.state import DocumentState
 from graph.routing import (
     after_classify,
     after_retry_classify,
+    after_review_classify,
     after_extraction,
+    after_extraction_gated,
     after_retry_extraction,
+    after_retry_extraction_gated,
+    after_judge,
+    after_arbiter,
     after_boss,
     after_human_review,
+    judge_gate,
 )
 from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
@@ -235,7 +241,11 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     """Chained-eval handoff: prefix the sorter's classification (doc class +
     contract subtype) to the specialist's extraction call so it extracts with
     the expected field/clause set in mind (mirrors the sister repo's
-    run_chained_eval pattern)."""
+    run_chained_eval pattern).
+
+    KANBAN-063: when this extraction is an ARBITER-APPROVED RETRY, the
+    arbiter's field fix-list rides along too, so the specialist repairs the
+    named failures instead of rolling the dice on a blind re-run."""
     doc_type = state.get("doc_type")
     if not doc_type:
         return None
@@ -246,6 +256,14 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     confidence = state.get("classification_confidence")
     if confidence is not None:
         context += f" confidence={float(confidence):.2f}"
+    if state.get("arbiter_retry_count"):
+        findings = state.get("judge_findings") or []
+        context += (
+            "\nARBITER RETRY — the previous extraction was rejected by quality "
+            "review. Fix these specific problems: "
+            + ("; ".join(str(f) for f in findings)[:1200] or "(unspecified)")
+            + "."
+        )
     context += ". Extract this document's fields accordingly, ensuring every expected item of this document class is captured."
     return context
 
@@ -624,6 +642,118 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
     }
 
 
+def review_classify_node(state: DocumentState) -> dict[str, Any]:
+    """KANBAN-062 (Lane A): independent agent second opinion on a medium-band
+    classification.
+
+    The reviewer classifies the document BLIND (no hint of the sorter's
+    answer — independence is the point). Agreement/override is computed here
+    in code. The lane never changes the failure surface: reviewer high-
+    confidence → extract with the reviewer's label applied; anything else →
+    human_review with BOTH opinions preserved on state.
+    """
+    from agents.sorter_reviewer import SorterReviewerAgent
+    from llm.retry import is_transient_error
+    from pipeline.guards import guard_classification
+
+    doc_text = state.get("doc_text", "")
+    sorter_type = state.get("doc_type")
+    sorter_confidence = state.get("classification_confidence")
+
+    try:
+        reviewer = SorterReviewerAgent()
+        result = reviewer.review(doc_text, pages=state.get("doc_pages"))
+    except Exception as exc:
+        if is_transient_error(exc):
+            transient = state.get("transient_retries_review_classify", 0) + 1
+            logger.warning(
+                "review_classify_transient_error",
+                doc_id=state.get("doc_id"),
+                error=str(exc)[:300],
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries_review_classify": transient,
+                "stage": PipelineStage.CLASSIFIED.value,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+                "escalation_reason": "transient provider error during sorter review",
+            }
+        # Reviewer hard-failed: escalate with the sorter's original answer
+        # intact (fail-safe — same destination the doc had before this lane).
+        logger.exception("review_classify_failed", doc_id=state.get("doc_id"))
+        return {
+            "review_verdict": "reviewer_error",
+            "stage": PipelineStage.CLASSIFIED.value,
+            "escalation_reason": f"sorter reviewer failed ({type(exc).__name__}) — routing to human review",
+        }
+
+    reviewer_type = result.get("doc_type")
+    reviewer_subtype = result.get("contract_subtype")
+    try:
+        reviewer_confidence = float(result.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        reviewer_confidence = 0.0
+    # Same deterministic guard the sorter's answers pass through: never trust
+    # an out-of-range confidence or unknown class from the reviewer either.
+    guard = guard_classification(
+        {
+            "doc_type": reviewer_type,
+            "classification_confidence": reviewer_confidence,
+            "contract_subtype": reviewer_subtype,
+        }
+    )
+    if not guard["ok"]:
+        logger.warning(
+            "review_classification_guardrail_triggered",
+            doc_id=state.get("doc_id"),
+            issues=guard["issues"],
+        )
+        reviewer_confidence = guard.get("confidence", 0.1)
+    reviewer_reasoning = str(result.get("reasoning", ""))
+
+    high = get_confidence_thresholds().get("high", 0.95)
+    if reviewer_type == sorter_type:
+        verdict = "reviewer_agrees_high" if reviewer_confidence >= high else "reviewer_agrees_low"
+    else:
+        verdict = "reviewer_overrides" if reviewer_confidence >= high else "reviewer_conflicts"
+
+    logger.info(
+        "review_classified",
+        doc_id=state.get("doc_id"),
+        sorter_type=sorter_type,
+        sorter_confidence=sorter_confidence,
+        reviewer_type=reviewer_type,
+        reviewer_confidence=reviewer_confidence,
+        verdict=verdict,
+    )
+    updates = {
+        "reviewer_doc_type": reviewer_type,
+        "reviewer_contract_subtype": reviewer_subtype,
+        "reviewer_confidence": reviewer_confidence,
+        "review_verdict": verdict,
+        # The reviewer's reasoning rides on escalation_reason so a human
+        # reviewing the doc sees BOTH opinions in the manifest/catalog.
+        "escalation_reason": (
+            f"sorter review: sorter='{sorter_type}' "
+            f"({float(sorter_confidence or 0):.2f}) → reviewer='{reviewer_type}' "
+            f"({reviewer_confidence:.2f}, {verdict}): {reviewer_reasoning[:400]}"
+        ),
+        "stage": PipelineStage.CLASSIFIED.value,
+        "transient_error": False,
+    }
+    # KANBAN-062: only a WINNING reviewer verdict may re-label the document.
+    # reviewer_agrees_high re-asserts the (identical) sorter type with the
+    # reviewer's confidence; reviewer_overrides replaces the sorter's label.
+    # Low-confidence verdicts keep the sorter's answer untouched — the human
+    # reviewer gets both opinions via the reviewer_* fields above.
+    if verdict in ("reviewer_agrees_high", "reviewer_overrides"):
+        updates["doc_type"] = reviewer_type
+        updates["contract_subtype"] = reviewer_subtype
+        updates["classification_confidence"] = reviewer_confidence
+    return updates
+
+
 def _fetch_matter_context(state: dict) -> list[dict]:
     """Best-effort fetch of archived matter records for the Boss / conflict
     detection. Returns a list of {doc_id, doc_type, extracted_data} dicts;
@@ -954,6 +1084,135 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
+
+
+def _clean_fields_for_judge(extracted: dict | None) -> dict:
+    """Drop pipeline metadata keys before judge/arbiter input (mirrors the
+    `_emit_pipeline_result` rule: `_`-prefixed keys are metadata, `reasoning`
+    is the per-field trace artifact — never verification input)."""
+    return {
+        k: v
+        for k, v in (extracted or {}).items()
+        if not str(k).startswith("_") and k != "reasoning"
+    }
+
+
+def judge_verify_node(state: DocumentState) -> dict[str, Any]:
+    """KANBAN-063 (Lane B): in-pipeline completeness judge.
+
+    Reuses the offline-battle-tested ``CompletenessJudge`` rubric against the
+    specialist's extraction. Verdict lands on state (`complete` proceeds,
+    `partial`/`incomplete` go to the arbiter, hard failure escalates
+    fail-safe). Gated by `_judge_gate` — most documents never see this call.
+    """
+    from agents.judge import CompletenessJudge
+    from llm.retry import is_transient_error
+
+    if not judge_gate(state):
+        logger.info(
+            "judge_skipped",
+            doc_id=state.get("doc_id"),
+            extraction_confidence=state.get("extraction_confidence"),
+        )
+        return {"judge_verdict": "skipped"}
+
+    doc_type = state.get("doc_type") or ""
+    extracted = _clean_fields_for_judge(state.get("extracted_data"))
+    doc_text = state.get("doc_text", "")
+    try:
+        judge = CompletenessJudge()
+        result = judge.judge_completeness(
+            doc_type=doc_type, extracted=extracted, doc_text=doc_text
+        )
+    except Exception as exc:
+        if is_transient_error(exc):
+            transient = state.get("transient_retries_judge_verify", 0) + 1
+            logger.warning(
+                "judge_transient_error",
+                doc_id=state.get("doc_id"),
+                error=str(exc)[:300],
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries_judge_verify": transient,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+            }
+        # Judge hard-failed AFTER the gate flagged this document as needing
+        # scrutiny — escalate rather than archive unverified.
+        logger.exception("judge_failed", doc_id=state.get("doc_id"))
+        return {
+            "judge_verdict": "judge_error",
+            "escalation_reason": f"judge verification failed ({type(exc).__name__}) — routing to human review",
+        }
+
+    label = result.get("completeness_label", "incomplete")
+    score = float(result.get("completeness", 0.0))
+    findings = [str(result.get("reasoning", ""))] if result.get("reasoning") else []
+    logger.info(
+        "judge_verified",
+        doc_id=state.get("doc_id"),
+        label=label,
+        score=score,
+    )
+    return {
+        "judge_verdict": label,
+        "judge_score": score,
+        "judge_findings": findings,
+    }
+
+
+def arbiter_node(state: DocumentState) -> dict[str, Any]:
+    """KANBAN-063 (Lane B): arbitration on a failed judge verdict.
+
+    Bounded decisions only (accept_with_caveats / one retry with the fix-list
+    attached / human_review). Any arbiter failure escalates fail-safe.
+    """
+    from agents.arbiter import ArbiterAgent
+
+    try:
+        arbiter = ArbiterAgent()
+        result = arbiter.arbitrate(
+            doc_type=state.get("doc_type") or "",
+            extracted=_clean_fields_for_judge(state.get("extracted_data")),
+            judge_verdict=str(state.get("judge_verdict") or ""),
+            judge_findings=state.get("judge_findings") or [],
+            judge_score=state.get("judge_score"),
+        )
+    except Exception as exc:
+        logger.exception("arbiter_failed", doc_id=state.get("doc_id"))
+        return {
+            "arbiter_decision": "human_review",
+            "arbiter_reasoning": f"arbiter failed ({type(exc).__name__})",
+            "escalation_reason": f"arbitration failed ({type(exc).__name__}) — routing to human review",
+        }
+
+    decision = result.get("decision")
+    updates: dict[str, Any] = {
+        "arbiter_decision": decision,
+        "arbiter_reasoning": str(result.get("reasoning", "")),
+        "arbiter_handoff": str(result.get("handoff_summary", "")),
+    }
+    if decision == "retry_extraction":
+        updates["arbiter_retry_count"] = state.get("arbiter_retry_count", 0) + 1
+        updates["escalation_reason"] = (
+            f"arbiter ordered re-extraction: {result.get('handoff_summary', '')[:400]}"
+        )
+    elif decision == "accept_with_caveats":
+        updates["escalation_reason"] = (
+            f"arbiter accepted with caveats: {result.get('reasoning', '')[:400]}"
+        )
+    else:  # human_review
+        updates["escalation_reason"] = (
+            f"arbiter escalated to human review: {result.get('handoff_summary', '')[:400]}"
+        )
+    logger.info(
+        "arbiter_decided",
+        doc_id=state.get("doc_id"),
+        decision=decision,
+        retry_count=updates.get("arbiter_retry_count", state.get("arbiter_retry_count", 0)),
+    )
+    return updates
 
 
 def human_review_node(state: DocumentState) -> dict[str, Any]:
@@ -1467,8 +1726,15 @@ def build_graph(checkpointer=None):
     workflow.add_node("ingest", traced_node("ingest-document")(_bounded(ingest_node)))
     workflow.add_node("classify", traced_node("classify-document")(_bounded(classify_node)))
     workflow.add_node("retry_classify", traced_node("classify-document")(_bounded(retry_classify_node)))
+    # KANBAN-062 (Lane A): agent second opinion on exhausted medium-band
+    # classifications — the [REVIEW] exception path from the target diagram.
+    workflow.add_node("review_classify", traced_node("classify-document")(_bounded(review_classify_node)))
     workflow.add_node("extract", traced_node("extract-fields")(_bounded(extract_node)))
     workflow.add_node("retry_extract", traced_node("extract-fields")(_bounded(retry_extract_node)))
+    # KANBAN-063 (Lane B): gated completeness verification + arbitration —
+    # the Judge → [ARBITER] exception path from the target diagram.
+    workflow.add_node("judge_verify", traced_node("judge-verify")(_bounded(judge_verify_node)))
+    workflow.add_node("arbiter", traced_node("arbitrate-verdict")(_bounded(arbiter_node)))
     workflow.add_node("human_review", traced_node("route-for-review")(_bounded(human_review_node)))
     workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(boss_escalation_node)))
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(compile_report_node)))
@@ -1490,23 +1756,50 @@ def build_graph(checkpointer=None):
 
     workflow.add_conditional_edges("retry_classify", after_retry_classify, {
         "classify": "classify",
+        "review_classify": "review_classify",
         "extract": "extract",
         "human_review": "human_review",
     })
 
-    workflow.add_conditional_edges("extract", after_extraction, {
+    # KANBAN-062 (Lane A): agent second opinion. High-confidence reviewer →
+    # extract (label applied by the node); anything else → human review.
+    workflow.add_conditional_edges("review_classify", after_review_classify, {
+        "review_classify": "review_classify",  # transient self-loop (own per-node budget)
+        "extract": "extract",
+        "human_review": "human_review",
+    })
+
+    workflow.add_conditional_edges("extract", after_extraction_gated, {
         "extract": "extract",  # transient-error self-loop (same node, LLM-level retry)
         "retry_extract": "retry_extract",
         "compile_report": "compile_report",
+        "judge_verify": "judge_verify",
         "human_review": "human_review",
         "boss_escalation": "boss_escalation",
     })
 
-    workflow.add_conditional_edges("retry_extract", after_retry_extraction, {
+    workflow.add_conditional_edges("retry_extract", after_retry_extraction_gated, {
         "extract": "extract",
+        "retry_extract": "retry_extract",
         "compile_report": "compile_report",
+        "judge_verify": "judge_verify",
         "human_review": "human_review",
         "boss_escalation": "boss_escalation",
+    })
+
+    # KANBAN-063 (Lane B): judge verdict routing — complete/skipped proceeds;
+    # partial/incomplete goes to the arbiter; hard failure escalates fail-safe.
+    workflow.add_conditional_edges("judge_verify", after_judge, {
+        "judge_verify": "judge_verify",  # transient self-loop (own per-node budget)
+        "compile_report": "compile_report",
+        "arbiter": "arbiter",
+        "human_review": "human_review",
+    })
+
+    workflow.add_conditional_edges("arbiter", after_arbiter, {
+        "compile_report": "compile_report",
+        "retry_extract": "retry_extract",
+        "human_review": "human_review",
     })
 
     workflow.add_conditional_edges("boss_escalation", after_boss, {
@@ -2088,6 +2381,19 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "transient_error": False,
         "transient_retries_classify": 0,
         "transient_retries_extract": 0,
+        # KANBAN-062/063 lane state — fresh per run, never inherited from a
+        # reviewed document's earlier attempt.
+        "reviewer_doc_type": None,
+        "reviewer_contract_subtype": None,
+        "reviewer_confidence": None,
+        "review_verdict": None,
+        "judge_verdict": None,
+        "judge_score": None,
+        "judge_findings": [],
+        "arbiter_decision": None,
+        "arbiter_reasoning": None,
+        "arbiter_handoff": None,
+        "arbiter_retry_count": 0,
         "run_attempt": 0,
     }
 

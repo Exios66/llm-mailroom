@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.4.0] - 2026-08-21
+
+### Added
+
+- **Lane A — Sorter Review (KANBAN-062, #28):** medium-band classifications
+  that survive the re-classification pass now receive an INDEPENDENT agent
+  second opinion (`sorter_reviewer`, blind re-classification) before any
+  human review. A confident reviewer resolves the ambiguity automatically
+  (winning label applied to state; original sorter answer preserved in
+  `reviewer_*` fields); an unsure/conflicting reviewer escalates to human
+  review with BOTH opinions recorded on state. Hot path unchanged.
+- **Lane B — Judge + Arbiter (KANBAN-063, #29):** gated in-pipeline
+  completeness verification reusing the offline-battle-tested
+  `CompletenessJudge` rubric. The judge fires ONLY for ambiguous-band
+  extractions (low <= confidence < `judge_band_high`, default 0.85) — clean
+  runs keep today's path with zero added LLM calls; disable the lane with
+  `MAILROOM_JUDGE_VERIFY=off`. Failed verdicts go to a bounded arbiter:
+  accept-with-caveats → proceed, retry_extraction (once, fix-list attached
+  via handoff context) → re-extract, else human_review. All failure modes
+  fail safe toward human eyes.
+- New agents: `agents/sorter_reviewer.py`, `agents/arbiter.py` (profiles
+  registered upstream: llm-dojo-scoring v0.6.0).
+- Graph nodes + routers: `review_classify`, `judge_verify`, `arbiter`;
+  `after_review_classify`, `judge_gate` + gated extraction routers,
+  `after_judge`, `after_arbiter`; per-node transient budgets (L-13).
+- Tests: `src/tests/test_lanes_062_063.py` (routing bands, gate cost
+  contract incl. kill-switch and band edges, topology assertion, mocked-node
+  behavior, fail-safe paths).
+
+### Changed
+
+- `test_pipeline_e2e.py::test_graph_routes_medium_confidence_to_review`
+  re-pinned to Lane A behavior (confident reviewer auto-resolves the medium
+  band; both opinions preserved on state).
+- Dependency pin: llm-dojo-scoring @ v0.6.0 (review/audit profile registry).
+
 ## [v0.3.2] - 2026-08-21
 
 ### Changed
