@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.2] - 2026-08-21
+
+### Changed
+
+- **Unified scoring migration (KANBAN-061):** the 1,273-line local
+  `observability/field_scoring.py` is replaced by a deprecation shim over
+  [`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring)
+  v0.5.1 — one scoring engine for both document pipelines.
+  - All public symbols re-exported from `llm_dojo_scoring.field_scoring`
+  - Taxonomy wiring at import via the package's `configure(**overrides)`
+    (YAML lists coerced to tuple/set, mirroring entity-extraction's
+    `dojo_config.py`)
+  - Mailroom-local glue kept: `get_type_bands`, `field_is_ambiguous`,
+    `warm_embedding_model`; `get_field_types` auto-loads
+    `config/taxonomy.yaml` (package version requires an explicit dict)
+
+### Added
+
+- `llm-dojo-scoring @ v0.5.1` dependency in `pyproject.toml`
+- Import-time validation of `scores.py::SCORE_CONFIGS` against the dojo
+  metric registry (all 37 names verified covered) — schema drift now fails
+  loudly at import instead of emitting unregistered metrics
+- `observability/README.md` documenting the split of ownership
+
+### Tests
+
+- Embedding-rescue patch targets moved to `llm_dojo_scoring.field_scoring`
+  (internals live there now); full suite: 326 passed.
+
 ## [v0.3.1] - 2026-08-19
 
 ### Changed
