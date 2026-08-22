@@ -231,6 +231,26 @@ doc_classes:
       citations: entity_list:id
       authored_by: name
 
+  - key: insurance_claim
+    label: "Insurance Claim"
+    schema: InsuranceClaimExtraction
+    specialist: insurance_claims_specialist
+    description: "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"
+    field_types:
+      claim_number: id
+      policy_number: id
+      insurer: name
+      insured_party: name
+      claim_type: name
+      date_of_loss: date
+      date_filed: date
+      claimed_amount: money
+      adjuster: name
+      damages_description: free_text
+      coverage_determination: name
+      denial_reasons: entity_list:free_text
+      supporting_documents: entity_list
+
 file_extensions:
   - .txt
   - .pdf
@@ -325,6 +345,14 @@ agents:
     reasoning_effort: none
 
   court_opinions_specialist:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 4096
+    max_input_chars: 60000
+    reasoning_effort: none
+
+  insurance_claims_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1

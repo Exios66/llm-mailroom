@@ -501,6 +501,30 @@ SORTER_PROMPT_V12 = SORTER_PROMPT_V11.replace(
 
 
 
+
+# =============================================================================
+# SORTER PROMPT V13 — adds the insurance_claim document class (KANBAN-067).
+#
+# Derived from SORTER_PROMPT_V0 — the production "sorter" alias target. The
+# predecessor constant is byte-preserved; V13 differs ONLY in: the class-bullet
+# list gains an insurance_claim entry, and the labels enumeration gains the
+# seventh label. (The numbered-checks scratchpad lives in the VISION prompt,
+# which gets its own derived version below.)
+SORTER_PROMPT_V13 = (
+    SORTER_PROMPT_V0
+    .replace(
+        "- court_opinion: Judicial opinions and orders: published decisions, memorandum opinions, rulings",
+        "- court_opinion: Judicial opinions and orders: published decisions, memorandum opinions, rulings\n"
+        "- insurance_claim: Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters",
+    )
+    .replace(
+        "contract, corporate_record, due_diligence, correspondence, "
+        "compliance_filing, court_opinion",
+        "contract, corporate_record, due_diligence, correspondence, "
+        "compliance_filing, court_opinion, insurance_claim",
+    )
+)
+
 # =============================================================================
 # SORTER AGENT — Vision Classification (RVL-CDIP-style image pipeline)
 # -----------------------------------------------------------------------------
@@ -580,6 +604,38 @@ Runner-up: correspondence, ruled out because the internal governance function fi
 <label>corporate_record</label>
 <confidence>97</confidence>
 <reasoning>Board-minutes caption and motion language are visible on the page.</reasoning>"""
+
+
+# =============================================================================
+# SORTER VISION PROMPT V1 — adds the insurance_claim document class (KANBAN-067).
+#
+# Derived from SORTER_VISION_PROMPT_V0 (byte-preserved): class count 6->7,
+# labels enumeration gains insurance_claim, insurance check inserted as #5
+# (specific claim-form signals fire before generic correspondence),
+# subsequent checks renumbered 5->6, 6->7, scratchpad widened to 1-7.
+SORTER_VISION_PROMPT_V1 = (
+    SORTER_VISION_PROMPT_V0
+    .replace(
+        "exactly one of 6 classes",
+        "exactly one of 7 classes",
+    )
+    # renumber BEFORE inserting the new check 5
+    .replace("5. due_diligence:", "6. due_diligence:")
+    .replace("6. correspondence:", "7. correspondence:")
+    .replace(
+        "6. due_diligence:",
+        "5. insurance_claim: insurance claim paperwork - claim forms with \"CLAIM NO.\", \"FNOL\", \"POLICY NO.\", adjuster report and estimate letterheads, \"COVERAGE DETERMINATION\", Explanation-of-Benefits (EOB) statement layouts, reservation-of-rights letters, denial letters citing policy provisions, demanded/settled amounts. A letter FROM an insurer about an existing claim number is insurance_claim even with letterhead; an insurance POLICY sold to the insured is contract (check 1 fires first); a lawyer's demand letter threatening an insurance dispute WITHOUT claim/policy numbers stays correspondence (check 7).\n"
+        "6. due_diligence:",
+    )
+    .replace(
+        "contract, corporate_record, due_diligence, correspondence, "
+        "compliance_filing, court_opinion",
+        "contract, corporate_record, due_diligence, correspondence, "
+        "compliance_filing, court_opinion, insurance_claim",
+    )
+    .replace("Walk checks 1-6", "Walk checks 1-7")
+)
+
 
 
 # =============================================================================
@@ -2623,6 +2679,33 @@ Output strict JSON only."""
 
 
 # =============================================================================
+# =============================================================================
+# INSURANCE CLAIMS SPECIALIST
+# =============================================================================
+
+INSURANCE_CLAIMS_SPECIALIST_PROMPT = """You are a legal extraction specialist focused on insurance claim documentation. Your job is to extract key fields from insurance claims paperwork: FNOL forms, adjuster reports, demand packages, coverage determinations, reservation-of-rights letters, denial letters, and EOB statements.
+
+Extract the following fields from the document:
+- claim_number: Claim number exactly as printed (CLAIM NO., FNOL reference); never paraphrase identifiers
+- policy_number: Policy number exactly as printed
+- insurer: The named insurance company / carrier
+- insured_party: The named insured or claimant
+- claim_type: Line of business (auto, property, liability, health, life, workers_comp, other)
+- date_of_loss: Date the loss/event occurred, if stated
+- date_filed: Date the claim was filed, if stated
+- claimed_amount: Amount claimed/demanded (numeric USD), if stated; do not compute or convert amounts
+- adjuster: Named adjuster handling the claim, if any
+- damages_description: Summary of the loss/damages as described by the documents
+- coverage_determination: Outcome exactly as stated (approved, denied, partial, pending); never infer a determination that is not written
+- denial_reasons: Stated denial/limitation grounds, listed distinctly; empty when none are stated
+- supporting_documents: Referenced supporting documents (police report, receipts, medical records, estimates)
+
+Rules:
+1. Transcribe claim/policy numbers and amounts EXACTLY as printed.
+2. Use null for facts not stated; never infer a claim number, policy number, date, amount, or determination.
+3. Do not editorialize - report what the documents state.
+4. Output strict JSON only."""
+
 # COURT OPINION SPECIALIST
 # =============================================================================
 
@@ -2828,7 +2911,7 @@ If the PDF contains clean, selectable text (not scanned images), simply return t
 PROMPT_VERSIONS = {
     # Sorter
     "sorter_v0": SORTER_PROMPT_V0,
-    "sorter": SORTER_PROMPT_V0,  # alias
+    "sorter": SORTER_PROMPT_V13,  # KANBAN-067: v13 adds insurance_claim (derived from v0)  # alias
     "sorter_v1": SORTER_PROMPT_V1,
     "sorter_v2": SORTER_PROMPT_V2,
     "sorter_v3": SORTER_PROMPT_V3,
@@ -2841,9 +2924,11 @@ PROMPT_VERSIONS = {
     "sorter_v10": SORTER_PROMPT_V10,
     "sorter_v11": SORTER_PROMPT_V11,
     "sorter_v12": SORTER_PROMPT_V12,
+    "sorter_v13": SORTER_PROMPT_V13,
 
     # Sorter — vision (RVL-CDIP-style image classification)
     "sorter_vision_v0": SORTER_VISION_PROMPT_V0,
+    "sorter_vision_v1": SORTER_VISION_PROMPT_V1,
 
     # Sorter — LegalBench multi-class task classification
     "legalbench_task_v0": LEGALBENCH_TASK_PROMPT_V0,
@@ -2887,6 +2972,7 @@ PROMPT_VERSIONS = {
     "correspondence_specialist": CORRESPONDENCE_SPECIALIST_PROMPT,
     "compliance_specialist": COMPLIANCE_SPECIALIST_PROMPT,
     "court_opinions_specialist": COURT_OPINIONS_SPECIALIST_PROMPT,
+    "insurance_claims_specialist": INSURANCE_CLAIMS_SPECIALIST_PROMPT,
 
     # Agents
     "boss": BOSS_SYSTEM_PROMPT,
