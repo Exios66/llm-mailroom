@@ -27,6 +27,7 @@ from langchain_agents.openrouter_utils import OPENROUTER_API_URL
 VALID_CLASSES = [
     "contract", "corporate_record", "due_diligence",
     "correspondence", "compliance_filing", "court_opinion",
+    "insurance_claim",
 ]
 
 

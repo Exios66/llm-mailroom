@@ -133,6 +133,14 @@ def sample_court_opinion_text():
     return fixture.read_text()
 
 
+@pytest.fixture
+def sample_insurance_claim_text():
+    """Synthetic FNOL-style sample — insurance_claim has no external benchmark
+    (KANBAN-067 honesty note: synthetic samples only, no external dataset)."""
+    fixture = Path(__file__).parent / "fixtures" / "insurance_claim" / "sample_claim.txt"
+    return fixture.read_text()
+
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 

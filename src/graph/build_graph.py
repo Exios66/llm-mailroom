@@ -288,6 +288,8 @@ def _build_specialist_dispatch():
             dispatch[key] = _extract_compliance
         elif spec_name == "court_opinions_specialist":
             dispatch[key] = _extract_court_opinions
+        elif spec_name == "insurance_claims_specialist":
+            dispatch[key] = _extract_insurance_claims
     return dispatch
 
 
@@ -995,6 +997,13 @@ def _extract_court_opinions(
 ) -> dict:
     from agents.court_opinions_specialist import CourtOpinionsSpecialist
     return CourtOpinionsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
+
+
+def _extract_insurance_claims(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
+    from agents.insurance_claims_specialist import InsuranceClaimsSpecialist
+    return InsuranceClaimsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
 def retry_extract_node(state: DocumentState) -> dict[str, Any]:

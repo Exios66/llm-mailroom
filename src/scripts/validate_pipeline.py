@@ -78,6 +78,7 @@ FIXTURE_EXPECTATIONS = {
     "tests/fixtures/compliance_filing/*": ("compliance_filing", None),
     "tests/fixtures/due_diligence/*": ("due_diligence", None),
     "tests/fixtures/court_opinion/*": ("court_opinion", None),
+    "tests/fixtures/insurance_claim/*": ("insurance_claim", None),
     "examples/sources/corporate/*": ("corporate_record", None),
     "examples/sources/correspondence/*": ("correspondence", None),
     "examples/sources/compliance/*": ("compliance_filing", None),
