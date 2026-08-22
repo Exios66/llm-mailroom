@@ -6,6 +6,7 @@ from .documents import (
     DueDiligenceExtraction,
     CorrespondenceExtraction,
     ComplianceFilingExtraction,
+    InsuranceClaimExtraction,
     EXTRACTION_SCHEMAS,
     get_extraction_schema,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "DueDiligenceExtraction",
     "CorrespondenceExtraction",
     "ComplianceFilingExtraction",
+    "InsuranceClaimExtraction",
     "EXTRACTION_SCHEMAS",
     "get_extraction_schema",
     "AuditLogEntry",

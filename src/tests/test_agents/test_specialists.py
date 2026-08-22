@@ -1,6 +1,6 @@
 import pytest
 
-from schemas.documents import EXTRACTION_SCHEMAS, CourtOpinionExtraction
+from schemas.documents import EXTRACTION_SCHEMAS, CourtOpinionExtraction, InsuranceClaimExtraction
 
 
 def test_court_opinion_schema_registered_and_validates():
@@ -23,6 +23,87 @@ def test_specialist_dispatch_includes_court_opinion():
 
     dispatch = _build_specialist_dispatch()
     assert "court_opinion" in dispatch
+
+
+def test_insurance_claim_schema_registered_and_validates():
+    assert EXTRACTION_SCHEMAS["insurance_claim"] is InsuranceClaimExtraction
+    parsed = InsuranceClaimExtraction.model_validate(
+        {
+            "claim_number": "2026-CLM-041701",
+            "policy_number": "HO-44-88391-A",
+            "insurer": "Acme Insurance Company",
+            "claim_type": "property",
+            "claimed_amount": 18530.00,
+            "coverage_determination": "denied",
+            "denial_reasons": ["late notice"],
+        }
+    )
+    assert parsed.claim_number == "2026-CLM-041701"
+    assert parsed.denial_reasons == ["late notice"]
+    assert parsed.supporting_documents == []
+
+
+def test_specialist_dispatch_includes_insurance_claim():
+    from graph.build_graph import _build_specialist_dispatch
+
+    dispatch = _build_specialist_dispatch()
+    assert "insurance_claim" in dispatch
+
+
+def test_insurance_claims_specialist_constructs_and_builds_schema():
+    from agents.insurance_claims_specialist import InsuranceClaimsSpecialist
+
+    agent = InsuranceClaimsSpecialist()
+    assert agent.agent_name == "insurance_claims_specialist"
+    # system_prompt resolves through get_managed_prompt's local fallback
+    prompt = agent.system_prompt()
+    assert "insurance claim" in prompt.lower()
+    assert "coverage determination" in prompt.lower()
+
+
+def test_insurance_claims_specialist_parse_error_path(mock_openai_client):
+    from agents.insurance_claims_specialist import InsuranceClaimsSpecialist
+
+    mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
+        "not-json-at-all"
+    )
+    agent = InsuranceClaimsSpecialist()
+    agent.client = mock_openai_client
+    agent.model = "test-model"
+    result = agent.extract("CLAIM NO. 123 ...")
+    assert result.get("_parse_error") is True
+    assert result.get("confidence") == 0.3
+
+
+def test_insurance_claims_specialist_happy_path(mock_openai_client):
+    import json
+
+    from agents.insurance_claims_specialist import InsuranceClaimsSpecialist
+
+    payload = {
+        "claim_number": "2026-CLM-041701",
+        "policy_number": "HO-44-88391-A",
+        "insurer": "Acme Insurance Company",
+        "insured_party": "Jack B",
+        "claim_type": "property",
+        "date_of_loss": None,
+        "date_filed": "2026-03-21",
+        "claimed_amount": 18530.00,
+        "adjuster": "J. Featherstone",
+        "damages_description": "hail damage to roof and detached garage",
+        "coverage_determination": "pending",
+        "denial_reasons": [],
+        "supporting_documents": ["contractor estimate"],
+        "confidence": 0.82,
+    }
+    mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
+        json.dumps(payload)
+    )
+    agent = InsuranceClaimsSpecialist()
+    agent.client = mock_openai_client
+    agent.model = "test-model"
+    result = agent.extract("FNOL form text ...")
+    assert result == payload
 
 
 class TestContractsSpecialist:

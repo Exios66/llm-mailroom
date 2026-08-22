@@ -36,6 +36,7 @@ DOC_CLASSES = [
     {"key": "correspondence", "label": "Correspondence", "description": "Letters, emails, memos, notices between parties or with regulators"},
     {"key": "compliance_filing", "label": "Compliance Filing", "description": "SEC filings, state registrations, regulatory submissions, annual reports"},
     {"key": "court_opinion", "label": "Court Opinion", "description": "Judicial opinions and orders: published decisions, memorandum opinions, rulings"},
+    {"key": "insurance_claim", "label": "Insurance Claim", "description": "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"},
 ]
 
 DOC_CLASS_KEYS = [d["key"] for d in DOC_CLASSES]

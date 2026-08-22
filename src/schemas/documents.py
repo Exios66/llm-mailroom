@@ -78,6 +78,23 @@ class CourtOpinionExtraction(BaseModel):
     authored_by: str | None = None
 
 
+class InsuranceClaimExtraction(BaseModel):
+    claim_number: str | None = None
+    policy_number: str | None = None
+    insurer: str = ""
+    insured_party: str = ""
+    claim_type: str = ""  # auto, property, liability, health, life, workers_comp, other
+    date_of_loss: str | None = None
+    date_filed: str | None = None
+    claimed_amount: float | None = None
+    adjuster: str = ""
+    damages_description: str = ""
+    coverage_determination: str = ""  # approved, denied, partial, pending
+    denial_reasons: list[str] = Field(default_factory=list)
+    supporting_documents: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
 EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
     "contract": ContractExtraction,
     "corporate_record": CorporateRecordExtraction,
@@ -85,6 +102,7 @@ EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
     "correspondence": CorrespondenceExtraction,
     "compliance_filing": ComplianceFilingExtraction,
     "court_opinion": CourtOpinionExtraction,
+    "insurance_claim": InsuranceClaimExtraction,
 }
 
 

@@ -97,7 +97,8 @@ _TAXONOMY_SPEC = """\
 - due_diligence (Due Diligence): Checklists, disclosure schedules, diligence memos, risk assessments
 - correspondence (Correspondence): Letters, emails, memos, notices between parties or with regulators
 - compliance_filing (Compliance Filing): SEC filings, state registrations, regulatory submissions, annual reports
-- court_opinion (Court Opinion): Judicial opinions, orders, and decisions issued by courts"""
+- court_opinion (Court Opinion): Judicial opinions, orders, and decisions issued by courts
+- insurance_claim (Insurance Claim): Insurance claim documentation - FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"""
 
 # One cumulative judge call per document returning a three-way
 # CORRECT/PARTIAL/MISS verdict. With ground truth the judge decides strictly
