@@ -63,6 +63,13 @@ postgres = [
 deploy = [
     "modal>=0.73",
 ]
+# Interactive notebooks (notebooks/dataset_browser.ipynb). The browser module
+# degrades to plain-text output without these — nothing in the pipeline or
+# test suite needs them. Install with:  pip install -e ".[notebooks]"
+notebooks = [
+    "ipywidgets>=8.1",
+    "jupyterlab>=4.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
