@@ -6,6 +6,7 @@
 
 ## Reference
 - [Repo docs/](https://github.com/Exios66/llm-mailroom/tree/main/docs) — canonical docs (architecture, agents, configuration, API, deployment, local models)
+- [Sister Repositories](https://github.com/Exios66/llm-mailroom/blob/main/docs/sister-repos.md) — the llm-mailroom umbrella map
 
 ## Operations
 - [FAQ](FAQ)

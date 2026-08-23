@@ -249,6 +249,7 @@ See `.env.example` for the complete list:
 | `DEFAULT_PROVIDER` | No | `openrouter` | Global provider override |
 | `OLLAMA_BASE_URL` | No | `http://localhost:11434/v1` | Ollama base URL |
 | `VLLM_BASE_URL` | No | `http://localhost:8000/v1` | vLLM base URL |
+| `VLLM_API_KEY` | No | — | Optional bearer token for the vLLM endpoint (keyless local servers work — the client falls back internally) |
 | `GENERIC_API_KEY` | No | — | Generic provider API key |
 | `GENERIC_BASE_URL` | No | — | Generic provider base URL |
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` | Async database URL. SQLite by default; set a Postgres URL to switch |
@@ -268,6 +269,8 @@ See `.env.example` for the complete list:
 | `PHOENIX_ENDPOINT` | No | `http://localhost:6006/v1/traces` | Phoenix OTLP HTTP endpoint |
 | `PHOENIX_SERVICE_NAME` | No | `mailroom` | OTel service name |
 | `PHOENIX_PROJECT` | No | `mailroom` | Phoenix openinference project name |
+| `MAILROOM_CHECKPOINTER` | No | `memory` | LangGraph checkpointer backend: `memory` (MemorySaver default — stateless design, review resume re-invokes from the manifest) or `sqlite` (on-disk SqliteSaver at `<MAILROOM_BASE_DIR>/checkpoints.db`, for debugging/resume-across-restart experiments) |
+| `MAILROOM_JUDGE_VERIFY` | No | `on` | Kill-switch for the judge-verify exception lane (KANBAN-063): set `off`/`false`/`0`/`no` to skip gated completeness verification entirely. When on, the lane fires only on grounded extractions landing in the ambiguous band (`low <= confidence < judge_band_high`, default 0.85) — clean high-confidence extractions cost zero added judge calls |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `2` | Watcher poll interval |
 | `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |
