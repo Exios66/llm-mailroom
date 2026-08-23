@@ -39,6 +39,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
 | [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive graphify knowledge graph of this codebase | **Derived site** — build artifact only, never committed here |
+| [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Interactive graphify knowledge graph of the sister experiment loop | **Derived site** — companion map of the sister repo's code structure |
 
 ## llm-entity-extraction — the sister loop
 
@@ -99,6 +100,8 @@ The scoring layer both mailroom and entity-extraction consume:
   skill lives in `.opencode/skills/graphify/`). Graphs are build artifacts:
   query them for structure questions ("what calls X", "where does Y route"),
   but board rules and source win any disagreement.
+- **[llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/)**
+  — companion graphify map of the sister experiment loop's codebase.
 - **Hugging Face — [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)** —
   the family's published dataset surface (CUAD contracts mirrors, LegalBench
   packs, docclass-merged, enron-correspondence/-dedup). One split rule for
