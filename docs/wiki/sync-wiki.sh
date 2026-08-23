@@ -42,7 +42,20 @@ git clone "$WIKI_REPO_URL" "$TEMP_DIR" 2>/dev/null || {
     exit 1
 }
 
-# Copy all .md files from wiki/ to the wiki repo
+# Refresh mirrored pages from canonical docs/ sources (repo docs stay
+# canonical — see docs/wiki/README.md for the mirror map). REPO_ROOT is the
+# main checkout that contains this docs/wiki directory.
+REPO_ROOT="$(cd "$WIKI_DIR/../.." && pwd)"
+echo "Refreshing mirrored pages from $REPO_ROOT/docs ..."
+cp "$REPO_ROOT/docs/architecture.md"    "$TEMP_DIR/Architecture.md"
+cp "$REPO_ROOT/docs/agents.md"          "$TEMP_DIR/Agents.md"
+cp "$REPO_ROOT/docs/configuration.md"   "$TEMP_DIR/Configuration.md"
+cp "$REPO_ROOT/docs/api.md"             "$TEMP_DIR/API-Reference.md"
+cp "$REPO_ROOT/docs/deployment.md"      "$TEMP_DIR/Deployment.md"
+cp "$REPO_ROOT/docs/local-models.md"    "$TEMP_DIR/Local-Model-Cutover.md"
+cp "$REPO_ROOT/docs/testing.md"         "$TEMP_DIR/Development.md"
+
+# Copy all .md files from wiki/ to the wiki repo (wiki-native pages)
 echo "Copying wiki pages..."
 cp "$WIKI_DIR"/*.md "$TEMP_DIR/"
 

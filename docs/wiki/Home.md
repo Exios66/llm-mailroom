@@ -24,8 +24,15 @@ Mailroom is a multi-agent pipeline that ingests high-volume legal documents, cla
 |---|---|
 | [Home](Home) | This page |
 | [Getting Started](Getting-Started) | Installation and first run |
+| [Architecture](Architecture) | Full architectural overview |
+| [Configuration](Configuration) | Config reference and environment variables |
+| [Agents](Agents) | Agent specifications and personalities |
+| [API Reference](API-Reference) | Complete API endpoint documentation |
+| [Deployment](Deployment) | Production deployment guide |
+| [Local Model Cutover](Local-Model-Cutover) | Switching to local LLMs |
+| [Development](Development) | Development and testing guide |
 | [FAQ](FAQ) | Frequently asked questions |
-| [Repository `docs/`](https://github.com/Exios66/llm-mailroom/tree/main/docs) | Canonical docs: architecture, agents, configuration, API, deployment, local models |
+| [Sister Repositories](https://github.com/Exios66/llm-mailroom/blob/main/docs/sister-repos.md) | The llm-mailroom umbrella: entity-extraction, llm-dojo-scoring, corpus feeds |
 
 ---
 
@@ -34,16 +41,17 @@ Mailroom is a multi-agent pipeline that ingests high-volume legal documents, cla
 ```
 Upload/Drop --> /pipeline/inbox/ --> [Watcher] --> LangGraph run per document
                                                         |
-                                    Sorter --> Specialist --> Reporter --> Catalog --> Archivist
+              Sorter --> Specialist --> [Judge/Arbiter gate] --> Reporter --> Catalog --> Archivist
                                                         |
                                     Boss (escalation)    Human Review    Audit Log
 ```
 
-**11 LangGraph nodes** in an SQLite-checkpointed state machine. One graph per document, resumable across crashes.
+**13 LangGraph nodes** in a state machine (`ingest`, `classify`, `retry_classify`, `review_classify`, `extract`, `retry_extract`, `judge_verify`, `arbiter`, `human_review`, `boss_escalation`, `compile_report`, `catalog_write`, `archive`) — including the exception lanes from the architecture-alignment build: an agent second-opinion reviewer for exhausted medium-band classifications (Lane A) and a gated judge→arbiter completeness-verification path for grounded extractions (Lane B). Checkpointing is in-memory by default (stateless design; review resume re-invokes from the manifest) with opt-in `SqliteSaver` via `MAILROOM_CHECKPOINTER=sqlite`.
 
 ## Quick Start
 
 ```bash
+docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server   # OPTIONAL: Langfuse tracing only
 cp .env.example .env
 pip install -e ".[dev]"
 PYTHONPATH=src python -m pipeline.watcher &
@@ -51,4 +59,6 @@ PYTHONPATH=src python -m api.main &
 curl -X POST http://localhost:8000/upload -F "file=@src/tests/fixtures/contract/sample_msa.txt" -F "matter_id=MATTER-001"
 ```
 
-No database server needed — SQLite files (`data/mailroom.db`, `data/checkpoints.db`) are created automatically. Docker is only required for the optional Langfuse trace viewer (`docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server`).
+## The Mailroom Umbrella
+
+Mailroom is the pipeline at the center of a governed constellation: **[llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction)** (the prompt-experiment loop that breeds its sorter/specialist prompts, sharing one kanban board), **[llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring)** (the pinned scoring engine, `@v0.7.0`), corpus feeds **[Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment)** (correspondence) and **[claims-data-eda](https://github.com/Exios66/claims-data-eda)** (insurance claims, candidate), eval sibling **[atticus-investigation](https://github.com/Exios66/atticus-investigation)** (LegalBench), and the derived knowledge-graph site **[llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/)**. Full map: [docs/sister-repos.md](https://github.com/Exios66/llm-mailroom/blob/main/docs/sister-repos.md).
