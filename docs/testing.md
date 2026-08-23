@@ -89,7 +89,7 @@ All LLM calls are **mocked** — tests assert schema conformance and confidence-
 - Ingest node: manifest creation and file reading
 - Full pipeline with mocked LLM: correspondence → archived
 
-These tests spin up a complete LangGraph graph with all 11 nodes and mock the LLM layer, verifying:
+These tests spin up a complete LangGraph graph with all 13 nodes and mock the LLM layer, verifying:
 - State flows through all nodes correctly
 - Files move between bins
 - Archive paths are correct

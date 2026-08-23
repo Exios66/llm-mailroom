@@ -29,7 +29,7 @@ Key design points:
 - When a managed prompt is active, it's passed to the OpenAI call as `langfuse_prompt=`, linking each generation to its exact prompt version in the trace UI.
 - Every agent has a distinct system prompt ("personality") aligned with its role
 
-**Two of the agents — the Sorter and the Contracts Specialist — are vendored LangChain agents** (from `github.com/Exios66/llm-entity-extraction`, verified against commit `3a03d5c`, 2026-08-10 — issue #10 alignment check), imported into `langchain_agents/` with mailroom plumbing adapted in (pages/vision, run-deadline checks, per-call usage accounting — each adaptation marked `MAILROOM PATCH`). They use `langchain-openai`'s `ChatOpenAI` + `with_structured_output` instead of the mailroom's `agents/base.py` plumbing, and their system prompts are the eval-validated *versioned* prompts (`sorter_v5`, `contracts_specialist_v11`) from `langchain_agents/prompts.py` — they bypass `get_managed_prompt`/Langfuse prompt linking (generations are still auto-traced via the langfuse-openai SDK patch). All other agents follow the `BaseAgent` contract below.
+**Two of the agents — the Sorter and the Contracts Specialist — are vendored LangChain agents** (from `github.com/Exios66/llm-entity-extraction`, kept in sync with that repo's append-only prompt lineage — last verified against its `main` @ `08f9bd7`, 2026-08-23), imported into `langchain_agents/` with mailroom plumbing adapted in (pages/vision, run-deadline checks, per-call usage accounting — each adaptation marked `MAILROOM PATCH`). They use `langchain-openai`'s `ChatOpenAI` + `with_structured_output` instead of the mailroom's `agents/base.py` plumbing, and their system prompts resolve **by version key** through `langchain_agents/prompts.py:PROMPT_VERSIONS`: the production aliases are `"sorter"` → `SORTER_PROMPT_V13` (adds `insurance_claim`; derived from V0) and `"contracts_specialist"` → the base extraction prompt (the upstream production config). The full eval history rides along in-repo (`sorter_v0…v13`, vision v0–v1, `contracts_specialist_v1…v31`) so evaluation loops can pin exactly one version per experiment — they bypass `get_managed_prompt`/Langfuse prompt linking (generations are still auto-traced via the langfuse-openai SDK patch). All other agents follow the `BaseAgent` contract below.
 
 ---
 
@@ -204,7 +204,39 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 ---
 
-### 8. Reporter (`agents/reporter.py`)
+### 8. Insurance Claims Specialist (`agents/insurance_claims_specialist.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | `extract`, `retry_extract` |
+| **Trigger** | `doc_type == insurance_claim` |
+| **Input** | Document text + `InsuranceClaimExtraction` schema |
+| **Output** | Structured extraction + confidence |
+| **Personality** | Detail-driven claims analyst — documents what the file shows, never argues with it |
+
+**Output schema fields:**
+| Field | Type | Description |
+|---|---|---|
+| `claim_number` | `str \| None` | Claim reference number |
+| `policy_number` | `str \| None` | Policy the claim is filed under |
+| `insurer` | `str` | Insurance carrier |
+| `insured_party` | `str` | Policyholder / insured party |
+| `claim_type` | `str` | auto, property, liability, health, life, workers_comp, other |
+| `date_of_loss` | `str \| None` | Date of the loss event |
+| `date_filed` | `str \| None` | Date the claim was filed |
+| `claimed_amount` | `float \| None` | Amount claimed |
+| `adjuster` | `str` | Assigned adjuster |
+| `damages_description` | `str` | Damages narrative |
+| `coverage_determination` | `str` | approved, denied, partial, pending |
+| `denial_reasons` | `list[str]` | Stated denial reasons |
+| `supporting_documents` | `list[str]` | Documents referenced as supporting the claim |
+| `confidence` | `float` | Extraction confidence (evidence-derived) |
+
+The seventh first-class document class (added in mailroom v0.4.0 / KANBAN-067): integrated at every surface `court_opinion` touches — schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage. **Honest gap:** unlike contract (CUAD), merger_agreement (MAUD), or correspondence (Enron), insurance_claim has no external benchmark corpus yet — CMS DE-SynPUF is the candidate source and EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda); samples are synthetic-only by design until that corpus lands.
+
+---
+
+### 9. Reporter (`agents/reporter.py`)
 
 | Attribute | Value |
 |---|---|
@@ -218,7 +250,7 @@ The Reporter does NOT extract new data — it compiles and refines what the spec
 
 ---
 
-### 9. Archivist (`agents/archivist.py`)
+### 10. Archivist (`agents/archivist.py`)
 
 | Attribute | Value |
 |---|---|
@@ -235,7 +267,7 @@ The Archivist is NOT an LLM agent — it's a procedural function that:
 
 ---
 
-### 10. Boss (`agents/boss.py`)
+### 11. Boss (`agents/boss.py`)
 
 | Attribute | Value |
 |---|---|
@@ -254,7 +286,7 @@ Both share the same system prompt voice — consistent persona across both invoc
 
 ---
 
-### 11. PDF Transcriber (`agents/pdf_transcriber.py`)
+### 12. PDF Transcriber (`agents/pdf_transcriber.py`)
 
 | Attribute | Value |
 |---|---|
@@ -268,7 +300,7 @@ A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`
 
 ---
 
-### 12. Judge (`agents/judge.py`)
+### 13. Judge (`agents/judge.py`)
 
 | Attribute | Value |
 |---|---|

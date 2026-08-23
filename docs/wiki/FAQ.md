@@ -6,22 +6,25 @@ Mailroom is a multi-agent pipeline that ingests legal documents, classifies them
 
 ## What document types does it handle?
 
-Five types in v1:
-- **Contracts** (MSAs, NDAs, employment agreements, etc.)
+Seven first-class document classes:
+
+- **Contracts** (MSAs, NDAs, employment agreements, etc. — 25 CUAD subtypes)
 - **Corporate Records** (bylaws, resolutions, board minutes, cap tables)
 - **Due Diligence** (checklists, disclosure schedules, diligence memos)
-- **Correspondence** (demand letters, legal notices, memos)
+- **Correspondence** (demand letters, legal notices, memos — corpus from the CMU Enron dataset)
 - **Compliance Filings** (SEC filings, state registrations, regulatory docs)
+- **Court Opinions** (published decisions, memorandum opinions, rulings)
+- **Insurance Claims** (FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters)
 
-Adding a new type takes 5 steps — see [the repo docs](https://github.com/Exios66/llm-mailroom/tree/main/docs).
+Adding a new class touches a known surface list (schema registry, taxonomy, specialist agent, graph dispatch, classifier vocabulary, sorter prompt) — see [the repo docs](https://github.com/Exios66/llm-mailroom/tree/main/docs).
 
 ## Why LangGraph instead of plain agent chains?
 
 LangGraph provides:
 - A defined, explicit state machine — agents don't freely negotiate what happens next
-- SQLite-backed checkpointing for crash/resume
-- Conditional edges for confidence-based routing
-- Human-in-the-loop via `interrupt()` for review scenarios
+- Conditional edges for confidence-based routing, plus exception lanes: an agent second-opinion reviewer for exhausted medium-band classifications, and a gated judge→arbiter completeness-verification path for grounded extractions
+- Human-in-the-loop via review routing (`human_review` node) for ambiguous or failed cases
+- In-memory checkpointing by default; opt-in SQLite persistence (`MAILROOM_CHECKPOINTER=sqlite`) for resume-across-restart experiments
 
 ## Can I use local models instead of OpenRouter?
 

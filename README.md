@@ -42,11 +42,11 @@ curl http://localhost:8000/audit/{doc_id}
 
 When a document is processed, you'll get two files under `data/`:
 - `data/mailroom.db` — the SQLite database (matters, documents, audit_log tables)
-- `data/checkpoints.db` — LangGraph crash-resume state
+- `data/checkpoints.db` — optional on-disk LangGraph state (only when `MAILROOM_CHECKPOINTER=sqlite`; MemorySaver is the default)
 
 ## Architecture
 
-One **LangGraph state machine run per document** — 11 nodes, SQLite-checkpointed and crash-resumable. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in Langfuse.
+One **LangGraph state machine run per document** — 13 nodes, MemorySaver-checkpointed by default (opt-in `SqliteSaver` for resume-across-restart experiments), crash-safe via manifest-driven re-invocation. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in the configured observability backend.
 
 ### LangGraph state machine
 
@@ -57,8 +57,11 @@ flowchart TD
     INGEST["ingest-document<br/>claim file, read text, create manifest"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
+    REVIEW_CLASS["classify-document (reviewer)<br/>agent second opinion (Lane A)"]
     EXTRACT["extract-fields<br/>specialist dispatch"]
     RETRY_EXTRACT["extract-fields (retry)<br/>specialist re-extraction"]
+    JUDGE["judge-verify<br/>gated completeness check (Lane B)"]
+    ARBITER["arbitrate-verdict<br/>ArbiterAgent (Lane B)"]
     BOSS["adjudicate-conflict<br/>BossAgent"]
     REVIEW["route-for-review<br/>review bin (human)"]
     REPORT["compile-report<br/>ReporterAgent"]
@@ -75,15 +78,24 @@ flowchart TD
     CLASSIFY -- "confidence < 0.70, attempts <= retry_max" --> RETRY_CLASS
     CLASSIFY -- "unknown type / still low after retries" --> REVIEW
     RETRY_CLASS -- "confidence >= 0.95" --> EXTRACT
+    RETRY_CLASS -- "medium band exhausted (Lane A)" --> REVIEW_CLASS
     RETRY_CLASS -- "medium or still low confidence" --> REVIEW
+    REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
+    REVIEW_CLASS -- "anything else" --> REVIEW
 
     EXTRACT -- "confidence >= 0.70" --> REPORT
     EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
     EXTRACT -- "conflict detected" --> BOSS
+    EXTRACT -- "judge gate fires (grounded run)" --> JUDGE
     EXTRACT -- "still low confidence" --> REVIEW
     RETRY_EXTRACT -- "confidence >= 0.70" --> REPORT
     RETRY_EXTRACT -- "still low confidence" --> REVIEW
 
+    JUDGE -- "complete or skipped" --> REPORT
+    JUDGE -- "partial / incomplete" --> ARBITER
+    ARBITER -- "verdict stands" --> REPORT
+    ARBITER -- "re-extraction ordered" --> RETRY_EXTRACT
+    ARBITER -- "unresolvable" --> REVIEW
     BOSS -- "approved" --> REPORT
     BOSS -- "review" --> REVIEW
     REVIEW -- "approved" --> REPORT
@@ -497,5 +509,6 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 - [Deployment](docs/deployment.md) — deployment and operations
 - [Testing](docs/testing.md) — testing strategy and fixtures
 - [Local Models](docs/local-models.md) — local model cutover guide
+- [Sister Repositories](docs/sister-repos.md) — the llm-mailroom umbrella: entity-extraction, llm-dojo-scoring, corpus feeds, derived sites
 - [Reports](docs/reports/README.md) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
 - [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `docs/wiki/` via `docs/wiki/sync-wiki.sh`)

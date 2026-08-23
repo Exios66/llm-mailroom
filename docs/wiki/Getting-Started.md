@@ -83,7 +83,7 @@ The document is now in its final home: `data/archive/MATTER-001/contract/sample_
 
 ## Step 7: View LLM Traces (optional)
 
-If you configured observability (Langfuse or Braintrust), every LLM call is auto-traced — open your Langfuse dashboard (`us.cloud.langfuse.com` or your self-hosted instance) or Braintrust project to see prompts, responses, latency, and token usage. The pipeline runs fine without any tracing.
+If you configured observability, every LLM call is auto-traced — `OBSERVABILITY_PROVIDER=auto` resolves Langfuse if its key is set, else Braintrust if its key is set, else the local cost-free Arize Phoenix (`PHOENIX_TRACING`, no subscription needed). Open your backend's dashboard to see prompts, responses, latency, and token usage. The pipeline runs fine without any tracing.
 
 ---
 
@@ -103,3 +103,4 @@ If you configured observability (Langfuse or Braintrust), every LLM call is auto
 ## Next Steps
 
 - [Repository docs/](https://github.com/Exios66/llm-mailroom/tree/main/docs) — architecture, agents, configuration, and more
+- [Sister Repositories](https://github.com/Exios66/llm-mailroom/blob/main/docs/sister-repos.md) — the llm-mailroom umbrella map

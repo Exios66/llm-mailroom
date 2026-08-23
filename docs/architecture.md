@@ -11,12 +11,16 @@ Mailroom is a multi-agent legal document processing pipeline built on LangGraph.
 ```mermaid
 flowchart TD
     START([START]) --> INGEST
+    START -. "resume: manifest shows extraction done" .-> EXTRACT
 
     INGEST["ingest-document<br/>claim file, read text, create manifest"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
+    REVIEW_CLASS["classify-document (reviewer)<br/>SorterReviewAgent second opinion<br/>(KANBAN-062 Lane A)"]
     EXTRACT["extract-fields<br/>specialist dispatch"]
     RETRY_EXTRACT["extract-fields (retry)<br/>specialist re-extraction"]
+    JUDGE["judge-verify<br/>gated completeness verification<br/>(KANBAN-063 Lane B)"]
+    ARBITER["arbitrate-verdict<br/>ArbiterAgent (KANBAN-063 Lane B)"]
     BOSS["adjudicate-conflict<br/>BossAgent"]
     REVIEW["route-for-review<br/>review bin (human)"]
     REPORT["compile-report<br/>ReporterAgent"]
@@ -25,23 +29,33 @@ flowchart TD
     FAILED["FAILED"]
     ENDX([END])
 
-    START --> INGEST
     INGEST --> CLASSIFY
 
     CLASSIFY -- "confidence >= high" --> EXTRACT
     CLASSIFY -- "low <= confidence < high" --> REVIEW
     CLASSIFY -- "confidence < low, attempts <= retry_max" --> RETRY_CLASS
     CLASSIFY -- "unknown type / still low after retries" --> REVIEW
+    CLASSIFY -. "transient error, per-node budget left" .-> CLASSIFY
     RETRY_CLASS -- "confidence >= high" --> EXTRACT
+    RETRY_CLASS -- "medium band exhausted (agent review)" --> REVIEW_CLASS
     RETRY_CLASS -- "medium or still low confidence" --> REVIEW
+    REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
+    REVIEW_CLASS -- "anything else" --> REVIEW
 
-    EXTRACT -- "confidence >= low, no conflict" --> REPORT
+    EXTRACT -- "no conflict, judge gate off/skip" --> REPORT
     EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
     EXTRACT -- "conflict detected" --> BOSS
+    EXTRACT -- "judge gate fires (grounded run)" --> JUDGE
     EXTRACT -- "still low confidence" --> REVIEW
+    EXTRACT -. "transient error, per-node budget left" .-> EXTRACT
     RETRY_EXTRACT -- "confidence >= low" --> REPORT
     RETRY_EXTRACT -- "still low confidence" --> REVIEW
 
+    JUDGE -- "complete or skipped" --> REPORT
+    JUDGE -- "partial / incomplete" --> ARBITER
+    ARBITER -- "verdict stands" --> REPORT
+    ARBITER -- "re-extraction ordered" --> RETRY_EXTRACT
+    ARBITER -- "unresolvable" --> REVIEW
     BOSS -- "approved" --> REPORT
     BOSS -- "review" --> REVIEW
     REVIEW -- "approved" --> REPORT
@@ -66,7 +80,7 @@ flowchart LR
 
     subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
         SORTER["SorterAgent"]
-        SPEC["6 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence,<br/>compliance, court opinions"]
+        SPEC["7 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence,<br/>compliance, court opinions, insurance claims"]
         BOSS["BossAgent"]
         REPORTER["ReporterAgent"]
         PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
@@ -111,9 +125,15 @@ flowchart LR
 
 ### LangGraph Engine (`graph/build_graph.py`)
 - One graph execution per document
-- 11 nodes forming a directed state machine
-- SQLite-checkpointed for crash/resume
-- Falls back to in-memory checkpointing when SQLite is unavailable
+- **13 nodes** forming a directed state machine: `ingest`, `classify`,
+  `retry_classify`, `review_classify` (agent second opinion on exhausted
+  medium-band classifications — KANBAN-062 Lane A), `extract`,
+  `retry_extract`, `judge_verify` + `arbiter` (gated completeness
+  verification + arbitration — KANBAN-063 Lane B), `human_review`,
+  `boss_escalation`, `compile_report`, `catalog_write`, `archive`
+- MemorySaver by default (stateless design: human-review resume re-invokes
+  the graph from the manifest); opt back into on-disk `SqliteSaver`
+  (`data/checkpoints.db`) via `MAILROOM_CHECKPOINTER=sqlite`
 
 ### LLM Client (`llm/client.py`, `llm/providers.py`, `llm/retry.py`, `llm/prompts.py`)
 - Thin OpenAI-compatible wrapper
@@ -132,8 +152,8 @@ flowchart LR
 - `DATABASE_URL` env var can switch to Postgres
 
 ### Observability (`observability/`)
-- Two interchangeable tracing backends: **Langfuse** (cloud or self-hosted, default) and **Braintrust**
-- Selected via `OBSERVABILITY_PROVIDER` env (`auto` | `langfuse` | `braintrust` | `none`)
+- Four interchangeable tracing backends: **Langfuse**, **Braintrust**, the local cost-free **Arize Phoenix**, and `none`
+- Selected via `OBSERVABILITY_PROVIDER` env (`auto` | `langfuse` | `braintrust` | `phoenix` | `none`); `auto` = Langfuse if key → Braintrust if key → local Phoenix → `none` (aligned with llm-entity-extraction's resolution chain — tracing never silently turns off)
 - Every LLM call is auto-traced: `llm/client.py:get_llm` wraps the OpenAI client (`langfuse.openai` patch or `braintrust.wrap_openai`), capturing prompt, response, tokens, latency
 - One trace per document (`pipeline_trace`), one span per node (`traced_node`), `session_id = matter_id` (or a run-scoped session for pilot runs), deterministic trace ids seeded from filenames
 - **Scores** (`observability/scores.py`): every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, confidences); pilot runs add ground-truth scores (class/stage correctness, calibration error, `expected_field_presence`); score configs auto-created via `ensure_score_configs()`
@@ -151,7 +171,9 @@ flowchart LR
 Document lands in `/pipeline/inbox/`. Watcher detects it, claims it atomically to `/pipeline/processing/<worker_id>/`. Manifest is created with `PipelineStage.PROCESSING`. PDFs are transcribed by `PDFTranscriber` — text-based PDFs directly (no LLM), scanned/garbled PDFs via an LLM markdown pass (`pipeline.pdf_direct_chars_per_page` controls the threshold). When the input agents' models are vision-capable (`vision:` config in `taxonomy.yaml` — Qwen etc.), PDFs are also rendered page-by-page to image data-URIs (`llm/vision.py`) and sent to the sorter/specialist prompts as multimodal `image_url` content, capped by `vision.max_pages`; if the pipeline is vision-capable the expensive LLM transcription pass is skipped for scanned PDFs (the page images carry the content) while `doc_text` is still stored for text-only paths/audit.
 
 ### 2. Classify (Sorter)
-LLM call: reads document text, determines `doc_type` (contract, corporate_record, due_diligence, correspondence, compliance_filing) and confidence score.
+LLM call: reads document text, determines `doc_type` (contract,
+corporate_record, due_diligence, correspondence, compliance_filing,
+court_opinion, insurance_claim) and confidence score.
 
 ### 3. Confidence Check
 Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
@@ -191,8 +213,11 @@ Writes document and matter records to the database (best-effort — pipeline con
 | `ingest` | — | Read file, create manifest, move to processing |
 | `classify` | Sorter | Determine doc_type + confidence |
 | `retry_classify` | Sorter | Re-classify with alternate prompt |
+| `review_classify` | Sorter Reviewer | Agent second opinion when the medium band is exhausted (KANBAN-062) |
 | `extract` | Specialist | Extract structured data per doc-type |
 | `retry_extract` | Specialist | Re-extract with context from prior attempt |
+| `judge_verify` | Judge (in-graph) | Gated completeness verification of grounded extractions (KANBAN-063) |
+| `arbiter` | Arbiter | Adjudicate partial/incomplete judge verdicts (KANBAN-063) |
 | `human_review` | — | Pause for human decision |
 | `boss_escalation` | Boss (in-graph) | Adjudicate conflicts |
 | `compile_report` | Reporter | Synthesize matter-record entry |
@@ -202,28 +227,48 @@ Writes document and matter records to the database (best-effort — pipeline con
 ## Conditional Edges
 
 ```
-classify ─┬─ confidence >= low ──▶ extract
+classify ─┬─ confidence >= high ──────▶ extract
+          ├─ low <= conf < high ─────▶ human_review
           ├─ attempts <= retry_max ──▶ retry_classify
-          └─ otherwise ──▶ human_review
+          └─ otherwise ──────────────▶ human_review
 
-extract ─┬─ confidence >= low + no conflict ──▶ compile_report
-         ├─ conflict detected ──▶ boss_escalation
-         ├─ attempts <= retry_max ──▶ retry_extract
-         └─ otherwise ──▶ human_review
+retry_classify ─┬─ confidence >= high ────────────▶ extract
+                ├─ medium band exhausted (Lane A) ─▶ review_classify
+                └─ medium or still low ────────────▶ human_review
 
-boss_escalation ─┬─ approved ──▶ compile_report
-                 └─ review ──▶ human_review
+review_classify ─┬─ high-confidence reviewer verdict ─▶ extract
+                 └─ anything else ────────────────────▶ human_review
 
-human_review ─┬─ approved ──▶ compile_report
-              └─ rejected ──▶ END (failed)
+extract ─┬─ no conflict, judge gate off/skip ──▶ compile_report
+         ├─ conflict detected ─────────────────▶ boss_escalation
+         ├─ judge gate fires (grounded run) ───▶ judge_verify
+         ├─ attempts <= retry_max ─────────────▶ retry_extract
+         └─ otherwise ─────────────────────────▶ human_review
+
+judge_verify ─┬─ complete or skipped ────▶ compile_report
+              ├─ partial / incomplete ───▶ arbiter
+              └─ hard failure ───────────▶ human_review
+
+arbiter ─┬─ verdict stands ─────────▶ compile_report
+         ├─ re-extraction ordered ──▶ retry_extract
+         └─ unresolvable ───────────▶ human_review
+
+boss_escalation ─┬─ approved ─▶ compile_report
+                 └─ review ───▶ human_review
+
+human_review ─┬─ approved ─▶ compile_report
+              └─ rejected ─▶ END (failed)
 ```
 
 ## Checkpointing
 
-LangGraph checkpoints the full state after each node. On crash or restart:
-- Any in-flight run resumes from the last completed node
-- No document is lost and no document is processed twice
-- SQLite-backed checkpointing (`data/checkpoints.db`) is the default; MemorySaver is the fallback if SQLite is unavailable
+LangGraph checkpoints the full state after each node. The checkpointer is
+**MemorySaver by default** (`graph/build_graph.py:_build_checkpointer()`) —
+the pipeline is deliberately stateless across restarts because human-review
+resume re-invokes the graph fresh from the document manifest (this also kills
+the unbounded per-doc checkpoint growth a persistent saver accumulates). Set
+`MAILROOM_CHECKPOINTER=sqlite` to opt back into the on-disk SqliteSaver at
+`data/checkpoints.db` for debugging/resume-across-restart experiments.
 
 ## Audit Trail
 
