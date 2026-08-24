@@ -340,3 +340,22 @@ PYTHONPATH=src python src/scripts/cutover.py --validate --agent sorter
 ```
 
 See [Local Models](local-models.md) for the full cutover guide.
+
+## Environment variables
+
+The committed template [`.env.example`](../.env.example) is the authoritative
+knob list (copy to `.env` at the repo root). The full per-provider /
+per-trace-sink configuration guide — covering THIS repo and
+llm-entity-extraction together, including the Modal-vLLM flip and the shared
+cross-repo contract — lives in the sibling repo:
+[`docs/configuration.md`](https://github.com/Exios66/llm-entity-extraction/blob/main/docs/configuration.md).
+
+Quick orientation:
+
+| Group | Knobs |
+|---|---|
+| LLM provider | `DEFAULT_PROVIDER`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OLLAMA_BASE_URL`, `VLLM_BASE_URL`, `VLLM_API_KEY`, `GENERIC_API_KEY`, `GENERIC_BASE_URL` |
+| Trace sinks | `OBSERVABILITY_PROVIDER`, `OBSERVABILITY_ENVIRONMENT`, `LANGFUSE_*`, `BRAINTRUST_*`, `PHOENIX_*` |
+| Pipeline & API | `MAILROOM_*`, `WATCHER_*`, `OPS_MONITOR_INTERVAL_SECONDS`, `DATABASE_URL` |
+| Logging | `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILE`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT` |
+| LegalBench | `LEGALBENCH_EXPERIMENT_LOG`, `LEGALBENCH_SIBLING_REPO` |
