@@ -591,6 +591,7 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |
+| [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine — renders every run as an animated document conveyor from this repo's Langfuse traces (web + TUI) | **Downstream visualizer** — Langfuse-only data source; mirrors the pipeline trace contract |
 | [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive knowledge graph of this codebase | **Derived site** (graphify build artifact) |
 | [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Knowledge graph of the sister loop | **Derived site** |
 | [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
