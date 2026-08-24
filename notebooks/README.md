@@ -24,3 +24,14 @@ jupyter lab notebooks/dataset_browser.ipynb   # or jupyter notebook
 
 Without the extra, the browser still runs in plain-text mode — every function is
 importable with only the core install. No network access, no LLM calls.
+
+## The suite plan
+
+`PLAN.md` is the plan of record for the full notebook suite: nine walkthroughs
+(`00` pipeline anatomy → `08` observability traces) covering the graph map,
+an example run through the agents (outputs + the role of each agent), routing
+dynamics, the review/judge/arbiter lanes, human-in-the-loop resume, failure
+recovery, outputs/audit, matter grouping, and the trace contract — all driven
+through one shared `pipeline_lab.py` bench on the REAL graph with the test
+suite's network-free mock seam. Implementation proceeds one notebook per
+commit per the plan's build order.
