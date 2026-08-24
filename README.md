@@ -1,10 +1,43 @@
-# Mailroom — Multi-Agent Legal Document Processing Pipeline
+<div align="center">
 
-Mailroom is a multi-agent pipeline that ingests high-volume legal documents for a transactional/corporate practice, classifies them, routes them to specialist agents for extraction, compiles the results into a matter record, and archives everything with a full audit trail. Every step is traced to Langfuse, scored against task-spec evaluators, and auditable end-to-end.
+<img src="docs/assets/banner.png" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight" width="100%">
+
+# Mailroom
+
+**A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents — with a full audit trail.**
+
+One LangGraph state machine per document. Specialist LLM agents per document class.
+Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
+
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![Pipeline](https://img.shields.io/badge/LangGraph-13--node%20state%20machine-4C8CBF)](https://langchain-ai.github.io/langgraph/)
+[![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
+[![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
+[![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
+
+</div>
 
 ---
 
-## Quick Start
+This repository consists of:
+
+- A **python library + pipeline** (`src/`) — a LangGraph state machine that moves each document through classification, specialist extraction, quality gates, reporting, and archival.
+- **15 LLM agents across 7 document classes** — a sorter, seven extraction specialists, a judge/arbiter quality lane, a boss escalation agent, a reporter, and procedural PDF/image workers (see [Agent Organization](#agent-organization)).
+- An **evaluation suite** — a 30-sample pilot with ground truth, deterministic field scoring, LLM-as-a-judge evaluators, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
+- **Canonical documentation** (`docs/`) — browsable locally with [docmd](https://github.com/docmd-io/docmd) (see [Browsing the Docs Locally](#browsing-the-docs-locally)).
+- A **dataset browser notebook** (`notebooks/`) — docile-style thin notebook over a reusable tool module.
+- A **Modal+vLLM deploy app** (`deploy/`) — optional local-model serving, flip-the-switch cutover.
+
+## Contents
+
+- [Getting started](#getting-started) — [Quick Start](#quick-start) · [Installation](#installation)
+- [Architecture](#architecture) — [Agent Organization](#agent-organization) · [Design Principles](#design-principles) · [Project Structure](#project-structure)
+- [Operations](#operations) — [Configuration](#configuration) · [LLM Providers](#llm-providers) · [Prompt Management](#prompt-management) · [Observability](#observability) · [Evaluators & Quality](#evaluators--quality) · [Guardrails](#guardrails) · [Logging](#logging) · [Local Model Cutover](#local-model-cutover) · [API Endpoints](#api-endpoints) · [Pipeline Bins](#pipeline-bins)
+- [Evaluation & ecosystem](#evaluation--ecosystem) — [Testing](#testing) · [Pilot Testing & Evaluation](#pilot-testing--evaluation) · [Full CUAD Corpus](#full-cuad-corpus-issue-9) · [Browsing the Docs Locally](#browsing-the-docs-locally) · [The Mailroom Umbrella](#the-mailroom-umbrella) · [Deployment](#deployment) · [Security](#security)
+
+## Getting started
+
+### Quick Start
 
 > **No database server needed.** Mailroom stores everything (catalog + audit log + crash-resume checkpoints) in a plain **SQLite file** inside your data folder. If you don't already use Docker, you can ignore it entirely.
 
@@ -30,7 +63,7 @@ PYTHONPATH=src python -m api.main
 
 # 7. Upload a document
 curl -X POST http://localhost:8000/upload \
-  -F "file=@tests/fixtures/contract/sample_msa.txt" \
+  -F "file=@src/tests/fixtures/contract/sample_msa.txt" \
   -F "matter_id=MATTER-001"
 
 # 8. Check pipeline status
@@ -43,6 +76,28 @@ curl http://localhost:8000/audit/{doc_id}
 When a document is processed, you'll get two files under `data/`:
 - `data/mailroom.db` — the SQLite database (matters, documents, audit_log tables)
 - `data/checkpoints.db` — optional on-disk LangGraph state (only when `MAILROOM_CHECKPOINTER=sqlite`; MemorySaver is the default)
+
+### Installation
+
+<a id="installing"></a>
+Core install (pipeline + API + tests):
+
+```bash
+pip install -e ".[dev]"
+```
+
+Optional install profiles — take only what you need:
+
+| Extra | Adds | Used by |
+|---|---|---|
+| `[embeddings]` | scipy, sentence-transformers | embedding-rescue second signal + Hungarian matcher in field scoring (degrades gracefully without) |
+| `[postgres]` | psycopg | Postgres storage engine (SQLite is the default) |
+| `[deploy]` | modal | the Modal+vLLM deploy app in `deploy/` (deploy-time only, never imported by the pipeline) |
+| `[notebooks]` | ipywidgets, jupyterlab | interactive `notebooks/dataset_browser.ipynb` (plain-text mode works without) |
+
+```bash
+pip install -e ".[embeddings]"   # etc.
+```
 
 ## Architecture
 
@@ -106,56 +161,58 @@ flowchart TD
 
 Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
 
-### Hierarchical organization
+### Agent Organization
+
+The agent roster (15 agents) as declared in `config/taxonomy.yaml` — every LLM agent resolves its provider/model/prompt through `get_llm(agent_name)`; nothing is hardcoded:
 
 ```mermaid
-flowchart LR
-    subgraph IN["Input layer"]
-        INBOX["inbox bin<br/>(watcher / API upload)"]
+flowchart TB
+    subgraph CLASSIFY["Classification"]
+        SORTER["SorterAgent<br/>7 doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v13)"]
+        REVIEWER["SorterReviewerAgent<br/>second opinion on medium-confidence<br/>classifications (Lane A)"]
     end
 
-    subgraph ORCH["Orchestration — LangGraph state machine (graph/)"]
-        direction TB
-        NODES["ingest → classify → extract →<br/>report → catalog → archive<br/>retries, boss, human review"]
-        ROUTING["conditional routing<br/>graph/routing.py"]
+    subgraph SPECIALISTS["Extraction Specialists — one per document class"]
+        CONTRACTS["Contracts<br/>Specialist"]
+        CORP["Corporate Records<br/>Specialist"]
+        DD["Due Diligence<br/>Specialist"]
+        CORR["Correspondence<br/>Specialist"]
+        COMP["Compliance Filing<br/>Specialist"]
+        COURT["Court Opinions<br/>Specialist"]
+        INS["Insurance Claims<br/>Specialist"]
     end
 
-    subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
-        SORTER["SorterAgent"]
-        SPEC["6 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence,<br/>compliance, court opinions"]
-        BOSS["BossAgent"]
-        REPORTER["ReporterAgent"]
-        PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
-        JUDGE["JudgeAgent<br/>(offline evaluators)"]
+    subgraph QUALITY["Quality & escalation"]
+        JUDGE["JudgeAgent<br/>classification / completeness /<br/>correctness rubrics (Lane B)"]
+        ARBITER["ArbiterAgent<br/>resolves partial extractions:<br/>stand · re-extract · human"]
+        BOSS["BossAgent<br/>conflict adjudication in-graph +<br/>scheduled ops sweeps"]
     end
 
-    subgraph LLM["LLM layer (llm/)"]
-        CLI["get_llm() — provider-agnostic client"]
-        RETRY["retry + max_tokens caps"]
-        PROMPTS["Langfuse-managed prompts<br/>mailroom-* (with local fallback)"]
-        P["OpenRouter / Ollama / vLLM / generic"]
+    subgraph OUTPUT["Output"]
+        REPORTER["ReporterAgent<br/>compiles the matter record"]
+        ARCHIVIST["Archivist<br/>(procedural) hash-chained audit log"]
     end
 
-    subgraph PERSIST["Persistence"]
-        BINS["filesystem bins"]
-        SQLITE["SQLite catalog + audit log"]
-        ARCHIVE2["archive/ + manifests/"]
+    subgraph INGEST2["Ingestion (procedural)"]
+        PDF["PDFTranscriber<br/>pypdf / pdfplumber / poppler"]
+        IMG["ImageExtractor<br/>vision page rendering (pymupdf)"]
     end
 
-    subgraph OBS["Observability — Langfuse (observability/)"]
-        TRACES["one trace per document<br/>spans per node, session per matter"]
-        SCORES["task-spec scores<br/>schema_valid, completeness, correctness…"]
-    end
-
-    INBOX --> NODES
-    NODES --> SORTER & SPEC & BOSS & REPORTER & PDF
-    SORTER & SPEC & BOSS & REPORTER --> CLI
-    CLI --> RETRY --> PROMPTS --> P
-    NODES --> BINS --> SQLITE --> ARCHIVE2
-    NODES -.-> TRACES
-    TRACES --> SCORES
-    JUDGE -.-> SCORES
+    SORTER -- "class + subtype + confidence" --> SPECIALISTS
+    REVIEWER -. "Lane A: medium band" .-> SORTER
+    SPECIALISTS -- "extraction + confidence" --> JUDGE
+    JUDGE -. "Lane B: partial" .-> ARBITER
+    SPECIALISTS -- "conflict" --> BOSS
+    SPECIALISTS --> REPORTER
+    JUDGE -- "complete/skipped" --> REPORTER
+    ARBITER -- "verdict" --> REPORTER
+    BOSS -- "approved" --> REPORTER
+    REPORTER --> ARCHIVIST
+    PDF -. "text extraction" .-> SORTER
+    IMG -. "page images (vision, additive)" .-> SPECIALISTS
 ```
+
+Document classes (7): `contract`, `corporate_record`, `due_diligence`, `correspondence`, `compliance_filing`, `court_opinion`, `insurance_claim` — each with its own extraction schema and specialist. The two vendored agents (Sorter, Contracts Specialist) come from the sister repo [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) with their full append-only prompt lineage; all other agents are mailroom-native `BaseAgent` subclasses with Langfuse-managed prompts.
 
 ## Design Principles
 
@@ -189,8 +246,11 @@ mailroom/
 │   ├── legalbench/      # LegalBench evaluation suite (binary QA + family classification)
 │   ├── scripts/         # ops & eval: run_pilot, run_quality_judges, run_vision_sweep, sync_*, cutover, compare_runs, fetch_full_cuad, validate_pipeline
 │   └── tests/           # pytest: unit, routing, e2e, judge, fixtures
+├── notebooks/        # docile-style dataset browser (thin notebook + tool module)
+├── deploy/           # Modal+vLLM serving app (optional local-model cutover)
 ├── data/             # runtime state: inbox/processing/archive bins, mailroom.db, cuad/ corpus, manifests/
 └── docs/             # canonical user docs (agents, architecture, configuration, deployment, local-models)
+    ├── assets/       # README banner + images
     ├── reports/      # evaluation write-ups: audits/, pilots/, evaluations/ (see docs/reports/README.md)
     ├── examples/     # sample documents + manifest ground truth (samples/, sources/, external/)
     └── wiki/         # GitHub-wiki-only pages, pushed to the GitHub wiki via docs/wiki/sync-wiki.sh (NOT a docs/ mirror)
@@ -199,7 +259,9 @@ mailroom/
 All code runs with `src/` on the import path (`PYTHONPATH=src`), so intra-repo
 imports keep their plain package names (`from pipeline import …`).
 
-## Configuration
+## Operations
+
+### Configuration
 
 All config lives in `config/taxonomy.yaml` — **never hardcoded**:
 
@@ -237,7 +299,7 @@ agents:
     max_tokens: 2048
 ```
 
-## LLM Providers
+### LLM Providers
 
 | Provider | Status | Auth | Base URL |
 |---|---|---|---|
@@ -250,7 +312,7 @@ Global override: set `DEFAULT_PROVIDER=ollama` in `.env`.
 
 All LLM calls go through `retry_chat_completion` (`llm/retry.py`): transient failures (`APIConnectionError`, timeouts, rate limits, 5xx) are retried with exponential backoff + jitter; 4xx client errors (e.g. malformed requests) are never retried.
 
-## Prompt Management
+### Prompt Management
 
 Every agent's system prompt is a **Langfuse-managed prompt** (`mailroom-<agent_name>`, type `text`, `production` label) — versioned, editable without a deploy, and linked to every generation in the trace UI.
 
@@ -263,7 +325,7 @@ PYTHONPATH=src python src/scripts/sync_prompts.py --agent sorter
 
 The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
 
-## Observability
+### Observability
 
 - **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. One trace per document, one span per node, `session_id = matter_id` (or a run-scoped session for pilot runs), deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
 - **Scores** — every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, confidence values); pilot runs add ground-truth scores (`class_correct`, `stage_correct`, calibration error). Score configs are auto-created by `observability/scores.py` (`ensure_score_configs()`).
@@ -279,9 +341,9 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --trace-id <id>
 - **Audit log** — append-only, SHA-256 hash-chained entries in SQLite (tamper-evident)
 - **Manifest sidecar** — JSON file archived alongside every document (self-contained record)
 
-## Evaluators & Quality
+### Evaluators & Quality
 
-### Deterministic field scoring (issues #4/#5)
+#### Deterministic field scoring (issues #4/#5)
 
 Before any LLM judge runs, every grounded extraction gets a **field-type-aware deterministic score** (`observability/field_scoring.py`) — cheap, reproducible, zero API cost:
 
@@ -292,7 +354,7 @@ Before any LLM judge runs, every grounded extraction gets a **field-type-aware d
 
 Per-field-type judge-escalation bands (`field_scoring.type_bands` in `taxonomy.yaml`) are **calibrated** by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are decisive (`never` escalate), money/free_text have calibrated cutoffs, name and entity-list trust only perfect scores and escalate everything else to the LLM judge. On grounded runs the pipeline suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both evaluator calls. The same scores are attached to traces via `observability/langfuse_field_scoring.py` (`extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, `entity_list_recall`).
 
-### LLM-as-a-judge
+#### LLM-as-a-judge
 
 Mailroom evaluates its own work against the **task specification** (the taxonomy doc classes + extraction schemas) using a dedicated `judge` agent. Judge dimensions:
 
@@ -302,7 +364,7 @@ Mailroom evaluates its own work against the **task specification** (the taxonomy
 | `completeness` | Did the specialist capture every field the document actually states? | `completeness`, `completeness_label` |
 | `correctness` | Are extracted field values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
 
-The same rubrics are **configured as two independent live LLM-as-a-Judge evaluators in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and two observation rules independently evaluate it: `mailroom-pipeline-judge` returns a **CORRECT/PARTIAL/MISS** verdict, while `mailroom-pipeline-quality` returns a proportional **0.0-1.0 quality score**. A substantially correct extraction with limited material gaps earns `PARTIAL` instead of a hard `MISS`, and still receives a useful quality score; the numeric score never replaces or alters the run verdict. Grounded runs skip document text in the judge input — the input is a labeled, pretty-printed expected-fields block and the output is a cleaned schema-only extraction, cutting ~90% of judge tokens. Live runs without ground truth fall back to rubric judgment:
+The same rubrics are **configured as two independent live LLM-as-a-Judge evaluators in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and two observation rules independently evaluate it: `mailroom-pipeline-judge` returns a **CORRECT/PARTIAL/MISS verdict**, while `mailroom-pipeline-quality` returns a proportional **0.0-1.0 quality score**. A substantially correct extraction with limited material gaps earns `PARTIAL` instead of a hard `MISS`, and still receives a useful quality score; the numeric score never replaces or alters the run verdict. Grounded runs skip document text in the judge input — the input is a labeled, pretty-printed expected-fields block and the output is a cleaned schema-only extraction, cutting ~90% of judge tokens. Live runs without ground truth fall back to rubric judgment:
 
 ```bash
 PYTHONPATH=src python src/scripts/sync_evaluators.py        # create/update evaluator + rule (idempotent)
@@ -312,7 +374,7 @@ PYTHONPATH=src python src/scripts/sync_evaluators.py --disable   # pause the rul
 
 `sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so both evaluators can run. Deployed: `mailroom-pipeline-judge` + `mailroom-pipeline-rule` (CORRECT/PARTIAL/MISS verdict), and `mailroom-pipeline-quality` + `mailroom-pipeline-quality-rule` (proportional quality), all targeting `pipeline-result`. Old per-agent evaluators/rules are pruned automatically. Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct` — binary 0/1 against the manifest; `expected_field_presence` — fraction of required expected fields extracted non-empty) attached by `run_pilot.py --scores`.
 
-### Evaluation dataset
+#### Evaluation dataset
 
 The pilot samples are mirrored into the **`mailroom-pilot` Langfuse dataset** (PDF text + ground truth incl. per-field `expected_fields` + manifest metadata) for experiments and judge calibration:
 
@@ -321,7 +383,7 @@ PYTHONPATH=src python src/scripts/sync_dataset.py            # 30 items, determi
 PYTHONPATH=src python src/scripts/sync_dataset.py --include contract
 ```
 
-### Offline judges over a pilot run
+#### Offline judges over a pilot run
 
 ```bash
 PYTHONPATH=src python src/scripts/run_pilot.py --real --scores        # needs OPENROUTER_API_KEY
@@ -332,7 +394,7 @@ PYTHONPATH=src python src/scripts/run_quality_judges.py --judges classification,
 
 Judges attach scores to each sample's trace (configs auto-created), print a per-class calibration summary, and append an `evaluation` section to the pilot report. For production traces with no ground truth, the live Langfuse evaluators above cover the same dimensions automatically.
 
-## Guardrails
+### Guardrails
 
 Agents are LLMs — they can return junk even when the provider call succeeds. `pipeline/guards.py` is the deterministic safety net between raw agent output and routing decisions:
 
@@ -341,11 +403,11 @@ Agents are LLMs — they can return junk even when the provider call succeeds. `
 
 Triggered guards are logged (`extraction_guardrail_triggered`), recorded on the state (`extraction_guardrail`), and scored (`guardrail_triggered`). On top of this, all LLM calls carry `max_tokens` caps and transient-failure retries.
 
-## Logging
+### Logging
 
 Structured logging via `pipeline/logging.py` (`setup_logging()`, called by every entrypoint): level from `LOG_LEVEL` (default `INFO`), renderer from `LOG_FORMAT` (`pretty` console or `json` for machine parsing). Noisy third-party loggers (httpx, openai, langfuse, opentelemetry) are silenced to WARNING.
 
-## Local Model Cutover
+### Local Model Cutover
 
 ```bash
 # See current agent→model assignments
@@ -364,7 +426,7 @@ PYTHONPATH=src python src/scripts/cutover.py --recommend
 PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwen3:7b
 ```
 
-### Available Local Models (Ollama)
+#### Available Local Models (Ollama)
 
 | Model | Sizes | Best For |
 |---|---|---|
@@ -380,22 +442,26 @@ PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwe
 | Gemma 2 | 9b, 27b | Instruction following |
 | Command R | 35b, 104b | RAG and extraction |
 
-## API Endpoints
+### API Endpoints
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/health` | Health check (includes LLM provider + DB dependency checks) |
 | `POST` | `/upload` | Upload document to inbox |
+| `GET` | `/queue` | Current processing queue (inbox + in-flight documents) |
 | `POST` | `/review/{doc_id}/resolve` | Resolve human review (approved/rejected) |
 | `GET` | `/status/{doc_id}` | Document pipeline status |
 | `GET` | `/matters/{matter_id}` | All documents in a matter |
 | `GET` | `/audit/{doc_id}` | Hash-chained audit trail + validity check |
 | `GET` | `/ops/status` | Pipeline-wide operational metrics |
 | `POST` | `/ops/sweep` | Run a one-off Boss ops-monitor sweep |
-| `POST` | `/ops/pause` | Pause ingestion (writes the `ops_monitor_paused` flag the watcher honors) |
 | `POST` | `/ops/resume` | Clear the ingestion-pause flag |
 
-## Pipeline Bins (Filesystem)
+All endpoints except `/health` and `/matters/{matter_id}` require the `MAILROOM_API_TOKEN` bearer token when one is configured (see [Security](#security)).
+
+### Pipeline Bins
+
+<a id="pipeline-bins"></a>
 
 ```
 data/
@@ -414,7 +480,9 @@ data/
   langfuse_logs/         # Mirrored run logs (scripts/sync_langfuse_logs.py)
 ```
 
-## Testing
+## Evaluation & ecosystem
+
+### Testing
 
 ```bash
 # Run all tests
@@ -432,7 +500,7 @@ pytest tests/ --cov=. --cov-report=html
 
 Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mocked (see `tests/conftest.py`).
 
-## Pilot Testing & Evaluation
+### Pilot Testing & Evaluation
 
 A ready-made set of **30 pilot samples** lives in `docs/examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset, LegalBench MAUD merger agreements, public-domain Pile of Law court opinions, plus original text for the other doc classes — see `docs/examples/README.md`). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
 
@@ -455,7 +523,7 @@ PYTHONPATH=src python src/scripts/run_quality_judges.py --real
 
 The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `docs/examples/samples/manifest.csv`. See `docs/examples/samples/README.md`.
 
-## Full CUAD Corpus (issue #9)
+### Full CUAD Corpus (issue #9)
 
 The **complete CUAD v1 dataset** (510 annotated contracts, 20,910 clause annotations, PDFs + plain text + master clause taxonomy) can be downloaded and validated against the pipeline's 25-family contract-subtype taxonomy:
 
@@ -467,7 +535,36 @@ PYTHONPATH=src python src/scripts/fetch_full_cuad.py --skip-download   # EDA onl
 
 The EDA (`data/cuad/EDA.md`) maps each contract to a `contract_subtype` — folder-authoritative from the CUAD PDF tree where available (198 contracts, all 20 folders resolve through the sorter's alias table) and title-derived elsewhere — and compares the resulting distribution against the CUAD paper's canonical 25-type counts. See `docs/reports/audits/` for the subclass-validation write-up.
 
-## Deployment
+### Browsing the Docs Locally
+
+The canonical documentation under [`docs/`](docs/) is browsable as a local static site via [docmd](https://github.com/docmd-io/docmd) — zero config, no install beyond Node.js 20+:
+
+```bash
+# Live-reload dev server with sidebar nav + full-text search (http://localhost:3000)
+npx @docmd/core dev
+
+# One-shot static build → site/ (gitignored; open site/index.html or host anywhere)
+npx @docmd/core build
+```
+
+The build auto-detects `docs/`, generates navigation from the file tree, and emits an offline search index, `llms.txt` / `llms-full.txt` context files for AI agents, and an OKF knowledge bundle. Mermaid diagrams render offline. No `docmd.config.json` is required; run `npx @docmd/core init` if you want to customize themes or add plugins later.
+
+### The Mailroom Umbrella
+
+Mailroom is the pipeline at the center of a small constellation of governed repositories — full map in [`docs/sister-repos.md`](docs/sister-repos.md):
+
+| Repository | Role | Relationship |
+|---|---|---|
+| [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop (prompt versions × models over CUAD/LegalBench/MAUD) | **Sister repo** — source of the vendored sorter/contracts prompts; shares ONE kanban board with this repo |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.7.0` in `pyproject.toml` |
+| [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
+| [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
+| [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |
+| [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive knowledge graph of this codebase | **Derived site** (graphify build artifact) |
+| [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Knowledge graph of the sister loop | **Derived site** |
+| [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
+
+### Deployment
 
 ```bash
 # 1. (Optional) Start Langfuse for trace viewing
@@ -493,7 +590,9 @@ PYTHONPATH=src python -m pipeline.ops_monitor &
 PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 ```
 
-## Security
+For fully local/offline serving, see [`deploy/`](deploy/README.md) (Modal+vLLM) and [Local Model Cutover](#local-model-cutover).
+
+### Security
 
 - Encrypt `/archive` at rest and the SQLite files (`mailroom.db`, `checkpoints.db`) at rest
 - Access-control the FastAPI endpoints and the Langfuse UI
