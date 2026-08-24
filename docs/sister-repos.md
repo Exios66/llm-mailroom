@@ -25,6 +25,13 @@ each lives. (All links verified 2026-08-23.)
                           │  upstream scoring engine     │
                           └──────────────────────────────┘
 
+                          ┌──────────────────────────────┐
+                          │        The-Mailroom          │
+                          │   pixel-art visual engine    │
+                          └──────────────────────────────┘
+             reads this repo's Langfuse project (US cloud) — every envelope,
+             badge, verdict, and metric on screen is trace-derived
+
 derived artifact: llm-mailroom-graph (graphify knowledge-graph site)
 HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 ```
@@ -38,6 +45,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
+| [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine rendering every pipeline run as an animated document conveyor — floor, review siding, inspector, sessions, metrics — plus a TUI console | **Downstream visualizer** — driven SOLELY by this repo's Langfuse project (nothing fabricated, no local fallback); mirrors the pipeline's trace contract in its schema layer |
 | [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive graphify knowledge graph of this codebase | **Derived site** — build artifact only, never committed here |
 | [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Interactive graphify knowledge graph of the sister experiment loop | **Derived site** — companion map of the sister repo's code structure |
 
@@ -91,6 +99,30 @@ The scoring layer both mailroom and entity-extraction consume:
   LegalBench classification sibling — its methodology (prompt versions ×
   models, paired-bootstrap ablations) is the same doctrine this constellation
   follows.
+
+## The-Mailroom — the visual engine
+
+- **[The-Mailroom](https://github.com/Exios66/The-Mailroom)** (v0.2.0) renders
+  every pipeline run as an animated conveyor of document envelopes — sorter,
+  specialist bays, judge gate, boss's desk, reporter, archive — grouped into
+  three rooms, plus a human-review siding queue, per-trace inspector,
+  matter/session explorer, and live metrics. Surfaces: `mailroom-web`
+  (FastAPI + vanilla JS on :8001) and `mailroom-tui` (AgentLab-style live
+  console).
+- **Langfuse is its sole source of truth**: every envelope, badge, verdict,
+  and metric is derived from this repo's Langfuse project — nothing is
+  fabricated, nothing falls back to canned data. Demo mode seeds synthetic
+  runs INTO Langfuse (env `demo`) rather than bypassing it.
+- **Schema mirror duty (its #1 maintenance rule)**: when THIS repo changes
+  span names, node order, agent roster, doc classes, confidence thresholds,
+  or judge score names, The-Mailroom must update `mailroom_ui/pipeline_schema.py`
+  and `mailroom_ui/trace_interpreter.py` in the same change window — new spans
+  render as `unknown` stage until mirrored. `MAILROOM_TAXONOMY` can point it
+  at this repo's `src/config/taxonomy.yaml` live instead of its bundled mirror.
+- **Governance:** fully governed member of the family — own `AGENTS.md`, own
+  semver release train (v0.2.0), own test suite (never hits real Langfuse),
+  own wiki. It is a downstream OBSERVER: dependency of no family repo — the
+  coupling is the shared trace contract.
 
 ## Derived artifacts
 
