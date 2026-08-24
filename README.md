@@ -14,8 +14,19 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
+[![Release](https://img.shields.io/badge/release-v0.4.1-2EA043)](https://github.com/Exios66/llm-mailroom/tags)
 
 </div>
+
+| At a glance | |
+|---|---|
+| **Release** | [`v0.4.1`](https://github.com/Exios66/llm-mailroom/tags) — see [CHANGELOG.md](CHANGELOG.md) |
+| **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
+| **Agents** | 15 LLM + procedural agents across 7 document classes |
+| **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
+| **Observability** | Langfuse · Braintrust · Arize Phoenix — optional; the pipeline runs fine without any of them |
+| **Docs** | Canonical under [`docs/`](docs/) · browsable locally via [docmd](https://github.com/docmd-io/docmd) |
+| **License** | Not yet published — no LICENSE file in the repository yet |
 
 ---
 
@@ -39,6 +50,7 @@ This repository consists of:
 
 ### Quick Start
 
+> [!NOTE]
 > **No database server needed.** Mailroom stores everything (catalog + audit log + crash-resume checkpoints) in a plain **SQLite file** inside your data folder. If you don't already use Docker, you can ignore it entirely.
 
 ```bash
@@ -98,6 +110,8 @@ Optional install profiles — take only what you need:
 ```bash
 pip install -e ".[embeddings]"   # etc.
 ```
+
+---
 
 ## Architecture
 
@@ -259,11 +273,19 @@ mailroom/
 All code runs with `src/` on the import path (`PYTHONPATH=src`), so intra-repo
 imports keep their plain package names (`from pipeline import …`).
 
+---
+
 ## Operations
 
 ### Configuration
 
-All config lives in `config/taxonomy.yaml` — **never hardcoded**:
+All config lives in `config/taxonomy.yaml` — **never hardcoded**.
+
+> [!IMPORTANT]
+> `taxonomy.yaml` is cached at import time (`lru_cache` in `pipeline/config.py`, module-level cache in `pipeline/bins.py`) — **restart the watcher/API after editing it**; changes are not picked up live.
+
+<details>
+<summary>Config cookbook — doc classes, thresholds, retries, per-agent caps</summary>
 
 ```yaml
 # Add a doc class:
@@ -298,6 +320,8 @@ agents:
     temperature: 0.1
     max_tokens: 2048
 ```
+
+</details>
 
 ### LLM Providers
 
@@ -428,6 +452,9 @@ PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwe
 
 #### Available Local Models (Ollama)
 
+<details>
+<summary>The curated Ollama shortlist — 11 models with sizes &amp; strengths</summary>
+
 | Model | Sizes | Best For |
 |---|---|---|
 | Qwen 3 | 7b, 14b | Structured output, legal text extraction |
@@ -441,6 +468,8 @@ PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwe
 | Phi-4 | 14b | Document understanding |
 | Gemma 2 | 9b, 27b | Instruction following |
 | Command R | 35b, 104b | RAG and extraction |
+
+</details>
 
 ### API Endpoints
 
@@ -479,6 +508,8 @@ data/
   checkpoints.db         # LangGraph crash-resume state
   langfuse_logs/         # Mirrored run logs (scripts/sync_langfuse_logs.py)
 ```
+
+---
 
 ## Evaluation & ecosystem
 
@@ -566,6 +597,9 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 
 ### Deployment
 
+<details>
+<summary>Full bring-up runbook — Langfuse stack, prompts sync, watcher, API, ops monitor, log mirroring</summary>
+
 ```bash
 # 1. (Optional) Start Langfuse for trace viewing
 docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
@@ -589,6 +623,8 @@ PYTHONPATH=src python -m pipeline.ops_monitor &
 # 7. (Optional) Mirror run logs for analysis
 PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 ```
+
+</details>
 
 For fully local/offline serving, see [`deploy/`](deploy/README.md) (Modal+vLLM) and [Local Model Cutover](#local-model-cutover).
 
