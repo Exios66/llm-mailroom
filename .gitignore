@@ -39,6 +39,9 @@ langfuse_data/
 # LegalBench suite derived artifacts (regenerated on demand)
 src/legalbench/reports/
 
+# docmd local docs-site build output (npx @docmd/core build)
+/site/
+
 # Stale pre-restructure paths (defensive)
 /legalbench/
 

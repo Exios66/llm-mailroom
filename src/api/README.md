@@ -30,10 +30,10 @@ Then open `http://localhost:8000/docs` for an interactive test page (Swagger UI)
 - `GET /queue` lists queued inbox files (with sidecar metadata), in-flight `processing/<worker>/` claims, and recent catalog documents.
 - `GET /status` and `GET /matters` read from the Postgres/SQLite catalog via `storage/catalog.py`, falling back to the JSON manifest on DB failure.
 - `GET /audit/{doc_id}` returns the hash chain from `storage/audit_log.py` plus a `chain_valid` bool from `schemas/audit.py:verify_chain`.
-- `POST /ops/pause` / `POST /ops/resume` — manual ingestion pause/resume (mirrors the scheduled `pipeline/ops_monitor.py` sweep); `GET /ops/status` reports `paused_ingestion`.
+- `POST /ops/resume` — clear the ingestion-pause flag (there is no `/ops/pause` endpoint; the pause flag is written by the ops monitor / operator); `GET /ops/status` reports `paused_ingestion` and pipeline-wide metrics.
 - Full endpoint docs (request/response shapes): `docs/api.md`.
 
 ### Wiring notes
 
 - The API shares `storage/` and `pipeline/bins.py` with the rest of the app, so the DB file and bins are the same ones the watcher uses.
-- There is no auth on any endpoint — access-control is left to you (see root README → Security).
+- Auth: all endpoints except `GET /health` and `GET /matters/{matter_id}` require the `MAILROOM_API_TOKEN` bearer token when one is configured (loopback-only dev works without; see root README → Security).
