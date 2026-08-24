@@ -2,7 +2,7 @@
 
 <img src="docs/assets/banner.png" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight" width="100%">
 
-# Mailroom
+# The LLM-Mailroom
 
 **A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents — with a full audit trail.**
 
