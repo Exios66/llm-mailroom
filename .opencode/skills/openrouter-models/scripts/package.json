@@ -3,6 +3,6 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "tsx": "^4.0.0"
+    "tsx": "^4.23.12"
   }
 }
