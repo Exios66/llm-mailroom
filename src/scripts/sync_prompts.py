@@ -76,16 +76,38 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Show what would change without creating anything.")
     parser.add_argument("--force", action="store_true", help="Always create a new prompt version.")
     parser.add_argument("--agent", help="Only sync one agent (e.g. sorter).")
+    parser.add_argument(
+        "--docclass",
+        action="store_true",
+        help=(
+            "Sync the KANBAN-090 docclass variants instead of the production "
+            "agent prompts. They are pushed under distinct names "
+            "(mailroom-docclass-<key>) so the thirteen production templates "
+            "are never touched."
+        ),
+    )
     args = parser.parse_args()
 
-    from llm.prompts import prompt_templates
+    if args.docclass:
+        from langchain_agents.prompts_docclass import DOCCLASS_PROMPT_VERSIONS
 
-    templates = prompt_templates()
-    if args.agent:
-        if args.agent not in templates:
-            print(f"Unknown agent '{args.agent}'. Available: {', '.join(sorted(templates))}")
-            return 1
-        templates = {args.agent: templates[args.agent]}
+        # Namespaced agent_name -> sync_one() creates mailroom-docclass-<key>.
+        templates = {f"docclass-{key}": tpl for key, tpl in DOCCLASS_PROMPT_VERSIONS.items()}
+        if args.agent:
+            key = args.agent.removeprefix("docclass-")
+            if key not in DOCCLASS_PROMPT_VERSIONS:
+                print(f"Unknown docclass key '{key}'. Available: {', '.join(sorted(DOCCLASS_PROMPT_VERSIONS))}")
+                return 1
+            templates = {f"docclass-{key}": DOCCLASS_PROMPT_VERSIONS[key]}
+    else:
+        from llm.prompts import prompt_templates
+
+        templates = prompt_templates()
+        if args.agent:
+            if args.agent not in templates:
+                print(f"Unknown agent '{args.agent}'. Available: {', '.join(sorted(templates))}")
+                return 1
+            templates = {args.agent: templates[args.agent]}
 
     client = _client()
     if client is None:
