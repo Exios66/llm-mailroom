@@ -70,20 +70,20 @@ MANIFEST_CSV = SAMPLES_DIR / "manifest.csv"
 # Intrinsic expectations for the standalone fixtures (not in the pilot
 # manifest). Value: (expected_doc_class, expected_subtype or None).
 FIXTURE_EXPECTATIONS = {
-    "tests/fixtures/contract/sample_msa.txt": ("contract", "service"),
-    "tests/fixtures/contract/sample_nda.txt": ("contract", "other"),
-    "tests/fixtures/contract/ambiguous_doc.txt": ("contract", None),
-    "tests/fixtures/corporate_record/*": ("corporate_record", None),
-    "tests/fixtures/correspondence/*": ("correspondence", None),
-    "tests/fixtures/compliance_filing/*": ("compliance_filing", None),
-    "tests/fixtures/due_diligence/*": ("due_diligence", None),
-    "tests/fixtures/court_opinion/*": ("court_opinion", None),
-    "tests/fixtures/insurance_claim/*": ("insurance_claim", None),
-    "examples/sources/corporate/*": ("corporate_record", None),
-    "examples/sources/correspondence/*": ("correspondence", None),
-    "examples/sources/compliance/*": ("compliance_filing", None),
-    "examples/sources/due_diligence/*": ("due_diligence", None),
-    "examples/sources/ambiguous/*": ("correspondence", None),
+    "src/tests/fixtures/contract/sample_msa.txt": ("contract", "service"),
+    "src/tests/fixtures/contract/sample_nda.txt": ("contract", "other"),
+    "src/tests/fixtures/contract/ambiguous_doc.txt": ("contract", None),
+    "src/tests/fixtures/corporate_record/*": ("corporate_record", None),
+    "src/tests/fixtures/correspondence/*": ("correspondence", None),
+    "src/tests/fixtures/compliance_filing/*": ("compliance_filing", None),
+    "src/tests/fixtures/due_diligence/*": ("due_diligence", None),
+    "src/tests/fixtures/court_opinion/*": ("court_opinion", None),
+    "src/tests/fixtures/insurance_claim/*": ("insurance_claim", None),
+    "docs/examples/sources/corporate/*": ("corporate_record", None),
+    "docs/examples/sources/correspondence/*": ("correspondence", None),
+    "docs/examples/sources/compliance/*": ("compliance_filing", None),
+    "docs/examples/sources/due_diligence/*": ("due_diligence", None),
+    "docs/examples/sources/ambiguous/*": ("correspondence", None),
 }
 
 
