@@ -100,9 +100,12 @@ class TestSorterAgent:
         )
         assert contract_subtype == "license"
 
-    def test_classify_invalid_doc_type_defaults_to_correspondence(
+    def test_classify_invalid_doc_type_is_not_silently_remapped(
         self, sample_contract_text, mock_langchain_llm
     ):
+        # A hallucinated class must reach the graph as-is. Remapping it onto
+        # correspondence at the model's 0.8 confidence used to auto-extract
+        # garbage as a letter.
         mock_langchain_llm.classification = {
             "doc_type": "not_a_doc_type",
             "contract_subtype": "license",
@@ -115,8 +118,9 @@ class TestSorterAgent:
         doc_type, contract_subtype, confidence, reasoning = agent.classify(
             sample_contract_text[:1000]
         )
-        assert doc_type == "correspondence"
+        assert doc_type == "not_a_doc_type"
         assert contract_subtype is None
+        assert confidence == 0.8
 
     def test_classify_parse_error(self, sample_contract_text, mock_langchain_llm, mocker):
         from langchain_agents.base_agent import BaseAgent as _LangChainBaseAgent

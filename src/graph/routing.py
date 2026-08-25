@@ -59,7 +59,7 @@ def after_classify(state: dict) -> Literal["classify", "retry_classify", "extrac
     retry_max = thresholds.get("retry_max", 1)
     valid_types = get_all_doc_types()
 
-    if doc_type and doc_type not in valid_types:
+    if not doc_type or doc_type not in valid_types:
         logger.warning("unknown_doc_type", doc_type=doc_type)
         return "human_review"
 

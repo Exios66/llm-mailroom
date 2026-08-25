@@ -1,0 +1,70 @@
+{
+  "dataset": "Lucius-Morningstar/enron-correspondence-dedup",
+  "rows": [
+    {
+      "filename": "allen-p/_sent_mail/1.",
+      "subject": "",
+      "text": "Here is our forecast",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2001-05-14T23:39:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<18782981.1075855378110.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 1, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    },
+    {
+      "filename": "allen-p/_sent_mail/10.",
+      "subject": "Re:",
+      "text": "Traveling to have a business meeting takes the fun out of the trip. Especially if you have to prepare a presentation. I would suggest holding the business plan meetings here then take a trip without any formal business meetings. I would even try and get some honest opinions on whether a trip is even desired or necessary.\n\nAs far as the business meetings, I think it would be more productive to try and stimulate discussions across the different groups about what is working and what is not. Too oft\u2026",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2001-05-04T20:51:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<15464986.1075855378456.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 1, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    },
+    {
+      "filename": "allen-p/_sent_mail/100.",
+      "subject": "Re: test",
+      "text": "test successful. way to go!!!",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2000-10-18T10:00:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<24216240.1075855687451.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 1, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    },
+    {
+      "filename": "allen-p/_sent_mail/1000.",
+      "subject": "",
+      "text": "Randy,\n\n Can you send me a schedule of the salary and level of everyone in the \nscheduling group. Plus your thoughts on any changes that need to be made. \n(Patti S for example)\n\nPhillip",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2000-10-23T13:13:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<13505866.1075863688222.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 1, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    },
+    {
+      "filename": "allen-p/_sent_mail/1001.",
+      "subject": "Re: Hello",
+      "text": "Let's shoot for Tuesday at 11:45.",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2000-08-31T12:07:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<30922949.1075863688243.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 1, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    },
+    {
+      "filename": "allen-p/_sent_mail/1002.",
+      "subject": "Re: Hello",
+      "text": "Greg,\n\n How about either next Tuesday or Thursday?\n\nPhillip",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2000-08-31T11:17:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<30965995.1075863688265.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 1, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    },
+    {
+      "filename": "allen-p/_sent_mail/1003.",
+      "subject": "",
+      "text": "Please cc the following distribution list with updates:\n\nPhillip Allen (pallen@enron.com)\nMike Grigsby (mike.grigsby@enron.com)\nKeith Holst (kholst@enron.com)\nMonique Sanchez\nFrank Ermis\nJohn Lavorato\n\nThank you for your help\n\nPhillip Allen",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2000-08-22T14:44:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<16254169.1075863688286.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 2, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    },
+    {
+      "filename": "allen-p/_sent_mail/1004.",
+      "subject": "Re: PRC review - phone calls",
+      "text": "any morning between 10 and 11:30",
+      "split": "train",
+      "metadata": "{\"source\": \"cmu_enron_maildir\", \"license\": \"Enron corpus \\u2014 released for research use\", \"built_by\": \"llm-entity-extraction scripts/datasets/publish_enron_correspondence.py (KANBAN-074)\", \"custodian\": \"allen-p\", \"folder\": \"_sent_mail\", \"date\": \"2000-07-14T13:59:00+00:00\", \"sender_addr\": \"phillip.allen@enron.com\", \"message_id\": \"<17189699.1075863688308.JavaMail.evans@thyme>\", \"in_reply_to\": \"\", \"n_recipients\": 1, \"has_attachments\": false, \"body_content_type\": \"text/plain\"}"
+    }
+  ],
+  "features": [
+    "filename",
+    "subject",
+    "text",
+    "split",
+    "metadata"
+  ],
+  "config": "default",
+  "split": "train"
+}

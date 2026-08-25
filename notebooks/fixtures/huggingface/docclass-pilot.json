@@ -1,0 +1,61 @@
+{
+  "dataset": "Lucius-Morningstar/docclass-pilot",
+  "rows": [
+    {
+      "filename": "0001062993-15-000198_s1011515_ex3z2.htm",
+      "doc_text": "EX-3.2\n 5\n s1011515_ex3z2.htm\n EXHIBIT 3.2\n Exhibit 3.2 Bylaws \n EXHIBIT 3.2 \n BYLAWS \n OF \n REVENUE.COM CORPORATION \n A Nevada Corporation\n ARTICLE I \n STOCKHOLDERS \n SECTION 1 \n Annual Meeting . Annual meetings of the stockholders (the Stockholders ) of Revenue.com Corporation (the Corporation ) shall be held on the day and at the time as may be set by the Board of Directors of the Corporation (the Board of Directors ) from time to time, at which annual meeting the Stockholders shall elect by \u2026",
+      "prompt": "",
+      "metadata": "{\"accession\": \"0001062993-15-000198\", \"applicable_categories\": \"\", \"body_content_type\": \"\", \"built_by\": \"\", \"category\": \"\", \"chars\": \"32772\", \"cik\": \"0001628609\", \"claim_subtype\": \"\", \"clause_count\": \"\", \"contract\": \"\", \"custodian\": \"\", \"date\": \"\", \"days_supply\": \"\", \"diagnosis_codes\": \"\", \"exhibit_description\": \"EXHIBIT 3.2\", \"exhibit_type\": \"EX-3.2\", \"exhibit_url\": \"/Archives/edgar/data/1628609/000106299315000198/s1011515_ex3z2.htm\", \"expected_doc_type\": \"corporate_record\", \"expected_subclass\"\u2026"
+    },
+    {
+      "filename": "0001469709-14-000003_ex3_2apg.htm",
+      "doc_text": "EX-3.2\n 7\n ex3_2apg.htm\n EXHIBIT 3.2 BYLAWS\n EXHIBIT 3.2 \n EXHIBIT 3.2 \n BYLAWS FOR THE REGULATION OF\n NIGHTFOOD HOLDINGS, INC.\n a Nevada corporation\n (the \"Corporation\")\n ARTICLE 1 \n Offices \n Section 1.01 -- Principal And Registered Office.\n The principal and registered office for the transaction of the business of the Corporation is hereby fixed and located at 85 Parkview Road, Elmsford, NY 10523. The Corporation's administrative offices shall be located at any place within the state of Nevad\u2026",
+      "prompt": "",
+      "metadata": "{\"accession\": \"0001469709-14-000003\", \"applicable_categories\": \"\", \"body_content_type\": \"\", \"built_by\": \"\", \"category\": \"\", \"chars\": \"29021\", \"cik\": \"0001593001\", \"claim_subtype\": \"\", \"clause_count\": \"\", \"contract\": \"\", \"custodian\": \"\", \"date\": \"\", \"days_supply\": \"\", \"diagnosis_codes\": \"\", \"exhibit_description\": \"EXHIBIT 3.2 BYLAWS\", \"exhibit_type\": \"EX-3.2\", \"exhibit_url\": \"/Archives/edgar/data/1593001/000146970914000003/ex3_2apg.htm\", \"expected_doc_type\": \"corporate_record\", \"expected_subclass\u2026"
+    },
+    {
+      "filename": "0001469709-14-000529_ex3_2apg.htm",
+      "doc_text": "EX-3.2\n 6\n ex3_2apg.htm\n EXHIBIT 3.2\n EXHIBIT 3.2 \n EXHIBIT 3.2\n BYLAWS \n OF\n SWEETS & TREATS, INC.\n (a Delaware corporation)\n ARTICLE I \n STOCKHOLDERS \n 1. CERTIFICATES REPRESENTING STOCK . Certificates representing stock in the corporation shall be signed by, or in the name of, the corporation by the Chairperson or Vice-Chairperson of the Board of Directors, if any, or by the Chief Executive Officer or a Vice-Chief Executive Officer and by the Chief Financial Officer or an Assistant Financial \u2026",
+      "prompt": "",
+      "metadata": "{\"accession\": \"0001469709-14-000529\", \"applicable_categories\": \"\", \"body_content_type\": \"\", \"built_by\": \"\", \"category\": \"\", \"chars\": \"35823\", \"cik\": \"0001624982\", \"claim_subtype\": \"\", \"clause_count\": \"\", \"contract\": \"\", \"custodian\": \"\", \"date\": \"\", \"days_supply\": \"\", \"diagnosis_codes\": \"\", \"exhibit_description\": \"EXHIBIT 3.2\", \"exhibit_type\": \"EX-3.2\", \"exhibit_url\": \"/Archives/edgar/data/1624982/000146970914000529/ex3_2apg.htm\", \"expected_doc_type\": \"corporate_record\", \"expected_subclass\": \"pow\u2026"
+    },
+    {
+      "filename": "0001547903-13-000006_a32amendedandrestatedby-la.htm",
+      "doc_text": "\"EX-3.2\\n 3\\n a32amendedandrestatedby-la.htm\\n EXHIBIT 3.2\\n 3.2 Amended and Restated By-Laws \\n EXH",
+      "prompt": "",
+      "metadata": "{\"accession\":\"0001547903-13-000006\",\"applicable_categories\":\"\",\"body_content_type\":\"\",\"built_by\":\"\","
+    },
+    {
+      "filename": "0001547903-13-000006_a44registrationrightsagree.htm",
+      "doc_text": "\"EX-4.4\\n 7\\n a44registrationrightsagree.htm\\n EXHIBIT 4.4\\n 4.4 Registration Rights Agreement NMI H",
+      "prompt": "",
+      "metadata": "{\"accession\":\"0001547903-13-000006\",\"applicable_categories\":\"\",\"body_content_type\":\"\",\"built_by\":\"\","
+    },
+    {
+      "filename": "0001547903-13-000020_a31secondamendedandrestate.htm",
+      "doc_text": "\"EX-3.1\\n 4\\n a31secondamendedandrestate.htm\\n EXHIBIT 3.1\\n 3.1 Second Amended and Restated Certifi",
+      "prompt": "",
+      "metadata": "{\"accession\":\"0001547903-13-000020\",\"applicable_categories\":\"\",\"body_content_type\":\"\",\"built_by\":\"\","
+    },
+    {
+      "filename": "0001547903-13-000020_a32amendedandrestatedby-la.htm",
+      "doc_text": "\"EX-3.2\\n 5\\n a32amendedandrestatedby-la.htm\\n EXHIBIT 3.2\\n 3.2 Amended and Restated By-Laws \\n EXH",
+      "prompt": "",
+      "metadata": "{\"accession\":\"0001547903-13-000020\",\"applicable_categories\":\"\",\"body_content_type\":\"\",\"built_by\":\"\","
+    },
+    {
+      "filename": "0001547903-13-000020_a42registrationrightsagree.htm",
+      "doc_text": "\"EX-4.2\\n 7\\n a42registrationrightsagree.htm\\n EXHIBIT 4.2\\n 4.2 Registration Rights Agreement NMI H",
+      "prompt": "",
+      "metadata": "{\"accession\":\"0001547903-13-000020\",\"applicable_categories\":\"\",\"body_content_type\":\"\",\"built_by\":\"\","
+    }
+  ],
+  "features": [
+    "filename",
+    "doc_text",
+    "prompt",
+    "metadata"
+  ],
+  "config": "default",
+  "split": "train"
+}
