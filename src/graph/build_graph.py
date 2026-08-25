@@ -296,7 +296,40 @@ def _build_handoff_context(state: DocumentState) -> str | None:
             + "."
         )
     context += ". Extract this document's fields accordingly, ensuring every expected item of this document class is captured."
+    if extract_class == "contract" or doc_type == "merger_agreement":
+        try:
+            from langchain_agents.cuad_maud import clause_handoff
+
+            context += " " + clause_handoff(doc_type, contract_subtype)
+        except Exception:
+            pass
     return context
+
+
+def _enrich_contract_result(result: dict | None, state: dict) -> dict:
+    """Attach CUAD/MAUD inventory fields after the specialist returns."""
+    payload = dict(result or {})
+    doc_type = state.get("doc_type") or ""
+    extract_class = doc_type
+    try:
+        from pipeline.config import resolve_extract_class
+
+        extract_class = resolve_extract_class(doc_type) or doc_type
+    except Exception:
+        pass
+    if extract_class != "contract" and doc_type != "merger_agreement":
+        return payload
+    try:
+        from langchain_agents.cuad_maud import enrich_contract_extraction
+
+        return enrich_contract_extraction(
+            payload,
+            doc_type=doc_type,
+            contract_subtype=state.get("contract_subtype"),
+        )
+    except Exception:
+        logger.exception("contract_inventory_enrich_failed")
+        return payload
 
 
 def _specialist_extractor_map():
@@ -943,6 +976,13 @@ def _detect_conflict(state: dict, extracted_data: dict | None) -> tuple[bool, li
         if not prior:
             continue
         for field in sorted(schema_fields):
+            try:
+                from langchain_agents.cuad_maud import skip_conflict_field
+
+                if skip_conflict_field(field):
+                    continue
+            except Exception:
+                pass
             new_val = extracted_data.get(field)
             old_val = prior.get(field)
             if new_val is None or old_val is None:
@@ -978,6 +1018,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     attempts = state.get("extraction_attempts", 0)
     try:
         result = extractor(doc_text, doc_pages, handoff_context)
+        result = _enrich_contract_result(result, state)
     except Exception as exc:
         from llm.retry import is_transient_error
 
@@ -1139,6 +1180,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     handoff_context = _build_handoff_context(state)
     try:
         result = extractor(augmented_text, doc_pages, handoff_context)
+        result = _enrich_contract_result(result, state)
     except Exception as exc:
         from llm.retry import is_transient_error
 

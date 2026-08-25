@@ -36,6 +36,13 @@ SRC_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = SRC_DIR.parent
 sys.path.insert(0, str(SRC_DIR))
 
+from langchain_agents.cuad_maud import (  # noqa: E402
+    flatten_cuad_clause_labels,
+    flatten_maud_clause_labels,
+    infer_merger_consideration,
+    normalize_consideration,
+)
+
 DATASET_ID = "Lucius-Morningstar/docclass-merged"
 VIEWER_BASE = "https://datasets-server.huggingface.co"
 HF_CLASSES = (
@@ -137,11 +144,23 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
         or meta.get("expected_subclass")
         or ""
     )
+    cuad_raw = (
+        gt.get("cuad_clause_labels")
+        if gt.get("cuad_clause_labels") not in (None, "")
+        else row.get("cuad_clause_labels")
+    )
+    maud_raw = (
+        gt.get("maud_clause_labels")
+        if gt.get("maud_clause_labels") not in (None, "")
+        else row.get("maud_clause_labels")
+    )
     return {
         "filename": filename,
         "text": str(text),
         "expected_hf_class": hf_class,
         "expected_subclass": str(subclass).strip() if subclass else "",
+        "cuad_clauses": flatten_cuad_clause_labels(cuad_raw),
+        "maud_clauses": flatten_maud_clause_labels(maud_raw),
         "chars": len(str(text)),
     }
 
@@ -219,54 +238,6 @@ def _loose_label_match(predicted, expected) -> bool:
     return a == b or a.startswith(b) or b.startswith(a) or b in a or a in b
 
 
-def normalize_consideration(value) -> str:
-    """Map MAUD merger-consideration labels to the Hub token set."""
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    key = _alnum(raw)
-    aliases = {
-        "allcash": "all_cash",
-        "cash": "all_cash",
-        "cashonly": "all_cash",
-        "allstock": "all_stock",
-        "stock": "all_stock",
-        "stockonly": "all_stock",
-        "mixedcashstockelection": "mixed_cash_stock_election",
-        "mixedelection": "mixed_cash_stock_election",
-        "mixedcashstock": "mixed_cash_stock",
-        "mixed": "mixed_cash_stock",
-        "cashandstock": "mixed_cash_stock",
-        "cashstock": "mixed_cash_stock",
-        "other": "other",
-    }
-    if key in aliases:
-        return aliases[key]
-    lower = raw.lower()
-    if "election" in lower and "cash" in lower and "stock" in lower:
-        return "mixed_cash_stock_election"
-    if "cash" in lower and "stock" in lower:
-        return "mixed_cash_stock"
-    if "all cash" in lower or "cash consideration" in lower or "per share in cash" in lower:
-        return "all_cash"
-    if "all stock" in lower or "stock consideration" in lower:
-        return "all_stock"
-    return ""
-
-
-def infer_merger_consideration(extracted: dict | None) -> str:
-    data = extracted or {}
-    for key in ("contract_value", "merger_consideration", "document_name"):
-        token = normalize_consideration(data.get(key) or "")
-        if token:
-            return token
-    blobs = data.get("key_obligations") or []
-    if isinstance(blobs, list):
-        joined = " ".join(str(x) for x in blobs)
-        return normalize_consideration(joined)
-    return ""
-
-
 def subclass_ok(expected_class: str, expected_subclass: str, *, predicted_subtype: str = "", extracted: dict | None = None) -> bool | None:
     """Score Hub ``expected_subclass`` against sorter subtype / extraction.
 
@@ -280,11 +251,15 @@ def subclass_ok(expected_class: str, expected_subclass: str, *, predicted_subtyp
     if hf_class == "contract":
         from langchain_agents.sorter_agent import equivalent_subtypes, normalize_subtype
 
-        got = normalize_subtype(predicted_subtype or extracted.get("contract_subtype"))
+        got = normalize_subtype(predicted_subtype or extracted.get("cuad_family") or extracted.get("contract_subtype"))
         need = normalize_subtype(want)
         return equivalent_subtypes(got, need)
     if hf_class == "merger_agreement":
-        got = infer_merger_consideration(extracted) or normalize_consideration(predicted_subtype)
+        got = (
+            normalize_consideration(extracted.get("merger_consideration"))
+            or infer_merger_consideration(extracted)
+            or normalize_consideration(predicted_subtype)
+        )
         need = normalize_consideration(want)
         if not got or not need:
             return False
@@ -570,6 +545,8 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
         labels[filename] = {
             "expected": expected,
             "expected_subclass": str(row.get("expected_subclass") or "").strip(),
+            "cuad_clause_labels": row.get("cuad_clause_labels"),
+            "maud_clause_labels": row.get("maud_clause_labels"),
         }
     return labels
 
@@ -662,6 +639,21 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     }
     if sample.get("expected_subclass"):
         ground_truth["expected_subclass"] = sample["expected_subclass"]
+    expected_fields: dict = {}
+    if sample.get("cuad_clauses"):
+        expected_fields["cuad_clauses"] = list(sample["cuad_clauses"])
+    if sample.get("maud_clauses"):
+        expected_fields["maud_clauses"] = list(sample["maud_clauses"])
+    if hf_class == "contract" and sample.get("expected_subclass"):
+        from langchain_agents.sorter_agent import normalize_subtype
+
+        expected_fields["cuad_family"] = normalize_subtype(sample["expected_subclass"])
+    if hf_class == "merger_agreement" and sample.get("expected_subclass"):
+        token = normalize_consideration(sample["expected_subclass"])
+        if token:
+            expected_fields["merger_consideration"] = token
+    if expected_fields:
+        ground_truth["expected_fields"] = expected_fields
 
     rp._LLM_METRICS["calls"] = 0
     rp._LLM_METRICS["seconds"] = 0.0
@@ -709,6 +701,8 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         "expected": hf_class,
         "expected_doc_class": expect_type,
         "expected_subclass": sample.get("expected_subclass") or "",
+        "cuad_clauses": sample.get("cuad_clauses") or [],
+        "maud_clauses": sample.get("maud_clauses") or [],
         "predicted": predicted,
         "predicted_subtype": subtype,
         "stage": result.get("stage"),

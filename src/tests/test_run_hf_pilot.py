@@ -137,10 +137,8 @@ def test_load_ground_truth_labels_reads_expected_fields(monkeypatch):
         ] if kw.get("config") == "ground_truth" else [],
     )
     labels = load_ground_truth_labels(split="train", max_scan=100)
-    assert labels["a.htm"] == {
-        "expected": "corporate_record",
-        "expected_subclass": "bylaws",
-    }
+    assert labels["a.htm"]["expected"] == "corporate_record"
+    assert labels["a.htm"]["expected_subclass"] == "bylaws"
     assert labels["b.pdf"]["expected"] == "contract"
     assert "skip.pdf" not in labels
     monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)

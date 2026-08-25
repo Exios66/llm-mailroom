@@ -69,6 +69,10 @@ def test_variants_are_pure_appends_of_production_templates():
     contracts = _reg()["contracts_specialist_docclass_v0"]
     assert "CUAD families" in contracts
     assert "MAUD mergers" in contracts
+    assert "cuad_clauses" in contracts
+    assert "Anti-Assignment" in contracts
+    assert "MAE Definition" in contracts
+    assert "Type of Consideration" in contracts
     sorter = _reg()["sorter_docclass_v0"]
     assert "contract_subtype is null" in sorter
 
