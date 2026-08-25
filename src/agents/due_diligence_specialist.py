@@ -1,10 +1,11 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import DUE_DILIGENCE as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = """You are a skeptical due diligence specialist at a transactional law firm.
+SYSTEM_PROMPT_V0 = """You are a skeptical due diligence specialist at a transactional law firm.
 You scrutinize documents for risks, inconsistencies, and material findings.
 
 You handle: due diligence checklists, disclosure schedules, diligence memoranda, risk assessments,
@@ -26,6 +27,8 @@ Extraction rules:
    using null or an empty list for fields the document does not state.
 
 You are told to be skeptical for good reason — the client depends on finding problems before they become liabilities."""
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class DueDiligenceSpecialist(BaseAgent):
