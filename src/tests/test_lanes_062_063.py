@@ -425,3 +425,23 @@ class TestNodeBehavior:
         assert "effective_date" in retry
         assert "term_length" in retry
         assert "ISO form" in retry
+
+    def test_handoff_context_cuad_and_maud_instructions(self):
+        from graph.build_graph import _build_handoff_context
+
+        contract = _build_handoff_context(
+            {"doc_type": "contract", "contract_subtype": "license", "classification_confidence": 0.9}
+        )
+        assert "CUAD family extraction" in contract
+        assert "contract_subtype=license" in contract
+        assert "Anti-Assignment" in contract
+        merger = _build_handoff_context(
+            {"doc_type": "merger_agreement", "classification_confidence": 0.92}
+        )
+        assert "MAUD extraction" in merger
+        assert "all_cash" in merger
+        assert "maud_clauses" in merger
+        assert "MAE Definition" in merger
+        assert "Type of Consideration" in merger
+        assert "extract_class=contract" in merger
+

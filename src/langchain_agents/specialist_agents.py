@@ -131,6 +131,28 @@ CONTRACTS_SCHEMA = build_structured_schema({
     "key_obligations": _string_array("Major obligations of each party (verbatim operative language, one item per obligation)"),
     "contract_value": _nullable_string("The monetary value or consideration"),
     "renewal_terms": _nullable_string("Renewal, extension, or rollover terms (automatic or otherwise)"),
+    "cuad_family": _nullable_string(
+        "CUAD agreement family key: affiliate, agency, collaboration, co_branding, "
+        "consulting, development, distributor, endorsement, franchise, hosting, ip, "
+        "joint_venture, license, maintenance, manufacturing, marketing, "
+        "non_compete_no_solicit, outsourcing, promotion, reseller, service, "
+        "sponsorship, strategic_alliance, supply, transportation, or other. Null for merger_agreement."
+    ),
+    "merger_consideration": _nullable_string(
+        "MAUD merger consideration token: all_cash, all_stock, mixed_cash_stock, "
+        "mixed_cash_stock_election, or other. Null when the document is not a merger."
+    ),
+    "cuad_clauses": _string_array(
+        "Present CUAD clause categories (the 41 Atticus names) as "
+        "'<Category>: <verbatim operative span>'. Omit absent categories."
+    ),
+    "maud_clauses": _string_array(
+        "Answered MAUD questions as '<Question>: <Answer>' using the exact "
+        "LegalBench MAUD names (Absence of Litigation Closing Condition, "
+        "Accuracy of Target R&W Closing Condition, MAE Definition, No-Shop, "
+        "Type of Consideration, …). Answer is the Hub valid_class, not a "
+        "paraphrase. Empty unless this is a merger agreement."
+    ),
     "confidence": {
         "type": "number", "minimum": 0.0, "maximum": 1.0,
         "description": "Evidence-grounded extraction confidence (share of fields found, "
@@ -420,6 +442,9 @@ class _SpecialistBase(BaseAgent):
         found = 0
         for key, spec in properties.items():
             if key in ("confidence", "reasoning"):
+                continue
+            if key in ("cuad_family", "merger_consideration", "cuad_clauses", "maud_clauses"):
+                # Absence is a valid inventory answer and must not drag confidence.
                 continue
             value = result.get(key)
             type_spec = spec.get("type")

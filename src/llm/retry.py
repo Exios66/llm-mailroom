@@ -33,6 +33,50 @@ logger = structlog.get_logger(__name__)
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
+
+def _status_code(exc: Exception) -> int | None:
+    code = getattr(exc, "status_code", None)
+    if isinstance(code, int):
+        return code
+    resp = getattr(exc, "response", None)
+    if resp is not None:
+        value = getattr(resp, "status_code", None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    resp = getattr(exc, "response", None)
+    headers = getattr(resp, "headers", None) or {}
+    raw = None
+    try:
+        raw = headers.get("Retry-After") or headers.get("retry-after")
+    except Exception:
+        raw = None
+    if raw in (None, ""):
+        return None
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def retry_sleep_seconds(exc: Exception, attempt: int, cfg: dict | None = None) -> float:
+    """Backoff for one retry. 429s wait longer than connection blips."""
+    cfg = cfg or _retry_config()
+    base = float(cfg.get("base_delay", 1.0))
+    max_delay = float(cfg.get("max_delay", 30.0))
+    jitter = float(cfg.get("jitter", 0.3))
+    rate_limited = isinstance(exc, RateLimitError) or _status_code(exc) == 429
+    if rate_limited:
+        base = float(cfg.get("rate_limit_base_delay", 8.0))
+        retry_after = _retry_after_seconds(exc)
+        if retry_after is not None:
+            base = max(base, retry_after)
+    delay = min(max_delay, base * (2 ** max(0, attempt - 1)))
+    return max(0.0, delay * (1 + random.uniform(-jitter, jitter)))
+
 # Alibaba/Qwen json_object gate: the raw provider error (via OpenRouter) is a
 # 400 whose message always contains this phrase. Bounded retry only for this
 # exact quirk — never a blanket 4xx retry.
@@ -104,10 +148,7 @@ def retry_chat_completion(
     from pipeline.limits import check_run_deadline, get_call_timeout_seconds
 
     cfg = _retry_config()
-    max_attempts = max_attempts if max_attempts is not None else int(cfg.get("max_attempts", 3))
-    base_delay = base_delay if base_delay is not None else float(cfg.get("base_delay", 1.0))
-    max_delay = max_delay if max_delay is not None else float(cfg.get("max_delay", 30.0))
-    jitter = jitter if jitter is not None else float(cfg.get("jitter", 0.3))
+    max_attempts = max_attempts if max_attempts is not None else int(cfg.get("max_attempts", 5))
     if timeout is None:
         timeout = float(get_call_timeout_seconds())
     attempt = 0
@@ -120,8 +161,7 @@ def retry_chat_completion(
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
             if not _is_retryable(exc) or attempt >= max_attempts:
                 raise
-            delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
-            delay = delay * (1 + random.uniform(-jitter, jitter))
+            delay = retry_sleep_seconds(exc, attempt, cfg)
             logger.warning(
                 "llm_retry",
                 attempt=attempt,

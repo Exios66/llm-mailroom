@@ -150,4 +150,4 @@ class TestVendoredRetryContract:
         monkeypatch.setattr(agent, "_check_deadline", lambda: None)
         with pytest.raises(openai.APIConnectionError):
             agent._invoke_with_retry(always_fail)
-        assert calls["n"] == 3  # max_attempts from taxonomy llm_retry
+        assert calls["n"] == 5  # max_attempts from taxonomy llm_retry

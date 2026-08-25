@@ -57,3 +57,36 @@ def test_judge_dimension_failure_does_not_block_other_dimensions(monkeypatch):
     assert result["completeness"]["completeness_label"] == "partial"
     assert result["correctness"]["extraction_correctness_label"] == "partial"
     assert "classification" in result["errors"]
+
+
+def test_raw_text_prefers_inline_doc_text():
+    sample = _sample()
+    sample["doc_text"] = "inline source"
+    assert run_quality_judges._raw_text_for(sample) == "inline source"
+
+
+def test_hf_report_mock_judge(tmp_path, monkeypatch):
+    report = {
+        "samples": [{
+            "local_filename": "hf_contract.txt",
+            "filename": "hf_contract.txt",
+            "predicted": "contract",
+            "expected_doc_class": "contract",
+            "expected": "contract",
+            "extracted_data": {"parties": ["Acme"]},
+            "trace_id": "trace-hf-1",
+            "doc_text": "SERVICES AGREEMENT between Acme and Beta.",
+        }]
+    }
+    path = tmp_path / "report.json"
+    path.write_text(__import__("json").dumps(report), encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["run_quality_judges.py", "--mock", "--hf-report", str(path)],
+    )
+    assert run_quality_judges.main() == 0
+    payload = __import__("json").loads(path.read_text(encoding="utf-8"))
+    evaluation = payload["evaluation"]["run"]
+    assert evaluation["hf_mode"] is True
+    assert evaluation["summary"]["classification"]["n"] == 1
+

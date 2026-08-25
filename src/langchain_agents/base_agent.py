@@ -213,7 +213,6 @@ class BaseAgent(ABC):
         come from taxonomy.yaml ``llm_retry:``; the ``llm_retry`` log event
         has the same shape as the native path.
         """
-        import random
         import time as _time
 
         from pipeline.limits import get_call_timeout_seconds
@@ -227,10 +226,7 @@ class BaseAgent(ABC):
                 return {}
 
         cfg = _retry_config()
-        max_attempts = int(cfg.get("max_attempts", 3))
-        base_delay = float(cfg.get("base_delay", 1.0))
-        max_delay = float(cfg.get("max_delay", 30.0))
-        jitter = float(cfg.get("jitter", 0.3))
+        max_attempts = int(cfg.get("max_attempts", 5))
 
         attempt = 0
         while True:
@@ -241,8 +237,9 @@ class BaseAgent(ABC):
             except Exception as exc:  # noqa: BLE001 — inspected below
                 if not _is_retryable_error(exc) or attempt >= max_attempts:
                     raise
-                delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
-                delay = delay * (1 + random.uniform(-jitter, jitter))
+                from llm.retry import retry_sleep_seconds
+
+                delay = retry_sleep_seconds(exc, attempt, cfg)
                 logger.warning(
                     "llm_retry",
                     agent=self.agent_name,
