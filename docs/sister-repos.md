@@ -119,6 +119,11 @@ The scoring layer both mailroom and entity-extraction consume:
   and `mailroom_ui/trace_interpreter.py` in the same change window — new spans
   render as `unknown` stage until mirrored. `MAILROOM_TAXONOMY` can point it
   at this repo's `src/config/taxonomy.yaml` live instead of its bundled mirror.
+  Current intake contract: span `normalize-intake` (INGEST), agent `intake`,
+  HF runner `src/scripts/run_hf_pilot.py` (session `pilot-hf-<stamp>`, tag
+  `source-docclass-merged`, ground truth on trace input/metadata including
+  `expected_hf_class`). Production session `pilot-hf-20260825T044207Z` is the
+  reference five-doc Qwen 3.7-Flash subset.
 - **Governance:** fully governed member of the family — own `AGENTS.md`, own
   semver release train (v0.2.0), own test suite (never hits real Langfuse),
   own wiki. It is a downstream OBSERVER: dependency of no family repo — the

@@ -80,3 +80,14 @@ class TestEmitPipelineScores:
             assert scores["estimated_cost_usd"] == 0.001
         finally:
             os.environ.pop("OBSERVABILITY_PROVIDER", None)
+
+
+def test_langfuse_score_name_aliases_overlong_verified_precision():
+    from observability.scores import langfuse_score_name
+
+    assert langfuse_score_name("extraction_overall_verified_precision") == (
+        "extraction_verified_precision"
+    )
+    assert langfuse_score_name("run_duration_seconds") == "run_duration_seconds"
+    assert len("extraction_verified_precision") <= 35
+

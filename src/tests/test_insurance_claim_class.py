@@ -37,6 +37,27 @@ def test_insurance_schema_fields_are_scoring_ready():
         assert name in fields, f"missing schema field: {name}"
 
 
+def test_insurance_schema_accepts_null_adjuster():
+    from schemas.documents import InsuranceClaimExtraction
+
+    parsed = InsuranceClaimExtraction.model_validate({
+        "insurer": "CMS Medicare",
+        "insured_party": "LOPEZ, PATRICIA",
+        "claim_type": "health",
+        "adjuster": None,
+        "claim_number": None,
+        "claimed_amount": None,
+        "damages_description": "Outpatient services",
+        "coverage_determination": "pending",
+    })
+    assert parsed.adjuster is None
+    from observability.scores import validate_extraction
+
+    checks = validate_extraction("insurance_claim", parsed.model_dump())
+    assert checks["schema_valid"] is True
+    assert checks["parse_error"] is False
+
+
 def test_taxonomy_declares_class_and_specialist_block():
     tax = yaml.safe_load((SRC / "config" / "taxonomy.yaml").read_text())
     classes = {c["key"]: c for c in tax["doc_classes"]}

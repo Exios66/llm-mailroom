@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Intake clerk + HF docclass pilot runner (The-Mailroom production contract).** Procedural `agents/intake.py` (`deterministic_normalize` / `looks_messy`, byte-compatible with The-Mailroom's `mailroom_ui/intake_normalize.py`) runs after transcription and emits verb-first span `normalize-intake` under ingest. New `scripts/run_hf_pilot.py` (`--check` / `--mock` / `--real`) loads a stratified `Lucius-Morningstar/docclass-merged` subset, traces each doc as `document-pipeline` under session `pilot-hf-<UTC stamp>` with tags `mailroom`/`pilot`/`source-docclass-merged`, and writes `data/hf_pilot/<stamp>/report.json` for The-Mailroom `eval_pipeline.py`. Ground truth (`expected_hf_class`, `expected_doc_class`, `expected_subclass`) is on trace input and metadata. Reference production session: `pilot-hf-20260825T044207Z`.
+
+### Changed
+
+- Sorter and sorter_reviewer `reasoning_effort` is `none` so Qwen 3.7-Flash reserves the completion budget for JSON (production HF runs hit `LengthFinishReasonError` with medium reasoning).
+- Langfuse score transport aliases `extraction_overall_verified_precision` → `extraction_verified_precision` (35-character config name limit).
+
+### Fixed
+
+- Insurance-claim schema accepts `adjuster: null` (CMS / DE-SynPUF rows have no named adjuster). JSON schema type is `["string", "null"]` so a valid extract no longer fails `schema_valid` and parks in REVIEW.
+
 ## [v0.5.0] - 2026-08-25
 
 Minor release covering everything since v0.4.1. Live pipeline is **five document classes** (`contract`, `corporate_record`, `correspondence`, `compliance_filing`, `insurance_claim`) with FastAPI `/v1`, a 00–13 notebook suite, production prompt doctrine, and a routing-flow audit so `unknown` / retired types never extract on a nearby specialist. Full suite **539 passed**, 1 skipped.

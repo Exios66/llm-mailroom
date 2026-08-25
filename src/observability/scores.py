@@ -101,6 +101,18 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "legalbench_task", "data_type": "TEXT"},
 ]
 
+# Langfuse Cloud rejects score *config* names over 35 characters
+# (`extraction_overall_verified_precision` is 40). Keep the canonical
+# Python/dojo name in SCORE_CONFIGS; emit this alias on the wire.
+LANGFUSE_SCORE_NAME_ALIASES = {
+    "extraction_overall_verified_precision": "extraction_verified_precision",
+}
+
+
+def langfuse_score_name(name: str) -> str:
+    """Name actually sent to Langfuse (may be a short transport alias)."""
+    return LANGFUSE_SCORE_NAME_ALIASES.get(name, name)
+
 # KANBAN-061: SCORE_CONFIGS is validated against llm-dojo-scoring's metric
 # registry (single source of truth). A name here but not in the registry
 # means the schema has drifted — fail loudly at import rather than silently
@@ -163,9 +175,10 @@ def ensure_score_configs() -> list[str]:
             existing = []
         created = list(existing)
         for spec in SCORE_CONFIGS:
-            if spec["name"] in existing:
+            wire_name = langfuse_score_name(spec["name"])
+            if spec["name"] in existing or wire_name in existing:
                 continue
-            kwargs = {"name": spec["name"], "data_type": spec["data_type"]}
+            kwargs = {"name": wire_name, "data_type": spec["data_type"]}
             if spec.get("min_value") is not None:
                 kwargs["min_value"] = spec["min_value"]
             if spec.get("max_value") is not None:
@@ -177,8 +190,8 @@ def ensure_score_configs() -> list[str]:
                     ConfigCategory(value=c["value"], label=c["label"]) for c in spec["categories"]
                 ]
             client.api.score_configs.create(**kwargs)
-            created.append(spec["name"])
-            logger.info("score_config_created", name=spec["name"], data_type=spec["data_type"])
+            created.append(wire_name)
+            logger.info("score_config_created", name=wire_name, data_type=spec["data_type"])
     except Exception:
         logger.warning("score_config_creation_failed", exc_info=True)
     _configs_ensured.update(created)
@@ -267,7 +280,7 @@ def create_trace_score(
     try:
         client.create_score(
             trace_id=trace_id,
-            name=name,
+            name=langfuse_score_name(name),
             value=value,
             data_type=data_type,
             comment=comment,

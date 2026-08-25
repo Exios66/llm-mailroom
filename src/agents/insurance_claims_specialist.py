@@ -63,7 +63,7 @@ class InsuranceClaimsSpecialist(BaseAgent):
                 "date_of_loss": {"type": ["string", "null"], "description": "Date the loss/event occurred, if stated"},
                 "date_filed": {"type": ["string", "null"], "description": "Date the claim was filed, if stated"},
                 "claimed_amount": {"type": ["number", "null"], "description": "Amount claimed/demanded in USD, if stated"},
-                "adjuster": {"type": "string", "description": "Named adjuster handling the claim, if any"},
+                "adjuster": {"type": ["string", "null"], "description": "Named adjuster handling the claim, if stated; null when absent"},
                 "damages_description": {"type": "string", "description": "Summary of the loss/damages as described"},
                 "coverage_determination": {"type": "string", "description": "Outcome as stated: approved, denied, partial, pending"},
                 "denial_reasons": {"type": "array", "items": {"type": "string"}, "description": "Stated denial/limitation grounds, if denied"},

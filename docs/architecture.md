@@ -13,7 +13,7 @@ flowchart TD
     START([START]) --> INGEST
     START -. "resume: manifest shows extraction done" .-> EXTRACT
 
-    INGEST["ingest-document<br/>claim file, read text, create manifest"]
+    INGEST["ingest-document<br/>claim file, read text, normalize-intake, create manifest"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
     REVIEW_CLASS["classify-document (reviewer)<br/>SorterReviewAgent second opinion<br/>(KANBAN-062 Lane A)"]
@@ -221,7 +221,7 @@ Writes document and matter records to the database (best-effort — pipeline con
 
 | Node | Agent | Purpose |
 |---|---|---|
-| `ingest` | — | Read file, create manifest, move to processing |
+| `ingest` | Intake clerk (procedural) | Read file, deterministic `normalize-intake`, create manifest, move to processing |
 | `classify` | Sorter | Determine doc_type + confidence |
 | `retry_classify` | Sorter | Re-classify with alternate prompt |
 | `review_classify` | Sorter Reviewer | Agent second opinion when the medium band is exhausted (KANBAN-062) |

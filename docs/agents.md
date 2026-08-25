@@ -211,9 +211,24 @@ The Reporter does NOT extract new data — it compiles and refines what the spec
 | **Personality** | Quiet, exhaustive, never skips a step |
 
 The Archivist is NOT an LLM agent — it's a procedural function that:
+
 1. Moves the file to `/archive/<matter_id>/<doc_type>/`
 2. Writes the manifest as a JSON sidecar
 3. Creates a hash-chained audit log entry
+
+---
+
+### 8b. Intake clerk (`agents/intake.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | nested under `ingest` (span `normalize-intake`) |
+| **Trigger** | every document after text extraction |
+| **Input** | transcribed `doc_text` |
+| **Output** | cleaned text + stats (`messy`, `changed`, hyphen unwraps, collapsed blanks) |
+| **Personality** | none — deterministic whitespace / NBSP / hyphen-unwrap |
+
+Procedural, not an LLM agent. The-Mailroom mirrors `deterministic_normalize` / `looks_messy` byte-for-byte in `mailroom_ui/intake_normalize.py` and reads the `normalize-intake` observation on every `document-pipeline` trace. Hugging Face pilots (`scripts/run_hf_pilot.py`) depend on this span so FLOOR / TUI / Observatory can show intake-changed / messy counts.
 
 ---
 

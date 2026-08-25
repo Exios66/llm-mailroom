@@ -6,7 +6,8 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 
 | Script | Purpose |
 |--------|---------|
-| `run_pilot.py` | Main pilot testing entrypoint. Runs the full pipeline over the sample set with mock (`--mock`) or real (`--real`) LLM. Supports baseline diffing (`--baseline`) and ground-truth score ingestion (`--scores`). |
+| `run_pilot.py` | Main committed-sample pilot. Runs the full pipeline over the sample set with mock (`--mock`) or real (`--real`) LLM. Supports baseline diffing (`--baseline`) and ground-truth score ingestion (`--scores`). |
+| `run_hf_pilot.py` | Hugging Face `Lucius-Morningstar/docclass-merged` pilot. The-Mailroom's `scripts/run_production_pilot.py` invokes this (`--check` / `--real --per-class N`). Writes `data/hf_pilot/<stamp>/report.json` with `session_id=pilot-hf-<stamp>`. |
 | `run_quality_judges.py` | Offline LLM-as-a-Judge evaluation over a pilot run. Measures classification correctness, extraction completeness, and extraction correctness. Supports `--mock` for deterministic fake judges. |
 | `run_vision_sweep.py` | Vision vs. text tradeoff benchmarking. Runs the same documents with text-only, vision-10-pages, and vision-all-pages modes. Outputs comparison metrics. |
 | `write_pilot_report.py` | Renders tracked markdown + JSON pilot report from collected run data (default: `docs/reports/pilots/pilot-vision-tradeoff.md`). |

@@ -402,6 +402,9 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         file_path = claim_file(file_path, worker_id)
 
     doc_text, text_ok = _read_file_text(file_path)
+    from agents.intake import apply_intake
+
+    doc_text, intake_stats = apply_intake(doc_text, filename=file_path.name)
     doc_pages = _render_doc_pages(file_path)
 
     matter_id = state.get("matter_id", "DEFAULT")
@@ -421,6 +424,8 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         chars=len(doc_text),
         suffix=file_path.suffix,
         vision_pages=len(doc_pages),
+        intake_changed=intake_stats.get("changed"),
+        intake_messy=intake_stats.get("messy"),
     )
     # Write the processing-stage catalog record immediately so a crashed run is
     # visible to stuck-doc detection (`get_stuck_documents`) and `/ops/status`
@@ -456,6 +461,8 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         "file_path": str(file_path),
         "doc_text": doc_text,
         "doc_pages": doc_pages,
+        "intake_messy": bool(intake_stats.get("messy")),
+        "intake_changed": bool(intake_stats.get("changed")),
         "classification_attempts": 0,
         "extraction_attempts": 0,
         "retry_count": 0,
@@ -2073,6 +2080,22 @@ def _write_catalog_record(state: dict):
 PIPELINE_RESULT_TEXT_LIMIT = 100_000
 
 
+def _public_ground_truth(ground_truth: dict | None) -> dict:
+    """Trace-safe ground truth (no expected_fields payloads / document text).
+
+    The-Mailroom eval reads ``input.ground_truth.expected_hf_class`` and the
+    flattened metadata keys. ``expected_fields`` stays off the trace.
+    """
+    if not ground_truth:
+        return {}
+    skip = {"expected_fields"}
+    return {
+        key: value
+        for key, value in ground_truth.items()
+        if key not in skip and value not in (None, "")
+    }
+
+
 def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool | None = None) -> None:
     """Emit the single `pipeline-result` generation observation per document.
 
@@ -2271,6 +2294,9 @@ def _execute_run(
         trace_metadata["source"] = source
     if run_id:
         trace_metadata["run_id"] = run_id
+    public_gt = _public_ground_truth(ground_truth)
+    for key, value in public_gt.items():
+        trace_metadata[key] = value
 
     # Native LangGraph RunnableConfig: thread-scoped attempt (a re-run of the
     # same document must not resume the previous run's checkpointed state —
@@ -2384,14 +2410,17 @@ def _execute_run(
         try:
             if root is not None:
                 _emit_pipeline_result(root, result, initial_state, judge_required=judge_required)
-                root.update(output={
+                output = {
                     "stage": result.get("stage"),
                     "doc_type": result.get("doc_type"),
                     "classification_confidence": result.get("classification_confidence"),
                     "extraction_confidence": result.get("extraction_confidence"),
                     "run_aborted": bool(result.get("run_aborted")),
                     "error_message": result.get("error_message"),
-                })
+                }
+                if public_gt:
+                    output["ground_truth"] = public_gt
+                root.update(output=output)
         except Exception:
             logger.exception("pipeline_result_emission_failed", doc_id=result.get("doc_id"))
     # O-2: the flush must run in `finally` — hard failures raised out of the
@@ -2450,6 +2479,13 @@ def run_pipeline(
     # each run gets its own trace instead of merging into one misleading span.
     seed = file_path.stem if attempt <= 0 else f"{file_path.stem}-run{attempt}"
 
+    trace_input = {"filename": file_path.name, "matter_id": matter_id, "attempt": attempt}
+    public_gt = _public_ground_truth(ground_truth)
+    if public_gt:
+        # The-Mailroom / eval_pipeline.py prefer input.ground_truth (and the
+        # matching metadata keys) over the pipeline-result generation.
+        trace_input["ground_truth"] = public_gt
+
     return _execute_run(
         initial_state,
         seed=seed,
@@ -2458,7 +2494,7 @@ def run_pipeline(
         ground_truth=ground_truth,
         session_id=session_id,
         run_id=run_id,
-        trace_input={"filename": file_path.name, "matter_id": matter_id, "attempt": attempt},
+        trace_input=trace_input,
     )
 
 
@@ -2482,6 +2518,9 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
     worker_id = get_worker_id()
     queued = requeue_from_review(review_file, worker_id)
     doc_text, text_ok = _read_file_text(queued)
+    from agents.intake import apply_intake
+
+    doc_text, _intake_stats = apply_intake(doc_text, filename=queued.name)
     doc_pages = _render_doc_pages(queued)
 
     initial_state: DocumentState = {

@@ -17,7 +17,7 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 
 | Node | What it does |
 |---|---|
-| `ingest` | Reads the file, creates the manifest, moves file to `processing/` |
+| `ingest` | Reads the file, deterministic `normalize-intake`, creates the manifest, moves file to `processing/` |
 | `classify` | Sorter LLM decides `doc_type` + confidence |
 | `retry_classify` | Re-classify with a "re-evaluate" prompt when confidence was low |
 | `extract` | Routes to the right specialist LLM, stores `extracted_data` |
@@ -35,6 +35,7 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 - `routing.py` — pure functions returning the name of the next node: `after_classify`, `after_retry_classify`, `after_extraction`, `after_retry_extraction`, `after_boss`, `after_human_review`, plus Lane A/B routers (`after_review_classify`, `after_judge`, `after_arbiter`). Transient provider errors self-loop on the SAME node (per-node `transient_retries_<node>` budget); they never bounce retry nodes back to first-pass `classify`/`extract`. Thresholds come from `config/taxonomy.yaml` → `get_confidence_thresholds()`, never hardcoded.
 - `build_graph.py` also handles:
   - Text extraction for images/PDFs (`_read_file_text` → `agents/image_extractor.py`, `agents/pdf_transcriber.py`).
+  - Deterministic intake normalize (`agents/intake.py`) after transcription; nested span `normalize-intake` (The-Mailroom maps it to INGEST).
   - Specialist dispatch via `_build_specialist_dispatch()` — **config-driven**: it walks `doc_classes` in `config/taxonomy.yaml` and maps each `specialist:` name to its extraction function (5 live specialists: contracts, corporate records, correspondence, compliance, insurance claims). Graph construction asserts dispatch keys equal taxonomy keys; a missing arm fails fast instead of silently stub-extracting. `unknown` is a sorter routing token, not a dispatch key. Adding an agent means adding a taxonomy entry + dispatch case.
   - The **checkpointer** (`_build_checkpointer`): SQLite-backed (`data/checkpoints.db`, via `langgraph.checkpoint.sqlite.SqliteSaver`) for crash-resume, with a `MemorySaver` fallback if anything fails.
   - `run_pipeline(file_path, matter_id)` — convenience entrypoint that builds the graph and runs one document.
