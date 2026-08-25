@@ -66,6 +66,11 @@ def test_variants_are_pure_appends_of_production_templates():
         assert "DOCCLASS ARM CONTEXT" in addition, key
         for cls in ("insurance_claim", "merger_agreement"):
             assert cls in addition, f"{cls} missing from {key}"
+    contracts = _reg()["contracts_specialist_docclass_v0"]
+    assert "CUAD families" in contracts
+    assert "MAUD mergers" in contracts
+    sorter = _reg()["sorter_docclass_v0"]
+    assert "contract_subtype is null" in sorter
 
 
 def test_runtime_arm_rewrites_langchain_and_managed_lookups(monkeypatch):

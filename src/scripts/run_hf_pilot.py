@@ -17,6 +17,8 @@ Usage:
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --mock --per-class 1
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 1
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 5 --docclass --max-scan 4000
+    PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 10 --docclass --max-scan 4000
+    PYTHONPATH=src python src/scripts/run_quality_judges.py --real --hf-latest 5
 """
 
 from __future__ import annotations
@@ -191,6 +193,298 @@ def _inbox_filename(name: str) -> str:
     return stem[:170] + ".txt"
 
 
+def _unique_name(desired: str, used: set[str]) -> str:
+    """Keep inbox / matter ids unique within a run (scale hardening)."""
+    if desired not in used:
+        used.add(desired)
+        return desired
+    stem, suffix = Path(desired).stem, Path(desired).suffix
+    n = 2
+    while True:
+        cand = f"{stem}__{n}{suffix}"
+        if cand not in used:
+            used.add(cand)
+            return cand
+        n += 1
+
+
+def _alnum(value) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _loose_label_match(predicted, expected) -> bool:
+    a, b = _alnum(predicted), _alnum(expected)
+    if not a or not b:
+        return False
+    return a == b or a.startswith(b) or b.startswith(a) or b in a or a in b
+
+
+def normalize_consideration(value) -> str:
+    """Map MAUD merger-consideration labels to the Hub token set."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    key = _alnum(raw)
+    aliases = {
+        "allcash": "all_cash",
+        "cash": "all_cash",
+        "cashonly": "all_cash",
+        "allstock": "all_stock",
+        "stock": "all_stock",
+        "stockonly": "all_stock",
+        "mixedcashstockelection": "mixed_cash_stock_election",
+        "mixedelection": "mixed_cash_stock_election",
+        "mixedcashstock": "mixed_cash_stock",
+        "mixed": "mixed_cash_stock",
+        "cashandstock": "mixed_cash_stock",
+        "cashstock": "mixed_cash_stock",
+        "other": "other",
+    }
+    if key in aliases:
+        return aliases[key]
+    lower = raw.lower()
+    if "election" in lower and "cash" in lower and "stock" in lower:
+        return "mixed_cash_stock_election"
+    if "cash" in lower and "stock" in lower:
+        return "mixed_cash_stock"
+    if "all cash" in lower or "cash consideration" in lower or "per share in cash" in lower:
+        return "all_cash"
+    if "all stock" in lower or "stock consideration" in lower:
+        return "all_stock"
+    return ""
+
+
+def infer_merger_consideration(extracted: dict | None) -> str:
+    data = extracted or {}
+    for key in ("contract_value", "merger_consideration", "document_name"):
+        token = normalize_consideration(data.get(key) or "")
+        if token:
+            return token
+    blobs = data.get("key_obligations") or []
+    if isinstance(blobs, list):
+        joined = " ".join(str(x) for x in blobs)
+        return normalize_consideration(joined)
+    return ""
+
+
+def subclass_ok(expected_class: str, expected_subclass: str, *, predicted_subtype: str = "", extracted: dict | None = None) -> bool | None:
+    """Score Hub ``expected_subclass`` against sorter subtype / extraction.
+
+    Returns None when there is no subclass ground truth to score.
+    """
+    want = str(expected_subclass or "").strip()
+    if not want:
+        return None
+    extracted = extracted or {}
+    hf_class = str(expected_class or "")
+    if hf_class == "contract":
+        from langchain_agents.sorter_agent import equivalent_subtypes, normalize_subtype
+
+        got = normalize_subtype(predicted_subtype or extracted.get("contract_subtype"))
+        need = normalize_subtype(want)
+        return equivalent_subtypes(got, need)
+    if hf_class == "merger_agreement":
+        got = infer_merger_consideration(extracted) or normalize_consideration(predicted_subtype)
+        need = normalize_consideration(want)
+        if not got or not need:
+            return False
+        return got == need
+    if hf_class == "corporate_record":
+        return _loose_label_match(extracted.get("record_type") or predicted_subtype, want)
+    if hf_class == "insurance_claim":
+        return _loose_label_match(extracted.get("claim_type") or predicted_subtype, want)
+    if hf_class == "correspondence":
+        return _loose_label_match(extracted.get("communication_type") or predicted_subtype, want)
+    return _loose_label_match(predicted_subtype, want)
+
+
+def _public_extracted(data) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        key: value
+        for key, value in data.items()
+        if not str(key).startswith("_") and key != "reasoning"
+    }
+
+
+def _usage_tokens(usage: list) -> int:
+    total = 0
+    for item in usage or []:
+        if not isinstance(item, dict):
+            continue
+        total += int(item.get("prompt_tokens") or 0) + int(item.get("completion_tokens") or 0)
+    return total
+
+
+def summarize_rows(rows: list[dict]) -> dict:
+    """Exact / aligned / subclass accuracy plus cost and stage mix."""
+    from collections import Counter
+
+    n = len(rows)
+    exact_n = sum(1 for r in rows if r.get("exact_ok"))
+    aligned_n = sum(1 for r in rows if r.get("aligned_ok"))
+    subclass_scored = [r for r in rows if r.get("subclass_ok") is not None]
+    subclass_n = sum(1 for r in subclass_scored if r.get("subclass_ok"))
+    costs = [float(r["llm_cost_usd"]) for r in rows if isinstance(r.get("llm_cost_usd"), (int, float))]
+    tokens = [int(r["llm_tokens"]) for r in rows if isinstance(r.get("llm_tokens"), (int, float))]
+    calls = [int(r["llm_calls"]) for r in rows if isinstance(r.get("llm_calls"), (int, float))]
+    walls = [float(r["wall_time_s"]) for r in rows if isinstance(r.get("wall_time_s"), (int, float))]
+    per_class: dict[str, dict] = {}
+    for row in rows:
+        cls = row.get("expected") or "unknown"
+        bucket = per_class.setdefault(cls, {
+            "n": 0, "exact": 0, "aligned": 0, "subclass": 0, "subclass_n": 0,
+            "cost_usd": 0.0, "tokens": 0, "stages": Counter(),
+        })
+        bucket["n"] += 1
+        bucket["exact"] += int(bool(row.get("exact_ok")))
+        bucket["aligned"] += int(bool(row.get("aligned_ok")))
+        if row.get("subclass_ok") is not None:
+            bucket["subclass_n"] += 1
+            bucket["subclass"] += int(bool(row.get("subclass_ok")))
+        bucket["cost_usd"] += float(row.get("llm_cost_usd") or 0)
+        bucket["tokens"] += int(row.get("llm_tokens") or 0)
+        bucket["stages"][row.get("stage") or "unknown"] += 1
+    return {
+        "n": n,
+        "exact_n": exact_n,
+        "aligned_n": aligned_n,
+        "exact_accuracy": round(exact_n / n, 3) if n else 0.0,
+        "aligned_accuracy": round(aligned_n / n, 3) if n else 0.0,
+        "subclass_n": len(subclass_scored),
+        "subclass_correct": subclass_n,
+        "subclass_accuracy": round(subclass_n / len(subclass_scored), 3) if subclass_scored else None,
+        "total_cost_usd": round(sum(costs), 6),
+        "avg_cost_usd": round(sum(costs) / len(costs), 6) if costs else 0.0,
+        "total_tokens": int(sum(tokens)),
+        "total_llm_calls": int(sum(calls)),
+        "avg_wall_time_s": round(sum(walls) / len(walls), 3) if walls else 0.0,
+        "stages": dict(Counter(r.get("stage") or "unknown" for r in rows)),
+        "per_class": {
+            cls: {
+                "n": v["n"],
+                "exact": v["exact"],
+                "aligned": v["aligned"],
+                "exact_accuracy": round(v["exact"] / v["n"], 3) if v["n"] else 0.0,
+                "aligned_accuracy": round(v["aligned"] / v["n"], 3) if v["n"] else 0.0,
+                "subclass_accuracy": (
+                    round(v["subclass"] / v["subclass_n"], 3) if v["subclass_n"] else None
+                ),
+                "cost_usd": round(v["cost_usd"], 6),
+                "tokens": v["tokens"],
+                "stages": dict(v["stages"]),
+            }
+            for cls, v in sorted(per_class.items())
+        },
+    }
+
+
+def find_sample_text(sample: dict, report_dir: Path | None = None) -> str:
+    """Recover source text for an HF pilot row (archive / review / failed)."""
+    for key in ("archive_path", "file_path", "source_path"):
+        raw = sample.get(key)
+        if raw:
+            path = Path(str(raw))
+            if path.is_file():
+                try:
+                    return path.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    pass
+    name = sample.get("local_filename") or sample.get("filename") or ""
+    name = Path(str(name)).name
+    if not name:
+        return str(sample.get("doc_text") or sample.get("text") or "")
+    roots: list[Path] = []
+    base = Path(os.environ.get("MAILROOM_BASE_DIR", "./data"))
+    roots.extend([base / "archive", base / "review", base / "failed"])
+    if report_dir is not None:
+        roots.append(Path(report_dir))
+    for root in roots:
+        if not root.exists():
+            continue
+        matches = list(root.rglob(name))
+        if matches:
+            try:
+                return matches[0].read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+    return str(sample.get("doc_text") or sample.get("text") or "")
+
+
+def latest_hf_reports(n: int = 5, root: Path | None = None) -> list[Path]:
+    base = root or _report_root()
+    if not base.exists():
+        return []
+    dirs = sorted(
+        (p for p in base.iterdir() if p.is_dir() and (p / "report.json").is_file()),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    return [d / "report.json" for d in dirs[: max(0, n)]]
+
+
+def hf_samples_from_report(report: dict, report_path: Path | None = None) -> list[dict]:
+    """Turn an HF ``report.json`` into judge-ready sample dicts."""
+    report_dir = report_path.parent if report_path else None
+    samples = []
+    for row in report.get("samples") or []:
+        filename = row.get("local_filename") or row.get("filename") or "doc.txt"
+        catalog = _catalog_by_trace(row.get("trace_id") or "")
+        extracted = row.get("extracted_data") or catalog.get("extracted_data") or {}
+        text = find_sample_text(row, report_dir)
+        if not text and catalog.get("original_filename"):
+            text = find_sample_text({**row, "filename": catalog["original_filename"]}, report_dir)
+        samples.append({
+            "id": filename,
+            "filename": filename,
+            "doc_type": row.get("predicted") or row.get("expected_doc_class") or "",
+            "extracted_data": _public_extracted(extracted),
+            "trace_id": row.get("trace_id"),
+            "doc_text": text,
+            "expected": row.get("expected"),
+            "expected_subclass": row.get("expected_subclass") or "",
+            "subdir": "",
+        })
+    return samples
+
+
+def _catalog_by_trace(trace_id: str) -> dict:
+    """Best-effort SQLite lookup so older HF reports without extracted_data still judge."""
+    if not trace_id:
+        return {}
+    db = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "mailroom.db"
+    if not db.exists():
+        return {}
+    try:
+        import sqlite3
+
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            row = con.execute(
+                "SELECT extracted_data, contract_subtype, original_filename "
+                "FROM documents WHERE trace_id = ?",
+                (trace_id,),
+            ).fetchone()
+        finally:
+            con.close()
+    except Exception:
+        return {}
+    if not row:
+        return {}
+    data = row[0]
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            data = {}
+    return {
+        "extracted_data": data or {},
+        "contract_subtype": row[1] or "",
+        "original_filename": row[2] or "",
+    }
+
+
 def _mock_samples(per_class: int) -> list[dict]:
     out = []
     for hf_class, (filename, text) in _MOCK_DOCS.items():
@@ -345,8 +639,7 @@ def _truncate_text(text: str, max_chars: int) -> str:
     return text
 
 
-def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, matter_id: str, max_chars: int = 25000) -> dict:
-    import shutil
+def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, matter_id: str, max_chars: int = 25000, local_name: str | None = None) -> dict:
     from unittest.mock import patch
 
     from graph.build_graph import run_pipeline
@@ -355,7 +648,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
 
     inbox = inbox_dir()
     inbox.mkdir(parents=True, exist_ok=True)
-    local_name = _inbox_filename(sample["filename"])
+    local_name = local_name or _inbox_filename(sample["filename"])
     queued = inbox / local_name
     queued.write_text(_truncate_text(sample["text"], max_chars), encoding="utf-8")
 
@@ -399,22 +692,36 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
             )
     wall = time.perf_counter() - started
     predicted = result.get("doc_type")
+    extracted = _public_extracted(result.get("extracted_data"))
+    subtype = result.get("contract_subtype") or ""
+    file_path = result.get("file_path") or ""
+    subclass = subclass_ok(
+        hf_class, sample.get("expected_subclass") or "",
+        predicted_subtype=subtype, extracted=extracted,
+    )
     return {
         "trace_id": result.get("trace_id"),
+        "doc_id": result.get("doc_id"),
+        "matter_id": matter_id,
         "filename": sample["filename"],
         "local_filename": local_name,
+        "file_path": file_path,
         "expected": hf_class,
         "expected_doc_class": expect_type,
         "expected_subclass": sample.get("expected_subclass") or "",
         "predicted": predicted,
+        "predicted_subtype": subtype,
         "stage": result.get("stage"),
         "classification_confidence": result.get("classification_confidence"),
         "extraction_confidence": result.get("extraction_confidence"),
+        "extracted_data": extracted,
         "exact_ok": predicted == hf_class,
         "aligned_ok": pipeline_class(hf_class) == predicted or hf_class == predicted,
+        "subclass_ok": subclass,
         "wall_time_s": round(wall, 3),
         "llm_calls": rp._LLM_METRICS["calls"],
         "llm_cost_usd": round(rp._LLM_METRICS["cost_usd"], 6),
+        "llm_tokens": _usage_tokens(rp._LLM_METRICS["usage"]),
         "error": result.get("error_message"),
     }
 
@@ -434,6 +741,13 @@ def main() -> int:
         "--docclass",
         action="store_true",
         help="Use KANBAN-090 docclass prompt variants (MAILROOM_DOCCLASS_PROMPTS=1).",
+    )
+    parser.add_argument(
+        "--shared-matter",
+        action="store_true",
+        help="Put every document on one matter_id (exercises Boss same-class "
+             "conflicts). Default is a unique matter per document so scaled "
+             "evals do not park later same-class docs in REVIEW.",
     )
     args = parser.parse_args()
 
@@ -468,7 +782,8 @@ def main() -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     session_id = f"pilot-hf-{stamp}"
     run_id = stamp
-    matter_id = f"hf-docclass-merged-{stamp}"
+    run_matter = f"hf-docclass-merged-{stamp}"
+    unique_matters = not args.shared_matter
 
     if mock_mode:
         samples = _mock_samples(max(1, args.per_class))
@@ -495,17 +810,52 @@ def main() -> int:
 
     rows = []
     errors = 0
+    used_names: set[str] = set()
+    used_matters: set[str] = set()
+    out_dir = _report_root() / stamp
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def _flush_report() -> Path:
+        report = {
+            "session_id": session_id,
+            "run_id": run_id,
+            "matter_id": run_matter,
+            "unique_matters": unique_matters,
+            "dataset": DATASET_ID,
+            "split": args.split,
+            "mode": "mock" if mock_mode else "real",
+            "docclass_prompts": docclass_prompts_enabled(),
+            "samples": rows,
+            "n": len(rows),
+            "errors": errors,
+            "metrics": summarize_rows(rows),
+        }
+        path = out_dir / "report.json"
+        tmp = out_dir / "report.json.tmp"
+        tmp.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        tmp.replace(path)
+        return path
+
+    from pipeline.docclass_mode import docclass_prompts_enabled
+
     for sample in samples:
+        local_name = _unique_name(_inbox_filename(sample.get("filename") or "doc.txt"), used_names)
+        if unique_matters:
+            matter_id = _unique_name(f"{run_matter}-{Path(local_name).stem}"[:120], used_matters)
+        else:
+            matter_id = run_matter
         try:
             rows.append(_run_one(
                 sample, mock_mode=mock_mode, session_id=session_id,
                 run_id=run_id, matter_id=matter_id, max_chars=args.max_chars,
+                local_name=local_name,
             ))
         except Exception as exc:
             errors += 1
             rows.append({
                 "filename": sample.get("filename"),
-                "local_filename": _inbox_filename(sample.get("filename") or "doc.txt"),
+                "local_filename": local_name,
+                "matter_id": matter_id,
                 "expected": sample.get("expected_hf_class"),
                 "expected_doc_class": pipeline_class(sample.get("expected_hf_class") or ""),
                 "expected_subclass": sample.get("expected_subclass") or "",
@@ -514,34 +864,24 @@ def main() -> int:
                 "error": str(exc)[:400],
                 "exact_ok": False,
                 "aligned_ok": False,
+                "subclass_ok": False,
+                "llm_cost_usd": 0.0,
+                "llm_tokens": 0,
+                "llm_calls": 0,
             })
+        _flush_report()
 
-    from pipeline.docclass_mode import docclass_prompts_enabled
-
-    report = {
-        "session_id": session_id,
-        "run_id": run_id,
-        "matter_id": matter_id,
-        "dataset": DATASET_ID,
-        "split": args.split,
-        "mode": "mock" if mock_mode else "real",
-        "docclass_prompts": docclass_prompts_enabled(),
-        "samples": rows,
-        "n": len(rows),
-        "errors": errors,
-    }
-    out_dir = _report_root() / stamp
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "report.json"
-    path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    path = _flush_report()
+    metrics = summarize_rows(rows)
     print(json.dumps({
         "session_id": session_id,
         "run_id": run_id,
         "report": str(path),
         "n": len(rows),
         "errors": errors,
-        "docclass_prompts": report["docclass_prompts"],
-        "stages": {r.get("stage"): 1 for r in rows},
+        "docclass_prompts": docclass_prompts_enabled(),
+        "unique_matters": unique_matters,
+        "metrics": metrics,
     }))
     return 1 if errors else 0
 
