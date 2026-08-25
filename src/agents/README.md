@@ -5,7 +5,7 @@
 This is the cast of characters. Each file is one **agent**: a specialist LLM "worker" with its own job and its own personality (a system prompt). When a document flows through the pipeline, the graph calls these agents one at a time:
 
 1. **Sorter** decides what kind of document it is (contract, corporate record, …).
-2. A **Specialist** (contracts, corporate records, due diligence, correspondence, or compliance) reads the document and extracts structured facts.
+2. A **Specialist** (contracts, corporate records, correspondence, compliance, or insurance claims) reads the document and extracts structured facts. Unclassifiable / retired types (`unknown`) skip extraction and go to human review.
 3. **Reporter** writes a clean summary of everything that was extracted.
 4. **Boss** steps in when there's a conflict or repeated low confidence and makes the final call.
 

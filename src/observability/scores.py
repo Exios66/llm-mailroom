@@ -300,8 +300,10 @@ def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
 
     model = get_extraction_schema(doc_type)
     if model is None:
-        # No schema registered for this doc type — nothing to validate against.
-        parsed["schema_valid"] = True
+        # No schema registered: this is not a live extractable class
+        # (unknown / retired / hallucinated). Treating it as valid used to
+        # let junk payloads look schema-clean and retry instead of parking.
+        parsed["schema_valid"] = False
         return parsed
     try:
         model.model_validate(extracted_data)
