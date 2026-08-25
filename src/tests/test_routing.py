@@ -69,6 +69,17 @@ class TestRoutingLogic:
         }
         assert after_classify(state) == "human_review"
 
+    def test_after_classify_missing_type_review(self):
+        # Empty type used to skip the unknown-type arm (`if doc_type and …`)
+        # and fall through to extract at high confidence.
+        state = {
+            "classification_confidence": 0.98,
+            "classification_attempts": 1,
+            "doc_type": "",
+        }
+        assert after_classify(state) == "human_review"
+        assert after_classify({**state, "doc_type": None}) == "human_review"
+
     def test_after_extraction_high_confidence_routes_to_report(self):
         state = {
             "extraction_confidence": 0.90,

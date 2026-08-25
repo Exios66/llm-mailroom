@@ -15,7 +15,8 @@ Enforces the four duties promised in ``notebooks/PLAN.md`` (§Guards):
    the marker-gated opt-in cells of notebook 08 excepted).
 
 Network-free by construction: the only network-shaped text lives behind the
-``NB-OPT-IN-NETWORK`` marker in 08 and is skipped unless keys are present.
+``NB-OPT-IN-NETWORK`` marker in 08 (Langfuse) and 11 (Hugging Face Dataset
+Viewer) and is skipped unless keys / ``MAILROOM_HF_LIVE`` are present.
 """
 
 from __future__ import annotations
@@ -45,6 +46,11 @@ PLANNED = {
     "06_outputs_and_audit.ipynb": "Outputs & audit",
     "07_multi_document_matters.ipynb": "Multi-document matters",
     "08_observability_traces.ipynb": "Observability traces",
+    "09_all_specialists.ipynb": "All specialists",
+    "10_edge_cases.ipynb": "Edge cases",
+    "11_huggingface_corpora.ipynb": "Hugging Face corpora",
+    "12_legalbench.ipynb": "LegalBench",
+    "13_vision_ingestion.ipynb": "Vision ingestion",
 }
 
 HONESTY_MARKERS = ("Honesty label", "honest", "OFFLINE")
@@ -155,7 +161,7 @@ def test_notebooks_make_no_exec_time_network_calls(fname: str) -> None:
             continue
         src = "".join(c["source"])
         if src in allowed_tail:
-            continue  # marker-gated opt-in cell (notebook 08)
+            continue  # marker-gated opt-in cell (notebooks 08, 11)
         tree = ast.parse(src, mode="exec")
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -169,16 +175,17 @@ def test_notebooks_make_no_exec_time_network_calls(fname: str) -> None:
 
 
 def test_lab_module_has_no_module_scope_network_imports() -> None:
-    tree = ast.parse((NB_DIR / "pipeline_lab.py").read_text())
-    for node in tree.body:
-        names: list[str] = []
-        if isinstance(node, ast.Import):
-            names = [a.name for a in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            names = [node.module]
-        roots = {n.split(".")[0] for n in names}
-        leaks = NETWORK_MODULES & roots
-        assert not leaks, f"pipeline_lab imports network modules at scope: {leaks}"
+    for module in ("pipeline_lab.py", "huggingface_lab.py", "legalbench_lab.py"):
+        tree = ast.parse((NB_DIR / module).read_text())
+        for node in tree.body:
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            roots = {n.split(".")[0] for n in names}
+            leaks = NETWORK_MODULES & roots
+            assert not leaks, f"{module} imports network modules at scope: {leaks}"
 
 
 # ---------------------------------------------------------------------------

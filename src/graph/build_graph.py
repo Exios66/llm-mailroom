@@ -855,7 +855,15 @@ def _detect_conflict(state: dict, extracted_data: dict | None) -> tuple[bool, li
         pass
 
     details: list[str] = []
+    current_type = state.get("doc_type") or ""
     for record in _fetch_matter_context(state):
+        # Same-class only: shared field names across schemas (e.g. both
+        # contract and corporate_record have `effective_date`) are not
+        # contradictions — they are different documents. The Boss exists to
+        # catch two *contracts* in one matter claiming different governing
+        # laws / parties, not a bylaws filing vs an MSA.
+        if current_type and record.get("doc_type") and record.get("doc_type") != current_type:
+            continue
         prior = record.get("extracted_data") or {}
         if not prior:
             continue

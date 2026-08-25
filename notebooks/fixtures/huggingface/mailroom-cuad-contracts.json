@@ -1,0 +1,50 @@
+{
+  "dataset": "Lucius-Morningstar/mailroom-cuad-contracts",
+  "rows": [
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    },
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    },
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    },
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    },
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    },
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    },
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    },
+    {
+      "image": {
+        "src": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts/resolve/efdd23644bd70305f44a524953bd60cdeba0a11f/images/ARMSTRONGFLOORING_INC_01_07_2019-EX-10.2-INTELLEC\u2026"
+      }
+    }
+  ],
+  "features": [
+    "image"
+  ],
+  "config": "default",
+  "split": "train"
+}

@@ -1109,3 +1109,298 @@ def show_artifacts(base_dir: Path) -> None:  # noqa: ANN201 - print helper
     else:
         print("catalog: (no db)")
     print("audit chain entries:", len(arts["audit_chain"]))
+
+
+# ---------------------------------------------------------------------------
+# All-class packs (09) + edge-case fuel (10) + vision demo (13)
+# ---------------------------------------------------------------------------
+
+DOC_CORPORATE_RECORD = """BYLAWS OF REVENUE.COM CORPORATION
+
+ARTICLE I. OFFICES. The principal office of the Corporation shall be in
+Delaware. ARTICLE II. SHAREHOLDERS. Annual meetings of the shareholders
+shall be held on the first Tuesday of June. These bylaws were adopted by
+unanimous written consent of the Board of Directors on 2015-02-12.
+Signed: A. Chen, Secretary. Filing number DE-2015-44190.
+"""
+
+DOC_DUE_DILIGENCE = """CONFIDENTIAL — DUE DILIGENCE MEMORANDUM
+
+Prepared by Northstar Diligence LLP, 2024-04-18.
+Target: Beta LLC (acquisition of the legal-ops unit).
+Type: legal / commercial.
+
+Material findings: customer concentration (top 3 = 61% of revenue);
+open wage-and-hour demand letter dated 2024-03-03.
+Risk flags: missing SOC 2 Type II; unsigned IP assignment for two
+engineers. Outstanding items: bring-down certificate; updated cap table.
+"""
+
+DOC_COMPLIANCE = """UNITED STATES SECURITIES AND EXCHANGE COMMISSION
+FORM 8-K — CURRENT REPORT
+
+Filer: Acme Corp  CIK 0001234567  Filed: 2024-05-02  Due: 2024-05-02
+Item 1.01 Entry into a Material Definitive Agreement.
+The Company entered into a Master Services Agreement with Beta LLC.
+Status: filed. Reference: 8-K-2024-0502.
+"""
+
+DOC_INSURANCE_CLAIM = """FIRST NOTICE OF LOSS — COMMERCIAL PROPERTY
+
+Claim number: CLM-2024-00881
+Policy: CPP-44190  Insurer: Harbor Mutual
+Insured: Beta LLC  Date of loss: 2024-02-11  Date filed: 2024-02-12
+Claim type: property  Claimed amount: $0.00 (deductible-only, no indemnity)
+Adjuster: M. Solis
+Damages: Sprinkler leak in the records room; no structural damage.
+Coverage determination: pending. Supporting documents: photos.zip, FNOL.pdf.
+"""
+
+CLASSIFY_CORPORATE_HIGH = {
+    "doc_type": "corporate_record",
+    "contract_subtype": None,
+    "confidence": 0.97,
+    "reasoning": "Bylaws caption, shareholder-meeting article, Delaware office",
+}
+CLASSIFY_DUE_DILIGENCE_HIGH = {
+    "doc_type": "due_diligence",
+    "contract_subtype": None,
+    "confidence": 0.96,
+    "reasoning": "Confidential diligence memo with findings and outstanding items",
+}
+CLASSIFY_COMPLIANCE_HIGH = {
+    "doc_type": "compliance_filing",
+    "contract_subtype": None,
+    "confidence": 0.97,
+    "reasoning": "SEC Form 8-K header, CIK, Item 1.01",
+}
+CLASSIFY_INSURANCE_HIGH = {
+    "doc_type": "insurance_claim",
+    "contract_subtype": None,
+    "confidence": 0.97,
+    "reasoning": "FNOL form, claim/policy numbers, insurer, date of loss",
+}
+CLASSIFY_UNKNOWN = {
+    "doc_type": "zzz_unknown",
+    "contract_subtype": None,
+    "confidence": 0.98,
+    "reasoning": "Hallucinated class",
+}
+CLASSIFY_CONTRACT_NO_SUBTYPE = {
+    "doc_type": "contract",
+    "contract_subtype": None,
+    "confidence": 0.98,
+    "reasoning": "Looks like a contract but no CUAD family was emitted",
+}
+
+CORPORATE_RECORD_EXTRACTION = {
+    "entity_name": "Revenue.com Corporation",
+    "record_type": "bylaws",
+    "effective_date": "2015-02-12",
+    "key_provisions": ["annual shareholder meeting first Tuesday of June"],
+    "signatories": ["A. Chen"],
+    "jurisdiction": "Delaware",
+    "filing_number": "DE-2015-44190",
+    "confidence": 0.94,
+}
+DUE_DILIGENCE_EXTRACTION = {
+    "target_entity": "Beta LLC",
+    "diligence_type": "legal",
+    "material_findings": ["customer concentration 61%", "open wage-and-hour demand"],
+    "risk_flags": ["missing SOC 2 Type II", "unsigned IP assignments"],
+    "outstanding_items": ["bring-down certificate", "updated cap table"],
+    "document_date": "2024-04-18",
+    "prepared_by": "Northstar Diligence LLP",
+    "confidence": 0.93,
+}
+COMPLIANCE_EXTRACTION = {
+    "filing_type": "8-K",
+    "regulatory_body": "SEC",
+    "filing_date": "2024-05-02",
+    "due_date": "2024-05-02",
+    "entity_name": "Acme Corp",
+    "key_requirements": ["Item 1.01 material definitive agreement"],
+    "status": "filed",
+    "reference_number": "8-K-2024-0502",
+    "confidence": 0.95,
+}
+INSURANCE_CLAIM_EXTRACTION = {
+    "claim_number": "CLM-2024-00881",
+    "policy_number": "CPP-44190",
+    "insurer": "Harbor Mutual",
+    "insured_party": "Beta LLC",
+    "claim_type": "property",
+    "date_of_loss": "2024-02-11",
+    "date_filed": "2024-02-12",
+    "claimed_amount": 0.0,
+    "adjuster": "M. Solis",
+    "damages_description": "Sprinkler leak in the records room",
+    "coverage_determination": "pending",
+    "denial_reasons": [],
+    "supporting_documents": ["photos.zip", "FNOL.pdf"],
+    "confidence": 0.94,
+}
+EXTRACT_SCHEMA_INVALID = {
+    "parties": 123,  # must be a list — pydantic rejects this
+    "governing_law": "Delaware",
+    "confidence": 0.96,
+}
+EXTRACT_ZERO_DEMAND = {
+    **CORRESPONDENCE_EXTRACTION,
+    "demand_amount": 0.0,
+    "confidence": 0.94,
+}
+
+# Marker → canned extraction for the LEGACY BaseAgent specialists
+# (user message: "Extract structured data from this <marker>:").
+LEGACY_SPECIALIST_CANNED = {
+    "court opinion": COURT_OPINION_EXTRACTION,
+    "correspondence": CORRESPONDENCE_EXTRACTION,
+    "compliance filing": COMPLIANCE_EXTRACTION,
+    "corporate record": CORPORATE_RECORD_EXTRACTION,
+    "due diligence document": DUE_DILIGENCE_EXTRACTION,
+    "insurance claim documentation": INSURANCE_CLAIM_EXTRACTION,
+}
+
+CLASS_PACKS: dict[str, dict[str, Any]] = {
+    "contract": {
+        "text": DOC_CONTRACT,
+        "filename": "contract.txt",
+        "classification": CLASSIFY_CONTRACT_HIGH,
+        "extraction": EXTRACT_HIGH,
+        "specialist": "contracts_specialist",
+        "path": "langchain",
+    },
+    "corporate_record": {
+        "text": DOC_CORPORATE_RECORD,
+        "filename": "bylaws.txt",
+        "classification": CLASSIFY_CORPORATE_HIGH,
+        "extraction": CORPORATE_RECORD_EXTRACTION,
+        "specialist": "corporate_records_specialist",
+        "path": "legacy",
+        "marker": "corporate record",
+    },
+    "due_diligence": {
+        "text": DOC_DUE_DILIGENCE,
+        "filename": "diligence.txt",
+        "classification": CLASSIFY_DUE_DILIGENCE_HIGH,
+        "extraction": DUE_DILIGENCE_EXTRACTION,
+        "specialist": "due_diligence_specialist",
+        "path": "legacy",
+        "marker": "due diligence document",
+    },
+    "correspondence": {
+        "text": DOC_CORRESPONDENCE,
+        "filename": "demand_letter.txt",
+        "classification": CLASSIFY_CORRESPONDENCE_HIGH,
+        "extraction": CORRESPONDENCE_EXTRACTION,
+        "specialist": "correspondence_specialist",
+        "path": "legacy",
+        "marker": "correspondence",
+    },
+    "compliance_filing": {
+        "text": DOC_COMPLIANCE,
+        "filename": "form_8k.txt",
+        "classification": CLASSIFY_COMPLIANCE_HIGH,
+        "extraction": COMPLIANCE_EXTRACTION,
+        "specialist": "compliance_specialist",
+        "path": "legacy",
+        "marker": "compliance filing",
+    },
+    "court_opinion": {
+        "text": DOC_COURT_OPINION,
+        "filename": "opinion.txt",
+        "classification": CLASSIFY_COURT_HIGH,
+        "extraction": COURT_OPINION_EXTRACTION,
+        "specialist": "court_opinions_specialist",
+        "path": "legacy",
+        "marker": "court opinion",
+    },
+    "insurance_claim": {
+        "text": DOC_INSURANCE_CLAIM,
+        "filename": "fnol.txt",
+        "classification": CLASSIFY_INSURANCE_HIGH,
+        "extraction": INSURANCE_CLAIM_EXTRACTION,
+        "specialist": "insurance_claims_specialist",
+        "path": "legacy",
+        "marker": "insurance claim documentation",
+    },
+}
+
+
+def script_all_specialists(client: MagicMock, extra: dict[str, dict] | None = None) -> MagicMock:
+    """Script every legacy specialist marker plus the default judge/arbiter/boss
+    happy-path canned responses. Contracts still flow through FakeLangChainLLM
+    (LangChain path); this covers the other six classes."""
+    canned = dict(LEGACY_SPECIALIST_CANNED)
+    if extra:
+        canned.update(extra)
+    return script_client(
+        client,
+        judge=JUDGE_COMPLETE,
+        arbiter=ARBITER_ACCEPT,
+        boss=BOSS_APPROVE,
+        reviewer=REVIEWER_AGREE,
+        specialist=canned,
+    )
+
+
+def run_all_classes(lab: dict[str, Any], *, matter_id: str = "LAB-ALL-CLASSES") -> list[dict[str, Any]]:
+    """One happy-path document per taxonomy class. Returns a per-class row
+    (class, specialist, path nodes, stage, extracted keys).
+
+    Each class uses its own ``matter_id`` suffix so a mixed-class matter
+    cannot collide on shared schema field names (``effective_date`` lives on
+    both contract and corporate_record). Notebook 07 still demonstrates a
+    real mixed matter; notebook 10 demonstrates same-class conflict.
+    """
+    script_all_specialists(lab["client"])
+    rows = []
+    for key, pack in CLASS_PACKS.items():
+        result = run_document(
+            lab,
+            pack["text"],
+            matter_id=f"{matter_id}-{key}",
+            filename=pack["filename"],
+            classification=pack["classification"],
+            extraction=pack["extraction"],
+        )
+        final = result["final"]
+        rows.append(
+            {
+                "doc_class": key,
+                "specialist": pack["specialist"],
+                "path": path_of(result["steps"]),
+                "stage": final.get("stage"),
+                "doc_type": final.get("doc_type"),
+                "extracted_keys": sorted(
+                    k for k in (final.get("extracted_data") or {}) if not str(k).startswith("_")
+                ),
+            }
+        )
+    return rows
+
+
+def write_lab_pdf(base_dir: Path, text: str, filename: str = "lab_scan.pdf") -> Path:
+    """Tiny one-page PDF in the sandbox inbox — vision ingestion fuel.
+
+    Uses reportlab (already a pipeline dep). The page is real pixels so
+    ``llm.vision.render_pdf_pages`` has something to rasterize.
+    """
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    inbox = base_dir / "pipeline" / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    path = inbox / filename
+    c = canvas.Canvas(str(path), pagesize=letter)
+    y = 740
+    for line in text.splitlines() or ["(empty)"]:
+        c.drawString(72, y, line[:90])
+        y -= 16
+        if y < 72:
+            c.showPage()
+            y = 740
+    c.save()
+    return path
+
