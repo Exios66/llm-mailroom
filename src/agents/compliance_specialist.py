@@ -1,5 +1,6 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from langchain_agents.doc_inventories import FILING_TYPE_DESCRIPTION
 from llm.prompt_doctrine import COMPLIANCE as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
@@ -45,7 +46,7 @@ class ComplianceSpecialist(BaseAgent):
     ) -> dict:
         schema = build_structured_schema(
             {
-                "filing_type": {"type": "string", "description": "Type of regulatory filing"},
+                "filing_type": {"type": "string", "description": FILING_TYPE_DESCRIPTION},
                 "regulatory_body": {
                     "type": "string",
                     "description": "Agency or authority: SEC, state, IRS, etc.",

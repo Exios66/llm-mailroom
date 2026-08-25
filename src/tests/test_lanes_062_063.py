@@ -445,3 +445,17 @@ class TestNodeBehavior:
         assert "Type of Consideration" in merger
         assert "extract_class=contract" in merger
 
+    def test_handoff_context_lists_every_specialist_inventory(self):
+        from graph.build_graph import _build_handoff_context
+
+        corp = _build_handoff_context({"doc_type": "corporate_record"})
+        assert "articles_of_incorporation" in corp
+        assert "rights_instrument" in corp
+        mail = _build_handoff_context({"doc_type": "correspondence"})
+        assert "meeting_request" in mail
+        claim = _build_handoff_context({"doc_type": "insurance_claim"})
+        assert "pde" in claim
+        assert "inpatient" in claim
+        filing = _build_handoff_context({"doc_type": "compliance_filing"})
+        assert "10-K" in filing
+

@@ -1,5 +1,6 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from langchain_agents.doc_inventories import RECORD_TYPE_DESCRIPTION
 from llm.prompt_doctrine import CORPORATE_RECORDS as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
@@ -48,7 +49,7 @@ class CorporateRecordsSpecialist(BaseAgent):
                 "entity_name": {"type": "string", "description": "Legal entity name"},
                 "record_type": {
                     "type": "string",
-                    "description": "Type of record: bylaws, resolution, minutes, formation, etc.",
+                    "description": RECORD_TYPE_DESCRIPTION,
                 },
                 "effective_date": {
                     "type": ["string", "null"],

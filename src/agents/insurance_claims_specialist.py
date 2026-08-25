@@ -1,5 +1,6 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from langchain_agents.doc_inventories import CLAIM_TYPE_DESCRIPTION
 from llm.prompt_doctrine import INSURANCE_CLAIMS as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
@@ -59,7 +60,7 @@ class InsuranceClaimsSpecialist(BaseAgent):
                 "policy_number": {"type": ["string", "null"], "description": "Policy number exactly as printed"},
                 "insurer": {"type": "string", "description": "Named insurance company / carrier"},
                 "insured_party": {"type": "string", "description": "Named insured or claimant"},
-                "claim_type": {"type": "string", "description": "Line of business: auto, property, liability, health, life, workers_comp, other"},
+                "claim_type": {"type": "string", "description": CLAIM_TYPE_DESCRIPTION},
                 "date_of_loss": {"type": ["string", "null"], "description": "Date the loss/event occurred, if stated"},
                 "date_filed": {"type": ["string", "null"], "description": "Date the claim was filed, if stated"},
                 "claimed_amount": {"type": ["number", "null"], "description": "Amount claimed/demanded in USD, if stated"},
