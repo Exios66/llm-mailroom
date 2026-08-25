@@ -74,7 +74,7 @@ def _make_mock_client(content: str) -> MagicMock:
 @pytest.fixture
 def mock_openai_client(mocker):
     mock_client = _make_mock_client(
-        '{"doc_type": "contract", "confidence": 0.95, "reasoning": "Contract found"}'
+        '{"doc_type": "contract", "contract_subtype": "other", "confidence": 0.95, "reasoning": "Contract found"}'
     )
     mocker.patch("llm.client.OpenAI", return_value=mock_client)
     mocker.patch("agents.base.BaseAgent.__init__", lambda self, mock=mock_client: setattr(self, "client", mock_client) or setattr(self, "model", "test-model"))

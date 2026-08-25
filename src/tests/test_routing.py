@@ -3,6 +3,10 @@ from graph.routing import (
     after_extraction,
     after_boss,
     after_human_review,
+    after_retry_classify,
+    after_retry_extraction,
+    after_arbiter,
+    after_judge,
 )
 
 
@@ -153,6 +157,40 @@ class TestRoutingLogic:
     def test_after_boss_review_routes_to_human(self):
         state = {"review_decision": "review"}
         assert after_boss(state) == "human_review"
+
+    def test_after_boss_transient_retries_not_leftover_approved(self):
+        # Review-resume sets review_decision="approved". A Boss blip must NOT
+        # treat that leftover flag as a successful adjudication.
+        state = {
+            "review_decision": "approved",
+            "transient_error": True,
+            "transient_retries_boss_escalation": 1,
+        }
+        assert after_boss(state) == "boss_escalation"
+        exhausted = {**state, "transient_retries_boss_escalation": 3}
+        assert after_boss(exhausted) == "human_review"
+
+    def test_after_retry_classify_transient_self_loops(self):
+        looping = {"transient_error": True, "transient_retries_retry_classify": 1}
+        assert after_retry_classify(looping) == "retry_classify"
+        exhausted = {"transient_error": True, "transient_retries_retry_classify": 3}
+        assert after_retry_classify(exhausted) == "human_review"
+
+    def test_after_retry_extraction_transient_self_loops(self):
+        looping = {"transient_error": True, "transient_retries_retry_extract": 1}
+        assert after_retry_extraction(looping) == "retry_extract"
+        exhausted = {"transient_error": True, "transient_retries_retry_extract": 3}
+        assert after_retry_extraction(exhausted) == "human_review"
+
+    def test_after_arbiter_transient_self_loops(self):
+        looping = {"transient_error": True, "transient_retries_arbiter": 1}
+        assert after_arbiter(looping) == "arbiter"
+        exhausted = {"transient_error": True, "transient_retries_arbiter": 3}
+        assert after_arbiter(exhausted) == "human_review"
+
+    def test_after_retry_classify_unknown_type_before_lane_a(self):
+        state = {"classification_confidence": 0.80, "doc_type": "zzz_unknown"}
+        assert after_retry_classify(state) == "human_review"
 
     def test_after_human_review_approved(self):
         state = {"review_decision": "approved"}

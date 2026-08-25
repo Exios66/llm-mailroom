@@ -32,7 +32,7 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 
 - **Node contract:** `def node(state: DocumentState) -> dict[str, Any]` — returns only the fields it changed; LangGraph merges them into state.
 - `state.py` — `DocumentState`, a `TypedDict` with all pipeline fields (`doc_type`, `classification_confidence`, `extracted_data`, `stage`, …).
-- `routing.py` — pure functions returning the name of the next node: `after_classify`, `after_retry_classify`, `after_extraction`, `after_retry_extraction`, `after_boss`, `after_human_review`. Thresholds come from `config/taxonomy.yaml` → `get_confidence_thresholds()`, never hardcoded.
+- `routing.py` — pure functions returning the name of the next node: `after_classify`, `after_retry_classify`, `after_extraction`, `after_retry_extraction`, `after_boss`, `after_human_review`, plus Lane A/B routers (`after_review_classify`, `after_judge`, `after_arbiter`). Transient provider errors self-loop on the SAME node (per-node `transient_retries_<node>` budget); they never bounce retry nodes back to first-pass `classify`/`extract`. Thresholds come from `config/taxonomy.yaml` → `get_confidence_thresholds()`, never hardcoded.
 - `build_graph.py` also handles:
   - Text extraction for images/PDFs (`_read_file_text` → `agents/image_extractor.py`, `agents/pdf_transcriber.py`).
   - Specialist dispatch via `_build_specialist_dispatch()` — **config-driven**: it walks `doc_classes` in `config/taxonomy.yaml` and maps each `specialist:` name to its extraction function (6 specialists: contracts, corporate records, due diligence, correspondence, compliance, court opinions). Adding an agent means adding a taxonomy entry + dispatch case.
