@@ -67,9 +67,9 @@ class SorterReviewerAgent(BaseAgent):
         Returns ``{doc_type, contract_subtype, confidence, reasoning}``. The
         caller compares against the sorter's answer and decides.
         """
-        from pipeline.config import get_all_doc_types
+        from pipeline.config import get_sorter_label_set
 
-        types = valid_doc_types or get_all_doc_types()
+        types = valid_doc_types or sorted(get_sorter_label_set())
         subtypes = contract_subtypes or []
         user_message = (
             "CONFIGURED TAXONOMY\n"
@@ -84,7 +84,7 @@ class SorterReviewerAgent(BaseAgent):
         )
         schema = build_structured_schema(
             {
-                "doc_type": {"type": "string"},
+                "doc_type": {"type": "string", "enum": list(types)},
                 "contract_subtype": {
                     "type": ["string", "null"],
                 },

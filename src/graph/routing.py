@@ -1,7 +1,7 @@
 import structlog
 from typing import Any, Literal, Mapping
 
-from pipeline.config import get_confidence_thresholds, get_all_doc_types
+from pipeline.config import get_confidence_thresholds, get_all_doc_types, is_extractable_doc_type
 from observability.scores import validate_extraction
 
 logger = structlog.get_logger(__name__)
@@ -143,12 +143,38 @@ def after_retry_classify(state: dict) -> Literal[
     return "human_review"
 
 
+def _extraction_is_unsupported(state: dict) -> bool:
+    """True when extraction must park for review — never retry.
+
+    Covers (1) a non-taxonomy ``doc_type`` (``unknown``, retired classes,
+    hallucinations) that somehow reached extract, and (2) the missing-
+    specialist stub (``_unsupported`` with no schema fields). A live class
+    whose payload happens to carry an extra ``_unsupported`` key alongside
+    real fields is NOT treated as a stub — pydantic ignores extra keys.
+    """
+    doc_type = state.get("doc_type") or ""
+    if doc_type and not is_extractable_doc_type(doc_type):
+        return True
+    extracted = state.get("extracted_data") or {}
+    if not extracted.get("_unsupported"):
+        return False
+    return all(str(k).startswith("_") or k == "reasoning" for k in extracted)
+
+
 def after_extraction(state: dict) -> Literal[
     "extract", "retry_extract", "compile_report", "human_review", "boss_escalation"
 ]:
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="extract") == "retry":
             return "extract"
+        return "human_review"
+
+    if _extraction_is_unsupported(state):
+        logger.warning(
+            "unsupported_extraction_review",
+            doc_id=state.get("doc_id"),
+            doc_type=state.get("doc_type"),
+        )
         return "human_review"
 
     confidence = state.get("extraction_confidence")

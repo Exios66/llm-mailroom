@@ -24,11 +24,27 @@ import requests
 from langchain_agents.openrouter_utils import OPENROUTER_API_URL
 
 
-VALID_CLASSES = [
-    "contract", "corporate_record",
-    "correspondence", "compliance_filing",
-    "insurance_claim",
-]
+def _valid_classes() -> list[str]:
+    """Live taxonomy classes plus the ``unknown`` routing token.
+
+    MAILROOM PATCH: ``unknown`` is a sorter/reviewer label, not a specialist.
+    """
+    try:
+        from pipeline.config import get_sorter_label_set
+
+        return sorted(get_sorter_label_set())
+    except Exception:
+        return [
+            "compliance_filing",
+            "contract",
+            "corporate_record",
+            "correspondence",
+            "insurance_claim",
+            "unknown",
+        ]
+
+
+VALID_CLASSES = _valid_classes()
 
 
 def clean_prediction(text: Union[str, None]) -> str:
@@ -37,8 +53,13 @@ def clean_prediction(text: Union[str, None]) -> str:
         return ""
     text = text.strip().lower()
     tagged = re.search(r"<label>\s*([^<\s][^<]*?)\s*</label>", text, flags=re.DOTALL)
-    if tagged and tagged.group(1).strip() in VALID_CLASSES:
-        return tagged.group(1).strip()
+    # MAILROOM PATCH: an explicit <label> is the model's committed answer —
+    # honor it even when it is `unknown` or a retired/hallucinated class so
+    # after_classify can park it. Fuzzy word-boundary matching below still
+    # requires VALID_CLASSES so a random mention of "contract" in reasoning
+    # does not win over an explicit tag.
+    if tagged:
+        return tagged.group(1).strip().lower()
     for line in reversed(text.splitlines()):
         candidate = line.strip().strip("`*_ ").lower()
         if candidate in VALID_CLASSES:

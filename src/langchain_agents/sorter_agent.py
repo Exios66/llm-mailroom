@@ -39,6 +39,48 @@ DOC_CLASSES = [
 
 DOC_CLASS_KEYS = [d["key"] for d in DOC_CLASSES]
 
+
+def _doc_classes_for_prompt() -> list[dict]:
+    """Prefer the live taxonomy catalog; fall back to the hardcoded table."""
+    try:
+        from pipeline.config import get_doc_class_catalog
+
+        catalog = get_doc_class_catalog()
+        if catalog:
+            return catalog
+    except Exception:
+        pass
+    return DOC_CLASSES
+
+
+def _sorter_schema() -> dict:
+    """Structured-output schema: live classes plus the ``unknown`` routing token.
+
+    MAILROOM PATCH: doctrine tells the model to emit ``unknown`` for court
+    opinions / DD memos. Restricting the enum to extractable classes forced
+    those documents onto a specialist.
+    """
+    try:
+        from pipeline.config import get_sorter_label_set
+
+        labels = sorted(get_sorter_label_set())
+    except Exception:
+        labels = list(DOC_CLASS_KEYS) + ["unknown"]
+    return build_structured_schema(
+        {
+            "doc_type": {"type": "string", "enum": labels},
+            "contract_subtype": {
+                "type": ["string", "null"],
+                "enum": CONTRACT_SUBTYPE_KEYS + [SUBTYPE_UNKNOWN],
+                "description": "The contract family/subgroup — REQUIRED when doc_type is "
+                               "contract, null otherwise. See the subtype list in the prompt.",
+            },
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "reasoning": {"type": "string"},
+        },
+        title="ClassificationOutput",
+    )
+
 # The CONTRACT SUBGROUP dimension (CUAD corpus, 25 contract types): the
 # finer-grained family of agreement a contract belongs to. The sorter outputs
 # ``contract_subtype`` alongside ``doc_type`` so the mailroom knows which
@@ -161,20 +203,8 @@ def normalize_subtype(value) -> str:
             return subtype["key"]
     return SUBTYPE_UNKNOWN
 
-SORTER_SCHEMA = build_structured_schema(
-    {
-        "doc_type": {"type": "string", "enum": DOC_CLASS_KEYS},
-        "contract_subtype": {
-            "type": ["string", "null"],
-            "enum": CONTRACT_SUBTYPE_KEYS + [SUBTYPE_UNKNOWN],
-            "description": "The contract family/subgroup — REQUIRED when doc_type is "
-                           "contract, null otherwise. See the subtype list in the prompt.",
-        },
-        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-        "reasoning": {"type": "string"},
-    },
-    title="ClassificationOutput",
-)
+
+SORTER_SCHEMA = _sorter_schema()
 
 
 class SorterAgent(BaseAgent):
@@ -213,7 +243,7 @@ class SorterAgent(BaseAgent):
             return base_prompt
         doc_type_descriptions = "\n".join(
             f"- {d['key']}: {d['label']} — {d['description']}"
-            for d in DOC_CLASSES
+            for d in _doc_classes_for_prompt()
         )
         base_prompt = base_prompt.replace("{{doc_type_descriptions}}", doc_type_descriptions)
         if "{{contract_subtypes}}" not in base_prompt:
@@ -240,7 +270,7 @@ class SorterAgent(BaseAgent):
         truncated = self.truncate_input(doc_text)
         result = self._call_structured(
             f"Classify this legal document:\n\n{truncated}",
-            json_schema=SORTER_SCHEMA,
+            json_schema=_sorter_schema(),
             temperature=0.1,
             pages=pages,  # MAILROOM PATCH
         )
@@ -303,7 +333,7 @@ class SorterAgent(BaseAgent):
             user_message = f"Classify this legal document:\n\n{truncated}"
         result = self._call_structured(
             user_message,
-            json_schema=SORTER_SCHEMA,
+            json_schema=_sorter_schema(),
             temperature=0.1,
             pages=pages,  # MAILROOM PATCH
         )
@@ -360,9 +390,12 @@ class SorterAgent(BaseAgent):
         )
 
         doc_type = clean_prediction(raw)
+        # MAILROOM PATCH: do NOT coerce an unknown/retired/hallucinated
+        # label onto `correspondence` at the model's confidence — that is
+        # the vision twin of the text-path defect. Invalid labels stay as-is
+        # so after_classify parks them for review.
         if doc_type not in DOC_CLASS_KEYS:
             logger.error("sorter_vision_invalid_label", raw_label=doc_type)
-            doc_type = "correspondence"
 
         confidence = extract_confidence(raw)
         if confidence is None:
@@ -389,7 +422,9 @@ class SorterAgent(BaseAgent):
         from langchain_agents.openrouter_utils import split_prompt
 
         if not pages_base64:
-            return {"doc_type": "correspondence", "confidence": 0.0,
+            from pipeline.config import UNKNOWN_DOC_TYPE
+
+            return {"doc_type": UNKNOWN_DOC_TYPE, "confidence": 0.0,
                     "reasoning": "no page images"}
 
         prompt_text = get_prompt(self.prompt_version)
@@ -406,9 +441,9 @@ class SorterAgent(BaseAgent):
         )
 
         doc_type = clean_prediction(raw)
+        # MAILROOM PATCH: same as classify_image — never silently remap.
         if doc_type not in DOC_CLASS_KEYS:
             logger.error("sorter_vision_invalid_label", raw_label=doc_type)
-            doc_type = "correspondence"
 
         confidence = extract_confidence(raw)
         if confidence is None:
@@ -443,12 +478,20 @@ Document text:
 
 Provide your best classification with justification."""
 
-        result = self._call_structured(prompt, json_schema=SORTER_SCHEMA, temperature=0.1)
+        result = self._call_structured(prompt, json_schema=_sorter_schema(), temperature=0.1)
 
         if result.get("_parse_error"):
-            return (previous_result.get("doc_type", "correspondence"), 0.3, "re-evaluation parse error")
+            from pipeline.config import UNKNOWN_DOC_TYPE
 
-        doc_type = result.get("doc_type", previous_result.get("doc_type", "correspondence"))
+            return (
+                previous_result.get("doc_type") or UNKNOWN_DOC_TYPE,
+                0.3,
+                "re-evaluation parse error",
+            )
+
+        from pipeline.config import UNKNOWN_DOC_TYPE
+
+        doc_type = result.get("doc_type") or previous_result.get("doc_type") or UNKNOWN_DOC_TYPE
         try:
             confidence = float(result.get("confidence", 0.5))
         except (TypeError, ValueError):

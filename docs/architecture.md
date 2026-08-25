@@ -171,28 +171,37 @@ flowchart LR
 Document lands in `/pipeline/inbox/`. Watcher detects it, claims it atomically to `/pipeline/processing/<worker_id>/`. Manifest is created with `PipelineStage.PROCESSING`. PDFs are transcribed by `PDFTranscriber` — text-based PDFs directly (no LLM), scanned/garbled PDFs via an LLM markdown pass (`pipeline.pdf_direct_chars_per_page` controls the threshold). When the input agents' models are vision-capable (`vision:` config in `taxonomy.yaml` — Qwen etc.), PDFs are also rendered page-by-page to image data-URIs (`llm/vision.py`) and sent to the sorter/specialist prompts as multimodal `image_url` content, capped by `vision.max_pages`; if the pipeline is vision-capable the expensive LLM transcription pass is skipped for scanned PDFs (the page images carry the content) while `doc_text` is still stored for text-only paths/audit.
 
 ### 2. Classify (Sorter)
-LLM call: reads document text, determines `doc_type` (contract,
-corporate_record, correspondence, compliance_filing, insurance_claim)
-and confidence score. Court opinions and due-diligence checklists/memos
-are not live classes — the sorter must emit `unknown` rather than remapping
-them onto correspondence or contract.
+LLM call: reads document text, determines `doc_type` and confidence.
+Live extractable classes are `contract`, `corporate_record`, `correspondence`,
+`compliance_filing`, `insurance_claim`. The sorter schema also allows the
+routing token `unknown` (not a taxonomy class, not a specialist) for court
+opinions, due-diligence memos, and anything that does not fit a live class.
+`unknown` / retired / hallucinated labels are preserved — they are never
+remapped onto correspondence — and `after_classify` parks them for human
+review regardless of confidence. Parse-error is the only remaining
+correspondence default, and it is explicitly low-confidence (0.3) so the
+retry budget still fires.
 
 ### 3. Confidence Check
 Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
-- **Confidence >= `high` (0.95)**: clearly matches one class → straight to extraction
-- **`low` (0.70) <= Confidence < `high` (0.95)**: classified but not clearly confident (e.g. multi-topic/ambiguous documents whose form still fits a class) → route to `/review/` (human) instead of silently archiving
-- **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`
-- **Still low after retry / unknown doc type**: route to `/review/` (human)
+- **Unknown / retired / empty `doc_type`**: human review immediately (never extract)
+- **Confidence >= `high` (0.95)** on a live class: straight to extraction
+- **`low` (0.70) <= Confidence < `high` (0.95)**: one `retry_classify`, then Lane A (`review_classify`) if still medium
+- **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`, then human review
+- **Lane A reviewer** may also emit `unknown`; `after_review_classify` only extracts a live taxonomy class at high confidence
 
 ### 4. Extract (Specialist)
-Dynamic dispatch to the matching specialist agent based on `doc_type`. Each specialist:
-- Has its own system prompt/personality
-- Uses structured JSON output against a Pydantic schema
-- Returns extraction data + confidence score
+Dynamic dispatch to the matching specialist for a **live taxonomy class**.
+Graph construction asserts dispatch keys == taxonomy keys; an unmapped
+`specialist:` name fails fast. A non-taxonomy type that nevertheless reaches
+extract (defense in depth) returns `{_unsupported: True}` and
+`after_extraction` parks it for human review **without** `retry_extract`.
 
 ### 5. Extraction Confidence Check
-Same three-way branch as classification, plus a fourth path:
+Same three-way branch as classification, plus:
+- **Unsupported / non-taxonomy type**: human review, no retry
 - **Conflict with existing matter data**: route to Boss escalation
+- **Schema invalid**: retry once, then human review
 - **Low confidence**: retry → still low → human review
 - **High confidence**: proceed to report compilation
 
@@ -229,20 +238,23 @@ Writes document and matter records to the database (best-effort — pipeline con
 ## Conditional Edges
 
 ```
-classify ─┬─ confidence >= high ──────▶ extract
-          ├─ low <= conf < high ─────▶ human_review
+classify ─┬─ unknown / retired type ──▶ human_review
+          ├─ confidence >= high ──────▶ extract
+          ├─ low <= conf < high ─────▶ retry_classify
           ├─ attempts <= retry_max ──▶ retry_classify
           └─ otherwise ──────────────▶ human_review
 
 retry_classify ─┬─ transient (budget left) ───────▶ retry_classify
+                ├─ unknown / retired type ────────▶ human_review
                 ├─ confidence >= high ────────────▶ extract
                 ├─ medium band exhausted (Lane A) ─▶ review_classify
-                └─ still low / unknown type ───────▶ human_review
+                └─ still low ─────────────────────▶ human_review
 
-review_classify ─┬─ high-confidence reviewer verdict ─▶ extract
-                 └─ anything else ────────────────────▶ human_review
+review_classify ─┬─ high-confidence live class ─▶ extract
+                 └─ unknown / unsure / else ────▶ human_review
 
-extract ─┬─ no conflict, judge gate off/skip ──▶ compile_report
+extract ─┬─ unsupported / non-taxonomy type ─▶ human_review (no retry)
+         ├─ no conflict, judge gate off/skip ──▶ compile_report
          ├─ conflict detected ─────────────────▶ boss_escalation
          ├─ judge gate fires (grounded run) ───▶ judge_verify
          ├─ attempts <= retry_max ─────────────▶ retry_extract
