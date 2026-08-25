@@ -11,6 +11,7 @@ from scripts.run_hf_pilot import (
     parse_hf_row,
     pipeline_class,
     select_stratified,
+    _inbox_filename,
     _safe_filename,
 )
 
@@ -104,6 +105,12 @@ def test_select_stratified_keeps_oversized_merger():
 def test_safe_filename_strips_path_and_caps():
     assert _safe_filename("a/b/c.txt") == "c.txt"
     assert _safe_filename("noext") == "noext.txt"
+
+
+def test_inbox_filename_forces_txt_for_pdf_and_htm():
+    assert _inbox_filename("deal.PDF") == "deal.txt"
+    assert _inbox_filename("a/b/ex4-1.htm") == "ex4-1.txt"
+    assert _inbox_filename("outpatient:1.txt") == "outpatient_1.txt"
 
 
 def test_load_ground_truth_labels_reads_expected_fields(monkeypatch):

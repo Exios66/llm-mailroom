@@ -180,6 +180,17 @@ def _safe_filename(name: str) -> str:
     return base[:180] or "doc.txt"
 
 
+def _inbox_filename(name: str) -> str:
+    """Write Hub extracted text as ``.txt``.
+
+    Source filenames are often ``.PDF`` / ``.htm``. Ingest keys off the
+    suffix, so keeping ``.PDF`` sends plaintext through pypdf and yields
+    a truncated transcription.
+    """
+    stem = Path(_safe_filename(name)).stem or "doc"
+    return stem[:170] + ".txt"
+
+
 def _mock_samples(per_class: int) -> list[dict]:
     out = []
     for hf_class, (filename, text) in _MOCK_DOCS.items():
@@ -337,7 +348,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
 
     inbox = inbox_dir()
     inbox.mkdir(parents=True, exist_ok=True)
-    local_name = _safe_filename(sample["filename"])
+    local_name = _inbox_filename(sample["filename"])
     queued = inbox / local_name
     queued.write_text(_truncate_text(sample["text"], max_chars), encoding="utf-8")
 
@@ -487,7 +498,7 @@ def main() -> int:
             errors += 1
             rows.append({
                 "filename": sample.get("filename"),
-                "local_filename": _safe_filename(sample.get("filename") or "doc.txt"),
+                "local_filename": _inbox_filename(sample.get("filename") or "doc.txt"),
                 "expected": sample.get("expected_hf_class"),
                 "expected_doc_class": pipeline_class(sample.get("expected_hf_class") or ""),
                 "expected_subclass": sample.get("expected_subclass") or "",
