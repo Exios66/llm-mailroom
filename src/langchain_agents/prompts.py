@@ -25,6 +25,9 @@ Usage:
 
 from __future__ import annotations
 
+from llm.prompt_doctrine import CONTRACTS as _MAILROOM_CONTRACTS_DOCTRINE
+from llm.prompt_doctrine import SORTER as _MAILROOM_SORTER_DOCTRINE
+
 
 # =============================================================================
 # SORTER AGENT — Document Classification
@@ -523,6 +526,21 @@ SORTER_PROMPT_V13 = (
         "contract, corporate_record, due_diligence, correspondence, "
         "compliance_filing, court_opinion, insurance_claim",
     )
+)
+
+# =============================================================================
+# SORTER PROMPT V14 — mailroom production mutation of V12 (the runtime pin).
+#
+# V13 added insurance_claim by deriving from V0 and dropped the CUAD-subtype
+# lineage (V1–V12). Mailroom classify/retry_classify actually runs V12, whose
+# class list is injected via {{doc_type_descriptions}} (already includes
+# insurance_claim). V14 keeps V12 byte-identical as a prefix and appends the
+# pipeline doctrine: unknown-type honesty (never remap onto correspondence),
+# required CUAD subtype for contracts, additive vision, seven-class form
+# discriminators. Predecessor V12 is frozen.
+# =============================================================================
+SORTER_PROMPT_V14 = (
+    SORTER_PROMPT_V12.rstrip() + "\n\n" + _MAILROOM_SORTER_DOCTRINE
 )
 
 # =============================================================================
@@ -2518,6 +2536,18 @@ CONTRACTS_SPECIALIST_PROMPT_V31 = CONTRACTS_SPECIALIST_PROMPT_V30.replace(
 )
 
 # =============================================================================
+# CONTRACTS SPECIALIST V32 — mailroom production mutation of V31.
+#
+# V31 remains the eval-validated extraction prompt (frozen predecessor). V32
+# is a pure append of mailroom pipeline doctrine: registered schema field
+# inventory, numeric zero is a value, CUAD subtype is routing state not an
+# extraction field, vision is additive, grounded extraction.
+# =============================================================================
+CONTRACTS_SPECIALIST_PROMPT_V32 = (
+    CONTRACTS_SPECIALIST_PROMPT_V31.rstrip() + "\n\n" + _MAILROOM_CONTRACTS_DOCTRINE
+)
+
+# =============================================================================
 CORPORATE_RECORDS_SPECIALIST_PROMPT = """You are a legal extraction specialist focused on corporate records. Your job is to extract key fields from corporate governance documents.
 
 Extract the following fields from the document:
@@ -2911,7 +2941,7 @@ If the PDF contains clean, selectable text (not scanned images), simply return t
 PROMPT_VERSIONS = {
     # Sorter
     "sorter_v0": SORTER_PROMPT_V0,
-    "sorter": SORTER_PROMPT_V13,  # KANBAN-067: v13 adds insurance_claim (derived from v0)  # alias
+    "sorter": SORTER_PROMPT_V14,  # mailroom production: V12 + pipeline doctrine
     "sorter_v1": SORTER_PROMPT_V1,
     "sorter_v2": SORTER_PROMPT_V2,
     "sorter_v3": SORTER_PROMPT_V3,
@@ -2925,6 +2955,7 @@ PROMPT_VERSIONS = {
     "sorter_v11": SORTER_PROMPT_V11,
     "sorter_v12": SORTER_PROMPT_V12,
     "sorter_v13": SORTER_PROMPT_V13,
+    "sorter_v14": SORTER_PROMPT_V14,
 
     # Sorter — vision (RVL-CDIP-style image classification)
     "sorter_vision_v0": SORTER_VISION_PROMPT_V0,
@@ -2934,7 +2965,7 @@ PROMPT_VERSIONS = {
     "legalbench_task_v0": LEGALBENCH_TASK_PROMPT_V0,
 
     # Specialists
-    "contracts_specialist": CONTRACTS_SPECIALIST_PROMPT,
+    "contracts_specialist": CONTRACTS_SPECIALIST_PROMPT_V32,  # mailroom production alias
     "contracts_specialist_v1": CONTRACTS_SPECIALIST_PROMPT_V1,
     "contracts_specialist_v2": CONTRACTS_SPECIALIST_PROMPT_V2,
     "contracts_specialist_v3": CONTRACTS_SPECIALIST_PROMPT_V3,
@@ -2966,6 +2997,7 @@ PROMPT_VERSIONS = {
     "contracts_specialist_v29": CONTRACTS_SPECIALIST_PROMPT_V29,
     "contracts_specialist_v30": CONTRACTS_SPECIALIST_PROMPT_V30,
     "contracts_specialist_v31": CONTRACTS_SPECIALIST_PROMPT_V31,
+    "contracts_specialist_v32": CONTRACTS_SPECIALIST_PROMPT_V32,
     "contracts_specialist_v28": CONTRACTS_SPECIALIST_PROMPT_V28,
     "corporate_records_specialist": CORPORATE_RECORDS_SPECIALIST_PROMPT,
     "due_diligence_specialist": DUE_DILIGENCE_SPECIALIST_PROMPT,

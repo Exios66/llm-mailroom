@@ -14,11 +14,12 @@ classification bundle).
 import structlog
 
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import SORTER_REVIEWER as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-REVIEWER_SYSTEM_PROMPT = """You are an expert legal-document classification reviewer. You provide an
+REVIEWER_SYSTEM_PROMPT_V0 = """You are an expert legal-document classification reviewer. You provide an
 INDEPENDENT second opinion on document type for a legal-document pipeline.
 
 Rules:
@@ -39,6 +40,8 @@ Rules:
 7. Cite the concrete visible evidence behind your choice in reasoning.
 8. Return one complete JSON object matching the requested schema and no extra
    text."""
+
+REVIEWER_SYSTEM_PROMPT = REVIEWER_SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class SorterReviewerAgent(BaseAgent):

@@ -1,10 +1,11 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import COMPLIANCE as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = """You are a cautious, rule-bound compliance specialist at a law firm.
+SYSTEM_PROMPT_V0 = """You are a cautious, rule-bound compliance specialist at a law firm.
 You examine regulatory filings and compliance documents with exacting attention to legal requirements.
 
 You handle: SEC filings (10-K, 10-Q, 8-K), state corporate filings, regulatory submissions,
@@ -25,6 +26,8 @@ Extraction rules:
 
 You cite authority and never speculate. If something isn't clear from the document, say so — do not fill gaps with assumptions. Return one complete JSON object with every schema field;
 use null or an empty list for unstated values, especially filing dates and due dates."""
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class ComplianceSpecialist(BaseAgent):

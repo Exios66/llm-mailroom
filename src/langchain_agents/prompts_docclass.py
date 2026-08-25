@@ -2,30 +2,31 @@
 
 KANBAN-090 (2026-08-23, human directive via Discord #hermes): mirrors the
 llm-entity-extraction docclass prompt arm (``src/prompts_docclass.py`` there).
-Every variant here is DERIVED from this repo's own production base constant by
-PURE APPENDITION — ``variant.startswith(base)`` holds in full, the base bytes
-are untouched, and the docclass block rides after the base's own JSON-output
-closer as additive context. Nothing is replaced, so no anchor can drift.
+Every variant here is DERIVED from this repo's own production base — the
+exact string in ``llm.prompts.prompt_templates()`` — by PURE APPENDITION.
+``variant.startswith(base)`` holds in full, the base bytes are untouched, and
+the docclass block rides after the production closer as additive context.
+Nothing is replaced, so no production anchor can drift.
 
-    role                          key in DOCCLASS_PROMPT_VERSIONS
-    -----------------------------  --------------------------------------
-    contracts_specialist           contracts_specialist_docclass_v0
-    corporate_records_specialist   corporate_records_specialist_docclass_v0
-    due_diligence_specialist       due_diligence_specialist_docclass_v0
-    correspondence_specialist      correspondence_specialist_docclass_v0
-    compliance_specialist          compliance_specialist_docclass_v0
-    court_opinions_specialist      court_opinions_specialist_docclass_v0
-    insurance_claims_specialist    insurance_claims_specialist_docclass_v0
-    reviewer (second opinion)      reviewer_docclass_v0
-    arbiter                        arbiter_docclass_v0
-    boss                           boss_docclass_v0
-    judge (completeness)           judge_docclass_v0
-    judge (classification)         judge_classification_docclass_v0
-    judge (correctness)            judge_correctness_docclass_v0
+    role                          production agent_name           key in DOCCLASS_PROMPT_VERSIONS
+    -----------------------------  -----------------------------  --------------------------------------
+    sorter                         sorter                         sorter_docclass_v0
+    contracts_specialist           contracts_specialist           contracts_specialist_docclass_v0
+    corporate_records_specialist   corporate_records_specialist   corporate_records_specialist_docclass_v0
+    due_diligence_specialist       due_diligence_specialist       due_diligence_specialist_docclass_v0
+    correspondence_specialist      correspondence_specialist      correspondence_specialist_docclass_v0
+    compliance_specialist          compliance_specialist          compliance_specialist_docclass_v0
+    court_opinions_specialist      court_opinions_specialist      court_opinions_specialist_docclass_v0
+    insurance_claims_specialist    insurance_claims_specialist    insurance_claims_specialist_docclass_v0
+    reviewer (second opinion)      sorter_reviewer                reviewer_docclass_v0
+    arbiter                        arbiter                        arbiter_docclass_v0
+    boss                           boss                           boss_docclass_v0
+    judge (completeness)           judge                          judge_docclass_v0
+    judge (classification)         judge-classification           judge_classification_docclass_v0
+    judge (correctness)            judge-correctness              judge_correctness_docclass_v0
 
-DEPLOYMENT MODEL DIFFERENCE (vs entity): mailroom's Langfuse production
-surface is THIRTEEN agent-name-pinned templates (`mailroom-<agent_name>`,
-see llm/prompts.py::prompt_templates — the count is test-pinned). Docclass
+DEPLOYMENT: mailroom's Langfuse production surface is the agent-name-pinned
+templates in ``prompt_templates()`` (`mailroom-<agent_name>`). Docclass
 variants must NEVER flow through prompt_templates(): that would overwrite
 production agent prompts. They ship as this standalone registry and reach
 Langfuse only via the OPT-IN sync path::
@@ -38,24 +39,6 @@ untouched: no pipeline fetches a docclass key by default.
 """
 
 from __future__ import annotations
-
-from langchain_agents.prompts import (
-    COMPLIANCE_SPECIALIST_PROMPT,
-    CONTRACTS_SPECIALIST_PROMPT,
-    CORRESPONDENCE_SPECIALIST_PROMPT,
-    COURT_OPINIONS_SPECIALIST_PROMPT,
-    CORPORATE_RECORDS_SPECIALIST_PROMPT,
-    DUE_DILIGENCE_SPECIALIST_PROMPT,
-)
-from agents.arbiter import ARBITER_SYSTEM_PROMPT
-from agents.boss import BOSS_SYSTEM_PROMPT
-from agents.insurance_claims_specialist import SYSTEM_PROMPT as INSURANCE_CLAIMS_SYSTEM_PROMPT
-from agents.judge import (
-    CLASSIFICATION_SYSTEM_PROMPT,
-    CORRECTNESS_SYSTEM_PROMPT,
-    SYSTEM_PROMPT as JUDGE_COMPLETENESS_SYSTEM_PROMPT,
-)
-from agents.sorter_reviewer import REVIEWER_SYSTEM_PROMPT
 
 # =============================================================================
 # Shared docclass context block — kept byte-compatible with the entity repo's
@@ -161,6 +144,21 @@ _REVIEWER_ARBITER_RULES_BODY = (
     "The output-format requirements of the prompt above are unchanged."
 )
 
+_SORTER_RULES_BODY = (
+    "a. Classify against the EXTENDED primary set — contract, "
+    "corporate_record, due_diligence, correspondence, compliance_filing, "
+    "court_opinion, insurance_claim, merger_agreement — plus unknown when "
+    "none fit. Never remap an unknown onto correspondence.\n"
+    "b. Family discriminators: acquisition machinery (Parent/Merger Sub, "
+    "Effective Time, Exchange Ratio) makes a document merger_agreement, not "
+    "contract; claim documentation (FNOL, adjuster reports, demand packages, "
+    "coverage determinations, denial letters) is insurance_claim; records "
+    "EMBEDDED as exhibits inside a parent agreement never change the parent's "
+    "class.\n"
+    "c. When doc_type is contract, contract_subtype (or other) is required.\n"
+    "The output-format requirements of the prompt above are unchanged."
+)
+
 _MARK = "(KANBAN-090)"
 
 
@@ -173,58 +171,60 @@ def _append(base: str, body: str, marker: str) -> str:
     )
 
 
-CONTRACTS_SPECIALIST_DOCCLASS_PROMPT_V0 = _append(
-    CONTRACTS_SPECIALIST_PROMPT, _SPECIALIST_RULES_BODY, "contracts_specialist_docclass_v0",
-)
-CORPORATE_RECORDS_SPECIALIST_DOCCLASS_PROMPT_V0 = _append(
-    CORPORATE_RECORDS_SPECIALIST_PROMPT, _SPECIALIST_RULES_BODY, "corporate_records_specialist_docclass_v0",
-)
-DUE_DILIGENCE_SPECIALIST_DOCCLASS_PROMPT_V0 = _append(
-    DUE_DILIGENCE_SPECIALIST_PROMPT, _SPECIALIST_RULES_BODY, "due_diligence_specialist_docclass_v0",
-)
-CORRESPONDENCE_SPECIALIST_DOCCLASS_PROMPT_V0 = _append(
-    CORRESPONDENCE_SPECIALIST_PROMPT, _SPECIALIST_RULES_BODY, "correspondence_specialist_docclass_v0",
-)
-COMPLIANCE_SPECIALIST_DOCCLASS_PROMPT_V0 = _append(
-    COMPLIANCE_SPECIALIST_PROMPT, _SPECIALIST_RULES_BODY, "compliance_specialist_docclass_v0",
-)
-COURT_OPINIONS_SPECIALIST_DOCCLASS_PROMPT_V0 = _append(
-    COURT_OPINIONS_SPECIALIST_PROMPT, _SPECIALIST_RULES_BODY, "court_opinions_specialist_docclass_v0",
-)
-INSURANCE_CLAIMS_SPECIALIST_DOCCLASS_PROMPT_V0 = _append(
-    INSURANCE_CLAIMS_SYSTEM_PROMPT, _SPECIALIST_RULES_BODY, "insurance_claims_specialist_docclass_v0",
-)
-REVIEWER_DOCCLASS_PROMPT_V0 = _append(
-    REVIEWER_SYSTEM_PROMPT, _REVIEWER_ARBITER_RULES_BODY, "reviewer_docclass_v0",
-)
-ARBITER_DOCCLASS_PROMPT_V0 = _append(
-    ARBITER_SYSTEM_PROMPT, _REVIEWER_ARBITER_RULES_BODY, "arbiter_docclass_v0",
-)
-BOSS_DOCCLASS_PROMPT_V0 = _append(
-    BOSS_SYSTEM_PROMPT, _BOSS_RULES_BODY, "boss_docclass_v0",
-)
-JUDGE_DOCCLASS_PROMPT_V0 = _append(
-    JUDGE_COMPLETENESS_SYSTEM_PROMPT, _JUDGE_RULES_BODY, "judge_docclass_v0",
-)
-JUDGE_CLASSIFICATION_DOCCLASS_PROMPT_V0 = _append(
-    CLASSIFICATION_SYSTEM_PROMPT, _JUDGE_CLASSIFICATION_RULES_BODY, "judge_classification_docclass_v0",
-)
-JUDGE_CORRECTNESS_DOCCLASS_PROMPT_V0 = _append(
-    CORRECTNESS_SYSTEM_PROMPT, _JUDGE_RULES_BODY, "judge_correctness_docclass_v0",
+# (production agent_name, docclass key, role-rules body)
+_DOCCLASS_FROM_PRODUCTION: tuple[tuple[str, str, str], ...] = (
+    ("sorter", "sorter_docclass_v0", _SORTER_RULES_BODY),
+    ("contracts_specialist", "contracts_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("corporate_records_specialist", "corporate_records_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("due_diligence_specialist", "due_diligence_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("correspondence_specialist", "correspondence_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("compliance_specialist", "compliance_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("court_opinions_specialist", "court_opinions_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("insurance_claims_specialist", "insurance_claims_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("sorter_reviewer", "reviewer_docclass_v0", _REVIEWER_ARBITER_RULES_BODY),
+    ("arbiter", "arbiter_docclass_v0", _REVIEWER_ARBITER_RULES_BODY),
+    ("boss", "boss_docclass_v0", _BOSS_RULES_BODY),
+    ("judge", "judge_docclass_v0", _JUDGE_RULES_BODY),
+    ("judge-classification", "judge_classification_docclass_v0", _JUDGE_CLASSIFICATION_RULES_BODY),
+    ("judge-correctness", "judge_correctness_docclass_v0", _JUDGE_RULES_BODY),
 )
 
-DOCCLASS_PROMPT_VERSIONS: dict[str, str] = {
-    "contracts_specialist_docclass_v0": CONTRACTS_SPECIALIST_DOCCLASS_PROMPT_V0,
-    "corporate_records_specialist_docclass_v0": CORPORATE_RECORDS_SPECIALIST_DOCCLASS_PROMPT_V0,
-    "due_diligence_specialist_docclass_v0": DUE_DILIGENCE_SPECIALIST_DOCCLASS_PROMPT_V0,
-    "correspondence_specialist_docclass_v0": CORRESPONDENCE_SPECIALIST_DOCCLASS_PROMPT_V0,
-    "compliance_specialist_docclass_v0": COMPLIANCE_SPECIALIST_DOCCLASS_PROMPT_V0,
-    "court_opinions_specialist_docclass_v0": COURT_OPINIONS_SPECIALIST_DOCCLASS_PROMPT_V0,
-    "insurance_claims_specialist_docclass_v0": INSURANCE_CLAIMS_SPECIALIST_DOCCLASS_PROMPT_V0,
-    "reviewer_docclass_v0": REVIEWER_DOCCLASS_PROMPT_V0,
-    "arbiter_docclass_v0": ARBITER_DOCCLASS_PROMPT_V0,
-    "boss_docclass_v0": BOSS_DOCCLASS_PROMPT_V0,
-    "judge_docclass_v0": JUDGE_DOCCLASS_PROMPT_V0,
-    "judge_classification_docclass_v0": JUDGE_CLASSIFICATION_DOCCLASS_PROMPT_V0,
-    "judge_correctness_docclass_v0": JUDGE_CORRECTNESS_DOCCLASS_PROMPT_V0,
-}
+
+def _build_versions() -> dict[str, str]:
+    """Derive every variant from the live production template of that role."""
+    from llm.prompts import prompt_templates
+
+    templates = prompt_templates()
+    versions: dict[str, str] = {}
+    missing = []
+    for agent_name, key, body in _DOCCLASS_FROM_PRODUCTION:
+        base = templates.get(agent_name)
+        if not base:
+            missing.append(agent_name)
+            continue
+        versions[key] = _append(base, body, key)
+    if missing:
+        raise RuntimeError(
+            "docclass derivation missing production templates: "
+            + ", ".join(missing)
+        )
+    return versions
+
+
+DOCCLASS_PROMPT_VERSIONS: dict[str, str] = _build_versions()
+
+# Named aliases kept so importers that pinned the V0 constants still resolve.
+SORTER_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["sorter_docclass_v0"]
+CONTRACTS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["contracts_specialist_docclass_v0"]
+CORPORATE_RECORDS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["corporate_records_specialist_docclass_v0"]
+DUE_DILIGENCE_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["due_diligence_specialist_docclass_v0"]
+CORRESPONDENCE_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["correspondence_specialist_docclass_v0"]
+COMPLIANCE_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["compliance_specialist_docclass_v0"]
+COURT_OPINIONS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["court_opinions_specialist_docclass_v0"]
+INSURANCE_CLAIMS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["insurance_claims_specialist_docclass_v0"]
+REVIEWER_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["reviewer_docclass_v0"]
+ARBITER_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["arbiter_docclass_v0"]
+BOSS_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["boss_docclass_v0"]
+JUDGE_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["judge_docclass_v0"]
+JUDGE_CLASSIFICATION_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["judge_classification_docclass_v0"]
+JUDGE_CORRECTNESS_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["judge_correctness_docclass_v0"]

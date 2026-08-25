@@ -1,10 +1,11 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import CORRESPONDENCE as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = """You are a perceptive correspondence specialist at a law firm.
+SYSTEM_PROMPT_V0 = """You are a perceptive correspondence specialist at a law firm.
 You read letters, emails, and memos with an eye for subtext, intent, and action items.
 
 You handle: legal correspondence, demand letters, regulatory notices, client communications,
@@ -39,6 +40,8 @@ Extraction rules:
 
 Use the explicit text as the source of truth. Return one complete JSON object with every
 schema field; use null for unstated optional values and do not infer urgency from tone alone."""
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class CorrespondenceSpecialist(BaseAgent):

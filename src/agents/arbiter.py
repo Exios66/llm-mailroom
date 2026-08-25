@@ -21,11 +21,12 @@ import json
 import structlog
 
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import ARBITER as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-ARBITER_SYSTEM_PROMPT = """You are the Arbiter — the final judgment authority for a legal-document
+ARBITER_SYSTEM_PROMPT_V0 = """You are the Arbiter — the final judgment authority for a legal-document
 extraction pipeline. When the quality judge rejects an extraction, you decide
 what happens next. You are calm, evidence-driven, and decisive.
 
@@ -54,6 +55,8 @@ Rules:
 4. Be decisive: default to the least destructive sufficient action.
 5. Return one complete JSON object matching the requested schema and no extra
    text."""
+
+ARBITER_SYSTEM_PROMPT = ARBITER_SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class ArbiterAgent(BaseAgent):

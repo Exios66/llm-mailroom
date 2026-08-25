@@ -4,6 +4,11 @@ document. Used offline by scripts/run_quality_judges.py and in-pipeline by
 
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import (
+    JUDGE_CLASSIFICATION as _CLASSIFICATION_DOCTRINE,
+    JUDGE_COMPLETENESS as _COMPLETENESS_DOCTRINE,
+    JUDGE_CORRECTNESS as _CORRECTNESS_DOCTRINE,
+)
 from llm.prompts import get_managed_prompt
 from pipeline.config import load_config
 from schemas.documents import get_extraction_schema
@@ -16,7 +21,7 @@ CLASSIFICATION_LABELS = ["correct", "incorrect", "ambiguous"]
 
 CORRECTNESS_LABELS = ["accurate", "partial", "inaccurate"]
 
-SYSTEM_PROMPT = """You are an expert legal-document quality reviewer. Evaluate ONE extraction
+SYSTEM_PROMPT_V0 = """You are an expert legal-document quality reviewer. Evaluate ONE extraction
 against ONLY the supplied source text for THAT SAME document.
 
 Evidence and scope rules:
@@ -45,7 +50,9 @@ Evidence and scope rules:
     `incomplete`. Cite concrete omissions, contradictions, or unsupported claims; do not speculate.
 10. Return one complete JSON object matching the requested judge schema and no extra text."""
 
-CLASSIFICATION_SYSTEM_PROMPT = """You are an expert legal-document classification auditor. Evaluate ONE
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _COMPLETENESS_DOCTRINE
+
+CLASSIFICATION_SYSTEM_PROMPT_V0 = """You are an expert legal-document classification auditor. Evaluate ONE
 classification against ONLY the supplied source text and the configured taxonomy for THAT SAME
 document.
 
@@ -67,7 +74,9 @@ Rules:
 7. Cite exact visible document evidence supporting or contradicting the assignment.
 8. Return one complete JSON object matching the requested judge schema and no extra text."""
 
-CORRECTNESS_SYSTEM_PROMPT = """You are an expert legal-document factual-accuracy auditor. Verify ONE
+CLASSIFICATION_SYSTEM_PROMPT = CLASSIFICATION_SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _CLASSIFICATION_DOCTRINE
+
+CORRECTNESS_SYSTEM_PROMPT_V0 = """You are an expert legal-document factual-accuracy auditor. Verify ONE
 extraction against ONLY the supplied source text for THAT SAME document.
 
 Rules:
@@ -91,6 +100,8 @@ Rules:
 8. Name each concrete error and quote the supporting source passage. Do not speculate or convert
     uncertainty into a factual accusation.
 9. Return one complete JSON object matching the requested judge schema and no extra text."""
+
+CORRECTNESS_SYSTEM_PROMPT = CORRECTNESS_SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _CORRECTNESS_DOCTRINE
 
 
 class CompletenessJudge(BaseAgent):

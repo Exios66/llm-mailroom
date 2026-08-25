@@ -85,10 +85,11 @@ def test_sorter_prompt_v13_registered_and_live():
     assert "- insurance_claim:" in v13
     assert v13.count("- court_opinion:") == 1
     assert "insurance_claim" in v13.split("Labels")[0] if "Labels" in v13 else True
-    # registered + live alias points at it
+    # registered; production alias is now v14 (v12 + mailroom doctrine)
     templates = lp.PROMPT_TEMPLATES()
     assert templates["sorter_v13"] is v13
-    assert templates["sorter"] is v13
+    assert templates["sorter_v14"] is lp.SORTER_PROMPT_V14
+    assert templates["sorter"] is lp.SORTER_PROMPT_V14
 
 
 def test_sorter_prompt_predecessors_unmutated():

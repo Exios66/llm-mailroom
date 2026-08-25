@@ -82,8 +82,8 @@ def main() -> int:
         help=(
             "Sync the KANBAN-090 docclass variants instead of the production "
             "agent prompts. They are pushed under distinct names "
-            "(mailroom-docclass-<key>) so the thirteen production templates "
-            "are never touched."
+            "(mailroom-docclass-<key>) so the production agent templates "
+            "are never overwritten."
         ),
     )
     args = parser.parse_args()

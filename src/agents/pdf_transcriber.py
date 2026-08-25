@@ -8,6 +8,7 @@ Uses multiple strategies in priority order:
 import structlog
 from pathlib import Path
 from agents.base import BaseAgent
+from llm.prompt_doctrine import PDF_TRANSCRIBER as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
@@ -17,7 +18,7 @@ logger = structlog.get_logger(__name__)
 # Below this many chars, just return the raw text — no need for an LLM pass.
 _DIRECT_MIN_CHARS = 500
 
-SYSTEM_PROMPT = """You are a legal document transcriber. Your job is to convert the raw text
+SYSTEM_PROMPT_V0 = """You are a legal document transcriber. Your job is to convert the raw text
 extracted from a PDF into clean, well-structured markdown suitable for downstream legal
 document analysis agents.
 
@@ -31,6 +32,8 @@ Rules:
 7. Remove PDF artifact text (page numbers, headers/footers that are clearly metadata).
 8. Return only the cleaned markdown transcription. Do not add a confidence score,
    commentary, or a summary; the pipeline records transcription confidence separately."""
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class PDFTranscriber(BaseAgent):
