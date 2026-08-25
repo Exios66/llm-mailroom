@@ -1,0 +1,383 @@
+{
+  "org": "Lucius-Morningstar",
+  "org_url": "https://huggingface.co/Lucius-Morningstar",
+  "snapshot_date": "2026-08-25",
+  "honesty": "Offline snapshot of Hub metadata + Dataset Viewer first-rows. Live cells behind NB-OPT-IN-NETWORK refresh from the API.",
+  "datasets": [
+    {
+      "id": "Lucius-Morningstar/docclass-merged",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged",
+      "downloads": 62,
+      "likes": 1,
+      "last_modified": "2026-08-24T15:55:44.000Z",
+      "tags": [
+        "task_categories:text-classification",
+        "language:en",
+        "license:cc-by-4.0",
+        "size_categories:1K<n<10K",
+        "format:parquet",
+        "modality:text",
+        "library:datasets",
+        "library:pandas",
+        "library:polars",
+        "library:mlcroissant",
+        "arxiv:2103.06268",
+        "arxiv:2301.00876"
+      ],
+      "license": "cc-by-4.0",
+      "viewer": {
+        "viewer": true,
+        "preview": true,
+        "search": true,
+        "filter": true,
+        "statistics": true
+      },
+      "splits": [
+        {
+          "config": "default",
+          "split": "train"
+        },
+        {
+          "config": "default",
+          "split": "test"
+        },
+        {
+          "config": "ground_truth",
+          "split": "train"
+        },
+        {
+          "config": "ground_truth",
+          "split": "test"
+        }
+      ],
+      "num_rows": 2420,
+      "num_bytes": 35846923,
+      "mailroom_classes": [
+        "contract",
+        "corporate_record",
+        "correspondence",
+        "compliance_filing",
+        "due_diligence",
+        "court_opinion"
+      ],
+      "role": "Merged document-classification training pack (SEC exhibits and mixed legal text).",
+      "text_fields": [
+        "doc_text",
+        "filename"
+      ],
+      "label_fields": [
+        "metadata"
+      ]
+    },
+    {
+      "id": "Lucius-Morningstar/docclass-pilot",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/docclass-pilot",
+      "downloads": 29,
+      "likes": 1,
+      "last_modified": "2026-08-24T03:31:21.000Z",
+      "tags": [
+        "task_categories:text-classification",
+        "language:en",
+        "license:cc-by-4.0",
+        "size_categories:n<1K",
+        "format:parquet",
+        "modality:tabular",
+        "modality:text",
+        "library:datasets",
+        "library:pandas",
+        "library:polars",
+        "library:mlcroissant",
+        "region:us"
+      ],
+      "license": "cc-by-4.0",
+      "viewer": {
+        "viewer": true,
+        "preview": true,
+        "search": true,
+        "filter": true,
+        "statistics": true
+      },
+      "splits": [
+        {
+          "config": "default",
+          "split": "train"
+        },
+        {
+          "config": "default",
+          "split": "test"
+        },
+        {
+          "config": "ground_truth",
+          "split": "train"
+        },
+        {
+          "config": "ground_truth",
+          "split": "test"
+        }
+      ],
+      "num_rows": 276,
+      "num_bytes": 4131197,
+      "mailroom_classes": [
+        "contract",
+        "corporate_record",
+        "correspondence",
+        "compliance_filing"
+      ],
+      "role": "Smaller pilot slice of the same docclass pack used for cheap experiments.",
+      "text_fields": [
+        "doc_text",
+        "filename"
+      ],
+      "label_fields": [
+        "metadata"
+      ]
+    },
+    {
+      "id": "Lucius-Morningstar/enron-correspondence-dedup",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/enron-correspondence-dedup",
+      "downloads": 48,
+      "likes": 1,
+      "last_modified": "2026-08-23T20:45:51.000Z",
+      "tags": [
+        "task_categories:text-classification",
+        "annotations_creators:machine-generated",
+        "language_creators:found",
+        "multilinguality:monolingual",
+        "source_datasets:extended",
+        "language:en",
+        "license:other",
+        "size_categories:100K<n<1M",
+        "format:parquet",
+        "modality:text",
+        "library:datasets",
+        "library:dask"
+      ],
+      "license": "other",
+      "viewer": {
+        "viewer": true,
+        "preview": true,
+        "search": true,
+        "filter": true,
+        "statistics": true
+      },
+      "splits": [
+        {
+          "config": "default",
+          "split": "train"
+        },
+        {
+          "config": "default",
+          "split": "test"
+        },
+        {
+          "config": "ground_truth",
+          "split": "train"
+        },
+        {
+          "config": "ground_truth",
+          "split": "test"
+        }
+      ],
+      "num_rows": 247523,
+      "num_bytes": 2454814,
+      "mailroom_classes": [
+        "correspondence"
+      ],
+      "role": "Deduplicated Enron mail \u2014 correspondence specialist corpus.",
+      "text_fields": [
+        "text",
+        "subject",
+        "filename"
+      ],
+      "label_fields": [
+        "split"
+      ]
+    },
+    {
+      "id": "Lucius-Morningstar/cms-desynpuf-insurance-claims",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/cms-desynpuf-insurance-claims",
+      "downloads": 16,
+      "likes": 1,
+      "last_modified": "2026-08-24T00:19:40.000Z",
+      "tags": [
+        "task_categories:token-classification",
+        "task_categories:text-classification",
+        "license:other",
+        "size_categories:n<1K",
+        "format:json",
+        "modality:text",
+        "library:datasets",
+        "library:pandas",
+        "library:polars",
+        "library:mlcroissant",
+        "region:us",
+        "insurance-claims"
+      ],
+      "license": "other",
+      "viewer": {
+        "viewer": true,
+        "preview": true,
+        "search": true,
+        "filter": true,
+        "statistics": true
+      },
+      "splits": [
+        {
+          "config": "default",
+          "split": "train"
+        },
+        {
+          "config": "default",
+          "split": "test"
+        }
+      ],
+      "num_rows": 400,
+      "num_bytes": 180549,
+      "mailroom_classes": [
+        "insurance_claim"
+      ],
+      "role": "CMS DE-SynPUF synthetic Medicare claims (insurance_claim class; no real PHI).",
+      "text_fields": [
+        "doc_text",
+        "filename"
+      ],
+      "label_fields": [
+        "expected",
+        "expected_subclass"
+      ]
+    },
+    {
+      "id": "Lucius-Morningstar/mailroom-cuad-contracts",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts",
+      "downloads": 52,
+      "likes": 0,
+      "last_modified": "2026-08-22T05:14:35.000Z",
+      "tags": [
+        "task_categories:text-classification",
+        "language:en",
+        "license:cc-by-4.0",
+        "size_categories:n<1K",
+        "format:imagefolder",
+        "modality:image",
+        "library:datasets",
+        "library:mlcroissant",
+        "region:us",
+        "legal",
+        "contracts",
+        "evaluation"
+      ],
+      "license": "cc-by-4.0",
+      "viewer": {
+        "viewer": true,
+        "preview": true,
+        "search": false,
+        "filter": true,
+        "statistics": true
+      },
+      "splits": [
+        {
+          "config": "default",
+          "split": "train"
+        }
+      ],
+      "num_rows": 546,
+      "num_bytes": 112707,
+      "mailroom_classes": [
+        "contract"
+      ],
+      "role": "Atticus CUAD contract pages as an image folder (vision ingestion surface).",
+      "text_fields": [],
+      "label_fields": []
+    },
+    {
+      "id": "Lucius-Morningstar/mailroom-cuad-contracts-full",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-cuad-contracts-full",
+      "downloads": 29,
+      "likes": 0,
+      "last_modified": "2026-08-24T03:44:36.000Z",
+      "tags": [
+        "task_categories:text-classification",
+        "language:en",
+        "license:cc-by-4.0",
+        "size_categories:n<1K",
+        "region:us",
+        "legal",
+        "contracts",
+        "evaluation",
+        "llm-mailroom",
+        "braintrust-mirror"
+      ],
+      "license": "cc-by-4.0",
+      "viewer": {
+        "viewer": false,
+        "preview": true,
+        "search": false,
+        "filter": false,
+        "statistics": false
+      },
+      "splits": [
+        {
+          "config": "default",
+          "split": "train"
+        }
+      ],
+      "num_rows": 0,
+      "num_bytes": 0,
+      "mailroom_classes": [
+        "contract"
+      ],
+      "role": "CUAD full-contract texts + clause labels for contract_qa / family classification.",
+      "text_fields": [
+        "input"
+      ],
+      "label_fields": [
+        "expected",
+        "id"
+      ]
+    },
+    {
+      "id": "Lucius-Morningstar/legalbench-full",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/legalbench-full",
+      "downloads": 23,
+      "likes": 0,
+      "last_modified": "2026-08-22T12:27:44.000Z",
+      "tags": [
+        "task_categories:text-classification",
+        "language:en",
+        "license:cc-by-4.0",
+        "size_categories:n<1K",
+        "format:text",
+        "modality:text",
+        "library:datasets",
+        "library:mlcroissant",
+        "region:us",
+        "legal",
+        "legalbench",
+        "evaluation"
+      ],
+      "license": "cc-by-4.0",
+      "viewer": {
+        "viewer": true,
+        "preview": true,
+        "search": true,
+        "filter": true,
+        "statistics": true
+      },
+      "splits": [
+        {
+          "config": "default",
+          "split": "train"
+        }
+      ],
+      "num_rows": 8,
+      "num_bytes": 1863,
+      "mailroom_classes": [],
+      "role": "LegalBench pack on the Hub. Snapshot shows a stub viewer (placeholder rows); the in-repo legalbench/ suite is the real eval.",
+      "text_fields": [
+        "text"
+      ],
+      "label_fields": [],
+      "honesty": "Hub viewer currently has 8 placeholder '{{text}}' rows. Use notebooks/12_legalbench.ipynb + local corpora."
+    }
+  ]
+}

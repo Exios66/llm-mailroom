@@ -220,6 +220,40 @@ class TestConflictDetection:
         assert result.get("conflict_detected") is False
         assert result.get("stage") == "archived"
 
+    def test_mixed_class_shared_field_name_is_not_a_conflict(self, monkeypatch):
+        """A bylaws `effective_date` vs an MSA `effective_date` in the same
+        matter is two documents, not a contradiction. Conflict is same-class."""
+        from graph.build_graph import _detect_conflict
+
+        monkeypatch.setattr(
+            "graph.build_graph._fetch_matter_context",
+            lambda state: [
+                {
+                    "doc_id": "prior-msa",
+                    "doc_type": "contract",
+                    "extracted_data": {
+                        "effective_date": "2024-01-01",
+                        "governing_law": "Delaware",
+                        "parties": ["Acme Corp"],
+                    },
+                }
+            ],
+        )
+        detected, details = _detect_conflict(
+            {"doc_type": "corporate_record", "doc_id": "bylaws-1"},
+            {"effective_date": "2015-02-12", "entity_name": "Revenue.com Corporation"},
+        )
+        assert detected is False
+        assert details == []
+
+        # Same-class still fires.
+        detected_same, details_same = _detect_conflict(
+            {"doc_type": "contract", "doc_id": "msa-2"},
+            {"effective_date": "2024-01-01", "governing_law": "New York", "parties": ["Acme Corp"]},
+        )
+        assert detected_same is True
+        assert any("governing_law" in d for d in details_same)
+
 
 class TestAbortedRunReusesDocId:
     def test_abort_reuses_ingest_doc_id(self, temp_base_dir, mock_openai_client):

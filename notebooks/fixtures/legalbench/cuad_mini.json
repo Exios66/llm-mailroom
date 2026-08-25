@@ -1,0 +1,61 @@
+{
+  "version": "v1",
+  "data": [
+    {
+      "title": "ACME_2020-EX-10.1-DISTRIBUTOR AGREEMENT",
+      "paragraphs": [
+        {
+          "context": "DISTRIBUTOR AGREEMENT between ACME and BETA. This agreement may be terminated for convenience by either party. Governing law is Delaware. This section is padded out so the document text comfortably exceeds the loader's minimum length filter for fixture realism and notebook narration.",
+          "qas": [
+            {
+              "id": "ACME_2020-EX-10.1-DISTRIBUTOR AGREEMENT__Termination For Convenience",
+              "question": "Highlight the parts related to Termination For Convenience.",
+              "answers": [{"text": "terminated for convenience", "answer_start": 0}],
+              "is_impossible": false
+            },
+            {
+              "id": "ACME_2020-EX-10.1-DISTRIBUTOR AGREEMENT__Non-Compete",
+              "question": "Highlight the parts related to Non-Compete.",
+              "answers": [],
+              "is_impossible": true
+            },
+            {
+              "id": "ACME_2020-EX-10.1-DISTRIBUTOR AGREEMENT__Governing Law",
+              "question": "Highlight the parts related to Governing Law.",
+              "answers": [{"text": "Governing law is Delaware", "answer_start": 0}],
+              "is_impossible": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "GLOBALTECH_2019-EX-10.2-LICENSE AGREEMENT",
+      "paragraphs": [
+        {
+          "context": "LICENSE AGREEMENT. Licensor grants a perpetual, irrevocable license to use the licensed technology. This section is padded out so the document text comfortably exceeds the loader's minimum length filter for fixture realism and notebook narration of the LegalBench binary-answer family.",
+          "qas": [
+            {
+              "id": "GLOBALTECH_2019-EX-10.2-LICENSE AGREEMENT__License Grant",
+              "question": "Highlight the parts related to License Grant.",
+              "answers": [{"text": "perpetual, irrevocable license", "answer_start": 0}],
+              "is_impossible": false
+            },
+            {
+              "id": "GLOBALTECH_2019-EX-10.2-LICENSE AGREEMENT__Non-Compete",
+              "question": "Highlight the parts related to Non-Compete.",
+              "answers": [],
+              "is_impossible": true
+            },
+            {
+              "id": "GLOBALTECH_2019-EX-10.2-LICENSE AGREEMENT__Insurance",
+              "question": "Highlight the parts related to Insurance.",
+              "answers": [],
+              "is_impossible": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

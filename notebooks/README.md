@@ -25,9 +25,14 @@ jupyter lab notebooks/dataset_browser.ipynb   # or jupyter notebook
 Without the extra, the browser still runs in plain-text mode — every function is
 importable with only the core install. No network access, no LLM calls.
 
+The **Hugging Face** surface is a separate notebook: `11_huggingface_corpora.ipynb`
+walks the Lucius-Morningstar org (CUAD, LegalBench, Enron, DE-SynPUF) from a
+committed Dataset Viewer snapshot. Set `MAILROOM_HF_LIVE=1` to refresh from
+`https://datasets-server.huggingface.co` (optional `HF_TOKEN`).
+
 ## The suite (shipped)
 
-`PLAN.md` is the plan of record; all nine planned walkthroughs now exist and
+`PLAN.md` is the plan of record; walkthroughs 00–13 now exist and
 are guarded:
 
 | # | notebook | what it teaches |
@@ -41,6 +46,11 @@ are guarded:
 | 06 | `06_outputs_and_audit` | manifests, catalog, bins, audit chain — who eats what |
 | 07 | `07_multi_document_matters` | several documents, one `matter_id`, catalog rollup |
 | 08 | `08_observability_traces` | the Langfuse trace contract, offline (+ marker-gated live cell) |
+| 09 | `09_all_specialists` | one happy-path run per document class — all 7 specialists |
+| 10 | `10_edge_cases` | unknown type, missing CUAD subtype, $0 amounts, schema-invalid extract, Boss conflict |
+| 11 | `11_huggingface_corpora` | Lucius-Morningstar Hub datasets (offline Dataset Viewer snapshot + live opt-in) |
+| 12 | `12_legalbench` | LegalBench eval suite (mock on a mini CUAD fixture; Hub pack is a stub) |
+| 13 | `13_vision_ingestion` | additive page-image render path (PyMuPDF data-URIs, no LLM call) |
 
 ★ = Jack's headline ask.
 

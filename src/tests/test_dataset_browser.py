@@ -122,8 +122,19 @@ def test_pdf_text_never_raises_on_missing_file():
     assert pdf_first_page_text("/nonexistent/path.pdf") == ""
 
 
-def test_browser_falls_back_to_text_mode_without_widgets(records, capsys):
-    # No ipywidgets installed in CI/test env -> constructor prints the listing.
+def test_browser_falls_back_to_text_mode_without_widgets(records, capsys, monkeypatch):
+    # Force the text-mode constructor even when `[notebooks]` extra (ipywidgets)
+    # is installed in the environment — CI is extra-less, local/dev often isn't.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _block_ipywidgets(name, *args, **kwargs):
+        if name.split(".")[0] == "ipywidgets":
+            raise ImportError("blocked for text-mode pin")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _block_ipywidgets)
     browser = DatasetBrowser(records, catalog={})
     captured = capsys.readouterr().out
     assert "ipywidgets not installed" in captured
