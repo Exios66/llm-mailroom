@@ -242,6 +242,7 @@ class TestSpecialistMemoryName:
     def test_maps_doc_type_to_configured_specialist(self):
         assert bg._specialist_memory_name("insurance_claim") == "insurance_claims_specialist"
         assert bg._specialist_memory_name("contract") == "contracts_specialist"
+        assert bg._specialist_memory_name("merger_agreement") == "contracts_specialist"
 
     def test_unmapped_type_does_not_fall_back_to_contracts(self):
         assert bg._specialist_memory_name("court_opinion") is None
@@ -264,6 +265,46 @@ class TestUnsupportedExtractParksWithoutRetry:
         assert updates["extraction_confidence"] == 0.0
         merged = {**prior, **updates}
         assert after_extraction(merged) == "human_review"
+
+    def test_merger_agreement_dispatches_contracts_specialist(self, monkeypatch):
+        from graph.routing import after_extraction
+
+        called = {}
+
+        def fake_contracts(doc_text, pages=None, handoff_context=None):
+            called["text"] = doc_text
+            called["handoff"] = handoff_context
+            return {
+                "parties": ["Parent Inc.", "Target Corp."],
+                "document_name": "Agreement and Plan of Merger",
+                "confidence": 0.92,
+            }
+
+        monkeypatch.setattr(bg, "_extract_contracts", fake_contracts)
+        monkeypatch.setattr(
+            bg,
+            "_specialist_extractor_map",
+            lambda: {
+                "contracts_specialist": fake_contracts,
+                "corporate_records_specialist": bg._extract_corporate_records,
+                "correspondence_specialist": bg._extract_correspondence,
+                "compliance_specialist": bg._extract_compliance,
+                "insurance_claims_specialist": bg._extract_insurance_claims,
+            },
+        )
+        prior = {
+            "doc_id": "d-ma",
+            "doc_type": "merger_agreement",
+            "doc_text": "AGREEMENT AND PLAN OF MERGER",
+            "extraction_attempts": 0,
+        }
+        updates = bg.extract_node(prior)
+        assert called.get("text")
+        assert "extract_class=contract" in (called.get("handoff") or "")
+        assert updates["extracted_data"]["parties"] == ["Parent Inc.", "Target Corp."]
+        assert updates.get("extracted_data", {}).get("_unsupported") is not True
+        merged = {**prior, **updates}
+        assert after_extraction(merged) == "compile_report"
 
     def test_unknown_token_extract_is_unsupported_stub(self):
         from graph.routing import after_extraction

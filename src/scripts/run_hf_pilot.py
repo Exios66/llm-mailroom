@@ -4,17 +4,19 @@
 ``scripts/run_production_pilot.py`` in The-Mailroom looks for this file and
 invokes ``--check`` / ``--real --per-class N``. Traces land in Langfuse under
 session ``pilot-hf-<UTC stamp>`` with tags ``mailroom``, ``pilot``,
-``source-docclass-merged`` so the visualizer FLOOR / TUI / Observatory can
-score them.
+``source-docclass-merged`` (and ``docclass-prompts`` when that arm is on)
+so the visualizer FLOOR / TUI / Observatory can score them.
 
   --check   network-free contract (intake + scorer mapping + report schema)
   --mock    pipeline machinery on tiny in-repo fixtures (no Hub, fake LLM)
   --real    live Qwen via OpenRouter on a stratified HF subset
+  --docclass  opt-in KANBAN-090 docclass prompt variants for every agent
 
 Usage:
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --check
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --mock --per-class 1
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 1
+    PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 5 --docclass --max-scan 4000
 """
 
 from __future__ import annotations
@@ -350,7 +352,15 @@ def main() -> int:
     parser.add_argument("--max-chars", type=int, default=25000)
     parser.add_argument("--target-chars", type=int, default=6000)
     parser.add_argument("--max-scan", type=int, default=1500)
+    parser.add_argument(
+        "--docclass",
+        action="store_true",
+        help="Use KANBAN-090 docclass prompt variants (MAILROOM_DOCCLASS_PROMPTS=1).",
+    )
     args = parser.parse_args()
+
+    if args.docclass:
+        os.environ["MAILROOM_DOCCLASS_PROMPTS"] = "1"
 
     if args.check:
         return check_contract()
@@ -421,6 +431,8 @@ def main() -> int:
                 "aligned_ok": False,
             })
 
+    from pipeline.docclass_mode import docclass_prompts_enabled
+
     report = {
         "session_id": session_id,
         "run_id": run_id,
@@ -428,6 +440,7 @@ def main() -> int:
         "dataset": DATASET_ID,
         "split": args.split,
         "mode": "mock" if mock_mode else "real",
+        "docclass_prompts": docclass_prompts_enabled(),
         "samples": rows,
         "n": len(rows),
         "errors": errors,
@@ -442,6 +455,7 @@ def main() -> int:
         "report": str(path),
         "n": len(rows),
         "errors": errors,
+        "docclass_prompts": report["docclass_prompts"],
         "stages": {r.get("stage"): 1 for r in rows},
     }))
     return 1 if errors else 0

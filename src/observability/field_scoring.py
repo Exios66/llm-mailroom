@@ -153,12 +153,19 @@ def get_field_types(doc_class: str, taxonomy: dict | None = None) -> dict[str, s
     ``config/taxonomy.yaml``, which production callers (and the tests)
     rely on. An explicit ``taxonomy`` argument still wins.
     """
+    resolved = doc_class
+    try:
+        from pipeline.config import resolve_extract_class
+
+        resolved = resolve_extract_class(doc_class) or doc_class
+    except Exception:
+        resolved = doc_class
     if taxonomy is not None:
-        return _package_get_field_types(doc_class, taxonomy)
+        return _package_get_field_types(resolved, taxonomy)
     try:
         from pipeline.config import load_config
 
-        return _package_get_field_types(doc_class, load_config())
+        return _package_get_field_types(resolved, load_config())
     except Exception:
         return {}
 

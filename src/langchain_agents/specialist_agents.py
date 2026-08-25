@@ -182,7 +182,17 @@ SPECIALIST_SCHEMAS = {
 
 def get_extraction_schema(doc_type: str) -> dict | None:
     """Return the extraction JSON schema for a doc type (None if unknown)."""
-    return SPECIALIST_SCHEMAS.get(doc_type)
+    if doc_type in SPECIALIST_SCHEMAS:
+        return SPECIALIST_SCHEMAS[doc_type]
+    try:
+        from pipeline.config import resolve_extract_class
+
+        resolved = resolve_extract_class(doc_type)
+        if resolved:
+            return SPECIALIST_SCHEMAS.get(resolved)
+    except Exception:
+        pass
+    return None
 
 
 # =============================================================================
@@ -489,6 +499,13 @@ def get_specialist(doc_type: str, model: str | None = None, api_key: str | None 
     Raises:
         ValueError: If no specialist exists for the doc_type.
     """
-    if doc_type not in SPECIALIST_REGISTRY:
+    resolved = doc_type
+    try:
+        from pipeline.config import resolve_extract_class
+
+        resolved = resolve_extract_class(doc_type) or doc_type
+    except Exception:
+        resolved = doc_type
+    if resolved not in SPECIALIST_REGISTRY:
         raise ValueError(f"No specialist registered for doc_type: {doc_type}")
-    return SPECIALIST_REGISTRY[doc_type](model=model, api_key=api_key)
+    return SPECIALIST_REGISTRY[resolved](model=model, api_key=api_key)

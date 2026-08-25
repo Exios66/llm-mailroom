@@ -43,6 +43,20 @@ class TestValidateExtraction:
         result_unknown = validate_extraction("unknown", {"_unsupported": True})
         assert result_unknown["schema_valid"] is False
 
+    def test_merger_agreement_validates_against_contract_schema(self):
+        from observability.scores import validate_extraction
+
+        result = validate_extraction(
+            "merger_agreement",
+            {
+                "parties": ["Parent Inc.", "Target Corp."],
+                "effective_date": "2024-06-01",
+                "governing_law": "Delaware",
+            },
+        )
+        assert result["parse_error"] is False
+        assert result["schema_valid"] is True
+
 
 class TestEmitPipelineScores:
     def test_scores_computed_when_tracing_disabled(self):
