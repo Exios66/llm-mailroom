@@ -62,7 +62,16 @@ def get_managed_prompt(
 
     Prefers the Langfuse-managed prompt labeled `production`; falls back to
     `default_text` (rendered with `variables`) when unavailable.
+
+    When ``MAILROOM_DOCCLASS_PROMPTS`` is on, fetch the namespaced
+    ``mailroom-docclass-<key>`` variant and fall back to the in-repo append.
     """
+    try:
+        from pipeline.docclass_mode import managed_prompt_lookup
+
+        agent_name, default_text = managed_prompt_lookup(agent_name, default_text)
+    except Exception:
+        pass
     cache_key = (agent_name, label)
     if cache_key not in _prompt_cache:
         client = _client()
@@ -87,10 +96,15 @@ def get_managed_prompt(
 
 def _langchain_prompt(version: str) -> str:
     """Local template for the vendored LangChain agents' versioned prompts
-    (langchain_agents/prompts.py, committed with the vendored stack)."""
-    from langchain_agents.prompts import get_prompt
+    (langchain_agents/prompts.py, committed with the vendored stack).
 
-    return get_prompt(version)
+    Reads ``PROMPT_VERSIONS`` directly so the production catalog never
+    rewrites through the docclass arm (``prompt_templates()`` must stay
+    the agent-name-pinned production surface).
+    """
+    from langchain_agents.prompts import PROMPT_VERSIONS
+
+    return PROMPT_VERSIONS[version]
 
 
 def _bound_prompt_versions() -> dict[str, str]:

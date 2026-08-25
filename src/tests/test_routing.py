@@ -80,6 +80,22 @@ class TestRoutingLogic:
         }
         assert after_classify(state) == "human_review"
 
+    def test_after_classify_merger_agreement_high_confidence_extracts(self):
+        # Extract alias: sorter may emit merger_agreement; contracts specialist
+        # owns the schema. Must not park the way retired classes do.
+        state = {
+            "classification_confidence": 0.99,
+            "classification_attempts": 1,
+            "doc_type": "merger_agreement",
+        }
+        assert after_classify(state) == "extract"
+        assert after_retry_classify(state) == "extract"
+        assert after_review_classify({
+            "review_verdict": "reviewer_agrees_high",
+            "reviewer_confidence": 0.99,
+            "reviewer_doc_type": "merger_agreement",
+        }) == "extract"
+
     def test_after_classify_unknown_type_review(self):
         state = {
             "classification_confidence": 0.80,
