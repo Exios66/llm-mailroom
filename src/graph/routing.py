@@ -1,7 +1,7 @@
 import structlog
 from typing import Any, Literal, Mapping
 
-from pipeline.config import get_confidence_thresholds, get_all_doc_types, is_extractable_doc_type
+from pipeline.config import get_confidence_thresholds, is_extractable_doc_type
 from observability.scores import validate_extraction
 
 logger = structlog.get_logger(__name__)
@@ -57,9 +57,8 @@ def after_classify(state: dict) -> Literal["classify", "retry_classify", "extrac
     low = thresholds.get("low", 0.70)
     high = thresholds.get("high", 0.95)
     retry_max = thresholds.get("retry_max", 1)
-    valid_types = get_all_doc_types()
 
-    if not doc_type or doc_type not in valid_types:
+    if not is_extractable_doc_type(doc_type):
         logger.warning("unknown_doc_type", doc_type=doc_type)
         return "human_review"
 
@@ -114,7 +113,7 @@ def after_retry_classify(state: dict) -> Literal[
     # Unknown type is checked BEFORE the medium-band Lane A route — matching
     # after_classify — so a hallucinated class never spends a reviewer call.
     doc_type = state.get("doc_type")
-    if not doc_type or doc_type not in get_all_doc_types():
+    if not is_extractable_doc_type(doc_type):
         logger.warning(
             "unknown_doc_type_post_retry",
             doc_id=state.get("doc_id"),
@@ -342,7 +341,7 @@ def after_review_classify(state: dict) -> Literal["review_classify", "extract", 
         verdict in ("reviewer_overrides", "reviewer_agrees_high")
         and confidence is not None
         and confidence >= high
-        and doc_type in get_all_doc_types()
+        and is_extractable_doc_type(doc_type)
     ):
         logger.info(
             "review_classify_accepted",
