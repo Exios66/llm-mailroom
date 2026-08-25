@@ -76,13 +76,10 @@ FIXTURE_EXPECTATIONS = {
     "src/tests/fixtures/corporate_record/*": ("corporate_record", None),
     "src/tests/fixtures/correspondence/*": ("correspondence", None),
     "src/tests/fixtures/compliance_filing/*": ("compliance_filing", None),
-    "src/tests/fixtures/due_diligence/*": ("due_diligence", None),
-    "src/tests/fixtures/court_opinion/*": ("court_opinion", None),
     "src/tests/fixtures/insurance_claim/*": ("insurance_claim", None),
     "docs/examples/sources/corporate/*": ("corporate_record", None),
     "docs/examples/sources/correspondence/*": ("correspondence", None),
     "docs/examples/sources/compliance/*": ("compliance_filing", None),
-    "docs/examples/sources/due_diligence/*": ("due_diligence", None),
     "docs/examples/sources/ambiguous/*": ("correspondence", None),
 }
 
@@ -152,13 +149,11 @@ class _EvalLangChainLLM(FakeLangChainLLM):
         lines = [ln.strip().lower() for ln in text.splitlines() if ln.strip()]
         # Self-identifying reports/records beat the header heuristic.
         if any(k in t for k in ("due diligence report", "due diligence checklist",
-                                "due diligence review", "disclosure schedule")):
-            doc_type, confidence = "due_diligence", 0.96
-        elif any(k in t for k in ("court of appeals", "supreme court", "appellant", "appellee",
-                                  "opinion of the court", "united states district court",
-                                  "per curiam", "dissenting opinion", "concurring opinion",
-                                  "before: ", "argued:")):
-            doc_type, confidence = "court_opinion", 0.96
+                                "due diligence review", "disclosure schedule",
+                                "court of appeals", "supreme court", "appellant", "appellee",
+                                "opinion of the court", "united states district court",
+                                "per curiam", "dissenting opinion", "concurring opinion")):
+            doc_type, confidence = "unknown", 0.96
         # Correspondence: memos/letters are the classic false-positive source
         # (they mention contracts, courts, filings and boards). The document
         # FORM decides — a header block (re:/to:/from:/subject:) plus
@@ -183,7 +178,7 @@ class _EvalLangChainLLM(FakeLangChainLLM):
         elif any(k in t for k in ("due diligence report", "due diligence review", "risk flag",
                                   "material findings", "outstanding items", "disclosure schedule",
                                   "diligence summary")):
-            doc_type, confidence = "due_diligence", 0.96
+            doc_type, confidence = "unknown", 0.96
         elif any(k in t for k in ("this license", "licensor", "licensee", "royalt", "licensed")):
             doc_type, subtype, confidence = "contract", "license", 0.96
         elif any(k in t for k in ("distribution agreement", "resell", "distributor", "resale")):
@@ -355,10 +350,17 @@ def _mock_get_llm(agent_name):
 
 def _collect_documents(args) -> list[Path]:
     files: list[Path] = []
+    retired = {"due_diligence", "court_opinion"}
     if args.fixtures or args.all:
-        files += sorted(FIXTURE_DIR.rglob("*.txt"))
+        files += [
+            p for p in sorted(FIXTURE_DIR.rglob("*.txt"))
+            if p.parent.name not in retired
+        ]
     if args.sources or args.all:
-        files += sorted(SOURCES_DIR.rglob("*.txt"))
+        files += [
+            p for p in sorted(SOURCES_DIR.rglob("*.txt"))
+            if p.parent.name not in retired
+        ]
     if args.pdfs or args.all:
         for pattern in ("contract/*.pdf", "*.pdf"):
             files += sorted(SAMPLES_DIR.glob(pattern))

@@ -286,14 +286,10 @@ def _build_specialist_dispatch():
             dispatch[key] = _extract_contracts
         elif spec_name == "corporate_records_specialist":
             dispatch[key] = _extract_corporate_records
-        elif spec_name == "due_diligence_specialist":
-            dispatch[key] = _extract_due_diligence
         elif spec_name == "correspondence_specialist":
             dispatch[key] = _extract_correspondence
         elif spec_name == "compliance_specialist":
             dispatch[key] = _extract_compliance
-        elif spec_name == "court_opinions_specialist":
-            dispatch[key] = _extract_court_opinions
         elif spec_name == "insurance_claims_specialist":
             dispatch[key] = _extract_insurance_claims
     return dispatch
@@ -1013,13 +1009,6 @@ def _extract_corporate_records(
     return CorporateRecordsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
-def _extract_due_diligence(
-    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
-) -> dict:
-    from agents.due_diligence_specialist import DueDiligenceSpecialist
-    return DueDiligenceSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
-
-
 def _extract_correspondence(
     doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
 ) -> dict:
@@ -1032,13 +1021,6 @@ def _extract_compliance(
 ) -> dict:
     from agents.compliance_specialist import ComplianceSpecialist
     return ComplianceSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
-
-
-def _extract_court_opinions(
-    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
-) -> dict:
-    from agents.court_opinions_specialist import CourtOpinionsSpecialist
-    return CourtOpinionsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
 
 
 def _extract_insurance_claims(

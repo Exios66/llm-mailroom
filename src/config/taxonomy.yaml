@@ -167,20 +167,6 @@ doc_classes:
       jurisdiction: name
       filing_number: id
 
-  - key: due_diligence
-    label: "Due Diligence"
-    schema: DueDiligenceExtraction
-    specialist: due_diligence_specialist
-    description: "Checklists, disclosure schedules, diligence memos, risk assessments"
-    field_types:
-      target_entity: name
-      diligence_type: name
-      material_findings: entity_list:free_text
-      risk_flags: entity_list:free_text
-      outstanding_items: entity_list:free_text
-      document_date: date
-      prepared_by: name
-
   - key: correspondence
     label: "Correspondence"
     schema: CorrespondenceExtraction
@@ -212,24 +198,6 @@ doc_classes:
       key_requirements: entity_list:free_text
       status: name
       reference_number: id
-
-  - key: court_opinion
-    label: "Court Opinion"
-    schema: CourtOpinionExtraction
-    specialist: court_opinions_specialist
-    description: "Judicial opinions and orders: published decisions, memorandum opinions, rulings by federal and state courts"
-    field_types:
-      case_name: name
-      court: name
-      date_decided: date
-      docket_number: id
-      opinion_type: name
-      parties: entity_list:name
-      holding: free_text
-      legal_issues: entity_list:free_text
-      outcome: free_text
-      citations: entity_list:id
-      authored_by: name
 
   - key: insurance_claim
     label: "Insurance Claim"
@@ -320,14 +288,6 @@ agents:
     max_input_chars: 40000
     reasoning_effort: none
 
-  due_diligence_specialist:
-    provider: openrouter
-    model: qwen/qwen3.7-flash
-    temperature: 0.1
-    max_tokens: 4096
-    max_input_chars: 40000
-    reasoning_effort: none
-
   correspondence_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
@@ -337,14 +297,6 @@ agents:
     reasoning_effort: none
 
   compliance_specialist:
-    provider: openrouter
-    model: qwen/qwen3.7-flash
-    temperature: 0.1
-    max_tokens: 4096
-    max_input_chars: 60000
-    reasoning_effort: none
-
-  court_opinions_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1

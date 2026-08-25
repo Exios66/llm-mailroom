@@ -39,6 +39,11 @@ class TestAuth:
         r = client.get("/health")
         assert r.status_code == 200
 
+    def test_health_v1_open_without_token(self, client):
+        r = client.get("/v1/health")
+        assert r.status_code == 200
+        assert r.json()["service"] == "mailroom"
+
     def test_upload_requires_token(self, client):
         r = client.post("/upload", files={"file": ("a.txt", b"hello", "text/plain")})
         assert r.status_code == 401
@@ -63,6 +68,9 @@ class TestAuth:
         assert client.get("/ops/status").status_code == 401
         assert client.post("/ops/sweep").status_code == 401
         assert client.post("/ops/resume").status_code == 401
+        assert client.get("/matters/X").status_code == 401
+        assert client.get("/v1/ops/status").status_code == 401
+        assert client.get("/v1/matters/X").status_code == 401
 
     def test_review_and_audit_require_token(self, client):
         assert client.get("/audit/anything").status_code == 401

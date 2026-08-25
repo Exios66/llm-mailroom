@@ -148,16 +148,6 @@ CORPORATE_RECORDS_SCHEMA = build_structured_schema({
     "filing_number": _nullable_string(),
 })
 
-DUE_DILIGENCE_SCHEMA = build_structured_schema({
-    "target_entity": _nullable_string(),
-    "diligence_type": _nullable_string("legal, financial, operational, tax, etc."),
-    "material_findings": _string_array(),
-    "risk_flags": _string_array(),
-    "outstanding_items": _string_array(),
-    "document_date": _nullable_string("mm/dd/yyyy"),
-    "prepared_by": _nullable_string(),
-})
-
 CORRESPONDENCE_SCHEMA = build_structured_schema({
     "sender": _nullable_string(),
     "recipient": _nullable_string(),
@@ -182,27 +172,11 @@ COMPLIANCE_FILING_SCHEMA = build_structured_schema({
     "reference_number": _nullable_string(),
 })
 
-COURT_OPINIONS_SCHEMA = build_structured_schema({
-    "case_name": _nullable_string("e.g., Smith v. Jones"),
-    "court": _nullable_string(),
-    "date_decided": _nullable_string("mm/dd/yyyy"),
-    "docket_number": _nullable_string(),
-    "opinion_type": _nullable_string("majority, dissenting, concurring, per curiam, order"),
-    "parties": _string_array(),
-    "holding": _nullable_string(),
-    "legal_issues": _string_array(),
-    "outcome": _nullable_string("affirmed, reversed, remanded, dismissed, etc."),
-    "citations": _string_array(),
-    "authored_by": _nullable_string(),
-})
-
 SPECIALIST_SCHEMAS = {
     "contract": CONTRACTS_SCHEMA,
     "corporate_record": CORPORATE_RECORDS_SCHEMA,
-    "due_diligence": DUE_DILIGENCE_SCHEMA,
     "correspondence": CORRESPONDENCE_SCHEMA,
     "compliance_filing": COMPLIANCE_FILING_SCHEMA,
-    "court_opinion": COURT_OPINIONS_SCHEMA,
 }
 
 
@@ -476,14 +450,6 @@ class CorporateRecordsSpecialist(_SpecialistBase):
         return get_prompt("corporate_records_specialist")
 
 
-class DueDiligenceSpecialist(_SpecialistBase):
-    agent_name = "due_diligence_specialist"
-    schema = DUE_DILIGENCE_SCHEMA
-
-    def system_prompt(self) -> str:
-        return get_prompt("due_diligence_specialist")
-
-
 class CorrespondenceSpecialist(_SpecialistBase):
     agent_name = "correspondence_specialist"
     schema = CORRESPONDENCE_SCHEMA
@@ -500,22 +466,12 @@ class ComplianceFilingSpecialist(_SpecialistBase):
         return get_prompt("compliance_specialist")
 
 
-class CourtOpinionsSpecialist(_SpecialistBase):
-    agent_name = "court_opinions_specialist"
-    schema = COURT_OPINIONS_SCHEMA
-
-    def system_prompt(self) -> str:
-        return get_prompt("court_opinions_specialist")
-
-
 # Specialist registry — maps doc_type keys to specialist classes
 SPECIALIST_REGISTRY = {
     "contract": ContractsSpecialist,
     "corporate_record": CorporateRecordsSpecialist,
-    "due_diligence": DueDiligenceSpecialist,
     "correspondence": CorrespondenceSpecialist,
     "compliance_filing": ComplianceFilingSpecialist,
-    "court_opinion": CourtOpinionsSpecialist,
 }
 
 

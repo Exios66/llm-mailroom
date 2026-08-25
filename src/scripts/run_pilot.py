@@ -450,11 +450,11 @@ def filter_real_samples(manifest: list[dict], *, mock_mode: bool) -> list[dict]:
     """Restrict a pilot manifest to samples a given mode may process.
 
     Real (non-mock) runs must only process actual committed legal documents —
-    the full Atticus/CUAD contract & agreement PDFs plus the other legal-DB
-    samples (LegalBench MAUD, Pile of Law). Repo-written synthetic .txt samples
-    (render-to-PDF stand-ins under examples/sources/) are mock-only; they exist
-    to test pipeline machinery, never to spend real LLM/eval tokens or pollute
-    live traces. Mock runs keep the full 30-sample set.
+    the full Atticus/CUAD contract & agreement PDFs plus LegalBench MAUD.
+    Repo-written synthetic .txt samples (render-to-PDF stand-ins under
+    examples/sources/) are mock-only; they exist to test pipeline machinery,
+    never to spend real LLM/eval tokens or pollute live traces. Mock runs
+    keep the full live-manifest set.
 
     Returns the filtered manifest. Real-mode callers that end up with zero
     samples must refuse (see main()).
@@ -826,18 +826,17 @@ def main() -> int:
         logger.info("max_docs_limit", limit=args.max_docs, remaining=len(manifest))
 
     # Real (non-mock) runs must only process real committed legal documents —
-    # the full Atticus/CUAD contract & agreement PDFs plus the other legal-DB
-    # samples (LegalBench MAUD, Pile of Law). The repo-written synthetic .txt
-    # samples (render-to-PDF stand-ins under examples/sources/) are mock-only:
-    # they exist to test pipeline machinery, never to spend real LLM/eval
-    # tokens or pollute live traces. Mock runs keep the full 30-sample set.
+    # the Atticus/CUAD PDFs plus LegalBench MAUD. Repo-written synthetic .txt
+    # samples are mock-only: they exist to test pipeline machinery, never to
+    # spend real LLM/eval tokens or pollute live traces. Mock runs keep the
+    # full live-manifest set.
     if not mock_mode:
         manifest = filter_real_samples(manifest, mock_mode=False)
         if not manifest:
             parser.error(
                 "No real samples selected. --real runs only process actual "
-                "committed legal documents (CUAD/Atticus PDFs, LegalBench, Pile "
-                "of Law). Synthetic .txt samples are mock-only — run with --mock."
+                "committed legal documents (CUAD/Atticus PDFs, LegalBench). "
+                "Synthetic .txt samples are mock-only — run with --mock."
             )
         logger.info("real_sample_filter", remaining=len(manifest))
 
