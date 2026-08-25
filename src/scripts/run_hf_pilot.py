@@ -220,9 +220,16 @@ def _viewer_rows(split: str, offset: int, length: int, *, config: str = "default
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    resp = httpx.get(f"{VIEWER_BASE}/rows", params=params, headers=headers, timeout=45)
-    resp.raise_for_status()
-    return resp.json()
+    last: Exception | None = None
+    for attempt in range(5):
+        try:
+            resp = httpx.get(f"{VIEWER_BASE}/rows", params=params, headers=headers, timeout=60)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as exc:
+            last = exc
+            time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"HF viewer failed after 5 tries ({config}/{split} offset={offset}): {last}")
 
 
 def _paginate_viewer(*, split: str, max_scan: int, config: str) -> list[dict]:
