@@ -17,9 +17,10 @@ pipeline:
   pdf_direct_chars_per_page: 800
 
 llm_retry:
-  max_attempts: 3
+  max_attempts: 5
   base_delay: 1.0
-  max_delay: 30.0
+  rate_limit_base_delay: 8.0
+  max_delay: 60.0
   jitter: 0.3
 
 run_limits:
@@ -152,6 +153,10 @@ doc_classes:
       key_obligations: entity_list:free_text
       contract_value: money
       renewal_terms: free_text
+      cuad_family: name
+      merger_consideration: name
+      cuad_clauses: entity_list:free_text
+      maud_clauses: entity_list:free_text
 
   - key: corporate_record
     label: "Corporate Record"
@@ -277,7 +282,7 @@ agents:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1
-    max_tokens: 4096
+    max_tokens: 8192
     max_input_chars: 100000
     reasoning_effort: none
 
