@@ -1,5 +1,6 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from langchain_agents.doc_inventories import COMMUNICATION_TYPE_DESCRIPTION
 from llm.prompt_doctrine import CORRESPONDENCE as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
@@ -68,7 +69,7 @@ class CorrespondenceSpecialist(BaseAgent):
                 },
                 "communication_type": {
                     "type": "string",
-                    "description": "Type: letter, email, memo, notice, demand, etc.",
+                    "description": COMMUNICATION_TYPE_DESCRIPTION,
                 },
                 "communication_date": {
                     "type": ["string", "null"],

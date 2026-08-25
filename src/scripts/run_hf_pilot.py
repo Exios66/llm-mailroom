@@ -44,6 +44,14 @@ from langchain_agents.cuad_maud import (  # noqa: E402
     infer_merger_consideration,
     normalize_consideration,
 )
+from langchain_agents.doc_inventories import (  # noqa: E402
+    INSURANCE_GT_KEYS,
+    coerce_gt_value,
+    normalize_claim_type,
+    normalize_communication_type,
+    normalize_filing_type,
+    normalize_record_type,
+)
 
 DATASET_ID = "Lucius-Morningstar/docclass-merged"
 VIEWER_BASE = "https://datasets-server.huggingface.co"
@@ -156,7 +164,7 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
         if gt.get("maud_clause_labels") not in (None, "")
         else row.get("maud_clause_labels")
     )
-    return {
+    sample = {
         "filename": filename,
         "text": str(text),
         "expected_hf_class": hf_class,
@@ -165,6 +173,13 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
         "maud_clauses": flatten_maud_clause_labels(maud_raw),
         "chars": len(str(text)),
     }
+    for key in INSURANCE_GT_KEYS:
+        raw = gt.get(key)
+        if raw in (None, ""):
+            raw = row.get(key)
+        if raw not in (None, ""):
+            sample[key] = coerce_gt_value(raw)
+    return sample
 
 
 def select_stratified(
@@ -267,11 +282,35 @@ def subclass_ok(expected_class: str, expected_subclass: str, *, predicted_subtyp
             return False
         return got == need
     if hf_class == "corporate_record":
+        got = normalize_record_type(extracted.get("record_type") or predicted_subtype)
+        need = normalize_record_type(want)
+        if got and need:
+            return got == need
         return _loose_label_match(extracted.get("record_type") or predicted_subtype, want)
     if hf_class == "insurance_claim":
+        got = normalize_claim_type(
+            extracted.get("claim_type") or predicted_subtype or extracted.get("record_type")
+        )
+        need = normalize_claim_type(want)
+        if got and need:
+            return got == need
         return _loose_label_match(extracted.get("claim_type") or predicted_subtype, want)
     if hf_class == "correspondence":
-        return _loose_label_match(extracted.get("communication_type") or predicted_subtype, want)
+        got = normalize_communication_type(
+            extracted.get("communication_type") or predicted_subtype
+        )
+        need = normalize_communication_type(want)
+        if got and need:
+            return got == need
+        return _loose_label_match(
+            extracted.get("communication_type") or predicted_subtype, want
+        )
+    if hf_class == "compliance_filing":
+        got = normalize_filing_type(extracted.get("filing_type") or predicted_subtype)
+        need = normalize_filing_type(want)
+        if got and need:
+            return got == need
+        return _loose_label_match(extracted.get("filing_type") or predicted_subtype, want)
     return _loose_label_match(predicted_subtype, want)
 
 
@@ -369,12 +408,15 @@ def summarize_rows(rows: list[dict]) -> dict:
 
 
 def expected_fields_for_sample(sample: dict) -> dict:
-    """Hub GT clause/family/consideration payload used as expected_fields."""
+    """Hub GT clause/family/consideration/subclass payload used as expected_fields."""
     expected_fields: dict = {}
     if sample.get("cuad_clauses"):
         expected_fields["cuad_clauses"] = list(sample["cuad_clauses"])
     if sample.get("maud_clauses"):
         expected_fields["maud_clauses"] = list(sample["maud_clauses"])
+    existing = sample.get("expected_fields")
+    if isinstance(existing, dict):
+        expected_fields.update({k: v for k, v in existing.items() if v not in (None, "")})
     hf_class = sample.get("expected_hf_class") or sample.get("expected") or ""
     subclass = sample.get("expected_subclass") or ""
     if hf_class == "contract" and subclass:
@@ -385,6 +427,26 @@ def expected_fields_for_sample(sample: dict) -> dict:
         token = normalize_consideration(subclass)
         if token:
             expected_fields["merger_consideration"] = token
+    if hf_class == "corporate_record" and subclass:
+        token = normalize_record_type(subclass)
+        expected_fields["record_type"] = token or subclass
+    if hf_class == "correspondence" and subclass:
+        token = normalize_communication_type(subclass)
+        expected_fields["communication_type"] = token or subclass
+    if hf_class == "compliance_filing" and subclass:
+        token = normalize_filing_type(subclass)
+        expected_fields["filing_type"] = token or subclass
+    if hf_class == "insurance_claim":
+        claim = sample.get("claim_type") or subclass
+        token = normalize_claim_type(claim)
+        if token or claim:
+            expected_fields["claim_type"] = token or claim
+        for key in INSURANCE_GT_KEYS:
+            if key == "claim_type":
+                continue
+            val = sample.get(key)
+            if val not in (None, ""):
+                expected_fields[key] = coerce_gt_value(val)
     return expected_fields
 
 
@@ -454,6 +516,7 @@ def enrich_sample_row(row: dict) -> dict:
         "expected_subclass": out.get("expected_subclass"),
         "cuad_clauses": out.get("cuad_clauses") or [],
         "maud_clauses": out.get("maud_clauses") or [],
+        **{k: out.get(k) for k in INSURANCE_GT_KEYS if out.get(k) not in (None, "")},
     })
     scored = score_row_extraction(
         extracted if isinstance(extracted, dict) else {},
@@ -772,6 +835,9 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
             "cuad_clause_labels": row.get("cuad_clause_labels"),
             "maud_clause_labels": row.get("maud_clause_labels"),
         }
+        for key in INSURANCE_GT_KEYS:
+            if row.get(key) not in (None, ""):
+                labels[filename][key] = row.get(key)
     return labels
 
 
