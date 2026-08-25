@@ -237,7 +237,16 @@ def test_subclass_ok_cuad_and_maud():
     assert subclass_ok("contract", "license", predicted_subtype="maintenance") is True
     assert subclass_ok("merger_agreement", "all_cash", extracted={"contract_value": "all_cash"}) is True
     assert subclass_ok("corporate_record", "bylaws", extracted={"record_type": "Bylaws"}) is True
+    assert subclass_ok(
+        "corporate_record",
+        "articles_of_incorporation",
+        extracted={"record_type": "Certificate of Incorporation"},
+    ) is True
     assert subclass_ok("insurance_claim", "outpatient", extracted={"claim_type": "outpatient"}) is True
+    assert subclass_ok("insurance_claim", "pde", extracted={"claim_type": "Part D Event"}) is True
+    assert subclass_ok(
+        "correspondence", "meeting_request", extracted={"communication_type": "meeting invite"}
+    ) is True
     assert subclass_ok("contract", "") is None
 
 

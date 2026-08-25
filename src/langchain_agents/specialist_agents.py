@@ -18,6 +18,12 @@ from __future__ import annotations
 
 import structlog
 from langchain_agents.base_agent import BaseAgent, build_structured_schema
+from langchain_agents.doc_inventories import (
+    CLAIM_TYPE_DESCRIPTION,
+    COMMUNICATION_TYPE_DESCRIPTION,
+    FILING_TYPE_DESCRIPTION,
+    RECORD_TYPE_DESCRIPTION,
+)
 from langchain_agents.prompts import get_prompt
 
 logger = structlog.get_logger(__name__)
@@ -161,37 +167,55 @@ CONTRACTS_SCHEMA = build_structured_schema({
 })
 
 CORPORATE_RECORDS_SCHEMA = build_structured_schema({
-    "entity_name": _nullable_string(),
-    "record_type": _nullable_string("bylaws, resolution, minutes, cap table, etc."),
-    "effective_date": _nullable_string("mm/dd/yyyy"),
-    "key_provisions": _string_array(),
-    "signatories": _string_array(),
-    "jurisdiction": _nullable_string(),
-    "filing_number": _nullable_string(),
+    "entity_name": _nullable_string("Legal entity name as stated"),
+    "record_type": _nullable_string(RECORD_TYPE_DESCRIPTION),
+    "effective_date": _nullable_string("Date the record took effect (ISO or as written)"),
+    "key_provisions": _string_array("Key governance provisions, verbatim where short"),
+    "signatories": _string_array("Individuals who signed or approved"),
+    "jurisdiction": _nullable_string("State/country of incorporation"),
+    "filing_number": _nullable_string("Official filing or document reference number"),
 })
 
 CORRESPONDENCE_SCHEMA = build_structured_schema({
-    "sender": _nullable_string(),
-    "recipient": _nullable_string(),
-    "additional_recipients": _string_array(),
-    "communication_type": _nullable_string("letter, email, memo, notice, demand, etc."),
-    "communication_date": _nullable_string("mm/dd/yyyy"),
-    "key_points": _string_array(),
-    "demand_amount": _nullable_string(),
-    "action_items": _string_array(),
-    "urgency": _nullable_string("high, medium, low, immediate, etc."),
-    "referenced_communications": _string_array(),
+    "sender": _nullable_string("Who sent the communication"),
+    "recipient": _nullable_string("Who received it"),
+    "additional_recipients": _string_array("Cc'd or otherwise copied parties"),
+    "communication_type": _nullable_string(COMMUNICATION_TYPE_DESCRIPTION),
+    "communication_date": _nullable_string("Date the communication was sent"),
+    "key_points": _string_array("Main substantive points made"),
+    "demand_amount": _nullable_string("Exact dollar amount demanded (demand letters only)"),
+    "action_items": _string_array("Actions required, with deadlines if stated"),
+    "urgency": _nullable_string("Urgency level: routine, time-sensitive, urgent, critical"),
+    "referenced_communications": _string_array(
+        "Prior letters, notices, or communications this message references"
+    ),
 })
 
 COMPLIANCE_FILING_SCHEMA = build_structured_schema({
-    "filing_type": _nullable_string("10-K, 10-Q, 8-K, DEF 14A, Schedule 13D, etc."),
-    "regulatory_body": _nullable_string("SEC, state secretary, etc."),
-    "filing_date": _nullable_string("mm/dd/yyyy"),
-    "due_date": _nullable_string("mm/dd/yyyy"),
-    "entity_name": _nullable_string(),
-    "key_requirements": _string_array(),
-    "status": _nullable_string("filed, pending, late, etc."),
-    "reference_number": _nullable_string(),
+    "filing_type": _nullable_string(FILING_TYPE_DESCRIPTION),
+    "regulatory_body": _nullable_string("Agency or authority: SEC, state secretary, IRS, etc."),
+    "filing_date": _nullable_string("Date the filing was submitted"),
+    "due_date": _nullable_string("Statutory or regulatory deadline"),
+    "entity_name": _nullable_string("Entity making the filing"),
+    "key_requirements": _string_array("Regulatory requirements being satisfied"),
+    "status": _nullable_string("draft, filed, pending, overdue, etc."),
+    "reference_number": _nullable_string("Accession, control, or tracking number"),
+})
+
+INSURANCE_CLAIMS_SCHEMA = build_structured_schema({
+    "claim_number": _nullable_string("Claim number exactly as printed (CLAIM NO., FNOL ref., CLM_ID)"),
+    "policy_number": _nullable_string("Policy number exactly as printed"),
+    "insurer": _nullable_string("Named insurance company / carrier"),
+    "insured_party": _nullable_string("Named insured or claimant"),
+    "claim_type": _nullable_string(CLAIM_TYPE_DESCRIPTION),
+    "date_of_loss": _nullable_string("Date the loss/event occurred, if stated"),
+    "date_filed": _nullable_string("Date the claim was filed, if stated"),
+    "claimed_amount": _nullable_string("Amount claimed/demanded, if stated"),
+    "adjuster": _nullable_string("Named adjuster handling the claim, if stated; null when absent"),
+    "damages_description": _nullable_string("Summary of the loss/damages as described"),
+    "coverage_determination": _nullable_string("Outcome as stated: approved, denied, partial, pending"),
+    "denial_reasons": _string_array("Stated denial/limitation grounds, if denied"),
+    "supporting_documents": _string_array("Referenced supporting documents"),
 })
 
 SPECIALIST_SCHEMAS = {
@@ -199,6 +223,7 @@ SPECIALIST_SCHEMAS = {
     "corporate_record": CORPORATE_RECORDS_SCHEMA,
     "correspondence": CORRESPONDENCE_SCHEMA,
     "compliance_filing": COMPLIANCE_FILING_SCHEMA,
+    "insurance_claim": INSURANCE_CLAIMS_SCHEMA,
 }
 
 

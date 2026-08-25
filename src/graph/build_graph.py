@@ -296,18 +296,19 @@ def _build_handoff_context(state: DocumentState) -> str | None:
             + "."
         )
     context += ". Extract this document's fields accordingly, ensuring every expected item of this document class is captured."
-    if extract_class == "contract" or doc_type == "merger_agreement":
-        try:
-            from langchain_agents.cuad_maud import clause_handoff
+    try:
+        from langchain_agents.doc_inventories import specialist_handoff
 
-            context += " " + clause_handoff(doc_type, contract_subtype)
-        except Exception:
-            pass
+        extra = specialist_handoff(doc_type, contract_subtype)
+        if extra:
+            context += " " + extra
+    except Exception:
+        pass
     return context
 
 
 def _enrich_contract_result(result: dict | None, state: dict) -> dict:
-    """Attach CUAD/MAUD inventory fields after the specialist returns."""
+    """Attach Hub inventory fields after the specialist returns."""
     payload = dict(result or {})
     doc_type = state.get("doc_type") or ""
     extract_class = doc_type
@@ -317,15 +318,14 @@ def _enrich_contract_result(result: dict | None, state: dict) -> dict:
         extract_class = resolve_extract_class(doc_type) or doc_type
     except Exception:
         pass
-    if extract_class != "contract" and doc_type != "merger_agreement":
-        return payload
     try:
-        from langchain_agents.cuad_maud import enrich_contract_extraction
+        from langchain_agents.doc_inventories import enrich_extraction
 
-        return enrich_contract_extraction(
+        return enrich_extraction(
             payload,
             doc_type=doc_type,
-            contract_subtype=state.get("contract_subtype"),
+            extract_class=extract_class,
+            subtype=state.get("contract_subtype"),
         )
     except Exception:
         logger.exception("contract_inventory_enrich_failed")
@@ -977,7 +977,7 @@ def _detect_conflict(state: dict, extracted_data: dict | None) -> tuple[bool, li
             continue
         for field in sorted(schema_fields):
             try:
-                from langchain_agents.cuad_maud import skip_conflict_field
+                from langchain_agents.doc_inventories import skip_conflict_field
 
                 if skip_conflict_field(field):
                     continue
