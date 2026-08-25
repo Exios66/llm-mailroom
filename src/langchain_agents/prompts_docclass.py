@@ -57,7 +57,11 @@ _DOCCONTEXT = (
     "record type read from the document's own title/head (bylaws, "
     "articles_of_incorporation, certificate_of_formation, charter_amendment, "
     "powers_of_attorney, subsidiary_list, rights_instrument, indenture, "
-    "board_resolution, officer_certificate, other).\n"
+    "board_resolution, officer_certificate, other); correspondence -> "
+    "email, letter, memo, notice, demand, attorney_demand, press_release, "
+    "meeting_request; insurance_claim -> CMS file types pde, inpatient, "
+    "outpatient, carrier (or traditional auto, property, liability, health, "
+    "life, workers_comp).\n"
 )
 
 
@@ -82,6 +86,54 @@ _SPECIALIST_RULES_BODY = (
     "evidence wherever it appears.\n"
     "The output-format requirements of the prompt above are unchanged: return "
     "exactly one JSON object matching the schema and no other text."
+)
+
+_OUTPUT_CLOSER = (
+    "The output-format requirements of the prompt above are unchanged: return "
+    "exactly one JSON object matching the schema and no other text."
+)
+
+
+def _specialist_rules(*extra: str) -> str:
+    prefix = _SPECIALIST_RULES_BODY.rsplit(
+        "The output-format requirements of the prompt above are unchanged:", 1
+    )[0]
+    return prefix + "".join(extra) + _OUTPUT_CLOSER
+
+
+_CORPORATE_SPECIALIST_RULES_BODY = _specialist_rules(
+    "e. Hub record_type: emit exactly one of articles_of_incorporation, "
+    "bylaws, powers_of_attorney, rights_instrument, other. Certificate/"
+    "Articles of Incorporation or Formation are articles_of_incorporation. "
+    "Stockholder rights, warrants, preferred certificates, and specimen "
+    "stock are rights_instrument. An S-1/10-K exhibit cover sheet does not "
+    "make this a compliance filing — extract the record as it is.\n"
+)
+
+_CORRESPONDENCE_SPECIALIST_RULES_BODY = _specialist_rules(
+    "e. Hub communication_type: emit exactly one of email, letter, memo, "
+    "notice, demand, attorney_demand, press_release, meeting_request. "
+    "Enron-style inbox messages are email; internal memoranda are memo; "
+    "calendar/meeting invites are meeting_request; news wires are "
+    "press_release. Readable correspondence is never unknown.\n"
+)
+
+_COMPLIANCE_SPECIALIST_RULES_BODY = _specialist_rules(
+    "e. Hub filing_type is the form BODY: 10-K, 10-Q, 8-K, S-1, DEF 14A, "
+    "13D, 13G, Form 4, 20-F, 6-K, or other. Attached charters, bylaws, "
+    "powers of attorney, and rights instruments are corporate_record — if "
+    "that is what this file is, extract those governance facts into the "
+    "compliance schema only as they appear, and set filing_type only when "
+    "the body itself is the SEC form.\n"
+)
+
+_INSURANCE_SPECIALIST_RULES_BODY = _specialist_rules(
+    "e. Hub claim_type: CMS/DE-SynPUF claim tables use pde (Part D Event / "
+    "prescription), inpatient, outpatient, or carrier (professional/"
+    "physician). Traditional FNOL/policy lines use auto, property, "
+    "liability, health, life, workers_comp. PDE/CLM_ID/DESYNPUF headers "
+    "identify the CMS file type; never classify those tables as a "
+    "compliance filing. Null adjuster is correct when none is named.\n"
 )
 
 _CONTRACTS_SPECIALIST_RULES_BODY = (
@@ -159,6 +211,19 @@ _SORTER_RULES_BODY = (
     "the CUAD folder convention (maintenance).\n"
     "d. When doc_type is merger_agreement, contract_subtype is null — MAUD "
     "consideration type is an extraction field, not a CUAD family.\n"
+    "e. SEC exhibit wrappers do not make a 10-K: a file whose BODY is a "
+    "Certificate/Articles of Incorporation, Bylaws, Power of Attorney, "
+    "stockholder rights instrument, warrant, preferred certificate, or "
+    "specimen stock is corporate_record even when an EDGAR/S-1/10-K cover "
+    "sheet is present. compliance_filing is the form body (Item 1 Business, "
+    "issuer financials, MD&A), not an attached charter exhibit.\n"
+    "f. CMS/Medicare claim tables (DESYNPUF, CLM_ID, PDE, inpatient/"
+    "outpatient/carrier claim files) are insurance_claim, never "
+    "compliance_filing, never unknown.\n"
+    "g. Enron-style emails, memos, meeting requests, press releases, and "
+    "demand letters are correspondence. Never emit unknown for readable "
+    "email/memo/invite text. unknown is reserved for unreadable scans, "
+    "empty files, or documents that match none of the classes.\n"
     "The output-format requirements of the prompt above are unchanged."
 )
 
@@ -189,6 +254,9 @@ _JUDGE_CLASSIFICATION_RULES_BODY = (
     "class.\n"
     "c. expected_class must be an exact key from the extended list; leave it "
     "null when the assigned class is correct.\n"
+    "d. Exhibit-vs-form: a charter/bylaws/POA/rights-instrument BODY is "
+    "corporate_record even under an S-1/10-K wrapper; CMS claim tables are "
+    "insurance_claim; readable email/memo text is correspondence, not unknown.\n"
     "The output-format requirements of the prompt above are unchanged."
 )
 
@@ -200,8 +268,10 @@ _BOSS_RULES_BODY = (
     "b. The extended class set includes insurance_claim and merger_agreement; "
     "when deciding which specialist's output reflects the document's real "
     "form, weigh the family discriminators (acquisition machinery -> "
-    "merger_agreement; FNOL/adjuster/coverage-denial material -> "
-    "insurance_claim).\n"
+    "merger_agreement; FNOL/adjuster/coverage-denial material AND CMS/"
+    "DE-SynPUF claim tables -> insurance_claim; charter/bylaws/rights "
+    "instrument BODY -> corporate_record even with an SEC exhibit wrapper; "
+    "readable email/memo text -> correspondence, not unknown).\n"
     "The output-format requirements of the prompt above are unchanged."
 )
 
@@ -217,6 +287,10 @@ _REVIEWER_ARBITER_RULES_BODY = (
     "exhibits never change the parent agreement's class.\n"
     "c. Flag suspected upstream misclassification explicitly rather than "
     "silently re-reading the document into the assigned class's schema.\n"
+    "d. Exhibit-vs-form: charter/bylaws/POA/rights-instrument BODY -> "
+    "corporate_record (SEC wrapper does not win); CMS claim tables -> "
+    "insurance_claim; readable email/memo/invite text -> correspondence, "
+    "never unknown.\n"
     "The output-format requirements of the prompt above are unchanged."
 )
 
@@ -236,10 +310,10 @@ def _append(base: str, body: str, marker: str) -> str:
 _DOCCLASS_FROM_PRODUCTION: tuple[tuple[str, str, str], ...] = (
     ("sorter", "sorter_docclass_v0", _SORTER_RULES_BODY),
     ("contracts_specialist", "contracts_specialist_docclass_v0", _CONTRACTS_SPECIALIST_RULES_BODY),
-    ("corporate_records_specialist", "corporate_records_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
-    ("correspondence_specialist", "correspondence_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
-    ("compliance_specialist", "compliance_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
-    ("insurance_claims_specialist", "insurance_claims_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("corporate_records_specialist", "corporate_records_specialist_docclass_v0", _CORPORATE_SPECIALIST_RULES_BODY),
+    ("correspondence_specialist", "correspondence_specialist_docclass_v0", _CORRESPONDENCE_SPECIALIST_RULES_BODY),
+    ("compliance_specialist", "compliance_specialist_docclass_v0", _COMPLIANCE_SPECIALIST_RULES_BODY),
+    ("insurance_claims_specialist", "insurance_claims_specialist_docclass_v0", _INSURANCE_SPECIALIST_RULES_BODY),
     ("sorter_reviewer", "reviewer_docclass_v0", _REVIEWER_ARBITER_RULES_BODY),
     ("arbiter", "arbiter_docclass_v0", _REVIEWER_ARBITER_RULES_BODY),
     ("boss", "boss_docclass_v0", _BOSS_RULES_BODY),
