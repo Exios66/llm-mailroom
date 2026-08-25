@@ -1,10 +1,11 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import INSURANCE_CLAIMS as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = """You are a meticulous insurance-claims specialist at a law firm.
+SYSTEM_PROMPT_V0 = """You are a meticulous insurance-claims specialist at a law firm.
 You read insurance claim documentation — FNOL forms, adjuster reports and estimates,
 demand packages, coverage determinations, reservation-of-rights letters, denial
 letters, and EOB statements — and distill their claim facts.
@@ -35,6 +36,8 @@ Extraction rules:
     start from the share of schema fields actually found (fields left null lower it), and lower
     it further for uncertain values or truncated input. Never default to a fixed high value
     (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports."""
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class InsuranceClaimsSpecialist(BaseAgent):

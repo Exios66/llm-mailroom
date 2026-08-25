@@ -1,10 +1,11 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import CORPORATE_RECORDS as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = """You are a methodical corporate records specialist at a law firm.
+SYSTEM_PROMPT_V0 = """You are a methodical corporate records specialist at a law firm.
 You excel at extracting structured data from corporate governance documents.
 
 You handle: bylaws, board resolutions, board minutes, shareholder resolutions, cap table entries,
@@ -25,6 +26,8 @@ Extraction rules:
    (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
 
 Be methodical and thorough — corporate records are the backbone of the client's legal structure."""
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class CorporateRecordsSpecialist(BaseAgent):
