@@ -99,11 +99,27 @@ def after_classify(state: dict) -> Literal["classify", "retry_classify", "extrac
 
 
 def after_retry_classify(state: dict) -> Literal[
-    "classify", "review_classify", "extract", "human_review"
+    "retry_classify", "review_classify", "extract", "human_review"
 ]:
     if state.get("transient_error"):
-        if _transient_decision(state, retry_target="classify") == "retry":
-            return "classify"
+        # L-13: retry the SAME node. Routing back to first-pass `classify`
+        # dropped the re-evaluation prompt, burned a classification attempt,
+        # and skipped Lane A when the extra pass exhausted the confidence budget.
+        if _transient_decision(state, retry_target="retry_classify") == "retry":
+            return "retry_classify"
+        return "human_review"
+    # KANBAN-062 (Lane A): a medium-band classification that survived the
+    # retry now goes to the agent second opinion instead of straight to a
+    # human.
+    # Unknown type is checked BEFORE the medium-band Lane A route — matching
+    # after_classify — so a hallucinated class never spends a reviewer call.
+    doc_type = state.get("doc_type")
+    if not doc_type or doc_type not in get_all_doc_types():
+        logger.warning(
+            "unknown_doc_type_post_retry",
+            doc_id=state.get("doc_id"),
+            doc_type=doc_type,
+        )
         return "human_review"
     # KANBAN-062 (Lane A): a medium-band classification that survived the
     # retry now goes to the agent second opinion instead of straight to a
@@ -120,16 +136,8 @@ def after_retry_classify(state: dict) -> Literal[
         )
         return "review_classify"
     # Post-retry resolution (explicit instead of delegating to after_classify,
-    # whose retry arms are unreachable once the budget is spent): unknown type
-    # or still-low confidence escalates to humans; high confidence proceeds.
-    doc_type = state.get("doc_type")
-    if not doc_type or doc_type not in get_all_doc_types():
-        logger.warning(
-            "unknown_doc_type_post_retry",
-            doc_id=state.get("doc_id"),
-            doc_type=doc_type,
-        )
-        return "human_review"
+    # whose retry arms are unreachable once the budget is spent): still-low
+    # confidence escalates to humans; high confidence proceeds.
     if confidence is not None and confidence >= high:
         return "extract"
     return "human_review"
@@ -188,10 +196,15 @@ def after_extraction(state: dict) -> Literal[
     return "human_review"
 
 
-def after_retry_extraction(state: dict) -> Literal["extract", "compile_report", "human_review", "boss_escalation"]:
+def after_retry_extraction(state: dict) -> Literal[
+    "retry_extract", "compile_report", "human_review", "boss_escalation"
+]:
     if state.get("transient_error"):
-        if _transient_decision(state, retry_target="extract") == "retry":
-            return "extract"
+        # L-13: retry the SAME node so the re-extraction prompt (and any
+        # arbiter fix-list riding on it) is preserved. Bouncing to first-pass
+        # `extract` dropped that context and could burn the confidence budget.
+        if _transient_decision(state, retry_target="retry_extract") == "retry":
+            return "retry_extract"
         return "human_review"
     return after_extraction(state)
 
@@ -239,9 +252,13 @@ def after_extraction_gated(state: dict) -> Literal[
 
 
 def after_retry_extraction_gated(state: dict) -> Literal[
-    "extract", "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
+    "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
-    """Same gate applied to the post-retry extraction router."""
+    """Same gate applied to the post-retry extraction router.
+
+    Transient blips self-loop on ``retry_extract`` (own per-node budget);
+    they no longer bounce to first-pass ``extract``.
+    """
     dest = after_retry_extraction(state)
     if dest == "compile_report" and judge_gate(state):
         logger.info(
@@ -253,7 +270,15 @@ def after_retry_extraction_gated(state: dict) -> Literal[
     return dest
 
 
-def after_boss(state: dict) -> Literal["compile_report", "human_review"]:
+def after_boss(state: dict) -> Literal["boss_escalation", "compile_report", "human_review"]:
+    if state.get("transient_error"):
+        # L-10: a provider blip during adjudication must retry the Boss, not
+        # treat a leftover `review_decision="approved"` (review-resume sets
+        # that flag) as a successful ruling — that composed path archived
+        # conflicted documents without adjudication.
+        if _transient_decision(state, retry_target="boss_escalation") == "retry":
+            return "boss_escalation"
+        return "human_review"
     decision = state.get("review_decision")
     if decision == "approved":
         return "compile_report"
@@ -331,7 +356,9 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     return "arbiter"
 
 
-def after_arbiter(state: dict) -> Literal["compile_report", "retry_extract", "human_review"]:
+def after_arbiter(state: dict) -> Literal[
+    "arbiter", "compile_report", "retry_extract", "human_review"
+]:
     """KANBAN-063 (Lane B): arbiter outcome router, with the retry bound.
 
     ``accept_with_caveats`` proceeds; ``retry_extraction`` re-runs extraction
@@ -345,7 +372,14 @@ def after_arbiter(state: dict) -> Literal["compile_report", "retry_extract", "hu
     arrives here with a count of 1. Hence ``<= 1``: the first approved retry
     dispatches to ``retry_extract``; only a SECOND arbitration demanding
     another retry finds a spent budget and escalates to human review.
+
+    Transient provider errors self-loop on the arbiter's OWN per-node budget
+    (L-13) before escalating fail-safe to humans.
     """
+    if state.get("transient_error"):
+        if _transient_decision(state, retry_target="arbiter") == "retry":
+            return "arbiter"
+        return "human_review"
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
         return "compile_report"

@@ -32,6 +32,8 @@ class TestBossGuardedNode:
                 adj.side_effect = openai.APIConnectionError(request=None)
                 result = bg.boss_escalation_node(state)
         assert result["transient_error"] is True
+        assert result["transient_retries_boss_escalation"] == 1
+        assert "review_decision" not in result
 
     def test_boss_hard_error_defaults_to_review(self):
         state = {
@@ -44,6 +46,7 @@ class TestBossGuardedNode:
                 result = bg.boss_escalation_node(state)
         assert result["review_decision"] == "review"
         assert "Boss unavailable" in result["escalation_reason"]
+        assert result["transient_error"] is False
 
     def test_boss_ok_path_unchanged(self):
         state = {
@@ -55,6 +58,7 @@ class TestBossGuardedNode:
             with patch("agents.boss.BossAgent.adjudicate", return_value={"decision": "approved", "reasoning": "fine"}):
                 result = bg.boss_escalation_node(state)
         assert result["review_decision"] == "approved"
+        assert result["transient_error"] is False
 
 
 class TestClassifyFailureRoutesToReview:
