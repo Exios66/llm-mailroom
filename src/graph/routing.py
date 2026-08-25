@@ -338,11 +338,18 @@ def after_arbiter(state: dict) -> Literal["compile_report", "retry_extract", "hu
     exactly once per document (the bound — compounding arbitration loops are
     the failure mode this prevents); anything else (or a retry demand past
     the bound) escalates to human review with the handoff summary attached.
+
+    KANBAN-098: the bound is approval-INCLUSIVE. ``arbiter_node`` increments
+    ``arbiter_retry_count`` at approval time (so the retrying extract node can
+    weave the fix-list into its prompt), meaning the FIRST approval already
+    arrives here with a count of 1. Hence ``<= 1``: the first approved retry
+    dispatches to ``retry_extract``; only a SECOND arbitration demanding
+    another retry finds a spent budget and escalates to human review.
     """
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
         return "compile_report"
-    if decision == "retry_extraction" and state.get("arbiter_retry_count", 0) < 1:
+    if decision == "retry_extraction" and state.get("arbiter_retry_count", 0) <= 1:
         logger.info(
             "arbiter_retry_approved",
             doc_id=state.get("doc_id"),

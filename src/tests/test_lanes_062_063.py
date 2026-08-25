@@ -153,9 +153,14 @@ class TestLaneBRouting:
         assert after_arbiter({"arbiter_decision": "accept_with_caveats"}) == "compile_report"
 
     def test_arbiter_retry_bounded_to_one(self):
-        first = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 0}
-        assert after_arbiter(first) == "retry_extract"
-        spent = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 1}
+        # KANBAN-098: the bound is approval-INCLUSIVE. arbiter_node increments
+        # arbiter_retry_count when the arbiter ORDERS the retry, so the FIRST
+        # approval already arrives at this router carrying count == 1 and must
+        # still dispatch to retry_extract. A SECOND arbitration demanding yet
+        # another retry finds the budget spent (count == 2) and escalates.
+        first_approval = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 1}
+        assert after_arbiter(first_approval) == "retry_extract"
+        spent = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 2}
         assert after_arbiter(spent) == "human_review"
 
     def test_arbiter_human_review_escalates(self):
