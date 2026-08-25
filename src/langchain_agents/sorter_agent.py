@@ -32,10 +32,8 @@ logger = structlog.get_logger(__name__)
 DOC_CLASSES = [
     {"key": "contract", "label": "Contract / Agreement", "description": "Formal agreements between parties: M&A, vendor, employment, NDAs, etc."},
     {"key": "corporate_record", "label": "Corporate Record", "description": "Bylaws, resolutions, board minutes, cap table entries, incorporation docs"},
-    {"key": "due_diligence", "label": "Due Diligence", "description": "Checklists, disclosure schedules, diligence memos, risk assessments"},
     {"key": "correspondence", "label": "Correspondence", "description": "Letters, emails, memos, notices between parties or with regulators"},
     {"key": "compliance_filing", "label": "Compliance Filing", "description": "SEC filings, state registrations, regulatory submissions, annual reports"},
-    {"key": "court_opinion", "label": "Court Opinion", "description": "Judicial opinions and orders: published decisions, memorandum opinions, rulings"},
     {"key": "insurance_claim", "label": "Insurance Claim", "description": "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"},
 ]
 

@@ -216,7 +216,7 @@ class TestReviewerReceivesSubtypeVocabulary:
                 seen["subtypes"] = contract_subtypes
                 seen["types"] = valid_doc_types
                 return {
-                    "doc_type": "court_opinion",
+                    "doc_type": "insurance_claim",
                     "contract_subtype": None,
                     "confidence": 0.98,
                     "reasoning": "judicial form",
@@ -239,6 +239,5 @@ class TestReviewerReceivesSubtypeVocabulary:
 
 class TestSpecialistMemoryName:
     def test_maps_doc_type_to_configured_specialist(self):
-        assert bg._specialist_memory_name("court_opinion") == "court_opinions_specialist"
         assert bg._specialist_memory_name("insurance_claim") == "insurance_claims_specialist"
         assert bg._specialist_memory_name("contract") == "contracts_specialist"

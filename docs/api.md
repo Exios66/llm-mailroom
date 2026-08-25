@@ -14,6 +14,10 @@ PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 ## Endpoints
 
+Each route below is also mounted under `/v1` (for example `GET /health` and
+`GET /v1/health` share the same handler). Prefer the `/v1` prefix. Management
+routes except health require a bearer token (`MAILROOM_API_TOKEN`).
+
 ### Health Check
 
 ```
@@ -381,14 +385,16 @@ When the API is running, visit:
 
 ## API Versioning
 
-The Mailroom API is currently **unversioned**. All endpoints are served from the root path (`/`) without a version prefix. This is acceptable while the API is internal and pre-1.0, but the following conventions apply:
+The Mailroom API is versioned under `/v1`. Unversioned routes remain as
+aliases during the deprecation window and share the same handlers, auth,
+and status codes.
 
 ### Versioning policy
 
 | Concern | Policy |
 |---|---|
-| **Current status** | Unversioned (pre-1.0), internal use only |
-| **Version prefix** | Planned: `/v1/` when the first breaking change ships |
+| **Current status** | `/v1` is the versioned surface; unversioned routes are deprecated |
+| **Version prefix** | `/v1/` |
 | **Backwards compatibility** | Breaking changes are grouped into a single release; the old route set is deprecated for one minor release before removal |
 | **Response evolution** | Additive fields in JSON responses are allowed within a version (consumers must ignore unknown fields) |
 | **Removal of fields** | Always a breaking change → new version |
@@ -396,13 +402,12 @@ The Mailroom API is currently **unversioned**. All endpoints are served from the
 
 ### Guidance for API consumers
 
-- Treat the API as unstable: pin to the Mailroom release you integrate against (see `CHANGELOG.md`).
+- Prefer `/v1/...` for all new integrations. Unversioned routes will be removed after the deprecation window (see `CHANGELOG.md`).
 - Do not depend on undocumented response fields — only fields documented in this reference are stable.
 - Breaking changes are announced in `CHANGELOG.md` under the "Breaking changes" section of the release.
+- Every management endpoint except `GET /health` and `GET /v1/health` requires `Authorization: Bearer $MAILROOM_API_TOKEN`, including `GET /matters/{matter_id}` and `GET /v1/matters/{matter_id}`.
 
-### Planned `/v1/` layout
-
-When versioning ships, routes will move under a prefix:
+### `/v1` layout
 
 ```
 GET  /v1/health
@@ -413,6 +418,8 @@ GET  /v1/status/{doc_id}
 GET  /v1/matters/{matter_id}
 GET  /v1/audit/{doc_id}
 GET  /v1/ops/status
+POST /v1/ops/sweep
+POST /v1/ops/resume
 ```
 
-The unversioned routes will continue to work during the deprecation window, then be removed.
+The unversioned routes (`GET /health`, `POST /upload`, …) continue to work during the deprecation window, then will be removed.

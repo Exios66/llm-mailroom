@@ -67,7 +67,7 @@ class TestLaneARouting:
             after_review_classify({
                 "review_verdict": "reviewer_overrides",
                 "reviewer_confidence": 0.98,
-                "reviewer_doc_type": "court_opinion",
+                "reviewer_doc_type": "insurance_claim",
             })
             == "extract"
         )
@@ -243,7 +243,7 @@ class TestNodeBehavior:
 
             def review(self, doc_text, pages=None, **kw):
                 return {
-                    "doc_type": "court_opinion",
+                    "doc_type": "insurance_claim",
                     "contract_subtype": None,
                     "confidence": 0.98,
                     "reasoning": "judicial decision format",
@@ -259,10 +259,10 @@ class TestNodeBehavior:
              "classification_confidence": 0.8}
         )
         assert updates["review_verdict"] == "reviewer_overrides"
-        assert updates["doc_type"] == "court_opinion"          # label APPLIED
+        assert updates["doc_type"] == "insurance_claim"          # label APPLIED
         assert updates["classification_confidence"] == 0.98
         # Original sorter answer preserved for the audit trail:
-        assert updates["reviewer_doc_type"] == "court_opinion"
+        assert updates["reviewer_doc_type"] == "insurance_claim"
         assert "sorter='correspondence'" in updates["escalation_reason"]
 
     def test_review_node_low_confidence_keeps_sorter_label(self, monkeypatch):

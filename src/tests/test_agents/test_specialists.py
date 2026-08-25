@@ -1,28 +1,6 @@
 import pytest
 
-from schemas.documents import EXTRACTION_SCHEMAS, CourtOpinionExtraction, InsuranceClaimExtraction
-
-
-def test_court_opinion_schema_registered_and_validates():
-    assert EXTRACTION_SCHEMAS["court_opinion"] is CourtOpinionExtraction
-    parsed = CourtOpinionExtraction.model_validate(
-        {
-            "case_name": "People v. Carter",
-            "court": "Appellate Division",
-            "holding": "affirmed",
-            "legal_issues": ["search and seizure"],
-            "outcome": "affirmed",
-        }
-    )
-    assert parsed.case_name == "People v. Carter"
-    assert parsed.parties == []
-
-
-def test_specialist_dispatch_includes_court_opinion():
-    from graph.build_graph import _build_specialist_dispatch
-
-    dispatch = _build_specialist_dispatch()
-    assert "court_opinion" in dispatch
+from schemas.documents import EXTRACTION_SCHEMAS, InsuranceClaimExtraction
 
 
 def test_insurance_claim_schema_registered_and_validates():
@@ -205,26 +183,6 @@ class TestCorporateRecordsSpecialist:
         assert "Meridian" in result.get("entity_name", "")
 
 
-class TestDueDiligenceSpecialist:
-    def test_extract_dd_report(self, sample_dd_text, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"target_entity": "NovaTech Solutions, Inc.", '
-            '"diligence_type": "Legal and Regulatory", '
-            '"material_findings": ["12 issued patents", "Patent litigation in E.D. Texas"], '
-            '"risk_flags": ["Patent litigation", "Customer concentration", "Employee attrition"], '
-            '"outstanding_items": ["Litigation hold documentation", "Customer contract review"], '
-            '"document_date": "2024-05-22", "prepared_by": "Morrison & Chase LLP", '
-            '"confidence": 0.91}'
-        )
-        from agents.due_diligence_specialist import DueDiligenceSpecialist
-        agent = DueDiligenceSpecialist()
-        agent.client = mock_openai_client
-        agent.model = "test-model"
-        result = agent.extract(sample_dd_text[:1000])
-        assert result.get("confidence", 0) >= 0.80
-        assert len(result.get("risk_flags", [])) > 0
-
-
 class TestCorrespondenceSpecialist:
     def test_extract_demand_letter(self, sample_correspondence_text, mock_openai_client):
         mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
@@ -262,44 +220,6 @@ class TestComplianceSpecialist:
         result = agent.extract(sample_compliance_text[:1000])
         assert result.get("confidence", 0) >= 0.80
         assert "10-K" in result.get("filing_type", "")
-
-
-class TestCourtOpinionsSpecialist:
-    def test_extract_opinion(self, sample_court_opinion_text, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"case_name": "People v. Carter", '
-            '"court": "New York Supreme Court, Appellate Division", '
-            '"date_decided": "2024-05-01", "docket_number": "2024-1847", '
-            '"opinion_type": "per curiam", '
-            '"parties": ["People of the State of New York", "John D. Carter"], '
-            '"holding": "Automobile exception permits warrantless search of containers", '
-            '"legal_issues": ["Suppression of warrantless search", "Weight of the evidence"], '
-            '"outcome": "affirmed", "citations": ["United States v. Ross, 456 U.S. 798 (1982)"], '
-            '"authored_by": null, "confidence": 0.95}'
-        )
-        from agents.court_opinions_specialist import CourtOpinionsSpecialist
-        agent = CourtOpinionsSpecialist()
-        agent.client = mock_openai_client
-        agent.model = "test-model"
-        result = agent.extract(sample_court_opinion_text[:1000])
-        assert result.get("confidence", 0) >= 0.80
-        assert "People v. Carter" in result.get("case_name", "")
-        assert result.get("outcome") == "affirmed"
-
-    def test_extract_returns_confidence(self, sample_court_opinion_text, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"case_name": "", "court": "", "date_decided": null, '
-            '"docket_number": null, "opinion_type": "", "parties": [], '
-            '"holding": "", "legal_issues": [], "outcome": "", "citations": [], '
-            '"authored_by": null, "confidence": 0.30}'
-        )
-        from agents.court_opinions_specialist import CourtOpinionsSpecialist
-        agent = CourtOpinionsSpecialist()
-        agent.client = mock_openai_client
-        agent.model = "test-model"
-        result = agent.extract("ambiguous text")
-        assert "confidence" in result
-        assert isinstance(result["confidence"], (int, float))
 
 
 class TestBossAgent:

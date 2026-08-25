@@ -1,29 +1,31 @@
 # Pilot Sample Set
 
 A curated set of legal PDFs used to **pilot-test the pipeline and evaluate
-procedural changes** (accuracy + efficiency). 30 documents spanning all six
-`config/taxonomy.yaml` doc classes, plus one deliberately ambiguous memo that
-drives the retry → human-review path.
+procedural changes** (accuracy + efficiency). 22 documents spanning the five
+live `config/taxonomy.yaml` doc classes, plus one deliberately ambiguous memo
+that drives the retry → human-review path.
 
 | Class | Count | Source |
 |---|---|---|
 | `contract` | 15 | 3 original CUAD SEC-exhibit PDFs + 6 CUAD/Atticus PDFs + 6 LegalBench MAUD merger agreements (CC-BY-4.0) |
-| `court_opinion` | 6 | Pile of Law court opinions (public domain) |
 | `compliance_filing` | 2 | Synthetic 10-K excerpt (large) + state filing |
 | `corporate_record` | 2 | Bylaws + board resolution |
 | `correspondence` | 2 | Demand letter + internal memo |
-| `due_diligence` | 2 | DD report + checklist |
 | `ambiguous` | 1 | Multi-topic memo → expects human review |
+
+`due_diligence` and `court_opinion` were retired from the live taxonomy.
+Their source files remain on disk (synthetic DD texts + Pile of Law opinions)
+but are **not** in `manifest.csv` and are not processed by `--real` or `--mock`
+pilot runs.
 
 Each sample carries a `dataset` tag in `manifest.csv` so a source corpus can be
 run or synced on its own:
 
 | dataset | samples | origin |
 |---|---|---|
-| `original` | 12 | committed CUAD PDFs + synthetic text (original) |
+| `original` | 10 | committed CUAD PDFs + synthetic text (original) |
 | `legalbench` | 6 | MAUD v1 merger agreements — the full texts behind LegalBench's `maud_*` tasks (Zenodo 10.5281/zenodo.7500064) |
 | `atticus` | 6 | CUAD v1 contract PDFs from `theatticusproject/cuad` |
-| `pileoflaw` | 6 | U.S. court opinions from Pile of Law `courtlistener_opinions` (public domain) |
 
 Size tiers (`small` / `medium` / `large`) are recorded in `manifest.csv` so you
 can benchmark the effect of document length on latency and LLM cost.
@@ -38,7 +40,7 @@ examples/
     contract/*.pdf        # real CUAD PDFs (committed; 3 original + 6 atticus_*)
   external/
     legalbench/*.txt      # MAUD merger agreement texts (committed)
-    pileoflaw/*.txt       # court opinion texts (committed)
+    pileoflaw/*.txt       # court opinion texts (on disk; retired from live pilot)
   sources/<class>/*.txt   # original text used to synthesize the rest
 scripts/
   fetch_external_samples.py  # downloads the 18 external samples (idempotent)
@@ -64,21 +66,22 @@ PYTHONPATH=src python src/scripts/run_pilot.py --real
 
 # Real runs process ONLY the actual committed legal documents: the 9
 # Atticus/CUAD contract & agreement PDFs (contract_01..03, atticus_01..06)
-# plus the 6 LegalBench MAUD and 6 Pile of Law external samples (21 real
-# samples). The repo-written synthetic .txt-derived PDFs (compliance /
-# corporate / correspondence / due_diligence / ambiguous, 9 samples) are
-# **mock-only** — --real refuses them so no real LLM/eval tokens or live
-# traces are ever spent on fake documents. Mock runs keep the full 30.
+# plus the 6 LegalBench MAUD samples (15 real samples). The repo-written
+# synthetic .txt-derived PDFs (compliance / corporate / correspondence /
+# ambiguous, 7 samples) are **mock-only** — --real refuses them so no real
+# LLM/eval tokens or live traces are ever spent on fake documents. Mock runs
+# keep the full live-manifest set (22). Pile of Law court opinions stay on
+# disk but are not in the live manifest.
 
 # 4. Run a single source corpus
-PYTHONPATH=src python src/scripts/run_pilot.py --mock --source pileoflaw
+PYTHONPATH=src python src/scripts/run_pilot.py --mock --source legalbench
 
 # 5. Compare a procedural change against a saved baseline
 PYTHONPATH=src python src/scripts/run_pilot.py --mock --baseline data/pilot_report_baseline.json
 
 # 6. Sync the evaluation datasets to Langfuse (one dataset per source)
 PYTHONPATH=src python src/scripts/sync_dataset.py --dry-run     # preview
-PYTHONPATH=src python src/scripts/sync_dataset.py               # mailroom-pilot[-legalbench|-atticus|-pileoflaw]
+PYTHONPATH=src python src/scripts/sync_dataset.py               # mailroom-pilot[-legalbench|-atticus]
 ```
 
 ## What to expect
@@ -90,7 +93,6 @@ PYTHONPATH=src python src/scripts/sync_dataset.py               # mailroom-pilot
   `compliance_01` (10-K excerpt) are the large-document efficiency cases; they
   exercise the classify-truncation path (`doc_text[:12000]`) and longer
   transcription/extraction times.
-- The `court_opinion` class is exercised only by the six Pile of Law samples.
 
 ## Licensing
 

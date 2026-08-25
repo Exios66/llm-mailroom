@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Court opinions specialist and due diligence specialist retired from the live pipeline.** `due_diligence` and `court_opinion` are no longer taxonomy classes, extraction schemas, graph dispatch arms, or managed prompts. The sorter doctrine now emits `unknown` (human review) for judicial opinions and DD checklists/memos instead of remapping them onto correspondence or contract. Source files stay on disk; the live pilot `manifest.csv` is the 22 remaining samples (15 real Atticus/CUAD + LegalBench; 7 synthetic). Frozen langchain prompt lineage (`SORTER_PROMPT_V0`–`V14`, vision V0/V1) is unchanged.
+
 ### Added
+
+- **API v1.** Documented `/v1` layout is live and aliases the existing handlers: `GET /v1/health`, `POST /v1/upload`, `GET /v1/queue`, `POST /v1/review/{doc_id}/resolve`, `GET /v1/status/{doc_id}`, `GET /v1/matters/{matter_id}`, `GET /v1/audit/{doc_id}`, `GET /v1/ops/status`, plus `/v1/ops/sweep` and `/v1/ops/resume`. Unversioned routes remain for the deprecation window. `GET /matters/{matter_id}` now requires the bearer token like the other management endpoints.
 
 - **Production prompt mutation + docclass connection:** iterative, predecessor-preserving prompt mutation for every specialist and supporting LLM role, then re-derived the KANBAN-090 docclass arm from those same production bases.
   - New `src/llm/prompt_doctrine.py` holds the smallest testable production rules (unknown-type honesty, required CUAD subtype, numeric zero is a value, additive vision, same-class Boss conflicts, schema-field inventories). Frozen `*_V0` / `sorter_v12` / `contracts_specialist_v31` texts are unchanged; new production versions are **pure appends**.
