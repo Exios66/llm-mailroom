@@ -192,10 +192,12 @@ def normalize_subtype(value) -> str:
     key = re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
     if not key:
         return SUBTYPE_UNKNOWN
-    if key in CONTRACT_SUBTYPE_KEYS:
-        return key
-    if key in _SUBTYPE_ALIASES:
-        return _SUBTYPE_ALIASES[key]
+    compact = {re.sub(r"[^a-z0-9]", "", k): k for k in CONTRACT_SUBTYPE_KEYS}
+    if key in compact:
+        return compact[key]
+    alias_norm = {re.sub(r"[^a-z0-9]", "", k): v for k, v in _SUBTYPE_ALIASES.items()}
+    if key in alias_norm:
+        return alias_norm[key]
     # "License Agreement" -> "license"; "Non-Compete" -> non_compete_no_solicit.
     for subtype in CONTRACT_SUBTYPES:
         norm_label = re.sub(r"[^a-z0-9]", "", subtype["label"].lower())

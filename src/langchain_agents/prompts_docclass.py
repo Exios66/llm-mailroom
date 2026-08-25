@@ -84,6 +84,84 @@ _SPECIALIST_RULES_BODY = (
     "exactly one JSON object matching the schema and no other text."
 )
 
+_CONTRACTS_SPECIALIST_RULES_BODY = (
+    _SPECIALIST_RULES_BODY.rsplit(
+        "The output-format requirements of the prompt above are unchanged:", 1
+    )[0]
+    +     "e. CUAD families: when the sorter subtype is one of the 25 CUAD "
+    "agreement families (affiliate, agency, collaboration, co_branding, "
+    "consulting, development, distributor, endorsement, franchise, hosting, "
+    "ip, joint_venture, license, maintenance, manufacturing, marketing, "
+    "non_compete_no_solicit, outsourcing, promotion, reseller, service, "
+    "sponsorship, strategic_alliance, supply, transportation), extract THAT "
+    "family's characteristic operative clauses verbatim into key_obligations "
+    "and termination_clauses. Do not substitute a paraphrase or a different "
+    "family's clause set. Joint Filing Agreements (Exchange Act 13(d)/13(g)) "
+    "are the joint_venture family. Set cuad_family to that family key.\n"
+    "f. MAUD mergers: when doc_type is merger_agreement (or the text is an "
+    "Agreement and Plan of Merger), set merger_consideration AND contract_value "
+    "to exactly one consideration token — all_cash, all_stock, mixed_cash_stock, "
+    "mixed_cash_stock_election, or other — matching the Merger Consideration "
+    "/ Conversion of Shares mechanics. Put the surviving corporation, "
+    "exchange ratio, and Effective Time into key_obligations as verbatim "
+    "operative language. cuad_family is null.\n"
+    "g. CUAD clause content: emit every PRESENT Atticus category in "
+    "cuad_clauses as '<Category>: <verbatim span>' using the exact names "
+    "Document Name, Parties, Agreement Date, Effective Date, Expiration Date, "
+    "Renewal Term, Notice Period To Terminate Renewal, Governing Law, Most "
+    "Favored Nation, Competitive Restriction Exception, Non-Compete, "
+    "Exclusivity, No-Solicit Of Customers, No-Solicit Of Employees, "
+    "Non-Disparagement, Termination For Convenience, Rofr/Rofo/Rofn, Change "
+    "Of Control, Anti-Assignment, Revenue/Profit Sharing, Price Restrictions, "
+    "Minimum Commitment, Volume Restriction, Ip Ownership Assignment, Joint "
+    "Ip Ownership, License Grant, Non-Transferable License, Affiliate "
+    "License-Licensor, Affiliate License-Licensee, Unlimited/All-You-Can-Eat-"
+    "License, Irrevocable Or Perpetual License, Source Code Escrow, "
+    "Post-Termination Services, Audit Rights, Uncapped Liability, Cap On "
+    "Liability, Liquidated Damages, Warranty Duration, Insurance, Covenant "
+    "Not To Sue, Third Party Beneficiary. Omit categories the visible text "
+    "does not contain.\n"
+    "h. MAUD clause content: emit every answered MAUD question in maud_clauses "
+    "as '<Question>: <Answer>' using the exact question names Absence of "
+    "Litigation Closing Condition, Accuracy of Target R&W Closing Condition, "
+    "Agreement provides for matching rights in connection with COR, Agreement "
+    "provides for matching rights in connection with FTR, Breach of Meeting "
+    "Covenant, Breach of No Shop, Compliance with Covenant Closing Condition, "
+    "FTR Triggers, Fiduciary exception to COR covenant, Fiduciary exception:  "
+    "Board determination (no-shop), General Antitrust Efforts Standard, "
+    "Intervening Event Definition, Knowledge Definition, Limitations on FTR "
+    "Exercise, MAE Definition, Negative interim operating covenant, No-Shop, "
+    "Ordinary course covenant, Specific Performance, Superior Offer "
+    "Definition, Tail Period & Acquisition Proposal Details, Type of "
+    "Consideration. The Answer must be the Hub valid_class string (Yes/No, "
+    "All Cash, All Stock, Mixed Cash/Stock, Mixed Cash/Stock: Election, "
+    "Continuous matching right, General R&Ws, …), not a paraphrase. Omit "
+    "unanswered questions. Empty maud_clauses when the document is not a "
+    "merger agreement.\n"
+    "The output-format requirements of the prompt above are unchanged: return "
+    "exactly one JSON object matching the schema and no other text."
+)
+
+_SORTER_RULES_BODY = (
+    "a. Classify against the EXTENDED primary set — contract, "
+    "corporate_record, due_diligence, correspondence, compliance_filing, "
+    "court_opinion, insurance_claim, merger_agreement — plus unknown when "
+    "none fit. Never remap an unknown onto correspondence.\n"
+    "b. Family discriminators: acquisition machinery (Parent/Merger Sub, "
+    "Effective Time, Exchange Ratio) makes a document merger_agreement, not "
+    "contract; claim documentation (FNOL, adjuster reports, demand packages, "
+    "coverage determinations, denial letters) is insurance_claim; records "
+    "EMBEDDED as exhibits inside a parent agreement never change the parent's "
+    "class.\n"
+    "c. When doc_type is contract, contract_subtype MUST be one of the 25 "
+    "CUAD families (or other). Do not invent a family. Joint Filing "
+    "Agreements are joint_venture. License-and-maintenance hybrids follow "
+    "the CUAD folder convention (maintenance).\n"
+    "d. When doc_type is merger_agreement, contract_subtype is null — MAUD "
+    "consideration type is an extraction field, not a CUAD family.\n"
+    "The output-format requirements of the prompt above are unchanged."
+)
+
 _JUDGE_RULES_BODY = (
     "a. Completeness and correctness are judged WITHIN the registered schema "
     "for the document's class — never demand fields that belong to another "
@@ -142,21 +220,6 @@ _REVIEWER_ARBITER_RULES_BODY = (
     "The output-format requirements of the prompt above are unchanged."
 )
 
-_SORTER_RULES_BODY = (
-    "a. Classify against the EXTENDED primary set — contract, "
-    "corporate_record, due_diligence, correspondence, compliance_filing, "
-    "court_opinion, insurance_claim, merger_agreement — plus unknown when "
-    "none fit. Never remap an unknown onto correspondence.\n"
-    "b. Family discriminators: acquisition machinery (Parent/Merger Sub, "
-    "Effective Time, Exchange Ratio) makes a document merger_agreement, not "
-    "contract; claim documentation (FNOL, adjuster reports, demand packages, "
-    "coverage determinations, denial letters) is insurance_claim; records "
-    "EMBEDDED as exhibits inside a parent agreement never change the parent's "
-    "class.\n"
-    "c. When doc_type is contract, contract_subtype (or other) is required.\n"
-    "The output-format requirements of the prompt above are unchanged."
-)
-
 _MARK = "(KANBAN-090)"
 
 
@@ -172,7 +235,7 @@ def _append(base: str, body: str, marker: str) -> str:
 # (production agent_name, docclass key, role-rules body)
 _DOCCLASS_FROM_PRODUCTION: tuple[tuple[str, str, str], ...] = (
     ("sorter", "sorter_docclass_v0", _SORTER_RULES_BODY),
-    ("contracts_specialist", "contracts_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
+    ("contracts_specialist", "contracts_specialist_docclass_v0", _CONTRACTS_SPECIALIST_RULES_BODY),
     ("corporate_records_specialist", "corporate_records_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
     ("correspondence_specialist", "correspondence_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
     ("compliance_specialist", "compliance_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
