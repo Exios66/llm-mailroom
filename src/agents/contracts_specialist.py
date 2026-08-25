@@ -1,7 +1,7 @@
 """Contracts specialist — LangChain version vendored from llm-entity-extraction.
 
 Re-exports ``langchain_agents.specialist_agents.ContractsSpecialist`` (the
-eval-validated LangChain contracts specialist, ``contracts_specialist_v31``
+eval-validated LangChain contracts specialist, ``contracts_specialist_v32``
 prompt, per-field ``reasoning`` trace, chunked-extraction support,
 ``normalize_extraction`` field-presence guarantee and evidence-derived
 confidence) with mailroom defaults applied from ``config/taxonomy.yaml``
@@ -26,8 +26,9 @@ class ContractsSpecialist(_LangChainContractsSpecialist):
     - Model/budget defaults come from ``taxonomy.yaml``
       ``agents.contracts_specialist`` (explicit ``model=``/``api_key=`` args
       still win).
-    - Uses the vendored ``contracts_specialist_v31`` prompt by default
-      (eval-validated); override with ``prompt_version=``.
+    - Uses the vendored ``contracts_specialist_v32`` prompt by default
+      (V31 eval-validated lineage + mailroom pipeline doctrine); override
+      with ``prompt_version=``.
     - ``handoff_context`` carries the sorter's classification (doc_type +
       contract subtype) into extraction, mirroring the sister repo's chained
       eval.
@@ -37,7 +38,7 @@ class ContractsSpecialist(_LangChainContractsSpecialist):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        prompt_version: str = "contracts_specialist_v31",
+        prompt_version: str = "contracts_specialist_v32",
         handoff_context: str | None = None,
     ):
         super().__init__(model=model, api_key=api_key, prompt_version=prompt_version)

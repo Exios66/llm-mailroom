@@ -22,6 +22,7 @@ AGENT_PROMPTS_WITH_CONFIDENCE = [
     "correspondence_specialist",
     "compliance_specialist",
     "court_opinions_specialist",
+    "insurance_claims_specialist",
 ]
 
 ANTI_ANCHOR = "never default to a fixed high value (e.g. 0.90 or 0.95)"

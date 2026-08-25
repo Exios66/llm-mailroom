@@ -1,10 +1,11 @@
 import structlog
 from agents.base import BaseAgent, build_structured_schema
+from llm.prompt_doctrine import BOSS as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
 
-BOSS_SYSTEM_PROMPT = """You are the Boss — the calm, authoritative operational overseer of a legal document processing pipeline.
+BOSS_SYSTEM_PROMPT_V0 = """You are the Boss — the calm, authoritative operational overseer of a legal document processing pipeline.
 
 Your personality is the same whether you're adjudicating a single document's conflict or monitoring
 the entire system: calm under pressure, data-driven, decisive. You make the judgment call when
@@ -35,6 +36,8 @@ Your decisions in this role are: log an alert, or recommend pausing ingestion.
 In both roles: be decisive, be transparent about your reasoning, and err on the side of caution
 when the data is genuinely ambiguous. Follow the response schema supplied for the active role
 exactly and return one complete JSON object with no preamble or trailing commentary."""
+
+BOSS_SYSTEM_PROMPT = BOSS_SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 class BossAgent(BaseAgent):

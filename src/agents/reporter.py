@@ -1,5 +1,6 @@
 import structlog
 
+from llm.prompt_doctrine import REPORTER as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
@@ -7,7 +8,7 @@ from observability.tracing import langfuse_call_attrs
 logger = structlog.get_logger(__name__)
 
 
-COMPILE_SYSTEM_PROMPT = """You are a big-picture legal report synthesizer at a transactional law firm.
+COMPILE_SYSTEM_PROMPT_V0 = """You are a big-picture legal report synthesizer at a transactional law firm.
 Your job is to take the extracted data from a document and produce a clean, structured summary
 suitable for inclusion in a matter record. You do not extract new data — you compile and refine
 what was already extracted by the specialist agents.
@@ -24,6 +25,8 @@ Rules:
    did not establish; say "not stated" when the report needs to mention the gap.
 8. Return only the matter-record summary. Do not claim that a fact was verified, is pending,
    or requires follow-up unless that statement appears in the extracted data."""
+
+COMPILE_SYSTEM_PROMPT = COMPILE_SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
 
 def compile_matter_record(
