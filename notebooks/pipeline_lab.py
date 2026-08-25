@@ -257,13 +257,16 @@ def lab_sandbox() -> Iterator[dict[str, Any]]:
 REPORT_TEXT = "Matter record compiled by the mock reporter (lab)."
 
 
-def script_client(client: MagicMock, *, judge: dict | None = None,
-                  arbiter: dict | None = None, boss: dict | None = None,
-                  reviewer: dict | None = None,
-                  specialist: dict[str, dict] | None = None,
+def script_client(client: MagicMock, *, judge: dict | list | None = None,
+                  arbiter: dict | list | None = None, boss: dict | list | None = None,
+                  reviewer: dict | list | None = None,
+                  specialist: dict[str, dict | list] | None = None,
                   report_text: str = REPORT_TEXT) -> MagicMock:
     """Key the sandbox's OpenAI client off the same prompt markers
     ``scripts/run_pilot.py``'s ``_fake_client`` uses.
+
+    Every canned spec may also be a SCRIPT SEQUENCE (list): entries pop per
+    call until the last one, which sticks.
 
     - ``judge`` → canned ``CompletenessJudge.judge_completeness`` response
       (``completeness`` / ``completeness_label`` / ``reasoning``).
