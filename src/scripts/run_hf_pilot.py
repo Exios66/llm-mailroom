@@ -1008,6 +1008,16 @@ def main() -> int:
     default_environment("pilot")
     setup_logging()
     os.environ.setdefault("MAILROOM_VISION_ENABLED", "0")
+    # Embeddings on every CUAD/MAUD clause burn OpenRouter quota at corpus
+    # scale; lexical scoring still runs. Opt back in with MAILROOM_FIELD_SCORING_EMBEDDING=1.
+    os.environ.setdefault("MAILROOM_FIELD_SCORING_EMBEDDING", "0")
+    if os.environ.get("MAILROOM_FIELD_SCORING_EMBEDDING", "0").lower() in ("0", "false", "no"):
+        try:
+            from llm_dojo_scoring import configure
+
+            configure(field_scoring__embedding_enabled=False)
+        except Exception:
+            pass
 
     mock_mode = bool(args.mock)
     if not mock_mode:
@@ -1096,6 +1106,7 @@ def main() -> int:
         out_dir = _report_root() / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
     plan = [_plan_entry(s) for s in samples]
+    gap = float(os.environ.get("MAILROOM_HF_PILOT_GAP_S", "0" if mock_mode else "1.5"))
 
     def _flush_report() -> Path:
         report = {
@@ -1120,6 +1131,8 @@ def main() -> int:
     _flush_report()
 
     for sample in samples_to_run:
+        if gap > 0 and rows:
+            time.sleep(gap)
         local_name = _unique_name(_inbox_filename(sample.get("filename") or "doc.txt"), used_names)
         if unique_matters:
             matter_id = _unique_name(f"{run_matter}-{Path(local_name).stem}"[:120], used_matters)

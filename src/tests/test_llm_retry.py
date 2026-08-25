@@ -88,3 +88,18 @@ class TestRetryChatCompletion:
         with pytest.raises(APIConnectionError):
             retry_chat_completion(client, model="m", messages=[], max_attempts=3)
         assert client.chat.completions.create.call_count == 3
+
+    def test_rate_limit_backoff_is_longer_than_connection(self, monkeypatch):
+        monkeypatch.setattr("llm.retry.random.uniform", lambda a, b: 0.0)
+        from llm.retry import retry_sleep_seconds
+
+        conn = APIConnectionError(request=object())
+        rate = RateLimitError(
+            "rate limited",
+            response=_http_response(429),
+            body={"message": "rate limited"},
+        )
+        cfg = {"base_delay": 1.0, "rate_limit_base_delay": 8.0, "max_delay": 60.0, "jitter": 0.0}
+        assert retry_sleep_seconds(conn, 1, cfg) == 1.0
+        assert retry_sleep_seconds(rate, 1, cfg) == 8.0
+        assert retry_sleep_seconds(rate, 2, cfg) == 16.0
