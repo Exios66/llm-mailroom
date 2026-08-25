@@ -36,6 +36,48 @@ def test_parse_hf_row_reads_nested_metadata():
     assert row["chars"] == 300
 
 
+def test_parse_hf_row_uses_ground_truth_expected_field():
+    row = parse_hf_row({
+        "filename": "deal.htm",
+        "doc_text": "x" * 300,
+        "expected": "merger_agreement",
+        "expected_subclass": "mixed_cash_stock",
+    })
+    assert row["expected_hf_class"] == "merger_agreement"
+    assert row["expected_subclass"] == "mixed_cash_stock"
+
+
+def test_parse_hf_row_rejects_cuad_folder_as_class():
+    assert parse_hf_row({
+        "filename": "license.pdf",
+        "doc_text": "x" * 300,
+        "metadata": {"expected_doc_type": "", "category": "License_Agreements"},
+    }) is None
+    assert parse_hf_row({
+        "filename": "license.pdf",
+        "doc_text": "x" * 300,
+        "expected": "License_Agreements",
+        "expected_subclass": "License_Agreements",
+    }) is None
+
+
+def test_parse_hf_row_joins_ground_truth_labels():
+    default = {
+        "filename": "outpatient_1.txt",
+        "doc_text": "CMS MEDICARE " + "x" * 300,
+        "metadata": {"expected_doc_type": "", "category": ""},
+    }
+    labels = {
+        "outpatient_1.txt": {
+            "expected": "insurance_claim",
+            "expected_subclass": "outpatient",
+        }
+    }
+    row = parse_hf_row(default, labels)
+    assert row["expected_hf_class"] == "insurance_claim"
+    assert row["expected_subclass"] == "outpatient"
+
+
 def test_select_stratified_picks_nearest_to_target():
     rows = []
     for cls in HF_CLASSES:
@@ -48,12 +90,52 @@ def test_select_stratified_picks_nearest_to_target():
     assert all(r["filename"].endswith("-near.txt") for r in picked)
 
 
+def test_select_stratified_keeps_oversized_merger():
+    rows = [{"expected_hf_class": "merger_agreement", "chars": 340354, "filename": "maud.htm"}]
+    for cls in HF_CLASSES:
+        if cls != "merger_agreement":
+            rows.append({"expected_hf_class": cls, "chars": 6100, "filename": f"{cls}.txt"})
+    picked = select_stratified(rows, per_class=1, max_chars=25000, target_chars=6000)
+    assert len(picked) == 5
+    merger = next(r for r in picked if r["expected_hf_class"] == "merger_agreement")
+    assert merger["chars"] == 340354
+
+
 def test_safe_filename_strips_path_and_caps():
     assert _safe_filename("a/b/c.txt") == "c.txt"
     assert _safe_filename("noext") == "noext.txt"
 
 
-def test_docclass_flag_sets_env(monkeypatch):
+def test_load_ground_truth_labels_reads_expected_fields(monkeypatch):
+    from scripts.run_hf_pilot import load_ground_truth_labels
+
+    monkeypatch.setattr(
+        "scripts.run_hf_pilot._paginate_viewer",
+        lambda **kw: [
+            {
+                "filename": "a.htm",
+                "expected": "corporate_record",
+                "expected_subclass": "bylaws",
+            },
+            {
+                "filename": "b.pdf",
+                "expected": "contract",
+                "expected_subclass": "Distributor",
+            },
+            {
+                "filename": "skip.pdf",
+                "expected": "License_Agreements",
+                "expected_subclass": "License_Agreements",
+            },
+        ] if kw.get("config") == "ground_truth" else [],
+    )
+    labels = load_ground_truth_labels(split="train", max_scan=100)
+    assert labels["a.htm"] == {
+        "expected": "corporate_record",
+        "expected_subclass": "bylaws",
+    }
+    assert labels["b.pdf"]["expected"] == "contract"
+    assert "skip.pdf" not in labels
     monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)
     import sys
     from scripts import run_hf_pilot as mod
