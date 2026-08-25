@@ -18,6 +18,8 @@ Usage:
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 1
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 5 --docclass --max-scan 4000
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 10 --docclass --max-scan 4000
+    PYTHONPATH=src python src/scripts/run_hf_pilot.py --finalize data/hf_pilot/<stamp>
+    PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --resume data/hf_pilot/<stamp> --per-class 10 --docclass --max-scan 4000
     PYTHONPATH=src python src/scripts/run_quality_judges.py --real --hf-latest 5
 """
 
@@ -310,7 +312,7 @@ def summarize_rows(rows: list[dict]) -> dict:
         cls = row.get("expected") or "unknown"
         bucket = per_class.setdefault(cls, {
             "n": 0, "exact": 0, "aligned": 0, "subclass": 0, "subclass_n": 0,
-            "cost_usd": 0.0, "tokens": 0, "stages": Counter(),
+            "cost_usd": 0.0, "tokens": 0, "tokens_known": False, "stages": Counter(),
         })
         bucket["n"] += 1
         bucket["exact"] += int(bool(row.get("exact_ok")))
@@ -319,9 +321,16 @@ def summarize_rows(rows: list[dict]) -> dict:
             bucket["subclass_n"] += 1
             bucket["subclass"] += int(bool(row.get("subclass_ok")))
         bucket["cost_usd"] += float(row.get("llm_cost_usd") or 0)
-        bucket["tokens"] += int(row.get("llm_tokens") or 0)
+        if isinstance(row.get("llm_tokens"), (int, float)):
+            bucket["tokens"] += int(row.get("llm_tokens") or 0)
+            bucket["tokens_known"] = True
         bucket["stages"][row.get("stage") or "unknown"] += 1
-    return {
+    scores = [
+        float(r["extraction_overall_score"])
+        for r in rows
+        if isinstance(r.get("extraction_overall_score"), (int, float))
+    ]
+    out = {
         "n": n,
         "exact_n": exact_n,
         "aligned_n": aligned_n,
@@ -332,7 +341,7 @@ def summarize_rows(rows: list[dict]) -> dict:
         "subclass_accuracy": round(subclass_n / len(subclass_scored), 3) if subclass_scored else None,
         "total_cost_usd": round(sum(costs), 6),
         "avg_cost_usd": round(sum(costs) / len(costs), 6) if costs else 0.0,
-        "total_tokens": int(sum(tokens)),
+        "total_tokens": int(sum(tokens)) if tokens else None,
         "total_llm_calls": int(sum(calls)),
         "avg_wall_time_s": round(sum(walls) / len(walls), 3) if walls else 0.0,
         "stages": dict(Counter(r.get("stage") or "unknown" for r in rows)),
@@ -347,12 +356,227 @@ def summarize_rows(rows: list[dict]) -> dict:
                     round(v["subclass"] / v["subclass_n"], 3) if v["subclass_n"] else None
                 ),
                 "cost_usd": round(v["cost_usd"], 6),
-                "tokens": v["tokens"],
+                "tokens": v["tokens"] if v["tokens_known"] else None,
                 "stages": dict(v["stages"]),
             }
             for cls, v in sorted(per_class.items())
         },
     }
+    if scores:
+        out["extraction_n"] = len(scores)
+        out["extraction_overall_mean"] = round(sum(scores) / len(scores), 3)
+    return out
+
+
+def expected_fields_for_sample(sample: dict) -> dict:
+    """Hub GT clause/family/consideration payload used as expected_fields."""
+    expected_fields: dict = {}
+    if sample.get("cuad_clauses"):
+        expected_fields["cuad_clauses"] = list(sample["cuad_clauses"])
+    if sample.get("maud_clauses"):
+        expected_fields["maud_clauses"] = list(sample["maud_clauses"])
+    hf_class = sample.get("expected_hf_class") or sample.get("expected") or ""
+    subclass = sample.get("expected_subclass") or ""
+    if hf_class == "contract" and subclass:
+        from langchain_agents.sorter_agent import normalize_subtype
+
+        expected_fields["cuad_family"] = normalize_subtype(subclass)
+    if hf_class == "merger_agreement" and subclass:
+        token = normalize_consideration(subclass)
+        if token:
+            expected_fields["merger_consideration"] = token
+    return expected_fields
+
+
+def score_row_extraction(extracted: dict | None, expected_fields: dict | None, doc_class: str) -> dict | None:
+    """Deterministic field score; never raises (scaled runs must not die here)."""
+    if not expected_fields or not extracted:
+        return None
+    try:
+        from llm_dojo_scoring.field_scoring import score_extraction
+        from observability.field_scoring import get_field_types
+
+        scored_class = pipeline_class(doc_class) or doc_class
+        result = score_extraction(
+            scored_class,
+            get_field_types(scored_class),
+            extracted,
+            expected_fields,
+        )
+        overall = result.overall_score
+        return {
+            "overall_score": None if overall is None else round(float(overall), 3),
+            "n_fields": len(result.field_scores or {}),
+            "needs_judge_review": bool(result.ambiguous_fields),
+        }
+    except Exception:
+        return None
+
+
+def completed_filenames(rows: list[dict]) -> set[str]:
+    """Filenames that already produced a pipeline result (retry errors)."""
+    done: set[str] = set()
+    for row in rows or []:
+        name = row.get("filename")
+        if not name:
+            continue
+        if row.get("stage") in (None, "error"):
+            continue
+        done.add(str(name))
+    return done
+
+
+def remaining_samples(samples: list[dict], rows: list[dict]) -> list[dict]:
+    done = completed_filenames(rows)
+    return [s for s in samples if str(s.get("filename") or "") not in done]
+
+
+def enrich_sample_row(row: dict) -> dict:
+    """Backfill subtype / extraction / subclass / field score on older reports."""
+    out = dict(row or {})
+    catalog = {}
+    if not out.get("extracted_data") or not out.get("predicted_subtype"):
+        catalog = _catalog_by_trace(str(out.get("trace_id") or ""))
+        if catalog.get("extracted_data") and not out.get("extracted_data"):
+            out["extracted_data"] = _public_extracted(catalog["extracted_data"])
+        if catalog.get("contract_subtype") and not out.get("predicted_subtype"):
+            out["predicted_subtype"] = catalog["contract_subtype"]
+    extracted = out.get("extracted_data") or {}
+    if out.get("subclass_ok") is None and out.get("expected"):
+        out["subclass_ok"] = subclass_ok(
+            str(out.get("expected") or ""),
+            str(out.get("expected_subclass") or ""),
+            predicted_subtype=str(out.get("predicted_subtype") or ""),
+            extracted=extracted if isinstance(extracted, dict) else {},
+        )
+    expected_fields = expected_fields_for_sample({
+        "expected_hf_class": out.get("expected"),
+        "expected_subclass": out.get("expected_subclass"),
+        "cuad_clauses": out.get("cuad_clauses") or [],
+        "maud_clauses": out.get("maud_clauses") or [],
+    })
+    scored = score_row_extraction(
+        extracted if isinstance(extracted, dict) else {},
+        expected_fields,
+        str(out.get("expected") or out.get("expected_doc_class") or ""),
+    )
+    if scored:
+        out["extraction_overall_score"] = scored["overall_score"]
+        out["extraction_n_fields"] = scored["n_fields"]
+        out["extraction_needs_judge_review"] = scored["needs_judge_review"]
+    return out
+
+
+def render_metrics_markdown(report: dict) -> str:
+    """Human-readable scoring + pricing table for an HF pilot report."""
+    rows = [enrich_sample_row(r) for r in (report.get("samples") or [])]
+    metrics = summarize_rows(rows)
+    session = report.get("session_id") or ""
+    lines = [
+        f"# HF pilot `{session or report.get('run_id') or 'report'}`",
+        "",
+        f"- dataset = `{report.get('dataset')}` split `{report.get('split')}`",
+        f"- mode = **{report.get('mode')}**  docclass = `{report.get('docclass_prompts')}`  "
+        f"unique_matters = `{report.get('unique_matters')}`",
+        f"- n = **{metrics.get('n', 0)}**  errors = **{report.get('errors', 0)}**",
+        f"- exact accuracy = **{metrics.get('exact_accuracy')}**  "
+        f"aligned (merger≡contract) = **{metrics.get('aligned_accuracy')}**  "
+        f"subclass = **{metrics.get('subclass_accuracy')}**",
+        f"- cost USD = **{metrics.get('total_cost_usd')}**  "
+        f"avg $/doc = {metrics.get('avg_cost_usd')}  "
+        f"tokens = {metrics.get('total_tokens') if metrics.get('total_tokens') is not None else 'n/a'}  "
+        f"LLM calls = {metrics.get('total_llm_calls')}  "
+        f"avg wall s = {metrics.get('avg_wall_time_s')}",
+    ]
+    if metrics.get("extraction_overall_mean") is not None:
+        lines.append(
+            f"- extraction overall (deterministic) mean = **{metrics['extraction_overall_mean']}** "
+            f"over {metrics.get('extraction_n')} grounded docs"
+        )
+    stages = metrics.get("stages") or {}
+    if stages:
+        mix = ", ".join(f"{k}={v}" for k, v in sorted(stages.items()))
+        lines += ["", f"- stages: {mix}"]
+    lines += [
+        "",
+        "## Per class",
+        "",
+        "| class | n | exact | aligned | subclass | cost USD | tokens | stages |",
+        "|---|---:|---:|---:|---:|---:|---:|---|",
+    ]
+    for cls, stats in (metrics.get("per_class") or {}).items():
+        stage_mix = ", ".join(f"{k}:{v}" for k, v in sorted((stats.get("stages") or {}).items()))
+        lines.append(
+            f"| {cls} | {stats.get('n')} | {stats.get('exact_accuracy')} | "
+            f"{stats.get('aligned_accuracy')} | {stats.get('subclass_accuracy')} | "
+            f"{stats.get('cost_usd')} | {stats.get('tokens')} | {stage_mix} |"
+        )
+    lines += [
+        "",
+        "## Samples",
+        "",
+        "| file | expected | predicted | subclass | stage | exact | cost | tokens | extract |",
+        "|---|---|---|---|---|---|---:|---:|---:|",
+    ]
+    for row in rows:
+        name = str(row.get("filename") or row.get("local_filename") or "")[:56]
+        lines.append(
+            f"| {name} | {row.get('expected')} | {row.get('predicted')} | "
+            f"{row.get('expected_subclass') or ''} | {row.get('stage')} | "
+            f"{row.get('exact_ok')} | {row.get('llm_cost_usd')} | "
+            f"{row.get('llm_tokens')} | {row.get('extraction_overall_score')} |"
+        )
+    parked = [r for r in rows if r.get("stage") and r.get("stage") != "archived"]
+    if parked:
+        lines += ["", "## Non-archive outcomes", ""]
+        for row in parked:
+            lines.append(
+                f"- `{row.get('filename')}` stage={row.get('stage')} "
+                f"expected={row.get('expected')} predicted={row.get('predicted')} "
+                f"error={row.get('error') or ''}"
+            )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_report_files(path: Path, report: dict) -> Path:
+    """Atomic JSON + sidecar markdown so scoring/pricing are always visible."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = dict(report)
+    payload["metrics"] = summarize_rows(payload.get("samples") or [])
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    tmp.replace(path)
+    md_path = path.with_suffix(".md")
+    md_path.write_text(render_metrics_markdown(payload), encoding="utf-8")
+    return path
+
+
+def finalize_report(path: Path) -> dict:
+    """Rewrite an existing HF report with metrics, catalog backfill, and markdown."""
+    path = Path(path)
+    if path.is_dir():
+        path = path / "report.json"
+    report = json.loads(path.read_text(encoding="utf-8"))
+    report["samples"] = [enrich_sample_row(row) for row in (report.get("samples") or [])]
+    report["n"] = len(report["samples"])
+    matters = [r.get("matter_id") for r in report["samples"] if r.get("matter_id")]
+    if "unique_matters" not in report or report.get("unique_matters") is None:
+        if matters:
+            report["unique_matters"] = len(set(matters)) == len(matters)
+        else:
+            report["unique_matters"] = False
+    report["metrics"] = summarize_rows(report["samples"])
+    write_report_files(path, report)
+    return report
+
+
+def _load_resume(path: Path) -> dict:
+    path = Path(path)
+    if path.is_dir():
+        path = path / "report.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def find_sample_text(sample: dict, report_dir: Path | None = None) -> str:
@@ -593,7 +817,7 @@ def check_contract() -> int:
     picked = select_stratified(rows, per_class=1, max_chars=25000, target_chars=6000)
     assert {r["expected_hf_class"] for r in picked} == set(HF_CLASSES)
     report_keys = {
-        "session_id", "run_id", "dataset", "split", "mode", "samples",
+        "session_id", "run_id", "dataset", "split", "mode", "samples", "metrics",
     }
     sample_keys = {
         "trace_id", "filename", "local_filename", "expected",
@@ -639,19 +863,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     }
     if sample.get("expected_subclass"):
         ground_truth["expected_subclass"] = sample["expected_subclass"]
-    expected_fields: dict = {}
-    if sample.get("cuad_clauses"):
-        expected_fields["cuad_clauses"] = list(sample["cuad_clauses"])
-    if sample.get("maud_clauses"):
-        expected_fields["maud_clauses"] = list(sample["maud_clauses"])
-    if hf_class == "contract" and sample.get("expected_subclass"):
-        from langchain_agents.sorter_agent import normalize_subtype
-
-        expected_fields["cuad_family"] = normalize_subtype(sample["expected_subclass"])
-    if hf_class == "merger_agreement" and sample.get("expected_subclass"):
-        token = normalize_consideration(sample["expected_subclass"])
-        if token:
-            expected_fields["merger_consideration"] = token
+    expected_fields = expected_fields_for_sample(sample)
     if expected_fields:
         ground_truth["expected_fields"] = expected_fields
 
@@ -691,7 +903,8 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         hf_class, sample.get("expected_subclass") or "",
         predicted_subtype=subtype, extracted=extracted,
     )
-    return {
+    extraction = score_row_extraction(extracted, expected_fields, hf_class)
+    row = {
         "trace_id": result.get("trace_id"),
         "doc_id": result.get("doc_id"),
         "matter_id": matter_id,
@@ -718,6 +931,20 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         "llm_tokens": _usage_tokens(rp._LLM_METRICS["usage"]),
         "error": result.get("error_message"),
     }
+    if extraction:
+        row["extraction_overall_score"] = extraction["overall_score"]
+        row["extraction_n_fields"] = extraction["n_fields"]
+        row["extraction_needs_judge_review"] = extraction["needs_judge_review"]
+    return row
+
+
+def _plan_entry(sample: dict) -> dict:
+    return {
+        "filename": sample.get("filename"),
+        "expected_hf_class": sample.get("expected_hf_class"),
+        "expected_subclass": sample.get("expected_subclass") or "",
+        "chars": sample.get("chars"),
+    }
 
 
 def main() -> int:
@@ -726,11 +953,22 @@ def main() -> int:
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--real", action="store_true")
     mode.add_argument("--mock", action="store_true")
+    mode.add_argument(
+        "--finalize",
+        metavar="REPORT",
+        help="Rewrite metrics + report.md for an existing HF report (no LLM).",
+    )
     parser.add_argument("--per-class", type=int, default=1)
     parser.add_argument("--split", default="train")
     parser.add_argument("--max-chars", type=int, default=25000)
     parser.add_argument("--target-chars", type=int, default=6000)
     parser.add_argument("--max-scan", type=int, default=1500)
+    parser.add_argument(
+        "--resume",
+        metavar="REPORT",
+        help="Continue an interrupted run from report.json (or its directory). "
+             "Skips filenames that already have a non-error stage.",
+    )
     parser.add_argument(
         "--docclass",
         action="store_true",
@@ -751,8 +989,20 @@ def main() -> int:
     if args.check:
         return check_contract()
 
+    if args.finalize:
+        report = finalize_report(Path(args.finalize))
+        metrics = report.get("metrics") or {}
+        print(json.dumps({
+            "finalized": str(Path(args.finalize)),
+            "n": report.get("n"),
+            "errors": report.get("errors", 0),
+            "metrics": metrics,
+        }, default=str))
+        return 0 if not report.get("errors") else 1
+
     from pipeline.env import default_environment, load_env
     from pipeline.logging import setup_logging
+    from pipeline.docclass_mode import docclass_prompts_enabled
 
     load_env()
     default_environment("pilot")
@@ -767,17 +1017,22 @@ def main() -> int:
 
     import scripts.run_pilot as rp
 
-    abort = float(os.environ.get("MAILROOM_PILOT_COST_ABORT", "2.00"))
-    rp._COST_ABORT_USD = abort
-    rp._COST_WARN_USD = abort * 0.75
-    rp._RUN_COST_USD["value"] = 0.0
-    rp._RUN_COST_USD["warned"] = False
+    resume_report: dict = {}
+    if args.resume:
+        resume_report = _load_resume(Path(args.resume))
 
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    session_id = f"pilot-hf-{stamp}"
+    stamp = (
+        str(resume_report.get("run_id") or "")
+        or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    )
+    session_id = str(resume_report.get("session_id") or f"pilot-hf-{stamp}")
     run_id = stamp
-    run_matter = f"hf-docclass-merged-{stamp}"
-    unique_matters = not args.shared_matter
+    run_matter = str(resume_report.get("matter_id") or f"hf-docclass-merged-{stamp}")
+    unique_matters = (
+        bool(resume_report["unique_matters"])
+        if resume_report and "unique_matters" in resume_report
+        else (not args.shared_matter)
+    )
 
     if mock_mode:
         samples = _mock_samples(max(1, args.per_class))
@@ -802,12 +1057,45 @@ def main() -> int:
                 "expected_subclass), joined to default-config doc_text."
             )
 
-    rows = []
-    errors = 0
+    if resume_report.get("plan"):
+        by_name = {s.get("filename"): s for s in samples}
+        ordered = []
+        for item in resume_report["plan"]:
+            match = by_name.get(item.get("filename"))
+            if match:
+                ordered.append(match)
+        if ordered:
+            samples = ordered
+
+    rows = list(resume_report.get("samples") or [])
+    samples_to_run = remaining_samples(samples, rows) if rows else list(samples)
+    planned_n = len(samples)
+    errors = int(resume_report.get("errors") or 0)
+
+    default_abort = max(2.0, 0.04 * max(planned_n, 1))
+    abort = float(os.environ.get("MAILROOM_PILOT_COST_ABORT", str(default_abort)))
+    rp._COST_ABORT_USD = abort
+    rp._COST_WARN_USD = abort * 0.75
+    spent = sum(float(r.get("llm_cost_usd") or 0) for r in rows)
+    rp._RUN_COST_USD["value"] = spent
+    rp._RUN_COST_USD["warned"] = spent >= rp._COST_WARN_USD
+
     used_names: set[str] = set()
     used_matters: set[str] = set()
-    out_dir = _report_root() / stamp
+    for row in rows:
+        if row.get("local_filename"):
+            used_names.add(str(row["local_filename"]))
+        if row.get("matter_id"):
+            used_matters.add(str(row["matter_id"]))
+
+    if args.resume:
+        out_dir = Path(args.resume)
+        if out_dir.is_file():
+            out_dir = out_dir.parent
+    else:
+        out_dir = _report_root() / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
+    plan = [_plan_entry(s) for s in samples]
 
     def _flush_report() -> Path:
         report = {
@@ -819,20 +1107,19 @@ def main() -> int:
             "split": args.split,
             "mode": "mock" if mock_mode else "real",
             "docclass_prompts": docclass_prompts_enabled(),
+            "cost_abort_usd": abort,
+            "plan": plan,
             "samples": rows,
             "n": len(rows),
+            "planned_n": planned_n,
             "errors": errors,
             "metrics": summarize_rows(rows),
         }
-        path = out_dir / "report.json"
-        tmp = out_dir / "report.json.tmp"
-        tmp.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        tmp.replace(path)
-        return path
+        return write_report_files(out_dir / "report.json", report)
 
-    from pipeline.docclass_mode import docclass_prompts_enabled
+    _flush_report()
 
-    for sample in samples:
+    for sample in samples_to_run:
         local_name = _unique_name(_inbox_filename(sample.get("filename") or "doc.txt"), used_names)
         if unique_matters:
             matter_id = _unique_name(f"{run_matter}-{Path(local_name).stem}"[:120], used_matters)
@@ -845,6 +1132,24 @@ def main() -> int:
                 local_name=local_name,
             ))
         except Exception as exc:
+            if "cost cap reached" in str(exc).lower():
+                errors += 1
+                rows.append({
+                    "filename": sample.get("filename"),
+                    "local_filename": local_name,
+                    "matter_id": matter_id,
+                    "expected": sample.get("expected_hf_class"),
+                    "stage": "error",
+                    "error": str(exc)[:400],
+                    "exact_ok": False,
+                    "aligned_ok": False,
+                    "subclass_ok": False,
+                    "llm_cost_usd": 0.0,
+                    "llm_tokens": 0,
+                    "llm_calls": 0,
+                })
+                _flush_report()
+                raise
             errors += 1
             rows.append({
                 "filename": sample.get("filename"),
@@ -863,7 +1168,24 @@ def main() -> int:
                 "llm_tokens": 0,
                 "llm_calls": 0,
             })
-        _flush_report()
+        path = _flush_report()
+        metrics = summarize_rows(rows)
+        print(json.dumps({
+            "progress": f"{len(rows)}/{planned_n}",
+            "session_id": session_id,
+            "report": str(path),
+            "n": len(rows),
+            "errors": errors,
+            "unique_matters": unique_matters,
+            "metrics": {
+                "exact_accuracy": metrics.get("exact_accuracy"),
+                "aligned_accuracy": metrics.get("aligned_accuracy"),
+                "subclass_accuracy": metrics.get("subclass_accuracy"),
+                "total_cost_usd": metrics.get("total_cost_usd"),
+                "total_tokens": metrics.get("total_tokens"),
+                "stages": metrics.get("stages"),
+            },
+        }), flush=True)
 
     path = _flush_report()
     metrics = summarize_rows(rows)
@@ -871,12 +1193,14 @@ def main() -> int:
         "session_id": session_id,
         "run_id": run_id,
         "report": str(path),
+        "markdown": str(path.with_suffix(".md")),
         "n": len(rows),
+        "planned_n": planned_n,
         "errors": errors,
         "docclass_prompts": docclass_prompts_enabled(),
         "unique_matters": unique_matters,
         "metrics": metrics,
-    }))
+    }, default=str))
     return 1 if errors else 0
 
 

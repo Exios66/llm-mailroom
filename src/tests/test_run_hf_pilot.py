@@ -206,6 +206,8 @@ def test_hf_pilot_mock_writes_report(temp_base_dir, mock_openai_client, mock_lan
     assert "aligned_accuracy" in metrics
     assert "total_cost_usd" in metrics
     assert "per_class" in metrics
+    assert (reports[0].with_suffix(".md")).is_file()
+    assert "exact accuracy" in reports[0].with_suffix(".md").read_text(encoding="utf-8")
 
 
 def test_unique_name_avoids_collisions():
@@ -291,4 +293,71 @@ def test_hf_samples_from_report_uses_stored_text(tmp_path):
     assert samples[0]["trace_id"] == "abc"
     assert samples[0]["extracted_data"]["parties"] == ["A"]
     assert "SERVICES" in samples[0]["doc_text"]
+
+
+def test_remaining_samples_retries_errors_only():
+    from scripts.run_hf_pilot import remaining_samples
+
+    samples = [
+        {"filename": "a.txt", "expected_hf_class": "contract"},
+        {"filename": "b.txt", "expected_hf_class": "contract"},
+        {"filename": "c.txt", "expected_hf_class": "contract"},
+    ]
+    rows = [
+        {"filename": "a.txt", "stage": "archived", "predicted": "contract"},
+        {"filename": "b.txt", "stage": "error", "predicted": None},
+    ]
+    left = remaining_samples(samples, rows)
+    assert [s["filename"] for s in left] == ["b.txt", "c.txt"]
+
+
+def test_finalize_report_writes_metrics_and_markdown(tmp_path):
+    from scripts.run_hf_pilot import finalize_report
+
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps({
+        "session_id": "pilot-hf-test",
+        "dataset": "Lucius-Morningstar/docclass-merged",
+        "split": "train",
+        "mode": "real",
+        "errors": 0,
+        "samples": [
+            {
+                "filename": "deal.txt",
+                "expected": "contract",
+                "predicted": "contract",
+                "expected_subclass": "Distributor",
+                "predicted_subtype": "distributor",
+                "stage": "archived",
+                "exact_ok": True,
+                "aligned_ok": True,
+                "llm_cost_usd": 0.01,
+                "llm_tokens": 50,
+                "llm_calls": 3,
+                "wall_time_s": 1.2,
+                "extracted_data": {"cuad_family": "distributor", "parties": ["A"]},
+            }
+        ],
+    }), encoding="utf-8")
+    payload = finalize_report(report_path)
+    assert payload["metrics"]["n"] == 1
+    assert payload["metrics"]["exact_accuracy"] == 1.0
+    assert payload["metrics"]["total_cost_usd"] == 0.01
+    assert payload["samples"][0]["subclass_ok"] is True
+    md = report_path.with_suffix(".md").read_text(encoding="utf-8")
+    assert "exact accuracy" in md
+    assert "cost USD" in md
+
+
+def test_summarize_rows_includes_extraction_mean():
+    from scripts.run_hf_pilot import summarize_rows
+
+    summary = summarize_rows([
+        {"expected": "contract", "exact_ok": True, "aligned_ok": True,
+         "llm_cost_usd": 0.01, "extraction_overall_score": 0.8, "stage": "archived"},
+        {"expected": "contract", "exact_ok": True, "aligned_ok": True,
+         "llm_cost_usd": 0.01, "extraction_overall_score": 1.0, "stage": "archived"},
+    ])
+    assert summary["extraction_n"] == 2
+    assert summary["extraction_overall_mean"] == 0.9
 
