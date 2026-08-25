@@ -14,13 +14,13 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
-[![Release](https://img.shields.io/badge/release-v0.4.1-2EA043)](https://github.com/Exios66/llm-mailroom/tags)
+[![Release](https://img.shields.io/badge/release-v0.5.0-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.5.0)
 
 </div>
 
 | At a glance | |
 |---|---|
-| **Release** | [`v0.4.1`](https://github.com/Exios66/llm-mailroom/tags) — see [CHANGELOG.md](CHANGELOG.md) |
+| **Release** | [`v0.5.0`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.5.0) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
 | **Agents** | 13 LLM + procedural agents across 5 document classes |
 | **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
