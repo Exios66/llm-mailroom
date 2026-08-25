@@ -15,12 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CUAD + MAUD clause inventory on the contracts specialist.** Schema, taxonomy `field_types`, and structured output now carry `cuad_family`, `merger_consideration`, `cuad_clauses` (all 41 Atticus categories as `'<Category>: <verbatim span>'`), and `maud_clauses` (`'<Question>: <Answer>'` for all 22 LegalBench MAUD questions, using Hub valid_class strings). Hub `ground_truth` columns `cuad_clause_labels` / `maud_clause_labels` join onto HF pilot rows as `expected_fields`. Handoff lists the full CUAD+MAUD inventory; post-extract enrich fills family/consideration when omitted. Same-class Boss conflicts skip inventory fields. Contracts specialist `max_tokens` is 8192 so a full clause inventory can complete.
 
+- **Hub subclass inventories on every specialist.** Corporate records, correspondence, compliance, and insurance claims now share the same hardening path as contracts: canonical Hub tokens in schema descriptions, extract-node handoff, post-extract enrich, Boss conflict-skip, and HF `expected_fields` join. Sorter/reviewer/judge/boss docclass rules discriminate SEC exhibit wrappers (charter/bylaws/rights BODY = `corporate_record`) from form bodies (`compliance_filing`), CMS/DE-SynPUF tables (`insurance_claim`: `pde`/`inpatient`/`outpatient`/`carrier`) from filings, and readable email/memo text (`correspondence`) from `unknown`. Production `prompt_templates()` bytes are unchanged. Specialist `max_tokens` is 8192.
+
 - **Docclass runtime arm + merger extract alias.** `MAILROOM_DOCCLASS_PROMPTS=1` (or `run_hf_pilot.py --docclass`) fetches namespaced `mailroom-docclass-<key>` prompts for every classification-chain agent, with the in-repo KANBAN-090 append as fallback. Production `mailroom-<agent>` templates stay untouched. Extract alias `merger_agreement` → `contract` lets the sorter emit the HF/MAUD label while the contracts specialist extracts; `state["doc_type"]` stays `merger_agreement` so exact HF accuracy can score 1.0. Retired `court_opinion` / `due_diligence` still park. Traces pick up a `docclass-prompts` tag when the arm is on.
 
 ### Changed
 
 - Sorter and sorter_reviewer `reasoning_effort` is `none` so Qwen 3.7-Flash reserves the completion budget for JSON (production HF runs hit `LengthFinishReasonError` with medium reasoning).
 - Langfuse score transport aliases `extraction_overall_verified_precision` → `extraction_verified_precision` (35-character config name limit).
+- LLM retry: 429/upstream quota waits use `rate_limit_base_delay` (8s, cap 60s) and 5 attempts. HF pilots default embeddings off and insert a 1.5s gap between documents so corpus runs do not stampede the shared OpenRouter pool.
 
 ### Fixed
 

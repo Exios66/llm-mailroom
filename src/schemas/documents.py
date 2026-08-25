@@ -25,7 +25,7 @@ class ContractExtraction(BaseModel):
 
 class CorporateRecordExtraction(BaseModel):
     entity_name: str = ""
-    record_type: str = ""
+    record_type: str = ""  # articles_of_incorporation, bylaws, powers_of_attorney, rights_instrument, other
     effective_date: str | None = None
     key_provisions: list[str] = Field(default_factory=list)
     signatories: list[str] = Field(default_factory=list)
@@ -37,7 +37,7 @@ class CorrespondenceExtraction(BaseModel):
     sender: str = ""
     recipient: str = ""
     additional_recipients: list[str] = Field(default_factory=list)
-    communication_type: str = ""
+    communication_type: str = ""  # email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request
     communication_date: str | None = None
     key_points: list[str] = Field(default_factory=list)
     demand_amount: float | None = None
@@ -48,7 +48,7 @@ class CorrespondenceExtraction(BaseModel):
 
 
 class ComplianceFilingExtraction(BaseModel):
-    filing_type: str = ""
+    filing_type: str = ""  # 10-K, 10-Q, 8-K, S-1, DEF 14A, 13D, 13G, Form 4, 20-F, 6-K, other
     regulatory_body: str = ""
     filing_date: str | None = None
     due_date: str | None = None
@@ -63,7 +63,7 @@ class InsuranceClaimExtraction(BaseModel):
     policy_number: str | None = None
     insurer: str = ""
     insured_party: str = ""
-    claim_type: str = ""  # auto, property, liability, health, life, workers_comp, other
+    claim_type: str = ""  # pde, inpatient, outpatient, carrier, auto, property, liability, health, life, workers_comp, other
     date_of_loss: str | None = None
     date_filed: str | None = None
     claimed_amount: float | None = None

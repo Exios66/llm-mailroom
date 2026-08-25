@@ -75,6 +75,20 @@ def test_variants_are_pure_appends_of_production_templates():
     assert "Type of Consideration" in contracts
     sorter = _reg()["sorter_docclass_v0"]
     assert "contract_subtype is null" in sorter
+    assert "corporate_record even when" in sorter
+    assert "CMS/Medicare claim tables" in sorter
+    assert "Never emit unknown for readable" in sorter
+    corporate = _reg()["corporate_records_specialist_docclass_v0"]
+    assert "articles_of_incorporation" in corporate
+    assert "rights_instrument" in corporate
+    correspondence = _reg()["correspondence_specialist_docclass_v0"]
+    assert "meeting_request" in correspondence
+    assert "attorney_demand" in correspondence
+    insurance = _reg()["insurance_claims_specialist_docclass_v0"]
+    assert "pde" in insurance
+    assert "DESYNPUF" in insurance
+    compliance = _reg()["compliance_specialist_docclass_v0"]
+    assert "form BODY" in compliance
 
 
 def test_runtime_arm_rewrites_langchain_and_managed_lookups(monkeypatch):
