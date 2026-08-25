@@ -63,7 +63,9 @@ class InsuranceClaimExtraction(BaseModel):
     date_of_loss: str | None = None
     date_filed: str | None = None
     claimed_amount: float | None = None
-    adjuster: str = ""
+    # CMS / DE-SynPUF rows often have no named adjuster — null must validate
+    # (production HF pilot parked REVIEW when this field was a required str).
+    adjuster: str | None = None
     damages_description: str = ""
     coverage_determination: str = ""  # approved, denied, partial, pending
     denial_reasons: list[str] = Field(default_factory=list)

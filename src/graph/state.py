@@ -32,6 +32,10 @@ class DocumentState(TypedDict, total=False):
     # sorter/specialist prompts when the agent's model is vision-capable;
     # `doc_text` above is always produced regardless for text-only paths.
     doc_pages: list[str]
+    # Intake clerk stats (procedural normalize at ingest; The-Mailroom reads
+    # the matching ``normalize-intake`` span, not these state keys).
+    intake_messy: bool
+    intake_changed: bool
     error_message: str | None
     run_deadline: float
     run_aborted: bool

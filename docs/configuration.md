@@ -271,6 +271,7 @@ See `.env.example` for the complete list:
 | `MAILROOM_VISION_ENABLED` | No | `true` | Enable/disable vision ingestion (overrides `vision.enabled` in taxonomy.yaml) |
 | `MAILROOM_VISION_MAX_PAGES` | No | `10` | Max PDF pages to render as images (0 = all pages; overrides `vision.max_pages`) |
 | `MAILROOM_VISION_DPI` | No | `150` | Render DPI for page images (overrides `vision.dpi`) |
+| `MAILROOM_PILOT_COST_ABORT` | No | `2.00` (HF pilot) / `0.20` (committed-sample `run_pilot.py`) | Cumulative USD cap; abort the pilot when exceeded |
 
 ## Provider Configuration
 
