@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Routing-flow audit after specialist retirement — unknown token, vision remap, missing-specialist retry:**
+  - Sorter structured-output enum now includes `unknown` (a routing token, not a specialist). Restricting it to the five live classes forced court opinions / DD memos onto a nearby specialist despite doctrine.
+  - Vision `classify_image` / `classify_document` no longer remap invalid labels onto `correspondence` at the model's confidence (the text-path MAILROOM PATCH twin). Empty pages return `unknown` at 0.0. Explicit `<label>` tags are honored even when the label is `unknown` or retired.
+  - `after_extraction` parks unsupported / non-taxonomy types for human review immediately — no `retry_extract` of a missing specialist. Extract nodes return `{_unsupported: True}` instead of a 0.3-confidence stub that burned the retry budget.
+  - Graph construction asserts dispatch keys == taxonomy keys; an unmapped `specialist:` name raises. Per-agent memory no longer falls back to `contracts_specialist` for unmapped types.
+  - Lane A reviewer options include `unknown`; `after_review_classify` still extracts only live taxonomy classes.
+  - `validate_extraction` treats a missing schema as **invalid** (retired/hallucinated types no longer look schema-clean).
+  - Classify hard-fail / empty text now label `unknown` instead of `correspondence`. Parse-error remains correspondence at 0.3 so the classify retry budget still fires.
+
 - **Sorter remapped unknown classes onto `correspondence` at the model's confidence:** `sorter_agent.classify` coerced any `doc_type` outside `DOC_CLASS_KEYS` to `correspondence` while keeping the stated 0.98, so `after_classify`'s unknown-type arm never fired and hallucinations archived as letters. Invalid types are now preserved; parse-error remains the only correspondence default (explicitly 0.3). Missing/empty type on `after_classify` also parks for review (already true on `after_retry_classify`).
 - **Mixed-class matter conflict false positive:** `_detect_conflict` compared shared schema field names (`effective_date` on both contract and corporate_record) across different document classes in the same matter and escalated to the Boss. Conflict is same-class only.
 

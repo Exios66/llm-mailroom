@@ -5,6 +5,7 @@ from graph.routing import (
     after_human_review,
     after_retry_classify,
     after_retry_extraction,
+    after_review_classify,
     after_arbiter,
     after_judge,
 )
@@ -58,6 +59,24 @@ class TestRoutingLogic:
             "classification_confidence": 0.50,
             "classification_attempts": 2,
             "doc_type": "contract",
+        }
+        assert after_classify(state) == "human_review"
+
+    def test_after_classify_unknown_token_high_confidence_parks(self):
+        # Doctrine emits `unknown` for court opinions / DD memos. That token
+        # is NOT a specialist class — even 0.99 must never extract.
+        state = {
+            "classification_confidence": 0.99,
+            "classification_attempts": 1,
+            "doc_type": "unknown",
+        }
+        assert after_classify(state) == "human_review"
+
+    def test_after_classify_retired_class_high_confidence_parks(self):
+        state = {
+            "classification_confidence": 0.99,
+            "classification_attempts": 1,
+            "doc_type": "court_opinion",
         }
         assert after_classify(state) == "human_review"
 
@@ -161,6 +180,38 @@ class TestRoutingLogic:
         }
         assert after_extraction(state) == "compile_report"
 
+    def test_after_extraction_unsupported_stub_skips_retry(self):
+        # Missing-specialist stub used to look like a low-confidence extract
+        # and burn retry_extract on the same missing arm.
+        state = {
+            "doc_type": "contract",
+            "extracted_data": {"_unsupported": True},
+            "extraction_confidence": 0.3,
+            "extraction_attempts": 1,
+            "conflict_detected": False,
+        }
+        assert after_extraction(state) == "human_review"
+
+    def test_after_extraction_retired_class_skips_retry(self):
+        state = {
+            "doc_type": "court_opinion",
+            "extracted_data": {"caption": "Smith v Jones"},
+            "extraction_confidence": 0.95,
+            "extraction_attempts": 1,
+            "conflict_detected": False,
+        }
+        assert after_extraction(state) == "human_review"
+
+    def test_after_extraction_unknown_token_skips_retry(self):
+        state = {
+            "doc_type": "unknown",
+            "extracted_data": {"_unsupported": True},
+            "extraction_confidence": 0.3,
+            "extraction_attempts": 1,
+            "conflict_detected": False,
+        }
+        assert after_extraction(state) == "human_review"
+
     def test_after_boss_approved_routes_to_report(self):
         state = {"review_decision": "approved"}
         assert after_boss(state) == "compile_report"
@@ -202,6 +253,21 @@ class TestRoutingLogic:
     def test_after_retry_classify_unknown_type_before_lane_a(self):
         state = {"classification_confidence": 0.80, "doc_type": "zzz_unknown"}
         assert after_retry_classify(state) == "human_review"
+
+    def test_after_retry_classify_unknown_token_high_confidence_parks(self):
+        state = {
+            "classification_confidence": 0.99,
+            "doc_type": "unknown",
+        }
+        assert after_retry_classify(state) == "human_review"
+
+    def test_after_review_classify_unknown_token_escalates(self):
+        state = {
+            "review_verdict": "reviewer_overrides",
+            "reviewer_confidence": 0.99,
+            "reviewer_doc_type": "unknown",
+        }
+        assert after_review_classify(state) == "human_review"
 
     def test_after_human_review_approved(self):
         state = {"review_decision": "approved"}
