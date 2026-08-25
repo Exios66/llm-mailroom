@@ -251,9 +251,13 @@ class SorterAgent(BaseAgent):
             logger.error("sorter_parse_error")
             return ("correspondence", None, 0.3, "parse error — defaulting to correspondence")
 
-        doc_type = result.get("doc_type", "correspondence")
-        if doc_type not in DOC_CLASS_KEYS:
-            doc_type = "correspondence"
+        doc_type = result.get("doc_type") or ""
+        # MAILROOM PATCH: do NOT coerce an unknown class onto `correspondence`
+        # while keeping the model's stated confidence — that archived
+        # hallucinations as letters. Invalid / empty types stay as-is so
+        # `apply_classification_guard` + `after_classify` park them for review.
+        # Parse-error above is the only remaining correspondence default, and
+        # it is explicitly low-confidence (0.3).
         contract_subtype = normalize_subtype(
             result.get("contract_subtype") if doc_type == "contract" else None
         )
@@ -308,9 +312,10 @@ class SorterAgent(BaseAgent):
         if result.get("_parse_error"):
             return {"doc_type": "correspondence", "contract_subtype": None,
                     "confidence": 0.3, "reasoning": "parse error"}
-        doc_type = result.get("doc_type", "correspondence")
-        if doc_type not in DOC_CLASS_KEYS:
-            doc_type = "correspondence"
+        doc_type = result.get("doc_type") or ""
+        # MAILROOM PATCH: same as classify() — never silently remap an
+        # unknown class onto correspondence at the model's confidence.
+        result["doc_type"] = doc_type
         result["contract_subtype"] = normalize_subtype(
             result.get("contract_subtype") if doc_type == "contract" else None
         )

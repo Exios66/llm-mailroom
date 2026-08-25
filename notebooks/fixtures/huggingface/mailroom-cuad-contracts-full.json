@@ -1,0 +1,79 @@
+{
+  "dataset": "Lucius-Morningstar/mailroom-cuad-contracts-full",
+  "rows": [
+    {
+      "id": "cuad-Monsanto Company - SECOND A_R EXCLUSIVE AGENCY AND MARKETING AGREEMENT ",
+      "input": "{\"doc_text\":\"Exhibit 10.14(a)\\n\\nSECOND AMENDED AND RESTATED  EXCLUSIVE AGENCY AND  MARKETING AGREEM",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"SECOND AMENDED AND RESTATED EXCLUSIVE AGENCY AND MARK",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Agreement Date\",\"Anti-Assignment\",\"Audit Rig",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.395Z"
+    },
+    {
+      "id": "cuad-MetLife, Inc. - Remarketing Agreement",
+      "input": "{\"doc_text\":\"Exhibit 99.1\\n\\nEXECUTION VERSION\\n\\nMETLIFE, INC.\\n\\nSeries E Senior Component Debentu",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"Remarketing Agreement\",\"answer_start\":364,\"question\":",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Agreement Date\",\"Anti-Assignment\",\"Audit Rig",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.395Z"
+    },
+    {
+      "id": "cuad-Loop Industries, Inc. - Marketing Agreement",
+      "input": "{\"doc_text\":\"EXHIBIT 10.3 Execution Copy MARKETING AGREEMENT This Marketing Agreement (this \\\"Agreem",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"Marketing Agreement\",\"answer_start\":29378,\"question\":",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Agreement Date\",\"Anti-Assignment\",\"Audit Rig",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.395Z"
+    },
+    {
+      "id": "cuad-LECLANCHE\u0301 S.A. - JOINT DEVELOPMENT AND MARKETING AGREEMENT",
+      "input": "{\"doc_text\":\"JOINT DEVELOPMENT AND MARKETING AGREEMENT\\n\\nBETWEEN\\n\\nLECLANCH\u00c9 SA\\n\\nAND\\n\\nOAK RID",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"JOINT DEVELOPMENT AND MARKETING AGREEMENT\",\"answer_st",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Agreement Date\",\"Anti-Assignment\",\"Audit Rig",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.395Z"
+    },
+    {
+      "id": "cuad-GWG HOLDINGS, INC. - ORDERLY MARKETING AGREEMENT",
+      "input": "{\"doc_text\":\"Exhibit 10.3 Execution Version GWG HOLDINGS, INC., AND THE TRUST ADVISORS TO THE SELLER",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"ORDERLY MARKETING AGREEMENT\",\"answer_start\":174,\"ques",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Agreement Date\",\"Anti-Assignment\",\"Audit Rig",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.394Z"
+    },
+    {
+      "id": "cuad-VAPOTHERM, INC. - Manufacturing and Supply Agreement",
+      "input": "{\"doc_text\":\"Exhibit 10.14\\n\\n[* * *] = Certain confidential information contained in this document,",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"Manufacturing and Supply Agreement\",\"answer_start\":73",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Affiliate License-Licensor\",\"Agreement Date\"",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.394Z"
+    },
+    {
+      "id": "cuad-Sonos, Inc. - Manufacturing Agreement ",
+      "input": "{\"doc_text\":\"Exhibit 10.07 [*] Certain confidential information contained in this document, marked b",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"Manufacturing Agreement\",\"answer_start\":1212,\"questio",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Affiliate License-Licensor\",\"Agreement Date\"",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.394Z"
+    },
+    {
+      "id": "cuad-Magenta Therapeutics, Inc. - Master Development and Manufacturing Agreement",
+      "input": "{\"doc_text\":\"Exhibit 10.10\\n\\nCONFIDENTIAL TREATMENT REQUESTED. INFORMATION FOR WHICH CONFIDENTIAL T",
+      "expected": "{\"clause_count\":41,\"clause_labels\":[{\"answer\":\"Master Development and Manufacturing Agreement\",\"answ",
+      "metadata": "{\"applicable_categories\":[\"Affiliate License-Licensee\",\"Affiliate License-Licensor\",\"Agreement Date\"",
+      "tags": null,
+      "created": "2026-08-10T04:41:04.394Z"
+    }
+  ],
+  "features": [
+    "id",
+    "input",
+    "expected",
+    "metadata",
+    "tags",
+    "created"
+  ],
+  "config": "default",
+  "split": "train"
+}

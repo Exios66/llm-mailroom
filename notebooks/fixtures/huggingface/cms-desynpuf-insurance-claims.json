@@ -1,0 +1,79 @@
+{
+  "dataset": "Lucius-Morningstar/cms-desynpuf-insurance-claims",
+  "rows": [
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887023387197025\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            TAYLOR, MARY\n  Policy number:            E88C5AB701DBA4D7\n  Age:                      81\n  Sex:                      F\n  State/County (SSA\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887023387197025.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"5899\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887023387197025\", \"claim_type\": \"health\", \"claimed_amount\": 110.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-08-23 to 2008-08-23; diagnoses (ICD-9): 5899; 2 billed service lines.\", \"date_filed\": \"2008-08-23\", \"date_of_loss\": \"2008-08-23\", \"denial_reasons\": [], \"insured_party\": \"TAYLOR, MARY\", \"insurer\": \"CMS Medicare\", \"po\u2026",
+      "prompt": ""
+    },
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887743385537772\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            SMITH, ROBERT\n  Policy number:            8505E94C4DB3C241\n  Age:                      68\n  Sex:                      F\n  State/County (SS\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887743385537772.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"2334\", \"78701\", \"7245\", \"78833\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887743385537772\", \"claim_type\": \"health\", \"claimed_amount\": 210.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-11-25 to 2008-11-28; diagnoses (ICD-9): 2334, 78701, 7245, 78833; 2 billed service lines.\", \"date_filed\": \"2008-11-28\", \"date_of_loss\": \"2008-11-25\", \"denial_reasons\": [], \"insured_party\": \u2026",
+      "prompt": ""
+    },
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887263387629219\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            MOORE, SARAH\n  Policy number:            C8C23E0EF1B1D432\n  Age:                      83\n  Sex:                      F\n  State/County (SSA\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887263387629219.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"2328\", \"7020\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887263387629219\", \"claim_type\": \"health\", \"claimed_amount\": 170.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-12-12 to 2008-12-12; diagnoses (ICD-9): 2328, 7020; 1 billed service lines.\", \"date_filed\": \"2008-12-12\", \"date_of_loss\": \"2008-12-12\", \"denial_reasons\": [], \"insured_party\": \"MOORE, SARAH\", \"insurer\": \"CMS \u2026",
+      "prompt": ""
+    },
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887423388592720\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            ANDERSON, MARK\n  Policy number:            B8DA8030B080E1A0\n  Age:                      87\n  Sex:                      F\n  State/County (S\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887423388592720.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"1978\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887423388592720\", \"claim_type\": \"health\", \"claimed_amount\": 100.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-05-23 to 2008-05-23; diagnoses (ICD-9): 1978; 1 billed service lines.\", \"date_filed\": \"2008-05-23\", \"date_of_loss\": \"2008-05-23\", \"denial_reasons\": [], \"insured_party\": \"ANDERSON, MARK\", \"insurer\": \"CMS Medicare\", \"\u2026",
+      "prompt": ""
+    },
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887053389147910\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            SANCHEZ, SANDRA\n  Policy number:            ECE5DA48B4AE7779\n  Age:                      87\n  Sex:                      F\n  State/County (\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887053389147910.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"38801\", \"38900\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887053389147910\", \"claim_type\": \"health\", \"claimed_amount\": 130.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-03-17 to 2008-03-17; diagnoses (ICD-9): 38801, 38900; 4 billed service lines.\", \"date_filed\": \"2008-03-17\", \"date_of_loss\": \"2008-03-17\", \"denial_reasons\": [], \"insured_party\": \"SANCHEZ, SANDRA\", \"insurer\"\u2026",
+      "prompt": ""
+    },
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887063384833263\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            HILL, SUSAN\n  Policy number:            31C0A615E1764600\n  Age:                      91\n  Sex:                      F\n  State/County (SSA)\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887063384833263.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"7286\", \"6278\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887063384833263\", \"claim_type\": \"health\", \"claimed_amount\": 100.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-02-29 to 2008-02-29; diagnoses (ICD-9): 7286, 6278; 3 billed service lines.\", \"date_filed\": \"2008-02-29\", \"date_of_loss\": \"2008-02-29\", \"denial_reasons\": [], \"insured_party\": \"HILL, SUSAN\", \"insurer\": \"CMS M\u2026",
+      "prompt": ""
+    },
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887783384981877\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            BROWN, MICHAEL\n  Policy number:            7983F3932D19B1E9\n  Age:                      87\n  Sex:                      F\n  State/County (S\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887783384981877.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"V1046\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887783384981877\", \"claim_type\": \"health\", \"claimed_amount\": 120.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-03-27 to 2008-04-03; diagnoses (ICD-9): V1046; 3 billed service lines.\", \"date_filed\": \"2008-04-03\", \"date_of_loss\": \"2008-03-27\", \"denial_reasons\": [], \"insured_party\": \"BROWN, MICHAEL\", \"insurer\": \"CMS Medicare\",\u2026",
+      "prompt": ""
+    },
+    {
+      "doc_text": "==========================================================================\nMEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)\nNotice ID: 887393389256013\n==========================================================================\n\nInsurer:                  CMS Medicare\nLine of business:         health\n\nBENEFICIARY / INSURED\n  Insured party:            JONES, MARY\n  Policy number:            F6AD305ACDD3FD02\n  Age:                      80\n  Sex:                      F\n  State/County (SSA)\u2026",
+      "expected": "insurance_claim",
+      "expected_subclass": "carrier",
+      "filename": "carrier:887393389256013.txt",
+      "metadata": "{\"claim_subtype\": \"carrier\", \"diagnosis_codes\": [\"37860\", \"36501\", \"3671\", \"36211\"], \"ground_truth\": {\"adjuster\": null, \"claim_number\": \"887393389256013\", \"claim_type\": \"health\", \"claimed_amount\": 110.0, \"coverage_determination\": \"approved\", \"damages_description\": \"Physician/supplier professional services 2008-01-21 to 2008-01-21; diagnoses (ICD-9): 37860, 36501, 3671, 36211; 2 billed service lines.\", \"date_filed\": \"2008-01-21\", \"date_of_loss\": \"2008-01-21\", \"denial_reasons\": [], \"insured_party\"\u2026",
+      "prompt": ""
+    }
+  ],
+  "features": [
+    "doc_text",
+    "expected",
+    "expected_subclass",
+    "filename",
+    "metadata",
+    "prompt"
+  ],
+  "config": "default",
+  "split": "train"
+}

@@ -1,7 +1,8 @@
 # llm-mailroom Notebooks — the Formal Plan
 
-Status: **PLANNED** (this document is the plan of record; implementation
-proceeds notebook-by-notebook in the build order below).
+Status: **SHIPPED 00–13** (this document is the plan of record; 00–08 shipped
+under KANBAN-095, 09–13 extend the suite to every specialist, edge cases,
+Lucius-Morningstar Hub corpora, LegalBench, and vision ingestion).
 
 Audience: anyone who wants to *see* the mailroom think — how the 13-node
 LangGraph pipeline routes a legal document through its specialist agents,
@@ -52,9 +53,14 @@ without reading the whole graph wiring first.
 | 06 | `outputs_and_audit.ipynb` | What does the pipeline leave behind? |
 | 07 | `multi_document_matters.ipynb` | How do runs group into matters/sessions? |
 | 08 | `observability_traces.ipynb` | What does Langfuse see? (opt-in) |
+| 09 | `all_specialists.ipynb` | One happy-path run per class (all 7 specialists) |
+| 10 | `edge_cases.ipynb` | Guards, $0 amounts, unknown type, schema-invalid extract, Boss conflict |
+| 11 | `huggingface_corpora.ipynb` | Navigate Lucius-Morningstar Hub datasets (offline snapshot + live opt-in) |
+| 12 | `legalbench.ipynb` | LegalBench eval suite beside the pipeline (mock on a mini CUAD fixture) |
+| 13 | `vision_ingestion.ipynb` | Additive page-image render path (no LLM call) |
 
-All eight share one reusable module: `notebooks/pipeline_lab.py`
-("the lab bench") — see Shared infrastructure below.
+All fourteen walkthroughs share `notebooks/pipeline_lab.py` ("the lab
+bench"); 11 also uses `huggingface_lab.py` and 12 uses `legalbench_lab.py`.
 
 ### 00 — `pipeline_anatomy.ipynb` (static map)
 
@@ -251,7 +257,9 @@ grows one governed commit at a time, never a big-bang dump.
 ## Out of scope / honest gaps
 
 - Real-LLM notebook runs are NOT part of any guard (cost + nondeterminism);
-  08's live cell is the only network path and is marker-gated.
-- Vision paths (`doc_pages` rendering) are narrated in 00 but not executed
-  in notebooks (pdf rendering deps stay out of the notebooks extra).
+  08's live Langfuse cell and 11's live Hub cell are the only network paths
+  and are marker-gated (`NB-OPT-IN-NETWORK`).
+- Vision **rendering** is executed in 13 (PyMuPDF data-URIs); multimodal LLM
+  calls are not (they would spend tokens). The additive contract is shown,
+  not a live vision completion.
 - The TUI (M4) gets notebooks only after it exists.
