@@ -18,12 +18,12 @@ def _rows():
 
 def test_manifest_has_rows_and_unique_ids():
     rows = _rows()
-    assert len(rows) >= 30
+    assert len(rows) == 22
     ids = [r["id"] for r in rows]
     assert len(ids) == len(set(ids)), "duplicate sample ids"
     for r in rows:
         assert r["filename"].endswith(".pdf")
-        assert r.get("dataset") in ("original", "legalbench", "atticus", "pileoflaw")
+        assert r.get("dataset") in ("original", "legalbench", "atticus")
 
 
 def test_manifest_has_six_samples_per_external_source():
@@ -32,7 +32,7 @@ def test_manifest_has_six_samples_per_external_source():
     counts = Counter(r.get("dataset") or "original" for r in _rows())
     assert counts["legalbench"] == 6
     assert counts["atticus"] == 6
-    assert counts["pileoflaw"] == 6
+    assert counts["pileoflaw"] == 0
 
 
 def test_manifest_expected_classes_are_valid_taxonomy():
@@ -83,8 +83,7 @@ def test_manifest_committed_cuad_pdfs():
         assert p.stat().st_size > 0
 
 
-def test_court_opinion_samples_map_to_court_opinion_class():
+def test_retired_classes_are_absent_from_live_manifest():
     for r in _rows():
-        if (r.get("dataset") or "") == "pileoflaw":
-            assert r["expected_doc_class"] == "court_opinion", r["id"]
-            assert r["expected_stage"] == "archived"
+        assert r["expected_doc_class"] not in ("court_opinion", "due_diligence"), r["id"]
+        assert (r.get("dataset") or "") != "pileoflaw"

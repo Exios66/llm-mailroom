@@ -46,12 +46,13 @@ CUAD_SUBTYPE = (
 )
 
 SEVEN_CLASSES = (
-    "The mailroom taxonomy has seven primary classes: contract, "
-    "corporate_record, due_diligence, correspondence, compliance_filing, "
-    "court_opinion, insurance_claim. A demand letter about a contract is "
-    "correspondence; a judicial decision about a contract is court_opinion; "
-    "an insurance policy is contract; FNOL/adjuster/coverage-denial paperwork "
-    "is insurance_claim."
+    "The mailroom taxonomy has five primary classes: contract, "
+    "corporate_record, correspondence, compliance_filing, "
+    "insurance_claim. A demand letter about a contract is "
+    "correspondence; an insurance policy is contract; FNOL/adjuster/"
+    "coverage-denial paperwork is insurance_claim. A court opinion or "
+    "due-diligence checklist/memo is not a mailroom class — set doc_type "
+    "to unknown rather than remapping it onto correspondence or contract."
 )
 
 HANDOFF_IS_ROUTING = (
@@ -130,15 +131,6 @@ CORPORATE_RECORDS = extraction_doctrine(
     ],
 )
 
-DUE_DILIGENCE = extraction_doctrine(
-    "target_entity, diligence_type, material_findings, risk_flags, "
-    "outstanding_items, document_date, prepared_by",
-    [
-        "Separate stated facts from inferred risks. Do not label a possibility as an established finding.",
-        "material_findings, risk_flags, and outstanding_items are distinct lists — do not collapse them.",
-    ],
-)
-
 CORRESPONDENCE = extraction_doctrine(
     "sender, recipient, additional_recipients, communication_type, "
     "communication_date, key_points, demand_amount, action_items, urgency, "
@@ -157,16 +149,6 @@ COMPLIANCE = extraction_doctrine(
         "Name the filing type specifically (for example 10-K annual report, not merely SEC filing).",
         "reference_number is an identifier (accession, control, file number); transcribe it exactly.",
         "An agreement filed as an SEC exhibit is still extracted as a filing only when THIS document's form is the filing wrapper; do not pull the exhibit's contract fields into this schema.",
-    ],
-)
-
-COURT_OPINIONS = extraction_doctrine(
-    "case_name, court, date_decided, docket_number, opinion_type, parties, "
-    "holding, legal_issues, outcome, citations, authored_by",
-    [
-        "Report the court's holding, not your view of the law.",
-        "docket_number and citations are identifiers; transcribe them as printed.",
-        "Do not infer a caption, date, docket, author, or citation that is not visible.",
     ],
 )
 
@@ -226,7 +208,7 @@ JUDGE_COMPLETENESS = _block(
 JUDGE_CLASSIFICATION = classification_doctrine(
     [
         "Grade doc_type and, for contracts, contract_subtype. A correct class with a missing subtype is not fully correct.",
-        "unknown is a valid assigned type when the document fits none of the seven classes; do not mark that incorrect merely because a nearby class exists.",
+        "unknown is a valid assigned type when the document fits none of the five live classes; do not mark that incorrect merely because a nearby class exists.",
     ]
 )
 

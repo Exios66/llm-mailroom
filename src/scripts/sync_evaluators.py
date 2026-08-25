@@ -94,10 +94,8 @@ _REQUEST_OPTS = {"timeout": 900}
 _TAXONOMY_SPEC = """\
 - contract (Contract / Agreement): Formal agreements between parties: M&A, vendor, employment, NDAs, service agreements, leases, licensing
 - corporate_record (Corporate Record): Bylaws, resolutions, board minutes, cap table entries, incorporation docs
-- due_diligence (Due Diligence): Checklists, disclosure schedules, diligence memos, risk assessments
 - correspondence (Correspondence): Letters, emails, memos, notices between parties or with regulators
 - compliance_filing (Compliance Filing): SEC filings, state registrations, regulatory submissions, annual reports
-- court_opinion (Court Opinion): Judicial opinions, orders, and decisions issued by courts
 - insurance_claim (Insurance Claim): Insurance claim documentation - FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"""
 
 # One cumulative judge call per document returning a three-way

@@ -172,8 +172,10 @@ Document lands in `/pipeline/inbox/`. Watcher detects it, claims it atomically t
 
 ### 2. Classify (Sorter)
 LLM call: reads document text, determines `doc_type` (contract,
-corporate_record, due_diligence, correspondence, compliance_filing,
-court_opinion, insurance_claim) and confidence score.
+corporate_record, correspondence, compliance_filing, insurance_claim)
+and confidence score. Court opinions and due-diligence checklists/memos
+are not live classes — the sorter must emit `unknown` rather than remapping
+them onto correspondence or contract.
 
 ### 3. Confidence Check
 Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
@@ -302,7 +304,7 @@ The `judge` agent (`agents/judge.py`, offline — not in the document graph) aud
 
 The same rubrics are configured as **two independent live LLM-as-a-Judge evaluators in the Langfuse project** (`scripts/sync_evaluators.py`): the pipeline emits a single `pipeline-result` generation per document trace, and two observation rules independently evaluate it. `mailroom-pipeline-judge` returns a **CORRECT/PARTIAL/MISS** verdict — PARTIAL for substantially correct runs with limited material gaps, MISS reserved for wrong class/stage, contradictions, failed runs, or broad omission; `mailroom-pipeline-quality` returns a proportional **0.0-1.0 quality score**, so partial-but-useful extractions are not flattened into MISS. The quality score never replaces or alters the run verdict. Grounded runs use a labeled, pretty-printed expected-fields input block and a cleaned schema-only output, cutting ~90% of judge tokens. Live runs without ground truth use visible source text. The script also ensures an LLM connection for the judge provider exists (OpenRouter key from `.env`) and prunes any stale mailroom evaluators/rules.
 
-The pilot samples are mirrored into Langfuse datasets — one **per source corpus** (`scripts/sync_dataset.py`): `mailroom-pilot` (original samples), `mailroom-pilot-legalbench`, `mailroom-pilot-atticus`, and `mailroom-pilot-pileoflaw`. One item per sample with document text, ground truth (`expected_doc_class`, `expected_stage`, `expected_fields`) and manifest metadata — for experiments and judge calibration.
+The pilot samples are mirrored into Langfuse datasets — one **per source corpus** (`scripts/sync_dataset.py`): `mailroom-pilot` (original samples), `mailroom-pilot-legalbench`, and `mailroom-pilot-atticus`. Pile of Law court opinions remain on disk but are no longer in the live manifest (`court_opinion` was retired). One item per sample with document text, ground truth (`expected_doc_class`, `expected_stage`, `expected_fields`) and manifest metadata — for experiments and judge calibration.
 
 Production runs additionally emit self-evident scores with no ground truth (`parse_error`, `schema_valid`, `stage_completed`, `guardrail_triggered`, confidence values) from `observability/scores.py`, and pilot runs add ground-truth scores (`class_correct`, `stage_correct`, `confidence_calibration_error`, `expected_field_presence`). All score configs are auto-created in Langfuse by `ensure_score_configs()`.
 

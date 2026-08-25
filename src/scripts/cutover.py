@@ -124,7 +124,7 @@ Recommended agent-by-agent cutover order (least risky first):
   3. correspondence_specialist    (narrative text, moderate complexity)
   4. corporate_records_specialist (hierarchical data, moderate complexity)
   5. contracts_specialist          (complex extraction, high accuracy needed)
-  6. due_diligence_specialist     (nuance/risk detection, highest sensitivity)
+  6. insurance_claims_specialist  (claim documentation)
   7. reporter                     (summarization)
   8. boss                         (adjudication/analysis)
 

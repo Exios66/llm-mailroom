@@ -171,8 +171,8 @@ agents:
     provider: ollama              # Local for structured filings
     model: qwen3:7b
 
-  due_diligence_specialist:
-    provider: openrouter          # Cloud for risk detection
+  insurance_claims_specialist:
+    provider: openrouter          # Cloud for claim documentation
     model: openai/gpt-4o
 ```
 

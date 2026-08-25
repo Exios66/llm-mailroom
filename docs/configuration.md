@@ -87,12 +87,6 @@ doc_classes:
     specialist: corporate_records_specialist
     description: "Bylaws, resolutions, board minutes, cap table entries, incorporation docs"
 
-  - key: due_diligence
-    label: "Due Diligence"
-    schema: DueDiligenceExtraction
-    specialist: due_diligence_specialist
-    description: "Checklists, disclosure schedules, diligence memos, risk assessments"
-
   - key: correspondence
     label: "Correspondence"
     schema: CorrespondenceExtraction
@@ -116,11 +110,11 @@ doc_classes:
     specialist: compliance_specialist
     description: "SEC filings, state registrations, regulatory submissions, annual reports"
 
-  - key: court_opinion
-    label: "Court Opinion"
-    schema: CourtOpinionExtraction
-    specialist: court_opinions_specialist
-    description: "Judicial opinions and orders: published decisions, memorandum opinions, rulings by federal and state courts"
+  - key: insurance_claim
+    label: "Insurance Claim"
+    schema: InsuranceClaimExtraction
+    specialist: insurance_claims_specialist
+    description: "FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"
 ```
 
 ### `field_scoring`

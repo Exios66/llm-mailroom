@@ -76,7 +76,7 @@ The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `lan
 | `contract_value` | `str \| None` | Total value |
 | `renewal_terms` | `str \| None` | Renewal conditions |
 
-The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): `contracts_specialist_v32` prompt (V31 eval-validated extraction + mailroom pipeline doctrine), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other five specialists accept the same optional `handoff_context` parameter.
+The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): `contracts_specialist_v32` prompt (V31 eval-validated extraction + mailroom pipeline doctrine), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other four specialists accept the same optional `handoff_context` parameter.
 
 ---
 
@@ -103,30 +103,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 ---
 
-### 4. Due Diligence Specialist (`agents/due_diligence_specialist.py`)
-
-| Attribute | Value |
-|---|---|
-| **Node** | `extract`, `retry_extract` |
-| **Trigger** | `doc_type == due_diligence` |
-| **Input** | Document text + `DueDiligenceExtraction` schema |
-| **Output** | Structured extraction + confidence |
-| **Personality** | Skeptical, flags inconsistencies aggressively |
-
-**Output schema fields:**
-| Field | Type | Description |
-|---|---|---|
-| `target_entity` | `str` | Entity being investigated |
-| `diligence_type` | `str` | Financial, legal, operational, etc. |
-| `material_findings` | `list[str]` | Significant facts discovered |
-| `risk_flags` | `list[str]` | Identified risks |
-| `outstanding_items` | `list[str]` | Open questions |
-| `document_date` | `str \| None` | Report date |
-| `prepared_by` | `str \| None` | Author |
-
----
-
-### 5. Correspondence Specialist (`agents/correspondence_specialist.py`)
+### 4. Correspondence Specialist (`agents/correspondence_specialist.py`)
 
 | Attribute | Value |
 |---|---|
@@ -153,7 +130,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 ---
 
-### 6. Compliance Specialist (`agents/compliance_specialist.py`)
+### 5. Compliance Specialist (`agents/compliance_specialist.py`)
 
 | Attribute | Value |
 |---|---|
@@ -177,34 +154,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 ---
 
-### 7. Court Opinions Specialist (`agents/court_opinions_specialist.py`)
-
-| Attribute | Value |
-|---|---|
-| **Node** | `extract`, `retry_extract` |
-| **Trigger** | `doc_type == court_opinion` |
-| **Input** | Document text + `CourtOpinionExtraction` schema |
-| **Output** | Structured extraction + confidence |
-| **Personality** | Meticulous, reports holdings without editorializing |
-
-**Output schema fields:**
-| Field | Type | Description |
-|---|---|---|
-| `case_name` | `str` | Style of the case (e.g. Smith v. Jones) |
-| `court` | `str` | Issuing court |
-| `date_decided` | `str \| None` | Decision date |
-| `docket_number` | `str \| None` | Case/docket number |
-| `opinion_type` | `str` | published, memorandum, per curiam, order, etc. |
-| `parties` | `list[str]` | Named parties from the caption |
-| `holding` | `str` | The rule of law established |
-| `legal_issues` | `list[str]` | Questions of law presented and decided |
-| `outcome` | `str` | affirmed, reversed, remanded, denied, granted |
-| `citations` | `list[str]` | Reporter citations and docket numbers |
-| `authored_by` | `str \| None` | Authoring judge |
-
----
-
-### 8. Insurance Claims Specialist (`agents/insurance_claims_specialist.py`)
+### 6. Insurance Claims Specialist (`agents/insurance_claims_specialist.py`)
 
 | Attribute | Value |
 |---|---|
@@ -232,11 +182,11 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `supporting_documents` | `list[str]` | Documents referenced as supporting the claim |
 | `confidence` | `float` | Extraction confidence (evidence-derived) |
 
-The seventh first-class document class (added in mailroom v0.4.0 / KANBAN-067): integrated at every surface `court_opinion` touches — schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage. **Honest gap:** unlike contract (CUAD), merger_agreement (MAUD), or correspondence (Enron), insurance_claim has no external benchmark corpus yet — CMS DE-SynPUF is the candidate source and EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda); samples are synthetic-only by design until that corpus lands.
+A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage. **Honest gap:** unlike contract (CUAD) or correspondence (Enron), insurance_claim has no external benchmark corpus yet — CMS DE-SynPUF is the candidate source and EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda); samples are synthetic-only by design until that corpus lands.
 
 ---
 
-### 9. Reporter (`agents/reporter.py`)
+### 7. Reporter (`agents/reporter.py`)
 
 | Attribute | Value |
 |---|---|
@@ -250,7 +200,7 @@ The Reporter does NOT extract new data — it compiles and refines what the spec
 
 ---
 
-### 10. Archivist (`agents/archivist.py`)
+### 8. Archivist (`agents/archivist.py`)
 
 | Attribute | Value |
 |---|---|
@@ -267,7 +217,7 @@ The Archivist is NOT an LLM agent — it's a procedural function that:
 
 ---
 
-### 11. Boss (`agents/boss.py`)
+### 9. Boss (`agents/boss.py`)
 
 | Attribute | Value |
 |---|---|
@@ -286,7 +236,7 @@ Both share the same system prompt voice — consistent persona across both invoc
 
 ---
 
-### 12. PDF Transcriber (`agents/pdf_transcriber.py`)
+### 10. PDF Transcriber (`agents/pdf_transcriber.py`)
 
 | Attribute | Value |
 |---|---|
@@ -300,7 +250,7 @@ A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`
 
 ---
 
-### 13. Judge (`agents/judge.py`)
+### 11. Judge (`agents/judge.py`)
 
 | Attribute | Value |
 |---|---|

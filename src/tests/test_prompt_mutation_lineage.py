@@ -11,8 +11,6 @@ from agents import (
     compliance_specialist,
     correspondence_specialist,
     corporate_records_specialist,
-    court_opinions_specialist,
-    due_diligence_specialist,
     insurance_claims_specialist,
     judge,
     pdf_transcriber,
@@ -27,8 +25,6 @@ from llm.prompt_doctrine import (
     CONTRACTS,
     CORPORATE_RECORDS,
     CORRESPONDENCE,
-    COURT_OPINIONS,
-    DUE_DILIGENCE,
     INSURANCE_CLAIMS,
     JUDGE_CLASSIFICATION,
     JUDGE_COMPLETENESS,
@@ -66,10 +62,8 @@ def test_contracts_v32_is_pure_append_of_v31():
 def test_mailroom_specialist_prompts_are_pure_appends_of_v0():
     pairs = [
         (corporate_records_specialist, CORPORATE_RECORDS),
-        (due_diligence_specialist, DUE_DILIGENCE),
         (correspondence_specialist, CORRESPONDENCE),
         (compliance_specialist, COMPLIANCE),
-        (court_opinions_specialist, COURT_OPINIONS),
         (insurance_claims_specialist, INSURANCE_CLAIMS),
         (pdf_transcriber, PDF_TRANSCRIBER),
     ]

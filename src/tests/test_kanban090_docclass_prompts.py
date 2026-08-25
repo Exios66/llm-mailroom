@@ -1,8 +1,8 @@
 """KANBAN-090 mirror guards: docclass variants in the mailroom repo.
 
 Three contracts:
-1. REGISTRY — one docclass key per classification-chain role (14: the
-   original 13 plus sorter, now that sorter has a production-ready base).
+1. REGISTRY — one docclass key per classification-chain role (12 after
+   court_opinion / due_diligence specialists were retired).
 2. PURE APPEND — every variant startswith its live production template
    from prompt_templates() IN FULL; the base bytes are untouched and the
    docclass block rides after them.
@@ -17,7 +17,7 @@ from langchain_agents.prompts_docclass import (
     _DOCCLASS_FROM_PRODUCTION,
 )
 
-EXPECTED_DOCCLASS_KEYS = 14
+EXPECTED_DOCCLASS_KEYS = 12
 
 
 def _reg():
@@ -31,10 +31,8 @@ def test_registry_complete():
         "sorter_docclass_v0",
         "contracts_specialist_docclass_v0",
         "corporate_records_specialist_docclass_v0",
-        "due_diligence_specialist_docclass_v0",
         "correspondence_specialist_docclass_v0",
         "compliance_specialist_docclass_v0",
-        "court_opinions_specialist_docclass_v0",
         "insurance_claims_specialist_docclass_v0",
         "reviewer_docclass_v0",
         "arbiter_docclass_v0",
@@ -74,7 +72,7 @@ def test_production_surface_has_no_docclass_arm():
     from llm.prompts import prompt_templates
 
     templates = prompt_templates()
-    assert len(templates) == 16
+    assert len(templates) == 14
     assert not any(key.endswith("_docclass_v0") for key in templates)
     assert all("DOCCLASS ARM CONTEXT" not in t for t in templates.values())
     # Supporting agents that are production-only (not a docclass role).

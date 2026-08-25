@@ -22,7 +22,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 |---|---|
 | **Release** | [`v0.4.1`](https://github.com/Exios66/llm-mailroom/tags) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
-| **Agents** | 15 LLM + procedural agents across 7 document classes |
+| **Agents** | 13 LLM + procedural agents across 5 document classes |
 | **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
 | **Observability** | Langfuse · Braintrust · Arize Phoenix — optional; the pipeline runs fine without any of them |
 | **Docs** | Canonical under [`docs/`](docs/) · browsable locally via [docmd](https://github.com/docmd-io/docmd) |
@@ -33,8 +33,8 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 This repository consists of:
 
 - A **python library + pipeline** (`src/`) — a LangGraph state machine that moves each document through classification, specialist extraction, quality gates, reporting, and archival.
-- **15 LLM agents across 7 document classes** — a sorter, seven extraction specialists, a judge/arbiter quality lane, a boss escalation agent, a reporter, and procedural PDF/image workers (see [Agent Organization](#agent-organization)).
-- An **evaluation suite** — a 30-sample pilot with ground truth, deterministic field scoring, LLM-as-a-judge evaluators, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
+- **13 LLM + procedural agents across 5 document classes** — a sorter, five extraction specialists, a judge/arbiter quality lane, a boss escalation agent, a reporter, and procedural PDF/image workers (see [Agent Organization](#agent-organization)).
+- An **evaluation suite** — a 22-sample pilot with ground truth, deterministic field scoring, LLM-as-a-judge evaluators, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
 - **Canonical documentation** (`docs/`) — browsable locally with [docmd](https://github.com/docmd-io/docmd) (see [Browsing the Docs Locally](#browsing-the-docs-locally)).
 - A **dataset browser notebook** (`notebooks/`) — docile-style thin notebook over a reusable tool module.
 - A **Modal+vLLM deploy app** (`deploy/`) — optional local-model serving, flip-the-switch cutover.
@@ -177,22 +177,20 @@ Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `con
 
 ### Agent Organization
 
-The agent roster (15 agents) as declared in `config/taxonomy.yaml` — every LLM agent resolves its provider/model/prompt through `get_llm(agent_name)`; nothing is hardcoded:
+The agent roster (13 agents) as declared in `config/taxonomy.yaml` — every LLM agent resolves its provider/model/prompt through `get_llm(agent_name)`; nothing is hardcoded:
 
 ```mermaid
 flowchart TB
     subgraph CLASSIFY["Classification"]
-        SORTER["SorterAgent<br/>7 doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v13)"]
+        SORTER["SorterAgent<br/>5 doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v14)"]
         REVIEWER["SorterReviewerAgent<br/>second opinion on medium-confidence<br/>classifications (Lane A)"]
     end
 
     subgraph SPECIALISTS["Extraction Specialists — one per document class"]
         CONTRACTS["Contracts<br/>Specialist"]
         CORP["Corporate Records<br/>Specialist"]
-        DD["Due Diligence<br/>Specialist"]
         CORR["Correspondence<br/>Specialist"]
         COMP["Compliance Filing<br/>Specialist"]
-        COURT["Court Opinions<br/>Specialist"]
         INS["Insurance Claims<br/>Specialist"]
     end
 
@@ -226,7 +224,7 @@ flowchart TB
     IMG -. "page images (vision, additive)" .-> SPECIALISTS
 ```
 
-Document classes (7): `contract`, `corporate_record`, `due_diligence`, `correspondence`, `compliance_filing`, `court_opinion`, `insurance_claim` — each with its own extraction schema and specialist. The two vendored agents (Sorter, Contracts Specialist) come from the sister repo [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) with their full append-only prompt lineage; all other agents are mailroom-native `BaseAgent` subclasses with Langfuse-managed prompts.
+Document classes (5): `contract`, `corporate_record`, `correspondence`, `compliance_filing`, `insurance_claim` — each with its own extraction schema and specialist. Court opinions and due-diligence memos classify as `unknown` (human review), not as a nearby class. The two vendored agents (Sorter, Contracts Specialist) come from the sister repo [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) with their full append-only prompt lineage; all other agents are mailroom-native `BaseAgent` subclasses with Langfuse-managed prompts.
 
 ## Design Principles
 
@@ -473,20 +471,22 @@ PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwe
 
 ### API Endpoints
 
+Prefer the `/v1` prefix; unversioned routes remain during the deprecation window.
+
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Health check (includes LLM provider + DB dependency checks) |
-| `POST` | `/upload` | Upload document to inbox |
-| `GET` | `/queue` | Current processing queue (inbox + in-flight documents) |
-| `POST` | `/review/{doc_id}/resolve` | Resolve human review (approved/rejected) |
-| `GET` | `/status/{doc_id}` | Document pipeline status |
-| `GET` | `/matters/{matter_id}` | All documents in a matter |
-| `GET` | `/audit/{doc_id}` | Hash-chained audit trail + validity check |
-| `GET` | `/ops/status` | Pipeline-wide operational metrics |
-| `POST` | `/ops/sweep` | Run a one-off Boss ops-monitor sweep |
-| `POST` | `/ops/resume` | Clear the ingestion-pause flag |
+| `GET` | `/v1/health` | Health check (includes LLM provider + DB dependency checks) |
+| `POST` | `/v1/upload` | Upload document to inbox |
+| `GET` | `/v1/queue` | Current processing queue (inbox + in-flight documents) |
+| `POST` | `/v1/review/{doc_id}/resolve` | Resolve human review (approved/rejected) |
+| `GET` | `/v1/status/{doc_id}` | Document pipeline status |
+| `GET` | `/v1/matters/{matter_id}` | All documents in a matter |
+| `GET` | `/v1/audit/{doc_id}` | Hash-chained audit trail + validity check |
+| `GET` | `/v1/ops/status` | Pipeline-wide operational metrics |
+| `POST` | `/v1/ops/sweep` | Run a one-off Boss ops-monitor sweep |
+| `POST` | `/v1/ops/resume` | Clear the ingestion-pause flag |
 
-All endpoints except `/health` and `/matters/{matter_id}` require the `MAILROOM_API_TOKEN` bearer token when one is configured (see [Security](#security)).
+All endpoints except `/health` and `/v1/health` require the `MAILROOM_API_TOKEN` bearer token when one is configured (see [Security](#security)).
 
 ### Pipeline Bins
 

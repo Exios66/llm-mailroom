@@ -60,4 +60,4 @@ def test_matcher_engages_for_every_entry():
 
 def test_registry_shape_unchanged():
     """Pin the registry size so edits here are deliberate, not accidental."""
-    assert len(vp.FIXTURE_EXPECTATIONS) == 14
+    assert len(vp.FIXTURE_EXPECTATIONS) == 11

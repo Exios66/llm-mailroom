@@ -53,12 +53,12 @@ def nb09() -> None:
         md("""# 09 · All specialists — one run per document class
 
 Every taxonomy class through the **real** graph: sorter → the matching
-specialist → report → catalog → archive. Seven documents, seven specialists,
-seven extraction schemas.
+specialist → report → catalog → archive. Five documents, five specialists,
+five extraction schemas.
 
 **What you'll see:** a per-class table of the specialist that dispatched, the
 node path the router actually took, the stage that landed, and the extracted
-keys. Contracts ride the LangChain specialist; the other six ride the legacy
+keys. Contracts ride the LangChain specialist; the other four ride the legacy
 `agents.*` specialists (the same split the production graph uses).
 
 **Honesty label:** the graph, dispatch, schemas, bins, and catalog are REAL.
@@ -95,7 +95,7 @@ for row in rows:
     print(f"{row['doc_class']:22s} {str(row['stage']):10s} {len(row['extracted_keys']):4d}  {' → '.join(row['path'])}")
 print()
 print("all archived:" , all(r["stage"] == "archived" for r in rows))
-print("all seven classes dispatched:", [r["doc_class"] for r in rows])
+print("all five classes dispatched:", [r["doc_class"] for r in rows])
 """),
         md("""## What each specialist wrote
 
@@ -352,7 +352,7 @@ lab.close_sandbox(env)
 | `enron-correspondence-dedup` | correspondence specialist |
 | `cms-desynpuf-insurance-claims` | insurance_claim specialist |
 
-Local pilot samples (30 rows, no Hub) still live in `dataset_browser.ipynb`."""),
+Local pilot samples (22 rows, no Hub) still live in `dataset_browser.ipynb`."""),
         md("""## Live Hub refresh (opt-in)
 
 <!-- NB-OPT-IN-NETWORK: Dataset Viewer / Hub API; skipped unless MAILROOM_HF_LIVE=1 -->

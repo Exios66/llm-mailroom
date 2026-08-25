@@ -3,7 +3,6 @@ from .matter import Matter
 from .documents import (
     ContractExtraction,
     CorporateRecordExtraction,
-    DueDiligenceExtraction,
     CorrespondenceExtraction,
     ComplianceFilingExtraction,
     InsuranceClaimExtraction,
@@ -18,7 +17,6 @@ __all__ = [
     "Matter",
     "ContractExtraction",
     "CorporateRecordExtraction",
-    "DueDiligenceExtraction",
     "CorrespondenceExtraction",
     "ComplianceFilingExtraction",
     "InsuranceClaimExtraction",

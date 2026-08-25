@@ -6,16 +6,14 @@ This directory contains example data and reference materials for the LLM-Mailroo
 
 ### `samples/`
 
-The **pilot sample set** — 30 curated legal PDFs spanning all six document classes in `config/taxonomy.yaml`, used to pilot-test the pipeline and evaluate procedural changes.
+The **pilot sample set** — 22 curated legal PDFs spanning the five live document classes in `config/taxonomy.yaml`, used to pilot-test the pipeline and evaluate procedural changes.
 
 | Class | Count | Source |
 |-------|-------|--------|
 | `contract` | 15 | 3 original CUAD SEC-exhibit PDFs + 6 CUAD/Atticus PDFs + 6 LegalBench MAUD merger agreements (CC-BY-4.0) |
-| `court_opinion` | 6 | Pile of Law court opinions (public domain) |
 | `compliance_filing` | 2 | Synthetic 10-K excerpt (large) + state filing |
 | `corporate_record` | 2 | Bylaws + board resolution |
 | `correspondence` | 2 | Demand letter + internal memo |
-| `due_diligence` | 2 | DD report + checklist |
 | `ambiguous` | 1 | Multi-topic memo → expects human review |
 
 **Key files:**
@@ -23,7 +21,7 @@ The **pilot sample set** — 30 curated legal PDFs spanning all six document cla
 - `ATTRIBUTION.md` — per-source license notes
 - `contract/*.pdf` — real CUAD PDFs (committed)
 - `external/legalbench/*.txt` — MAUD merger agreement texts (committed)
-- `external/pileoflaw/*.txt` — court opinion texts (committed)
+- `external/pileoflaw/*.txt` — court opinion texts (on disk; retired from live pilot)
 - `sources/<class>/*.txt` — original text used to synthesize the rest
 
 See [`samples/README.md`](samples/README.md) for full details on running pilot tests.
@@ -32,11 +30,11 @@ See [`samples/README.md`](samples/README.md) for full details on running pilot t
 
 External data sources fetched by `scripts/fetch_external_samples.py`:
 - **LegalBench MAUD** — 6 merger agreement texts (CC-BY-4.0)
-- **Pile of Law** — 6 U.S. court opinion texts (public domain)
+- **Pile of Law** — 6 U.S. court opinion texts (public domain; retired from the live manifest)
 
 ### `sources/`
 
-Original text files used to synthesize the non-contract document classes (compliance, corporate_record, correspondence, due_diligence, ambiguous).
+Original text files used to synthesize the non-contract document classes (compliance, corporate_record, correspondence, ambiguous). Due-diligence sources remain on disk but are not in the live pilot.
 
 ## Quick Start
 

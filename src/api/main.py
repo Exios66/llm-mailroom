@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Mailroom API",
     description="Multi-Agent Legal Document Processing Pipeline",
-    version="0.2.2",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -516,7 +516,7 @@ async def get_document_status(doc_id: str):
     raise HTTPException(404, f"Document not found: {doc_id}")
 
 
-@app.get("/matters/{matter_id}")
+@app.get("/matters/{matter_id}", dependencies=[Depends(_require_token)])
 async def get_matter(matter_id: str):
     try:
         from storage.catalog import get_matter_documents
@@ -670,6 +670,44 @@ async def ops_resume():
     except Exception as exc:
         logger.exception("ops_resume_failed")
         raise HTTPException(500, f"Ops resume failed: {exc}")
+
+
+def _mount_v1_aliases() -> None:
+    """Expose the documented /v1 layout as aliases of the live handlers.
+
+    Unversioned routes stay registered for the deprecation window. Both
+    prefixes share the same functions, auth, and status codes.
+    """
+    from fastapi.routing import APIRoute
+
+    wanted = {
+        "/health",
+        "/upload",
+        "/queue",
+        "/review/{doc_id}/resolve",
+        "/status/{doc_id}",
+        "/matters/{matter_id}",
+        "/audit/{doc_id}",
+        "/ops/status",
+        "/ops/sweep",
+        "/ops/resume",
+    }
+    for route in list(app.router.routes):
+        if not isinstance(route, APIRoute) or route.path not in wanted:
+            continue
+        methods = sorted(m for m in route.methods if m not in {"HEAD"})
+        app.add_api_route(
+            "/v1" + route.path,
+            route.endpoint,
+            methods=methods,
+            dependencies=route.dependencies,
+            status_code=route.status_code,
+            name=f"v1_{route.name}",
+            tags=["v1"],
+        )
+
+
+_mount_v1_aliases()
 
 
 if __name__ == "__main__":

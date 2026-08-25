@@ -1,9 +1,10 @@
 """Real (non-mock) pilot runs must only process actual committed legal
-documents — the Atticus/CUAD contract & agreement PDFs plus the other legal-DB
-samples (LegalBench MAUD, Pile of Law). Repo-written synthetic .txt samples
-(render-to-PDF stand-ins under docs/examples/sources/) are mock-only and must be
-blocked from every --real run so no real LLM/eval tokens or live traces are
-spent on fake documents.
+documents — the Atticus/CUAD contract & agreement PDFs plus LegalBench MAUD.
+Repo-written synthetic .txt samples (render-to-PDF stand-ins under
+docs/examples/sources/) are mock-only and must be blocked from every --real
+run so no real LLM/eval tokens or live traces are spent on fake documents.
+Pile of Law court opinions remain on disk but are not in the live manifest
+(court_opinion is no longer a pipeline class).
 """
 
 import csv
@@ -28,21 +29,19 @@ def test_manifest_split_real_vs_synthetic():
     real = [r for r in rows if is_real_sample(r)]
     synthetic = [r for r in rows if not is_real_sample(r)]
 
-    # All 9 committed CUAD/Atticus PDFs + 6 LegalBench + 6 Pile of Law are real.
+    # 9 committed CUAD/Atticus PDFs + 6 LegalBench MAUD are real.
+    # Pile of Law court opinions were retired with the court_opinion class.
     assert {r["id"] for r in real} == {
         "contract_01", "contract_02", "contract_03",
         "atticus_01", "atticus_02", "atticus_03", "atticus_04", "atticus_05", "atticus_06",
         "legalbench_01", "legalbench_02", "legalbench_03", "legalbench_04",
         "legalbench_05", "legalbench_06",
-        "pileoflaw_01", "pileoflaw_02", "pileoflaw_03", "pileoflaw_04",
-        "pileoflaw_05", "pileoflaw_06",
     }, [r["id"] for r in real]
-    # The 9 repo-written synthetic samples are mock-only.
+    # The 7 remaining repo-written synthetic samples are mock-only.
     assert {r["id"] for r in synthetic} == {
         "compliance_01", "compliance_02",
         "corporate_01", "corporate_02",
         "correspondence_01", "correspondence_02",
-        "due_diligence_01", "due_diligence_02",
         "ambiguous_01",
     }, [r["id"] for r in synthetic]
 
@@ -52,7 +51,7 @@ def test_filter_real_samples_keeps_all_for_mock():
 
     rows = _rows()
     assert filter_real_samples(rows, mock_mode=True) == rows
-    assert len(filter_real_samples(rows, mock_mode=True)) == 30
+    assert len(filter_real_samples(rows, mock_mode=True)) == 22
 
 
 def test_filter_real_samples_blocks_synthetic_for_real():
@@ -63,8 +62,8 @@ def test_filter_real_samples_blocks_synthetic_for_real():
     assert "atticus_01" in ids  # real CUAD/Atticus PDF kept
     assert "contract_01" in ids  # real CUAD PDF kept
     assert "legalbench_01" in ids  # external LegalBench kept
-    assert "pileoflaw_01" in ids  # external Pile of Law kept
-    assert "due_diligence_01" not in ids  # synthetic blocked
+    assert "pileoflaw_01" not in ids  # court opinions retired from live set
+    assert "due_diligence_01" not in ids  # synthetic blocked (and retired)
     assert "compliance_01" not in ids
     assert "ambiguous_01" not in ids
 
@@ -82,7 +81,7 @@ def test_real_run_refuses_synthetic_only_selection():
     # before any document is processed — never spend real LLM tokens on fake
     # documents. The refusal happens before any pipeline work (no LLM calls).
     proc = subprocess.run(
-        [sys.executable, "src/scripts/run_pilot.py", "--real", "--include", "due_diligence"],
+        [sys.executable, "src/scripts/run_pilot.py", "--real", "--include", "correspondence"],
         capture_output=True, text=True, env=_env_no_dotenv(), cwd=REPO_ROOT,
     )
     assert proc.returncode != 0
