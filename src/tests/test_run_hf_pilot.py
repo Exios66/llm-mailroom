@@ -199,3 +199,98 @@ def test_hf_pilot_mock_writes_report(temp_base_dir, mock_openai_client, mock_lan
     assert payload["samples"][0]["expected"] == "contract"
     assert payload["samples"][0]["local_filename"] == "hf_contract.txt"
     assert "stage" in payload["samples"][0]
+    assert payload["unique_matters"] is True
+    matter_ids = {row["matter_id"] for row in payload["samples"]}
+    assert len(matter_ids) == len(payload["samples"])
+    metrics = payload["metrics"]
+    assert metrics["n"] == len(payload["samples"])
+    assert "exact_accuracy" in metrics
+    assert "aligned_accuracy" in metrics
+    assert "total_cost_usd" in metrics
+    assert "per_class" in metrics
+
+
+def test_unique_name_avoids_collisions():
+    from scripts.run_hf_pilot import _unique_name
+
+    used: set[str] = set()
+    assert _unique_name("deal.txt", used) == "deal.txt"
+    assert _unique_name("deal.txt", used) == "deal__2.txt"
+    assert _unique_name("deal.txt", used) == "deal__3.txt"
+
+
+def test_normalize_consideration_tokens():
+    from scripts.run_hf_pilot import infer_merger_consideration, normalize_consideration
+
+    assert normalize_consideration("all_cash") == "all_cash"
+    assert normalize_consideration("Mixed Cash/Stock Election") == "mixed_cash_stock_election"
+    assert infer_merger_consideration({"contract_value": "all stock"}) == "all_stock"
+    assert infer_merger_consideration({
+        "key_obligations": ["Merger consideration is cash and stock"]
+    }) == "mixed_cash_stock"
+
+
+def test_subclass_ok_cuad_and_maud():
+    from scripts.run_hf_pilot import subclass_ok
+
+    assert subclass_ok("contract", "Distributor", predicted_subtype="distributor") is True
+    assert subclass_ok("contract", "license", predicted_subtype="maintenance") is True
+    assert subclass_ok("merger_agreement", "all_cash", extracted={"contract_value": "all_cash"}) is True
+    assert subclass_ok("corporate_record", "bylaws", extracted={"record_type": "Bylaws"}) is True
+    assert subclass_ok("insurance_claim", "outpatient", extracted={"claim_type": "outpatient"}) is True
+    assert subclass_ok("contract", "") is None
+
+
+def test_summarize_rows_counts_cost_and_accuracy():
+    from scripts.run_hf_pilot import summarize_rows
+
+    rows = [
+        {"expected": "contract", "exact_ok": True, "aligned_ok": True, "subclass_ok": True,
+         "llm_cost_usd": 0.01, "llm_tokens": 100, "llm_calls": 2, "wall_time_s": 1.0, "stage": "archived"},
+        {"expected": "merger_agreement", "exact_ok": False, "aligned_ok": True, "subclass_ok": False,
+         "llm_cost_usd": 0.02, "llm_tokens": 200, "llm_calls": 3, "wall_time_s": 2.0, "stage": "review"},
+    ]
+    summary = summarize_rows(rows)
+    assert summary["n"] == 2
+    assert summary["exact_accuracy"] == 0.5
+    assert summary["aligned_accuracy"] == 1.0
+    assert summary["subclass_accuracy"] == 0.5
+    assert summary["total_cost_usd"] == 0.03
+    assert summary["total_tokens"] == 300
+    assert summary["stages"]["archived"] == 1
+    assert summary["per_class"]["contract"]["exact"] == 1
+
+
+def test_latest_hf_reports_orders_newest(tmp_path):
+    from scripts.run_hf_pilot import latest_hf_reports
+
+    older = tmp_path / "20260825T010000Z"
+    newer = tmp_path / "20260825T020000Z"
+    older.mkdir()
+    newer.mkdir()
+    (older / "report.json").write_text("{}", encoding="utf-8")
+    (newer / "report.json").write_text("{}", encoding="utf-8")
+    found = latest_hf_reports(1, root=tmp_path)
+    assert found == [newer / "report.json"]
+
+
+def test_hf_samples_from_report_uses_stored_text(tmp_path):
+    from scripts.run_hf_pilot import hf_samples_from_report
+
+    report = {
+        "samples": [{
+            "local_filename": "deal.txt",
+            "predicted": "contract",
+            "expected_doc_class": "contract",
+            "expected": "contract",
+            "expected_subclass": "service",
+            "extracted_data": {"parties": ["A"]},
+            "trace_id": "abc",
+            "doc_text": "SERVICES AGREEMENT",
+        }]
+    }
+    samples = hf_samples_from_report(report, tmp_path / "report.json")
+    assert samples[0]["trace_id"] == "abc"
+    assert samples[0]["extracted_data"]["parties"] == ["A"]
+    assert "SERVICES" in samples[0]["doc_text"]
+

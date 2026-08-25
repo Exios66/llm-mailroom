@@ -264,6 +264,20 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     contract_subtype = state.get("contract_subtype")
     if (doc_type == "contract" or extract_class == "contract") and contract_subtype:
         context += f" contract_subtype={contract_subtype}"
+        context += (
+            " CUAD family extraction: capture that family's characteristic "
+            "operative clauses verbatim in key_obligations and "
+            "termination_clauses (grant of license, resale/purchase, "
+            "franchise fees, maintenance/support, joint-venture sharing, "
+            "non-compete covenants, etc. as the family requires)."
+        )
+    if doc_type == "merger_agreement":
+        context += (
+            " MAUD extraction: set contract_value to the merger-consideration "
+            "token all_cash|all_stock|mixed_cash_stock|"
+            "mixed_cash_stock_election|other; put the surviving corporation, "
+            "exchange ratio, and Effective Time into key_obligations."
+        )
     confidence = state.get("classification_confidence")
     if confidence is not None:
         context += f" confidence={float(confidence):.2f}"

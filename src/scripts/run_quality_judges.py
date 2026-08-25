@@ -114,6 +114,8 @@ def _fake_judge_client() -> MagicMock:
 
 
 def _raw_text_for(sample: dict) -> str:
+    if sample.get("doc_text"):
+        return str(sample["doc_text"])
     from agents.pdf_transcriber import PDFTranscriber
 
     pdf = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "samples" / sample["subdir"] / sample["filename"]
@@ -128,7 +130,7 @@ def _raw_text_for(sample: dict) -> str:
         return ""
 
 
-def _ingest(sample: dict, verdict: dict, run_id: str = "") -> None:
+def _ingest(sample: dict, verdict: dict, run_id: str = "", *, trace_id: str | None = None) -> None:
     from observability.langfuse_setup import _NoopLangfuse, get_langfuse_client
     from observability.scores import create_trace_score, ensure_score_configs, is_enabled
 
@@ -138,13 +140,16 @@ def _ingest(sample: dict, verdict: dict, run_id: str = "") -> None:
     if isinstance(client, _NoopLangfuse):
         return
     try:
-        # L-26: run-scoped judge seed — the deterministic filename-stem seed
-        # collided with the run's own trace id, so re-judging merged new
-        # context into the FIRST run's immutable trace (misattribution, broken
-        # before/after comparison). A judge run now gets its own trace id.
-        stem = Path(sample["filename"]).stem
-        seed = f"{stem}-judge-{run_id}" if run_id else f"{stem}-judge"
-        trace_id = client.create_trace_id(seed=seed)
+        if not trace_id:
+            # L-26: run-scoped judge seed — the deterministic filename-stem seed
+            # collided with the run's own trace id, so re-judging merged new
+            # context into the FIRST run's immutable trace (misattribution, broken
+            # before/after comparison). A judge run now gets its own trace id
+            # unless the caller asks to overlay scores on an existing pipeline
+            # trace (HF `--on-existing-traces`).
+            stem = Path(sample["filename"]).stem
+            seed = f"{stem}-judge-{run_id}" if run_id else f"{stem}-judge"
+            trace_id = client.create_trace_id(seed=seed)
     except Exception:
         logger.error("judge_trace_id_failed", filename=sample["filename"])
         return
@@ -272,6 +277,31 @@ def main() -> int:
     parser.add_argument("--real", action="store_true", help="Real judge via get_llm().")
     parser.add_argument("--judges", default=",".join(JUDGES), help=f"Comma-separated judges: {','.join(JUDGES)}")
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT, help="Pilot report to read/update.")
+    parser.add_argument(
+        "--hf-report",
+        type=Path,
+        action="append",
+        default=None,
+        help="HF pilot report.json (repeatable). Judges attach to each row's "
+             "document-pipeline trace_id.",
+    )
+    parser.add_argument(
+        "--hf-latest",
+        type=int,
+        default=0,
+        help="Judge the N most recent data/hf_pilot/*/report.json runs.",
+    )
+    parser.add_argument(
+        "--on-existing-traces",
+        action="store_true",
+        help="Attach judge scores to each sample's document-pipeline trace_id "
+             "(default for --hf-report / --hf-latest).",
+    )
+    parser.add_argument(
+        "--new-judge-traces",
+        action="store_true",
+        help="Mint separate judge-seeded traces even for HF reports (L-26).",
+    )
     args = parser.parse_args()
 
     if args.mock and args.real:
@@ -299,41 +329,68 @@ def main() -> int:
     if invalid:
         parser.error(f"Unknown judge(s): {invalid}. Available: {', '.join(JUDGES)}")
 
-    if not args.report.exists():
-        parser.error(f"Pilot report not found: {args.report} (run scripts/run_pilot.py first)")
+    hf_paths: list[Path] = list(args.hf_report or [])
+    if args.hf_latest:
+        from scripts.run_hf_pilot import latest_hf_reports
 
-    prepare_samples()
-    report = json.loads(args.report.read_text())
-    samples = report.get("samples", [])
+        hf_paths.extend(latest_hf_reports(args.hf_latest))
+    hf_mode = bool(hf_paths)
+    attach_existing = (
+        (hf_mode and not args.new_judge_traces) or args.on_existing_traces
+    )
 
-    # Real (non-mock) judging must only ever spend LLM tokens on real committed
-    # legal documents. If the report contains repo-written synthetic samples
-    # (e.g. produced by an earlier mock run), skip them — never judge fake
-    # documents with the real judge LLM.
-    if not mock_mode:
-        real_ids = set()
-        import csv as _csv
+    if hf_mode:
+        from scripts.run_hf_pilot import hf_samples_from_report
 
-        with MANIFEST.open() as _fh:
-            for _row in _csv.DictReader(_fh):
-                if is_real_sample(_row):
-                    real_ids.add(_row["id"])
-        synthetic = [s for s in samples if s.get("id") not in real_ids]
-        if synthetic:
-            ids = ", ".join(s.get("id", "?") for s in synthetic)
-            logger.warning(
-                "real_judge_skipped_synthetic_samples",
-                skipped_ids=ids,
-                hint="synthetic .txt samples are mock-only; judge them with --mock",
-            )
-        samples = [s for s in samples if s.get("id") in real_ids]
+        samples = []
+        report_targets: list[tuple[Path, dict]] = []
+        for path in hf_paths:
+            if not path.exists():
+                parser.error(f"HF report not found: {path}")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            report_targets.append((path, payload))
+            loaded = hf_samples_from_report(payload, path)
+            samples.extend(loaded)
+            logger.info("hf_judge_report_loaded", path=str(path), n=len(loaded))
         if not samples:
-            parser.error(
-                "No real samples in the report to judge. --real judging only "
-                "processes actual committed legal documents; run the judge with "
-                "--mock to include synthetic .txt samples."
-            )
-        logger.info("real_judge_sample_filter", remaining=len(samples))
+            parser.error("No samples in the HF report(s) to judge.")
+        report = {"samples": samples, "hf_reports": [str(p) for p, _ in report_targets]}
+    else:
+        if not args.report.exists():
+            parser.error(f"Pilot report not found: {args.report} (run scripts/run_pilot.py first)")
+
+        prepare_samples()
+        report = json.loads(args.report.read_text())
+        samples = report.get("samples", [])
+
+        # Real (non-mock) judging must only ever spend LLM tokens on real committed
+        # legal documents. If the report contains repo-written synthetic samples
+        # (e.g. produced by an earlier mock run), skip them — never judge fake
+        # documents with the real judge LLM.
+        if not mock_mode:
+            real_ids = set()
+            import csv as _csv
+
+            with MANIFEST.open() as _fh:
+                for _row in _csv.DictReader(_fh):
+                    if is_real_sample(_row):
+                        real_ids.add(_row["id"])
+            synthetic = [s for s in samples if s.get("id") not in real_ids]
+            if synthetic:
+                ids = ", ".join(s.get("id", "?") for s in synthetic)
+                logger.warning(
+                    "real_judge_skipped_synthetic_samples",
+                    skipped_ids=ids,
+                    hint="synthetic .txt samples are mock-only; judge them with --mock",
+                )
+            samples = [s for s in samples if s.get("id") in real_ids]
+            if not samples:
+                parser.error(
+                    "No real samples in the report to judge. --real judging only "
+                    "processes actual committed legal documents; run the judge with "
+                    "--mock to include synthetic .txt samples."
+                )
+            logger.info("real_judge_sample_filter", remaining=len(samples))
 
     results = []
     judge_run_id = datetime.now(timezone.utc).isoformat().replace(":", "").replace("+", "").replace("-", "")[:20]
@@ -342,7 +399,8 @@ def main() -> int:
         verdict = judge_one(s, mock_mode, judges)
         results.append(verdict)
         if verdict["status"] == "judged" and not mock_mode:
-            _ingest(s, verdict, run_id=judge_run_id)  # L-26: run-scoped judge trace seed
+            target = s.get("trace_id") if attach_existing else None
+            _ingest(s, verdict, run_id=judge_run_id, trace_id=target)
         dimension_error_count += len(verdict.get("errors") or {})
 
     if not mock_mode:
@@ -361,17 +419,27 @@ def main() -> int:
         "run_id": judge_run_id,
         "mode": "mock" if mock_mode else "real",
         "judges": judges,
+        "hf_mode": hf_mode,
+        "attach_existing_traces": attach_existing,
         "summary": stats,
         "results": results,
         "dimension_errors": dimension_error_count,
     }
-    evaluation = report.setdefault("evaluation", {})
-    # Preserve every independent scoring iteration. `run` remains the latest
-    # result for existing readers; `runs` is the append-only history.
-    evaluation.setdefault("runs", []).append(evaluation_run)
-    evaluation["run"] = evaluation_run
-    args.report.write_text(json.dumps(report, indent=2))
-    print(f"\nEvaluation report written to {args.report}")
+    if hf_mode:
+        for path, payload in report_targets:
+            evaluation = payload.setdefault("evaluation", {})
+            evaluation.setdefault("runs", []).append(evaluation_run)
+            evaluation["run"] = evaluation_run
+            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            print(f"\nEvaluation report written to {path}")
+    else:
+        evaluation = report.setdefault("evaluation", {})
+        # Preserve every independent scoring iteration. `run` remains the latest
+        # result for existing readers; `runs` is the append-only history.
+        evaluation.setdefault("runs", []).append(evaluation_run)
+        evaluation["run"] = evaluation_run
+        args.report.write_text(json.dumps(report, indent=2))
+        print(f"\nEvaluation report written to {args.report}")
 
     # L-25: dimension errors used to be collected and ignored (exit 0 always).
     # A judge that failed on every sample is a failed run — surface it.
