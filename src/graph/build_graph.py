@@ -24,7 +24,7 @@ from graph.routing import (
 )
 from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
-from pipeline.config import get_confidence_thresholds
+from pipeline.config import get_confidence_thresholds, UNKNOWN_DOC_TYPE
 from pipeline.bins import (
     inbox_dir,
     processing_dir,
@@ -274,29 +274,48 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     return context
 
 
+def _specialist_extractor_map():
+    """Name → extract function. Keys MUST match taxonomy ``specialist:`` values."""
+    return {
+        "contracts_specialist": _extract_contracts,
+        "corporate_records_specialist": _extract_corporate_records,
+        "correspondence_specialist": _extract_correspondence,
+        "compliance_specialist": _extract_compliance,
+        "insurance_claims_specialist": _extract_insurance_claims,
+    }
+
+
 def _build_specialist_dispatch():
     from pipeline.config import load_config
+
     cfg = load_config()
     doc_classes = cfg.get("doc_classes", [])
+    extractors = _specialist_extractor_map()
     dispatch = {}
+    unmapped = []
     for cls in doc_classes:
         key = cls["key"]
         spec_name = cls.get("specialist", "")
-        if spec_name == "contracts_specialist":
-            dispatch[key] = _extract_contracts
-        elif spec_name == "corporate_records_specialist":
-            dispatch[key] = _extract_corporate_records
-        elif spec_name == "correspondence_specialist":
-            dispatch[key] = _extract_correspondence
-        elif spec_name == "compliance_specialist":
-            dispatch[key] = _extract_compliance
-        elif spec_name == "insurance_claims_specialist":
-            dispatch[key] = _extract_insurance_claims
+        fn = extractors.get(spec_name)
+        if fn is None:
+            unmapped.append((key, spec_name))
+            continue
+        dispatch[key] = fn
+    expected = {c["key"] for c in doc_classes}
+    if unmapped or set(dispatch) != expected:
+        raise RuntimeError(
+            "specialist dispatch incomplete for taxonomy classes: "
+            f"unmapped={unmapped} missing={sorted(expected - set(dispatch))}"
+        )
     return dispatch
 
 
-def _specialist_memory_name(doc_type: str) -> str:
-    """Resolve the specialist agent name for per-agent memory (not always contracts)."""
+def _specialist_memory_name(doc_type: str) -> str | None:
+    """Resolve the specialist agent name for per-agent memory.
+
+    Unmapped / retired / unknown types return None — never fall back to
+    contracts_specialist (that attributed the wrong agent's outcomes).
+    """
     try:
         from pipeline.config import load_config
 
@@ -305,7 +324,25 @@ def _specialist_memory_name(doc_type: str) -> str:
                 return str(cls["specialist"])
     except Exception:
         pass
-    return "contracts_specialist"
+    return None
+
+
+def _unsupported_extraction_update(state: DocumentState, doc_type: str) -> dict[str, Any]:
+    """Park a missing-specialist extract for human review (no retry)."""
+    retry_max = get_confidence_thresholds().get("retry_max", 1)
+    attempts = max(state.get("extraction_attempts", 0) or 0, retry_max) + 1
+    reason = f"no specialist dispatched for doc_type={doc_type!r}"
+    logger.error("no_specialist_dispatch", doc_type=doc_type, doc_id=state.get("doc_id"))
+    return {
+        "extracted_data": {"_unsupported": True},
+        "extraction_confidence": 0.0,
+        "extraction_attempts": attempts,
+        "extraction_guardrail": ["no_specialist_dispatch"],
+        "conflict_detected": False,
+        "conflict_details": [],
+        "escalation_reason": reason,
+        "transient_error": False,
+    }
 
 
 def _chunk_config() -> dict:
@@ -452,7 +489,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         # to review immediately.
         retry_max = get_confidence_thresholds().get("retry_max", 1)
         return {
-            "doc_type": "correspondence",
+            "doc_type": UNKNOWN_DOC_TYPE,
             "classification_confidence": 0.1,
             "classification_attempts": max(state.get("classification_attempts", 0), retry_max) + 1,
             "stage": PipelineStage.CLASSIFIED.value,
@@ -506,7 +543,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
             error=str(exc)[:300],
         )
         return {
-            "doc_type": "correspondence",
+            "doc_type": UNKNOWN_DOC_TYPE,
             "contract_subtype": None,
             "classification_confidence": 0.1,
             "classification_attempts": max(attempts, retry_max) + 1,
@@ -680,7 +717,7 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     """
     from agents.sorter_reviewer import SorterReviewerAgent
     from llm.retry import is_transient_error
-    from pipeline.config import get_all_doc_types
+    from pipeline.config import get_sorter_label_set
     from pipeline.guards import apply_classification_guard
     from langchain_agents.sorter_agent import CONTRACT_SUBTYPE_KEYS, SUBTYPE_UNKNOWN
 
@@ -693,7 +730,7 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
         result = reviewer.review(
             doc_text,
             pages=state.get("doc_pages"),
-            valid_doc_types=get_all_doc_types(),
+            valid_doc_types=sorted(get_sorter_label_set()),
             contract_subtypes=list(CONTRACT_SUBTYPE_KEYS) + [SUBTYPE_UNKNOWN],
         )
     except Exception as exc:
@@ -894,11 +931,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     dispatch = _build_specialist_dispatch()
     extractor = dispatch.get(doc_type)
     if extractor is None:
-        logger.error("no_specialist_dispatch", doc_type=doc_type, doc_id=state.get("doc_id"))
-        extractor = lambda t, pages=None, handoff_context=None: {
-            "confidence": 0.3,
-            "_unsupported": True,
-        }
+        return _unsupported_extraction_update(state, doc_type)
     handoff_context = _build_handoff_context(state)
     attempts = state.get("extraction_attempts", 0)
     try:
@@ -973,15 +1006,17 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     try:
         from langchain_agents.memory import record_outcome
 
-        record_outcome(
-            _specialist_memory_name(doc_type),
-            doc_type=doc_type or "",
-            decision=f"conf={confidence:.2f}",
-            confidence=confidence,
-            feedback=f"extraction guardrail: {guard['issues']}" if guard["issues"] else f"extraction confidence {confidence:.2f}",
-            source="guardrail" if guard["issues"] else "run",
-            detail={"conflict_detected": bool(conflict_detected)},
-        )
+        mem_name = _specialist_memory_name(doc_type)
+        if mem_name:
+            record_outcome(
+                mem_name,
+                doc_type=doc_type or "",
+                decision=f"conf={confidence:.2f}",
+                confidence=confidence,
+                feedback=f"extraction guardrail: {guard['issues']}" if guard["issues"] else f"extraction confidence {confidence:.2f}",
+                source="guardrail" if guard["issues"] else "run",
+                detail={"conflict_detected": bool(conflict_detected)},
+            )
     except Exception:
         pass
     # A-1: record the extraction decision (attempt, guardrail issues, conflict).
@@ -1042,7 +1077,8 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     try:
         from langchain_agents.memory import recent_context
 
-        memory = recent_context(_specialist_memory_name(doc_type), doc_type=doc_type or "", k=3)
+        mem_name = _specialist_memory_name(doc_type)
+        memory = recent_context(mem_name, doc_type=doc_type or "", k=3) if mem_name else ""
     except Exception:
         memory = ""
     augmented_text = (
@@ -1055,11 +1091,9 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     dispatch = _build_specialist_dispatch()
     extractor = dispatch.get(doc_type)
     if extractor is None:
-        logger.error("no_specialist_dispatch", doc_type=doc_type, doc_id=state.get("doc_id"))
-        extractor = lambda t, pages=None, handoff_context=None: {
-            "confidence": 0.3,
-            "_unsupported": True,
-        }
+        update = _unsupported_extraction_update(state, doc_type)
+        update["retry_count"] = state.get("retry_count", 0) + 1
+        return update
     handoff_context = _build_handoff_context(state)
     try:
         result = extractor(augmented_text, doc_pages, handoff_context)
@@ -1807,6 +1841,10 @@ def _touch_heartbeat(state: dict) -> None:
 def build_graph(checkpointer=None):
     if checkpointer is None:
         checkpointer = _build_checkpointer()
+
+    # Fail fast: every live taxonomy class must have a specialist extract arm.
+    # A missing arm used to silently stub-extract and retry the same miss.
+    _build_specialist_dispatch()
 
     workflow = StateGraph(DocumentState)
 

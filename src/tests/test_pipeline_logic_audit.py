@@ -235,9 +235,84 @@ class TestReviewerReceivesSubtypeVocabulary:
         assert "other" in seen["subtypes"]
         assert seen["types"]
         assert "contract" in seen["types"]
+        assert "unknown" in seen["types"]
 
 
 class TestSpecialistMemoryName:
     def test_maps_doc_type_to_configured_specialist(self):
         assert bg._specialist_memory_name("insurance_claim") == "insurance_claims_specialist"
         assert bg._specialist_memory_name("contract") == "contracts_specialist"
+
+    def test_unmapped_type_does_not_fall_back_to_contracts(self):
+        assert bg._specialist_memory_name("court_opinion") is None
+        assert bg._specialist_memory_name("unknown") is None
+        assert bg._specialist_memory_name("not_a_class") is None
+
+
+class TestUnsupportedExtractParksWithoutRetry:
+    def test_retired_class_extract_is_unsupported_stub(self):
+        from graph.routing import after_extraction
+
+        prior = {
+            "doc_id": "d1",
+            "doc_type": "court_opinion",
+            "doc_text": "IN THE SUPREME COURT",
+            "extraction_attempts": 0,
+        }
+        updates = bg.extract_node(prior)
+        assert updates["extracted_data"]["_unsupported"] is True
+        assert updates["extraction_confidence"] == 0.0
+        merged = {**prior, **updates}
+        assert after_extraction(merged) == "human_review"
+
+    def test_unknown_token_extract_is_unsupported_stub(self):
+        from graph.routing import after_extraction
+
+        prior = {
+            "doc_id": "d1",
+            "doc_type": "unknown",
+            "doc_text": "unclassifiable",
+            "extraction_attempts": 0,
+        }
+        updates = bg.extract_node(prior)
+        assert updates["extracted_data"]["_unsupported"] is True
+        merged = {**prior, **updates}
+        assert after_extraction(merged) == "human_review"
+
+    def test_retry_extract_retired_class_does_not_reinvoke_specialist(self):
+        from graph.routing import after_retry_extraction
+
+        prior = {
+            "doc_id": "d1",
+            "doc_type": "due_diligence",
+            "doc_text": "due diligence memo",
+            "extracted_data": {"_unsupported": True},
+            "extraction_attempts": 1,
+        }
+        updates = bg.retry_extract_node(prior)
+        assert updates["extracted_data"]["_unsupported"] is True
+        merged = {**prior, **updates}
+        assert after_retry_extraction(merged) == "human_review"
+
+
+class TestDispatchCoversEveryTaxonomyClass:
+    def test_dispatch_keys_match_taxonomy(self):
+        from pipeline.config import get_all_doc_types
+
+        dispatch = bg._build_specialist_dispatch()
+        assert set(dispatch) == set(get_all_doc_types())
+
+    def test_unmapped_specialist_name_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            "pipeline.config.load_config",
+            lambda: {
+                "doc_classes": [
+                    {"key": "contract", "specialist": "no_such_agent"},
+                ]
+            },
+        )
+        try:
+            bg._build_specialist_dispatch()
+            raise AssertionError("expected RuntimeError")
+        except RuntimeError as exc:
+            assert "incomplete" in str(exc)

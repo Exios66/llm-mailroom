@@ -35,11 +35,13 @@ class TestValidateExtraction:
         result = validate_extraction("contract", {"parties": "ACME"})
         assert result["schema_valid"] is False
 
-    def test_unknown_doc_type_is_valid(self):
+    def test_unknown_doc_type_is_not_schema_valid(self):
         from observability.scores import validate_extraction
 
         result = validate_extraction("not_a_real_type", {"foo": 1})
-        assert result["schema_valid"] is True
+        assert result["schema_valid"] is False
+        result_unknown = validate_extraction("unknown", {"_unsupported": True})
+        assert result_unknown["schema_valid"] is False
 
 
 class TestEmitPipelineScores:

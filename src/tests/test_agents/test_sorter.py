@@ -135,3 +135,55 @@ class TestSorterAgent:
         assert confidence <= 0.5
         assert doc_type == "correspondence"
         assert contract_subtype is None
+
+    def test_classify_image_invalid_doc_type_is_not_silently_remapped(self, mocker):
+        from langchain_agents.sorter_agent import SorterAgent
+
+        agent = SorterAgent()
+        mocker.patch.object(
+            agent,
+            "_call_vision",
+            return_value=(
+                "<label>court_opinion</label>\n"
+                "<confidence>91</confidence>\n"
+                "<reasoning>judicial caption</reasoning>"
+            ),
+        )
+        result = agent.classify_image("fake")
+        assert result["doc_type"] == "court_opinion"
+        assert result["confidence"] == 0.91
+
+    def test_classify_image_unknown_label_is_preserved(self, mocker):
+        from langchain_agents.sorter_agent import SorterAgent
+
+        agent = SorterAgent()
+        mocker.patch.object(
+            agent,
+            "_call_vision",
+            return_value=(
+                "<label>unknown</label>\n"
+                "<confidence>88</confidence>\n"
+                "<reasoning>no live class fits</reasoning>"
+            ),
+        )
+        result = agent.classify_image("fake")
+        assert result["doc_type"] == "unknown"
+        assert result["confidence"] == 0.88
+
+    def test_classify_document_empty_pages_is_unknown(self):
+        from langchain_agents.sorter_agent import SorterAgent
+
+        agent = SorterAgent()
+        result = agent.classify_document([])
+        assert result["doc_type"] == "unknown"
+        assert result["confidence"] == 0.0
+
+    def test_sorter_schema_enum_includes_unknown(self):
+        from langchain_agents.sorter_agent import SORTER_SCHEMA, DOC_CLASS_KEYS
+
+        enum = SORTER_SCHEMA["properties"]["doc_type"]["enum"]
+        assert "unknown" in enum
+        for key in DOC_CLASS_KEYS:
+            assert key in enum
+        assert "court_opinion" not in enum
+        assert "due_diligence" not in enum
