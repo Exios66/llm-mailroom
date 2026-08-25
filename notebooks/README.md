@@ -35,7 +35,7 @@ are guarded:
 | 00 | `00_pipeline_anatomy` | static map: nodes, routers, lanes |
 | 01 | `01_happy_path_run` | one clean run, step-by-step state deltas ★ |
 | 02 | `02_routing_dynamics` | confidence bands → five different paths for one document |
-| 03 | `03_review_lanes` | Lane A reviewer + Lane B judge/arbiter, incl. a demonstrated wiring trap |
+| 03 | `03_review_lanes` | Lane A reviewer + Lane B judge/arbiter, incl. the bounded retry firing end-to-end (fixed under KANBAN-098) |
 | 04 | `04_human_in_the_loop` | park → inspect → approve/reject, real checkpointer threads |
 | 05 | `05_failure_recovery` | transient-error ladder vs confidence budget (L-13) |
 | 06 | `06_outputs_and_audit` | manifests, catalog, bins, audit chain — who eats what |
