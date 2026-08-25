@@ -248,9 +248,10 @@ agents:
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 12000
-    # Matches the eval-validated vendored default (sorter_v5 was validated
-    # with medium reasoning); explicitly declared for config completeness.
-    reasoning_effort: medium
+    # none: reserve the completion budget for the JSON object. Medium/high
+    # reasoning on Qwen 3.7-Flash starved structured output
+    # (LengthFinishReasonError) on the production HF pilot.
+    reasoning_effort: none
 
   # KANBAN-062 (Lane A): independent second-opinion classification reviewer.
   # Fires only on medium-band classifications that survive retry_classify.
@@ -260,7 +261,7 @@ agents:
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 12000
-    reasoning_effort: medium
+    reasoning_effort: none
 
   # KANBAN-063 (Lane B): judgment arbitration on failed judge verdicts.
   # Sees the specialist extraction + judge findings; bounded decisions only.
