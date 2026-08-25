@@ -232,9 +232,10 @@ classify ─┬─ confidence >= high ──────▶ extract
           ├─ attempts <= retry_max ──▶ retry_classify
           └─ otherwise ──────────────▶ human_review
 
-retry_classify ─┬─ confidence >= high ────────────▶ extract
+retry_classify ─┬─ transient (budget left) ───────▶ retry_classify
+                ├─ confidence >= high ────────────▶ extract
                 ├─ medium band exhausted (Lane A) ─▶ review_classify
-                └─ medium or still low ────────────▶ human_review
+                └─ still low / unknown type ───────▶ human_review
 
 review_classify ─┬─ high-confidence reviewer verdict ─▶ extract
                  └─ anything else ────────────────────▶ human_review
@@ -249,11 +250,13 @@ judge_verify ─┬─ complete or skipped ────▶ compile_report
               ├─ partial / incomplete ───▶ arbiter
               └─ hard failure ───────────▶ human_review
 
-arbiter ─┬─ verdict stands ─────────▶ compile_report
+arbiter ─┬─ transient (budget left) ─▶ arbiter
+         ├─ verdict stands ─────────▶ compile_report
          ├─ re-extraction ordered ──▶ retry_extract
          └─ unresolvable ───────────▶ human_review
 
-boss_escalation ─┬─ approved ─▶ compile_report
+boss_escalation ─┬─ transient (budget left) ─▶ boss_escalation
+                 ├─ approved ─▶ compile_report
                  └─ review ───▶ human_review
 
 human_review ─┬─ approved ─▶ compile_report

@@ -39,14 +39,20 @@ class TestLaneARouting:
         assert after_retry_classify(state) == "human_review"
 
     def test_transient_error_self_loops_on_own_budget(self):
-        # L-13 per-node budgets: the review lane must not spend classify's or
-        # extract's transient retries.
+        # L-13 per-node budgets: retry_classify transients must retry the SAME
+        # node (the re-evaluation prompt), not bounce back to first-pass classify.
         state = {
             "transient_error": True,
-            "transient_retries_review_classify": 1,
+            "transient_retries_retry_classify": 1,
             "classification_confidence": 0.80,
         }
-        assert after_retry_classify(state) == "classify"  # classify's budget governs pre-lane
+        assert after_retry_classify(state) == "retry_classify"
+        exhausted = {
+            "transient_error": True,
+            "transient_retries_retry_classify": 3,
+            "classification_confidence": 0.80,
+        }
+        assert after_retry_classify(exhausted) == "human_review"
 
     def test_review_verdict_winning_routes_to_extract(self):
         assert (
@@ -189,18 +195,26 @@ class TestTopology:
         required = {
             ("__start__", "ingest"),
             ("retry_classify", "review_classify"),
+            ("retry_classify", "retry_classify"),
             ("review_classify", "extract"),
             ("review_classify", "human_review"),
             ("extract", "judge_verify"),
             ("retry_extract", "judge_verify"),
+            ("retry_extract", "retry_extract"),
             ("judge_verify", "compile_report"),
             ("judge_verify", "arbiter"),
             ("arbiter", "retry_extract"),
             ("arbiter", "human_review"),
             ("arbiter", "compile_report"),
+            ("arbiter", "arbiter"),
+            ("boss_escalation", "boss_escalation"),
         }
         missing = required - edges
         assert not missing, f"lane edges missing: {missing}"
+        # Transient blips on retry nodes must self-loop, not bounce to the
+        # first-pass node (that dropped the re-evaluation / arbiter fix-list).
+        assert ("retry_extract", "extract") not in edges
+        assert ("retry_classify", "classify") not in edges
 
 
 class TestNodeBehavior:
@@ -213,7 +227,7 @@ class TestNodeBehavior:
             def review(self, doc_text, pages=None, **kw):
                 return {
                     "doc_type": "contract",
-                    "contract_subtype": None,
+                    "contract_subtype": "other",
                     "confidence": 0.97,
                     "reasoning": "clear contractual form",
                 }
@@ -305,7 +319,8 @@ class TestNodeBehavior:
         from graph.build_graph import judge_verify_node
 
         result = judge_verify_node({"doc_id": "d1", "extraction_confidence": 0.99})
-        assert result == {"judge_verdict": "skipped"}
+        assert result["judge_verdict"] == "skipped"
+        assert result["transient_error"] is False
 
     def test_judge_node_scores_dirty_fields_only(self, monkeypatch):
         seen = {}
@@ -366,6 +381,8 @@ class TestNodeBehavior:
         })
         assert updates["arbiter_decision"] == "retry_extraction"
         assert updates["arbiter_retry_count"] == 1             # bound counter moved
+        assert updates["arbiter_fields_to_fix"] == ["effective_date"]
+        assert updates["transient_error"] is False
         assert calls["judge_score"] == 0.4
         assert "_trace" not in str(calls["extracted"])
 
@@ -399,8 +416,12 @@ class TestNodeBehavior:
         assert "ARBITER RETRY" not in plain
         retry = _build_handoff_context(
             {"doc_type": "contract", "arbiter_retry_count": 1,
-             "judge_findings": ["missing effective_date"]}
+             "judge_findings": ["missing effective_date"],
+             "arbiter_fields_to_fix": ["term_length"],
+             "arbiter_handoff": "put the term in ISO form"}
         )
         assert retry is not None
         assert "ARBITER RETRY" in retry
         assert "effective_date" in retry
+        assert "term_length" in retry
+        assert "ISO form" in retry

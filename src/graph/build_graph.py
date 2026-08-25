@@ -257,7 +257,13 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     if confidence is not None:
         context += f" confidence={float(confidence):.2f}"
     if state.get("arbiter_retry_count"):
-        findings = state.get("judge_findings") or []
+        findings = list(state.get("judge_findings") or [])
+        to_fix = [str(f) for f in (state.get("arbiter_fields_to_fix") or []) if f]
+        if to_fix:
+            findings = [f"fields_to_fix: {', '.join(to_fix)}"] + findings
+        handoff = state.get("arbiter_handoff")
+        if handoff:
+            findings.append(str(handoff)[:400])
         context += (
             "\nARBITER RETRY — the previous extraction was rejected by quality "
             "review. Fix these specific problems: "
@@ -291,6 +297,19 @@ def _build_specialist_dispatch():
         elif spec_name == "insurance_claims_specialist":
             dispatch[key] = _extract_insurance_claims
     return dispatch
+
+
+def _specialist_memory_name(doc_type: str) -> str:
+    """Resolve the specialist agent name for per-agent memory (not always contracts)."""
+    try:
+        from pipeline.config import load_config
+
+        for cls in load_config().get("doc_classes", []) or []:
+            if cls.get("key") == doc_type and cls.get("specialist"):
+                return str(cls["specialist"])
+    except Exception:
+        pass
+    return "contracts_specialist"
 
 
 def _chunk_config() -> dict:
@@ -342,7 +361,11 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
             raise RuntimeError("No files in inbox")
         file_path = files[0]
 
-    if str(inbox_dir()) in str(file_path):
+    try:
+        in_inbox = file_path.resolve().is_relative_to(inbox_dir().resolve())
+    except (OSError, ValueError):
+        in_inbox = False
+    if in_inbox:
         file_path = claim_file(file_path, worker_id)
 
     doc_text, text_ok = _read_file_text(file_path)
@@ -443,7 +466,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
 
     from agents.sorter import SorterAgent
     from llm.retry import is_transient_error
-    from pipeline.guards import guard_classification
+    from pipeline.guards import apply_classification_guard
 
     sorter = SorterAgent()
     attempts = state.get("classification_attempts", 0)
@@ -498,7 +521,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         }
     attempts = attempts + 1
 
-    guard = guard_classification(
+    guard, confidence = apply_classification_guard(
         {
             "doc_type": doc_type,
             "classification_confidence": confidence,
@@ -506,12 +529,10 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         }
     )
     if not guard["ok"]:
-        # Never trust out-of-range confidence or an invalid contract subtype;
-        # leave doc_type untouched so routing's unknown-type check sends it to
-        # human review. Record the guardrail on state so it is scored
+        # Confidence is already clamped by apply_classification_guard. Leave
+        # doc_type untouched so routing's unknown-type check can still send it
+        # to human review. Record the guardrail on state so it is scored
         # (guardrail_triggered) and visible in traces.
-        logger.warning("classification_guardrail_triggered", doc_id=state.get("doc_id"), issues=guard["issues"])
-        confidence = guard.get("confidence", 0.1)
         # Per-agent memory (iterative improvement): record what the guardrail
         # rejected so retry calls can learn from it.
         try:
@@ -584,7 +605,7 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         )
     except Exception as exc:
         if is_transient_error(exc):
-            transient = state.get("transient_retries", 0) + 1
+            transient = state.get("transient_retries_retry_classify", 0) + 1
             logger.warning(
                 "retry_classify_transient_error",
                 doc_id=state.get("doc_id"),
@@ -593,34 +614,41 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
             )
             return {
                 "transient_error": True,
-                "transient_retries": transient,
+                "transient_retries_retry_classify": transient,
                 "classification_attempts": attempts,
                 "stage": PipelineStage.CLASSIFIED.value,
                 "error_message": f"transient provider error: {str(exc)[:200]}",
                 "escalation_reason": "transient provider error during re-classification",
             }
-        raise
+        # L-15: match classify_node — a hard failure during re-classification
+        # must park for human review, not crash the run into the failed bin.
+        retry_max = get_confidence_thresholds().get("retry_max", 1)
+        logger.exception(
+            "retry_classification_exception",
+            doc_id=state.get("doc_id"),
+            error=str(exc)[:300],
+        )
+        return {
+            "classification_confidence": 0.1,
+            "classification_attempts": max(attempts, retry_max) + 1,
+            "stage": PipelineStage.CLASSIFIED.value,
+            "error_message": f"re-classification error: {str(exc)[:200]}",
+            "escalation_reason": (
+                f"re-classification failed ({type(exc).__name__}) — routing to human review"
+            ),
+            "transient_error": False,
+        }
     attempts = attempts + 1
 
-    # Same deterministic guard as the first-pass classify: never trust an
-    # out-of-range confidence, unknown doc type, or invalid contract subtype
-    # from the retry either (it would otherwise route to extract directly).
-    from pipeline.guards import guard_classification
+    from pipeline.guards import apply_classification_guard
 
-    guard = guard_classification(
+    guard, confidence = apply_classification_guard(
         {
             "doc_type": doc_type,
             "classification_confidence": confidence,
             "contract_subtype": contract_subtype,
         }
     )
-    if not guard["ok"]:
-        logger.warning(
-            "retry_classification_guardrail_triggered",
-            doc_id=state.get("doc_id"),
-            issues=guard["issues"],
-        )
-        confidence = guard.get("confidence", 0.1)
 
     logger.info(
         "retry_classified",
@@ -656,7 +684,9 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     """
     from agents.sorter_reviewer import SorterReviewerAgent
     from llm.retry import is_transient_error
-    from pipeline.guards import guard_classification
+    from pipeline.config import get_all_doc_types
+    from pipeline.guards import apply_classification_guard
+    from langchain_agents.sorter_agent import CONTRACT_SUBTYPE_KEYS, SUBTYPE_UNKNOWN
 
     doc_text = state.get("doc_text", "")
     sorter_type = state.get("doc_type")
@@ -664,7 +694,12 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
 
     try:
         reviewer = SorterReviewerAgent()
-        result = reviewer.review(doc_text, pages=state.get("doc_pages"))
+        result = reviewer.review(
+            doc_text,
+            pages=state.get("doc_pages"),
+            valid_doc_types=get_all_doc_types(),
+            contract_subtypes=list(CONTRACT_SUBTYPE_KEYS) + [SUBTYPE_UNKNOWN],
+        )
     except Exception as exc:
         if is_transient_error(exc):
             transient = state.get("transient_retries_review_classify", 0) + 1
@@ -688,6 +723,7 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
             "review_verdict": "reviewer_error",
             "stage": PipelineStage.CLASSIFIED.value,
             "escalation_reason": f"sorter reviewer failed ({type(exc).__name__}) — routing to human review",
+            "transient_error": False,
         }
 
     reviewer_type = result.get("doc_type")
@@ -698,20 +734,15 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
         reviewer_confidence = 0.0
     # Same deterministic guard the sorter's answers pass through: never trust
     # an out-of-range confidence or unknown class from the reviewer either.
-    guard = guard_classification(
+    # Clamping happens here so a high-confidence invalid subtype cannot win
+    # the lane and auto-extract.
+    _guard, reviewer_confidence = apply_classification_guard(
         {
             "doc_type": reviewer_type,
             "classification_confidence": reviewer_confidence,
             "contract_subtype": reviewer_subtype,
         }
     )
-    if not guard["ok"]:
-        logger.warning(
-            "review_classification_guardrail_triggered",
-            doc_id=state.get("doc_id"),
-            issues=guard["issues"],
-        )
-        reviewer_confidence = guard.get("confidence", 0.1)
     reviewer_reasoning = str(result.get("reasoning", ""))
 
     high = get_confidence_thresholds().get("high", 0.95)
@@ -857,10 +888,13 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     doc_pages = state.get("doc_pages") or []
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(
-        doc_type,
-        lambda t, pages=None, handoff_context=None: {"confidence": 0.3, "_unsupported": True},
-    )
+    extractor = dispatch.get(doc_type)
+    if extractor is None:
+        logger.error("no_specialist_dispatch", doc_type=doc_type, doc_id=state.get("doc_id"))
+        extractor = lambda t, pages=None, handoff_context=None: {
+            "confidence": 0.3,
+            "_unsupported": True,
+        }
     handoff_context = _build_handoff_context(state)
     attempts = state.get("extraction_attempts", 0)
     try:
@@ -936,7 +970,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         from langchain_agents.memory import record_outcome
 
         record_outcome(
-            "contracts_specialist",
+            _specialist_memory_name(doc_type),
             doc_type=doc_type or "",
             decision=f"conf={confidence:.2f}",
             confidence=confidence,
@@ -1018,7 +1052,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     try:
         from langchain_agents.memory import recent_context
 
-        memory = recent_context("contracts_specialist", doc_type=doc_type or "", k=3)
+        memory = recent_context(_specialist_memory_name(doc_type), doc_type=doc_type or "", k=3)
     except Exception:
         memory = ""
     augmented_text = (
@@ -1029,10 +1063,13 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     )
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(
-        doc_type,
-        lambda t, pages=None, handoff_context=None: {"confidence": 0.3, "_unsupported": True},
-    )
+    extractor = dispatch.get(doc_type)
+    if extractor is None:
+        logger.error("no_specialist_dispatch", doc_type=doc_type, doc_id=state.get("doc_id"))
+        extractor = lambda t, pages=None, handoff_context=None: {
+            "confidence": 0.3,
+            "_unsupported": True,
+        }
     handoff_context = _build_handoff_context(state)
     try:
         result = extractor(augmented_text, doc_pages, handoff_context)
@@ -1040,7 +1077,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         from llm.retry import is_transient_error
 
         if is_transient_error(exc):
-            transient = state.get("transient_retries", 0) + 1
+            transient = state.get("transient_retries_retry_extract", 0) + 1
             logger.warning(
                 "retry_extract_transient_error",
                 doc_id=state.get("doc_id"),
@@ -1049,7 +1086,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
             )
             return {
                 "transient_error": True,
-                "transient_retries": transient,
+                "transient_retries_retry_extract": transient,
                 "extraction_attempts": attempts,
                 "extraction_confidence": 0.0,
                 "extracted_data": None,
@@ -1123,7 +1160,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
             doc_id=state.get("doc_id"),
             extraction_confidence=state.get("extraction_confidence"),
         )
-        return {"judge_verdict": "skipped"}
+        return {"judge_verdict": "skipped", "transient_error": False}
 
     doc_type = state.get("doc_type") or ""
     extracted = _clean_fields_for_judge(state.get("extracted_data"))
@@ -1153,6 +1190,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         return {
             "judge_verdict": "judge_error",
             "escalation_reason": f"judge verification failed ({type(exc).__name__}) — routing to human review",
+            "transient_error": False,
         }
 
     label = result.get("completeness_label", "incomplete")
@@ -1168,6 +1206,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         "judge_verdict": label,
         "judge_score": score,
         "judge_findings": findings,
+        "transient_error": False,
     }
 
 
@@ -1178,6 +1217,7 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
     attached / human_review). Any arbiter failure escalates fail-safe.
     """
     from agents.arbiter import ArbiterAgent
+    from llm.retry import is_transient_error
 
     try:
         arbiter = ArbiterAgent()
@@ -1189,11 +1229,26 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
             judge_score=state.get("judge_score"),
         )
     except Exception as exc:
+        if is_transient_error(exc):
+            transient = state.get("transient_retries_arbiter", 0) + 1
+            logger.warning(
+                "arbiter_transient_error",
+                doc_id=state.get("doc_id"),
+                error=str(exc)[:300],
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries_arbiter": transient,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+                "escalation_reason": "transient provider error during arbitration",
+            }
         logger.exception("arbiter_failed", doc_id=state.get("doc_id"))
         return {
             "arbiter_decision": "human_review",
             "arbiter_reasoning": f"arbiter failed ({type(exc).__name__})",
             "escalation_reason": f"arbitration failed ({type(exc).__name__}) — routing to human review",
+            "transient_error": False,
         }
 
     decision = result.get("decision")
@@ -1201,9 +1256,11 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         "arbiter_decision": decision,
         "arbiter_reasoning": str(result.get("reasoning", "")),
         "arbiter_handoff": str(result.get("handoff_summary", "")),
+        "transient_error": False,
     }
     if decision == "retry_extraction":
         updates["arbiter_retry_count"] = state.get("arbiter_retry_count", 0) + 1
+        updates["arbiter_fields_to_fix"] = list(result.get("fields_to_fix") or [])
         updates["escalation_reason"] = (
             f"arbiter ordered re-extraction: {result.get('handoff_summary', '')[:400]}"
         )
@@ -1314,8 +1371,19 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
         from llm.retry import is_transient_error
 
         if is_transient_error(exc):
-            logger.warning("boss_transient_error", doc_id=state.get("doc_id"), error=type(exc).__name__)
-            return {"transient_error": True}
+            transient = state.get("transient_retries_boss_escalation", 0) + 1
+            logger.warning(
+                "boss_transient_error",
+                doc_id=state.get("doc_id"),
+                error=type(exc).__name__,
+                transient_retries=transient,
+            )
+            return {
+                "transient_error": True,
+                "transient_retries_boss_escalation": transient,
+                "error_message": f"transient provider error: {str(exc)[:200]}",
+                "escalation_reason": "transient provider error during boss adjudication",
+            }
         logger.warning("boss_failed_defaulting_to_review", doc_id=state.get("doc_id"),
                        error=type(exc).__name__, exc_info=True)
         decision = "review"
@@ -1330,6 +1398,7 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
     result = {
         "review_decision": decision,
         "escalation_reason": f"Boss: {reasoning}",
+        "transient_error": False,
     }
     # A-1: Boss adjudication is part of the compliance record ("who decided
     # what, based on what").
@@ -1342,6 +1411,9 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
 def compile_report_node(state: DocumentState) -> dict[str, Any]:
     from llm.client import get_llm
 
+    extracted = state.get("extracted_data") or {}
+    if not isinstance(extracted, dict):
+        extracted = {}
     manifest_data = {
         "doc_id": state.get("doc_id"),
         "matter_id": state.get("matter_id"),
@@ -1349,17 +1421,36 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
         "contract_subtype": state.get("contract_subtype"),
         "classification_confidence": state.get("classification_confidence"),
         "extraction_confidence": state.get("extraction_confidence"),
-        "extracted_data": state.get("extracted_data"),
+        "extracted_data": extracted,
     }
 
-    llm_client, model = get_llm("reporter")
-    from agents.reporter import compile_matter_record
-    report = compile_matter_record(manifest_data, llm_client, model)
+    try:
+        llm_client, model = get_llm("reporter")
+        from agents.reporter import compile_matter_record
+        report = compile_matter_record(manifest_data, llm_client, model)
+    except Exception as exc:
+        # A reporter blip must not fail a successfully extracted document
+        # (same fail-safe as L-10 for the Boss). Archive the extraction with
+        # a fallback summary instead of sending the run to the failed bin.
+        logger.exception("report_compile_failed", doc_id=state.get("doc_id"))
+        report = {
+            "summary": (
+                f"(report unavailable: {type(exc).__name__} — extracted fields preserved)"
+            ),
+            "doc_type": state.get("doc_type"),
+            "contract_subtype": state.get("contract_subtype"),
+            "extracted_data": {
+                k: v for k, v in extracted.items() if k not in ("confidence", "reasoning")
+            },
+            "classification_confidence": state.get("classification_confidence"),
+            "extraction_confidence": state.get("extraction_confidence"),
+            "error": True,
+        }
 
     logger.info("report_compiled", doc_id=state.get("doc_id"))
     return {
         "extracted_data": {
-            **state.get("extracted_data", {}),
+            **extracted,
             "_report": report,
         },
     }
@@ -1764,7 +1855,7 @@ def build_graph(checkpointer=None):
     })
 
     workflow.add_conditional_edges("retry_classify", after_retry_classify, {
-        "classify": "classify",
+        "retry_classify": "retry_classify",  # transient self-loop (own per-node budget)
         "review_classify": "review_classify",
         "extract": "extract",
         "human_review": "human_review",
@@ -1788,8 +1879,7 @@ def build_graph(checkpointer=None):
     })
 
     workflow.add_conditional_edges("retry_extract", after_retry_extraction_gated, {
-        "extract": "extract",
-        "retry_extract": "retry_extract",
+        "retry_extract": "retry_extract",  # transient self-loop (own per-node budget)
         "compile_report": "compile_report",
         "judge_verify": "judge_verify",
         "human_review": "human_review",
@@ -1806,12 +1896,14 @@ def build_graph(checkpointer=None):
     })
 
     workflow.add_conditional_edges("arbiter", after_arbiter, {
+        "arbiter": "arbiter",  # transient self-loop (own per-node budget)
         "compile_report": "compile_report",
         "retry_extract": "retry_extract",
         "human_review": "human_review",
     })
 
     workflow.add_conditional_edges("boss_escalation", after_boss, {
+        "boss_escalation": "boss_escalation",  # transient self-loop (own per-node budget)
         "compile_report": "compile_report",
         "human_review": "human_review",
     })
@@ -2402,6 +2494,7 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "arbiter_decision": None,
         "arbiter_reasoning": None,
         "arbiter_handoff": None,
+        "arbiter_fields_to_fix": [],
         "arbiter_retry_count": 0,
         "run_attempt": 0,
     }

@@ -7,9 +7,9 @@ structure and values against the task specification.
 
 Enforcement points (graph/build_graph.py):
 
-- `classify_node` / `retry_classify_node`: `guard_classification` clamps
-  out-of-range confidence and flags unknown doc types (routing already sends
-  unknown types to review).
+- `classify_node` / `retry_classify_node` / `review_classify_node`:
+  `apply_classification_guard` clamps confidence on unknown types, invalid
+  subtypes, and out-of-range values so routing cannot auto-extract junk.
 - `extract_node` / `retry_extract_node`: `guard_extraction` clamps confidence
   below the routing threshold when the extraction fails JSON parsing or schema
   validation, forcing the retry/review path instead of trusting bad output.
@@ -42,6 +42,37 @@ def _valid_subtypes() -> frozenset[str]:
         return frozenset(CONTRACT_SUBTYPE_KEYS + [SUBTYPE_UNKNOWN])
     except Exception:
         return frozenset()
+
+
+def apply_classification_guard(state: dict) -> tuple[dict, float | None]:
+    """Run the classification guardrail and return (guard_result, confidence).
+
+    Mirrors ``apply_extraction_guard``: structural failures (unknown type,
+    missing/invalid contract subtype, out-of-range confidence) clamp
+    confidence to ``_GUARD_CONFIDENCE_CEILING`` so routing cannot auto-extract
+    a high-confidence-but-invalid sorter answer. Unknown types are still
+    caught by ``after_classify``'s taxonomy check; clamping covers the
+    valid-type / invalid-subtype case that used to sail through at 0.95.
+    """
+    guard = guard_classification(state)
+    confidence = state.get("classification_confidence")
+    if not guard["ok"]:
+        if _is_valid_confidence(confidence):
+            new_confidence = min(float(confidence), _GUARD_CONFIDENCE_CEILING)
+        elif confidence is None:
+            new_confidence = 0.0
+        else:
+            new_confidence = _GUARD_CONFIDENCE_CEILING
+        logger.warning(
+            "classification_guardrail_triggered",
+            issues=guard["issues"],
+            confidence_before=confidence,
+            confidence_after=new_confidence,
+        )
+        return guard, new_confidence
+    if _is_valid_confidence(confidence):
+        return guard, float(confidence)
+    return guard, confidence
 
 
 def guard_classification(state: dict) -> dict:
@@ -93,8 +124,10 @@ def _has_substantive_content(extracted_data: dict | None) -> bool:
         if isinstance(value, (str, list, dict, tuple, set)):
             if value:
                 return True
-        elif value != 0:
-            return True
+            continue
+        # Scalars including 0 / 0.0 are real extracted values (a $0 claim
+        # amount, a zero count). Only None and empty containers are empty.
+        return True
     return False
 
 

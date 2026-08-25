@@ -36,8 +36,10 @@ class DocumentState(TypedDict, total=False):
     run_deadline: float
     run_aborted: bool
     # Transient provider-error retry (connection errors etc.): the node sets
-    # `transient_error` and `transient_retries` so routing can retry the SAME
-    # node (self-loop) instead of consuming the confidence-based retry budget.
+    # `transient_error` and per-node `transient_retries_<node>` so routing
+    # can retry the SAME node (self-loop) instead of consuming the
+    # confidence-based retry budget. The generic `transient_retries` key is
+    # unused; each node writes its own counter (L-13).
     transient_error: bool
     transient_retries: int
     # Attempt number of this pipeline run for a document (observability: trace
@@ -61,6 +63,8 @@ class DocumentState(TypedDict, total=False):
     arbiter_decision: str | None
     arbiter_reasoning: str | None
     arbiter_handoff: str | None
+    # Named fields the arbiter asked the specialist to repair (Lane B retry).
+    arbiter_fields_to_fix: list[str]
     # Bound on arbiter-driven re-extractions (mirrors the retry budget idea;
     # separate counter so extraction retries and arbitration retries never
     # alias each other).
