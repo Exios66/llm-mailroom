@@ -82,9 +82,9 @@ def guard_classification(state: dict) -> dict:
     contract_subtype = state.get("contract_subtype")
     issues: list[str] = []
 
-    from pipeline.config import get_all_doc_types
+    from pipeline.config import is_extractable_doc_type
 
-    if doc_type not in get_all_doc_types():
+    if not is_extractable_doc_type(doc_type):
         issues.append(f"unknown_doc_type: {doc_type!r} not in taxonomy")
     if confidence is not None and not _is_valid_confidence(confidence):
         issues.append(f"classification_confidence_out_of_range: {confidence!r}")

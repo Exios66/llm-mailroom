@@ -68,6 +68,26 @@ def test_variants_are_pure_appends_of_production_templates():
             assert cls in addition, f"{cls} missing from {key}"
 
 
+def test_runtime_arm_rewrites_langchain_and_managed_lookups(monkeypatch):
+    monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)
+    from langchain_agents.prompts import get_prompt
+    from llm.prompts import get_managed_prompt, prompt_templates
+
+    production = get_prompt("sorter_v14")
+    assert "DOCCLASS ARM CONTEXT" not in production
+    monkeypatch.setenv("MAILROOM_DOCCLASS_PROMPTS", "1")
+    variant = get_prompt("sorter_v14")
+    assert variant.startswith(production.rstrip("\n"))
+    assert "DOCCLASS ARM CONTEXT" in variant
+    assert "merger_agreement" in variant
+    text, _obj = get_managed_prompt("sorter_reviewer", "LOCAL FALLBACK")
+    assert "DOCCLASS ARM CONTEXT" in text
+    # Production catalog must stay the un-rewritten templates even while
+    # the runtime arm is on (Langfuse sync must never overwrite mailroom-sorter).
+    assert all("DOCCLASS ARM CONTEXT" not in t for t in prompt_templates().values())
+    monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)
+
+
 def test_production_surface_has_no_docclass_arm():
     from llm.prompts import prompt_templates
 

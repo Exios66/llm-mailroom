@@ -53,6 +53,17 @@ def test_safe_filename_strips_path_and_caps():
     assert _safe_filename("noext") == "noext.txt"
 
 
+def test_docclass_flag_sets_env(monkeypatch):
+    monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)
+    import sys
+    from scripts import run_hf_pilot as mod
+
+    monkeypatch.setattr(sys, "argv", ["run_hf_pilot.py", "--check", "--docclass"])
+    assert mod.main() == 0
+    assert os.environ.get("MAILROOM_DOCCLASS_PROMPTS") == "1"
+    monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)
+
+
 def test_check_contract_prints_ok(capsys):
     assert check_contract() == 0
     out = capsys.readouterr().out

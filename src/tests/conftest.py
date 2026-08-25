@@ -15,6 +15,11 @@ def _set_test_env():
     # Keep tests hermetic: never pick up the real .env Langfuse/Braintrust keys
     # (llm/client.py now loads .env at import time).
     os.environ["OBSERVABILITY_PROVIDER"] = "none"
+    # Production .env may enable the docclass arm, force vision off, or pin
+    # DEFAULT_PROVIDER; tests must stay hermetic unless a case opts in.
+    os.environ["MAILROOM_DOCCLASS_PROMPTS"] = "0"
+    os.environ.pop("MAILROOM_VISION_ENABLED", None)
+    os.environ.pop("DEFAULT_PROVIDER", None)
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
               "LANGFUSE_BASE_URL", "BRAINTRUST_API_KEY"):
         os.environ.pop(k, None)

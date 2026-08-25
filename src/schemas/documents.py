@@ -83,4 +83,14 @@ EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
 
 
 def get_extraction_schema(doc_type: str) -> type[BaseModel] | None:
-    return EXTRACTION_SCHEMAS.get(doc_type)
+    if doc_type in EXTRACTION_SCHEMAS:
+        return EXTRACTION_SCHEMAS[doc_type]
+    try:
+        from pipeline.config import resolve_extract_class
+
+        resolved = resolve_extract_class(doc_type)
+        if resolved:
+            return EXTRACTION_SCHEMAS.get(resolved)
+    except Exception:
+        pass
+    return None

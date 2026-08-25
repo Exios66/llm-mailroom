@@ -23,6 +23,16 @@ class TestGuardClassification:
         assert guard["ok"] is False
         assert any("unknown_doc_type" in i for i in guard["issues"])
 
+    def test_merger_agreement_alias_passes(self):
+        from pipeline.guards import guard_classification
+
+        guard = guard_classification({
+            "doc_type": "merger_agreement",
+            "classification_confidence": 0.97,
+        })
+        assert guard["ok"] is True
+        assert guard["issues"] == []
+
     def test_out_of_range_confidence_fails(self):
         from pipeline.guards import guard_classification
 

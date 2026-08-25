@@ -183,6 +183,7 @@ class TestSorterAgent:
 
         enum = SORTER_SCHEMA["properties"]["doc_type"]["enum"]
         assert "unknown" in enum
+        assert "merger_agreement" in enum
         for key in DOC_CLASS_KEYS:
             assert key in enum
         assert "court_opinion" not in enum

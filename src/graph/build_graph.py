@@ -250,8 +250,19 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     if not doc_type:
         return None
     context = f"Sorter classification: doc_type={doc_type}"
+    extract_class = doc_type
+    try:
+        from pipeline.config import resolve_extract_class
+
+        resolved = resolve_extract_class(doc_type)
+        if resolved:
+            extract_class = resolved
+        if extract_class and extract_class != doc_type:
+            context += f" extract_class={extract_class}"
+    except Exception:
+        pass
     contract_subtype = state.get("contract_subtype")
-    if doc_type == "contract" and contract_subtype:
+    if (doc_type == "contract" or extract_class == "contract") and contract_subtype:
         context += f" contract_subtype={contract_subtype}"
     confidence = state.get("classification_confidence")
     if confidence is not None:
@@ -315,16 +326,26 @@ def _specialist_memory_name(doc_type: str) -> str | None:
 
     Unmapped / retired / unknown types return None — never fall back to
     contracts_specialist (that attributed the wrong agent's outcomes).
+    Extract aliases (``merger_agreement`` → ``contract``) use the target
+    specialist so retry memory stays on the agent that actually ran.
     """
     try:
-        from pipeline.config import load_config
+        from pipeline.config import load_config, resolve_extract_class
 
+        resolved = resolve_extract_class(doc_type) or doc_type
         for cls in load_config().get("doc_classes", []) or []:
-            if cls.get("key") == doc_type and cls.get("specialist"):
+            if cls.get("key") == resolved and cls.get("specialist"):
                 return str(cls["specialist"])
     except Exception:
         pass
     return None
+
+
+def _extract_dispatch_key(doc_type: str) -> str:
+    """Taxonomy dispatch key for extract — aliases keep ``state['doc_type']``."""
+    from pipeline.config import resolve_extract_class
+
+    return resolve_extract_class(doc_type) or doc_type
 
 
 def _unsupported_extraction_update(state: DocumentState, doc_type: str) -> dict[str, Any]:
@@ -936,7 +957,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     doc_pages = state.get("doc_pages") or []
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(doc_type)
+    extractor = dispatch.get(_extract_dispatch_key(doc_type))
     if extractor is None:
         return _unsupported_extraction_update(state, doc_type)
     handoff_context = _build_handoff_context(state)
@@ -1096,7 +1117,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     )
 
     dispatch = _build_specialist_dispatch()
-    extractor = dispatch.get(doc_type)
+    extractor = dispatch.get(_extract_dispatch_key(doc_type))
     if extractor is None:
         update = _unsupported_extraction_update(state, doc_type)
         update["retry_count"] = state.get("retry_count", 0) + 1
@@ -2288,6 +2309,13 @@ def _execute_run(
         tags.append(f"run-{attempt}")
     if source:
         tags.append(f"source-{source}")
+    try:
+        from pipeline.docclass_mode import docclass_prompts_enabled
+
+        if docclass_prompts_enabled():
+            tags.append("docclass-prompts")
+    except Exception:
+        pass
 
     trace_metadata = {"pipeline": "mailroom", "run_deadline": deadline, "attempt": attempt}
     if source:

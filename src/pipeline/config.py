@@ -42,19 +42,46 @@ def get_all_doc_types() -> list[str]:
 # specialist — after_classify / after_retry_classify park it for human review.
 UNKNOWN_DOC_TYPE = "unknown"
 
+# Sorter / HF labels that extract through a live taxonomy specialist without
+# adding a new doc_class row. ``merger_agreement`` is the docclass-merged /
+# MAUD label; the contracts specialist owns the schema. Retired classes
+# (court_opinion, due_diligence) are deliberately absent — they still park.
+EXTRACT_CLASS_ALIASES: dict[str, str] = {
+    "merger_agreement": "contract",
+}
+
+
+def resolve_extract_class(doc_type: str | None) -> str | None:
+    """Map a sorter label to the live taxonomy class used for extraction.
+
+    Live taxonomy keys pass through. Extract aliases (``merger_agreement`` →
+    ``contract``) resolve to their specialist class. Unknown / retired /
+    empty return None — never extract.
+    """
+    if not doc_type:
+        return None
+    live = get_all_doc_types()
+    if doc_type in live:
+        return doc_type
+    aliased = EXTRACT_CLASS_ALIASES.get(doc_type)
+    if aliased and aliased in live:
+        return aliased
+    return None
+
 
 def is_extractable_doc_type(doc_type: str | None) -> bool:
-    """True when ``doc_type`` is a live taxonomy class with a specialist."""
-    return bool(doc_type) and doc_type in get_all_doc_types()
+    """True when ``doc_type`` is a live taxonomy class or an extract alias."""
+    return resolve_extract_class(doc_type) is not None
 
 
 def get_sorter_label_set() -> set[str]:
     """Labels the sorter (and Lane A reviewer) may emit.
 
-    Live taxonomy classes plus ``unknown``. ``unknown`` is a routing token,
-    not a specialist class — routers park it; extract never dispatches it.
+    Live taxonomy classes plus ``unknown`` plus extract aliases so structured
+    output can emit ``merger_agreement``. ``unknown`` is a routing token, not
+    a specialist class — routers park it; extract never dispatches it.
     """
-    return set(get_all_doc_types()) | {UNKNOWN_DOC_TYPE}
+    return set(get_all_doc_types()) | {UNKNOWN_DOC_TYPE} | set(EXTRACT_CLASS_ALIASES)
 
 
 def get_doc_class_catalog() -> list[dict[str, str]]:
@@ -77,7 +104,8 @@ def get_doc_class_catalog() -> list[dict[str, str]]:
 
 
 def get_extraction_schema_name(doc_type: str) -> str | None:
-    cls = get_doc_class(doc_type)
+    resolved = resolve_extract_class(doc_type) or doc_type
+    cls = get_doc_class(resolved)
     if cls:
         return cls.get("schema")
     return None

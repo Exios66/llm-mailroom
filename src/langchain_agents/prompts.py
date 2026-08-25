@@ -3034,11 +3034,29 @@ def get_prompt(version: str) -> str:
     Raises:
         KeyError: If the version is not found.
     """
-    if version not in PROMPT_VERSIONS:
-        raise KeyError(
-            f"Prompt version '{version}' not found. Available versions: {list(PROMPT_VERSIONS.keys())}"
-        )
-    return PROMPT_VERSIONS[version]
+    try:
+        from pipeline.docclass_mode import AGENT_DOCCLASS_KEY, docclass_prompts_enabled
+
+        if docclass_prompts_enabled():
+            key = AGENT_DOCCLASS_KEY.get(version)
+            if key:
+                from langchain_agents.prompts_docclass import DOCCLASS_PROMPT_VERSIONS
+
+                return DOCCLASS_PROMPT_VERSIONS[key]
+    except Exception:
+        pass
+    if version in PROMPT_VERSIONS:
+        return PROMPT_VERSIONS[version]
+    try:
+        from langchain_agents.prompts_docclass import DOCCLASS_PROMPT_VERSIONS
+
+        if version in DOCCLASS_PROMPT_VERSIONS:
+            return DOCCLASS_PROMPT_VERSIONS[version]
+    except Exception:
+        pass
+    raise KeyError(
+        f"Prompt version '{version}' not found. Available versions: {list(PROMPT_VERSIONS.keys())}"
+    )
 
 
 def list_prompts() -> list[str]:
