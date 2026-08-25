@@ -1254,11 +1254,9 @@ EXTRACT_ZERO_DEMAND = {
 # Marker → canned extraction for the LEGACY BaseAgent specialists
 # (user message: "Extract structured data from this <marker>:").
 LEGACY_SPECIALIST_CANNED = {
-    "court opinion": COURT_OPINION_EXTRACTION,
     "correspondence": CORRESPONDENCE_EXTRACTION,
     "compliance filing": COMPLIANCE_EXTRACTION,
     "corporate record": CORPORATE_RECORD_EXTRACTION,
-    "due diligence document": DUE_DILIGENCE_EXTRACTION,
     "insurance claim documentation": INSURANCE_CLAIM_EXTRACTION,
 }
 
@@ -1280,15 +1278,6 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
         "path": "legacy",
         "marker": "corporate record",
     },
-    "due_diligence": {
-        "text": DOC_DUE_DILIGENCE,
-        "filename": "diligence.txt",
-        "classification": CLASSIFY_DUE_DILIGENCE_HIGH,
-        "extraction": DUE_DILIGENCE_EXTRACTION,
-        "specialist": "due_diligence_specialist",
-        "path": "legacy",
-        "marker": "due diligence document",
-    },
     "correspondence": {
         "text": DOC_CORRESPONDENCE,
         "filename": "demand_letter.txt",
@@ -1307,15 +1296,6 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
         "path": "legacy",
         "marker": "compliance filing",
     },
-    "court_opinion": {
-        "text": DOC_COURT_OPINION,
-        "filename": "opinion.txt",
-        "classification": CLASSIFY_COURT_HIGH,
-        "extraction": COURT_OPINION_EXTRACTION,
-        "specialist": "court_opinions_specialist",
-        "path": "legacy",
-        "marker": "court opinion",
-    },
     "insurance_claim": {
         "text": DOC_INSURANCE_CLAIM,
         "filename": "fnol.txt",
@@ -1331,7 +1311,7 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
 def script_all_specialists(client: MagicMock, extra: dict[str, dict] | None = None) -> MagicMock:
     """Script every legacy specialist marker plus the default judge/arbiter/boss
     happy-path canned responses. Contracts still flow through FakeLangChainLLM
-    (LangChain path); this covers the other six classes."""
+    (LangChain path); this covers the other four live classes."""
     canned = dict(LEGACY_SPECIALIST_CANNED)
     if extra:
         canned.update(extra)

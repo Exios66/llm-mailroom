@@ -29,16 +29,6 @@ class CorporateRecordExtraction(BaseModel):
     filing_number: str | None = None
 
 
-class DueDiligenceExtraction(BaseModel):
-    target_entity: str = ""
-    diligence_type: str = ""
-    material_findings: list[str] = Field(default_factory=list)
-    risk_flags: list[str] = Field(default_factory=list)
-    outstanding_items: list[str] = Field(default_factory=list)
-    document_date: str | None = None
-    prepared_by: str | None = None
-
-
 class CorrespondenceExtraction(BaseModel):
     sender: str = ""
     recipient: str = ""
@@ -64,20 +54,6 @@ class ComplianceFilingExtraction(BaseModel):
     reference_number: str | None = None
 
 
-class CourtOpinionExtraction(BaseModel):
-    case_name: str = ""
-    court: str = ""
-    date_decided: str | None = None
-    docket_number: str | None = None
-    opinion_type: str = ""
-    parties: list[str] = Field(default_factory=list)
-    holding: str = ""
-    legal_issues: list[str] = Field(default_factory=list)
-    outcome: str = ""
-    citations: list[str] = Field(default_factory=list)
-    authored_by: str | None = None
-
-
 class InsuranceClaimExtraction(BaseModel):
     claim_number: str | None = None
     policy_number: str | None = None
@@ -98,10 +74,8 @@ class InsuranceClaimExtraction(BaseModel):
 EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
     "contract": ContractExtraction,
     "corporate_record": CorporateRecordExtraction,
-    "due_diligence": DueDiligenceExtraction,
     "correspondence": CorrespondenceExtraction,
     "compliance_filing": ComplianceFilingExtraction,
-    "court_opinion": CourtOpinionExtraction,
     "insurance_claim": InsuranceClaimExtraction,
 }
 

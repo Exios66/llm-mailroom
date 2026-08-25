@@ -1,8 +1,9 @@
 """KANBAN-067 — insurance_claim as a first-class mailroom document class.
 
 Network-free integration pins: schema registry, taxonomy, graph dispatch,
-classifier vocabulary, sorter prompt surface, fixture wiring. Mirrors the
-guarantees court_opinion has, so the seventh class is a native sibling.
+classifier vocabulary, sorter prompt surface, fixture wiring. A native
+sibling of the four remaining live classes (five total after court_opinion
+and due_diligence were retired from the pipeline).
 """
 
 from pathlib import Path
@@ -20,7 +21,7 @@ def test_extraction_schemas_include_insurance_claim():
     from schemas.documents import get_extraction_schema
 
     assert get_extraction_schema("insurance_claim") is InsuranceClaimExtraction
-    assert len(EXTRACTION_SCHEMAS) == 7  # six prior classes + insurance_claim
+    assert len(EXTRACTION_SCHEMAS) == 5  # live pipeline classes
 
 
 def test_insurance_schema_fields_are_scoring_ready():
@@ -45,7 +46,7 @@ def test_taxonomy_declares_class_and_specialist_block():
     assert ic["field_types"]["claim_number"] == "id"
     assert ic["field_types"]["claimed_amount"] == "money"
     assert ic["field_types"]["denial_reasons"] == "entity_list:free_text"
-    assert len(classes) == 7
+    assert len(classes) == 5
     agents = tax["agents"]
     assert "insurance_claims_specialist" in agents
     assert agents["insurance_claims_specialist"]["provider"] == "openrouter"
@@ -64,14 +65,14 @@ def test_classifier_vocabulary_contains_insurance_claim():
     from langchain_agents.classifier import VALID_CLASSES
 
     assert "insurance_claim" in VALID_CLASSES
-    assert len(VALID_CLASSES) == 7
+    assert len(VALID_CLASSES) == 5
 
 
 def test_sorter_doc_classes_table_contains_insurance_claim():
     from langchain_agents.sorter_agent import DOC_CLASSES, DOC_CLASS_KEYS
 
     assert "insurance_claim" in DOC_CLASS_KEYS
-    assert len(DOC_CLASSES) == 7
+    assert len(DOC_CLASSES) == 5
     entry = next(d for d in DOC_CLASSES if d["key"] == "insurance_claim")
     assert entry["label"] == "Insurance Claim"
 

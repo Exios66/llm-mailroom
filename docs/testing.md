@@ -15,9 +15,11 @@ tests/
 └── fixtures/
     ├── contract/                # 3 sample contracts (MSA, NDA, ambiguous)
     ├── corporate_record/        # 2 sample corp records (bylaws, resolution)
-    ├── due_diligence/           # 2 sample DD docs (report, checklist)
+    ├── due_diligence/           # retired class (fixtures kept on disk)
+    ├── court_opinion/           # retired class (fixtures kept on disk)
     ├── correspondence/          # 2 sample correspondences (demand letter, memo)
-    └── compliance_filing/       # 2 sample filings (10-K, state filing)
+    ├── compliance_filing/       # 2 sample filings (10-K, state filing)
+    └── insurance_claim/         # FNOL / claim documentation
 ```
 
 ---
@@ -106,7 +108,7 @@ PDFs (real CC-BY-4.0 CUAD/Atticus contracts + LegalBench MAUD merger agreements 
 public-domain Pile of Law court opinions + repo-written synthetic text) with a
 ground-truth `manifest.csv`, built by `scripts/prepare_samples.py` (and
 `scripts/fetch_external_samples.py` for the external corpus) and evaluated by
-`scripts/run_pilot.py` (`--mock` for a deterministic run over the full 30-sample
+`scripts/run_pilot.py` (`--mock` for a deterministic run over the live 22-sample
 set, `--real` for actual LLM accuracy on the 21 real committed documents, 
 `--baseline` to diff two runs, `--source <corpus>` to run one dataset). Real
 runs are restricted to the actual committed legal documents (CUAD/Atticus PDFs,

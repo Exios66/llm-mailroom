@@ -13,10 +13,8 @@ Nothing is replaced, so no production anchor can drift.
     sorter                         sorter                         sorter_docclass_v0
     contracts_specialist           contracts_specialist           contracts_specialist_docclass_v0
     corporate_records_specialist   corporate_records_specialist   corporate_records_specialist_docclass_v0
-    due_diligence_specialist       due_diligence_specialist       due_diligence_specialist_docclass_v0
     correspondence_specialist      correspondence_specialist      correspondence_specialist_docclass_v0
     compliance_specialist          compliance_specialist          compliance_specialist_docclass_v0
-    court_opinions_specialist      court_opinions_specialist      court_opinions_specialist_docclass_v0
     insurance_claims_specialist    insurance_claims_specialist    insurance_claims_specialist_docclass_v0
     reviewer (second opinion)      sorter_reviewer                reviewer_docclass_v0
     arbiter                        arbiter                        arbiter_docclass_v0
@@ -176,10 +174,8 @@ _DOCCLASS_FROM_PRODUCTION: tuple[tuple[str, str, str], ...] = (
     ("sorter", "sorter_docclass_v0", _SORTER_RULES_BODY),
     ("contracts_specialist", "contracts_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
     ("corporate_records_specialist", "corporate_records_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
-    ("due_diligence_specialist", "due_diligence_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
     ("correspondence_specialist", "correspondence_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
     ("compliance_specialist", "compliance_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
-    ("court_opinions_specialist", "court_opinions_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
     ("insurance_claims_specialist", "insurance_claims_specialist_docclass_v0", _SPECIALIST_RULES_BODY),
     ("sorter_reviewer", "reviewer_docclass_v0", _REVIEWER_ARBITER_RULES_BODY),
     ("arbiter", "arbiter_docclass_v0", _REVIEWER_ARBITER_RULES_BODY),
@@ -217,10 +213,8 @@ DOCCLASS_PROMPT_VERSIONS: dict[str, str] = _build_versions()
 SORTER_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["sorter_docclass_v0"]
 CONTRACTS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["contracts_specialist_docclass_v0"]
 CORPORATE_RECORDS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["corporate_records_specialist_docclass_v0"]
-DUE_DILIGENCE_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["due_diligence_specialist_docclass_v0"]
 CORRESPONDENCE_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["correspondence_specialist_docclass_v0"]
 COMPLIANCE_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["compliance_specialist_docclass_v0"]
-COURT_OPINIONS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["court_opinions_specialist_docclass_v0"]
 INSURANCE_CLAIMS_SPECIALIST_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["insurance_claims_specialist_docclass_v0"]
 REVIEWER_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["reviewer_docclass_v0"]
 ARBITER_DOCCLASS_PROMPT_V0 = DOCCLASS_PROMPT_VERSIONS["arbiter_docclass_v0"]
