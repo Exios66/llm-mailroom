@@ -1,6 +1,6 @@
 """LLM-as-a-judge that evaluates extraction completeness against the source
-document. Used offline by scripts/run_completeness_judge.py; never runs inside
-the pipeline."""
+document. Used offline by scripts/run_quality_judges.py and in-pipeline by
+``judge_verify_node`` (KANBAN-063 Lane B)."""
 
 import structlog
 from agents.base import BaseAgent, build_structured_schema

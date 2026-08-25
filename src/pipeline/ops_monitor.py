@@ -145,7 +145,9 @@ class OpsMonitor:
 
     @property
     def is_paused(self) -> bool:
-        return self._pause_file.exists()
+        # TTL-aware: a stale pause file that `is_ingestion_paused()` would
+        # auto-expire must not look paused here.
+        return is_ingestion_paused()
 
     @property
     def pause_info(self) -> dict | None:

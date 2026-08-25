@@ -134,3 +134,48 @@ class TestApplyExtractionGuard:
         guard, confidence = apply_extraction_guard("contract", {"_parse_error": True}, None, attempts=1)
         assert guard["ok"] is False
         assert confidence == 0.0
+
+
+class TestApplyClassificationGuard:
+    def test_clamps_valid_type_missing_subtype(self):
+        from pipeline.guards import apply_classification_guard
+
+        guard, confidence = apply_classification_guard(
+            {
+                "doc_type": "contract",
+                "classification_confidence": 0.97,
+            }
+        )
+        assert guard["ok"] is False
+        assert confidence == 0.5
+
+    def test_keeps_confidence_when_ok(self):
+        from pipeline.guards import apply_classification_guard
+
+        guard, confidence = apply_classification_guard(
+            {
+                "doc_type": "contract",
+                "contract_subtype": "license",
+                "classification_confidence": 0.9,
+            }
+        )
+        assert guard["ok"] is True
+        assert confidence == 0.9
+
+
+class TestSubstantiveContent:
+    def test_numeric_zero_is_content(self):
+        from pipeline.guards import _has_substantive_content, guard_extraction
+
+        assert _has_substantive_content({"claimed_amount": 0}) is True
+        guard = guard_extraction(
+            "insurance_claim",
+            {"claimed_amount": 0, "claim_number": None},
+        )
+        assert "extraction_empty" not in guard["issues"]
+
+    def test_empty_containers_are_not_content(self):
+        from pipeline.guards import _has_substantive_content
+
+        assert _has_substantive_content({"parties": [], "notes": "", "meta": None}) is False
+        assert _has_substantive_content({"_parse_error": True, "reasoning": "x"}) is False
