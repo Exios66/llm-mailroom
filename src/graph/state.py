@@ -12,6 +12,10 @@ class DocumentState(TypedDict, total=False):
     # None for non-contract documents. Additive classification detail used for
     # the extraction handoff context and reporting.
     contract_subtype: str | None
+    # Per-class subclass from the dojo sorter catalogs (CUAD family for
+    # contracts, MAUD consideration for merger_agreement, Hub/dojo tokens
+    # for other live classes). None when the class has no catalog.
+    doc_subclass: str | None
     classification_confidence: float | None
     classification_attempts: int
     extracted_data: dict[str, Any] | None
@@ -55,6 +59,7 @@ class DocumentState(TypedDict, total=False):
     # (reviewer_agrees | reviewer_overrides | escalated).
     reviewer_doc_type: str | None
     reviewer_contract_subtype: str | None
+    reviewer_doc_subclass: str | None
     reviewer_confidence: float | None
     review_verdict: str | None
     # KANBAN-063 (Lane B): in-pipeline judge verification + arbiter

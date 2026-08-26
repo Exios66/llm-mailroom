@@ -262,6 +262,8 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     except Exception:
         pass
     contract_subtype = state.get("contract_subtype")
+    doc_subclass = state.get("doc_subclass")
+    subtype = contract_subtype or doc_subclass
     if (doc_type == "contract" or extract_class == "contract") and contract_subtype:
         context += f" contract_subtype={contract_subtype}"
         context += (
@@ -271,6 +273,8 @@ def _build_handoff_context(state: DocumentState) -> str | None:
             "franchise fees, maintenance/support, joint-venture sharing, "
             "non-compete covenants, etc. as the family requires)."
         )
+    elif doc_subclass:
+        context += f" doc_subclass={doc_subclass}"
     if doc_type == "merger_agreement":
         context += (
             " MAUD extraction: set contract_value to the merger-consideration "
@@ -299,7 +303,7 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     try:
         from langchain_agents.doc_inventories import specialist_handoff
 
-        extra = specialist_handoff(doc_type, contract_subtype)
+        extra = specialist_handoff(doc_type, subtype)
         if extra:
             context += " " + extra
     except Exception:
@@ -325,7 +329,7 @@ def _enrich_contract_result(result: dict | None, state: dict) -> dict:
             payload,
             doc_type=doc_type,
             extract_class=extract_class,
-            subtype=state.get("contract_subtype"),
+            subtype=state.get("contract_subtype") or state.get("doc_subclass"),
         )
     except Exception:
         logger.exception("contract_inventory_enrich_failed")
@@ -579,11 +583,21 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     sorter = SorterAgent()
     attempts = state.get("classification_attempts", 0)
     try:
-        # Vendored LangChain sorter returns the 4-tuple (doc_type,
-        # contract_subtype, confidence, reasoning).
-        doc_type, contract_subtype, confidence, reasoning = sorter.classify(
+        # Structured classify includes per-class doc_subclass (dojo catalogs).
+        classified = sorter.classify_json(
             doc_text, pages=state.get("doc_pages")
         )
+        from langchain_agents.sorter_agent import finalize_sorter_result
+
+        classified = finalize_sorter_result(classified)
+        doc_type = classified.get("doc_type") or ""
+        contract_subtype = classified.get("contract_subtype")
+        doc_subclass = classified.get("doc_subclass")
+        try:
+            confidence = float(classified.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        reasoning = classified.get("reasoning") or ""
     except Exception as exc:
         if is_transient_error(exc):
             # Provider-side transient failure (connection/timeout/rate-limit/
@@ -620,6 +634,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         return {
             "doc_type": UNKNOWN_DOC_TYPE,
             "contract_subtype": None,
+            "doc_subclass": None,
             "classification_confidence": 0.1,
             "classification_attempts": max(attempts, retry_max) + 1,
             "stage": PipelineStage.CLASSIFIED.value,
@@ -634,6 +649,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
             "doc_type": doc_type,
             "classification_confidence": confidence,
             "contract_subtype": contract_subtype,
+            "doc_subclass": doc_subclass,
         }
     )
     if not guard["ok"]:
@@ -649,7 +665,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
             record_outcome(
                 "sorter",
                 doc_type=doc_type or "",
-                decision=f"{doc_type}/{contract_subtype}",
+                decision=f"{doc_type}/{doc_subclass or contract_subtype}",
                 confidence=confidence,
                 feedback=f"classification guardrail rejected: {guard['issues']}",
                 source="guardrail",
@@ -661,12 +677,14 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         "classified",
         doc_type=doc_type,
         contract_subtype=contract_subtype,
+        doc_subclass=doc_subclass,
         confidence=confidence,
         attempts=attempts,
     )
     result = {
         "doc_type": doc_type,
         "contract_subtype": contract_subtype,
+        "doc_subclass": doc_subclass,
         "classification_confidence": confidence,
         "classification_attempts": attempts,
         "classification_guardrail": guard["issues"],
@@ -708,9 +726,20 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         + (f"\n\n{memory}" if memory else "")
     )
     try:
-        doc_type, contract_subtype, confidence, reasoning = sorter.classify(
+        classified = sorter.classify_json(
             augmented_text, pages=state.get("doc_pages")
         )
+        from langchain_agents.sorter_agent import finalize_sorter_result
+
+        classified = finalize_sorter_result(classified)
+        doc_type = classified.get("doc_type") or ""
+        contract_subtype = classified.get("contract_subtype")
+        doc_subclass = classified.get("doc_subclass")
+        try:
+            confidence = float(classified.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        reasoning = classified.get("reasoning") or ""
     except Exception as exc:
         if is_transient_error(exc):
             transient = state.get("transient_retries_retry_classify", 0) + 1
@@ -755,6 +784,7 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
             "doc_type": doc_type,
             "classification_confidence": confidence,
             "contract_subtype": contract_subtype,
+            "doc_subclass": doc_subclass,
         }
     )
 
@@ -762,12 +792,14 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         "retry_classified",
         doc_type=doc_type,
         contract_subtype=contract_subtype,
+        doc_subclass=doc_subclass,
         confidence=confidence,
         attempts=attempts,
     )
     return {
         "doc_type": doc_type,
         "contract_subtype": contract_subtype,
+        "doc_subclass": doc_subclass,
         "classification_confidence": confidence,
         "classification_attempts": attempts,
         "retry_count": state.get("retry_count", 0) + 1,
@@ -836,6 +868,7 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
 
     reviewer_type = result.get("doc_type")
     reviewer_subtype = result.get("contract_subtype")
+    reviewer_subclass = result.get("doc_subclass")
     try:
         reviewer_confidence = float(result.get("confidence", 0.0))
     except (TypeError, ValueError):
@@ -849,6 +882,7 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
             "doc_type": reviewer_type,
             "classification_confidence": reviewer_confidence,
             "contract_subtype": reviewer_subtype,
+            "doc_subclass": reviewer_subclass,
         }
     )
     reviewer_reasoning = str(result.get("reasoning", ""))
@@ -871,6 +905,7 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     updates = {
         "reviewer_doc_type": reviewer_type,
         "reviewer_contract_subtype": reviewer_subtype,
+        "reviewer_doc_subclass": reviewer_subclass,
         "reviewer_confidence": reviewer_confidence,
         "review_verdict": verdict,
         # The reviewer's reasoning rides on escalation_reason so a human
@@ -891,6 +926,7 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     if verdict in ("reviewer_agrees_high", "reviewer_overrides"):
         updates["doc_type"] = reviewer_type
         updates["contract_subtype"] = reviewer_subtype
+        updates["doc_subclass"] = reviewer_subclass
         updates["classification_confidence"] = reviewer_confidence
     return updates
 
@@ -1404,6 +1440,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             stage=PipelineStage.REVIEW,
             doc_type=state.get("doc_type"),
             contract_subtype=state.get("contract_subtype"),
+            doc_subclass=state.get("doc_subclass"),
             classification_confidence=state.get("classification_confidence"),
             extracted_data=state.get("extracted_data"),
             extraction_confidence=state.get("extraction_confidence"),
@@ -1422,6 +1459,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
                 "original_filename": state.get("original_filename", ""),
                 "doc_type": state.get("doc_type"),
                 "contract_subtype": state.get("contract_subtype"),
+            "doc_subclass": state.get("doc_subclass"),
                 "classification_confidence": state.get("classification_confidence"),
                 "extraction_confidence": state.get("extraction_confidence"),
                 "extracted_data": state.get("extracted_data"),
@@ -1527,6 +1565,7 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
         "matter_id": state.get("matter_id"),
         "doc_type": state.get("doc_type"),
         "contract_subtype": state.get("contract_subtype"),
+            "doc_subclass": state.get("doc_subclass"),
         "classification_confidence": state.get("classification_confidence"),
         "extraction_confidence": state.get("extraction_confidence"),
         "extracted_data": extracted,
@@ -1547,6 +1586,7 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
             ),
             "doc_type": state.get("doc_type"),
             "contract_subtype": state.get("contract_subtype"),
+            "doc_subclass": state.get("doc_subclass"),
             "extracted_data": {
                 k: v for k, v in extracted.items() if k not in ("confidence", "reasoning")
             },
@@ -1587,6 +1627,7 @@ def _catalog_upsert(state: dict, *, stage: str | None = None, update_only: bool 
             "original_filename": state.get("original_filename", ""),
             "doc_type": state.get("doc_type", "unknown"),
             "contract_subtype": state.get("contract_subtype"),
+            "doc_subclass": state.get("doc_subclass"),
             "stage": stage or state.get("stage", "cataloged"),
             "classification_confidence": state.get("classification_confidence"),
             "extraction_confidence": state.get("extraction_confidence"),
@@ -1635,6 +1676,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         stage=PipelineStage.ARCHIVED,
         doc_type=state.get("doc_type", "unknown"),
         contract_subtype=state.get("contract_subtype"),
+            doc_subclass=state.get("doc_subclass"),
         classification_confidence=state.get("classification_confidence"),
         extracted_data=state.get("extracted_data"),
         extraction_confidence=state.get("extraction_confidence"),
@@ -1679,6 +1721,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
             "original_filename": manifest.original_filename,
             "doc_type": manifest.doc_type,
             "contract_subtype": manifest.contract_subtype,
+            "doc_subclass": getattr(manifest, "doc_subclass", None),
             "classification_confidence": manifest.classification_confidence,
             "extraction_confidence": manifest.extraction_confidence,
             "extracted_data": manifest.extracted_data,
@@ -1796,6 +1839,7 @@ def _emit_stage_audit(state: dict, event: str, actor: str = "pipeline", detail: 
                 "stage": state.get("stage"),
                 "doc_type": state.get("doc_type"),
                 "contract_subtype": state.get("contract_subtype"),
+            "doc_subclass": state.get("doc_subclass"),
                 "classification_confidence": state.get("classification_confidence"),
                 "extraction_confidence": state.get("extraction_confidence"),
                 "escalation_reason": state.get("escalation_reason"),
@@ -2087,6 +2131,7 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
         stage=PipelineStage.FAILED,
         doc_type=state.get("doc_type"),
         contract_subtype=state.get("contract_subtype"),
+            doc_subclass=state.get("doc_subclass"),
         classification_confidence=state.get("classification_confidence"),
         classification_attempts=state.get("classification_attempts", 0),
         extracted_data=state.get("extracted_data"),
@@ -2616,6 +2661,7 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "stage": PipelineStage.CLASSIFIED.value,
         "doc_type": manifest.doc_type,
         "contract_subtype": manifest.contract_subtype,
+        "doc_subclass": getattr(manifest, "doc_subclass", None),
         "classification_confidence": manifest.classification_confidence,
         "classification_attempts": manifest.classification_attempts,
         "extracted_data": None,  # fresh extraction — never reuse the reviewed data
@@ -2639,6 +2685,7 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         # reviewed document's earlier attempt.
         "reviewer_doc_type": None,
         "reviewer_contract_subtype": None,
+        "reviewer_doc_subclass": None,
         "reviewer_confidence": None,
         "review_verdict": None,
         "judge_verdict": None,

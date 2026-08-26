@@ -65,6 +65,7 @@ class TestCatalogStageTracking:
             {
                 "doc_type": "correspondence",
                 "contract_subtype": None,
+                "doc_subclass": "memo",
                 "confidence": 0.80,  # medium band -> human review
                 "reasoning": "Multi-topic",
             },
@@ -446,6 +447,7 @@ class TestReviewRejectionFinalizes:
             {
                 "doc_type": "correspondence",
                 "contract_subtype": None,
+                "doc_subclass": "memo",
                 "confidence": 0.80,
                 "reasoning": "Multi-topic",
             },
