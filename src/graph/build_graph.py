@@ -587,9 +587,6 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         classified = sorter.classify_json(
             doc_text, pages=state.get("doc_pages")
         )
-        from langchain_agents.sorter_agent import finalize_sorter_result
-
-        classified = finalize_sorter_result(classified)
         doc_type = classified.get("doc_type") or ""
         contract_subtype = classified.get("contract_subtype")
         doc_subclass = classified.get("doc_subclass")
@@ -729,9 +726,6 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         classified = sorter.classify_json(
             augmented_text, pages=state.get("doc_pages")
         )
-        from langchain_agents.sorter_agent import finalize_sorter_result
-
-        classified = finalize_sorter_result(classified)
         doc_type = classified.get("doc_type") or ""
         contract_subtype = classified.get("contract_subtype")
         doc_subclass = classified.get("doc_subclass")
