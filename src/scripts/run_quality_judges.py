@@ -315,6 +315,9 @@ def main() -> int:
     if mock_mode:
         os.environ["OBSERVABILITY_PROVIDER"] = "none"
     else:
+        from observability.tracing import ensure_process_tracing
+
+        ensure_process_tracing()
         # Real mode: fail fast before any judging if the OpenRouter key is
         # missing or is the mock placeholder. llm/providers.py enforces the
         # same check at every get_llm call.

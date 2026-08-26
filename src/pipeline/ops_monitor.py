@@ -167,7 +167,7 @@ async def run_ops_monitor(sweep_interval: int | None = None):
 
 if __name__ == "__main__":
     import signal
-    from observability.tracing import flush, register_atexit_flush
+    from observability.tracing import ensure_process_tracing, flush
 
     stop = asyncio.Event()
 
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
-    register_atexit_flush()  # O-7/L-6: flush buffered traces on exit
+    ensure_process_tracing()  # O-7/L-6: drop-warnings + flush/shutdown on exit
 
     async def _main():
         monitor = OpsMonitor()

@@ -713,7 +713,7 @@ _mount_v1_aliases()
 if __name__ == "__main__":
     import signal
     import uvicorn
-    from observability.tracing import register_atexit_flush
+    from observability.tracing import ensure_process_tracing
 
     # Audit L-2: bind loopback by default; allow explicit MAILROOM_API_HOST
     # override. When binding non-loopback, a bearer token is mandatory.
@@ -724,5 +724,5 @@ if __name__ == "__main__":
             "Refusing to bind to a non-loopback address without MAILROOM_API_TOKEN "
             "(audit L-2: unauthenticated API exposure)."
         )
-    register_atexit_flush()  # O-7: flush buffered traces on exit
+    ensure_process_tracing()  # O-7: drop-warnings + flush/shutdown on exit
     uvicorn.run(app, host=host, port=port)

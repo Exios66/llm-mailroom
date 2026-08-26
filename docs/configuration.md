@@ -249,14 +249,21 @@ See `.env.example` for the complete list:
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` | Async database URL. SQLite by default; set a Postgres URL to switch |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `phoenix` \| `none`. `auto` = Langfuse if key → Braintrust if key → local Arize Phoenix (cost-free) → `none` |
+| `OBSERVABILITY_ENVIRONMENT` | No | entrypoint default (`live`/`pilot`/`misc`/`mock`) | Environment label copied onto every Langfuse observation |
+| `LANGFUSE_PUBLIC_KEY` | No | `pk-lf-local` | Langfuse public key |
+| `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key (present ⇒ `auto` picks Langfuse) |
+| `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server URL (`LANGFUSE_BASE_URL` accepted as alias) |
+| `LANGFUSE_FLUSH_AT` | No | SDK default `512` | Max queued events before the background exporter sends a batch. Do not set to `1` globally (API stampede). Short-lived jobs still MUST `flush()` before exit |
+| `LANGFUSE_FLUSH_INTERVAL` | No | SDK default `5` (seconds) | Max seconds the background exporter waits before sending a batch |
+| `LANGFUSE_RELEASE` | No | `mailroom@<pkg version>` | Release/version label on every observation |
+| `LANGFUSE_TIMEOUT` | No | SDK default | HTTP timeout (seconds) for the Langfuse client |
+| `LANGFUSE_SAMPLE_RATE` | No | `1.0` | Trace sampling rate (`0`–`1`) |
+| `MAILROOM_TRACE_USER_ID` | No | — | Optional Langfuse `user_id` propagated onto every `document-pipeline` trace |
 | `LOG_LEVEL` | No | `INFO` | Structured log level (`DEBUG`, `INFO`, `WARNING`, ...) |
 | `LOG_FORMAT` | No | `pretty` | Log renderer: `pretty` (console) or `json` (machine-readable) |
 | `LOG_FILE` | No | — | Optional rotating file sink: every structlog event is appended here as a JSON line (audit item 10.3 — no unbounded log files) |
 | `LOG_MAX_BYTES` | No | `10485760` | Rotation size per log file (10 MB default) |
 | `LOG_BACKUP_COUNT` | No | `5` | Rotated log files kept |
-| `LANGFUSE_PUBLIC_KEY` | No | `pk-lf-local` | Langfuse public key |
-| `LANGFUSE_SECRET_KEY` | No | — | Langfuse secret key (present ⇒ `auto` picks Langfuse) |
-| `LANGFUSE_HOST` | No | `http://localhost:3000` | Langfuse server URL (`LANGFUSE_BASE_URL` accepted as alias) |
 | `BRAINTRUST_API_KEY` | No | — | Braintrust API key (present ⇒ `auto` picks Braintrust) |
 | `BRAINTRUST_PROJECT` | No | `mailroom` | Braintrust project name |
 | `PHOENIX_TRACING` | No | `enabled` | Enable the local Arize Phoenix OTel backend (default fallback in `auto`) |

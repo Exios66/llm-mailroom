@@ -13,6 +13,14 @@ def _clear_observability_env(monkeypatch):
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_HOST", raising=False)
     monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
+    monkeypatch.delenv("LANGFUSE_FLUSH_AT", raising=False)
+    monkeypatch.delenv("LANGFUSE_FLUSH_INTERVAL", raising=False)
+    monkeypatch.delenv("LANGFUSE_RELEASE", raising=False)
+    monkeypatch.delenv("LANGFUSE_TIMEOUT", raising=False)
+    monkeypatch.delenv("LANGFUSE_SAMPLE_RATE", raising=False)
+    monkeypatch.delenv("LANGFUSE_TRACING_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("OBSERVABILITY_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("MAILROOM_TRACE_USER_ID", raising=False)
     monkeypatch.delenv("BRAINTRUST_API_KEY", raising=False)
     monkeypatch.delenv("BRAINTRUST_PROJECT", raising=False)
     monkeypatch.delenv("PHOENIX_TRACING", raising=False)
@@ -177,3 +185,119 @@ class TestLogContextvars:
         with structlog.contextvars.bound_contextvars():
             result = run_pipeline(src, "MATTER-CTX")
             assert result.get("stage") in ("archived", "review", "failed")
+
+
+class TestLangfuseClientKwargs:
+    def test_batching_and_environment_from_env(self, monkeypatch):
+        monkeypatch.setenv("LANGFUSE_FLUSH_AT", "64")
+        monkeypatch.setenv("LANGFUSE_FLUSH_INTERVAL", "2.5")
+        monkeypatch.setenv("OBSERVABILITY_ENVIRONMENT", "misc")
+        monkeypatch.setenv("LANGFUSE_RELEASE", "mailroom@test")
+        monkeypatch.setenv("LANGFUSE_TIMEOUT", "12")
+        monkeypatch.setenv("LANGFUSE_SAMPLE_RATE", "0.5")
+        kwargs = langfuse_setup.client_kwargs()
+        assert kwargs["flush_at"] == 64
+        assert kwargs["flush_interval"] == 2.5
+        assert kwargs["environment"] == "misc"
+        assert kwargs["release"] == "mailroom@test"
+        assert kwargs["timeout"] == 12
+        assert kwargs["sample_rate"] == 0.5
+
+    def test_defaults_omit_flush_overrides(self):
+        kwargs = langfuse_setup.client_kwargs()
+        assert "flush_at" not in kwargs
+        assert "flush_interval" not in kwargs
+        assert "environment" not in kwargs
+        assert kwargs["release"]
+        assert kwargs["host"]
+
+    def test_invalid_batching_env_is_omitted(self, monkeypatch):
+        monkeypatch.setenv("LANGFUSE_FLUSH_AT", "not-an-int")
+        monkeypatch.setenv("LANGFUSE_FLUSH_INTERVAL", "nope")
+        kwargs = langfuse_setup.client_kwargs()
+        assert "flush_at" not in kwargs
+        assert "flush_interval" not in kwargs
+
+    def test_tracing_environment_alias(self, monkeypatch):
+        monkeypatch.setenv("LANGFUSE_TRACING_ENVIRONMENT", "pilot")
+        assert langfuse_setup.client_kwargs()["environment"] == "pilot"
+
+
+class TestObservationTypes:
+    def test_data_model_types_for_pipeline_nodes(self):
+        assert tracing.observation_type_for("document-pipeline") == "chain"
+        assert tracing.observation_type_for("classify-document") == "agent"
+        assert tracing.observation_type_for("extract-fields") == "agent"
+        assert tracing.observation_type_for("compile-report") == "agent"
+        assert tracing.observation_type_for("arbitrate-verdict") == "agent"
+        assert tracing.observation_type_for("adjudicate-conflict") == "agent"
+        assert tracing.observation_type_for("judge-verify") == "evaluator"
+        assert tracing.observation_type_for("transcribe-pdf") == "retriever"
+        assert tracing.observation_type_for("extract-image-text") == "retriever"
+        assert tracing.observation_type_for("pipeline-result") == "generation"
+        assert tracing.observation_type_for("answer-question") == "generation"
+        assert tracing.observation_type_for("unknown-step") == "span"
+
+    def test_every_graph_traced_node_is_typed(self):
+        from pathlib import Path
+        import re
+
+        src = Path(__file__).resolve().parents[1] / "graph" / "build_graph.py"
+        names = re.findall(r'traced_node\("([^"]+)"', src.read_text())
+        assert names, "expected traced_node registrations in build_graph.py"
+        missing = [n for n in names if n not in tracing.NODE_OBSERVATION_TYPES]
+        assert missing == []
+
+    def test_pipeline_trace_defaults_to_chain(self):
+        import inspect
+
+        params = inspect.signature(langfuse_setup.pipeline_trace).parameters
+        assert params["as_type"].default == "chain"
+        assert params["user_id"].default is None
+
+    def test_traced_node_passes_agent_type(self, monkeypatch):
+        from contextlib import contextmanager
+        from unittest.mock import MagicMock
+
+        monkeypatch.setenv("OBSERVABILITY_PROVIDER", "langfuse")
+        captured = []
+
+        @contextmanager
+        def fake_obs(name, **kwargs):
+            captured.append((name, kwargs.get("as_type")))
+            yield MagicMock()
+
+        monkeypatch.setattr("observability.langfuse_setup.observation", fake_obs)
+        deco = tracing.traced_node("classify-document")
+
+        @deco
+        def node(state):
+            return {"stage": "classified"}
+
+        assert node({"doc_id": "1"}) == {"stage": "classified"}
+        assert captured == [("classify-document", "agent")]
+
+    def test_ensure_process_tracing_is_safe_when_disabled(self, monkeypatch):
+        monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+        tracing.ensure_process_tracing()  # must not raise
+
+    def test_legalbench_question_name_is_stable(self, monkeypatch):
+        from contextlib import contextmanager
+        from legalbench.langfuse_tracing import question_observation
+
+        captured = []
+
+        @contextmanager
+        def fake_obs(name, **kwargs):
+            captured.append({"name": name, **kwargs})
+            yield None
+
+        monkeypatch.setattr("legalbench.langfuse_tracing.tracing.observation", fake_obs)
+        with question_observation(7, "contract_qa", input_data={"q": "x"}):
+            pass
+        assert len(captured) == 1
+        assert captured[0]["name"] == "answer-question"
+        assert captured[0]["as_type"] == "generation"
+        assert captured[0]["metadata"]["index"] == 7
+        assert captured[0]["metadata"]["task_id"] == "contract_qa"
+        assert "q7" not in captured[0]["name"]
