@@ -916,12 +916,15 @@ def _report_root() -> Path:
 
 def check_contract() -> int:
     from agents.intake import deterministic_normalize, looks_messy
+    from llm_dojo_scoring import get_suite
 
     cleaned, stats = deterministic_normalize("A\u00a0B\n\n\n\nagree-\nment")
     assert "A B" in cleaned
     assert "agreement" in cleaned
     assert stats["changed"] is True
     assert looks_messy("x\n" * 30) is True
+    intake_out = get_suite("intake").score("A\u00a0B\n\n\n\nagree-\nment", cleaned)
+    assert intake_out["intake_prep_completeness"] == 1.0
     assert pipeline_class("merger_agreement") == "contract"
     assert pipeline_class("insurance_claim") == "insurance_claim"
     rows = [

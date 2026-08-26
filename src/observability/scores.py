@@ -103,6 +103,14 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "maud_clause_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "maud_valid_class_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "maud_category_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    # Intake clerk (llm-dojo-scoring PR #5): get_suite("intake") scores the
+    # pre-sorter normalize against clerk gold. Live method is deterministic;
+    # completeness/changed/messy/count flags still land on the trace.
+    {"name": "intake_prep_completeness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "intake_changed_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "intake_messy_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "intake_hyphen_unwraps", "data_type": "NUMERIC", "min_value": 0.0},
+    {"name": "intake_collapsed_blanks", "data_type": "NUMERIC", "min_value": 0.0},
     # --- LegalBench evaluation suite (legalbench/) ----------------------
     # Run-level scores attached to the per-run Langfuse trace by the suite's
     # runner; deterministic, computed locally (never LLM-graded).
