@@ -67,3 +67,35 @@ def test_apply_intake_noops_without_langfuse(monkeypatch):
     assert cleaned == "Hello world."
     assert stats["method"] == "deterministic"
     assert stats["changed"] is True
+
+
+def test_mailroom_normalize_matches_dojo_clerk():
+    from llm_dojo_scoring.intake import (
+        INTAKE_SPAN as DOJO_SPAN,
+        deterministic_normalize as dojo_normalize,
+    )
+    from agents.intake import INTAKE_SPAN
+
+    raw = "A\u00a0B\n\n\n\nagree-\nment"
+    ours, our_stats = deterministic_normalize(raw)
+    theirs, their_stats = dojo_normalize(raw)
+    assert ours == theirs
+    assert our_stats == their_stats
+    assert INTAKE_SPAN == DOJO_SPAN == "normalize-intake"
+
+
+def test_intake_suite_scores_prep_completeness():
+    from llm_dojo_scoring import get_suite
+    from observability.scores import SCORE_CONFIGS
+    from observability.suite_scoring import INTAKE_SCORE_NAMES, score_intake_suite
+
+    raw = "A\u00a0B\n\n\n\nagree-\nment"
+    cleaned, stats = deterministic_normalize(raw)
+    extras = score_intake_suite(raw, cleaned, stats)
+    assert extras["intake_prep_completeness"] == 1.0
+    assert extras["intake_changed_rate"] == 1.0
+    assert extras["intake_hyphen_unwraps"] >= 1.0
+    suite_out = get_suite("intake").score(raw, cleaned)
+    assert suite_out["intake_prep_completeness"] == 1.0
+    names = {c["name"] for c in SCORE_CONFIGS}
+    assert INTAKE_SCORE_NAMES <= names

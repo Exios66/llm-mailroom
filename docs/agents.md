@@ -228,7 +228,7 @@ The Archivist is NOT an LLM agent — it's a procedural function that:
 | **Output** | cleaned text + stats (`messy`, `changed`, hyphen unwraps, collapsed blanks) |
 | **Personality** | none — deterministic whitespace / NBSP / hyphen-unwrap |
 
-Procedural, not an LLM agent. The-Mailroom mirrors `deterministic_normalize` / `looks_messy` byte-for-byte in `mailroom_ui/intake_normalize.py` and reads the `normalize-intake` observation on every `document-pipeline` trace. Hugging Face pilots (`scripts/run_hf_pilot.py`) depend on this span so FLOOR / TUI / Observatory can show intake-changed / messy counts.
+Procedural, not an LLM agent. Clerk gold lives in `llm_dojo_scoring.intake` (dojo PR #5); `agents/intake.py` re-exports the primitives and emits the live `normalize-intake` span (dojo's own `apply_intake` is span-less). The-Mailroom still mirrors `deterministic_normalize` / `looks_messy` in `mailroom_ui/intake_normalize.py` and reads the span on every `document-pipeline` trace. Hugging Face pilots (`scripts/run_hf_pilot.py`) depend on this span so FLOOR / TUI / Observatory can show intake-changed / messy counts. Live runs also attach `get_suite("intake")` scores (`intake_prep_completeness`, changed/messy rates, hyphen/blank counts).
 
 ---
 
