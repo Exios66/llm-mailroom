@@ -170,11 +170,24 @@ def guard_extraction(doc_type: str, extracted_data: dict | None) -> dict:
         issues.append("extraction_schema_invalid")
     if not _has_substantive_content(extracted_data):
         issues.append("extraction_empty")
+    determination_issues: list[str] = []
+    if doc_type == "insurance_claim":
+        from observability.honest_gaps import insurance_determination_issues
+
+        determination_issues = insurance_determination_issues(extracted_data)
+        # Informational only — not in `issues`, so routing is unchanged.
+        # Determination-consistency is not a registered dojo score.
+        if determination_issues:
+            logger.info(
+                "insurance_determination_inconsistent",
+                issues=determination_issues,
+            )
     return {
         "ok": not issues,
         "issues": issues,
         "parse_error": checks["parse_error"],
         "schema_valid": checks["schema_valid"],
+        "determination_issues": determination_issues,
     }
 
 

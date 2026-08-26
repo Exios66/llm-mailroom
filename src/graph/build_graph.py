@@ -2310,6 +2310,17 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
             "pipeline": "mailroom",
             "truncated": len(doc_text) > PIPELINE_RESULT_TEXT_LIMIT,
         }
+    try:
+        from observability.honest_gaps import honesty_trace_metadata
+
+        honesty = honesty_trace_metadata(
+            result.get("doc_type") or (ground_truth or {}).get("expected_doc_class"),
+            extracted_data,
+        )
+        if honesty:
+            metadata["suite_honesty"] = honesty
+    except Exception:
+        logger.debug("pipeline_result_honesty_attach_failed", exc_info=True)
     if ground_truth:
         # When the caller knows the expected outcome (pilot runs pass the
         # manifest ground truth), expose it here so the live evaluator can
@@ -2427,6 +2438,19 @@ def _execute_run(
     public_gt = _public_ground_truth(ground_truth)
     for key, value in public_gt.items():
         trace_metadata[key] = value
+    # Honesty is a class property known once we have an expected/live type.
+    # Tags stay immutable/upfront (mailroom/pilot/source-*); gap text goes in
+    # metadata, never tags, and never a SCORE_CONFIG name that isn't registered.
+    expected_class = public_gt.get("expected_doc_class") or public_gt.get("expected")
+    if expected_class:
+        try:
+            from observability.honest_gaps import honesty_trace_metadata
+
+            honesty = honesty_trace_metadata(str(expected_class))
+            if honesty:
+                trace_metadata["suite_honesty"] = honesty
+        except Exception:
+            logger.debug("suite_honesty_attach_failed", exc_info=True)
 
     # Native LangGraph RunnableConfig: thread-scoped attempt (a re-run of the
     # same document must not resume the previous run's checkpointed state —

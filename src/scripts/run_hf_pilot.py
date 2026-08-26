@@ -62,6 +62,13 @@ HF_CLASSES = (
     "correspondence",
     "insurance_claim",
 )
+# Zero-row / retired classes are scored by dojo suites but MUST NOT appear in
+# HF_CLASSES — compliance_filing has zero Hub rows; court/DD were retired.
+HF_HONESTY_EXCLUDED = (
+    "compliance_filing",
+    "court_opinion",
+    "due_diligence",
+)
 # Live mailroom taxonomy files MAUD/merger rows as contract. The visualizer
 # still scores exact vs aligned (merger_agreement ≡ contract).
 ALIGN = {"merger_agreement": "contract"}
@@ -439,6 +446,22 @@ def summarize_rows(rows: list[dict]) -> dict:
     return out
 
 
+def hf_corpus_honesty() -> dict:
+    """Per-class corpus honesty from the dedicated specialist suites.
+
+    Includes scored HF_CLASSES plus the zero-row/retired exclusions so a
+    report never invents compliance accuracy at n=0.
+    """
+    from observability.honest_gaps import suite_honesty
+
+    out: dict[str, dict] = {}
+    for cls in (*HF_CLASSES, *HF_HONESTY_EXCLUDED):
+        payload = suite_honesty(cls)
+        payload["in_hf_pilot"] = cls in HF_CLASSES
+        out[cls] = payload
+    return out
+
+
 def expected_fields_for_sample(sample: dict) -> dict:
     """Hub GT clause/family/consideration/subclass payload used as expected_fields."""
     expected_fields: dict = {}
@@ -512,6 +535,13 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
         }
         for key, value in extras.items():
             out[key] = round(float(value), 3)
+        if (pipeline_class(doc_class) or doc_class) == "insurance_claim":
+            from observability.honest_gaps import insurance_determination_consistent
+
+            consistent = insurance_determination_consistent(extracted)
+            if consistent is not None:
+                # Local invariant, not a registered dojo extra.
+                out["local_determination_consistent"] = consistent
         return out
     except Exception:
         return None
@@ -601,6 +631,28 @@ def render_metrics_markdown(report: dict) -> str:
             f"- extraction overall (deterministic) mean = **{metrics['extraction_overall_mean']}** "
             f"over {metrics.get('extraction_n')} grounded docs"
         )
+    honesty = report.get("honesty") or hf_corpus_honesty()
+    lines += [
+        "",
+        "## Corpus honesty (dojo 0.9.0)",
+        "",
+        "Gaps are suite metadata, not invented accuracy. `compliance_filing` is "
+        "excluded from this runner (zero Hub rows). `court_opinion` / "
+        "`due_diligence` are retired. `corporate_record` has Hub subclass rows "
+        "but no external extraction benchmark. Insurance determination-consistency "
+        "is a local field invariant until dojo registers a scorer.",
+        "",
+        "| class | in HF pilot | in_corpus | retired | honest gap |",
+        "|---|---|---|---|---|",
+    ]
+    for cls, payload in honesty.items():
+        gap = payload.get("honest_gap") or "—"
+        if len(str(gap)) > 140:
+            gap = str(gap)[:137] + "…"
+        lines.append(
+            f"| {cls} | {payload.get('in_hf_pilot')} | {payload.get('in_corpus')} | "
+            f"{payload.get('retired')} | {gap} |"
+        )
     stages = metrics.get("stages") or {}
     if stages:
         mix = ", ".join(f"{k}={v}" for k, v in sorted(stages.items()))
@@ -653,6 +705,7 @@ def write_report_files(path: Path, report: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(report)
     payload["metrics"] = summarize_rows(payload.get("samples") or [])
+    payload["honesty"] = hf_corpus_honesty()
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     tmp.replace(path)
@@ -927,6 +980,32 @@ def check_contract() -> int:
     assert intake_out["intake_prep_completeness"] == 1.0
     assert pipeline_class("merger_agreement") == "contract"
     assert pipeline_class("insurance_claim") == "insurance_claim"
+    assert "compliance_filing" not in HF_CLASSES
+    for retired in ("court_opinion", "due_diligence"):
+        assert retired not in HF_CLASSES
+        assert get_suite(retired).retired is True
+    from observability.honest_gaps import (
+        insurance_determination_consistent,
+        suite_honesty,
+    )
+
+    insurance = suite_honesty("insurance_claim")
+    assert insurance["in_corpus"] is True
+    assert "determination-consistency" in (insurance["honest_gap"] or "").lower()
+    compliance = suite_honesty("compliance_filing")
+    assert compliance["in_corpus"] is False
+    assert "zero" in (compliance["honest_gap"] or "").lower()
+    corporate = suite_honesty("corporate_record")
+    assert corporate["in_corpus"] is True
+    assert "no external extraction benchmark" in (corporate["honest_gap"] or "").lower()
+    assert insurance_determination_consistent(
+        {"coverage_determination": "approved", "denial_reasons": []}
+    ) is True
+    assert insurance_determination_consistent(
+        {"coverage_determination": "denied", "denial_reasons": []}
+    ) is False
+    honesty = hf_corpus_honesty()
+    assert honesty["compliance_filing"]["in_hf_pilot"] is False
     rows = [
         {"expected_hf_class": c, "chars": 6000 if c != "contract" else 5900, "filename": f"{c}.txt"}
         for c in HF_CLASSES
@@ -947,6 +1026,9 @@ def check_contract() -> int:
         "sample_keys": sorted(sample_keys),
         "dataset": DATASET_ID,
         "n_classes": len(HF_CLASSES),
+        "honesty_excluded": list(HF_HONESTY_EXCLUDED),
+        "corporate_in_corpus": True,
+        "compliance_in_corpus": False,
     }))
     return 0
 

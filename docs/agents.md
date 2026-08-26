@@ -94,12 +94,14 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | Field | Type | Description |
 |---|---|---|
 | `entity_name` | `str` | Legal entity name |
-| `record_type` | `str` | bylaws, resolution, minutes, formation, etc. |
+| `record_type` | `str` | Hub extract tokens: `articles_of_incorporation`, `bylaws`, `powers_of_attorney`, `rights_instrument`, `other` (sorter catalog is wider) |
 | `effective_date` | `str \| None` | Date the record took effect |
 | `key_provisions` | `list[str]` | Key governance provisions |
 | `signatories` | `list[str]` | Who signed/approved |
 | `jurisdiction` | `str \| None` | State/country of incorporation |
 | `filing_number` | `str \| None` | Official filing reference |
+
+**Honest gap (dojo 0.9.0):** there is **no external extraction benchmark** for this class (nothing CUAD-shaped). The published `docclass-merged` set has 39 `corporate_record` rows with record-type subclasses; the suite scores typed extraction plus that catalog. Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold.
 
 ---
 
@@ -152,6 +154,8 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `status` | `str \| None` | draft, filed, pending, overdue |
 | `reference_number` | `str \| None` | Accession/tracking number |
 
+**Honest gap (dojo 0.9.0):** `compliance_filing` has **zero rows** in `Lucius-Morningstar/docclass-merged`. The Hub SEC form-body inventory (`10-K`, `10-Q`, `8-K`, …) is the live subclass catalog; the suite scores typed extraction plus that inventory. The HF pilot (`scripts/run_hf_pilot.py`) therefore omits this class — it must not report a corpus accuracy at n=0.
+
 ---
 
 ### 6. Insurance Claims Specialist (`agents/insurance_claims_specialist.py`)
@@ -171,18 +175,26 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `policy_number` | `str \| None` | Policy the claim is filed under |
 | `insurer` | `str` | Insurance carrier |
 | `insured_party` | `str` | Policyholder / insured party |
-| `claim_type` | `str` | auto, property, liability, health, life, workers_comp, other |
+| `claim_type` | `str` | CMS/DE-SynPUF `pde` / `inpatient` / `outpatient` / `carrier`, plus legacy FNOL lines (`auto`, `property`, `liability`, `health`, `life`, `workers_comp`, `other`) |
 | `date_of_loss` | `str \| None` | Date of the loss event |
 | `date_filed` | `str \| None` | Date the claim was filed |
 | `claimed_amount` | `float \| None` | Amount claimed |
-| `adjuster` | `str` | Assigned adjuster |
+| `adjuster` | `str \| None` | Assigned adjuster; null is valid for CMS / DE-SynPUF rows |
 | `damages_description` | `str` | Damages narrative |
 | `coverage_determination` | `str` | approved, denied, partial, pending |
 | `denial_reasons` | `list[str]` | Stated denial reasons |
 | `supporting_documents` | `list[str]` | Documents referenced as supporting the claim |
 | `confidence` | `float` | Extraction confidence (evidence-derived) |
 
-A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage. **Honest gap:** unlike contract (CUAD) or correspondence (Enron), insurance_claim has no external benchmark corpus yet — CMS DE-SynPUF is the candidate source and EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda); samples are synthetic-only by design until that corpus lands.
+A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage.
+
+**Honest gap (dojo 0.9.0):** Hub rows are CMS DE-SynPUF source tables (`carrier`/`inpatient`/`outpatient`/`pde`). Typed extraction is scored; **determination-consistency and amount-exactness scorers are pending in the dojo registry** (current GT is all `coverage_determination=approved` with empty `denial_reasons`). Mailroom runs a **local field invariant** only (`denied` ⇒ non-empty reasons; `approved`/`pending` ⇒ empty reasons) and attaches it as trace metadata — it is not a SCORE_CONFIG. Candidate corpus EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda).
+
+---
+
+### Retired classes (`court_opinion`, `due_diligence`)
+
+Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (human review); there is no specialist dispatch, extraction schema, or managed prompt. Dojo keeps historical suites with `retired=True` (`list_suites(live_only=True)` excludes them). **Court opinions:** LegalBench remains the real benchmark surface. **Due diligence:** zero rows in `docclass-merged`.
 
 ---
 

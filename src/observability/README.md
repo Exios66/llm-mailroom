@@ -42,3 +42,20 @@ in llm-dojo-scoring first, then use them here.
 (`intake_prep_completeness`, changed/messy rates, hyphen/blank counts). That
 path returns a dict, not an `ExtractionScoreResult` — see
 `suite_scoring.score_and_log_intake`.
+
+## Honesty gaps (dojo 0.9.0)
+
+`observability/honest_gaps.py` reads `honest_gap` / `in_corpus` / `retired`
+from `get_suite(doc_class)` and attaches a slim block as **trace metadata**
+(never tags — tags are immutable/upfront; never a SCORE_CONFIG name that is
+not in the registry):
+
+| Class | Gap |
+| --- | --- |
+| `insurance_claim` | determination-consistency scorers pending; local `coverage_determination` ↔ `denial_reasons` invariant only |
+| `compliance_filing` | zero Hub rows; HF pilot excludes the class |
+| `corporate_record` | 39 Hub subclass rows; no external extraction benchmark |
+| `court_opinion` / `due_diligence` | retired from live mailroom; sorter emits `unknown` |
+
+HF reports (`scripts/run_hf_pilot.py`) include the same table so n=0 classes
+cannot grow a fake accuracy.
