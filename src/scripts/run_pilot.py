@@ -779,6 +779,10 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    from observability.tracing import ensure_process_tracing
+
+    ensure_process_tracing()
+
     if args.mock and args.real:
         parser.error("choose --mock OR --real")
     if not args.mock and not args.real:

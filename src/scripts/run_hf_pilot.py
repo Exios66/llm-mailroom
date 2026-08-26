@@ -1073,6 +1073,9 @@ def main() -> int:
     load_env()
     default_environment("pilot")
     setup_logging()
+    from observability.tracing import ensure_process_tracing, flush as tracing_flush
+
+    ensure_process_tracing()
     os.environ.setdefault("MAILROOM_VISION_ENABLED", "0")
     # Embeddings on every CUAD/MAUD clause burn OpenRouter quota at corpus
     # scale; lexical scoring still runs. Opt back in with MAILROOM_FIELD_SCORING_EMBEDDING=1.
@@ -1280,6 +1283,10 @@ def main() -> int:
         "unique_matters": unique_matters,
         "metrics": metrics,
     }, default=str))
+    try:
+        tracing_flush()
+    except Exception:
+        pass
     return 1 if errors else 0
 
 

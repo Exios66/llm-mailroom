@@ -81,10 +81,11 @@ def instrument_openai_client(client):
 
 @contextmanager
 def pipeline_trace(*args, **kwargs):
-    """Root span for one document run (one trace per document).
+    """Root chain observation for one document run (one trace per document).
 
     See `observability/langfuse_setup.pipeline_trace` for parameters. No-ops
-    (yields None) unless Langfuse is the active backend.
+    (yields None) unless Langfuse is the active backend. Default ``as_type``
+    is ``chain``.
     """
     if resolve_provider_name() != "langfuse":
         yield None
@@ -135,24 +136,55 @@ def _result_summary(result: dict):
     return out or None
 
 
-def traced_node(name, *, summarize_input=None, summarize_output=None):
+# Data-model observation types (https://langfuse.com/docs/observability/features/observation-types):
+# generations = LLM calls (auto via langfuse.openai); agents = specialist
+# orchestration; evaluators = quality judges; retrievers = document reads;
+# chain = the pipeline as a whole; span = remaining units of work.
+NODE_OBSERVATION_TYPES = {
+    "document-pipeline": "chain",
+    "ingest-document": "span",
+    "normalize-intake": "span",
+    "extract-image-text": "retriever",
+    "transcribe-pdf": "retriever",
+    "classify-document": "agent",
+    "extract-fields": "agent",
+    "judge-verify": "evaluator",
+    "arbitrate-verdict": "agent",
+    "route-for-review": "span",
+    "adjudicate-conflict": "agent",
+    "compile-report": "agent",
+    "write-catalog": "span",
+    "archive-document": "span",
+    "pipeline-result": "generation",
+    "answer-question": "generation",
+}
+
+
+def observation_type_for(name: str, default: str = "span") -> str:
+    return NODE_OBSERVATION_TYPES.get(name, default)
+
+
+def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=None):
     """Decorator that wraps a graph node fn in a named observation span.
 
     Applies Langfuse structure best practices: stable, verb-first names
-    (`classify-document`, not `classify-<docid>`), and curated input/output
-    (identifiers + stage/confidence, never raw document text). When Langfuse is
-    not the active backend this is a no-op identity decorator.
+    (`classify-document`, not `classify-<docid>`), typed observations
+    (agent/evaluator/retriever rather than a generic span), and curated
+    input/output (identifiers + stage/confidence, never raw document text).
+    When Langfuse is not the active backend this is a no-op identity decorator.
     """
     if resolve_provider_name() != "langfuse":
         return lambda fn: fn
 
     from .langfuse_setup import observation
 
+    obs_type = as_type or observation_type_for(name)
+
     def deco(fn):
         @functools.wraps(fn)
         def wrapper(state):
             inp = summarize_input(state) if summarize_input else _state_summary(state)
-            with observation(name, input=inp) as span:
+            with observation(name, as_type=obs_type, input=inp) as span:
                 result = fn(state)
                 if span is not None:
                     out = summarize_output(result) if summarize_output else _result_summary(result)
@@ -248,7 +280,33 @@ def get_trace_id():
 
 
 def register_atexit_flush():
-    """Flush pending traces when the process exits (so the last events land)."""
+    """Flush then shut down when the process exits so batched traces land.
+
+    Short-lived jobs (pilots, scripts) must also call ``flush()`` themselves
+    before exit; atexit is the last-chance drain for the watcher/API.
+    """
     import atexit
 
-    atexit.register(flush)
+    atexit.register(_atexit_flush)
+
+
+def _atexit_flush():
+    flush()
+    if resolve_provider_name() != "langfuse":
+        return
+    try:
+        from .langfuse_setup import shutdown_langfuse
+
+        shutdown_langfuse()
+    except Exception:
+        logger.debug("tracing_shutdown_failed", exc_info=True)
+
+
+def ensure_process_tracing() -> None:
+    """Wire drop-warnings + atexit flush for a short-lived process.
+
+    Call once from script entrypoints after ``load_env()``. Long-running
+    services (watcher, API, ops monitor) already do this in ``__main__``.
+    """
+    install_on_dropped()
+    register_atexit_flush()

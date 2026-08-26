@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Langfuse data-model + batching.** The SDK client now receives release, environment, and optional `flush_at` / `flush_interval` / timeout / sample-rate from env. The `document-pipeline` root is a **chain**; graph nodes use specific observation types (`agent` / `evaluator` / `retriever` / `generation` / `span`) instead of a generic span. Short-lived scripts call `ensure_process_tracing()` so process exit runs `flush()` then `shutdown()`. LegalBench question observations are the stable name `answer-question` (index lives in metadata). Optional `MAILROOM_TRACE_USER_ID` propagates as `user_id`.
+
 - Sorter and sorter_reviewer `reasoning_effort` is `none` so Qwen 3.7-Flash reserves the completion budget for JSON (production HF runs hit `LengthFinishReasonError` with medium reasoning).
 - Langfuse score transport aliases `extraction_overall_verified_precision` → `extraction_verified_precision` (35-character config name limit).
 - LLM retry: 429/upstream quota waits use `rate_limit_base_delay` (8s, cap 60s) and 5 attempts. HF pilots default embeddings off and insert a 1.5s gap between documents so corpus runs do not stampede the shared OpenRouter pool.

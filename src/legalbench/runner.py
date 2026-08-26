@@ -107,6 +107,13 @@ def run_task(
 
     stamp = _dt.datetime.now().strftime("%Y%m%dT%H%M%S")
     run_id = f"legalbench-{task.id}-{seed}-{stamp}"
+    if trace_enabled:
+        try:
+            from observability.tracing import ensure_process_tracing
+
+            ensure_process_tracing()
+        except Exception:
+            pass
     results: list[dict[str, Any]] = []
     usages: list[dict[str, Any]] = []
 
@@ -170,9 +177,12 @@ def run_task(
             if results and isinstance(cost, (int, float)):
                 results[-1]["cost_usd"] = round(float(cost), 6)
 
-    scores = task.scorer(results)
+        scores = task.scorer(results)
+        if trace_enabled:
+            # Scores must land on the active trace (score_current_trace).
+            _tracing.attach_run_scores(scores, task.id)
+
     if trace_enabled:
-        _tracing.attach_run_scores(scores, task.id)
         from observability import tracing
 
         tracing.flush()

@@ -9,18 +9,32 @@ Two layers of tracing:
    completion becomes a `generation` observation (model, tokens, cost,
    latency) nested under whatever observation is active in the OTel context.
 
-2. **Pipeline structure** — `pipeline_trace()` opens one root span per document
-   run (one trace per document = one self-contained unit of work) with
+2. **Pipeline structure** — `pipeline_trace()` opens one root *chain*
+   observation per document (one trace = one unit of work) with
    `session_id = matter_id`, a deterministic trace id seeded from the file
-   name, and curated input/metadata. `observation()` opens child spans for each
-   graph node (verb-first, stable names). LLM generations created inside a
-   node's `observation()` block automatically nest under it.
+   name, and curated input/metadata. `observation()` opens typed children
+   (agent / evaluator / retriever / span / generation) with verb-first
+   stable names. LLM generations created inside a node's observation
+   automatically nest under it.
 
 Configuration (env):
   LANGFUSE_PUBLIC_KEY   required
   LANGFUSE_SECRET_KEY   required
   LANGFUSE_HOST         base URL (default http://localhost:3000); LANGFUSE_BASE_URL
                         is accepted as an alias for cloud-hosted setups.
+  LANGFUSE_FLUSH_AT / LANGFUSE_FLUSH_INTERVAL
+                        SDK batching (event count / seconds). Defaults 512 / 5s.
+                        Short-lived jobs still MUST call flush() before exit —
+                        the background exporter may not drain otherwise.
+  LANGFUSE_RELEASE      optional release/version label on every observation.
+  OBSERVABILITY_ENVIRONMENT / LANGFUSE_TRACING_ENVIRONMENT
+                        client-default environment (live/pilot/misc/mock).
+
+Data model (https://langfuse.com/docs/observability/data-model):
+  observations nested in one trace (trace_id), traces grouped by session_id,
+  attributes (environment, tags, metadata, optional user_id, release)
+  copied onto every observation. Tracing is non-blocking: events enqueue
+  locally and a background exporter sends batches.
 
 Graceful degradation: if keys/host are missing or any init fails, every helper
 no-ops and the pipeline runs exactly as if tracing were disabled.
@@ -82,6 +96,75 @@ def _resolve_host() -> str:
     return os.environ.get("LANGFUSE_HOST") or os.environ.get("LANGFUSE_BASE_URL") or "http://localhost:3000"
 
 
+def _optional_int(name: str):
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("langfuse_invalid_int_env", name=name, value=raw)
+        return None
+
+
+def _optional_float(name: str):
+    raw = os.environ.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("langfuse_invalid_float_env", name=name, value=raw)
+        return None
+
+
+def _release_label() -> str:
+    explicit = os.environ.get("LANGFUSE_RELEASE")
+    if explicit:
+        return explicit
+    try:
+        from importlib.metadata import version
+
+        return f"mailroom@{version('mailroom')}"
+    except Exception:
+        return "mailroom"
+
+
+def client_kwargs() -> dict:
+    """Constructor kwargs for the Langfuse SDK (batching + data-model attrs).
+
+    ``flush_at`` / ``flush_interval`` are the Python SDK's batch size and
+    timer (https://langfuse.com/docs/observability/features/queuing-batching).
+    Environment and release land on every observation so dashboards can
+    separate live/pilot/misc without per-span plumbing.
+    """
+    kwargs: dict = {
+        "public_key": os.environ.get("LANGFUSE_PUBLIC_KEY", "pk-lf-local"),
+        "secret_key": os.environ.get("LANGFUSE_SECRET_KEY", "sk-lf-local"),
+        "host": _resolve_host(),
+        "release": _release_label(),
+    }
+    environment = (
+        os.environ.get("OBSERVABILITY_ENVIRONMENT")
+        or os.environ.get("LANGFUSE_TRACING_ENVIRONMENT")
+    )
+    if environment:
+        kwargs["environment"] = environment
+    flush_at = _optional_int("LANGFUSE_FLUSH_AT")
+    if flush_at is not None:
+        kwargs["flush_at"] = flush_at
+    flush_interval = _optional_float("LANGFUSE_FLUSH_INTERVAL")
+    if flush_interval is not None:
+        kwargs["flush_interval"] = flush_interval
+    timeout = _optional_int("LANGFUSE_TIMEOUT")
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    sample_rate = _optional_float("LANGFUSE_SAMPLE_RATE")
+    if sample_rate is not None:
+        kwargs["sample_rate"] = sample_rate
+    return kwargs
+
+
 def get_langfuse_client():
     """Return a configured Langfuse client, or a noop stub if unavailable."""
     global _langfuse_client
@@ -96,16 +179,16 @@ def get_langfuse_client():
     try:
         from langfuse import Langfuse
 
-        public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "pk-lf-local")
-        secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "sk-lf-local")
-        host = _resolve_host()
-
-        _langfuse_client = Langfuse(
-            public_key=public_key,
-            secret_key=secret_key,
-            host=host,
+        kwargs = client_kwargs()
+        _langfuse_client = Langfuse(**kwargs)
+        logger.info(
+            "langfuse_initialized",
+            host=kwargs.get("host"),
+            environment=kwargs.get("environment"),
+            flush_at=kwargs.get("flush_at"),
+            flush_interval=kwargs.get("flush_interval"),
+            release=kwargs.get("release"),
         )
-        logger.info("langfuse_initialized", host=host)
     except Exception:
         logger.warning("langfuse_unavailable", exc_info=True)
         _langfuse_client = _NoopLangfuse()
@@ -142,15 +225,19 @@ def pipeline_trace(
     metadata=None,
     tags=None,
     environment=None,
+    user_id=None,
+    as_type="chain",
 ):
-    """Open the root span of a document's trace.
+    """Open the root chain observation of a document's trace.
 
-    One trace per document pipeline execution. Sets a deterministic trace id
-    (seeded from `seed`, e.g. the file name) so traces correlate with the
-    document in our own system, and propagates session_id/tags/metadata to
-    every nested observation (sessions group all documents of a matter).
+    One trace per document pipeline execution (data-model: one request /
+    unit of work). Sets a deterministic trace id (seeded from `seed`, e.g.
+    the file name) so traces correlate with the document in our own system,
+    and propagates session_id/tags/metadata/environment/user_id to every
+    nested observation. Root type is ``chain`` — the pipeline is a sequence
+    of specialist steps, not a single LLM generation.
 
-    Yields the root span (or None when tracing is disabled).
+    Yields the root observation (or None when tracing is disabled).
     """
     client = get_langfuse_client()
     if isinstance(client, _NoopLangfuse):
@@ -174,10 +261,12 @@ def pipeline_trace(
     }
     if environment:
         attrs["environment"] = environment
+    if user_id:
+        attrs["user_id"] = user_id
 
     with propagate_attributes(**attrs):
         with client.start_as_current_observation(
-            as_type="span",
+            as_type=as_type,
             name=name,
             input=input,
             trace_context=trace_context,
@@ -225,15 +314,21 @@ def flush_langfuse():
 
 
 def install_on_dropped() -> None:
-    """Wire the Langfuse SDK's on_dropped callback (O-3): any event dropped by
-    the client queue is logged at WARNING instead of vanishing silently."""
+    """Warn when the SDK drops events (O-3).
+
+    Langfuse Python v4 has no ``on_dropped`` callback (that was a v2/v3
+    queue hook). Overflows are logged by the SDK itself; we still attach
+    a callback when the attribute exists so older SDKs keep working, and
+    we always wire flush_health counters via ``tracing.flush``.
+    """
     try:
         client = get_langfuse_client()
         if isinstance(client, _NoopLangfuse):
             return
-        client.on_dropped = lambda dropped: logger.warning(
-            "langfuse_events_dropped", dropped=len(dropped or [])
-        )
+        if hasattr(client, "on_dropped"):
+            client.on_dropped = lambda dropped: logger.warning(
+                "langfuse_events_dropped", dropped=len(dropped or [])
+            )
     except Exception:
         logger.debug("on_dropped_wire_failed")
 
