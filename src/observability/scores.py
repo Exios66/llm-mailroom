@@ -91,6 +91,18 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "extraction_overall_verified_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_hallucination_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_category_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    # Dedicated specialist-suite extras (llm-dojo-scoring 0.9.0): Enron
+    # topic/sentiment on correspondence, MAUD per-question extraction on
+    # merger_agreement. Not extraction fields — peeled before typed scoring.
+    {"name": "content_topic_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "content_topic_f1_macro", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "sentiment_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "sentiment_f1_macro", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "maud_question_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "maud_question_macro_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "maud_clause_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "maud_valid_class_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "maud_category_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     # --- LegalBench evaluation suite (legalbench/) ----------------------
     # Run-level scores attached to the per-run Langfuse trace by the suite's
     # runner; deterministic, computed locally (never LLM-graded).

@@ -37,6 +37,7 @@ def compile_matter_record(
 ) -> dict:
     doc_type = manifest_data.get("doc_type", "unknown")
     contract_subtype = manifest_data.get("contract_subtype")
+    doc_subclass = manifest_data.get("doc_subclass")
     extracted = manifest_data.get("extracted_data", {})
     classification_confidence = manifest_data.get("classification_confidence")
     extraction_confidence = manifest_data.get("extraction_confidence")
@@ -48,6 +49,7 @@ def compile_matter_record(
 
     user_message = f"""Document type: {doc_type}
 Contract subtype: {contract_subtype}
+Document subclass: {doc_subclass}
 Classification confidence: {classification_confidence}
 Extraction confidence: {extraction_confidence}
 
@@ -93,6 +95,7 @@ Please compile this into a clean matter-record summary."""
         "summary": summary,
         "doc_type": doc_type,
         "contract_subtype": contract_subtype,
+        "doc_subclass": doc_subclass,
         "extracted_data": cleaned_extracted,
         "classification_confidence": classification_confidence,
         "extraction_confidence": extraction_confidence,
