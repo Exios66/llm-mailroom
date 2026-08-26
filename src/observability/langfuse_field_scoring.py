@@ -148,6 +148,9 @@ def score_and_log_extraction(
         field_types=field_types,
         doc_text=doc_text,
     )
+    from observability.honest_gaps import honesty_trace_metadata
+
+    honesty = honesty_trace_metadata(doc_class, predicted)
     if not is_enabled():
         return result
 
@@ -164,10 +167,21 @@ def score_and_log_extraction(
         )
 
     if result.overall_score is not None:
+        comment = f"doc_class={doc_class} n_fields={len(result.field_scores)}"
+        if honesty:
+            comment += (
+                f" in_corpus={honesty.get('in_corpus')}"
+                f" retired={honesty.get('retired')}"
+            )
+            gap = honesty.get("honest_gap")
+            if gap:
+                comment += f" honest_gap={str(gap)[:180]}"
+            if "determination_consistent" in honesty:
+                comment += f" determination_consistent={honesty['determination_consistent']}"
         create_trace_score(
             name="extraction_overall_score",
             value=result.overall_score,
-            comment=f"doc_class={doc_class} n_fields={len(result.field_scores)}",
+            comment=comment,
             **common_kwargs,
         )
 

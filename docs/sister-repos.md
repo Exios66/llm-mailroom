@@ -92,9 +92,15 @@ The scoring layer both mailroom and entity-extraction consume:
   [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar) HF org
   (`enron-correspondence`, `enron-correspondence-dedup`, …).
 - **[claims-data-eda](https://github.com/Exios66/claims-data-eda)**:
-  exploratory analysis toward an insurance-claims benchmark — the future
-  ground truth for the `insurance_claim` specialist (today synthetic-only by
-  design; honest gap documented in [Agents](Agents)).
+  exploratory analysis toward an insurance-claims benchmark. Hub rows today
+  are CMS DE-SynPUF source tables; dojo 0.9.0 still flags
+  **determination-consistency scorers as pending**. Mailroom surfaces that
+  gap on traces/HF reports and runs a local determination invariant only
+  (documented in [Agents](agents.md)).
+- **Honesty (dojo 0.9.0 suites):** `compliance_filing` has zero
+  `docclass-merged` rows (HF pilot omits it). `corporate_record` has 39 Hub
+  subclass rows but **no external extraction benchmark**. `court_opinion` /
+  `due_diligence` are retired from live mailroom (`retired=True`).
 - **[atticus-investigation](https://github.com/Exios66/atticus-investigation)**:
   LegalBench classification sibling — its methodology (prompt versions ×
   models, paired-bootstrap ablations) is the same doctrine this constellation
