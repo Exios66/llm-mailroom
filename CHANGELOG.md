@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Dojo intake clerk profile (PR #5).** Pinned `llm-dojo-scoring` to the PR #5 merge (`f815544`) which replaces the emit-only `intake` stub with a computable pre-sorter prep profile. `agents/intake.py` is now a thin wrapper over `llm_dojo_scoring.intake` (byte-compatible `deterministic_normalize` / `looks_messy` / `intake_span_output`); mailroom still owns the `normalize-intake` span. Live ingest scores via `get_suite("intake")` (`intake_prep_completeness`, changed/messy rates, hyphen/blank counts). Package version remains 0.9.0.
+- **Dojo intake clerk profile (PR #5).** Pinned `llm-dojo-scoring` to `@v0.9.0` (PR #5 merge `f815544`) which replaces the emit-only `intake` stub with a computable pre-sorter prep profile. `agents/intake.py` is now a thin wrapper over `llm_dojo_scoring.intake` (byte-compatible `deterministic_normalize` / `looks_messy` / `intake_span_output`); mailroom still owns the `normalize-intake` span. Live ingest scores via `get_suite("intake")` (`intake_prep_completeness`, changed/messy rates, hyphen/blank counts).
 
 - **Dojo 0.9.0 specialist scoring suites + sorter subclass catalogs.** Pinned `llm-dojo-scoring` to the PR #4 merge (`c3dbe9da`) which ships dedicated `get_suite()` scoring for every specialist (Enron topic/sentiment extras on correspondence, MAUD per-question extraction on `merger_agreement`, WER/CER on the transcribers) and per-class sorter subclass catalogs. The sorter now emits `doc_subclass` alongside CUAD-only `contract_subtype`; grounded runs and the HF pilot score through `get_suite` so those extras land as Langfuse scores. Hub extraction inventories are unchanged (corporate_record stays five tokens).
 
@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docclass runtime arm + merger extract alias.** `MAILROOM_DOCCLASS_PROMPTS=1` (or `run_hf_pilot.py --docclass`) fetches namespaced `mailroom-docclass-<key>` prompts for every classification-chain agent, with the in-repo KANBAN-090 append as fallback. Production `mailroom-<agent>` templates stay untouched. Extract alias `merger_agreement` → `contract` lets the sorter emit the HF/MAUD label while the contracts specialist extracts; `state["doc_type"]` stays `merger_agreement` so exact HF accuracy can score 1.0. Retired `court_opinion` / `due_diligence` still park. Traces pick up a `docclass-prompts` tag when the arm is on.
 
 ### Changed
+
+- **Pin `llm-dojo-scoring` `@v0.9.0`.** `pyproject.toml` now uses the tagged release (`git+…@v0.9.0`, target `f815544`) instead of a raw merge SHA.
 
 - **Langfuse data-model + batching.** The SDK client now receives release, environment, and optional `flush_at` / `flush_interval` / timeout / sample-rate from env. The `document-pipeline` root is a **chain**; graph nodes use specific observation types (`agent` / `evaluator` / `retriever` / `generation` / `span`) instead of a generic span. Short-lived scripts call `ensure_process_tracing()` so process exit runs `flush()` then `shutdown()`. LegalBench question observations are the stable name `answer-question` (index lives in metadata). Optional `MAILROOM_TRACE_USER_ID` propagates as `user_id`.
 
