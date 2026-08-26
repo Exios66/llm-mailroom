@@ -8,6 +8,10 @@ per-question metrics on merger agreements — beside the typed ExtractionScoreRe
 ``get_suite("intake")`` is a different shape: it returns a dict (accuracy,
 prep completeness, changed/messy rates, hyphen/blank counts) rather than an
 ``ExtractionScoreResult``. Do not force it through ``score_with_suite``.
+
+Honesty fields on each suite (``honest_gap``, ``in_corpus``, ``retired``) are
+surfaced by ``observability.honest_gaps`` — never turned into SCORE_CONFIGS
+names that are not in the installed dojo registry.
 """
 
 from __future__ import annotations

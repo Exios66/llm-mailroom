@@ -206,8 +206,13 @@ def test_hf_pilot_mock_writes_report(temp_base_dir, mock_openai_client, mock_lan
     assert "aligned_accuracy" in metrics
     assert "total_cost_usd" in metrics
     assert "per_class" in metrics
+    assert payload["honesty"]["compliance_filing"]["in_hf_pilot"] is False
+    assert payload["honesty"]["compliance_filing"]["in_corpus"] is False
+    assert payload["honesty"]["corporate_record"]["in_corpus"] is True
+    md = reports[0].with_suffix(".md").read_text(encoding="utf-8")
     assert (reports[0].with_suffix(".md")).is_file()
-    assert "exact accuracy" in reports[0].with_suffix(".md").read_text(encoding="utf-8")
+    assert "exact accuracy" in md
+    assert "Corpus honesty" in md
 
 
 def test_unique_name_avoids_collisions():
