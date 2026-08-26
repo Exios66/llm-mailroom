@@ -109,7 +109,23 @@ def test_subclass_ok_prefers_sorter_doc_subclass():
 
 def test_score_configs_include_suite_extras():
     from observability.scores import SCORE_CONFIGS
-    from observability.suite_scoring import SUITE_EXTRA_SCORE_NAMES
+    from observability.suite_scoring import INTAKE_SCORE_NAMES, SUITE_EXTRA_SCORE_NAMES
 
     names = {c["name"] for c in SCORE_CONFIGS}
     assert SUITE_EXTRA_SCORE_NAMES <= names
+    assert INTAKE_SCORE_NAMES <= names
+
+
+def test_get_suite_intake_is_computable_not_extraction():
+    from llm_dojo_scoring import get_suite
+    from llm_dojo_scoring.field_scoring import ExtractionScoreResult
+    from observability.suite_scoring import unwrap_suite_result
+
+    raw = "agree-\nment\n\n\n\nNext"
+    out = get_suite("intake").score(raw, "agreement\n\nNext")
+    assert isinstance(out, dict)
+    assert "intake_prep_completeness" in out
+    result, extras = unwrap_suite_result(out)
+    assert result is None
+    assert not extras  # intake keys are not extraction extras
+    assert not isinstance(out, ExtractionScoreResult)

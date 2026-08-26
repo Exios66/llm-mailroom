@@ -476,7 +476,14 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
     doc_text, text_ok = _read_file_text(file_path)
     from agents.intake import apply_intake
 
+    raw_text = doc_text
     doc_text, intake_stats = apply_intake(doc_text, filename=file_path.name)
+    try:
+        from observability.suite_scoring import score_and_log_intake
+
+        score_and_log_intake(raw_text, doc_text, intake_stats)
+    except Exception:
+        logger.debug("intake_suite_score_failed", exc_info=True)
     doc_pages = _render_doc_pages(file_path)
 
     matter_id = state.get("matter_id", "DEFAULT")

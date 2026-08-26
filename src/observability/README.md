@@ -37,3 +37,8 @@ Tests that patch internals (`_get_embedding`) must patch
 import time. Adding a score name here without registering it upstream fails
 fast with a `RuntimeError` naming the drifted entries — register new metrics
 in llm-dojo-scoring first, then use them here.
+
+`get_suite("intake")` (dojo PR #5) scores the pre-sorter clerk against gold
+(`intake_prep_completeness`, changed/messy rates, hyphen/blank counts). That
+path returns a dict, not an `ExtractionScoreResult` — see
+`suite_scoring.score_and_log_intake`.

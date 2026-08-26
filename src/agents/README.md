@@ -12,7 +12,7 @@ This is the cast of characters. Each file is one **agent**: a specialist LLM "wo
 Three of these files are **not** LLM agents — they're plain code helpers:
 
 - `archivist.py` — moves the finished file into `data/archive/` and writes the audit entry.
-- `intake.py` — deterministic whitespace / hyphen / NBSP normalize; emits span `normalize-intake` under ingest.
+- `intake.py` — thin wrapper over `llm_dojo_scoring.intake` (clerk gold); emits span `normalize-intake` under ingest. Dojo's `apply_intake` does not emit traces.
 - `image_extractor.py` — turns an image into text (uses a vision LLM if available).
 - `pdf_transcriber.py` — turns a PDF into text/markdown.
 
