@@ -587,7 +587,7 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 | Repository | Role | Relationship |
 |---|---|---|
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop (prompt versions × models over CUAD/LegalBench/MAUD) | **Sister repo** — source of the vendored sorter/contracts prompts; shares ONE kanban board with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@f815544` (0.9.0 / PR #5) in `pyproject.toml` |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.9.0` in `pyproject.toml` |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |
