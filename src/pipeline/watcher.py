@@ -274,9 +274,7 @@ class Watcher:
 
 
 if __name__ == "__main__":
-    import atexit
-
-    from observability.tracing import register_atexit_flush
+    from observability.tracing import ensure_process_tracing
 
     watcher = Watcher()
     _shutdown = threading.Event()
@@ -290,7 +288,7 @@ if __name__ == "__main__":
 
     try:
         watcher.start()
-        register_atexit_flush()
+        ensure_process_tracing()
         while not _shutdown.is_set():
             time.sleep(1)
     except KeyboardInterrupt:
