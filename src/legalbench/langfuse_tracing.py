@@ -69,10 +69,10 @@ def question_observation(
 ) -> Iterator[Any]:
     """One child observation per question/document (no-op when disabled)."""
     with tracing.observation(
-        f"{task_id}-q{index + 1}",
-        as_type="span",
+        "answer-question",
+        as_type="generation",
         input=input_data,
-        metadata=metadata,
+        metadata={"index": index, "task_id": task_id, **(metadata or {})},
     ) as span:
         yield span
 

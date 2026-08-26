@@ -110,6 +110,7 @@ def apply_intake(text: str, *, filename: str | None = None) -> tuple[str, dict]:
     payload = intake_span_output(stats, messy)
     with observation(
         "normalize-intake",
+        as_type="span",
         input={"file": filename, "raw_chars": stats.get("raw_chars", 0)},
     ) as span:
         if span is not None:

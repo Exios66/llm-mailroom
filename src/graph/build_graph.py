@@ -166,7 +166,7 @@ def _extract_text_from_image(file_path: Path) -> tuple[str, bool]:
         from observability.tracing import observation
 
         extractor = ImageExtractor()
-        with observation("extract-image-text", input={"file": file_path.name}) as span:
+        with observation("extract-image-text", as_type="retriever", input={"file": file_path.name}) as span:
             result = extractor.extract(file_path)
             if span is not None:
                 span.update(output={"chars": len(result.get("text", ""))})
@@ -186,7 +186,7 @@ def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
         from observability.tracing import observation
 
         transcriber = PDFTranscriber()
-        with observation("transcribe-pdf", input={"file": file_path.name}) as span:
+        with observation("transcribe-pdf", as_type="retriever", input={"file": file_path.name}) as span:
             result = transcriber.transcribe(file_path)
             if span is not None:
                 span.update(
@@ -2402,6 +2402,8 @@ def _execute_run(
         metadata=trace_metadata,
         tags=tags,
         environment=environment,
+        user_id=os.environ.get("MAILROOM_TRACE_USER_ID") or None,
+        as_type="chain",
     ) as root:
         # Capture the trace id into the state so manifests, catalog records and
         # the returned result all carry it (the DB↔Langfuse correlation link).
