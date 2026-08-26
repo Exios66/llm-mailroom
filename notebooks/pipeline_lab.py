@@ -413,6 +413,7 @@ def _diff(before: dict, after: dict) -> dict[str, tuple[Any, Any]]:
 CLASSIFY_CONTRACT_HIGH = {
     "doc_type": "contract",
     "contract_subtype": "other",
+    "doc_subclass": "other",
     "confidence": 0.98,
     "reasoning": "Service agreement language throughout",
 }
@@ -437,6 +438,7 @@ CLASSIFY_COURT_HIGH = {
 CLASSIFY_CORRESPONDENCE_HIGH = {
     "doc_type": "correspondence",
     "contract_subtype": None,
+    "doc_subclass": "letter",
     "confidence": 0.96,
     "reasoning": "Law-firm letterhead, RE: line, demand language",
 }
@@ -1159,6 +1161,7 @@ Coverage determination: pending. Supporting documents: photos.zip, FNOL.pdf.
 CLASSIFY_CORPORATE_HIGH = {
     "doc_type": "corporate_record",
     "contract_subtype": None,
+    "doc_subclass": "bylaws",
     "confidence": 0.97,
     "reasoning": "Bylaws caption, shareholder-meeting article, Delaware office",
 }
@@ -1171,12 +1174,14 @@ CLASSIFY_DUE_DILIGENCE_HIGH = {
 CLASSIFY_COMPLIANCE_HIGH = {
     "doc_type": "compliance_filing",
     "contract_subtype": None,
+    "doc_subclass": "8-K",
     "confidence": 0.97,
     "reasoning": "SEC Form 8-K header, CIK, Item 1.01",
 }
 CLASSIFY_INSURANCE_HIGH = {
     "doc_type": "insurance_claim",
     "contract_subtype": None,
+    "doc_subclass": "carrier",
     "confidence": 0.97,
     "reasoning": "FNOL form, claim/policy numbers, insurer, date of loss",
 }

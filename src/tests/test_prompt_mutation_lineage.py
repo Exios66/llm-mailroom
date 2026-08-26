@@ -42,6 +42,8 @@ def test_sorter_v14_is_pure_append_of_v12():
     assert LP.SORTER_PROMPT_V14 != LP.SORTER_PROMPT_V12
     assert SORTER in LP.SORTER_PROMPT_V14
     assert "never substitute correspondence" in LP.SORTER_PROMPT_V14.lower()
+    assert "doc_subclass" in LP.SORTER_PROMPT_V14
+    assert "content_topic and sentiment_label are not sorter outputs" in LP.SORTER_PROMPT_V14
     # Frozen predecessors
     assert "insurance_claim" not in LP.SORTER_PROMPT_V0
     assert LP.PROMPT_TEMPLATES()["sorter_v12"] is LP.SORTER_PROMPT_V12

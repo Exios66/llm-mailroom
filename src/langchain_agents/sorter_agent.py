@@ -75,6 +75,16 @@ def _sorter_schema() -> dict:
                 "description": "The contract family/subgroup — REQUIRED when doc_type is "
                                "contract, null otherwise. See the subtype list in the prompt.",
             },
+            "doc_subclass": {
+                "type": ["string", "null"],
+                "description": (
+                    "Per-class subclass from the catalogs in the user message "
+                    "(CUAD family for contract, MAUD consideration for "
+                    "merger_agreement, Hub/dojo tokens for other live classes). "
+                    "REQUIRED when the chosen class has a catalog; null for "
+                    "unknown. Not an enum — SEC form types keep their hyphens."
+                ),
+            },
             "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "reasoning": {"type": "string"},
         },
@@ -206,6 +216,70 @@ def normalize_subtype(value) -> str:
     return SUBTYPE_UNKNOWN
 
 
+def finalize_sorter_result(result: dict) -> dict:
+    """Normalize sorter JSON: CUAD ``contract_subtype`` + per-class ``doc_subclass``.
+
+    ``contract_subtype`` stays CUAD-only (null for every non-contract) so the
+    existing classification guard still holds. ``doc_subclass`` carries the
+    dojo per-class catalog token (CUAD family for contracts, MAUD
+    consideration for merger agreements, Hub/dojo tokens otherwise).
+    """
+    out = dict(result or {})
+    doc_type = out.get("doc_type") or ""
+    raw_subclass = out.get("doc_subclass")
+    raw_cuad = out.get("contract_subtype")
+    candidate = raw_subclass if raw_subclass not in (None, "") else raw_cuad
+
+    if doc_type == "contract":
+        key = normalize_subtype(candidate)
+        out["contract_subtype"] = key
+        out["doc_subclass"] = key
+        return out
+
+    out["contract_subtype"] = None
+    try:
+        from langchain_agents.doc_inventories import (
+            normalize_sorter_subclass,
+            sorter_subclass_catalog,
+            valid_sorter_subclasses,
+        )
+    except Exception:
+        out["doc_subclass"] = None
+        return out
+
+    if not sorter_subclass_catalog(doc_type):
+        out["doc_subclass"] = None
+        return out
+    if candidate in (None, ""):
+        out["doc_subclass"] = None
+        return out
+    token = normalize_sorter_subclass(doc_type, candidate)
+    catalog = valid_sorter_subclasses(doc_type)
+    if token in catalog:
+        out["doc_subclass"] = token
+    else:
+        out["doc_subclass"] = str(candidate).strip()
+    return out
+
+
+def _classification_user_message(doc_text: str, *, subtype_focus: bool = False) -> str:
+    from langchain_agents.doc_inventories import format_sorter_subclass_catalogs
+
+    catalogs = format_sorter_subclass_catalogs()
+    if subtype_focus:
+        body = (
+            "This document IS a contract (all documents in this task are "
+            "contracts). Your job is to sort it into its correct CONTRACT "
+            "SUBTYPE: assign the contract_subtype key that best matches its "
+            "agreement family, copy that same key into doc_subclass, and "
+            "confirm doc_type as \"contract\".\n\n"
+            f"Contract text:\n\n{doc_text}"
+        )
+    else:
+        body = f"Classify this legal document:\n\n{doc_text}"
+    return f"{body}\n\n{catalogs}"
+
+
 SORTER_SCHEMA = _sorter_schema()
 
 
@@ -248,13 +322,19 @@ class SorterAgent(BaseAgent):
             for d in _doc_classes_for_prompt()
         )
         base_prompt = base_prompt.replace("{{doc_type_descriptions}}", doc_type_descriptions)
-        if "{{contract_subtypes}}" not in base_prompt:
-            return base_prompt
-        contract_subtypes = "\n".join(
-            f"- {s['key']}: {s['label']} — {s['description']}"
-            for s in CONTRACT_SUBTYPES
-        )
-        return base_prompt.replace("{{contract_subtypes}}", contract_subtypes)
+        if "{{contract_subtypes}}" in base_prompt:
+            contract_subtypes = "\n".join(
+                f"- {s['key']}: {s['label']} — {s['description']}"
+                for s in CONTRACT_SUBTYPES
+            )
+            base_prompt = base_prompt.replace("{{contract_subtypes}}", contract_subtypes)
+        if "{{doc_subclasses}}" in base_prompt:
+            from langchain_agents.doc_inventories import format_sorter_subclass_catalogs
+
+            base_prompt = base_prompt.replace(
+                "{{doc_subclasses}}", format_sorter_subclass_catalogs()
+            )
+        return base_prompt
 
     def classify(
         self, doc_text: str, pages: list[str] | None = None  # MAILROOM PATCH: pages
@@ -269,43 +349,17 @@ class SorterAgent(BaseAgent):
         Returns:
             Tuple of (doc_type key, contract_subtype key, confidence 0-1, reasoning string).
         """
-        truncated = self.truncate_input(doc_text)
-        result = self._call_structured(
-            f"Classify this legal document:\n\n{truncated}",
-            json_schema=_sorter_schema(),
-            temperature=0.1,
-            pages=pages,  # MAILROOM PATCH
-        )
-
-        if result.get("_parse_error"):
-            logger.error("sorter_parse_error")
-            return ("correspondence", None, 0.3, "parse error — defaulting to correspondence")
-
-        doc_type = result.get("doc_type") or ""
-        # MAILROOM PATCH: do NOT coerce an unknown class onto `correspondence`
-        # while keeping the model's stated confidence — that archived
-        # hallucinations as letters. Invalid / empty types stay as-is so
-        # `apply_classification_guard` + `after_classify` park them for review.
-        # Parse-error above is the only remaining correspondence default, and
-        # it is explicitly low-confidence (0.3).
-        contract_subtype = normalize_subtype(
-            result.get("contract_subtype") if doc_type == "contract" else None
-        )
-        # MAILROOM PATCH: non-contracts must carry None, not the "other"
-        # fallback — the schema says contract_subtype is "REQUIRED when
-        # doc_type is contract, null otherwise", and the mailroom's
-        # classification guard enforces exactly that.
-        if doc_type != "contract":
-            contract_subtype = None
+        result = self.classify_json(doc_text, pages=pages)
         try:
             confidence = float(result.get("confidence", 0.5))
         except (TypeError, ValueError):
             confidence = 0.5
-        reasoning = result.get("reasoning", "")
-
-        logger.info("classified", doc_type=doc_type, contract_subtype=contract_subtype,
-                    confidence=confidence)
-        return (doc_type, contract_subtype, confidence, reasoning)
+        return (
+            result.get("doc_type") or "",
+            result.get("contract_subtype"),
+            confidence,
+            result.get("reasoning") or "",
+        )
 
     def classify_json(
         self,
@@ -323,16 +377,9 @@ class SorterAgent(BaseAgent):
         than a general doc-type gate.
         """
         truncated = self.truncate_input(doc_text)
-        if subtype_focus:
-            user_message = (
-                "This document IS a contract (all documents in this task are "
-                "contracts). Your job is to sort it into its correct CONTRACT "
-                "SUBTYPE: assign the contract_subtype key that best matches its "
-                "agreement family, and confirm doc_type as \"contract\".\n\n"
-                f"Contract text:\n\n{truncated}"
-            )
-        else:
-            user_message = f"Classify this legal document:\n\n{truncated}"
+        user_message = _classification_user_message(
+            truncated, subtype_focus=subtype_focus
+        )
         result = self._call_structured(
             user_message,
             json_schema=_sorter_schema(),
@@ -340,19 +387,29 @@ class SorterAgent(BaseAgent):
             pages=pages,  # MAILROOM PATCH
         )
         if result.get("_parse_error"):
-            return {"doc_type": "correspondence", "contract_subtype": None,
-                    "confidence": 0.3, "reasoning": "parse error"}
-        doc_type = result.get("doc_type") or ""
-        # MAILROOM PATCH: same as classify() — never silently remap an
-        # unknown class onto correspondence at the model's confidence.
-        result["doc_type"] = doc_type
-        result["contract_subtype"] = normalize_subtype(
-            result.get("contract_subtype") if doc_type == "contract" else None
+            logger.error("sorter_parse_error")
+            return {
+                "doc_type": "correspondence",
+                "contract_subtype": None,
+                "doc_subclass": None,
+                "confidence": 0.3,
+                "reasoning": "parse error — defaulting to correspondence",
+            }
+        # MAILROOM PATCH: never silently remap an unknown class onto
+        # correspondence at the model's confidence.
+        result["doc_type"] = result.get("doc_type") or ""
+        result = finalize_sorter_result(result)
+        try:
+            result["confidence"] = float(result.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            result["confidence"] = 0.5
+        logger.info(
+            "classified",
+            doc_type=result.get("doc_type"),
+            contract_subtype=result.get("contract_subtype"),
+            doc_subclass=result.get("doc_subclass"),
+            confidence=result.get("confidence"),
         )
-        # MAILROOM PATCH: non-contracts must carry None (schema: "null
-        # otherwise"), matching classify().
-        if doc_type != "contract":
-            result["contract_subtype"] = None
         return result
 
     # ------------------------------------------------------------------

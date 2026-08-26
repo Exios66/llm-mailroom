@@ -188,3 +188,54 @@ class TestSorterAgent:
             assert key in enum
         assert "court_opinion" not in enum
         assert "due_diligence" not in enum
+        assert "doc_subclass" in SORTER_SCHEMA["properties"]
+        assert "enum" not in SORTER_SCHEMA["properties"]["doc_subclass"]
+
+    def test_classify_json_contract_copies_subtype_to_doc_subclass(
+        self, sample_contract_text, mock_langchain_llm
+    ):
+        mock_langchain_llm.classification = {
+            "doc_type": "contract",
+            "contract_subtype": "license",
+            "confidence": 0.9,
+            "reasoning": "license grant",
+        }
+        from agents.sorter import SorterAgent
+
+        agent = SorterAgent()
+        result = agent.classify_json(sample_contract_text[:1000])
+        assert result["contract_subtype"] == "license"
+        assert result["doc_subclass"] == "license"
+
+    def test_classify_json_non_contract_emits_catalog_subclass(
+        self, sample_corporate_text, mock_langchain_llm
+    ):
+        mock_langchain_llm.classification = {
+            "doc_type": "corporate_record",
+            "contract_subtype": None,
+            "doc_subclass": "Bylaws",
+            "confidence": 0.92,
+            "reasoning": "bylaws",
+        }
+        from agents.sorter import SorterAgent
+
+        agent = SorterAgent()
+        result = agent.classify_json(sample_corporate_text[:1000])
+        assert result["contract_subtype"] is None
+        assert result["doc_subclass"] == "bylaws"
+
+    def test_classify_json_merger_does_not_keep_cuad_subtype(
+        self, sample_contract_text, mock_langchain_llm
+    ):
+        mock_langchain_llm.classification = {
+            "doc_type": "merger_agreement",
+            "contract_subtype": "all_cash",
+            "confidence": 0.94,
+            "reasoning": "all-cash merger",
+        }
+        from agents.sorter import SorterAgent
+
+        agent = SorterAgent()
+        result = agent.classify_json(sample_contract_text[:1000])
+        assert result["contract_subtype"] is None
+        assert result["doc_subclass"] == "all_cash"

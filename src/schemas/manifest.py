@@ -20,6 +20,7 @@ class DocumentManifest(BaseModel):
     stage: PipelineStage = PipelineStage.INBOX
     doc_type: str | None = None
     contract_subtype: str | None = None
+    doc_subclass: str | None = None
     classification_confidence: float | None = None
     classification_attempts: int = 0
     extracted_data: dict | None = None

@@ -91,6 +91,139 @@ INSURANCE_GT_KEYS: tuple[str, ...] = (
     "supporting_documents",
 )
 
+# Sorter subclass catalogs from llm-dojo-scoring 0.9.0 (PR #4). Hub extraction
+# inventories above stay narrower (corporate_record is five tokens; insurance
+# extract still accepts FNOL lines). Do not replace CORPORATE_RECORD_TYPES.
+_DOJO_SORTER_SUBCLASSES: dict[str, tuple[str, ...]] = {
+    "contract": (
+        "affiliate", "agency", "collaboration", "co_branding", "consulting",
+        "development", "distributor", "endorsement", "franchise", "hosting",
+        "ip", "joint_venture", "license", "maintenance", "manufacturing",
+        "marketing", "non_compete_no_solicit", "outsourcing", "promotion",
+        "reseller", "service", "sponsorship", "strategic_alliance", "supply",
+        "transportation",
+    ),
+    "merger_agreement": (
+        "all_cash", "all_stock", "mixed_cash_stock",
+        "mixed_cash_stock_election", "other",
+    ),
+    "corporate_record": (
+        "bylaws", "articles_of_incorporation", "certificate_of_formation",
+        "charter_amendment", "powers_of_attorney", "subsidiary_list",
+        "rights_instrument", "indenture", "board_resolution",
+        "officer_certificate", "other",
+    ),
+    "correspondence": CORRESPONDENCE_TYPES,
+    "insurance_claim": ("carrier", "inpatient", "outpatient", "pde"),
+    "compliance_filing": COMPLIANCE_FILING_TYPES,
+    "due_diligence": (),
+    "court_opinion": (),
+}
+
+
+def sorter_subclass_catalog(doc_type: str | None) -> tuple[str, ...]:
+    """Dojo per-class sorter catalog (empty for unknown / retired types)."""
+    kind = str(doc_type or "")
+    try:
+        from llm_dojo_scoring.corpus import DOC_TYPE_SUBCLASSES
+
+        tokens = DOC_TYPE_SUBCLASSES.get(kind)
+        if tokens is not None:
+            return tuple(tokens)
+    except Exception:
+        pass
+    return _DOJO_SORTER_SUBCLASSES.get(kind, ())
+
+
+def valid_sorter_subclasses(doc_type: str | None) -> frozenset[str]:
+    """Catalog keys the classification guard accepts for ``doc_subclass``.
+
+    Contract adds CUAD ``other``. Insurance also accepts Hub FNOL lines
+    (extract ``claim_type``); the sorter prompt lists CMS tokens first.
+    """
+    kind = str(doc_type or "")
+    keys = set(sorter_subclass_catalog(kind))
+    if kind == "contract":
+        keys.add("other")
+    elif kind == "insurance_claim":
+        keys.update(INSURANCE_CLAIM_TYPES)
+    return frozenset(keys)
+
+
+def normalize_sorter_subclass(doc_type: str | None, value: Any) -> str | None:
+    """Canonical subclass for ``doc_type``, or None when empty/uncatalogued."""
+    kind = str(doc_type or "")
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    catalog = valid_sorter_subclasses(kind)
+    if not catalog:
+        return None
+    if kind == "contract":
+        from langchain_agents.sorter_agent import normalize_subtype
+
+        token = normalize_subtype(text)
+        return token if token in catalog else None
+    try:
+        from llm_dojo_scoring.corpus import normalize_corpus_subclass
+
+        token = normalize_corpus_subclass(kind, text)
+    except Exception:
+        token = None
+        compact = re.sub(r"[^a-z0-9]", "", text.lower())
+        for key in catalog:
+            if re.sub(r"[^a-z0-9]", "", key.lower()) == compact:
+                token = key
+                break
+        if token is None and kind == "insurance_claim":
+            token = normalize_claim_type(text) or None
+        elif token is None and kind == "corporate_record":
+            token = normalize_record_type(text) or None
+        elif token is None and kind == "correspondence":
+            token = normalize_communication_type(text) or None
+        elif token is None and kind == "compliance_filing":
+            token = normalize_filing_type(text) or None
+    if token in catalog:
+        return token
+    if text in catalog:
+        return text
+    return None
+
+
+def format_sorter_subclass_catalogs() -> str:
+    """User-message catalog block (not Mustache — doctrine stays placeholder-free)."""
+    lines = [
+        "DOCUMENT SUBCLASS CATALOGS — when the chosen doc_type has a catalog, "
+        "emit doc_subclass as exactly one of that class's keys. "
+        "contract_subtype is CUAD-only (required for contract, null otherwise). "
+        "content_topic and sentiment_label are not sorter outputs.",
+    ]
+    order = (
+        "contract",
+        "merger_agreement",
+        "corporate_record",
+        "correspondence",
+        "insurance_claim",
+        "compliance_filing",
+    )
+    notes = {
+        "contract": " — also copy this key into contract_subtype; use other if none fit",
+        "merger_agreement": " — MAUD consideration type; contract_subtype stays null",
+        "insurance_claim": (
+            " — CMS file types; FNOL/policy lines "
+            "auto/property/liability/health/life/workers_comp are also valid"
+        ),
+    }
+    for key in order:
+        tokens = sorter_subclass_catalog(key)
+        if not tokens:
+            continue
+        extra = notes.get(key, "")
+        lines.append(f"- {key}: {', '.join(tokens)}{extra}")
+    return "\n".join(lines)
+
 _INVENTORY_FIELDS = {
     "record_type",
     "communication_type",

@@ -449,6 +449,7 @@ def _move_rejected_to_failed(doc_id: str, manifest) -> None:
             "original_filename": manifest.original_filename,
             "doc_type": manifest.doc_type,
             "contract_subtype": manifest.contract_subtype,
+            "doc_subclass": getattr(manifest, "doc_subclass", None),
             "stage": PipelineStage.FAILED.value,
             "classification_confidence": manifest.classification_confidence,
             "extraction_confidence": manifest.extraction_confidence,

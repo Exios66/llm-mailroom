@@ -50,9 +50,30 @@ class SorterAgent(_LangChainSorterAgent):
 
         Returns ``(doc_type, contract_subtype, confidence, reasoning)``.
         """
+        result = self.classify_json(doc_text, pages=pages)
+        try:
+            confidence = float(result.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        return (
+            result.get("doc_type") or "",
+            result.get("contract_subtype"),
+            confidence,
+            result.get("reasoning") or "",
+        )
+
+    def classify_json(
+        self,
+        doc_text: str,
+        subtype_focus: bool = False,
+        pages: list[str] | None = None,
+    ) -> dict:
+        """Structured classify used by the graph (includes ``doc_subclass``)."""
         if pages:
             doc_text = (
                 f"{doc_text}\n\n[Attached: {len(pages)} page image(s) of this "
                 "document — also read them.]"
             )
-        return super().classify(doc_text, pages=pages)
+        return super().classify_json(
+            doc_text, subtype_focus=subtype_focus, pages=pages
+        )

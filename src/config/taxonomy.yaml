@@ -145,6 +145,7 @@ doc_classes:
     specialist: contracts_specialist
     description: "Formal agreements between parties: M&A, vendor, employment, NDAs, etc."
     field_types:
+      document_name: name
       parties: entity_list:name
       effective_date: date
       term_length: free_text

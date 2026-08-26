@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import structlog
 
-from observability.field_scoring import ExtractionScoreResult, score_extraction
+from observability.field_scoring import ExtractionScoreResult
 
 logger = structlog.get_logger(__name__)
 
@@ -139,9 +139,14 @@ def score_and_log_extraction(
     regardless of the tracing backend.
     """
     from observability.scores import create_trace_score, is_enabled
+    from observability.suite_scoring import score_with_suite
 
-    result = score_extraction(
-        doc_class, field_types, predicted, expected, doc_text=doc_text
+    result, extras = score_with_suite(
+        doc_class,
+        predicted,
+        expected,
+        field_types=field_types,
+        doc_text=doc_text,
     )
     if not is_enabled():
         return result
@@ -219,6 +224,14 @@ def score_and_log_extraction(
             name="extraction_category_presence",
             value=cat_score,
             comment=f"doc_class={doc_class}",
+            **common_kwargs,
+        )
+
+    for extra_name, extra_value in extras.items():
+        create_trace_score(
+            name=extra_name,
+            value=extra_value,
+            comment=f"doc_class={doc_class} suite_extra",
             **common_kwargs,
         )
 

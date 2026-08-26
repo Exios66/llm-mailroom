@@ -67,7 +67,7 @@ class TestClassifyFailureRoutesToReview:
             "doc_id": "d1", "matter_id": "M", "doc_text": "some text",
             "classification_attempts": 0, "doc_pages": None,
         }
-        with patch("agents.sorter.SorterAgent.classify", side_effect=RuntimeError("boom")):
+        with patch("agents.sorter.SorterAgent.classify_json", side_effect=RuntimeError("boom")):
             result = bg.classify_node(state)
         assert result["classification_confidence"] == 0.1
         # Past retry_max → after_classify sends it to review, not failed.
@@ -85,7 +85,7 @@ class TestClassifyFailureRoutesToReview:
         }
         import openai
 
-        with patch("agents.sorter.SorterAgent.classify", side_effect=openai.APIConnectionError(request=None)):
+        with patch("agents.sorter.SorterAgent.classify_json", side_effect=openai.APIConnectionError(request=None)):
             result = bg.classify_node(state)
         assert result["transient_error"] is True
         assert result["classification_attempts"] == 0  # no retry budget burned

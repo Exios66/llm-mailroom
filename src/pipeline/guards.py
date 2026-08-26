@@ -100,6 +100,27 @@ def guard_classification(state: dict) -> dict:
             f"contract_subtype_not_null_for_non_contract: {contract_subtype!r}"
         )
 
+    doc_subclass = state.get("doc_subclass")
+    try:
+        from langchain_agents.doc_inventories import (
+            sorter_subclass_catalog,
+            valid_sorter_subclasses,
+        )
+
+        catalog = sorter_subclass_catalog(doc_type)
+        allowed = valid_sorter_subclasses(doc_type)
+    except Exception:
+        catalog = ()
+        allowed = frozenset()
+    if catalog:
+        token = doc_subclass
+        if not token and doc_type == "contract":
+            token = contract_subtype
+        if not token:
+            issues.append("doc_subclass_missing")
+        elif allowed and token not in allowed:
+            issues.append(f"doc_subclass_unknown: {token!r}")
+
     result = {"ok": not issues, "issues": issues}
     if confidence is not None and _is_valid_confidence(confidence):
         result["confidence"] = float(confidence)

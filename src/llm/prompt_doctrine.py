@@ -45,6 +45,14 @@ CUAD_SUBTYPE = (
     "or invented subtype is an incomplete classification."
 )
 
+DOC_SUBCLASS = (
+    "When the chosen class has a subclass catalog, emit doc_subclass as one "
+    "key from that class's catalog (or other when the catalog lists it). "
+    "contract_subtype is CUAD-only: required for contract — the same key as "
+    "doc_subclass — and null for every other class. content_topic and "
+    "sentiment_label are not sorter outputs."
+)
+
 SEVEN_CLASSES = (
     "The mailroom taxonomy has five primary classes: contract, "
     "corporate_record, correspondence, compliance_filing, "
@@ -56,10 +64,10 @@ SEVEN_CLASSES = (
 )
 
 HANDOFF_IS_ROUTING = (
-    "Classification (doc_type, contract_subtype) in any handoff is pipeline "
-    "routing state, not ground truth and not an extraction field. Verify it "
-    "against the visible text; extract the registered schema from the "
-    "document as it actually reads."
+    "Classification (doc_type, contract_subtype, doc_subclass) in any handoff "
+    "is pipeline routing state, not ground truth and not an extraction field. "
+    "Verify it against the visible text; extract the registered schema from "
+    "the document as it actually reads."
 )
 
 
@@ -86,6 +94,7 @@ def classification_doctrine(extra: list[str] | None = None) -> str:
         SEVEN_CLASSES,
         UNKNOWN_TYPE,
         CUAD_SUBTYPE,
+        DOC_SUBCLASS,
         VISION_ADDITIVE,
         "Classify the document's substantive form, not the source wrapper, exhibit stamp, or filing context.",
         *(extra or []),

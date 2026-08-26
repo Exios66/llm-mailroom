@@ -174,3 +174,43 @@ def test_parse_hf_row_joins_insurance_ground_truth():
         "expected_subclass": "meeting_request",
     })
     assert mail["communication_type"] == "meeting_request"
+
+
+def test_sorter_catalogs_come_from_dojo_without_replacing_hub_extract_tokens():
+    from langchain_agents.doc_inventories import (
+        CORPORATE_RECORD_TYPES,
+        sorter_subclass_catalog,
+        valid_sorter_subclasses,
+        normalize_sorter_subclass,
+        format_sorter_subclass_catalogs,
+    )
+
+    assert CORPORATE_RECORD_TYPES == (
+        "articles_of_incorporation",
+        "bylaws",
+        "powers_of_attorney",
+        "rights_instrument",
+        "other",
+    )
+    corp_catalog = sorter_subclass_catalog("corporate_record")
+    assert "certificate_of_formation" in corp_catalog
+    assert "board_resolution" in corp_catalog
+    assert "bylaws" in corp_catalog
+    merger = sorter_subclass_catalog("merger_agreement")
+    assert merger == (
+        "all_cash",
+        "all_stock",
+        "mixed_cash_stock",
+        "mixed_cash_stock_election",
+        "other",
+    )
+    assert "license" not in merger
+    assert sorter_subclass_catalog("due_diligence") == ()
+    assert sorter_subclass_catalog("court_opinion") == ()
+    assert normalize_sorter_subclass("correspondence", "Email") == "email"
+    assert normalize_sorter_subclass("insurance_claim", "PDE") == "pde"
+    assert "auto" in valid_sorter_subclasses("insurance_claim")
+    text = format_sorter_subclass_catalogs()
+    assert "content_topic" in text
+    assert "merger_agreement" in text
+    assert "10-K" in text
