@@ -28,6 +28,7 @@ class TestGuardClassification:
 
         guard = guard_classification({
             "doc_type": "merger_agreement",
+            "doc_subclass": "all_cash",
             "classification_confidence": 0.97,
         })
         assert guard["ok"] is True
@@ -83,6 +84,44 @@ class TestGuardClassification:
         )
         assert guard["ok"] is False
         assert any("contract_subtype_not_null_for_non_contract" in i for i in guard["issues"])
+
+    def test_catalogued_class_missing_subclass_fails(self):
+        from pipeline.guards import guard_classification
+
+        guard = guard_classification(
+            {
+                "doc_type": "correspondence",
+                "classification_confidence": 0.9,
+            }
+        )
+        assert guard["ok"] is False
+        assert any("doc_subclass_missing" in i for i in guard["issues"])
+
+    def test_catalogued_class_unknown_subclass_fails(self):
+        from pipeline.guards import guard_classification
+
+        guard = guard_classification(
+            {
+                "doc_type": "corporate_record",
+                "doc_subclass": "not_a_record_type",
+                "classification_confidence": 0.9,
+            }
+        )
+        assert guard["ok"] is False
+        assert any("doc_subclass_unknown" in i for i in guard["issues"])
+
+    def test_correspondence_with_catalog_subclass_passes(self):
+        from pipeline.guards import guard_classification
+
+        guard = guard_classification(
+            {
+                "doc_type": "correspondence",
+                "doc_subclass": "email",
+                "classification_confidence": 0.9,
+            }
+        )
+        assert guard["ok"] is True
+        assert guard["issues"] == []
 
 
 class TestGuardExtraction:

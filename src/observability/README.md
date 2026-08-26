@@ -5,7 +5,7 @@ Tracing, scoring, and evaluation plumbing for the mailroom pipeline.
 ## Where things live (post KANBAN-061)
 
 The field-scoring implementation is **owned by the shared package**
-[`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) (v0.5.1+).
+[`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) (v0.9.0+).
 This repo keeps only a backward-compatibility shim.
 
 | Module | Status |

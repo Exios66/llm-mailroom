@@ -28,8 +28,10 @@ Rules:
    your own view from the evidence alone.
 2. Choose doc_type from the configured taxonomy classes listed in the user
    message. Never invent a class.
-3. For contracts, also choose contract_subtype from the supplied list; return
-   null for non-contract documents.
+3. For contracts, also choose contract_subtype from the supplied CUAD list
+   and copy that same key into doc_subclass. For every other class that has
+   a subclass catalog in the user message, emit doc_subclass from that
+   catalog and leave contract_subtype null. unknown has no subclass.
 4. A class is correct when it best fits the document's purpose and form: a
    demand letter about a contract is correspondence, not a contract; a
    judicial decision about a contract is a court opinion.
@@ -61,16 +63,28 @@ class SorterReviewerAgent(BaseAgent):
         pages: list[str] | None = None,
         valid_doc_types: list[str] | None = None,
         contract_subtypes: list[str] | None = None,
+        doc_subclass_catalogs: dict[str, list[str]] | None = None,
     ) -> dict:
         """Independently classify the document.
 
-        Returns ``{doc_type, contract_subtype, confidence, reasoning}``. The
-        caller compares against the sorter's answer and decides.
+        Returns ``{doc_type, contract_subtype, doc_subclass, confidence, reasoning}``.
+        The caller compares against the sorter's answer and decides.
         """
         from pipeline.config import get_sorter_label_set
+        from langchain_agents.doc_inventories import format_sorter_subclass_catalogs
+        from langchain_agents.sorter_agent import finalize_sorter_result
 
         types = valid_doc_types or sorted(get_sorter_label_set())
         subtypes = contract_subtypes or []
+        catalog_block = format_sorter_subclass_catalogs()
+        if doc_subclass_catalogs:
+            extra_lines = [
+                f"- {cls}: {', '.join(keys)}"
+                for cls, keys in doc_subclass_catalogs.items()
+                if keys
+            ]
+            if extra_lines:
+                catalog_block = "DOCUMENT SUBCLASS CATALOGS\n" + "\n".join(extra_lines)
         user_message = (
             "CONFIGURED TAXONOMY\n"
             f"doc_type options: {', '.join(types)}\n"
@@ -79,7 +93,8 @@ class SorterReviewerAgent(BaseAgent):
                 if subtypes
                 else ""
             )
-            + "\nCLASSIFY THIS DOCUMENT\n\n"
+            + catalog_block
+            + "\n\nCLASSIFY THIS DOCUMENT\n\n"
             f"{self._truncate_input(doc_text)}"
         )
         schema = build_structured_schema(
@@ -88,19 +103,24 @@ class SorterReviewerAgent(BaseAgent):
                 "contract_subtype": {
                     "type": ["string", "null"],
                 },
+                "doc_subclass": {
+                    "type": ["string", "null"],
+                },
                 "confidence": {"type": "number"},
                 "reasoning": {"type": "string"},
             },
-            required=["doc_type", "contract_subtype", "confidence", "reasoning"],
+            required=["doc_type", "contract_subtype", "doc_subclass", "confidence", "reasoning"],
         )
         result = self._call_structured(
             user_message,
             schema,
             pages=pages,
         )
+        result = finalize_sorter_result(result)
         logger.info(
             "sorter_review_completed",
             doc_type=result.get("doc_type"),
+            doc_subclass=result.get("doc_subclass"),
             confidence=result.get("confidence"),
         )
         return result

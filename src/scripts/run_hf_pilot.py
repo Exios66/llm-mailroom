@@ -179,6 +179,12 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
             raw = row.get(key)
         if raw not in (None, ""):
             sample[key] = coerce_gt_value(raw)
+    for key in ("content_topic", "sentiment_label", "maud_clause_labels"):
+        raw = gt.get(key)
+        if raw in (None, ""):
+            raw = row.get(key)
+        if raw not in (None, ""):
+            sample[key] = coerce_gt_value(raw)
     return sample
 
 
@@ -256,7 +262,7 @@ def _loose_label_match(predicted, expected) -> bool:
 
 
 def subclass_ok(expected_class: str, expected_subclass: str, *, predicted_subtype: str = "", extracted: dict | None = None) -> bool | None:
-    """Score Hub ``expected_subclass`` against sorter subtype / extraction.
+    """Score Hub ``expected_subclass`` against sorter ``doc_subclass`` / extraction.
 
     Returns None when there is no subclass ground truth to score.
     """
@@ -265,53 +271,79 @@ def subclass_ok(expected_class: str, expected_subclass: str, *, predicted_subtyp
         return None
     extracted = extracted or {}
     hf_class = str(expected_class or "")
+    # Sorter doc_subclass is the primary predicted token; extraction fields
+    # remain a fallback for older reports that only stored contract_subtype.
+    predicted = predicted_subtype or ""
     if hf_class == "contract":
         from langchain_agents.sorter_agent import equivalent_subtypes, normalize_subtype
 
-        got = normalize_subtype(predicted_subtype or extracted.get("cuad_family") or extracted.get("contract_subtype"))
+        got = normalize_subtype(predicted or extracted.get("cuad_family") or extracted.get("contract_subtype"))
         need = normalize_subtype(want)
         return equivalent_subtypes(got, need)
     if hf_class == "merger_agreement":
+        from langchain_agents.doc_inventories import normalize_sorter_subclass
+
         got = (
-            normalize_consideration(extracted.get("merger_consideration"))
+            normalize_sorter_subclass("merger_agreement", predicted)
+            or normalize_consideration(extracted.get("merger_consideration"))
             or infer_merger_consideration(extracted)
-            or normalize_consideration(predicted_subtype)
+            or normalize_consideration(predicted)
         )
-        need = normalize_consideration(want)
+        need = normalize_sorter_subclass("merger_agreement", want) or normalize_consideration(want)
         if not got or not need:
             return False
         return got == need
     if hf_class == "corporate_record":
-        got = normalize_record_type(extracted.get("record_type") or predicted_subtype)
-        need = normalize_record_type(want)
+        from langchain_agents.doc_inventories import normalize_sorter_subclass
+
+        got = (
+            normalize_sorter_subclass(hf_class, predicted)
+            or normalize_record_type(extracted.get("record_type") or predicted)
+        )
+        need = normalize_sorter_subclass(hf_class, want) or normalize_record_type(want)
         if got and need:
             return got == need
-        return _loose_label_match(extracted.get("record_type") or predicted_subtype, want)
+        return _loose_label_match(extracted.get("record_type") or predicted, want)
     if hf_class == "insurance_claim":
-        got = normalize_claim_type(
-            extracted.get("claim_type") or predicted_subtype or extracted.get("record_type")
+        from langchain_agents.doc_inventories import normalize_sorter_subclass
+
+        got = (
+            normalize_sorter_subclass(hf_class, predicted)
+            or normalize_claim_type(
+                extracted.get("claim_type") or predicted or extracted.get("record_type")
+            )
         )
-        need = normalize_claim_type(want)
+        need = normalize_sorter_subclass(hf_class, want) or normalize_claim_type(want)
         if got and need:
             return got == need
-        return _loose_label_match(extracted.get("claim_type") or predicted_subtype, want)
+        return _loose_label_match(extracted.get("claim_type") or predicted, want)
     if hf_class == "correspondence":
-        got = normalize_communication_type(
-            extracted.get("communication_type") or predicted_subtype
+        from langchain_agents.doc_inventories import normalize_sorter_subclass
+
+        got = (
+            normalize_sorter_subclass(hf_class, predicted)
+            or normalize_communication_type(
+                extracted.get("communication_type") or predicted
+            )
         )
-        need = normalize_communication_type(want)
+        need = normalize_sorter_subclass(hf_class, want) or normalize_communication_type(want)
         if got and need:
             return got == need
         return _loose_label_match(
-            extracted.get("communication_type") or predicted_subtype, want
+            extracted.get("communication_type") or predicted, want
         )
     if hf_class == "compliance_filing":
-        got = normalize_filing_type(extracted.get("filing_type") or predicted_subtype)
-        need = normalize_filing_type(want)
+        from langchain_agents.doc_inventories import normalize_sorter_subclass
+
+        got = (
+            normalize_sorter_subclass(hf_class, predicted)
+            or normalize_filing_type(extracted.get("filing_type") or predicted)
+        )
+        need = normalize_sorter_subclass(hf_class, want) or normalize_filing_type(want)
         if got and need:
             return got == need
-        return _loose_label_match(extracted.get("filing_type") or predicted_subtype, want)
-    return _loose_label_match(predicted_subtype, want)
+        return _loose_label_match(extracted.get("filing_type") or predicted, want)
+    return _loose_label_match(predicted, want)
 
 
 def _public_extracted(data) -> dict:
@@ -447,30 +479,40 @@ def expected_fields_for_sample(sample: dict) -> dict:
             val = sample.get(key)
             if val not in (None, ""):
                 expected_fields[key] = coerce_gt_value(val)
+    for key in ("content_topic", "sentiment_label", "maud_clause_labels"):
+        val = sample.get(key)
+        if val not in (None, ""):
+            expected_fields[key] = coerce_gt_value(val)
     return expected_fields
 
 
 def score_row_extraction(extracted: dict | None, expected_fields: dict | None, doc_class: str) -> dict | None:
-    """Deterministic field score; never raises (scaled runs must not die here)."""
+    """Deterministic field score via the dedicated specialist suite."""
     if not expected_fields or not extracted:
         return None
     try:
-        from llm_dojo_scoring.field_scoring import score_extraction
         from observability.field_scoring import get_field_types
+        from observability.suite_scoring import score_with_suite
 
         scored_class = pipeline_class(doc_class) or doc_class
-        result = score_extraction(
-            scored_class,
-            get_field_types(scored_class),
+        # merger_agreement keeps its own suite (MAUD extras); other HF
+        # classes share the live specialist suite.
+        suite_class = doc_class if doc_class == "merger_agreement" else scored_class
+        result, extras = score_with_suite(
+            suite_class,
             extracted,
             expected_fields,
+            field_types=get_field_types(scored_class),
         )
         overall = result.overall_score
-        return {
+        out = {
             "overall_score": None if overall is None else round(float(overall), 3),
             "n_fields": len(result.field_scores or {}),
             "needs_judge_review": bool(result.ambiguous_fields),
         }
+        for key, value in extras.items():
+            out[key] = round(float(value), 3)
+        return out
     except Exception:
         return None
 
@@ -501,6 +543,8 @@ def enrich_sample_row(row: dict) -> dict:
         catalog = _catalog_by_trace(str(out.get("trace_id") or ""))
         if catalog.get("extracted_data") and not out.get("extracted_data"):
             out["extracted_data"] = _public_extracted(catalog["extracted_data"])
+        if catalog.get("doc_subclass") and not out.get("predicted_subtype"):
+            out["predicted_subtype"] = catalog["doc_subclass"]
         if catalog.get("contract_subtype") and not out.get("predicted_subtype"):
             out["predicted_subtype"] = catalog["contract_subtype"]
     extracted = out.get("extracted_data") or {}
@@ -516,6 +560,7 @@ def enrich_sample_row(row: dict) -> dict:
         "expected_subclass": out.get("expected_subclass"),
         "cuad_clauses": out.get("cuad_clauses") or [],
         "maud_clauses": out.get("maud_clauses") or [],
+        **{k: out.get(k) for k in ("content_topic", "sentiment_label", "maud_clause_labels") if out.get(k) not in (None, "")},
         **{k: out.get(k) for k in INSURANCE_GT_KEYS if out.get(k) not in (None, "")},
     })
     scored = score_row_extraction(
@@ -724,7 +769,7 @@ def _catalog_by_trace(trace_id: str) -> dict:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         try:
             row = con.execute(
-                "SELECT extracted_data, contract_subtype, original_filename "
+                "SELECT extracted_data, contract_subtype, original_filename, doc_subclass "
                 "FROM documents WHERE trace_id = ?",
                 (trace_id,),
             ).fetchone()
@@ -744,6 +789,7 @@ def _catalog_by_trace(trace_id: str) -> dict:
         "extracted_data": data or {},
         "contract_subtype": row[1] or "",
         "original_filename": row[2] or "",
+        "doc_subclass": (row[3] if len(row) > 3 else "") or "",
     }
 
 
@@ -834,6 +880,8 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
             "expected_subclass": str(row.get("expected_subclass") or "").strip(),
             "cuad_clause_labels": row.get("cuad_clause_labels"),
             "maud_clause_labels": row.get("maud_clause_labels"),
+            "content_topic": row.get("content_topic"),
+            "sentiment_label": row.get("sentiment_label"),
         }
         for key in INSURANCE_GT_KEYS:
             if row.get(key) not in (None, ""):
@@ -963,7 +1011,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     wall = time.perf_counter() - started
     predicted = result.get("doc_type")
     extracted = _public_extracted(result.get("extracted_data"))
-    subtype = result.get("contract_subtype") or ""
+    subtype = result.get("doc_subclass") or result.get("contract_subtype") or ""
     file_path = result.get("file_path") or ""
     subclass = subclass_ok(
         hf_class, sample.get("expected_subclass") or "",
@@ -1000,6 +1048,11 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     if extraction:
         row["extraction_overall_score"] = extraction["overall_score"]
         row["extraction_n_fields"] = extraction["n_fields"]
+        row["extraction_needs_judge_review"] = extraction["needs_judge_review"]
+        for key, value in extraction.items():
+            if key in ("overall_score", "n_fields", "needs_judge_review"):
+                continue
+            row[key] = value
         row["extraction_needs_judge_review"] = extraction["needs_judge_review"]
     return row
 

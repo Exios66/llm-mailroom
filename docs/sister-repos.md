@@ -18,7 +18,7 @@ each lives. (All links verified 2026-08-23.)
 │  corpus feed repos     │──▶│        llm-mailroom          │
 │  Enron-Eval-Environment│   │  (this repo — the pipeline)  │
 │  claims-data-eda       │   └──────────┬───────────────────┘
-│  atticus-investigation │              │ pinned dependency @v0.7.0
+│  atticus-investigation │              │ pinned dependency @c3dbe9da (0.9.0)
 └────────────────────────┘              ▼
                           ┌──────────────────────────────┐
                           │     llm-dojo-scoring         │
@@ -41,7 +41,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | Repository | Role | Relationship to mailroom |
 |---|---|---|
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board and discussion log with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, tiers, agent profiles) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.7.0`); consumed through thin re-export shims |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@c3dbe9da`, package 0.9.0 / [PR #4](https://github.com/Exios66/llm-dojo-scoring/pull/4)); consumed through thin re-export shims |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
@@ -78,7 +78,7 @@ The scoring layer both mailroom and entity-extraction consume:
   **agent profiles** covering every mailroom agent, and
   `DOC_TYPE_BUNDLES` keyed on the processed document classes with the
   explicit-fallback honesty resolver (`resolve_doc_bundle()`).
-- Pinned as a git dependency (`@v0.7.0` at time of writing); mailroom wires
+- Pinned as a git dependency (`@c3dbe9da` / package 0.9.0 at time of writing); mailroom wires
   its `taxonomy.yaml` scoring block onto package Settings via
   `observability/field_scoring.py` (a deprecation shim — imports should move
   to `llm_dojo_scoring.field_scoring`).

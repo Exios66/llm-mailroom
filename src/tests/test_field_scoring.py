@@ -40,8 +40,13 @@ from observability.field_scoring import (
 
 @pytest.fixture(autouse=True)
 def _no_real_embedding(monkeypatch):
-    """Never load sentence-transformers in tests (no model download)."""
+    """Never load sentence-transformers in tests (no model download).
+
+    Patch the dojo module — ``score_free_text_field`` is a re-export whose
+    embedding rescue reads ``llm_dojo_scoring.field_scoring._get_embedding``.
+    """
     monkeypatch.setattr(field_scoring, "_get_embedding", lambda: None)
+    monkeypatch.setattr(_dojo_field_scoring, "_get_embedding", lambda: None)
 
 
 class FakeEmbedding:

@@ -100,6 +100,7 @@ class TestPipelineE2E:
         mock_langchain_llm.classification = {
             "doc_type": "correspondence",
             "contract_subtype": None,
+            "doc_subclass": "memo",
             "confidence": 0.90,
             "reasoning": "Multi-topic memo",
         }
@@ -186,6 +187,7 @@ class TestPipelineE2E:
         mock_langchain_llm.classification = {
             "doc_type": "correspondence",
             "contract_subtype": None,
+            "doc_subclass": "letter",
             "confidence": 0.96,
             "reasoning": "Legal letter",
         }

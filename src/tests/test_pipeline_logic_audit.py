@@ -88,7 +88,7 @@ class TestStickyTransientErrorClearedOnSuccess:
 class TestRetryNodeTransientCounters:
     def test_retry_classify_writes_own_counter_and_router_self_loops(self, monkeypatch):
         monkeypatch.setattr(
-            "agents.sorter.SorterAgent.classify",
+            "agents.sorter.SorterAgent.classify_json",
             lambda *a, **k: (_ for _ in ()).throw(openai.APIConnectionError(request=None)),
         )
         updates = bg.retry_classify_node(
@@ -121,7 +121,7 @@ class TestRetryNodeTransientCounters:
 
     def test_retry_classify_hard_fail_routes_to_review_not_crash(self, monkeypatch):
         monkeypatch.setattr(
-            "agents.sorter.SorterAgent.classify",
+            "agents.sorter.SorterAgent.classify_json",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         updates = bg.retry_classify_node(
@@ -190,8 +190,14 @@ class TestCompileReportFailSafe:
 class TestClassificationGuardClampsInvalidSubtype:
     def test_high_confidence_contract_missing_subtype_does_not_auto_extract(self, monkeypatch):
         monkeypatch.setattr(
-            "agents.sorter.SorterAgent.classify",
-            lambda *a, **k: ("contract", None, 0.97, "looks like a contract"),
+            "agents.sorter.SorterAgent.classify_json",
+            lambda *a, **k: {
+                "doc_type": "contract",
+                "contract_subtype": None,
+                "doc_subclass": None,
+                "confidence": 0.97,
+                "reasoning": "looks like a contract",
+            },
         )
         updates = bg.classify_node(
             {"doc_id": "d1", "doc_text": "agreement", "classification_attempts": 0}
@@ -218,6 +224,7 @@ class TestReviewerReceivesSubtypeVocabulary:
                 return {
                     "doc_type": "insurance_claim",
                     "contract_subtype": None,
+                    "doc_subclass": "carrier",
                     "confidence": 0.98,
                     "reasoning": "judicial form",
                 }

@@ -245,6 +245,7 @@ class TestNodeBehavior:
                 return {
                     "doc_type": "insurance_claim",
                     "contract_subtype": None,
+                    "doc_subclass": "carrier",
                     "confidence": 0.98,
                     "reasoning": "judicial decision format",
                 }
