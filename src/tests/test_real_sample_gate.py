@@ -37,12 +37,14 @@ def test_manifest_split_real_vs_synthetic():
         "legalbench_01", "legalbench_02", "legalbench_03", "legalbench_04",
         "legalbench_05", "legalbench_06",
     }, [r["id"] for r in real]
-    # The 7 remaining repo-written synthetic samples are mock-only.
+    # The 10 remaining repo-written synthetic samples are mock-only
+    # (7 original classes + 3 insurance_claim contrast letters).
     assert {r["id"] for r in synthetic} == {
         "compliance_01", "compliance_02",
         "corporate_01", "corporate_02",
         "correspondence_01", "correspondence_02",
         "ambiguous_01",
+        "insurance_01", "insurance_02", "insurance_03",
     }, [r["id"] for r in synthetic]
 
 
@@ -51,7 +53,7 @@ def test_filter_real_samples_keeps_all_for_mock():
 
     rows = _rows()
     assert filter_real_samples(rows, mock_mode=True) == rows
-    assert len(filter_real_samples(rows, mock_mode=True)) == 22
+    assert len(filter_real_samples(rows, mock_mode=True)) == 25
 
 
 def test_filter_real_samples_blocks_synthetic_for_real():
@@ -66,6 +68,9 @@ def test_filter_real_samples_blocks_synthetic_for_real():
     assert "due_diligence_01" not in ids  # synthetic blocked (and retired)
     assert "compliance_01" not in ids
     assert "ambiguous_01" not in ids
+    assert "insurance_01" not in ids
+    assert "insurance_02" not in ids
+    assert "insurance_03" not in ids
 
 
 def _env_no_dotenv() -> dict:

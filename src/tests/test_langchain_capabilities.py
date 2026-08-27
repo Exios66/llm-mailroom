@@ -30,7 +30,19 @@ class TestSkills:
     def test_unknown_agent_no_skills(self):
         from langchain_agents.skills import load_skills
 
-        assert load_skills("boss") == ""
+        assert load_skills("not_an_agent") == ""
+
+    def test_boss_and_reviewer_have_skill_files(self):
+        from langchain_agents.skills import load_skills
+
+        assert "approved" in load_skills("boss").lower() or "review" in load_skills("boss").lower()
+        assert "independent" in load_skills("sorter_reviewer").lower()
+
+    def test_sorter_confidence_calibration_skill(self):
+        from langchain_agents.skills import load_skills
+
+        ctx = load_skills("sorter")
+        assert "confidence" in ctx.lower()
 
     def test_budget_bound(self):
         from langchain_agents.skills import load_skills

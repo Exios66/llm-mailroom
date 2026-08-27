@@ -1,10 +1,9 @@
 # Pilot Sample Set
 
 A curated set of legal PDFs used to **pilot-test the pipeline and evaluate
-procedural changes** (accuracy + efficiency). 22 documents spanning five of
-the six live `config/taxonomy.yaml` doc classes (`insurance_claim` is live
-but not in this set), plus one deliberately ambiguous memo that drives the
-retry → human-review path.
+procedural changes** (accuracy + efficiency). 25 documents spanning all six
+live `config/taxonomy.yaml` doc classes, plus one deliberately ambiguous memo
+that drives the retry → human-review path.
 
 | Class | Count | Source |
 |---|---|---|
@@ -13,6 +12,7 @@ retry → human-review path.
 | `compliance_filing` | 2 | Synthetic 10-K excerpt (large) + state filing |
 | `corporate_record` | 2 | Bylaws + board resolution |
 | `correspondence` | 2 | Demand letter + internal memo |
+| `insurance_claim` | 3 | Synthetic FNOL / coverage letters (approved / denied / partial); complements the local contrast pack |
 | `ambiguous` | 1 | Multi-topic memo → expects human review |
 
 `due_diligence` and `court_opinion` were retired from the live taxonomy.
@@ -25,7 +25,7 @@ run or synced on its own:
 
 | dataset | samples | origin |
 |---|---|---|
-| `original` | 10 | committed CUAD PDFs + synthetic text (original) |
+| `original` | 13 | committed CUAD PDFs + synthetic text (original, including 3 insurance_claim letters) |
 | `legalbench` | 6 | MAUD v1 merger agreements — the full texts behind LegalBench's `maud_*` tasks (Zenodo 10.5281/zenodo.7500064) |
 | `atticus` | 6 | CUAD v1 contract PDFs from `theatticusproject/cuad` |
 
@@ -70,10 +70,10 @@ PYTHONPATH=src python src/scripts/run_pilot.py --real
 # Atticus/CUAD contract & agreement PDFs (contract_01..03, atticus_01..06)
 # plus the 6 LegalBench MAUD samples (15 real samples). The repo-written
 # synthetic .txt-derived PDFs (compliance / corporate / correspondence /
-# ambiguous, 7 samples) are **mock-only** — --real refuses them so no real
-# LLM/eval tokens or live traces are ever spent on fake documents. Mock runs
-# keep the full live-manifest set (22). Pile of Law court opinions stay on
-# disk but are not in the live manifest.
+# insurance / ambiguous, 10 samples) are **mock-only** — --real refuses them
+# so no real LLM/eval tokens or live traces are ever spent on fake documents.
+# Mock runs keep the full live-manifest set (25). Pile of Law court opinions
+# stay on disk but are not in the live manifest.
 
 # 4. Run a single source corpus
 PYTHONPATH=src python src/scripts/run_pilot.py --mock --source legalbench

@@ -37,14 +37,35 @@ from .bins import (
     claim_file,
     is_ingestion_paused,
     list_stale_processing_files,
-    requeue_stale_processing,
+    reconcile_stale_processing_file,
     accepted_extensions,
     read_inbox_meta,
     touch_watcher_heartbeat,
 )
 from graph.build_graph import build_graph, run_pipeline
 
-logger = structlog.get_logger(__name__)
+def _finalize_claimed_on_error(claimed: Path | None, matter_id: str, reason: str) -> None:
+    """Move a claimed file to failed/ if run_pipeline raised outside the graph.
+
+    The graph's ``_finalize_aborted`` already handles crashes inside
+    ``_execute_run``. This covers the watcher wrapper itself (import/setup
+    failures after ``claim_file``).
+    """
+    if claimed is None:
+        return
+    try:
+        from graph.build_graph import _finalize_aborted
+
+        _finalize_aborted(
+            {
+                "file_path": str(claimed),
+                "original_filename": claimed.name,
+                "matter_id": matter_id or "DEFAULT",
+            },
+            reason,
+        )
+    except Exception:
+        logger.exception("watcher_finalize_failed", file=str(claimed))
 
 # In-flight processing guard: a file name may be claimed by only one thread at
 # a time (watchdog's on_created + the startup scan race on the same inbox
@@ -259,6 +280,8 @@ class InboxHandler(FileSystemEventHandler):
         if not _mark_active(path.name):
             logger.info("file_already_processing", file=str(path))
             return
+        claimed = None
+        matter_id = "DEFAULT"
         try:
             if is_ingestion_paused():
                 # Leave the file in the inbox (never claim it). The periodic
@@ -279,6 +302,7 @@ class InboxHandler(FileSystemEventHandler):
             logger.info("pipeline_complete", doc_id=result.get("doc_id"), matter_id=matter_id)
         except Exception:
             logger.exception("pipeline_failed", file=str(path))
+            _finalize_claimed_on_error(claimed, matter_id, "watcher pipeline exception")
         finally:
             _unmark_active(path.name)
 
@@ -351,13 +375,21 @@ class Watcher:
             raise
 
     def _reconcile_stale_claims(self) -> None:
-        """Re-queue processing/<worker_id>/ files orphaned by a crashed
-        process (L-1/A-18). Runs once at startup before the inbox scan."""
+        """Re-queue (or retire) processing/<worker_id>/ files orphaned by a
+        crashed process (L-1/A-18). Runs once at startup before the inbox
+        scan. Terminal manifests (archived/failed/review) retire the copy
+        to failed/ so it cannot orphan in the inbox.
+        """
         stale = list_stale_processing_files(stale_minutes=STALE_CLAIM_MINUTES)
         for f in stale:
             try:
-                requeue_stale_processing(f)
-                logger.warning("stale_claim_requeued", file=str(f))
+                action, dest = reconcile_stale_processing_file(f)
+                logger.warning(
+                    "stale_claim_reconciled",
+                    file=str(f),
+                    action=action,
+                    dest=str(dest),
+                )
             except Exception:
                 logger.exception("stale_claim_requeue_failed", file=str(f))
 
@@ -396,6 +428,8 @@ class Watcher:
         if not _mark_active(path.name):
             logger.info("file_already_processing", file=str(path))
             return
+        claimed = None
+        matter_id = "DEFAULT"
         try:
             if is_ingestion_paused():
                 logger.info("ingestion_paused_by_ops_monitor", file=str(path))
@@ -412,6 +446,7 @@ class Watcher:
             run_pipeline(claimed, matter_id)
         except Exception:
             logger.exception("existing_file_failed", file=str(path))
+            _finalize_claimed_on_error(claimed, matter_id, "watcher existing-file exception")
         finally:
             _unmark_active(path.name)
 
