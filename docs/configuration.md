@@ -272,7 +272,7 @@ See `.env.example` for the complete list:
 | `PHOENIX_ENDPOINT` | No | `http://localhost:6006/v1/traces` | Phoenix OTLP HTTP endpoint |
 | `PHOENIX_SERVICE_NAME` | No | `mailroom` | OTel service name |
 | `PHOENIX_PROJECT` | No | `mailroom` | Phoenix openinference project name |
-| `MAILROOM_CHECKPOINTER` | No | `memory` | LangGraph checkpointer backend: `memory` (MemorySaver default — stateless design, review resume re-invokes from the manifest) or `sqlite` (on-disk SqliteSaver at `<MAILROOM_BASE_DIR>/checkpoints.db`, for debugging/resume-across-restart experiments) |
+| `MAILROOM_CHECKPOINTER` | No | `memory` | LangGraph checkpointer backend: `memory` (MemorySaver default — process-level compiled graph so `interrupt()` HITL can resume in-process; review bin is the durable park, with extract-invoke fallback if the checkpoint is gone) or `sqlite` (on-disk SqliteSaver at `<MAILROOM_BASE_DIR>/checkpoints.db`, for debugging/resume-across-restart experiments) |
 | `MAILROOM_JUDGE_VERIFY` | No | `on` | Kill-switch for the judge-verify exception lane (KANBAN-063): set `off`/`false`/`0`/`no` to skip gated completeness verification entirely. When on, the lane fires only on grounded extractions landing in the ambiguous band (`low <= confidence < judge_band_high`, default 0.85) — clean high-confidence extractions cost zero added judge calls |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `1` | Inbox rescan interval (seconds) |

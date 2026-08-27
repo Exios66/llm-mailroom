@@ -136,3 +136,44 @@ class TestReviewResume:
         )
         with pytest.raises(ValueError, match="no classification"):
             resume_from_review(manifest, Path("/nonexistent/review/x.txt"))
+
+    def test_park_pauses_via_interrupt_and_stores_thread_id(
+        self, temp_base_dir, phased_client
+    ):
+        from pipeline.bins import review_dir, load_manifest
+        from graph.build_graph import get_compiled_graph, _thread_is_interrupted
+
+        result = _run_to_review(temp_base_dir, phased_client)
+        assert result.get("stage") == "review"
+        assert result.get("review_decision") == "pending_review"
+        thread_id = result.get("checkpoint_thread_id")
+        assert thread_id
+        manifest = load_manifest(result["doc_id"])
+        assert manifest.checkpoint_thread_id == thread_id
+        assert (review_dir() / manifest.original_filename).exists()
+        graph = get_compiled_graph()
+        assert _thread_is_interrupted(graph, thread_id)
+
+    def test_park_for_review_is_idempotent(self, temp_base_dir):
+        from pipeline.bins import park_for_review, review_dir
+        from schemas.manifest import DocumentManifest, PipelineStage
+
+        src = temp_base_dir / "pipeline" / "processing" / "w1"
+        src.mkdir(parents=True)
+        f = src / "park.txt"
+        f.write_text("hello")
+        manifest = DocumentManifest(
+            doc_id="park-1",
+            matter_id="M",
+            original_filename="park.txt",
+            stage=PipelineStage.REVIEW,
+        )
+        dest, newly = park_for_review(f, manifest)
+        assert newly is True
+        assert dest == review_dir() / "park.txt"
+        assert dest.exists()
+        assert not f.exists()
+        dest2, newly2 = park_for_review(f, manifest)
+        assert newly2 is False
+        assert dest2 == dest
+        assert dest.exists()

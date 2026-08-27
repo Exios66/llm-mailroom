@@ -24,6 +24,9 @@ class DocumentState(TypedDict, total=False):
     trace_id: str | None
     escalation_reason: str | None
     review_decision: str | None
+    # Process-level LangGraph thread id for interrupt() HITL resume.
+    checkpoint_thread_id: str | None
+    resume_extraction: bool
     retry_count: int
     conflict_detected: bool
     conflict_details: list[str]
