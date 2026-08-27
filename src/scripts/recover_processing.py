@@ -38,27 +38,11 @@ from pipeline.logging import setup_logging  # noqa: E402
 setup_logging()
 
 from pipeline.bins import (  # noqa: E402
-    manifests_dir,
     list_stale_processing_files,
     mark_processing_dead,
-    requeue_stale_processing,
+    reconcile_stale_processing_file,
+    terminal_manifest_for,
 )
-
-TERMINAL_STAGES = ("archived", "failed", "review")
-
-
-def _terminal_manifest_for(filename: str) -> bool:
-    mdir = manifests_dir()
-    if not mdir.exists():
-        return False
-    for mf in mdir.glob("*.json"):
-        try:
-            data = json.loads(mf.read_text())
-        except Exception:
-            continue
-        if data.get("original_filename") == filename and data.get("stage") in TERMINAL_STAGES:
-            return True
-    return False
 
 
 def main() -> int:
@@ -77,7 +61,7 @@ def main() -> int:
     print(f"{len(stale)} stale processing claim(s):")
     n_requeue = n_fail = 0
     for f in stale:
-        terminal = _terminal_manifest_for(f.name)
+        terminal = terminal_manifest_for(f.name)
         to_failed = args.move_all_to_failed or terminal
         action = "failed" if to_failed else "requeue"
         reason = "terminal manifest exists" if terminal else ("forced" if args.move_all_to_failed else "no terminal manifest")
@@ -85,12 +69,15 @@ def main() -> int:
         if not args.apply:
             continue
         try:
-            if to_failed:
+            if args.move_all_to_failed:
                 mark_processing_dead(f.parent.name, f.name)
                 n_fail += 1
             else:
-                requeue_stale_processing(f)
-                n_requeue += 1
+                action_done, _dest = reconcile_stale_processing_file(f)
+                if action_done == "failed":
+                    n_fail += 1
+                else:
+                    n_requeue += 1
             print(f"    done")
         except Exception as exc:
             print(f"    ERROR: {exc}", file=sys.stderr)

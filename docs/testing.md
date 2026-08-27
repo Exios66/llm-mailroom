@@ -103,17 +103,19 @@ These tests spin up a complete LangGraph graph with all 13 nodes and mock the LL
 
 ### Pilot sample set
 
-For live end-to-end pilots (not the unit suite), see `docs/examples/samples/`: 30 legal
-PDFs (real CC-BY-4.0 CUAD/Atticus contracts + LegalBench MAUD merger agreements +
-public-domain Pile of Law court opinions + repo-written synthetic text) with a
-ground-truth `manifest.csv`, built by `scripts/prepare_samples.py` (and
-`scripts/fetch_external_samples.py` for the external corpus) and evaluated by
-`scripts/run_pilot.py` (`--mock` for a deterministic run over the live 22-sample
-set, `--real` for actual LLM accuracy on the 21 real committed documents, 
-`--baseline` to diff two runs, `--source <corpus>` to run one dataset). Real
-runs are restricted to the actual committed legal documents (CUAD/Atticus PDFs,
-LegalBench, Pile of Law); the repo-written synthetic `.txt` samples are mock-only
-and are refused by `--real`. See `docs/examples/samples/README.md`.
+For live end-to-end pilots (not the unit suite), see `docs/examples/samples/`: 25
+legal PDFs on the live manifest (real CC-BY-4.0 CUAD/Atticus contracts + LegalBench
+MAUD merger agreements + repo-written synthetic text including three
+`insurance_claim` coverage letters) with a ground-truth `manifest.csv`, built by
+`scripts/prepare_samples.py` (and `scripts/fetch_external_samples.py` for the
+external corpus) and evaluated by `scripts/run_pilot.py` (`--mock` for a
+deterministic run over the live 25-sample set, `--real` for actual LLM accuracy
+on the 15 real committed documents, `--baseline` to diff two runs, `--source
+<corpus>` to run one dataset). Real runs are restricted to the actual committed
+legal documents (CUAD/Atticus PDFs + LegalBench MAUD); the repo-written synthetic
+`.txt` samples (compliance / corporate / correspondence / insurance / ambiguous)
+are mock-only and are refused by `--real`. See `docs/examples/samples/README.md`.
+Per-agent isolation eval (no full graph) is `scripts/run_agent_eval.py`.
 
 ### Shared Fixtures (`conftest.py`)
 
@@ -140,6 +142,9 @@ and are refused by `--real`. See `docs/examples/samples/README.md`.
 | `ambiguous_memo.txt` | Correspondence | Interoffice memo mixing multiple doc types |
 | `sample_10k.txt` | Compliance Filing | SEC 10-K filing |
 | `sample_state_filing.txt` | Compliance Filing | State annual report |
+| `sample_claim_approved.txt` | Insurance Claim | Local-pack approved hail claim (coverage determination contrast) |
+| `sample_claim_denied.txt` | Insurance Claim | Local-pack auto denial (lapse) |
+| `sample_claim_partial.txt` | Insurance Claim | Local-pack partial water + betterment exclusion |
 | `sample_opinion.txt` | Court Opinion | Appellate opinion — exercises suppression + weight-of-evidence issues |
 
 ---

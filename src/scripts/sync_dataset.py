@@ -67,8 +67,9 @@ SOURCE_DATASETS = {
     "pileoflaw": "mailroom-pilot-pileoflaw",
 }
 SOURCE_DESCRIPTIONS = {
-    "original": "Pilot evaluation set: 10 legal documents with ground-truth "
-                "doc class + stage from examples/samples/manifest.csv.",
+    "original": "Pilot evaluation set: 13 original-corpus documents with "
+                "ground-truth doc class + stage from examples/samples/manifest.csv "
+                "(3 CUAD PDFs + 10 synthetic mock-only texts including insurance_claim).",
     "legalbench": "LegalBench samples: 6 MAUD v1 merger agreements (the full "
                   "contract texts behind the maud_* tasks) — CC BY 4.0.",
     "atticus": "The Atticus Project samples: 6 CUAD v1 contract PDFs (SEC "

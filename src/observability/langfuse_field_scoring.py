@@ -124,6 +124,7 @@ def score_and_log_extraction(
     matter_id: str | None = None,
     doc_text: str | None = None,
     presence_expectations: dict | None = None,
+    expected_class: str | None = None,
 ) -> ExtractionScoreResult:
     """Score one extraction deterministically and push every score to Langfuse,
     attached to the given trace.
@@ -189,6 +190,22 @@ def score_and_log_extraction(
         name="extraction_needs_judge_review",
         value=bool(result.ambiguous_fields),
         comment=f"ambiguous_fields={result.ambiguous_fields}" if result.ambiguous_fields else None,
+        **common_kwargs,
+    )
+
+    from observability.scores import deterministic_verdict_label
+
+    mismatch = bool(expected_class and doc_class and expected_class != doc_class)
+    verdict = deterministic_verdict_label(
+        result.overall_score,
+        needs_judge_review=bool(result.needs_judge_review),
+        class_mismatch=mismatch,
+    )
+    create_trace_score(
+        name="deterministic_verdict",
+        value=verdict,
+        data_type="CATEGORICAL",
+        comment=f"doc_class={doc_class} overall={result.overall_score}",
         **common_kwargs,
     )
 
