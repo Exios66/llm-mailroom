@@ -3,7 +3,8 @@
 The dedicated specialist suites carry ``honest_gap``, ``in_corpus``,
 and ``retired``. Mailroom pins those fields on traces and HF reports.
 
-v0.10.0 registered ``determination_consistency`` / ``amount_exactness``.
+v0.10.0 registered ``determination_consistency`` / ``amount_exactness``
+(v0.11.0 labels them ``ground_truth=structural`` / ``required``).
 The remaining insurance Hub gap is CMS GT homogeneity (all-approved / empty
 denials), not a missing scorer: that extra is gated as a quality KPI on
 homogeneous GT and exercised on the local contrast pack
