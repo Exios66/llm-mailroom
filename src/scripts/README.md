@@ -46,6 +46,8 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 |--------|---------|
 | `compare_runs.py` | Compares two pilot run reports and outputs a diff of stage changes, confidence shifts, and extraction differences. |
 | `recover_processing.py` | Audit L-1/A-18: reconciles `processing/<worker_id>/` claims orphaned by crashed processes — re-queues to the inbox when no terminal manifest exists, retires to `failed/` when one does. `--apply` to move (default dry-run), `--stale-minutes N`, `--move-all-to-failed`. |
+| `verify_audit_chains.py` | Recompute every per-doc SHA-256 audit chain; nonzero exit on breaks. |
+| `analyze_audit_db.py` | Parse/summarize the full local audit DB (event/actor histograms, review events, chain health, optional catalog join). `--json`, `--no-verify`, `--join-catalog`. |
 | `new_report.py` | Scaffolds a new evaluation write-up / audit / report under `docs/reports/<kind>/` (`audits` \| `pilots` \| `evaluations`) with a dated kebab-case filename and a standard header. Use this for any future report — never drop reports in the repo root. Supports `--date` and `--dry-run`. |
 | `calibrate_field_scoring.py` | Issue #4 calibration step: builds a labeled field sample from `docs/examples/samples/manifest.csv` ground truth (exact/format variants = correct; controlled perturbations = incorrect) and reports per-field-type score separation + calibrated `field_scoring.type_bands` cutoffs. Supports `--band LOW HIGH` to evaluate a candidate band and `--json` for machine-readable output. |
 

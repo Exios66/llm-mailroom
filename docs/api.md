@@ -136,24 +136,77 @@ Auth-gated like the other management endpoints.
 
 ---
 
+### Lookup Document (REVIEW desk)
+
+```
+GET /lookup?doc_id=&trace_id=&filename=
+```
+
+Resolve a catalog (or manifest) row for The-Mailroom REVIEW proxy. Provide at
+least one query parameter. Preference order: `doc_id` → `trace_id` →
+`filename` (newest match).
+
+**Response:**
+```json
+{
+  "document": {
+    "doc_id": "…",
+    "matter_id": "MATTER-001",
+    "original_filename": "msa.pdf",
+    "stage": "review",
+    "doc_type": "contract",
+    "escalation_reason": "low_confidence",
+    "trace_id": "…"
+  }
+}
+```
+
+**Errors:** `400` (no query), `404` (not found).
+
+---
+
+### REVIEW Tray Queue
+
+```
+GET /review/queue
+```
+
+Lists parked `stage=review` documents (catalog + on-disk manifests) with the
+dispositions each item supports (`resume`, `record`, `requeue`, `complete`).
+
+---
+
 ### Resolve Human Review
 
 ```
 POST /review/{doc_id}/resolve
 ```
 
-Resolve a document that's been routed to human review.
+Resolve a document on the REVIEW / RECONSIDER siding. Accepts **JSON** (The-Mailroom
+proxy) or **form** (legacy clients).
 
 **Path Parameters:**
 | Parameter | Type | Description |
 |---|---|---|
 | `doc_id` | string | Document ID from the manifest |
 
-**Form Data:**
+**Body / Form fields:**
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `decision` | string | Yes | `approved` or `rejected` |
 | `notes` | string | No | Reviewer notes |
+| `disposition` | string | No | `resume` (default), `record`, `requeue`, or `complete` |
+| `override_doc_type` | string | No | Reroute classification to a live taxonomy class before resume/complete |
+| `contract_subtype` / `doc_subclass` | string | No | Optional subtype overrides |
+| `extracted_data` | object | For `complete` | Human-finished extraction payload |
+
+**Dispositions:**
+| disposition | When | Effect |
+|---|---|---|
+| `resume` | `stage=review` | Approve → fresh extract under same `doc_id`; reject → failed bin |
+| `record` | any stage | Hash-chained audit + optional manifest note; file stays put |
+| `requeue` | source file locatable | Copy source back to inbox for a fresh watcher run |
+| `complete` | `stage=review` + `decision=approved` | Archive with operator `extracted_data` (no LLM) |
 
 **Response:**
 ```json
@@ -161,14 +214,29 @@ Resolve a document that's been routed to human review.
     "status": "ok",
     "doc_id": "550e8400-e29b-41d4-a716-446655440000",
     "decision": "approved",
+    "disposition": "resume",
     "notes": "Classification confirmed — proceed"
 }
 ```
 
 **Errors:**
-- `400`: Document not in review stage
-- `400`: Invalid decision value
-- `404`: Manifest not found
+- `400`: Invalid decision/disposition, or resume/complete on non-review stage
+- `404`: Manifest or source file not found
+- `409`: Approve/resume without classification (set `override_doc_type` or requeue)
+
+---
+
+### Analyze Full Audit DB
+
+```
+GET /audit?verify=true&recent=20
+```
+
+Summarize every row in the local audit log: event/actor histograms, per-doc
+hash-chain health, review-related event counts, and recent entries. CLI twin:
+`PYTHONPATH=src python src/scripts/analyze_audit_db.py`.
+
+Per-document chain (unchanged): `GET /audit/{doc_id}`.
 
 ---
 
