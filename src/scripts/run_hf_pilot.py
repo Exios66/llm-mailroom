@@ -45,6 +45,8 @@ from langchain_agents.cuad_maud import (  # noqa: E402
     normalize_consideration,
 )
 from langchain_agents.doc_inventories import (  # noqa: E402
+    COMPLIANCE_GT_KEYS,
+    CORPORATE_GT_KEYS,
     INSURANCE_GT_KEYS,
     coerce_gt_value,
     normalize_claim_type,
@@ -64,10 +66,15 @@ HF_CLASSES = (
 )
 # Zero-row / retired classes are scored by dojo suites but MUST NOT appear in
 # HF_CLASSES — compliance_filing has zero Hub rows; court/DD were retired.
+# A local mock/check pack still scores compliance (and insurance contrast /
+# corporate schema extraction) without inventing Hub accuracy.
 HF_HONESTY_EXCLUDED = (
     "compliance_filing",
     "court_opinion",
     "due_diligence",
+)
+HF_LOCAL_PACK_CLASSES = (
+    "compliance_filing",
 )
 # Live mailroom taxonomy files MAUD/merger rows as contract. The visualizer
 # still scores exact vs aligned (merger_agreement ≡ contract).
@@ -181,6 +188,15 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
         "chars": len(str(text)),
     }
     for key in INSURANCE_GT_KEYS:
+        raw = gt.get(key)
+        if raw in (None, ""):
+            raw = row.get(key)
+        if raw not in (None, ""):
+            sample[key] = coerce_gt_value(raw)
+    extra_keys = CORPORATE_GT_KEYS + COMPLIANCE_GT_KEYS
+    for key in extra_keys:
+        if key in sample:
+            continue
         raw = gt.get(key)
         if raw in (None, ""):
             raw = row.get(key)
@@ -408,6 +424,19 @@ def summarize_rows(rows: list[dict]) -> dict:
         for r in rows
         if isinstance(r.get("extraction_overall_score"), (int, float))
     ]
+    quality_dc = [
+        float(r["determination_consistency"])
+        for r in rows
+        if isinstance(r.get("determination_consistency"), (int, float))
+        and r.get("determination_consistency_is_quality") is not False
+        and not r.get("gt_homogeneity")
+    ]
+    gated_dc = [
+        float(r["determination_consistency"])
+        for r in rows
+        if isinstance(r.get("determination_consistency"), (int, float))
+        and (r.get("gt_homogeneity") or r.get("determination_consistency_is_quality") is False)
+    ]
     out = {
         "n": n,
         "exact_n": exact_n,
@@ -443,6 +472,12 @@ def summarize_rows(rows: list[dict]) -> dict:
     if scores:
         out["extraction_n"] = len(scores)
         out["extraction_overall_mean"] = round(sum(scores) / len(scores), 3)
+    if quality_dc:
+        out["determination_consistency_n"] = len(quality_dc)
+        out["determination_consistency_mean"] = round(sum(quality_dc) / len(quality_dc), 3)
+    if gated_dc:
+        out["determination_consistency_gated_n"] = len(gated_dc)
+        out["determination_consistency_gated_mean"] = round(sum(gated_dc) / len(gated_dc), 3)
     return out
 
 
@@ -450,14 +485,17 @@ def hf_corpus_honesty() -> dict:
     """Per-class corpus honesty from the dedicated specialist suites.
 
     Includes scored HF_CLASSES plus the zero-row/retired exclusions so a
-    report never invents compliance accuracy at n=0.
+    report never invents compliance accuracy at n=0. Local packs are
+    attached as extras (mock/check only) — they do not flip ``in_hf_pilot``.
     """
     from observability.honest_gaps import suite_honesty
+    from observability.local_eval_packs import local_pack_status
 
     out: dict[str, dict] = {}
     for cls in (*HF_CLASSES, *HF_HONESTY_EXCLUDED):
         payload = suite_honesty(cls)
         payload["in_hf_pilot"] = cls in HF_CLASSES
+        payload.update(local_pack_status(cls))
         out[cls] = payload
     return out
 
@@ -482,15 +520,29 @@ def expected_fields_for_sample(sample: dict) -> dict:
         token = normalize_consideration(subclass)
         if token:
             expected_fields["merger_consideration"] = token
-    if hf_class == "corporate_record" and subclass:
-        token = normalize_record_type(subclass)
-        expected_fields["record_type"] = token or subclass
+    if hf_class == "corporate_record":
+        if subclass:
+            token = normalize_record_type(subclass)
+            expected_fields["record_type"] = token or subclass
+        for key in CORPORATE_GT_KEYS:
+            if key == "record_type" and expected_fields.get("record_type"):
+                continue
+            val = sample.get(key)
+            if val not in (None, ""):
+                expected_fields[key] = coerce_gt_value(val)
     if hf_class == "correspondence" and subclass:
         token = normalize_communication_type(subclass)
         expected_fields["communication_type"] = token or subclass
-    if hf_class == "compliance_filing" and subclass:
-        token = normalize_filing_type(subclass)
-        expected_fields["filing_type"] = token or subclass
+    if hf_class == "compliance_filing":
+        if subclass:
+            token = normalize_filing_type(subclass)
+            expected_fields["filing_type"] = token or subclass
+        for key in COMPLIANCE_GT_KEYS:
+            if key == "filing_type" and expected_fields.get("filing_type"):
+                continue
+            val = sample.get(key)
+            if val not in (None, ""):
+                expected_fields[key] = coerce_gt_value(val)
     if hf_class == "insurance_claim":
         claim = sample.get("claim_type") or subclass
         token = normalize_claim_type(claim)
@@ -536,12 +588,20 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
         for key, value in extras.items():
             out[key] = round(float(value), 3)
         if (pipeline_class(doc_class) or doc_class) == "insurance_claim":
-            from observability.honest_gaps import insurance_determination_consistent
+            from observability.honest_gaps import (
+                determination_consistency_is_quality,
+                insurance_determination_consistent,
+                insurance_gt_is_homogeneous,
+            )
 
             consistent = insurance_determination_consistent(extracted)
             if consistent is not None:
                 # Local invariant, not a registered dojo extra.
                 out["local_determination_consistent"] = consistent
+            if insurance_gt_is_homogeneous(expected_fields):
+                out["gt_homogeneity"] = True
+            if not determination_consistency_is_quality(expected_fields):
+                out["determination_consistency_is_quality"] = False
         return out
     except Exception:
         return None
@@ -592,6 +652,8 @@ def enrich_sample_row(row: dict) -> dict:
         "maud_clauses": out.get("maud_clauses") or [],
         **{k: out.get(k) for k in ("content_topic", "sentiment_label", "maud_clause_labels") if out.get(k) not in (None, "")},
         **{k: out.get(k) for k in INSURANCE_GT_KEYS if out.get(k) not in (None, "")},
+        **{k: out.get(k) for k in CORPORATE_GT_KEYS if out.get(k) not in (None, "")},
+        **{k: out.get(k) for k in COMPLIANCE_GT_KEYS if out.get(k) not in (None, "")},
     })
     scored = score_row_extraction(
         extracted if isinstance(extracted, dict) else {},
@@ -631,29 +693,76 @@ def render_metrics_markdown(report: dict) -> str:
             f"- extraction overall (deterministic) mean = **{metrics['extraction_overall_mean']}** "
             f"over {metrics.get('extraction_n')} grounded docs"
         )
+    if metrics.get("determination_consistency_mean") is not None:
+        lines.append(
+            f"- determination_consistency (mixed-GT quality) mean = "
+            f"**{metrics['determination_consistency_mean']}** over "
+            f"{metrics.get('determination_consistency_n')} docs"
+        )
+    if metrics.get("determination_consistency_gated_n"):
+        lines.append(
+            f"- determination_consistency on homogeneous CMS GT is **gated** "
+            f"(n={metrics['determination_consistency_gated_n']}, "
+            f"mean={metrics.get('determination_consistency_gated_mean')} — not a quality KPI)"
+        )
     honesty = report.get("honesty") or hf_corpus_honesty()
     lines += [
         "",
-        "## Corpus honesty (dojo 0.9.0)",
+        "## Corpus honesty (dojo 0.10.0)",
         "",
-        "Gaps are suite metadata, not invented accuracy. `compliance_filing` is "
-        "excluded from this runner (zero Hub rows). `court_opinion` / "
-        "`due_diligence` are retired. `corporate_record` has Hub subclass rows "
-        "but no external extraction benchmark. Insurance `determination_consistency` "
-        "is a registered scorer; CMS GT is homogeneous (all-approved), so that "
-        "score is degenerate on GT-shaped rows.",
+        "Gaps are suite metadata, not invented accuracy. `compliance_filing` stays "
+        "out of Hub `--real` (zero Hub rows) and is scored by a **local pack** "
+        "(mock/check only). `court_opinion` / `due_diligence` are retired. "
+        "`corporate_record` Hub rows remain subclass-only; schema-complete "
+        "extraction GT is the local pack. Insurance `determination_consistency` "
+        "is a registered scorer; CMS Hub GT is homogeneous (all-approved), so "
+        "that extra is gated on Hub rows and exercised on the local contrast pack.",
         "",
-        "| class | in HF pilot | in_corpus | retired | honest gap |",
-        "|---|---|---|---|---|",
+        "| class | in HF pilot | in_corpus | retired | local pack | honest gap |",
+        "|---|---|---|---|---|---|",
     ]
     for cls, payload in honesty.items():
         gap = payload.get("honest_gap") or "—"
         if len(str(gap)) > 140:
             gap = str(gap)[:137] + "…"
+        local = payload.get("local_pack") or "—"
         lines.append(
             f"| {cls} | {payload.get('in_hf_pilot')} | {payload.get('in_corpus')} | "
-            f"{payload.get('retired')} | {gap} |"
+            f"{payload.get('retired')} | {local} | {gap} |"
         )
+    local_packs = report.get("local_packs")
+    if local_packs:
+        lines += [
+            "",
+            "## Local eval packs (mock/check; not Hub accuracy)",
+            "",
+            "Perfect-extract scores are scorer self-checks on committed fixtures.",
+            "",
+        ]
+        for name, pack in local_packs.items():
+            perfect = pack.get("perfect_extract") or {}
+            lines.append(
+                f"- **{name}** (`{pack.get('doc_class')}`, n={pack.get('n')}): "
+                f"overall={perfect.get('extraction_overall_mean')} "
+                f"f1={perfect.get('extraction_f1_mean')}"
+            )
+            if name == "insurance_contrast":
+                adv = pack.get("adversarial_denied_without_reasons") or {}
+                lines.append(
+                    f"  - determinations={pack.get('determinations')} "
+                    f"gt_homogeneity={pack.get('gt_homogeneity')} "
+                    f"adversarial denied-without-reasons consistency="
+                    f"{adv.get('determination_consistency')}"
+                )
+            if name == "compliance_filing":
+                lines.append(
+                    f"  - Hub rows=0; subclasses={pack.get('subclasses')}"
+                )
+            if name == "corporate_extraction":
+                lines.append(
+                    f"  - Hub extract is subclass-only; local schema fields="
+                    f"{pack.get('schema_fields')}"
+                )
     stages = metrics.get("stages") or {}
     if stages:
         mix = ", ".join(f"{k}={v}" for k, v in sorted(stages.items()))
@@ -707,6 +816,12 @@ def write_report_files(path: Path, report: dict) -> Path:
     payload = dict(report)
     payload["metrics"] = summarize_rows(payload.get("samples") or [])
     payload["honesty"] = hf_corpus_honesty()
+    try:
+        from observability.local_eval_packs import score_local_packs
+
+        payload["local_packs"] = score_local_packs()
+    except Exception:
+        payload.setdefault("local_packs", report.get("local_packs") or {})
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     tmp.replace(path)
@@ -859,6 +974,14 @@ def _mock_samples(per_class: int) -> list[dict]:
                 "expected_subclass": "fixture",
                 "chars": len(text),
             })
+    # Additive local packs: compliance (zero Hub rows), insurance contrast
+    # (mixed determinations), corporate schema extraction. Mock-only.
+    try:
+        from observability.local_eval_packs import all_local_pack_samples
+
+        out.extend(all_local_pack_samples())
+    except Exception:
+        pass
     return out
 
 
@@ -937,7 +1060,7 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
             "content_topic": row.get("content_topic"),
             "sentiment_label": row.get("sentiment_label"),
         }
-        for key in INSURANCE_GT_KEYS:
+        for key in (*INSURANCE_GT_KEYS, *CORPORATE_GT_KEYS, *COMPLIANCE_GT_KEYS):
             if row.get(key) not in (None, ""):
                 labels[filename][key] = row.get(key)
     return labels
@@ -982,13 +1105,17 @@ def check_contract() -> int:
     assert pipeline_class("merger_agreement") == "contract"
     assert pipeline_class("insurance_claim") == "insurance_claim"
     assert "compliance_filing" not in HF_CLASSES
+    assert "compliance_filing" in HF_LOCAL_PACK_CLASSES
     for retired in ("court_opinion", "due_diligence"):
         assert retired not in HF_CLASSES
         assert get_suite(retired).retired is True
     from observability.honest_gaps import (
+        determination_consistency_is_quality,
         insurance_determination_consistent,
+        insurance_expected_set_is_homogeneous,
         suite_honesty,
     )
+    from observability.local_eval_packs import score_local_packs
 
     insurance = suite_honesty("insurance_claim")
     assert insurance["in_corpus"] is True
@@ -1008,8 +1135,37 @@ def check_contract() -> int:
     assert insurance_determination_consistent(
         {"coverage_determination": "denied", "denial_reasons": []}
     ) is False
+    assert insurance_expected_set_is_homogeneous([
+        {"coverage_determination": "approved", "denial_reasons": []},
+        {"coverage_determination": "approved", "denial_reasons": []},
+    ]) is True
+    assert insurance_expected_set_is_homogeneous([
+        {"coverage_determination": "approved", "denial_reasons": []},
+        {"coverage_determination": "denied", "denial_reasons": ["lapse"]},
+    ]) is False
+    assert determination_consistency_is_quality(
+        {"coverage_determination": "approved", "denial_reasons": []}
+    ) is False
+    packs = score_local_packs()
+    contrast = packs["insurance_contrast"]
+    assert contrast["gt_homogeneity"] is False
+    assert set(contrast["determinations"]) == {"approved", "denied", "partial"}
+    assert contrast["perfect_extract"]["determination_consistency_mean"] == 1.0
+    assert contrast["adversarial_denied_without_reasons"]["determination_consistency"] == 0.0
+    assert contrast["hub_cms_shaped"]["gt_homogeneity"] is True
+    assert packs["compliance_filing"]["n"] >= 2
+    assert packs["compliance_filing"]["in_hub"] is False
+    assert packs["compliance_filing"]["perfect_extract"]["n"] >= 2
+    corp_pack = packs["corporate_extraction"]
+    assert corp_pack["hub_extract_is_subclass_only"] is True
+    assert "entity_name" in corp_pack["schema_fields"]
+    assert "key_provisions" in corp_pack["schema_fields"]
+    assert corp_pack["perfect_extract"]["n"] >= 2
     honesty = hf_corpus_honesty()
     assert honesty["compliance_filing"]["in_hf_pilot"] is False
+    assert honesty["compliance_filing"]["local_pack"] == "compliance_filing"
+    assert honesty["corporate_record"]["local_pack"] == "corporate_extraction"
+    assert honesty["insurance_claim"]["hub_gt_homogeneous"] is True
     rows = [
         {"expected_hf_class": c, "chars": 6000 if c != "contract" else 5900, "filename": f"{c}.txt"}
         for c in HF_CLASSES
@@ -1031,8 +1187,14 @@ def check_contract() -> int:
         "dataset": DATASET_ID,
         "n_classes": len(HF_CLASSES),
         "honesty_excluded": list(HF_HONESTY_EXCLUDED),
+        "local_pack_classes": list(HF_LOCAL_PACK_CLASSES),
         "corporate_in_corpus": True,
         "compliance_in_corpus": False,
+        "local_packs": {
+            "insurance_contrast": packs["insurance_contrast"]["n"],
+            "compliance_filing": packs["compliance_filing"]["n"],
+            "corporate_extraction": packs["corporate_extraction"]["n"],
+        },
     }))
     return 0
 

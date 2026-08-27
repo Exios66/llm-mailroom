@@ -51,12 +51,15 @@ from `get_suite(doc_class)` and attaches a slim block as **trace metadata**
 (`determination_consistency`, field-micro F1/F2) are SCORE_CONFIGS names
 that exist in the v0.10.0 registry.
 
-| Class | Gap |
-| --- | --- |
-| `insurance_claim` | CMS GT homogeneity (all-approved); `determination_consistency` / `amount_exactness` are registered |
-| `compliance_filing` | zero Hub rows; HF pilot excludes the class |
-| `corporate_record` | 39 Hub subclass rows; no external extraction benchmark |
-| `court_opinion` / `due_diligence` | retired from live mailroom; sorter emits `unknown` |
+`observability/local_eval_packs.py` closes the operational holes Hub cannot
+(mock/check only; never billed as `--real` Hub accuracy):
 
-HF reports (`scripts/run_hf_pilot.py`) include the same table so n=0 classes
-cannot grow a fake accuracy.
+| Class | Gap | What mailroom does |
+| --- | --- | --- |
+| `insurance_claim` | CMS GT homogeneity (all-approved) | Gate Hub `determination_consistency` as a quality KPI; local contrast pack (approved/denied/partial) exercises the scorer |
+| `compliance_filing` | zero Hub rows; HF `--real` excludes the class | Local fixture pack (10-K + state filing) scored on `--check` / `--mock` |
+| `corporate_record` | 39 Hub subclass rows; no external extraction benchmark | Local schema-complete extraction pack; join extra Hub GT columns when present |
+| `court_opinion` / `due_diligence` | retired from live mailroom | sorter emits `unknown` |
+
+HF reports (`scripts/run_hf_pilot.py`) include the honesty table plus a
+**Local eval packs** section so n=0 classes cannot grow a fake Hub accuracy.
