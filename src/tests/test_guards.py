@@ -23,7 +23,7 @@ class TestGuardClassification:
         assert guard["ok"] is False
         assert any("unknown_doc_type" in i for i in guard["issues"])
 
-    def test_merger_agreement_alias_passes(self):
+    def test_merger_agreement_is_live_class(self):
         from pipeline.guards import guard_classification
 
         guard = guard_classification({

@@ -1,4 +1,4 @@
-"""Extract-class aliases: merger_agreement extracts as contract; retired parks."""
+"""Live taxonomy class: merger_agreement (MAUD) is not an alias of contract (CUAD)."""
 
 from pipeline.config import (
     EXTRACT_CLASS_ALIASES,
@@ -10,15 +10,15 @@ from pipeline.config import (
 from schemas.documents import EXTRACTION_SCHEMAS, ContractExtraction, get_extraction_schema
 
 
-def test_alias_table_is_merger_only():
-    assert EXTRACT_CLASS_ALIASES == {"merger_agreement": "contract"}
+def test_no_extract_alias_collapses_maud_into_cuad():
+    assert EXTRACT_CLASS_ALIASES == {}
     assert "court_opinion" not in EXTRACT_CLASS_ALIASES
     assert "due_diligence" not in EXTRACT_CLASS_ALIASES
 
 
 def test_resolve_extract_class():
     assert resolve_extract_class("contract") == "contract"
-    assert resolve_extract_class("merger_agreement") == "contract"
+    assert resolve_extract_class("merger_agreement") == "merger_agreement"
     assert resolve_extract_class("insurance_claim") == "insurance_claim"
     assert resolve_extract_class("unknown") is None
     assert resolve_extract_class("court_opinion") is None
@@ -27,15 +27,16 @@ def test_resolve_extract_class():
     assert resolve_extract_class(None) is None
 
 
-def test_is_extractable_includes_alias_not_retired():
+def test_is_extractable_includes_merger_not_retired():
     assert is_extractable_doc_type("merger_agreement") is True
     assert is_extractable_doc_type("contract") is True
     assert is_extractable_doc_type("unknown") is False
     assert is_extractable_doc_type("court_opinion") is False
-    assert "merger_agreement" not in get_all_doc_types()
+    assert "merger_agreement" in get_all_doc_types()
+    assert "contract" in get_all_doc_types()
 
 
-def test_sorter_label_set_includes_alias_and_unknown():
+def test_sorter_label_set_includes_merger_and_unknown():
     labels = get_sorter_label_set()
     assert "merger_agreement" in labels
     assert "unknown" in labels
@@ -45,7 +46,8 @@ def test_sorter_label_set_includes_alias_and_unknown():
     assert "due_diligence" not in labels
 
 
-def test_extraction_schema_aliases_without_duplicating_taxonomy():
+def test_extraction_schema_registers_merger_as_own_class():
     assert get_extraction_schema("merger_agreement") is ContractExtraction
-    assert "merger_agreement" not in EXTRACTION_SCHEMAS
-    assert len(EXTRACTION_SCHEMAS) == 5
+    assert get_extraction_schema("contract") is ContractExtraction
+    assert "merger_agreement" in EXTRACTION_SCHEMAS
+    assert len(EXTRACTION_SCHEMAS) == 6

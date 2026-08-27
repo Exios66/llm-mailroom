@@ -43,20 +43,19 @@ def get_all_doc_types() -> list[str]:
 UNKNOWN_DOC_TYPE = "unknown"
 
 # Sorter / HF labels that extract through a live taxonomy specialist without
-# adding a new doc_class row. ``merger_agreement`` is the docclass-merged /
-# MAUD label; the contracts specialist owns the schema. Retired classes
-# (court_opinion, due_diligence) are deliberately absent — they still park.
-EXTRACT_CLASS_ALIASES: dict[str, str] = {
-    "merger_agreement": "contract",
-}
+# adding a new doc_class row. Retired classes (court_opinion, due_diligence)
+# are deliberately absent — they still park. ``merger_agreement`` is a live
+# MAUD class (not an alias of CUAD ``contract``).
+EXTRACT_CLASS_ALIASES: dict[str, str] = {}
 
 
 def resolve_extract_class(doc_type: str | None) -> str | None:
     """Map a sorter label to the live taxonomy class used for extraction.
 
-    Live taxonomy keys pass through. Extract aliases (``merger_agreement`` →
-    ``contract``) resolve to their specialist class. Unknown / retired /
-    empty return None — never extract.
+    Live taxonomy keys pass through. Extract aliases resolve to their
+    specialist class. Unknown / retired / empty return None — never extract.
+    ``merger_agreement`` is a live taxonomy key (MAUD), not an alias of
+    ``contract`` (CUAD).
     """
     if not doc_type:
         return None
@@ -77,9 +76,10 @@ def is_extractable_doc_type(doc_type: str | None) -> bool:
 def get_sorter_label_set() -> set[str]:
     """Labels the sorter (and Lane A reviewer) may emit.
 
-    Live taxonomy classes plus ``unknown`` plus extract aliases so structured
-    output can emit ``merger_agreement``. ``unknown`` is a routing token, not
-    a specialist class — routers park it; extract never dispatches it.
+    Live taxonomy classes plus ``unknown`` plus any extract aliases.
+    ``unknown`` is a routing token, not a specialist class — routers park
+    it; extract never dispatches it. ``merger_agreement`` is a live
+    taxonomy class (MAUD), not an extract alias of ``contract``.
     """
     return set(get_all_doc_types()) | {UNKNOWN_DOC_TYPE} | set(EXTRACT_CLASS_ALIASES)
 

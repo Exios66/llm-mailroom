@@ -53,7 +53,7 @@ def test_class_packs_cover_every_taxonomy_class():
 
     keys = [c["key"] for c in load_config()["doc_classes"]]
     assert set(CLASS_PACKS) == set(keys)
-    assert len(LEGACY_SPECIALIST_CANNED) == 4  # every live class except langchain contracts
+    assert len(LEGACY_SPECIALIST_CANNED) == 4  # live classes except langchain contract + merger
 
 
 def test_legalbench_mini_mock_run():
