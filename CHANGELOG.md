@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project Cursor Agent Skills** under `.cursor/skills/` (companion to [local-mailroom-sandbox#4](https://github.com/Exios66/local-mailroom-sandbox/pull/4)). Router + dedicated skills for OpenRouter, Ollama, Modal, Langfuse, Phoenix, Braintrust, Hugging Face, LangGraph, dojo-scoring, and LegalBench so agents pick the stack this repo actually uses instead of inventing parallel providers or sinks.
+
 - **Dedicated extraction scoring for every live specialist, with post-hoc GT.** Hub official labels (CUAD clauses, MAUD questions, CMS columns, subclass tokens) still win. Remaining specialist schema fields are filled from conservative regexes over the source text (`observability/posthoc_gt.py`) so every included document — not just contracts — has scorable `expected_fields`. Each live extract class has a dedicated suite in `observability/specialist_suites.py` (`get_suite(doc_class)`). `merger_agreement` keeps sharing the `contracts_specialist` *agent* but uses the rebound MAUD suite, not CUAD families. HF reports add a per-specialist extraction table. `compliance_filing` stays out of Hub `--real` (zero rows); local pack + post-hoc labels cover mock/check. Post-hoc fills are provenance-tagged and never billed as official Hub annotations.
 
 - **Per-agent isolation eval.** `scripts/run_agent_eval.py` + `observability/agent_eval.py` score one LLM role against fixtures, local packs, and the live manifest without running the 13-node graph. `--real` is gated by `is_real_sample` the same way `run_pilot.py` is. Live Langfuse evaluators stay pipeline-level (`pipeline-result`) by design.
