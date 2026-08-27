@@ -260,12 +260,16 @@ def nb11() -> None:
         md("""# 11 · Hugging Face corpora — Lucius-Morningstar
 
 Navigate and explore the datasets the mailroom family publishes on
-[Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar): CUAD
-contracts, LegalBench, docclass packs, Enron correspondence, and CMS
-DE-SynPUF insurance claims — each mapped onto a mailroom document class.
+[Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar). The
+targeted full corpus is **`docclass-merged` schema v5** (1,210 docs).
+Class × subtype **examples** come from **`docclass-pilot`** (48 strata).
+Other pipeline-ready Hub sets (Enron correspondence ~247k, CMS claims,
+CUAD contracts) ingest the same way; `legalbench-full` is a LegalBench
+CLI task pack, not a document-pipeline ingest.
 
-**What you'll see:** the org catalog, first-row previews, substring search,
-an equality filter, and one Hub row fed into the real pipeline (mock LLM).
+**What you'll see:** the org catalog, the committed class×subclass example
+pack, first-row previews, substring search, an equality filter, and one
+Hub row fed into the real pipeline (mock LLM).
 
 **Honesty label:** default cells are OFFLINE. They read a committed Dataset
 Viewer snapshot under `notebooks/fixtures/huggingface/` (dated in
@@ -287,11 +291,24 @@ print("live requested:", hf.live_requested())
         md("""## The catalog
 
 Seven datasets. `mailroom_classes` is the wiring back to `taxonomy.yaml`,
-not a Hub tag — it is how this pipeline consumes the published surface."""),
+not a Hub tag — it is how this pipeline consumes the published surface.
+`docclass-merged` v5 is the full corpus; `docclass-pilot` is one example
+of every type and subtype. `compliance_filing` has zero Hub rows."""),
         code("""cat = hf.catalog()
 hf.show_catalog(cat["datasets"])
 print()
 print("org:", cat["org_url"])
+"""),
+        md("""## Class × subclass examples (docclass-pilot, v5 parent)
+
+One Hub row per stratum — every type and subtype in `docclass-merged` v5.
+This pack is what `--mock` / `--examples` on `run_hf_pilot.py` and the
+notebook `CLASS_PACKS` use. Not invented stand-in text."""),
+        code("""pack = hf.class_subclass_examples()
+print("parent:", pack["parent"], "schema:", pack["schema"], "strata:", pack["n_strata"])
+from collections import Counter
+print(Counter(row["expected"] for row in pack["examples"]))
+print("sample:", pack["examples"][0]["filename"], "/", pack["examples"][0]["expected_subclass"])
 """),
         md("""## Preview — insurance claims (CMS DE-SynPUF)
 
@@ -347,14 +364,15 @@ lab.close_sandbox(env)
 
 | dataset | mailroom use |
 |---|---|
-| `docclass-merged` / `docclass-pilot` | sorter training / classification experiments |
+| `docclass-merged` (v5, 1,210 docs) | targeted full pipeline corpus |
+| `docclass-pilot` (48 strata) | class × subclass examples |
 | `mailroom-cuad-contracts` | vision surface (page images) |
 | `mailroom-cuad-contracts-full` | contract texts + CUAD clause labels |
-| `legalbench-full` | Hub stub — use notebook 12 |
-| `enron-correspondence-dedup` | correspondence specialist |
+| `legalbench-full` | LegalBench CLI tasks — not pipeline ingest |
+| `enron-correspondence-dedup` (~247k) | correspondence specialist |
 | `cms-desynpuf-insurance-claims` | insurance_claim specialist |
 
-Local pilot samples (22 rows, no Hub) still live in `dataset_browser.ipynb`."""),
+Committed PDFs under `docs/examples/samples/` are PDF-ingest fixtures, not the class catalog. `dataset_browser.ipynb` still walks that local set."""),
         md("""## Live Hub refresh (opt-in)
 
 <!-- NB-OPT-IN-NETWORK: Dataset Viewer / Hub API; skipped unless MAILROOM_HF_LIVE=1 -->

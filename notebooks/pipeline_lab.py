@@ -1280,40 +1280,67 @@ LEGACY_SPECIALIST_CANNED = {
     "insurance claim documentation": INSURANCE_CLAIM_EXTRACTION,
 }
 
+def _hub_class_doc(doc_class: str) -> tuple[str, str]:
+    """Document text + filename from the committed Hub class×subtype pack.
+
+    Live Hub classes must come from ``Lucius-Morningstar/docclass-pilot``.
+    ``compliance_filing`` has no Hub rows (v5 honest gap) and is not
+    looked up here.
+    """
+    from pipeline.hf_corpora import example_for_class
+
+    ex = example_for_class(doc_class)
+    name = Path(str(ex.get("filename") or f"{doc_class}.txt")).name
+    text = str(ex.get("doc_text") or "")
+    if not text.strip():
+        raise ValueError(f"Hub example for {doc_class!r} has empty doc_text")
+    return text, name
+
+
+_HUB_CONTRACT_TEXT, _HUB_CONTRACT_FILE = _hub_class_doc("contract")
+_HUB_MERGER_TEXT, _HUB_MERGER_FILE = _hub_class_doc("merger_agreement")
+_HUB_CORP_TEXT, _HUB_CORP_FILE = _hub_class_doc("corporate_record")
+_HUB_MAIL_TEXT, _HUB_MAIL_FILE = _hub_class_doc("correspondence")
+_HUB_CLAIM_TEXT, _HUB_CLAIM_FILE = _hub_class_doc("insurance_claim")
+
 CLASS_PACKS: dict[str, dict[str, Any]] = {
     "contract": {
-        "text": DOC_CONTRACT,
-        "filename": "contract.txt",
+        "text": _HUB_CONTRACT_TEXT,
+        "filename": _HUB_CONTRACT_FILE,
         "classification": CLASSIFY_CONTRACT_HIGH,
         "extraction": EXTRACT_HIGH,
         "specialist": "contracts_specialist",
         "path": "langchain",
+        "source": "huggingface:docclass-pilot",
     },
     "merger_agreement": {
-        "text": DOC_MERGER,
-        "filename": "merger_agreement.txt",
+        "text": _HUB_MERGER_TEXT,
+        "filename": _HUB_MERGER_FILE,
         "classification": CLASSIFY_MERGER_HIGH,
         "extraction": EXTRACT_HIGH,
         "specialist": "contracts_specialist",
         "path": "langchain",
+        "source": "huggingface:docclass-pilot",
     },
     "corporate_record": {
-        "text": DOC_CORPORATE_RECORD,
-        "filename": "bylaws.txt",
+        "text": _HUB_CORP_TEXT,
+        "filename": _HUB_CORP_FILE,
         "classification": CLASSIFY_CORPORATE_HIGH,
         "extraction": CORPORATE_RECORD_EXTRACTION,
         "specialist": "corporate_records_specialist",
         "path": "legacy",
         "marker": "corporate record",
+        "source": "huggingface:docclass-pilot",
     },
     "correspondence": {
-        "text": DOC_CORRESPONDENCE,
-        "filename": "demand_letter.txt",
+        "text": _HUB_MAIL_TEXT,
+        "filename": _HUB_MAIL_FILE,
         "classification": CLASSIFY_CORRESPONDENCE_HIGH,
         "extraction": CORRESPONDENCE_EXTRACTION,
         "specialist": "correspondence_specialist",
         "path": "legacy",
         "marker": "correspondence",
+        "source": "huggingface:docclass-pilot",
     },
     "compliance_filing": {
         "text": DOC_COMPLIANCE,
@@ -1323,15 +1350,17 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
         "specialist": "compliance_specialist",
         "path": "legacy",
         "marker": "compliance filing",
+        "source": "local-fixture",  # zero Hub rows in docclass-merged v5
     },
     "insurance_claim": {
-        "text": DOC_INSURANCE_CLAIM,
-        "filename": "fnol.txt",
+        "text": _HUB_CLAIM_TEXT,
+        "filename": _HUB_CLAIM_FILE,
         "classification": CLASSIFY_INSURANCE_HIGH,
         "extraction": INSURANCE_CLAIM_EXTRACTION,
         "specialist": "insurance_claims_specialist",
         "path": "legacy",
         "marker": "insurance claim documentation",
+        "source": "huggingface:docclass-pilot",
     },
 }
 

@@ -3,7 +3,8 @@
 
 Default path is **network-free**: every helper reads the committed Dataset
 Viewer snapshot under ``notebooks/fixtures/huggingface/`` (catalog + first
-rows, dated in ``catalog.json``). Live Hub / Dataset Viewer calls are
+rows, dated in ``catalog.json``, plus ``class_subclass_examples.json`` —
+one Hub row per v5 class × subclass stratum from ``docclass-pilot``). Live Hub / Dataset Viewer calls are
 opt-in (``live=True`` / ``MAILROOM_HF_LIVE=1``) and imported lazily so the
 notebook guard's module-scope network scan stays clean.
 
@@ -36,6 +37,12 @@ _SNAPSHOT_NAME = {
     "Lucius-Morningstar/mailroom-cuad-contracts-full": "mailroom-cuad-contracts-full.json",
     "Lucius-Morningstar/legalbench-full": "legalbench-full.json",
 }
+EXAMPLES_PACK = FIXTURES / "class_subclass_examples.json"
+
+
+def class_subclass_examples() -> dict[str, Any]:
+    """Committed class × subclass examples from docclass-pilot (v5 parent)."""
+    return json.loads(EXAMPLES_PACK.read_text(encoding="utf-8"))
 
 
 def live_requested() -> bool:
@@ -50,7 +57,7 @@ def live_requested() -> bool:
 
 
 def catalog(*, live: bool = False) -> dict[str, Any]:
-    """Org catalog: 7 published datasets mapped onto mailroom doc classes.
+    """Org catalog: published datasets mapped onto mailroom doc classes.
 
     Offline: committed snapshot. Live: Hub ``/api/datasets?author=`` merged
     with Dataset Viewer ``/is-valid`` + ``/size`` (keeps the mapping table
