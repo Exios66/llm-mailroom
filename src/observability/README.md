@@ -5,7 +5,7 @@ Tracing, scoring, and evaluation plumbing for the mailroom pipeline.
 ## Where things live (post KANBAN-061)
 
 The field-scoring implementation is **owned by the shared package**
-[`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) (v0.9.0+).
+[`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) (v0.10.0+).
 This repo keeps only a backward-compatibility shim.
 
 | Module | Status |
@@ -43,16 +43,17 @@ in llm-dojo-scoring first, then use them here.
 path returns a dict, not an `ExtractionScoreResult` — see
 `suite_scoring.score_and_log_intake`.
 
-## Honesty gaps (dojo 0.9.0)
+## Honesty gaps (dojo 0.10.0)
 
 `observability/honest_gaps.py` reads `honest_gap` / `in_corpus` / `retired`
 from `get_suite(doc_class)` and attaches a slim block as **trace metadata**
-(never tags — tags are immutable/upfront; never a SCORE_CONFIG name that is
-not in the registry):
+(never tags — tags are immutable/upfront). Registered extras
+(`determination_consistency`, field-micro F1/F2) are SCORE_CONFIGS names
+that exist in the v0.10.0 registry.
 
 | Class | Gap |
 | --- | --- |
-| `insurance_claim` | determination-consistency scorers pending; local `coverage_determination` ↔ `denial_reasons` invariant only |
+| `insurance_claim` | CMS GT homogeneity (all-approved); `determination_consistency` / `amount_exactness` are registered |
 | `compliance_filing` | zero Hub rows; HF pilot excludes the class |
 | `corporate_record` | 39 Hub subclass rows; no external extraction benchmark |
 | `court_opinion` / `due_diligence` | retired from live mailroom; sorter emits `unknown` |

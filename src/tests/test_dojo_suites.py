@@ -84,6 +84,28 @@ def test_score_with_suite_unwraps_extras():
     assert extras["sentiment_accuracy"] == 1.0
 
 
+def test_score_with_suite_emits_v010_claims_and_prf_extras():
+    from observability.suite_scoring import score_with_suite
+
+    expected = {
+        "claim_number": "C-1",
+        "insurer": "Acme",
+        "insured_party": "Pat",
+        "claim_type": "carrier",
+        "coverage_determination": "denied",
+        "denial_reasons": ["exclusion"],
+        "claimed_amount": 10.0,
+    }
+    result, extras = score_with_suite("insurance_claim", expected, expected)
+    assert result.overall_score == 1.0
+    assert extras["determination_consistency"] == 1.0
+    assert extras["amount_exactness"] == 1.0
+    assert extras["extraction_f1"] == 1.0
+    inconsistent = dict(expected, denial_reasons=[])
+    _, bad = score_with_suite("insurance_claim", inconsistent, expected)
+    assert bad["determination_consistency"] == 0.0
+
+
 def test_subclass_ok_prefers_sorter_doc_subclass():
     from scripts.run_hf_pilot import subclass_ok
 

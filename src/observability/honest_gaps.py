@@ -1,20 +1,20 @@
-"""Surface llm-dojo-scoring 0.9.0 honesty gaps without inventing metrics.
+"""Surface llm-dojo-scoring honesty gaps without inventing metrics.
 
-The dedicated specialist suites already carry ``honest_gap``, ``in_corpus``,
-and ``retired``. Mailroom must pin those fields on traces and HF reports so
-we never pretend a class has a CUAD-class extraction benchmark (or a
-corpus-backed accuracy) that the registry does not.
+The dedicated specialist suites carry ``honest_gap``, ``in_corpus``,
+and ``retired``. Mailroom pins those fields on traces and HF reports.
 
-Do **not** add SCORE_CONFIGS names here. Determination-consistency is not in
-the installed dojo metric registry; the local insurance invariant below is a
-field-consistency check, not a registered score.
+v0.10.0 registered ``determination_consistency`` / ``amount_exactness``.
+The remaining insurance gap is CMS GT homogeneity (all-approved / empty
+denials), not a missing scorer. Local ``insurance_determination_*`` helpers
+stay as a guardrail/metadata invariant; the registry score is emitted via
+``suite_scoring.attach_single_doc_extras``.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-# Hub / taxonomy extract classes whose v0.9.0 suites declare an honest gap.
+# Hub / taxonomy extract classes whose suites still declare an honest gap.
 # HF_CLASSES omits compliance (zero rows) and the retired court/DD types.
 GAP_DOC_TYPES: tuple[str, ...] = (
     "insurance_claim",
@@ -95,12 +95,11 @@ def _denial_reasons(extracted: dict | None) -> list[str]:
 def insurance_determination_issues(extracted: dict | None) -> list[str]:
     """Local coverage_determination ↔ denial_reasons invariant.
 
-    Not a dojo metric. CMS DE-SynPUF ground truth is all
-    ``coverage_determination=approved`` with empty ``denial_reasons``, so the
-    Hub rows never exercise the denied path. This check flags internally
-    contradictory extracts (denied with no reasons, approved with reasons)
-    without claiming amount-exactness or a registered determination-consistency
-    score.
+    Not a substitute for the registered ``determination_consistency`` score.
+    CMS DE-SynPUF ground truth is all ``coverage_determination=approved``
+    with empty ``denial_reasons``, so Hub rows make that score degenerate
+    (always 1.0 on GT-shaped predictions). This helper flags internally
+    contradictory extracts for the extraction guard / trace metadata.
     """
     data = extracted or {}
     det = str(data.get("coverage_determination") or "").strip().lower()

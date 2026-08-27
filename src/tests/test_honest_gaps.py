@@ -1,4 +1,4 @@
-"""v0.9.0 honesty gaps: insurance, retired court/DD, zero-row compliance, corporate_record."""
+"""v0.10.0 honesty gaps: CMS GT homogeneity, retired court/DD, zero-row compliance, corporate_record."""
 
 from langchain_agents.doc_inventories import CORPORATE_RECORD_TYPES
 from observability.honest_gaps import (
@@ -11,11 +11,13 @@ from observability.honest_gaps import (
 from pipeline.config import is_extractable_doc_type, resolve_extract_class
 
 
-def test_insurance_honest_gap_is_determination_consistency():
+def test_insurance_honest_gap_is_gt_homogeneity():
     payload = suite_honesty("insurance_claim")
     assert payload["retired"] is False
     assert payload["in_corpus"] is True
-    assert "determination-consistency" in (payload["honest_gap"] or "").lower()
+    gap = (payload["honest_gap"] or "").lower()
+    assert "homogeneous" in gap or "degenerate" in gap
+    assert "determination_consistency" in gap
     assert "carrier" in payload["subclasses"]
 
 
@@ -58,7 +60,8 @@ def test_corporate_record_honest_gap_is_no_external_extraction_benchmark():
     payload = suite_honesty("corporate_record")
     assert payload["in_corpus"] is True
     assert payload["retired"] is False
-    assert "no external extraction benchmark" in (payload["honest_gap"] or "").lower()
+    gap = (payload["honest_gap"] or "").lower()
+    assert "external" in gap and "extraction benchmark" in gap
     # Hub extract inventory stays five tokens; dojo sorter catalog is wider.
     assert CORPORATE_RECORD_TYPES == (
         "articles_of_incorporation",
@@ -105,7 +108,9 @@ def test_insurance_determination_invariant_does_not_invent_a_score():
     from observability.scores import SCORE_CONFIGS
 
     names = {c["name"] for c in SCORE_CONFIGS}
-    assert "determination_consistency" not in names
+    assert "determination_consistency" in names
+    assert "amount_exactness" in names
+    assert "extraction_f1" in names
     assert "local_determination_consistent" not in names
 
 
