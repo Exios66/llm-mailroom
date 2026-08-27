@@ -173,7 +173,7 @@ class PDFTranscriber(BaseAgent):
         kwargs = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": self.system_prompt()},
+                {"role": "system", "content": self.system_prompt_with_skills()},
                 {"role": "user", "content": user_message},
             ],
             "max_tokens": self._configured_max_tokens(),

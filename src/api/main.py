@@ -177,11 +177,15 @@ async def health():
 
     paused = is_ingestion_paused()
     tracing_health = flush_health()
+    heartbeat_age = watcher_heartbeat_age()
+    lamp = watcher_lamp(heartbeat_age)
     overall = "ok" if (llm["status"] == "ok" and db["status"] == "ok") else "degraded"
     if paused or not tracing_health["healthy"]:
         overall = "degraded"
-    heartbeat_age = watcher_heartbeat_age()
-    lamp = watcher_lamp(heartbeat_age)
+    # Uploads sit in the inbox until the watcher drains them — a missing or
+    # stale watcher is an operational outage, not an informational lamp.
+    if lamp in ("stale", "missing"):
+        overall = "degraded"
     return {
         "status": overall,
         "service": "mailroom",

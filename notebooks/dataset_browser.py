@@ -7,7 +7,7 @@ the notebook next to it only loads data and renders the browser.
 What it browses
 ---------------
 The pilot sample set defined by `docs/examples/samples/manifest.csv`
-(22 rows: id, subdir/filename, expected doc class/stage, size tier,
+(25 rows: id, subdir/filename, expected doc class/stage, size tier,
 provenance `source` — CUAD / external/ = REAL committed legal documents,
 anything else = synthetic .txt rendered to PDF only for mock runs — license,
 notes, and ground-truth `expected_fields` JSON), optionally joined with the
