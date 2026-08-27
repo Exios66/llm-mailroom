@@ -111,6 +111,14 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "intake_messy_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "intake_hyphen_unwraps", "data_type": "NUMERIC", "min_value": 0.0},
     {"name": "intake_collapsed_blanks", "data_type": "NUMERIC", "min_value": 0.0},
+    # Dojo 0.10.0: field-micro P/R/F1/F2 + insurance claims extras.
+    {"name": "extraction_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "extraction_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "extraction_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "extraction_f2", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "entity_list_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "determination_consistency", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    {"name": "amount_exactness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     # --- LegalBench evaluation suite (legalbench/) ----------------------
     # Run-level scores attached to the per-run Langfuse trace by the suite's
     # runner; deterministic, computed locally (never LLM-graded).
