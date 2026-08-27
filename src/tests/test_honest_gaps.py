@@ -1,4 +1,4 @@
-"""v0.10.0 honesty gaps: CMS GT homogeneity, retired court/DD, zero-row compliance, corporate_record."""
+"""Honesty gaps (dojo 0.10.0+ / 0.11.0): CMS GT homogeneity, retired court/DD, zero-row compliance, corporate_record."""
 
 from langchain_agents.doc_inventories import CORPORATE_RECORD_TYPES
 from observability.honest_gaps import (

@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dojo 0.11.0 pin (scoring docs + prompt catalog).** `pyproject.toml` now pins `llm-dojo-scoring @v0.11.0` (`35f3584`). Formulas and T0 names are unchanged from 0.10.0. Mailroom consumes the new `MetricDef` `citation` / `inclusion` / `ground_truth` metadata (never invent `field_presence` as 0.0) and the importable `llm_dojo_scoring.prompts` catalog (anti-priming on live `prompt_templates()`, honest empty text for intake/archivist/proposed auditors). Production prompts stay owned here; the catalog is the scored snapshot.
+
 - **Reconsideration beyond self-reported confidence (The-Mailroom PR #14).** `pipeline/reconsideration.py` mirrors the visualizer cause tokens. Ground-truth class misses go to Lane A even at 0.99 confidence (reviewer still-wrong → human review). Hollow extracts and expected-field coverage below `confidence.low` retry then review. Failed `compile_report` withholds `catalog_write` so incomplete reports cannot archive.
 
 - **Local eval packs for remaining 0.10.0 honesty gaps.** Hub CMS `determination_consistency` is gated when GT is all-approved / empty denials (not reported as a quality KPI). A local approved/denied/partial contrast pack exercises the registered scorer. `compliance_filing` stays out of `HF_CLASSES` (zero Hub rows) and is scored from committed fixtures on `--check` / `--mock` only. `corporate_record` keeps Hub as subclass-only; a local schema-complete extraction pack is the extraction benchmark, and extra Hub GT columns are joined when present.

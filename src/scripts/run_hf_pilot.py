@@ -706,7 +706,7 @@ def render_metrics_markdown(report: dict) -> str:
     honesty = report.get("honesty") or hf_corpus_honesty()
     lines += [
         "",
-        "## Corpus honesty (dojo 0.10.0)",
+        "## Corpus honesty (dojo 0.11.0)",
         "",
         "Gaps are suite metadata, not invented accuracy. `compliance_filing` stays "
         "out of Hub `--real` (zero Hub rows) and is scored by a **local pack** "
