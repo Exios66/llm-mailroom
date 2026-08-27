@@ -374,10 +374,17 @@ def after_boss(state: dict) -> Literal["boss_escalation", "compile_report", "hum
     return "human_review"
 
 
-def after_human_review(state: dict) -> Literal["compile_report", "failed"]:
+def after_human_review(state: dict) -> Literal["extract", "failed"]:
+    """Route a resolved HITL interrupt.
+
+    Approved reviews re-enter extraction (fresh fields, never the reviewed
+    payload) — the same contract as ``resume_from_review``. Rejected (or
+    still-pending, which should not happen after ``interrupt()`` returns)
+    ends the run; the node already moved the file to ``failed/``.
+    """
     decision = state.get("review_decision")
     if decision == "approved":
-        return "compile_report"
+        return "extract"
     return "failed"
 
 
