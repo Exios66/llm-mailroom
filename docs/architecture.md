@@ -32,6 +32,7 @@ flowchart TD
     INGEST --> CLASSIFY
 
     CLASSIFY -- "confidence >= high" --> EXTRACT
+    CLASSIFY -- "GT class miss (even at 0.99)" --> REVIEW_CLASS
     CLASSIFY -- "low <= confidence < high" --> REVIEW
     CLASSIFY -- "confidence < low, attempts <= retry_max" --> RETRY_CLASS
     CLASSIFY -- "unknown type / still low after retries" --> REVIEW
@@ -40,10 +41,10 @@ flowchart TD
     RETRY_CLASS -- "medium band exhausted (agent review)" --> REVIEW_CLASS
     RETRY_CLASS -- "medium or still low confidence" --> REVIEW
     REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
-    REVIEW_CLASS -- "anything else" --> REVIEW
+    REVIEW_CLASS -- "reviewer still wrong vs GT / anything else" --> REVIEW
 
     EXTRACT -- "no conflict, judge gate off/skip" --> REPORT
-    EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
+    EXTRACT -- "hollow payload or expected-field coverage < low" --> RETRY_EXTRACT
     EXTRACT -- "conflict detected" --> BOSS
     EXTRACT -- "judge gate fires (grounded run)" --> JUDGE
     EXTRACT -- "still low confidence" --> REVIEW
@@ -61,7 +62,8 @@ flowchart TD
     REVIEW -- "approved" --> REPORT
     REVIEW -- "rejected" --> FAILED --> ENDX
 
-    REPORT --> CATALOG --> ARCHIVE --> ENDX
+    REPORT -- "ok" --> CATALOG --> ARCHIVE --> ENDX
+    REPORT -- "compile failed" --> REVIEW
 ```
 
 ### Hierarchical organization

@@ -195,6 +195,7 @@ class TestTopology:
         required = {
             ("__start__", "ingest"),
             ("retry_classify", "review_classify"),
+            ("classify", "review_classify"),
             ("retry_classify", "retry_classify"),
             ("review_classify", "extract"),
             ("review_classify", "human_review"),
@@ -208,6 +209,8 @@ class TestTopology:
             ("arbiter", "compile_report"),
             ("arbiter", "arbiter"),
             ("boss_escalation", "boss_escalation"),
+            ("compile_report", "catalog_write"),
+            ("compile_report", "human_review"),
         }
         missing = required - edges
         assert not missing, f"lane edges missing: {missing}"

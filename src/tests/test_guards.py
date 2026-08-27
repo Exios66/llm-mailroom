@@ -228,3 +228,4 @@ class TestSubstantiveContent:
 
         assert _has_substantive_content({"parties": [], "notes": "", "meta": None}) is False
         assert _has_substantive_content({"_parse_error": True, "reasoning": "x"}) is False
+        assert _has_substantive_content({"confidence": 0.99, "mock_extraction": True}) is False

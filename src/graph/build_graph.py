@@ -20,6 +20,7 @@ from graph.routing import (
     after_arbiter,
     after_boss,
     after_human_review,
+    after_report,
     judge_gate,
 )
 from observability.tracing import pipeline_trace, traced_node, observation
@@ -1433,6 +1434,16 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
 
     logger.info("human_review_required", doc_id=doc_id, reason=esc_reason)
 
+    from pipeline.reconsideration import collect_review_causes, format_causes
+
+    causes = collect_review_causes(state)
+    cause_line = format_causes(causes)
+    if cause_line:
+        if esc_reason and cause_line not in str(esc_reason):
+            esc_reason = f"{esc_reason}; {cause_line}"
+        else:
+            esc_reason = cause_line
+
     if file_path_str:
         manifest = DocumentManifest(
             doc_id=doc_id,
@@ -1474,6 +1485,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     result = {
         "stage": PipelineStage.REVIEW.value,
         "escalation_reason": esc_reason,
+        "review_causes": causes,
         # Sentinal for graph termination, NOT a human decision: the document
         # was routed to review and is awaiting a human. "rejected" would leak
         # into traces/manifests as a verdict the human never gave.
@@ -1577,9 +1589,10 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
         from agents.reporter import compile_matter_record
         report = compile_matter_record(manifest_data, llm_client, model)
     except Exception as exc:
-        # A reporter blip must not fail a successfully extracted document
-        # (same fail-safe as L-10 for the Boss). Archive the extraction with
-        # a fallback summary instead of sending the run to the failed bin.
+        # A reporter blip must not drop a successfully extracted document
+        # (same fail-safe as L-10 for the Boss). Keep the fields on a
+        # fallback _report (error=True); after_report then withholds
+        # catalog_write and parks for human review instead of archiving.
         logger.exception("report_compile_failed", doc_id=state.get("doc_id"))
         report = {
             "summary": (
@@ -1602,6 +1615,7 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
             **extracted,
             "_report": report,
         },
+        "report_error": bool(report.get("error")),
     }
 
 
@@ -2007,6 +2021,7 @@ def build_graph(checkpointer=None):
     workflow.add_conditional_edges("classify", after_classify, {
         "classify": "classify",  # transient-error self-loop (same node, LLM-level retry)
         "retry_classify": "retry_classify",
+        "review_classify": "review_classify",  # GT class miss even at 0.99
         "extract": "extract",
         "human_review": "human_review",
     })
@@ -2070,7 +2085,10 @@ def build_graph(checkpointer=None):
         "failed": END,
     })
 
-    workflow.add_edge("compile_report", "catalog_write")
+    workflow.add_conditional_edges("compile_report", after_report, {
+        "catalog_write": "catalog_write",
+        "human_review": "human_review",
+    })
     workflow.add_edge("catalog_write", "archive")
     workflow.add_edge("archive", END)
 

@@ -132,13 +132,13 @@ def _has_substantive_content(extracted_data: dict | None) -> bool:
 
     Underscore-prefixed keys are pipeline metadata (`_report`, `_unsupported`,
     `_parse_error`), never extraction content; `reasoning` is a per-field TRACE
-    artifact (populated even for empty extractions) and is never content. An
+    artifact and `confidence` / `mock_extraction` are not schema fields. An
     extraction whose only fields are empty/null/[] is a failed extraction
     regardless of schema validity — routing must not archive it (see
-    `apply_extraction_guard`).
+    `apply_extraction_guard` and `pipeline.reconsideration.extraction_is_hollow`).
     """
     for key, value in (extracted_data or {}).items():
-        if key.startswith("_") or key == "reasoning":
+        if key.startswith("_") or key in ("reasoning", "confidence", "mock_extraction"):
             continue
         if value is None:
             continue

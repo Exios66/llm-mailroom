@@ -134,6 +134,14 @@ The scoring layer both mailroom and entity-extraction consume:
   `source-docclass-merged`, ground truth on trace input/metadata including
   `expected_hf_class`). Production session `pilot-hf-20260825T044207Z` is the
   reference five-doc Qwen 3.7-Flash subset.
+- **Reconsideration (The-Mailroom [PR #14](https://github.com/Exios66/The-Mailroom/pull/14)):**
+  the visualizer parks archived objective misses as **RECONSIDER** from
+  ground truth / judge / scores — never from self-reported confidence.
+  This pipeline mirrors those cause tokens in `pipeline/reconsideration.py`
+  and acts on them **before** catalog write: GT class miss → Lane A even at
+  0.99; reviewer still-wrong → human review; hollow extract or expected-field
+  coverage below `confidence.low` → retry then review; failed `compile_report`
+  withholds `catalog_write`.
 - **Governance:** fully governed member of the family — own `AGENTS.md`, own
   semver release train (v0.2.0), own test suite (never hits real Langfuse),
   own wiki. It is a downstream OBSERVER: dependency of no family repo — the
