@@ -216,7 +216,11 @@ def _fake_client(expect: dict) -> MagicMock:
         elif "ADJUDICATION REQUEST" in user_content:
             content = json.dumps({"decision": "approved", "reasoning": "mock", "resolution_notes": ""})
         else:
-            content = json.dumps({"confidence": expect["conf"], "mock_extraction": True})
+            content = json.dumps({
+                "confidence": expect["conf"],
+                "document_name": "Mock Agreement",
+                "parties": ["Mock Party"],
+            })
         resp = MagicMock()
         resp.choices = [MagicMock()]
         resp.choices[0].message.content = content
@@ -261,7 +265,11 @@ def _make_mock_langchain_llm(expect: dict):
                 "confidence": expect["conf"],
                 "reasoning": "mock",
             },
-            extraction={"confidence": expect["conf"], "mock_extraction": True},
+            extraction={
+                "confidence": expect["conf"],
+                "document_name": "Mock Agreement",
+                "parties": ["Mock Party"],
+            },
             on_call=_on_call,
         )
 
