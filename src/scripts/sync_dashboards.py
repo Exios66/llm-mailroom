@@ -394,12 +394,30 @@ PERF_WIDGETS = [
         filters=[PILOT_ENV_FILTER, {"column": "name", "operator": "=", "type": "string", "value": "stage_completed"}],
         description="Fraction of runs reaching a terminal stage over time.",
     ),
+    WidgetSpec(
+        name="First-pass success rate over Time",
+        view="scores-numeric",
+        dimensions=[],
+        metrics=[("value", "avg")],
+        chart_type="LINE_TIME_SERIES",
+        filters=[REAL_ENVS_FILTER, {"column": "name", "operator": "=", "type": "string", "value": "success_rate"}],
+        description="Fraction of documents that archived in one pass with no retry, Lane A, arbiter, boss, human review, guardrail, or transient reprocess. Production KPI — no ground truth required (live + pilot).",
+    ),
+    WidgetSpec(
+        name="First-pass success count over Time",
+        view="scores-numeric",
+        dimensions=[],
+        metrics=[("value", "sum")],
+        chart_type="BAR_TIME_SERIES",
+        filters=[REAL_ENVS_FILTER, {"column": "name", "operator": "=", "type": "string", "value": "success_rate"}],
+        description="Count of documents that archived in one clean pass (sum of per-run success_rate 0/1). Production KPI — no ground truth required (live + pilot).",
+    ),
 ]
 
 
 PERF_DASHBOARD = {
     "name": "Mailroom Performance — Throughput / Errors / Tokens / Cost / Latency",
-    "description": "Operational gauges over live + pilot runs: document throughput, error count, token spend per model, cost per model, p99 latency per model, run duration, cost, and stage completion. Model grouping uses the requested model string (qwen/deepseek), never the OpenRouter adapter's providedModelName.",
+    "description": "Operational gauges over live + pilot runs: document throughput, first-pass success (archived with no reroute/reprocess; no ground truth), error count, token spend per model, cost per model, p99 latency per model, run duration, cost, and stage completion. Model grouping uses the requested model string (qwen/deepseek), never the OpenRouter adapter's providedModelName.",
 }
 
 
