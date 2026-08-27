@@ -92,4 +92,6 @@ def test_local_pack_status_does_not_flip_hub_membership():
     status = local_pack_status("compliance_filing")
     assert status["in_hub"] is False
     assert local_pack_status("corporate_record")["hub_extract_is_subclass_only"] is True
+    assert local_pack_status("corporate_record")["posthoc_schema_gt"] is True
     assert local_pack_status("insurance_claim")["hub_gt_homogeneous"] is True
+    assert local_pack_status("insurance_claim")["posthoc_schema_gt"] is True

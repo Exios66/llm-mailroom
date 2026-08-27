@@ -114,6 +114,22 @@ COMPLIANCE_GT_KEYS: tuple[str, ...] = (
     "reference_number",
 )
 
+# Correspondence schema fields joined from Hub extra columns when present.
+# Enron rows typically only carry subclass + topic/sentiment extras; the
+# rest is filled post-hoc from headers (From/To/Date) in extraction_gt.
+CORRESPONDENCE_GT_KEYS: tuple[str, ...] = (
+    "sender",
+    "recipient",
+    "additional_recipients",
+    "communication_type",
+    "communication_date",
+    "key_points",
+    "demand_amount",
+    "action_items",
+    "urgency",
+    "referenced_communications",
+)
+
 # Sorter subclass catalogs from llm-dojo-scoring 0.9.0 (PR #4). Hub extraction
 # inventories above stay narrower (corporate_record is five tokens; insurance
 # extract still accepts FNOL lines). Do not replace CORPORATE_RECORD_TYPES.

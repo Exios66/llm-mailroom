@@ -420,6 +420,9 @@ def test_summarize_rows_includes_extraction_mean():
     ])
     assert summary["extraction_n"] == 2
     assert summary["extraction_overall_mean"] == 0.9
+    assert summary["per_class"]["contract"]["extraction_overall_mean"] == 0.9
+    assert summary["per_specialist"]["contracts_specialist"]["extraction_n"] == 2
+    assert summary["per_specialist"]["contracts_specialist"]["classes"] == ["contract"]
 
 
 def test_summarize_rows_merger_predicted_as_contract_is_a_class_miss():

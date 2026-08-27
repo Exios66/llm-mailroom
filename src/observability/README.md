@@ -12,7 +12,10 @@ This repo keeps only a backward-compatibility shim.
 | --- | --- |
 | `tracing.py`, `langfuse_setup.py`, `phoenix_setup.py` | local — tracing facade/backends |
 | `scores.py` | local — Langfuse score configs; names validated against the dojo metric registry at import |
+| `classification_scoring.py` | local — exact class match (MAUD ≠ CUAD) |
 | `field_scoring.py` | **deprecated shim** over `llm_dojo_scoring.field_scoring` |
+| `specialist_suites.py` | local — one dedicated scoring suite per live extract class |
+| `extraction_gt.py` / `posthoc_gt.py` | local — Hub catalog labels + post-hoc schema GT |
 
 ## `field_scoring.py` shim
 
@@ -53,6 +56,29 @@ v5 Hub class × subtype strata.
 path returns a dict, not an `ExtractionScoreResult` — see
 `suite_scoring.score_and_log_intake`.
 
+## Dedicated specialist extraction suites
+
+Every live specialist has a dedicated scoring suite (`observability.specialist_suites`):
+
+| Specialist | Classes scored | Suite extras |
+| --- | --- | --- |
+| `contracts_specialist` | `contract` (CUAD) | field-micro F1; CUAD family / clauses |
+| `contracts_specialist` | `merger_agreement` (MAUD) | MAUD question extras; same agent, rebound suite |
+| `corporate_records_specialist` | `corporate_record` | typed field-micro + entity-list F1 |
+| `correspondence_specialist` | `correspondence` | Enron topic/sentiment extras when Hub has them |
+| `compliance_specialist` | `compliance_filing` | typed field-micro (local pack; zero Hub rows) |
+| `insurance_claims_specialist` | `insurance_claim` | determination_consistency / amount_exactness |
+
+`merger_agreement` does **not** add a sixth specialist agent — extraction still
+runs through `contracts_specialist`. The scoring suite is rebound (MAUD
+consideration subclasses, MAUD extras) so CUAD families never score MAUD.
+
+Hub official labels still win. Remaining schema fields are filled post-hoc from
+document text (`observability.posthoc_gt`) so every included document has
+scorable expected_fields. Provenance (`n_hub` / `n_posthoc`) is recorded; a
+post-hoc fill is never billed as an official Hub annotation.
+`compliance_filing` stays out of Hub `--real` (n=0).
+
 ## Honesty gaps (dojo 0.11.0)
 
 `observability/honest_gaps.py` reads `honest_gap` / `in_corpus` / `retired`
@@ -71,7 +97,7 @@ do not treat a missing key as 0.0.
 | --- | --- | --- |
 | `insurance_claim` | CMS GT homogeneity (all-approved) | Gate Hub `determination_consistency` as a quality KPI; local contrast pack (approved/denied/partial) exercises the scorer |
 | `compliance_filing` | zero Hub rows; HF `--real` excludes the class | Local fixture pack (10-K + state filing) scored on `--check` / `--mock` |
-| `corporate_record` | 39 Hub subclass rows; no external extraction benchmark | Local schema-complete extraction pack; join extra Hub GT columns when present |
+| `corporate_record` | 39 Hub subclass rows; no *external* extraction benchmark | Post-hoc schema GT from exhibit text is scored on Hub rows (not claimed as CUAD-grade gold); local schema-complete pack remains the mock/check self-check |
 | `court_opinion` / `due_diligence` | retired from live mailroom | sorter emits `unknown` |
 
 HF reports (`scripts/run_hf_pilot.py`) include the honesty table plus a

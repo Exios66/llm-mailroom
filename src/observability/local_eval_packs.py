@@ -383,17 +383,20 @@ def local_pack_status(doc_class: str) -> dict[str, Any]:
             "local_pack": "insurance_contrast",
             "local_pack_mock_only": True,
             "hub_gt_homogeneous": True,
+            "posthoc_schema_gt": True,
         }
     if kind == "compliance_filing":
         return {
             "local_pack": "compliance_filing",
             "local_pack_mock_only": True,
             "in_hub": False,
+            "posthoc_schema_gt": True,
         }
     if kind == "corporate_record":
         return {
             "local_pack": "corporate_extraction",
             "local_pack_mock_only": True,
             "hub_extract_is_subclass_only": True,
+            "posthoc_schema_gt": True,
         }
     return {}
