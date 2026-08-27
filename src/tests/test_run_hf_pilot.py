@@ -196,6 +196,8 @@ def test_check_contract_prints_ok(capsys):
     assert payload["dataset"] == DATASET_ID
     assert payload["schema"] == "v5"
     assert payload["example_strata"] == 48
+    assert payload["align"] == {}
+    assert payload["aligned_equals_exact"] is True
     assert payload["intake"] is True
 
 
@@ -243,6 +245,7 @@ def test_hf_pilot_mock_writes_report(temp_base_dir, mock_openai_client, mock_lan
     assert metrics["n"] == len(payload["samples"])
     assert "exact_accuracy" in metrics
     assert "aligned_accuracy" in metrics
+    assert metrics["aligned_equals_exact"] is True
     assert "total_cost_usd" in metrics
     assert "per_class" in metrics
     assert payload["honesty"]["compliance_filing"]["in_hf_pilot"] is False
@@ -310,6 +313,7 @@ def test_summarize_rows_counts_cost_and_accuracy():
     assert summary["n"] == 2
     assert summary["exact_accuracy"] == 0.5
     assert summary["aligned_accuracy"] == 0.5
+    assert summary["aligned_equals_exact"] is True
     assert summary["subclass_accuracy"] == 0.5
     assert summary["total_cost_usd"] == 0.03
     assert summary["total_tokens"] == 300
@@ -416,6 +420,47 @@ def test_summarize_rows_includes_extraction_mean():
     ])
     assert summary["extraction_n"] == 2
     assert summary["extraction_overall_mean"] == 0.9
+
+
+def test_summarize_rows_merger_predicted_as_contract_is_a_class_miss():
+    from observability.classification_scoring import score_exact_classification
+    from scripts.run_hf_pilot import render_metrics_markdown, summarize_rows
+
+    summary = summarize_rows([
+        {
+            "expected": "merger_agreement",
+            "predicted": "contract",
+            "expected_subclass": "all_cash",
+            "exact_ok": False,
+            "aligned_ok": True,  # stale report flag; summarizer must ignore it
+            "subclass_ok": False,
+            "stage": "review",
+            "llm_cost_usd": 0.0,
+        },
+    ])
+    assert summary["exact_accuracy"] == 0.0
+    assert summary["aligned_accuracy"] == 0.0
+    assert summary["aligned_equals_exact"] is True
+    assert summary["per_subclass"]["merger_agreement/all_cash"]["exact_accuracy"] == 0.0
+    mailroom = score_exact_classification(["merger_agreement"], ["contract"])
+    assert mailroom["exact_accuracy"] == 0.0
+    from llm_dojo_scoring.mailroom import score_aligned_classification
+
+    dojo = score_aligned_classification(["merger_agreement"], ["contract"])
+    assert dojo["aligned_accuracy"] == 1.0  # v0.11.0 pin still aliases MAUD ≡ CUAD
+    md = render_metrics_markdown({
+        "session_id": "pilot-hf-test",
+        "samples": [{
+            "expected": "merger_agreement",
+            "predicted": "contract",
+            "expected_subclass": "all_cash",
+            "stage": "review",
+            "filename": "deal.htm",
+        }],
+    })
+    assert "merger≡contract" not in md
+    assert "class miss" in md.lower()
+    assert "Per subclass" in md
 
 
 def test_legalbench_full_rejected_as_pipeline_ingest(monkeypatch):
