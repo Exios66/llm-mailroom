@@ -44,7 +44,9 @@ def _transient_decision(state: dict, *, retry_target: str) -> Literal["retry", "
     return "human_review"
 
 
-def after_classify(state: dict) -> Literal["classify", "retry_classify", "extract", "human_review"]:
+def after_classify(state: dict) -> Literal[
+    "classify", "retry_classify", "review_classify", "extract", "human_review"
+]:
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="classify") == "retry":
             return "classify"
@@ -61,6 +63,20 @@ def after_classify(state: dict) -> Literal["classify", "retry_classify", "extrac
     if not is_extractable_doc_type(doc_type):
         logger.warning("unknown_doc_type", doc_type=doc_type)
         return "human_review"
+
+    # Ground-truth class miss: the model can be overconfident (0.99 on the
+    # wrong class). Lane A is the independent second opinion even at high
+    # stated confidence. Live runs without GT are unchanged.
+    from pipeline.reconsideration import class_misses_ground_truth
+
+    if class_misses_ground_truth(state):
+        logger.info(
+            "gt_class_miss_lane_a",
+            confidence=confidence,
+            doc_type=doc_type,
+            doc_id=state.get("doc_id"),
+        )
+        return "review_classify"
 
     # High confidence: clearly matches one class -> auto-continue to extraction.
     if confidence is not None and confidence >= high:
@@ -120,6 +136,16 @@ def after_retry_classify(state: dict) -> Literal[
             doc_type=doc_type,
         )
         return "human_review"
+    from pipeline.reconsideration import class_misses_ground_truth
+
+    if class_misses_ground_truth(state):
+        logger.info(
+            "gt_class_miss_lane_a_post_retry",
+            confidence=state.get("classification_confidence"),
+            doc_type=doc_type,
+            doc_id=state.get("doc_id"),
+        )
+        return "review_classify"
     # KANBAN-062 (Lane A): a medium-band classification that survived the
     # retry now goes to the agent second opinion instead of straight to a
     # human.
@@ -209,6 +235,44 @@ def after_extraction(state: dict) -> Literal[
                 attempts=attempts,
             )
             return "human_review"
+
+    from pipeline.reconsideration import (
+        coverage_below_floor,
+        extraction_is_hollow,
+    )
+
+    extracted = state.get("extracted_data")
+    if extraction_is_hollow(extracted):
+        if attempts <= retry_max:
+            logger.info(
+                "extraction_hollow_retry",
+                doc_id=state.get("doc_id"),
+                attempts=attempts,
+            )
+            return "retry_extract"
+        logger.info(
+            "extraction_hollow_review",
+            doc_id=state.get("doc_id"),
+            attempts=attempts,
+        )
+        return "human_review"
+
+    gt = state.get("ground_truth") or {}
+    expected_fields = gt.get("expected_fields") if isinstance(gt, dict) else None
+    if coverage_below_floor(extracted if isinstance(extracted, dict) else {}, expected_fields):
+        if attempts <= retry_max:
+            logger.info(
+                "extraction_coverage_retry",
+                doc_id=state.get("doc_id"),
+                attempts=attempts,
+            )
+            return "retry_extract"
+        logger.info(
+            "extraction_coverage_review",
+            doc_id=state.get("doc_id"),
+            attempts=attempts,
+        )
+        return "human_review"
 
     if confidence is not None and confidence >= low:
         return "compile_report"
@@ -343,6 +407,17 @@ def after_review_classify(state: dict) -> Literal["review_classify", "extract", 
         and confidence >= high
         and is_extractable_doc_type(doc_type)
     ):
+        from pipeline.reconsideration import class_misses_ground_truth
+
+        if class_misses_ground_truth(state, reviewer=True):
+            logger.info(
+                "gt_class_miss_after_reviewer",
+                verdict=verdict,
+                confidence=confidence,
+                doc_type=doc_type,
+                doc_id=state.get("doc_id"),
+            )
+            return "human_review"
         logger.info(
             "review_classify_accepted",
             verdict=verdict,
@@ -421,3 +496,23 @@ def after_arbiter(state: dict) -> Literal[
         doc_id=state.get("doc_id"),
     )
     return "human_review"
+
+
+def after_report(state: dict) -> Literal["catalog_write", "human_review"]:
+    """Withhold catalog writes when compile_report failed.
+
+    A fallback ``_report`` with ``error: True`` used to flow into
+    ``catalog_write`` → archive. The-Mailroom then treated those archives as
+    done despite incomplete reporting. Park for human review instead.
+    """
+    from pipeline.reconsideration import report_is_failed
+
+    extracted = state.get("extracted_data") if isinstance(state.get("extracted_data"), dict) else {}
+    report = extracted.get("_report") if isinstance(extracted, dict) else None
+    if report_is_failed(state) or not isinstance(report, dict):
+        logger.info(
+            "report_failed_withhold_catalog",
+            doc_id=state.get("doc_id"),
+        )
+        return "human_review"
+    return "catalog_write"

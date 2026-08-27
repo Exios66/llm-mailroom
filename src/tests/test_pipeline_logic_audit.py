@@ -183,8 +183,17 @@ class TestCompileReportFailSafe:
         )
         report = result["extracted_data"]["_report"]
         assert report.get("error") is True
+        assert result["report_error"] is True
         assert "reporter down" in report["summary"] or "RuntimeError" in report["summary"]
         assert result["extracted_data"]["sender"] == "A"
+        from graph.routing import after_report
+
+        merged = {
+            "doc_id": "d1",
+            "doc_type": "correspondence",
+            **result,
+        }
+        assert after_report(merged) == "human_review"
 
 
 class TestClassificationGuardClampsInvalidSubtype:

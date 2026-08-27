@@ -62,7 +62,11 @@ class FakeLangChainLLM:
             "confidence": 0.95,
             "reasoning": "mock",
         }
-        self.extraction = extraction or {"confidence": 0.9, "mock_extraction": True}
+        self.extraction = extraction or {
+            "confidence": 0.9,
+            "document_name": "Mock Agreement",
+            "parties": ["Mock Party"],
+        }
         self.usage = usage if usage is not None else dict(DEFAULT_USAGE)
         self.on_call = on_call
         self.calls = 0

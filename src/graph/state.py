@@ -78,4 +78,9 @@ class DocumentState(TypedDict, total=False):
     # separate counter so extraction retries and arbitration retries never
     # alias each other).
     arbiter_retry_count: int
+    # Ground truth (pilot / HF eval). Live runs omit this; routing only
+    # consults it when present so overconfident misses cannot auto-archive.
+    ground_truth: dict[str, Any]
+    report_error: bool
+    review_causes: list[str]
     messages: Annotated[list, add_messages]
