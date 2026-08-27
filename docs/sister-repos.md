@@ -131,9 +131,10 @@ The scoring layer both mailroom and entity-extraction consume:
   at this repo's `src/config/taxonomy.yaml` live instead of its bundled mirror.
   Current intake contract: span `normalize-intake` (INGEST), agent `intake`,
   HF runner `src/scripts/run_hf_pilot.py` (session `pilot-hf-<stamp>`, tag
-  `source-docclass-merged`, ground truth on trace input/metadata including
-  `expected_hf_class`). Production session `pilot-hf-20260825T044207Z` is the
-  reference five-doc Qwen 3.7-Flash subset.
+  `source-docclass-merged` on the v5 full corpus — other Hub sets use their
+  own `source-*` tag from `pipeline/hf_corpora.py`, ground truth on trace
+  input/metadata including `expected_hf_class`). Production session
+  `pilot-hf-20260825T044207Z` is the reference five-doc Qwen 3.7-Flash subset.
 - **Reconsideration (The-Mailroom [PR #14](https://github.com/Exios66/The-Mailroom/pull/14)):**
   the visualizer parks archived objective misses as **RECONSIDER** from
   ground truth / judge / scores — never from self-reported confidence.
@@ -158,10 +159,19 @@ The scoring layer both mailroom and entity-extraction consume:
 - **[llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/)**
   — companion graphify map of the sister experiment loop's codebase.
 - **Hugging Face — [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)** —
-  the family's published dataset surface (CUAD contracts mirrors, LegalBench
-  packs, docclass-merged, enron-correspondence/-dedup). One split rule for
-  the whole family (`md5(filename) % 10 == 0 → test`), owned by
-  entity-extraction's publisher scripts.
+  the family's published dataset surface. **`docclass-merged` schema v5**
+  (1,210 docs, Hub SHA `d2c96ecb…`) is the targeted full pipeline corpus
+  (CUAD contracts, MAUD merger agreements, S-1 corporate records, Enron
+  correspondence sample, CMS insurance claims). **`docclass-pilot`** is the
+  class × subclass example pack (48 strata — every type and subtype in that
+  v5 parent). Other pipeline-ready Hub sets (`enron-correspondence-dedup`
+  ~247k, `cms-desynpuf-insurance-claims`, `mailroom-cuad-contracts[-full]`)
+  ingest the same way via `run_hf_pilot.py --dataset`. `legalbench-full` is
+  a LegalBench CLI task pack, not a document-pipeline ingest. One split rule
+  for the whole family (`md5(filename) % 10 == 0 → test`), owned by
+  entity-extraction's publisher scripts. Local committed PDFs under
+  `docs/examples/samples/` remain PDF-ingest fixtures — they are not the
+  class catalog.
 
 ## Governance notes
 
