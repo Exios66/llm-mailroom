@@ -105,3 +105,29 @@ def test_langfuse_score_name_aliases_overlong_verified_precision():
     assert langfuse_score_name("run_duration_seconds") == "run_duration_seconds"
     assert len("extraction_verified_precision") <= 35
 
+
+def test_emit_pipeline_scores_class_correct_is_exact_not_aligned():
+    os.environ["OBSERVABILITY_PROVIDER"] = "none"
+    try:
+        from observability.scores import emit_pipeline_scores
+
+        hit = emit_pipeline_scores({
+            "stage": "archived",
+            "doc_type": "merger_agreement",
+            "ground_truth": {"expected_hf_class": "merger_agreement"},
+            "extracted_data": {"parties": ["A"]},
+        })
+        assert hit["class_correct"] == 1
+        miss = emit_pipeline_scores({
+            "stage": "archived",
+            "doc_type": "contract",
+            "ground_truth": {
+                "expected_doc_class": "merger_agreement",
+                "expected_hf_class": "merger_agreement",
+            },
+            "extracted_data": {"parties": ["A"]},
+        })
+        assert miss["class_correct"] == 0
+    finally:
+        os.environ.pop("OBSERVABILITY_PROVIDER", None)
+

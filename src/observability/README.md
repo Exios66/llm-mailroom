@@ -38,6 +38,16 @@ import time. Adding a score name here without registering it upstream fails
 fast with a `RuntimeError` naming the drifted entries — register new metrics
 in llm-dojo-scoring first, then use them here.
 
+**Class KPIs after #38/#39:** exact class match is the only classification
+score. `merger_agreement` (MAUD) is not `contract` (CUAD). Dojo 0.11.0's
+`llm_dojo_scoring.mailroom.align_doc_type` still aliases them — mailroom
+does not call it. Grounded runs emit `class_correct` from
+`emit_pipeline_scores` via `observability.classification_scoring`. HF reports
+keep `aligned_accuracy` as a deprecated JSON alias of exact
+(`aligned_equals_exact: true`) so older readers do not break; markdown no
+longer labels it merger≡contract. Subclass accuracy is scored against the
+v5 Hub class × subtype strata.
+
 `get_suite("intake")` (dojo PR #5) scores the pre-sorter clerk against gold
 (`intake_prep_completeness`, changed/messy rates, hyphen/blank counts). That
 path returns a dict, not an `ExtractionScoreResult` — see

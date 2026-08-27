@@ -440,6 +440,17 @@ def emit_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
                 scores[name] = int(value)
             elif isinstance(value, (int, float)):
                 scores[name] = value
+    gt = state.get("ground_truth") or {}
+    if isinstance(gt, dict):
+        expected = (
+            gt.get("expected_doc_class")
+            or gt.get("expected_hf_class")
+            or gt.get("expected")
+        )
+        if expected:
+            from observability.classification_scoring import classes_match
+
+            scores["class_correct"] = int(classes_match(expected, state.get("doc_type")))
     if is_enabled():
         for name, value in scores.items():
             score_trace(name, value, data_type=_score_data_type(name))
