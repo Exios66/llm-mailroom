@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Dedicated extraction scoring for every live specialist, with post-hoc GT.** Hub official labels (CUAD clauses, MAUD questions, CMS columns, subclass tokens) still win. Remaining specialist schema fields are filled from conservative regexes over the source text (`observability/posthoc_gt.py`) so every included document — not just contracts — has scorable `expected_fields`. Each live extract class has a dedicated suite in `observability/specialist_suites.py` (`get_suite(doc_class)`). `merger_agreement` keeps sharing the `contracts_specialist` *agent* but uses the rebound MAUD suite, not CUAD families. HF reports add a per-specialist extraction table. `compliance_filing` stays out of Hub `--real` (zero rows); local pack + post-hoc labels cover mock/check. Post-hoc fills are provenance-tagged and never billed as official Hub annotations.
+- **First-pass production STP score (`success_rate`).** Every finished run
+  emits the registered dojo metric as a 0/1 flag: archived in one pass with
+  no retry, Lane A, arbiter, boss, human review, guardrail, or transient
+  reprocess. No ground truth. Langfuse Performance dashboard charts the
+  live+pilot rate and count. `GET /ops/status` reports `first_pass` /
+  `first_pass_rate`. The-Mailroom metrics tiles FIRST PASS from this score.
 
 - **Per-agent isolation eval.** `scripts/run_agent_eval.py` + `observability/agent_eval.py` score one LLM role against fixtures, local packs, and the live manifest without running the 13-node graph. `--real` is gated by `is_real_sample` the same way `run_pilot.py` is. Live Langfuse evaluators stay pipeline-level (`pipeline-result`) by design.
 

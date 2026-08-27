@@ -8,7 +8,8 @@ Two score origins:
 
 - **Production** (`emit_pipeline_scores`): self-evident signals computed inside
   a run with no ground truth needed — parse errors, schema validity, routing
-  outcome, and the confidence values (so calibration dashboards work offline).
+  outcome, first-pass `success_rate` (archived with no reroute/reprocess), and
+  the confidence values (so calibration dashboards work offline).
 - **Pilot** (`scripts/run_pilot.py`, `scripts/run_quality_judges.py`):
   ground-truth-derived scores (class/stage correctness, calibration error,
   completeness) attached to the deterministic trace id. In-pipeline Lane B
@@ -35,6 +36,11 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "parse_error", "data_type": "BOOLEAN"},
     {"name": "schema_valid", "data_type": "BOOLEAN"},
     {"name": "stage_completed", "data_type": "BOOLEAN"},
+    # Production STP (straight-through processing). Dojo registry: gt=none,
+    # "value is whatever the pipeline emits". Mailroom emits 1 only when the
+    # document archived in one pass with no retry/Lane A/arbiter/boss/human
+    # review/guardrail/transient self-loop — no ground truth required.
+    {"name": "success_rate", "data_type": "BOOLEAN"},
     {"name": "guardrail_triggered", "data_type": "BOOLEAN"},
     {"name": "classification_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
@@ -479,6 +485,66 @@ def compute_run_metrics(state: dict, started_at: float, ended_at: float) -> dict
     }
 
 
+def first_pass_success(state: dict, scores: dict | None = None) -> bool:
+    """Operational first-pass: archived in one hop, no ground truth required.
+
+    Production KPI for incoming zero-shot documents. True only when the
+    document reached archive without retry, Lane A ``review_classify``,
+    in-pipeline arbiter, boss, human review, guardrail, parse/schema
+    failure, transient provider self-loop, or a later ``run_attempt``.
+
+    Judge ``skipped`` (high-confidence extract; the gate never fired) or
+    ``complete`` (gate passed, no arbiter) still counts — those are not
+    reroutes. ``class_correct`` / field GT / hosted LLM-judge CORRECT are
+    not consulted: live traffic will not have those labels.
+    """
+    blob = {**(state or {}), **(scores or {})}
+    if str(blob.get("stage") or "") != "archived":
+        return False
+    if blob.get("run_aborted"):
+        return False
+    if int(blob.get("classification_attempts") or 0) > 1:
+        return False
+    if int(blob.get("extraction_attempts") or 0) > 1:
+        return False
+    if int(blob.get("arbiter_retry_count") or 0) > 0:
+        return False
+    # First live run stores attempt 0 or 1; a later reprocess is > 1.
+    attempt = blob.get("run_attempt")
+    if attempt is not None and int(attempt) > 1:
+        return False
+    if int(blob.get("retry_count") or 0) > 0:
+        return False
+    if blob.get("conflict_detected"):
+        return False
+    if blob.get("review_verdict"):
+        return False
+    if blob.get("arbiter_decision"):
+        return False
+    if blob.get("review_decision"):
+        return False
+    verdict = blob.get("judge_verdict")
+    if verdict and verdict not in ("skipped", "complete"):
+        return False
+    if scores is not None:
+        if scores.get("guardrail_triggered"):
+            return False
+        if scores.get("parse_error"):
+            return False
+        if not scores.get("schema_valid"):
+            return False
+        if not scores.get("stage_completed"):
+            return False
+    elif blob.get("extraction_guardrail") or blob.get("classification_guardrail"):
+        return False
+    for key, value in (state or {}).items():
+        if str(key).startswith("transient_retries_") and int(value or 0) > 0:
+            return False
+    if int((state or {}).get("transient_retries") or 0) > 0:
+        return False
+    return True
+
+
 def _score_data_type(name: str) -> str | None:
     for spec in SCORE_CONFIGS:
         if spec["name"] == name:
@@ -533,6 +599,7 @@ def emit_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
         expected_stage = gt.get("expected_stage")
         if expected_stage:
             scores["stage_correct"] = int(str(stage or "") == str(expected_stage))
+    scores["success_rate"] = int(first_pass_success(state, scores))
     if is_enabled():
         for name, value in scores.items():
             score_trace(name, value, data_type=_score_data_type(name))
