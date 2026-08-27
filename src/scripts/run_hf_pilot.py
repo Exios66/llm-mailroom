@@ -639,8 +639,9 @@ def render_metrics_markdown(report: dict) -> str:
         "Gaps are suite metadata, not invented accuracy. `compliance_filing` is "
         "excluded from this runner (zero Hub rows). `court_opinion` / "
         "`due_diligence` are retired. `corporate_record` has Hub subclass rows "
-        "but no external extraction benchmark. Insurance determination-consistency "
-        "is a local field invariant until dojo registers a scorer.",
+        "but no external extraction benchmark. Insurance `determination_consistency` "
+        "is a registered scorer; CMS GT is homogeneous (all-approved), so that "
+        "score is degenerate on GT-shaped rows.",
         "",
         "| class | in HF pilot | in_corpus | retired | honest gap |",
         "|---|---|---|---|---|",
@@ -991,13 +992,16 @@ def check_contract() -> int:
 
     insurance = suite_honesty("insurance_claim")
     assert insurance["in_corpus"] is True
-    assert "determination-consistency" in (insurance["honest_gap"] or "").lower()
+    gap = (insurance["honest_gap"] or "").lower()
+    assert "homogeneous" in gap or "degenerate" in gap
+    assert "determination_consistency" in gap
     compliance = suite_honesty("compliance_filing")
     assert compliance["in_corpus"] is False
     assert "zero" in (compliance["honest_gap"] or "").lower()
     corporate = suite_honesty("corporate_record")
     assert corporate["in_corpus"] is True
-    assert "no external extraction benchmark" in (corporate["honest_gap"] or "").lower()
+    corp_gap = (corporate["honest_gap"] or "").lower()
+    assert "external" in corp_gap and "extraction benchmark" in corp_gap
     assert insurance_determination_consistent(
         {"coverage_determination": "approved", "denial_reasons": []}
     ) is True

@@ -1,17 +1,22 @@
-"""Dedicated specialist scoring suites from llm-dojo-scoring 0.9.0.
+"""Dedicated specialist scoring suites from llm-dojo-scoring 0.10.0.
 
 ``get_suite(doc_class)`` returns the specialist suite (merger_agreement
 rebinds the MAUD catalog rather than inheriting CUAD families). Extraction
 suites may wrap extras — Enron topic/sentiment on correspondence, MAUD
-per-question metrics on merger agreements — beside the typed ExtractionScoreResult.
+per-question metrics on merger agreements, insurance determination /
+amount extras — beside the typed ExtractionScoreResult.
+
+Single-doc ``suite.score(dict, dict)`` still returns ``ExtractionScoreResult``
+unless content extras force a dict; field-micro P/R/F1/F2 and claims extras
+are attached here so they land on the trace.
 
 ``get_suite("intake")`` is a different shape: it returns a dict (accuracy,
 prep completeness, changed/messy rates, hyphen/blank counts) rather than an
 ``ExtractionScoreResult``. Do not force it through ``score_with_suite``.
 
 Honesty fields on each suite (``honest_gap``, ``in_corpus``, ``retired``) are
-surfaced by ``observability.honest_gaps`` — never turned into SCORE_CONFIGS
-names that are not in the installed dojo registry.
+surfaced by ``observability.honest_gaps``. SCORE_CONFIGS names must exist in
+the installed dojo registry.
 """
 
 from __future__ import annotations
@@ -32,6 +37,13 @@ SUITE_EXTRA_SCORE_NAMES = frozenset({
     "maud_clause_presence",
     "maud_valid_class_rate",
     "maud_category_accuracy",
+    "extraction_precision",
+    "extraction_recall",
+    "extraction_f1",
+    "extraction_f2",
+    "entity_list_f1",
+    "determination_consistency",
+    "amount_exactness",
 })
 
 # Intake clerk metrics from get_suite("intake").score — dict, not extraction.
@@ -64,6 +76,77 @@ def unwrap_suite_result(out: Any) -> tuple[ExtractionScoreResult | None, dict[st
     return result, extras
 
 
+def _numeric_extra(name: str, value: Any) -> float | None:
+    if name not in SUITE_EXTRA_SCORE_NAMES:
+        return None
+    if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def attach_single_doc_extras(
+    doc_class: str,
+    predicted: dict,
+    expected: dict,
+    result: ExtractionScoreResult,
+    extras: dict[str, float],
+    *,
+    field_types: dict[str, str] | None = None,
+) -> dict[str, float]:
+    """Fill 0.10.0 field-micro P/R/F1/F2 and insurance claims extras.
+
+    Single-doc ``suite.score`` returns ``ExtractionScoreResult`` and only
+    attaches claims extras on the batch path. Mailroom always scores one
+    document, so we compute those extras here.
+    """
+    merged = dict(extras)
+    ftypes = field_types or {}
+    if not ftypes:
+        try:
+            from llm_dojo_scoring import get_suite
+
+            ftypes = dict(get_suite(doc_class).field_types or {})
+        except Exception:
+            ftypes = {}
+    try:
+        from llm_dojo_scoring.extraction_metrics import (
+            extraction_binary_metrics,
+            prf_bundle_keys,
+        )
+
+        one = extraction_binary_metrics(
+            expected,
+            predicted,
+            field_map=ftypes,
+            doc_class=doc_class,
+            result=result,
+        )
+        for key, value in prf_bundle_keys(one).items():
+            numeric = _numeric_extra(key, value)
+            if numeric is not None:
+                merged[key] = numeric
+    except Exception:
+        pass
+    kind = str(doc_class or "")
+    try:
+        from pipeline.config import resolve_extract_class
+
+        kind = resolve_extract_class(doc_class) or kind
+    except Exception:
+        pass
+    if kind == "insurance_claim" or doc_class == "insurance_claim":
+        try:
+            from llm_dojo_scoring.claims_consistency import score_claims_extras
+
+            for key, value in score_claims_extras(expected, predicted).items():
+                numeric = _numeric_extra(key, value)
+                if numeric is not None:
+                    merged[key] = numeric
+        except Exception:
+            pass
+    return merged
+
+
 def score_with_suite(
     doc_class: str,
     predicted: dict,
@@ -89,6 +172,14 @@ def score_with_suite(
         )
         result, extras = unwrap_suite_result(out)
         if result is not None:
+            extras = attach_single_doc_extras(
+                doc_class,
+                predicted,
+                expected,
+                result,
+                extras,
+                field_types=field_types or dict(suite.field_types or {}),
+            )
             return result, extras
     except Exception:
         pass
