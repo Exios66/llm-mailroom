@@ -134,3 +134,133 @@ async def get_latest_audit_hash(doc_id: str) -> str:
         )
         row = result.first()
         return row[0] if row else ""
+
+
+async def list_audit_doc_ids() -> list[str]:
+    """Every doc_id that has at least one audit entry (ordered)."""
+    ensure_schema()
+    from sqlalchemy import distinct
+
+    async with async_session() as session:
+        rows = await session.execute(select(distinct(AuditLogRecord.doc_id)))
+        return sorted(r[0] for r in rows.all() if r[0])
+
+async def analyze_audit_db(
+    *,
+    verify_chains: bool = True,
+    event_limit: int = 20,
+) -> dict:
+    """Parse the full local audit DB into summary stats for operators.
+
+    Returns counts by event/actor, per-doc chain lengths, optional hash-chain
+    verification results, and the most recent events. Read-only.
+    """
+    from collections import Counter
+    from datetime import timezone as _tz
+
+    from schemas.audit import AuditLogEntry, verify_chain
+    from sqlalchemy import func
+
+    ensure_schema()
+
+    def _utc(dt):
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=_tz.utc)
+        return dt.astimezone(_tz.utc)
+
+    async with async_session() as session:
+        total = (await session.execute(select(func.count()).select_from(AuditLogRecord))).scalar() or 0
+        by_event_rows = await session.execute(
+            select(AuditLogRecord.event, func.count())
+            .group_by(AuditLogRecord.event)
+            .order_by(func.count().desc())
+        )
+        by_actor_rows = await session.execute(
+            select(AuditLogRecord.actor, func.count())
+            .group_by(AuditLogRecord.actor)
+            .order_by(func.count().desc())
+        )
+        doc_count = (
+            await session.execute(select(func.count(func.distinct(AuditLogRecord.doc_id))))
+        ).scalar() or 0
+        matter_count = (
+            await session.execute(select(func.count(func.distinct(AuditLogRecord.matter_id))))
+        ).scalar() or 0
+        recent = await session.execute(
+            select(AuditLogRecord)
+            .order_by(desc(AuditLogRecord.timestamp), desc(AuditLogRecord.seq))
+            .limit(max(1, event_limit))
+        )
+        recent_rows = list(recent.scalars().all())
+
+    by_event = {e: int(c) for e, c in by_event_rows.all()}
+    by_actor = {a: int(c) for a, c in by_actor_rows.all()}
+
+    chain_report: list[dict] = []
+    broken = 0
+    if verify_chains and total:
+        for doc_id in await list_audit_doc_ids():
+            records = await get_audit_chain(doc_id)
+            entries = [
+                AuditLogEntry(
+                    entry_id=r["entry_id"],
+                    doc_id=doc_id,
+                    matter_id=r.get("matter_id") or "",
+                    event=r["event"],
+                    actor=r["actor"],
+                    detail=r["detail"],
+                    prev_hash=r["prev_hash"],
+                    entry_hash=r["entry_hash"],
+                    timestamp=r["timestamp"],
+                )
+                for r in records
+            ]
+            ok = verify_chain(entries) if entries else True
+            if not ok:
+                broken += 1
+            chain_report.append(
+                {
+                    "doc_id": doc_id,
+                    "entries": len(records),
+                    "ok": ok,
+                    "matter_id": records[0].get("matter_id") if records else None,
+                }
+            )
+
+    review_events = Counter()
+    for key in (
+        "routed_to_review",
+        "review_approved",
+        "review_rejected",
+        "review_recorded",
+        "review_requeued",
+        "review_completed",
+    ):
+        if key in by_event:
+            review_events[key] = by_event[key]
+
+    return {
+        "total_entries": int(total),
+        "distinct_documents": int(doc_count),
+        "distinct_matters": int(matter_count),
+        "by_event": by_event,
+        "by_actor": by_actor,
+        "review_events": dict(review_events),
+        "chains_checked": len(chain_report) if verify_chains else 0,
+        "chains_broken": broken if verify_chains else None,
+        "chains": chain_report if verify_chains else [],
+        "recent_events": [
+            {
+                "entry_id": r.entry_id,
+                "doc_id": r.doc_id,
+                "matter_id": r.matter_id,
+                "event": r.event,
+                "actor": r.actor,
+                "seq": r.seq,
+                "timestamp": (_utc(r.timestamp).isoformat() if _utc(r.timestamp) else None),
+            }
+            for r in recent_rows
+        ],
+    }
