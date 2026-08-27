@@ -148,6 +148,14 @@ The scoring layer both mailroom and entity-extraction consume:
   0.99; reviewer still-wrong → human review; hollow extract or expected-field
   coverage below `confidence.low` → retry then review; failed `compile_report`
   withholds `catalog_write`.
+- **Live floor (The-Mailroom [PR #16](https://github.com/Exios66/The-Mailroom/pull/16)):**
+  the visualizer re-enriches in-flight traces every poll and reads producer
+  liveness from `GET /health` (`checks.watcher`, `inbox_pending`). This
+  pipeline flushes after each graph node (`output.stage` on the span),
+  embeds the inbox watcher in the API lifespan by default, and treats
+  `on_moved` / `on_modified` inbox events so an upload appears on the floor
+  within one poll tick. `MAILROOM_PIPELINE_URL` on the visualizer should
+  point at this API (`http://127.0.0.1:8000`).
 - **Governance:** fully governed member of the family — own `AGENTS.md`, own
   semver release train (v0.2.0), own test suite (never hits real Langfuse),
   own wiki. It is a downstream OBSERVER: dependency of no family repo — the

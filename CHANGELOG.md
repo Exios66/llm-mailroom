@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live-floor producer contract (The-Mailroom PR #16).** `python -m api.main` embeds the inbox watcher by default (`MAILROOM_EMBED_WATCHER=1`; set `0` when a dedicated watcher process holds `watcher.lock`). Inbox handling listens for `on_moved` / `on_modified` as well as `on_created`, and the periodic rescan default is 1s. Each `traced_node` publishes `output.stage` and `flush()`es so envelopes move on the next visualizer poll. `GET /health` reports `checks.watcher` (`live`/`stale`/`missing`), `checks.watcher_embedded`, and `inbox_pending` that counts processable documents only (not `.meta` sidecars).
+
 - **Dojo 0.11.0 pin (scoring docs + prompt catalog).** `pyproject.toml` now pins `llm-dojo-scoring @v0.11.0` (`35f3584`). Formulas and T0 names are unchanged from 0.10.0. Mailroom consumes the new `MetricDef` `citation` / `inclusion` / `ground_truth` metadata (never invent `field_presence` as 0.0) and the importable `llm_dojo_scoring.prompts` catalog (anti-priming on live `prompt_templates()`, honest empty text for intake/archivist/proposed auditors). Production prompts stay owned here; the catalog is the scored snapshot.
 
 - **Reconsideration beyond self-reported confidence (The-Mailroom PR #14).** `pipeline/reconsideration.py` mirrors the visualizer cause tokens. Ground-truth class misses go to Lane A even at 0.99 confidence (reviewer still-wrong → human review). Hollow extracts and expected-field coverage below `confidence.low` retry then review. Failed `compile_report` withholds `catalog_write` so incomplete reports cannot archive.

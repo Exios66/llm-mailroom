@@ -308,14 +308,21 @@ def list_inbox_files() -> list[Path]:
     inbox = inbox_dir()
     if not inbox.exists():
         return []
-    cfg = _get_config()
-    extensions = cfg.get("file_extensions", None)
-    if extensions is None:
-        extensions = [".txt", ".pdf", ".docx", ".md"]
+    extensions = accepted_extensions()
     return sorted(
         p for p in inbox.iterdir()
         if p.is_file() and p.suffix.lower() in extensions
     )
+
+
+def count_inbox_pending() -> int:
+    """Processable documents waiting in the inbox (excludes `.meta` sidecars).
+
+    The-Mailroom hopper/`GET /api/pipeline` reads this via `/health`
+    `checks.inbox_pending`. Counting every file would double-count uploads
+    (document + sidecar).
+    """
+    return len(list_inbox_files())
 
 
 def accepted_extensions() -> list[str]:
@@ -366,14 +373,10 @@ def read_inbox_meta(file_path: Path) -> dict | None:
 
 
 HEARTBEAT_FILE_NAME = "watcher_heartbeat"
-_HEARTBEAT_FILE_PATH = None
 
 
 def _heartbeat_file_path() -> Path:
-    global _HEARTBEAT_FILE_PATH
-    if _HEARTBEAT_FILE_PATH is None:
-        _HEARTBEAT_FILE_PATH = get_base_dir() / HEARTBEAT_FILE_NAME
-    return _HEARTBEAT_FILE_PATH
+    return get_base_dir() / HEARTBEAT_FILE_NAME
 
 
 def touch_watcher_heartbeat() -> None:
@@ -410,3 +413,30 @@ def watcher_heartbeat_age() -> float | None:
         return max(0.0, _time.time() - float(data.get("ts", 0)))
     except Exception:
         return None
+
+
+def watcher_stale_seconds() -> float:
+    """Age at which a heartbeat is stale. Matches The-Mailroom `_WATCHER_STALE_S`."""
+    try:
+        return float(os.environ.get("WATCHER_STALE_SECONDS", "15"))
+    except (TypeError, ValueError):
+        return 15.0
+
+
+def watcher_lamp(age: float | None = None) -> str:
+    """Producer watcher lamp for The-Mailroom: ``live`` / ``stale`` / ``missing``.
+
+    The visualizer prefers ``checks.watcher`` on ``GET /health`` and falls
+    back to deriving the same three states from
+    ``watcher_heartbeat_seconds_ago``.
+    """
+    if age is None:
+        age = watcher_heartbeat_age()
+    if age is None:
+        return "missing"
+    try:
+        if float(age) > watcher_stale_seconds():
+            return "stale"
+    except (TypeError, ValueError):
+        return "missing"
+    return "live"
