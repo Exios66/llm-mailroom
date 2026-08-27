@@ -1,10 +1,26 @@
 """Production finalization, scoring completeness, and per-agent eval."""
 
+import importlib
 import json
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def client(monkeypatch, temp_base_dir):
+    monkeypatch.setenv("MAILROOM_API_TOKEN", "test-token-123")
+    monkeypatch.setenv("MAILROOM_BASE_DIR", str(temp_base_dir))
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+    for mod in ("api.main",):
+        if mod in sys.modules:
+            importlib.reload(sys.modules[mod])
+    from api.main import app
+
+    with TestClient(app) as c:
+        yield c
 
 
 class TestArchiveMissingFileFinalizes:
@@ -151,9 +167,10 @@ class TestScoringCompleteness:
         })
         assert miss["stage_correct"] == 0
 
-    def test_deterministic_verdict_labels(self):
-        from observability.scores import deterministic_verdict_label
+    def test_deterministic_verdict_is_local_not_dojo_config(self):
+        from observability.scores import SCORE_CONFIGS, deterministic_verdict_label
 
+        assert "deterministic_verdict" not in {c["name"] for c in SCORE_CONFIGS}
         assert deterministic_verdict_label(1.0, needs_judge_review=False) == "CORRECT"
         assert deterministic_verdict_label(0.0, needs_judge_review=False) == "MISS"
         assert deterministic_verdict_label(0.7, needs_judge_review=True) == "PARTIAL"

@@ -51,15 +51,10 @@ SCORE_CONFIGS: list[dict] = [
         ],
     },
     {"name": "judge_notes", "data_type": "TEXT"},
-    {
-        "name": "deterministic_verdict",
-        "data_type": "CATEGORICAL",
-        "categories": [
-            {"label": "CORRECT", "value": 1.0},
-            {"label": "PARTIAL", "value": 0.5},
-            {"label": "MISS", "value": 0.0},
-        ],
-    },
+    # deterministic_verdict is a local CORRECT/PARTIAL/MISS label emitted on
+    # grounded traces (see deterministic_verdict_label). It is NOT a dojo
+    # registry metric — KANBAN-061 forbids SCORE_CONFIGS names that are not
+    # in llm-dojo-scoring. The label still lands via create_trace_score.
     {"name": "classification_quality", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {
         "name": "classification_correct",
@@ -368,9 +363,10 @@ def deterministic_verdict_label(
 ) -> str:
     """Map a deterministic field-score into CORRECT / PARTIAL / MISS.
 
-    Keeps the LLM-judge cost contract (clearly-wrong skips the LLM call) but
-    still leaves a verdict on the trace. Ambiguous-band fields are PARTIAL;
-    class mismatch is always MISS.
+    Local label (not a dojo-registered SCORE_CONFIG). Keeps the LLM-judge
+    cost contract (clearly-wrong skips the LLM call) but still leaves a
+    verdict on the trace. Ambiguous-band fields are PARTIAL; class mismatch
+    is always MISS.
     """
     if class_mismatch:
         return "MISS"

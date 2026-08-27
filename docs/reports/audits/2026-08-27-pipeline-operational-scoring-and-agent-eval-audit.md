@@ -58,7 +58,8 @@ the local contrast pack. The approved plan file is not edited here.
      `expected_stage` was present.
    - In-pipeline `judge_verify` scores were not attached to the trace.
    - Field scoring had no three-way `deterministic_verdict` label; class
-     mismatch did not force MISS.
+     mismatch did not force MISS. The label is now emitted locally (not a
+     dojo-registered SCORE_CONFIG — KANBAN-061).
    - `judge_band_high` was used in code but missing from taxonomy.
    - `conflict_threshold` was documented as a Boss routing knob; conflicts
      are field-value comparison in `_detect_conflict`.
@@ -79,7 +80,7 @@ the local contrast pack. The approved plan file is not edited here.
 | Production | `archive_node` finalize; watcher exception finalize; stale-claim reconcile; `/health` degrade |
 | Prompts | `image_extractor` in `prompt_templates()` + doctrine (15 managed prompts) |
 | Skills | Remaining `src/langchain_agents/skills/<agent>/` files; `system_prompt_with_skills()` |
-| Scoring | `emit_in_pipeline_judge_scores`; `stage_correct`; `deterministic_verdict`; `judge_band_high`; conflict-threshold honesty |
+| Scoring | `emit_in_pipeline_judge_scores`; `stage_correct`; local `deterministic_verdict` label (not a dojo SCORE_CONFIG); `judge_band_high`; conflict-threshold honesty |
 | Agent eval | `observability/agent_eval.py` + `scripts/run_agent_eval.py` |
 | Samples | `docs/examples/sources/insurance/claim_{approved,denied,partial}.txt` + manifest rows `insurance_01..03` (25 live samples; 10 synthetic mock-only) |
 

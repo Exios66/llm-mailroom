@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Operational finalization.** `archive_node` missing-file paths call `_finalize_aborted` (failed bin + catalog). Watcher stale-claim reconcile retires to `failed/` when a terminal manifest exists, else requeues. Watcher exceptions after `claim_file` finalize the claim. `GET /health` reports `status=degraded` when the watcher lamp is `stale` or `missing`.
 
-- **Scoring completeness.** `judge_verify_node` emits in-pipeline judge scores; grounded runs emit `stage_correct`; field scoring attaches `deterministic_verdict` (CORRECT/PARTIAL/MISS) and treats class mismatch as MISS. Taxonomy documents `judge_band_high: 0.85` and that `conflict_threshold` is an unused compatibility knob.
+- **Scoring completeness.** `judge_verify_node` emits in-pipeline judge scores; grounded runs emit `stage_correct`; field scoring attaches a local `deterministic_verdict` label (CORRECT/PARTIAL/MISS; not a dojo SCORE_CONFIG) and treats class mismatch as MISS. Taxonomy documents `judge_band_high: 0.85` and that `conflict_threshold` is an unused compatibility knob.
 
 ### Added
 
