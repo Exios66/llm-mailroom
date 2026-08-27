@@ -4,29 +4,35 @@ Mailroom: a LangGraph state machine that processes legal documents through speci
 
 ## Skills (all agents)
 
-Project skills under `.opencode/skills/` are available to every agent:
+Cursor agents discover **project skills** under `.cursor/skills/` (start with
+`mailroom-tool-router`, then one specialty: openrouter, ollama, modal,
+langfuse, apache-phoenix, braintrust, huggingface, langgraph, dojo-scoring,
+legalbench). Use those instead of inventing a parallel provider or sink.
+
+Deeper vendored skills under `.opencode/skills/` remain available:
 
 - **langfuse** (github.com/langfuse/skills) — CLI API access, docs,
-  instrumentation/prompt-migration/prompt-engineering references, judge
-  calibration, error analysis, v4 migration.
+ instrumentation/prompt-migration/prompt-engineering references, judge
+ calibration, error analysis, v4 migration.
 - **braintrust** (github.com/braintrustdata/braintrust-skills) — the
-  agent-auto-improvement loop: production traces -> failure taxonomy ->
-  remote Braintrust dataset -> scorers -> offline eval file -> iterate, then
-  push online scorers. Matches this repo's eval discipline (Braintrust
-  datasets, Eval loops, deterministic local scoring, experiment log).
+ agent-auto-improvement loop: production traces -> failure taxonomy ->
+ remote Braintrust dataset -> scorers -> offline eval file -> iterate, then
+ push online scorers. Matches this repo's eval discipline (Braintrust
+ datasets, Eval loops, deterministic local scoring, experiment log).
 - **openrouter-*** (github.com/OpenRouterTeam/skills) — `openrouter-models`
-  (catalog, pricing, context, provider latency/uptime — grounds the
-  `taxonomy.yaml` model registry + cost prices), `openrouter-generations`
-  (per-request cost/latency/tokens/provider routing — debug unexpected
-  generations), `openrouter-analytics` (spend/usage queries), and
-  `openrouter-benchmarks` (live benchmark data for model selection).
+ (catalog, pricing, context, provider latency/uptime — grounds the
+ `taxonomy.yaml` model registry + cost prices), `openrouter-generations`
+ (per-request cost/latency/tokens/provider routing — debug unexpected
+ generations), `openrouter-analytics` (spend/usage queries), and
+ `openrouter-benchmarks` (live benchmark data for model selection).
 - **langchain-*/langgraph-*** (github.com/langchain-ai/langchain-skills) —
-  fundamentals, python quickstarts, dependencies, middleware,
-  langgraph-fundamentals/persistence (checkpointers — SqliteSaver)/
-  human-in-the-loop (review/interrupt nodes)/cli, ecosystem-primer.
+ fundamentals, python quickstarts, dependencies, middleware,
+ langgraph-fundamentals/persistence (checkpointers — SqliteSaver)/
+ human-in-the-loop (review/interrupt nodes)/cli, ecosystem-primer.
 
-Invoke the matching skill before writing or changing agent/graph/tracing
-code.
+Invoke the matching **project** skill (`.cursor/skills/`) before writing or
+changing agent/graph/tracing/provider code; use `.opencode/skills/` for CLI
+and upstream docs depth.
 
 ### Langfuse best-practices compliance (verified 2026-08-12)
 

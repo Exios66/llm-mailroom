@@ -38,6 +38,7 @@ This repository consists of:
 - **Canonical documentation** (`docs/`) — browsable locally with [docmd](https://github.com/docmd-io/docmd) (see [Browsing the Docs Locally](#browsing-the-docs-locally)).
 - A **dataset browser notebook** (`notebooks/`) — docile-style thin notebook over a reusable tool module.
 - A **Modal+vLLM deploy app** (`deploy/`) — optional local-model serving, flip-the-switch cutover.
+- **Project Agent Skills** (`.cursor/skills/`) — Cursor-discoverable router + dedicated skills for every serving/tracing/data/scoring stack this repo uses (companion to the offline [local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox) skills).
 
 ## Contents
 
