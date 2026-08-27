@@ -242,10 +242,23 @@ def score_and_log_extraction(
         )
 
     for extra_name, extra_value in extras.items():
+        if extra_name == "field_presence":
+            continue
+        meta = {}
+        try:
+            from observability.scores import registry_score_meta
+
+            meta = registry_score_meta(extra_name)
+        except Exception:
+            meta = {}
+        comment = f"doc_class={doc_class} suite_extra"
+        gt = meta.get("ground_truth")
+        if gt:
+            comment += f" gt={gt}"
         create_trace_score(
             name=extra_name,
             value=extra_value,
-            comment=f"doc_class={doc_class} suite_extra",
+            comment=comment,
             **common_kwargs,
         )
 

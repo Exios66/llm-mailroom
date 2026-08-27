@@ -111,7 +111,9 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "intake_messy_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "intake_hyphen_unwraps", "data_type": "NUMERIC", "min_value": 0.0},
     {"name": "intake_collapsed_blanks", "data_type": "NUMERIC", "min_value": 0.0},
-    # Dojo 0.10.0: field-micro P/R/F1/F2 + insurance claims extras.
+    # Dojo 0.10.0+: field-micro P/R/F1/F2 + insurance claims extras.
+    # v0.11.0 adds citation/inclusion/ground_truth on these names; it does
+    # not add `field_presence` (honesty gap — score_extraction does not emit it).
     {"name": "extraction_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
@@ -157,6 +159,13 @@ try:
             f"registry: {_unregistered}. Register them upstream or remove "
             "them here."
         )
+    # dojo 0.11.0: field_presence is catalogued but score_extraction does not
+    # emit it. A missing key is not 0.0.
+    if any(c["name"] == "field_presence" for c in SCORE_CONFIGS):
+        raise RuntimeError(
+            "field_presence is an unemitted dojo 0.11.0 honesty gap; do not "
+            "add it to SCORE_CONFIGS."
+        )
     logger.debug(
         "score_configs_validated",
         count=len(SCORE_CONFIGS),
@@ -166,6 +175,25 @@ except ImportError:
     # Package not importable in this environment (e.g. docs builds);
     # skip validation rather than block module import.
     pass
+
+
+def registry_score_meta(name: str) -> dict[str, str]:
+    """Citation / inclusion / ground_truth from the installed dojo registry.
+
+    Empty dict when the package or name is unavailable. Never invents a
+    method: values are whatever ``MetricDef`` carries.
+    """
+    try:
+        from llm_dojo_scoring import load_registry
+
+        metric = load_registry().get(name)
+    except Exception:
+        return {}
+    return {
+        "citation": getattr(metric, "citation", "") or "",
+        "inclusion": getattr(metric, "inclusion", "") or "",
+        "ground_truth": getattr(metric, "ground_truth", "") or "",
+    }
 
 
 def is_enabled() -> bool:

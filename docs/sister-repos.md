@@ -18,7 +18,7 @@ each lives. (All links verified 2026-08-23.)
 │  corpus feed repos     │──▶│        llm-mailroom          │
 │  Enron-Eval-Environment│   │  (this repo — the pipeline)  │
 │  claims-data-eda       │   └──────────┬───────────────────┘
-│  atticus-investigation │              │ pinned dependency @v0.10.0
+│  atticus-investigation │              │ pinned dependency @v0.11.0
 └────────────────────────┘              ▼
                           ┌──────────────────────────────┐
                           │     llm-dojo-scoring         │
@@ -41,7 +41,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | Repository | Role | Relationship to mailroom |
 |---|---|---|
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board and discussion log with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.10.0` / [PR #7](https://github.com/Exios66/llm-dojo-scoring/pull/7)); consumed through thin re-export shims |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.11.0` / [PR #8](https://github.com/Exios66/llm-dojo-scoring/pull/8)); consumed through thin re-export shims |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
@@ -78,10 +78,15 @@ The scoring layer both mailroom and entity-extraction consume:
   **agent profiles** covering every mailroom agent, and
   `DOC_TYPE_BUNDLES` keyed on the processed document classes with the
   explicit-fallback honesty resolver (`resolve_doc_bundle()`).
-- Pinned as a git dependency (`@v0.10.0` at time of writing); mailroom wires
+- Pinned as a git dependency (`@v0.11.0` at time of writing); mailroom wires
   its `taxonomy.yaml` scoring block onto package Settings via
   `observability/field_scoring.py` (a deprecation shim — imports should move
   to `llm_dojo_scoring.field_scoring`).
+- **v0.11.0** ([PR #8](https://github.com/Exios66/llm-dojo-scoring/pull/8))
+  is additive on the 0.10.0 scoring surface: T0/T1 `MetricDef`s carry
+  `citation` / `inclusion` / `ground_truth`; `llm_dojo_scoring.prompts`
+  vendors production + docclass templates with metric names in catalog
+  metadata only (anti-priming). `field_presence` stays unemitted.
 
 ## Corpus feeds
 
@@ -93,13 +98,13 @@ The scoring layer both mailroom and entity-extraction consume:
   (`enron-correspondence`, `enron-correspondence-dedup`, …).
 - **[claims-data-eda](https://github.com/Exios66/claims-data-eda)**:
   exploratory analysis toward an insurance-claims benchmark. Hub rows today
-  are CMS DE-SynPUF source tables; dojo 0.10.0 ships
+  are CMS DE-SynPUF source tables; dojo 0.10.0+ ships
   **`determination_consistency` / `amount_exactness`** as real scorers. CMS GT
   is homogeneous (all-approved / empty denials), so Hub
   `determination_consistency` is gated as a quality KPI. Mailroom exercises
   the scorer on a local approved/denied/partial contrast pack (documented in
   [Agents](agents.md)).
-- **Honesty (dojo 0.10.0 suites):** `compliance_filing` has zero
+- **Honesty (dojo 0.11.0 suites):** `compliance_filing` has zero
   `docclass-merged` rows (HF `--real` omits it; local fixture pack is
   mock/check only). `corporate_record` has 39 Hub subclass rows and **no
   external extraction benchmark**; schema-complete extraction GT is the
