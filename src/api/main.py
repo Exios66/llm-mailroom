@@ -361,44 +361,345 @@ def _validate_doc_id(doc_id: str) -> str:
     return doc_id
 
 
-@app.post("/review/{doc_id}/resolve", dependencies=[Depends(_require_token)])
-async def resolve_review(
-    doc_id: str,
-    decision: str = Form(..., description="approved or rejected"),
-    notes: str = Form(default=""),
+def _document_payload_from_manifest(manifest) -> dict:
+    from pipeline.review_resolve import serialize_document
+
+    return serialize_document(manifest)
+
+
+@app.get("/lookup", dependencies=[Depends(_require_token)])
+async def lookup_document_endpoint(
+    doc_id: str | None = Query(default=None),
+    trace_id: str | None = Query(default=None),
+    filename: str | None = Query(default=None),
 ):
+    """Catalog lookup for The-Mailroom REVIEW desk (PR #18).
+
+    Provide at least one of ``doc_id``, ``trace_id``, or ``filename``. Returns
+    ``{"document": {...}}`` or 404 when nothing matches.
+    """
+    if not (doc_id or trace_id or filename):
+        raise HTTPException(400, "provide doc_id, trace_id, or filename")
+    if doc_id:
+        _validate_doc_id(doc_id)
+
+    from pipeline.review_resolve import serialize_document
+
+    try:
+        from storage.catalog import lookup_document
+
+        row = await lookup_document(doc_id=doc_id, trace_id=trace_id, filename=filename)
+        if row is not None:
+            return {"document": serialize_document(row)}
+    except Exception:
+        logger.exception("lookup_catalog_failed")
+
+    # Manifest fallback — review may be parked before a catalog write lands.
+    if doc_id:
+        manifest = load_manifest(doc_id)
+        if manifest:
+            return {"document": _document_payload_from_manifest(manifest)}
+    if filename:
+        from pipeline.bins import manifests_dir
+        import json as _json
+
+        mdir = manifests_dir()
+        if mdir.exists():
+            for path in mdir.glob("*.json"):
+                try:
+                    data = _json.loads(path.read_text())
+                except Exception:
+                    continue
+                if data.get("original_filename") == filename:
+                    manifest = load_manifest(data["doc_id"])
+                    if manifest:
+                        return {"document": _document_payload_from_manifest(manifest)}
+    raise HTTPException(404, "Document not found")
+
+
+@app.get("/review/queue", dependencies=[Depends(_require_token)])
+async def review_queue():
+    """REVIEW tray: parked documents plus available dispositions.
+
+    Combines catalog ``stage=review`` rows with on-disk manifests so the tray
+    stays usable even when the catalog write lagged the park.
+    """
+    from pipeline.review_resolve import serialize_document, tray_actions_for
+    from pipeline.bins import manifests_dir
+    import json as _json
+
+    items: dict[str, dict] = {}
+    try:
+        from storage.catalog import get_documents_by_stage
+
+        for row in await get_documents_by_stage("review"):
+            payload = serialize_document(row)
+            payload["actions"] = tray_actions_for(payload.get("stage"))
+            items[payload["doc_id"]] = payload
+    except Exception:
+        logger.exception("review_queue_catalog_failed")
+
+    mdir = manifests_dir()
+    if mdir.exists():
+        for path in mdir.glob("*.json"):
+            try:
+                data = _json.loads(path.read_text())
+            except Exception:
+                continue
+            if data.get("stage") != PipelineStage.REVIEW.value:
+                continue
+            doc_id = data.get("doc_id")
+            if not doc_id or doc_id in items:
+                continue
+            manifest = load_manifest(doc_id)
+            if not manifest:
+                continue
+            payload = serialize_document(manifest)
+            payload["actions"] = tray_actions_for(payload.get("stage"))
+            items[doc_id] = payload
+
+    docs = sorted(
+        items.values(),
+        key=lambda d: d.get("updated_at") or d.get("created_at") or "",
+        reverse=True,
+    )
+    return {
+        "review_queue": len(docs),
+        "documents": docs,
+        "dispositions": ["resume", "record", "requeue", "complete"],
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+
+
+async def _parse_resolve_payload(request: Request) -> dict:
+    """Accept JSON (The-Mailroom proxy) or form-urlencoded (legacy clients)."""
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "invalid JSON body")
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON body must be an object")
+        return {
+            "decision": str(body.get("decision") or "").strip(),
+            "notes": str(body.get("notes") or ""),
+            "disposition": str(body.get("disposition") or "resume").strip() or "resume",
+            "override_doc_type": body.get("override_doc_type"),
+            "contract_subtype": body.get("contract_subtype"),
+            "doc_subclass": body.get("doc_subclass"),
+            "extracted_data": body.get("extracted_data"),
+        }
+    form = await request.form()
+    extracted_raw = form.get("extracted_data")
+    extracted = None
+    if extracted_raw:
+        import json as _json
+
+        try:
+            extracted = _json.loads(str(extracted_raw))
+        except Exception:
+            raise HTTPException(400, "extracted_data must be JSON when sent as form field")
+    return {
+        "decision": str(form.get("decision") or "").strip(),
+        "notes": str(form.get("notes") or ""),
+        "disposition": str(form.get("disposition") or "resume").strip() or "resume",
+        "override_doc_type": form.get("override_doc_type"),
+        "contract_subtype": form.get("contract_subtype"),
+        "doc_subclass": form.get("doc_subclass"),
+        "extracted_data": extracted,
+    }
+
+
+@app.post("/review/{doc_id}/resolve", dependencies=[Depends(_require_token)])
+async def resolve_review(doc_id: str, request: Request):
+    """Resolve a REVIEW / RECONSIDER item (The-Mailroom PR #18 dispositions).
+
+    Body (JSON or form): ``decision`` (approved|rejected), optional ``notes``,
+    ``disposition`` (resume|record|requeue|complete), optional classification
+    overrides, and optional ``extracted_data`` for ``complete``.
+    """
+    import asyncio
+
+    from pipeline.review_resolve import (
+        DECISIONS,
+        DISPOSITIONS,
+        apply_classification_override,
+        complete_human_extraction,
+        copy_to_inbox,
+        locate_document_file,
+    )
+
     _validate_doc_id(doc_id)
-    if decision not in ("approved", "rejected"):
+    payload = await _parse_resolve_payload(request)
+    decision = payload["decision"]
+    notes = payload["notes"]
+    disposition = (payload["disposition"] or "resume").lower()
+    if decision not in DECISIONS:
         raise HTTPException(400, "decision must be 'approved' or 'rejected'")
+    if disposition not in DISPOSITIONS:
+        raise HTTPException(
+            400,
+            "disposition must be 'resume', 'record', 'requeue', or 'complete'",
+        )
 
     manifest = load_manifest(doc_id)
     if not manifest:
         raise HTTPException(404, f"Manifest not found for doc_id: {doc_id}")
 
-    if manifest.stage != PipelineStage.REVIEW:
-        raise HTTPException(400, f"Document is not in review (current stage: {manifest.stage})")
+    try:
+        apply_classification_override(
+            manifest,
+            override_doc_type=payload.get("override_doc_type"),
+            contract_subtype=payload.get("contract_subtype"),
+            doc_subclass=payload.get("doc_subclass"),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
+    # --- record: paper trail only (any stage) ---------------------------------
+    if disposition == "record":
+        event = "review_recorded"
+        detail = {
+            "decision": decision,
+            "disposition": "record",
+            "stage": manifest.stage.value if hasattr(manifest.stage, "value") else manifest.stage,
+        }
+        if notes:
+            prior = manifest.escalation_reason or ""
+            tag = f"[review:{decision}] {notes}"
+            manifest.escalation_reason = f"{prior}; {tag}".strip("; ") if prior else tag
+            manifest.touch()
+            save_manifest(manifest)
+        await _write_review_audit_entry(doc_id, manifest.matter_id, event, notes, detail=detail)
+        logger.info("review_recorded", doc_id=doc_id, decision=decision)
+        return {
+            "status": "ok",
+            "doc_id": doc_id,
+            "decision": decision,
+            "disposition": "record",
+            "notes": notes,
+        }
+
+    # --- requeue: copy source → inbox ----------------------------------------
+    if disposition == "requeue":
+        source = locate_document_file(manifest)
+        if source is None:
+            raise HTTPException(404, "Source file not found for requeue")
+        try:
+            dest = copy_to_inbox(
+                source,
+                preferred_name=manifest.original_filename,
+                matter_id=manifest.matter_id,
+            )
+        except Exception as exc:
+            logger.exception("review_requeue_failed", doc_id=doc_id)
+            raise HTTPException(500, f"Requeue failed: {exc}")
+        await _write_review_audit_entry(
+            doc_id,
+            manifest.matter_id,
+            "review_requeued",
+            notes,
+            detail={
+                "decision": decision,
+                "disposition": "requeue",
+                "inbox_file": dest.name,
+                "source": str(source),
+            },
+        )
+        logger.info("review_requeued", doc_id=doc_id, inbox_file=dest.name)
+        return {
+            "status": "ok",
+            "doc_id": doc_id,
+            "decision": decision,
+            "disposition": "requeue",
+            "notes": notes,
+            "inbox_file": dest.name,
+        }
+
+    # Remaining dispositions require a parked review document.
+    if manifest.stage != PipelineStage.REVIEW:
+        raise HTTPException(
+            400,
+            f"Document is not in review (current stage: {manifest.stage}); "
+            "use disposition=record or disposition=requeue",
+        )
+
+    # --- complete: human-supplied extraction, archive without LLM ------------
+    if disposition == "complete":
+        if decision != "approved":
+            raise HTTPException(400, "disposition=complete requires decision=approved")
+        extracted = payload.get("extracted_data")
+        if not isinstance(extracted, dict) or not extracted:
+            raise HTTPException(400, "disposition=complete requires extracted_data object")
+        from pipeline.bins import review_dir
+
+        review_file = review_dir() / manifest.original_filename
+        if not review_file.exists():
+            raise HTTPException(404, f"File not found in review bin: {review_file}")
+        try:
+            result = await asyncio.to_thread(
+                complete_human_extraction, manifest, review_file, extracted
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        except Exception as exc:
+            logger.exception("review_complete_failed", doc_id=doc_id)
+            raise HTTPException(500, f"Complete failed: {exc}")
+        try:
+            from storage.catalog import write_document_record
+
+            doc_record = result.pop("doc_record", None)
+            if doc_record:
+                await write_document_record(doc_record)
+        except Exception:
+            logger.exception("review_complete_catalog_failed", doc_id=doc_id)
+        await _write_review_audit_entry(
+            doc_id,
+            manifest.matter_id,
+            "review_completed",
+            notes,
+            detail={"disposition": "complete", "stage": result.get("stage")},
+        )
+        return {
+            "status": "ok",
+            "doc_id": doc_id,
+            "decision": decision,
+            "disposition": "complete",
+            "notes": notes,
+            "complete": result,
+        }
+
+    # --- resume (default) ----------------------------------------------------
     if decision == "rejected":
         manifest.review_decision = "rejected"
         manifest.stage = PipelineStage.FAILED
         manifest.touch()
         save_manifest(manifest)
-        _move_rejected_to_failed(doc_id, manifest)
-        _write_review_audit_entry(doc_id, manifest.matter_id, "review_rejected", notes)
+        await _move_rejected_to_failed(doc_id, manifest)
+        await _write_review_audit_entry(
+            doc_id,
+            manifest.matter_id,
+            "review_rejected",
+            notes,
+            detail={"disposition": "resume"},
+        )
         logger.info("review_rejected", doc_id=doc_id)
-        return {"status": "ok", "doc_id": doc_id, "decision": decision, "notes": notes}
+        return {
+            "status": "ok",
+            "doc_id": doc_id,
+            "decision": decision,
+            "disposition": "resume",
+            "notes": notes,
+        }
 
-    # Approved → resume with a FRESH extraction (never reuse the reviewed
-    # payload). Prefers LangGraph Command(resume=...) on the parked interrupt
-    # checkpoint; falls back to a stateless extract invoke if the checkpointer
-    # was lost. Then compile → catalog → archive under the original doc_id.
     if not manifest.doc_type:
         raise HTTPException(
             409,
-            "Document has no classification to resume; re-submit it to the inbox instead.",
+            "Document has no classification to resume; set override_doc_type "
+            "or requeue to the inbox instead.",
         )
 
-    import asyncio
     from pipeline.bins import review_dir
     from graph.build_graph import resume_from_review
 
@@ -406,24 +707,26 @@ async def resolve_review(
     if not review_file.exists():
         raise HTTPException(404, f"File not found in review bin: {review_file}")
 
+    save_manifest(manifest)  # persist any classification override before resume
     try:
         result = await asyncio.to_thread(resume_from_review, manifest, review_file, notes)
     except Exception as exc:
         logger.exception("review_resume_failed", doc_id=doc_id)
         raise HTTPException(500, f"Resume failed: {exc}")
 
-    _write_review_audit_entry(
+    await _write_review_audit_entry(
         doc_id,
         manifest.matter_id,
         "review_approved",
         notes,
-        detail={"resumed_stage": result.get("stage")},
+        detail={"disposition": "resume", "resumed_stage": result.get("stage")},
     )
     logger.info("review_approved_resumed", doc_id=doc_id, stage=result.get("stage"))
     return {
         "status": "ok",
         "doc_id": doc_id,
         "decision": decision,
+        "disposition": "resume",
         "notes": notes,
         "resume": {
             "stage": result.get("stage"),
@@ -434,37 +737,38 @@ async def resolve_review(
     }
 
 
-def _write_review_audit_entry(
+
+async def _write_review_audit_entry(
     doc_id: str, matter_id: str, event: str, notes: str, detail: dict | None = None
 ) -> None:
     """Append a hash-chained audit entry for a human review decision.
 
-    The review decision is part of the document's compliance record: it must
-    be chained to the previous entry for this doc_id (best-effort; the audit
-    log is the durable record, but a DB failure must not fail the API call).
+    Awaited from the API event loop so we never deadlock on
+    ``run_coroutine_threadsafe`` against the same loop (best-effort; a DB
+    failure must not fail the API call).
     """
     try:
-        import asyncio
         from schemas.audit import build_audit_entry
-        from graph.build_graph import _latest_audit_hash, _write_audit_log
+        from storage.audit_log import get_latest_audit_hash, write_audit_entry
 
         entry_detail = dict(detail or {})
         if notes:
             entry_detail["notes"] = notes
+        prev = await get_latest_audit_hash(doc_id)
         entry = build_audit_entry(
             doc_id=doc_id,
             matter_id=matter_id,
             event=event,
             actor="human_reviewer",
             detail=entry_detail,
-            prev_hash=_latest_audit_hash(doc_id),
+            prev_hash=prev,
         )
-        _write_audit_log(entry)
+        await write_audit_entry(entry)
     except Exception:
         logger.exception("review_audit_entry_failed", doc_id=doc_id, event=event)
 
 
-def _move_rejected_to_failed(doc_id: str, manifest) -> None:
+async def _move_rejected_to_failed(doc_id: str, manifest) -> None:
     """Close the conveyor loop for a rejected review: move the file from the
     review bin to the failed bin and flip the catalog record to failed.
 
@@ -494,22 +798,7 @@ def _move_rejected_to_failed(doc_id: str, manifest) -> None:
             "escalation_reason": manifest.escalation_reason,
             "trace_id": manifest.trace_id,
         }
-
-        async def _write():
-            await write_document_record(doc_record)
-
-        import asyncio
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                future = asyncio.run_coroutine_threadsafe(_write(), loop)
-                future.result(timeout=5)
-            else:
-                asyncio.run(_write())
-        except RuntimeError:
-            asyncio.run(_write())
+        await write_document_record(doc_record)
         logger.info("review_rejected_finalized", doc_id=doc_id)
     except Exception:
         logger.exception("review_rejected_finalize_failed", doc_id=doc_id)
@@ -613,6 +902,25 @@ async def get_audit_trail(doc_id: str):
         }
     except Exception:
         raise HTTPException(500, "Audit log unavailable")
+
+
+@app.get("/audit", dependencies=[Depends(_require_token)])
+async def analyze_audit_database(
+    verify: bool = Query(default=True, description="Verify every hash chain"),
+    recent: int = Query(default=20, ge=1, le=200, description="Recent events to include"),
+):
+    """Parse and summarize the full local audit DB (catalog companion).
+
+    Returns event/actor histograms, per-doc chain health, review-related event
+    counts, and the newest entries — for operator audits without opening sqlite3.
+    """
+    try:
+        from storage.audit_log import analyze_audit_db
+
+        return await analyze_audit_db(verify_chains=verify, event_limit=recent)
+    except Exception:
+        logger.exception("audit_analyze_failed")
+        raise HTTPException(500, "Audit analysis unavailable")
 
 
 @app.get("/ops/status", dependencies=[Depends(_require_token)])
@@ -731,9 +1039,12 @@ def _mount_v1_aliases() -> None:
         "/health",
         "/upload",
         "/queue",
+        "/lookup",
+        "/review/queue",
         "/review/{doc_id}/resolve",
         "/status/{doc_id}",
         "/matters/{matter_id}",
+        "/audit",
         "/audit/{doc_id}",
         "/ops/status",
         "/ops/sweep",

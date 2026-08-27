@@ -119,6 +119,44 @@ async def get_document(doc_id: str) -> DocumentRecord | None:
         return await session.get(DocumentRecord, doc_id)
 
 
+async def lookup_document(
+    *,
+    doc_id: str | None = None,
+    trace_id: str | None = None,
+    filename: str | None = None,
+) -> DocumentRecord | None:
+    """Resolve a catalog row by doc_id, then trace_id, then original filename.
+
+    Preferential order matches The-Mailroom review proxy (PR #18): an explicit
+    ``doc_id`` wins; otherwise the newest match for ``trace_id`` / filename.
+    """
+    ensure_schema()
+    async with async_session() as session:
+        if doc_id:
+            row = await session.get(DocumentRecord, doc_id)
+            if row is not None:
+                return row
+        if trace_id:
+            result = await session.execute(
+                select(DocumentRecord)
+                .where(DocumentRecord.trace_id == trace_id)
+                .order_by(DocumentRecord.updated_at.desc())
+                .limit(1)
+            )
+            row = result.scalars().first()
+            if row is not None:
+                return row
+        if filename:
+            result = await session.execute(
+                select(DocumentRecord)
+                .where(DocumentRecord.original_filename == filename)
+                .order_by(DocumentRecord.updated_at.desc())
+                .limit(1)
+            )
+            return result.scalars().first()
+    return None
+
+
 async def list_documents(limit: int | None = None) -> list[DocumentRecord]:
     ensure_schema()
     async with async_session() as session:

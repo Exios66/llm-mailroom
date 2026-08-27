@@ -170,6 +170,14 @@ The scoring layer both mailroom and entity-extraction consume:
   `on_moved` / `on_modified` inbox events so an upload appears on the floor
   within one poll tick. `MAILROOM_PIPELINE_URL` on the visualizer should
   point at this API (`http://127.0.0.1:8000`).
+- **REVIEW resolve (The-Mailroom [PR #18](https://github.com/Exios66/The-Mailroom/pull/18)):**
+  the visualizer proxies operator decisions to this API — never holds producer
+  keys in the browser. Producer surface: `GET /lookup`, `GET /audit/{doc_id}`,
+  `POST /review/{doc_id}/resolve` with `disposition=resume|record|requeue`
+  (plus mailroom-local `complete` + classification overrides for tray
+  reroute/finish). Set `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` on
+  the visualizer. Full audit parse: `GET /audit` /
+  `scripts/analyze_audit_db.py`.
 - **Governance:** fully governed member of the family — own `AGENTS.md`, own
   semver release train (v0.2.0), own test suite (never hits real Langfuse),
   own wiki. It is a downstream OBSERVER: dependency of no family repo — the

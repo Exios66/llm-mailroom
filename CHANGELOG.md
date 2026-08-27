@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Human-review resolve for The-Mailroom PR #18 (producer half).** `GET /lookup`
+  (by `doc_id` / `trace_id` / `filename`), `GET /review/queue` (REVIEW tray with
+  available actions), and disposition-aware `POST /review/{doc_id}/resolve`
+  accepting JSON or form: `resume` (default approve→re-extract / reject→failed),
+  `record` (audit paper trail, file stays put), `requeue` (copy source → inbox),
+  `complete` (archive with human `extracted_data`, no LLM). Optional
+  `override_doc_type` / subtype / subclass reroutes classification before
+  resume/complete. `/v1` aliases for the new routes. Module:
+  `pipeline/review_resolve.py`.
+
+- **Full local audit DB analysis.** `GET /audit` plus CLI
+  `scripts/analyze_audit_db.py` (`--json`, `--no-verify`, `--join-catalog`)
+  summarize event/actor histograms, review events, and hash-chain health across
+  every document. Storage alternatives write-up:
+  `docs/reports/audits/2026-08-27-local-storage-alternatives-for-audit-and-review.md`
+  (keep SQLite for live ops; Parquet/DuckDB as analytics companions).
+
 - **First-pass production STP score (`success_rate`).** Every finished run
   emits the registered dojo metric as a 0/1 flag: archived in one pass with
   no retry, Lane A, arbiter, boss, human review, guardrail, or transient

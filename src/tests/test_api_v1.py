@@ -18,9 +18,12 @@ V1_PATHS = [
     ("GET", "/v1/health"),
     ("POST", "/v1/upload"),
     ("GET", "/v1/queue"),
+    ("GET", "/v1/lookup"),
+    ("GET", "/v1/review/queue"),
     ("POST", "/v1/review/{doc_id}/resolve"),
     ("GET", "/v1/status/{doc_id}"),
     ("GET", "/v1/matters/{matter_id}"),
+    ("GET", "/v1/audit"),
     ("GET", "/v1/audit/{doc_id}"),
     ("GET", "/v1/ops/status"),
 ]
