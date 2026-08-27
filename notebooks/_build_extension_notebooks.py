@@ -53,13 +53,15 @@ def nb09() -> None:
         md("""# 09 · All specialists — one run per document class
 
 Every taxonomy class through the **real** graph: sorter → the matching
-specialist → report → catalog → archive. Five documents, five specialists,
-five extraction schemas.
+specialist → report → catalog → archive. Six live classes, five specialists
+(contracts also covers MAUD `merger_agreement`; both share
+`ContractExtraction`).
 
 **What you'll see:** a per-class table of the specialist that dispatched, the
 node path the router actually took, the stage that landed, and the extracted
-keys. Contracts ride the LangChain specialist; the other four ride the legacy
-`agents.*` specialists (the same split the production graph uses).
+keys. CUAD contracts and MAUD merger agreements ride the LangChain specialist;
+the other four ride the legacy `agents.*` specialists (the same split the
+production graph uses).
 
 **Honesty label:** the graph, dispatch, schemas, bins, and catalog are REAL.
 The LLMs are the test-suite mocks (`FakeLangChainLLM` for the LangChain path,

@@ -316,7 +316,11 @@ class TestUnsupportedExtractParksWithoutRetry:
         }
         updates = bg.extract_node(prior)
         assert called.get("text")
-        assert "extract_class=contract" in (called.get("handoff") or "")
+        handoff = called.get("handoff") or ""
+        assert "doc_type=merger_agreement" in handoff
+        assert "MAUD extraction" in handoff
+        # Shared specialist, distinct class — no extract alias onto contract.
+        assert "extract_class=contract" not in handoff
         assert updates["extracted_data"]["parties"] == ["Parent Inc.", "Target Corp."]
         assert updates.get("extracted_data", {}).get("_unsupported") is not True
         merged = {**prior, **updates}

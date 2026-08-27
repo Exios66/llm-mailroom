@@ -87,3 +87,15 @@ def test_retired_classes_are_absent_from_live_manifest():
     for r in _rows():
         assert r["expected_doc_class"] not in ("court_opinion", "due_diligence"), r["id"]
         assert (r.get("dataset") or "") != "pileoflaw"
+
+
+def test_legalbench_maud_samples_are_merger_agreement_not_contract():
+    """MAUD is its own class. CUAD Atticus rows stay contract."""
+    for r in _rows():
+        if r.get("dataset") == "legalbench":
+            assert r["expected_doc_class"] == "merger_agreement", r["id"]
+            assert r["subdir"] == "merger_agreement", r["id"]
+        if r.get("dataset") == "atticus":
+            assert r["expected_doc_class"] == "contract", r["id"]
+        if r["id"].startswith("contract_"):
+            assert r["expected_doc_class"] == "contract", r["id"]

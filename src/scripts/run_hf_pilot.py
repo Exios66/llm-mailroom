@@ -76,9 +76,9 @@ HF_HONESTY_EXCLUDED = (
 HF_LOCAL_PACK_CLASSES = (
     "compliance_filing",
 )
-# Live mailroom taxonomy files MAUD/merger rows as contract. The visualizer
-# still scores exact vs aligned (merger_agreement ≡ contract).
-ALIGN = {"merger_agreement": "contract"}
+# Live taxonomy files MAUD merger rows as merger_agreement (not contract).
+# Exact and aligned classification are identical — do not treat MAUD ≡ CUAD.
+ALIGN: dict[str, str] = {}
 
 _MOCK_DOCS = {
     "contract": (
@@ -570,9 +570,7 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
         from observability.suite_scoring import score_with_suite
 
         scored_class = pipeline_class(doc_class) or doc_class
-        # merger_agreement keeps its own suite (MAUD extras); other HF
-        # classes share the live specialist suite.
-        suite_class = doc_class if doc_class == "merger_agreement" else scored_class
+        suite_class = scored_class
         result, extras = score_with_suite(
             suite_class,
             extracted,
@@ -1102,7 +1100,7 @@ def check_contract() -> int:
     assert looks_messy("x\n" * 30) is True
     intake_out = get_suite("intake").score("A\u00a0B\n\n\n\nagree-\nment", cleaned)
     assert intake_out["intake_prep_completeness"] == 1.0
-    assert pipeline_class("merger_agreement") == "contract"
+    assert pipeline_class("merger_agreement") == "merger_agreement"
     assert pipeline_class("insurance_claim") == "insurance_claim"
     assert "compliance_filing" not in HF_CLASSES
     assert "compliance_filing" in HF_LOCAL_PACK_CLASSES

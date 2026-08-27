@@ -245,9 +245,14 @@ class TestFieldTypesFromConfig:
     def test_unknown_class_returns_empty(self):
         assert get_field_types("not_a_class") == {}
 
-    def test_merger_agreement_alias_uses_contract_field_types(self):
+    def test_merger_agreement_field_types_match_shared_schema(self):
+        # Same field map as contract (shared ContractExtraction) but a
+        # distinct live class — not an extract alias.
         assert get_field_types("merger_agreement") == get_field_types("contract")
         assert get_field_types("merger_agreement")["parties"] == "entity_list:name"
+        from pipeline.config import resolve_extract_class
+
+        assert resolve_extract_class("merger_agreement") == "merger_agreement"
 
 
 class TestScoreExtraction:

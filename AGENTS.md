@@ -144,7 +144,7 @@ PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mo
 ## Config gotchas
 
 - `pipeline/config.py:load_config` is `lru_cache`d and `pipeline/bins.py` caches config at module level. Editing `taxonomy.yaml` requires restarting the watcher/API — it will not be picked up live.
-- Adding a doc class touches ~5 places, all required: `taxonomy.yaml` (`doc_classes` + `agents:`), schema + `EXTRACTION_SCHEMAS` in `schemas/documents.py`, a `BaseAgent` subclass in `agents/`, a dispatch entry in `graph/build_graph.py:_build_specialist_dispatch` (the specialist-name→function map is hardcoded to 5 names), a prompt template entry in `llm/prompts.py:prompt_templates()`, and test fixtures/tests.
+- Adding a doc class touches ~5 places, all required: `taxonomy.yaml` (`doc_classes` + `agents:`), schema + `EXTRACTION_SCHEMAS` in `schemas/documents.py`, a `BaseAgent` subclass in `agents/`, a dispatch entry in `graph/build_graph.py:_build_specialist_dispatch` (the specialist-name→function map is hardcoded to 5 names), a prompt template entry in `llm/prompts.py:prompt_templates()`, and test fixtures/tests. `merger_agreement` is the exception: it is a live taxonomy class that reuses `contracts_specialist` / `ContractExtraction` (MAUD ≠ CUAD; no sixth specialist).
 - Ollama runs as a profile-gated service in docker-compose: `--profile local-llm up`.
 
 ## Testing quirks

@@ -43,7 +43,7 @@ class TestValidateExtraction:
         result_unknown = validate_extraction("unknown", {"_unsupported": True})
         assert result_unknown["schema_valid"] is False
 
-    def test_merger_agreement_validates_against_contract_schema(self):
+    def test_merger_agreement_validates_against_shared_schema(self):
         from observability.scores import validate_extraction
 
         result = validate_extraction(

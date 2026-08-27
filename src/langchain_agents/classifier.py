@@ -40,6 +40,7 @@ def _valid_classes() -> list[str]:
             "corporate_record",
             "correspondence",
             "insurance_claim",
+            "merger_agreement",
             "unknown",
         ]
 

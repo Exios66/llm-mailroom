@@ -175,8 +175,11 @@ Document lands in `/pipeline/inbox/`. Watcher detects it, claims it atomically t
 
 ### 2. Classify (Sorter)
 LLM call: reads document text, determines `doc_type` and confidence.
-Live extractable classes are `contract`, `corporate_record`, `correspondence`,
-`compliance_filing`, `insurance_claim`. The sorter schema also allows the
+Live extractable classes are `contract`, `merger_agreement`, `corporate_record`,
+`correspondence`, `compliance_filing`, `insurance_claim`. `merger_agreement`
+is the MAUD class (agreement and plan of merger); `contract` is the CUAD
+commercial-contract class — they are not interchangeable. The sorter schema
+also allows the
 routing token `unknown` (not a taxonomy class, not a specialist) for court
 opinions, due-diligence memos, and anything that does not fit a live class.
 `unknown` / retired / hallucinated labels are preserved — they are never

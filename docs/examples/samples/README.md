@@ -1,13 +1,15 @@
 # Pilot Sample Set
 
 A curated set of legal PDFs used to **pilot-test the pipeline and evaluate
-procedural changes** (accuracy + efficiency). 22 documents spanning the five
-live `config/taxonomy.yaml` doc classes, plus one deliberately ambiguous memo
-that drives the retry → human-review path.
+procedural changes** (accuracy + efficiency). 22 documents spanning five of
+the six live `config/taxonomy.yaml` doc classes (`insurance_claim` is live
+but not in this set), plus one deliberately ambiguous memo that drives the
+retry → human-review path.
 
 | Class | Count | Source |
 |---|---|---|
-| `contract` | 15 | 3 original CUAD SEC-exhibit PDFs + 6 CUAD/Atticus PDFs + 6 LegalBench MAUD merger agreements (CC-BY-4.0) |
+| `contract` | 9 | 3 original CUAD SEC-exhibit PDFs + 6 CUAD/Atticus PDFs (CC-BY-4.0) |
+| `merger_agreement` | 6 | LegalBench MAUD v1 merger agreements (CC-BY-4.0) |
 | `compliance_filing` | 2 | Synthetic 10-K excerpt (large) + state filing |
 | `corporate_record` | 2 | Bylaws + board resolution |
 | `correspondence` | 2 | Demand letter + internal memo |

@@ -23,8 +23,8 @@ from pipeline.reconsideration import (
 )
 
 
-def test_align_class_merges_merger_agreement():
-    assert align_class("merger_agreement") == "contract"
+def test_align_class_keeps_merger_distinct_from_contract():
+    assert align_class("merger_agreement") == "merger_agreement"
     assert align_class("contract") == "contract"
     assert align_class("correspondence") == "correspondence"
 
@@ -41,9 +41,20 @@ def test_class_miss_even_at_high_confidence_goes_to_lane_a():
     assert after_retry_classify(state) == "review_classify"
 
 
-def test_merger_agreement_alias_is_not_a_class_miss():
+def test_predicting_contract_for_maud_gt_is_a_class_miss():
     state = {
         "doc_type": "contract",
+        "classification_confidence": 0.99,
+        "classification_attempts": 1,
+        "ground_truth": {"expected_hf_class": "merger_agreement"},
+    }
+    assert class_misses_ground_truth(state) is True
+    assert after_classify(state) == "review_classify"
+
+
+def test_matching_merger_agreement_extracts():
+    state = {
+        "doc_type": "merger_agreement",
         "classification_confidence": 0.99,
         "classification_attempts": 1,
         "ground_truth": {"expected_hf_class": "merger_agreement"},
