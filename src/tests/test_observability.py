@@ -277,6 +277,37 @@ class TestObservationTypes:
         assert node({"doc_id": "1"}) == {"stage": "classified"}
         assert captured == [("classify-document", "agent")]
 
+    def test_traced_node_publishes_stage_and_flushes(self, monkeypatch):
+        from contextlib import contextmanager
+        from unittest.mock import MagicMock
+
+        monkeypatch.setenv("OBSERVABILITY_PROVIDER", "langfuse")
+        outputs = []
+        flushes = []
+
+        span = MagicMock()
+        span.update.side_effect = lambda **kw: outputs.append(kw.get("output"))
+
+        @contextmanager
+        def fake_obs(name, **kwargs):
+            yield span
+
+        monkeypatch.setattr("observability.langfuse_setup.observation", fake_obs)
+        monkeypatch.setattr(tracing, "flush", lambda: flushes.append(1))
+        deco = tracing.traced_node("extract-fields")
+
+        @deco
+        def node(state):
+            return {"doc_type": "contract"}
+
+        assert node({"doc_id": "1", "stage": "classified"}) == {"doc_type": "contract"}
+        assert outputs == [{"doc_type": "contract", "stage": "classified"}]
+        assert flushes == [1]
+
+    def test_result_summary_always_includes_stage(self):
+        assert tracing._result_summary({"stage": "processing"})["stage"] == "processing"
+        assert tracing._result_summary({}, {"stage": "inbox"})["stage"] == "inbox"
+
     def test_ensure_process_tracing_is_safe_when_disabled(self, monkeypatch):
         monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
         tracing.ensure_process_tracing()  # must not raise

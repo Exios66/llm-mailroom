@@ -32,19 +32,16 @@ No database setup needed — SQLite files are created automatically under `data/
 
 ## Step 3: Run Services
 
-Open three terminals:
+Open two terminals (the API embeds the inbox watcher by default):
 
-**Terminal 1 — Pipeline Watcher:**
-```bash
-PYTHONPATH=src python -m pipeline.watcher
-```
-
-**Terminal 2 — API Server:**
+**Terminal 1 — API Server:**
 ```bash
 PYTHONPATH=src python -m api.main
 ```
 
-**Terminal 3 — Ops Monitor (optional):**
+Set `MAILROOM_EMBED_WATCHER=0` and start `PYTHONPATH=src python -m pipeline.watcher` only when you want a dedicated watcher process.
+
+**Terminal 2 — Ops Monitor (optional):**
 ```bash
 PYTHONPATH=src python -m pipeline.ops_monitor
 ```

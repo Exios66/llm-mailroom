@@ -50,8 +50,8 @@ score-config categories).
 ```bash
 pip install -e ".[dev]"        # install (deps NOT vendored; no venv in repo)
 docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server   # OPTIONAL: only for Langfuse tracing
-PYTHONPATH=src python -m pipeline.watcher   # filesystem watcher — the main entrypoint
-PYTHONPATH=src python -m api.main           # FastAPI on :8000
+PYTHONPATH=src python -m pipeline.watcher   # filesystem watcher (optional when the API embeds it)
+PYTHONPATH=src python -m api.main           # FastAPI on :8000 — embeds the inbox watcher by default
 PYTHONPATH=src python -m pipeline.ops_monitor  # scheduled Boss sweep (optional)
 PYTHONPATH=src python src/scripts/cutover.py --list       # show agent→provider/model; also --recommend, --validate --agent <name>
 PYTHONPATH=src python src/scripts/prepare_samples.py          # build the pilot PDF set into data/samples/

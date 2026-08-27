@@ -59,6 +59,97 @@ TERMINAL_STAGES = ("archived", "failed", "review")
 # this are presumed orphaned by a crashed process and re-queued.
 STALE_CLAIM_MINUTES = int(os.environ.get("WATCHER_STALE_CLAIM_MINUTES", "60"))
 
+WATCHER_LOCK_NAME = "watcher.lock"
+
+# Default 1s so The-Mailroom's live floor sees inbox drops within one poll
+# tick. Override with WATCHER_POLL_INTERVAL_SECONDS.
+DEFAULT_POLL_INTERVAL_SECONDS = 1.0
+
+# In-process guard: flock is per-fd, so the same process can take the lock
+# twice. The API lifespan and a nested start() must not double-run.
+_watcher_owned = False
+_watcher_owned_lock = threading.Lock()
+
+
+class WatcherLockHeld(RuntimeError):
+    """Another watcher already holds ``watcher.lock`` (or this process already started)."""
+
+
+class _WatcherLock:
+    """Exclusive file lock so the API-embedded watcher and ``python -m pipeline.watcher`` cannot both drain the inbox."""
+
+    def __init__(self, path: Path, fh):
+        self.path = path
+        self._fh = fh
+
+    def release(self) -> None:
+        fh = self._fh
+        self._fh = None
+        if fh is None:
+            return
+        try:
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+        try:
+            fh.close()
+        except Exception:
+            pass
+
+
+def acquire_watcher_lock() -> _WatcherLock | None:
+    """Non-blocking exclusive lock on ``<MAILROOM_BASE_DIR>/watcher.lock``.
+
+    Returns ``None`` when another process already holds it. Best-effort on
+    platforms without ``fcntl`` (lock skipped, in-process flag still applies).
+    """
+    from pipeline.bins import get_base_dir
+
+    path = get_base_dir() / WATCHER_LOCK_NAME
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(path, "a+")
+    except OSError:
+        logger.warning("watcher_lock_open_failed", path=str(path), exc_info=True)
+        return None
+    try:
+        import fcntl
+
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        fh.close()
+        return None
+    except ImportError:
+        # Non-Unix: skip the kernel lock; in-process ownership still holds.
+        pass
+    except OSError:
+        fh.close()
+        return None
+    try:
+        fh.seek(0)
+        fh.truncate()
+        fh.write(str(os.getpid()))
+        fh.flush()
+    except OSError:
+        pass
+    return _WatcherLock(path, fh)
+
+
+def embed_watcher_enabled() -> bool:
+    """Whether the API lifespan should drain the inbox itself.
+
+    Default ON outside pytest so ``python -m api.main`` does not leave
+    uploads sitting until someone starts ``python -m pipeline.watcher``.
+    Set ``MAILROOM_EMBED_WATCHER=0`` when a dedicated watcher process holds
+    ``watcher.lock``. Tests stay off unless the env is explicitly ``1``.
+    """
+    raw = os.environ.get("MAILROOM_EMBED_WATCHER")
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip().lower() in ("1", "true", "yes", "on")
+    return not os.environ.get("PYTEST_CURRENT_TEST")
+
 
 def _mark_active(name: str) -> bool:
     with _active_lock:
@@ -119,13 +210,25 @@ class InboxHandler(FileSystemEventHandler):
         """
         return path.suffix.lower() in accepted_extensions()
 
-    def on_created(self, event):
-        if event.is_directory:
-            return
-        path = Path(event.src_path)
+    def _schedule(self, path: Path) -> None:
+        """Debounced claim for created / modified / moved-into-inbox events.
+
+        ``Path.write_bytes`` (API ``/upload``) typically fires created then
+        modified. ``mv`` into the inbox fires moved, not created, on inotify.
+        """
         cfg = inbox_dir()
-        if not str(path).startswith(str(cfg)):
-            return
+        try:
+            path = path.resolve()
+            inbox = cfg.resolve()
+        except OSError:
+            path = Path(path)
+            inbox = cfg
+        try:
+            if not path.is_relative_to(inbox):
+                return
+        except (ValueError, TypeError):
+            if not str(path).startswith(str(inbox)):
+                return
         if not self._is_processable(path):
             logger.debug("inbox_file_ignored_extension", file=str(path))
             return
@@ -135,6 +238,22 @@ class InboxHandler(FileSystemEventHandler):
         self._debounce[path.name] = now
         logger.info("inbox_file_detected", file=str(path))
         threading.Thread(target=self._process, args=(path,), daemon=True).start()
+
+    def on_created(self, event):
+        if event.is_directory:
+            return
+        self._schedule(Path(event.src_path))
+
+    def on_modified(self, event):
+        if event.is_directory:
+            return
+        self._schedule(Path(event.src_path))
+
+    def on_moved(self, event):
+        if event.is_directory:
+            return
+        dest = getattr(event, "dest_path", None) or event.src_path
+        self._schedule(Path(dest))
 
     def _process(self, path: Path):
         if not _mark_active(path.name):
@@ -186,32 +305,50 @@ class Watcher:
         self.worker_id = get_worker_id()
         self.observer = Observer()
         self._running = False
+        self._lock: _WatcherLock | None = None
 
     def start(self):
+        global _watcher_owned
         inbox = inbox_dir()
         ensure_dirs(inbox)
         logger.info("watcher_starting", inbox=str(inbox), worker_id=self.worker_id)
 
-        self._reconcile_stale_claims()
+        with _watcher_owned_lock:
+            if _watcher_owned:
+                raise WatcherLockHeld("watcher already running in this process")
+            lock = acquire_watcher_lock()
+            if lock is None:
+                raise WatcherLockHeld(
+                    f"another process holds {WATCHER_LOCK_NAME} — "
+                    "the API-embedded watcher or `python -m pipeline.watcher` is already draining the inbox"
+                )
+            self._lock = lock
+            _watcher_owned = True
 
-        for f in list_inbox_files():
-            logger.info("existing_inbox_file", file=str(f))
-            threading.Thread(
-                target=self._process_existing, args=(f,), daemon=True
-            ).start()
+        try:
+            self._reconcile_stale_claims()
 
-        handler = InboxHandler(self.worker_id)
-        self.observer.schedule(handler, str(inbox), recursive=False)
-        self.observer.start()
-        self._running = True
-        touch_watcher_heartbeat()  # immediate liveness beacon before the first rescan
-        logger.info("watcher_running", inbox=str(inbox))
+            for f in list_inbox_files():
+                logger.info("existing_inbox_file", file=str(f))
+                threading.Thread(
+                    target=self._process_existing, args=(f,), daemon=True
+                ).start()
 
-        # Periodic inbox rescan: catches files skipped while ingestion was
-        # paused (the pause path leaves them in the inbox) and any file that
-        # appeared between watchdog events. Cheap and idempotent — already-
-        # processed files are skipped by `_is_already_processed`.
-        threading.Thread(target=self._rescan_loop, daemon=True).start()
+            handler = InboxHandler(self.worker_id)
+            self.observer.schedule(handler, str(inbox), recursive=False)
+            self.observer.start()
+            self._running = True
+            touch_watcher_heartbeat()  # immediate liveness beacon before the first rescan
+            logger.info("watcher_running", inbox=str(inbox))
+
+            # Periodic inbox rescan: catches files skipped while ingestion was
+            # paused (the pause path leaves them in the inbox) and any file that
+            # appeared between watchdog events. Cheap and idempotent — already-
+            # processed files are skipped by `_is_already_processed`.
+            threading.Thread(target=self._rescan_loop, daemon=True).start()
+        except Exception:
+            self.stop()
+            raise
 
     def _reconcile_stale_claims(self) -> None:
         """Re-queue processing/<worker_id>/ files orphaned by a crashed
@@ -227,7 +364,7 @@ class Watcher:
     def _rescan_loop(self):
         import time as _time
 
-        poll = float(os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", "5"))
+        poll = float(os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", str(DEFAULT_POLL_INTERVAL_SECONDS)))
         while self._running:
             _time.sleep(poll)
             # Liveness beacon for /health: proves the watcher is alive and
@@ -243,11 +380,17 @@ class Watcher:
                 ).start()
 
     def stop(self):
+        global _watcher_owned
         if self._running:
             self.observer.stop()
-            self.observer.join()
+            self.observer.join(timeout=5)
             self._running = False
             logger.info("watcher_stopped")
+        if self._lock is not None:
+            self._lock.release()
+            self._lock = None
+        with _watcher_owned_lock:
+            _watcher_owned = False
 
     def _process_existing(self, path: Path):
         if not _mark_active(path.name):
@@ -291,6 +434,9 @@ if __name__ == "__main__":
         ensure_process_tracing()
         while not _shutdown.is_set():
             time.sleep(1)
+    except WatcherLockHeld as exc:
+        logger.error("watcher_not_started", reason=str(exc))
+        raise SystemExit(1) from exc
     except KeyboardInterrupt:
         pass
     finally:

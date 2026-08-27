@@ -54,8 +54,9 @@ Upload/Drop --> /pipeline/inbox/ --> [Watcher] --> LangGraph run per document
 docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server   # OPTIONAL: Langfuse tracing only
 cp .env.example .env
 pip install -e ".[dev]"
-PYTHONPATH=src python -m pipeline.watcher &
 PYTHONPATH=src python -m api.main &
+# optional dedicated watcher when MAILROOM_EMBED_WATCHER=0:
+# PYTHONPATH=src python -m pipeline.watcher &
 curl -X POST http://localhost:8000/upload -F "file=@src/tests/fixtures/contract/sample_msa.txt" -F "matter_id=MATTER-001"
 ```
 

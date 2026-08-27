@@ -75,21 +75,17 @@ python -c "import asyncio; from storage.db import init_db; asyncio.run(init_db()
 Start all services (each in its own terminal or use a process manager):
 
 ```bash
-# Terminal 1: Pipeline Watcher (processes documents from inbox)
-PYTHONPATH=src python -m pipeline.watcher
-
-# Terminal 2: API Server
+# Terminal 1: API (embeds the inbox watcher by default)
 PYTHONPATH=src python -m api.main
+
+# Terminal 2 (optional): dedicated watcher — only if MAILROOM_EMBED_WATCHER=0
+PYTHONPATH=src python -m pipeline.watcher
 
 # Terminal 3 (optional): Ops Monitor (system health sweeps)
 PYTHONPATH=src python -m pipeline.ops_monitor
 ```
 
-Uploads are accepted by the API but only **drain** (leave the inbox and get
-processed) while the watcher is running — the inbox is the queue and the
-watcher is its consumer. `GET /health` reports `watcher_heartbeat_seconds_ago`
-(the age of the watcher's liveness beacon): if it is `null` or growing, the
-watcher is down and files will pile up in the inbox.
+Uploads land in the inbox and drain while a watcher is running. `python -m api.main` starts that watcher in-process unless `MAILROOM_EMBED_WATCHER=0` (use that when a dedicated `python -m pipeline.watcher` already holds `watcher.lock`). `GET /health` reports `checks.watcher` (`live` / `stale` / `missing`) and `inbox_pending` so The-Mailroom's live floor can show operator liveness without fabricating document rows.
 
 ---
 
@@ -193,6 +189,8 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       # SQLite by default — data lives in the volume below.
       - MAILROOM_BASE_DIR=/data
+      # API drains the inbox; omit or set 0 if a sidecar watcher service exists.
+      - MAILROOM_EMBED_WATCHER=1
     volumes:
       - mailroom_data:/data
 ```

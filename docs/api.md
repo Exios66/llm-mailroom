@@ -43,6 +43,8 @@ Checks the API plus best-effort dependency health: LLM provider connectivity (re
         },
         "ingestion_paused": false,
         "pause_info": null,
+        "watcher": "live",
+        "watcher_embedded": true,
         "inbox_pending": 3,
         "watcher_heartbeat_seconds_ago": 2
     }
@@ -51,7 +53,7 @@ Checks the API plus best-effort dependency health: LLM provider connectivity (re
 
 `status` is `"ok"` when all checks pass, `"degraded"` when any dependency is unreachable (e.g. provider resolution fails, missing API key, or the models endpoint is down). Dependency checks are best-effort and never block the response.
 
-`watcher_heartbeat_seconds_ago` is the age of the watcher's liveness beacon — how recently the watcher process touched its heartbeat file. Uploads only drain (leave the inbox) while the watcher is running, so a `null`/growing value here means files will pile up in the inbox.
+`checks.watcher` is the producer lamp The-Mailroom reads (`live` / `stale` / `missing`; stale after 15s without a heartbeat). `watcher_heartbeat_seconds_ago` is the age of the watcher's liveness beacon. `inbox_pending` counts processable inbox documents (not `.meta` upload sidecars). The API embeds the inbox watcher by default (`MAILROOM_EMBED_WATCHER=1`) so uploads drain without a second process; set `0` when a dedicated `python -m pipeline.watcher` already holds `watcher.lock`.
 
 ---
 

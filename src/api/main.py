@@ -74,10 +74,40 @@ def _rate_limit_upload() -> None:
     _upload_timestamps.append(now)
 
 
+_embedded_watcher = None
+
+
+def _embed_watcher_running() -> bool:
+    w = _embedded_watcher
+    return bool(w is not None and getattr(w, "_running", False))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _embedded_watcher
     _ensure_dirs()
-    yield
+    watcher = None
+    from pipeline.watcher import Watcher, WatcherLockHeld, embed_watcher_enabled
+
+    if embed_watcher_enabled():
+        watcher = Watcher()
+        try:
+            watcher.start()
+            _embedded_watcher = watcher
+            logger.info("embedded_watcher_started", worker_id=watcher.worker_id)
+        except WatcherLockHeld as exc:
+            logger.warning("embedded_watcher_skipped", reason=str(exc))
+            watcher = None
+            _embedded_watcher = None
+    try:
+        yield
+    finally:
+        _embedded_watcher = None
+        if watcher is not None:
+            try:
+                watcher.stop()
+            except Exception:
+                logger.exception("embedded_watcher_stop_failed")
 
 
 app = FastAPI(
@@ -142,7 +172,7 @@ async def health():
     llm = await _check_llm_provider()
     db = await _check_database()
     from pipeline.bins import is_ingestion_paused, inbox_dir, get_pause_info
-    from pipeline.bins import watcher_heartbeat_age
+    from pipeline.bins import watcher_heartbeat_age, watcher_lamp, count_inbox_pending
     from observability.tracing import flush_health
 
     paused = is_ingestion_paused()
@@ -151,6 +181,7 @@ async def health():
     if paused or not tracing_health["healthy"]:
         overall = "degraded"
     heartbeat_age = watcher_heartbeat_age()
+    lamp = watcher_lamp(heartbeat_age)
     return {
         "status": overall,
         "service": "mailroom",
@@ -159,7 +190,9 @@ async def health():
             "database": db,
             "ingestion_paused": paused,
             "pause_info": get_pause_info(),
-            "inbox_pending": sum(1 for _ in inbox_dir().glob("*") if _.is_file()) if inbox_dir().exists() else 0,
+            "watcher": lamp,
+            "watcher_embedded": _embed_watcher_running(),
+            "inbox_pending": count_inbox_pending(),
             "watcher_heartbeat_seconds_ago": heartbeat_age,
             "observability": tracing_health,
         },
@@ -235,7 +268,7 @@ async def upload_document(
             "file": dest.name,
             "upload_id": upload_id,
             "matter_id": matter_id,
-            "message": "File queued for processing — watcher will pick it up.",
+            "message": "File queued for processing — the API-embedded watcher (or a dedicated watcher process) will pick it up.",
         },
     )
 
