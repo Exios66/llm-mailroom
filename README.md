@@ -67,21 +67,18 @@ docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse
 # 4. (Optional) Sync the agent prompts into Langfuse prompt management
 PYTHONPATH=src python src/scripts/sync_prompts.py
 
-# 5. Run the watcher (starts processing documents from inbox)
-PYTHONPATH=src python -m pipeline.watcher
-
-# 6. In another terminal, start the API
+# 5. Start the API (embeds the inbox watcher — uploads drain without a second process)
 PYTHONPATH=src python -m api.main
 
-# 7. Upload a document
+# 6. Upload a document
 curl -X POST http://localhost:8000/upload \
   -F "file=@src/tests/fixtures/contract/sample_msa.txt" \
   -F "matter_id=MATTER-001"
 
-# 8. Check pipeline status
+# 7. Check pipeline status
 curl http://localhost:8000/status/{doc_id}
 
-# 9. View full audit trail
+# 8. View full audit trail
 curl http://localhost:8000/audit/{doc_id}
 ```
 
@@ -612,11 +609,11 @@ export OPENROUTER_API_KEY=sk-or-v1-...
 # 3. Sync prompts into Langfuse (once, and after prompt edits)
 PYTHONPATH=src python src/scripts/sync_prompts.py
 
-# 4. Run the pipeline watcher
-PYTHONPATH=src python -m pipeline.watcher &
-
-# 5. Run the API server
+# 4. Run the API (embeds the inbox watcher)
 PYTHONPATH=src python -m api.main &
+
+# 5. (Optional) dedicated watcher only if MAILROOM_EMBED_WATCHER=0
+# PYTHONPATH=src python -m pipeline.watcher &
 
 # 6. (Optional) Run the ops monitor
 PYTHONPATH=src python -m pipeline.ops_monitor &

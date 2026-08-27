@@ -119,7 +119,13 @@ def _state_summary(state: dict) -> dict:
     }
 
 
-def _result_summary(result: dict):
+def _result_summary(result: dict, state: dict | None = None):
+    """Curated node output for Langfuse (never raw document text).
+
+    Always publishes ``stage`` so The-Mailroom can move the live-floor
+    envelope on the next poll. Prefer the node's returned stage, else the
+    incoming state's stage (partial updates often omit it).
+    """
     result = result or {}
     out = {
         k: result.get(k)
@@ -133,6 +139,12 @@ def _result_summary(result: dict):
         )
         if k in result
     }
+    if "stage" not in out:
+        stage = result.get("stage") if isinstance(result, dict) else None
+        if not stage and isinstance(state, dict):
+            stage = state.get("stage")
+        if stage:
+            out["stage"] = stage
     return out or None
 
 
@@ -171,24 +183,39 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
     (`classify-document`, not `classify-<docid>`), typed observations
     (agent/evaluator/retriever rather than a generic span), and curated
     input/output (identifiers + stage/confidence, never raw document text).
-    When Langfuse is not the active backend this is a no-op identity decorator.
+    After every node the span output includes ``stage`` and the active
+    backend is ``flush()``ed so The-Mailroom's live floor can move the
+    envelope on the next poll tick instead of waiting for
+    ``LANGFUSE_FLUSH_INTERVAL`` or process exit.
     """
-    if resolve_provider_name() != "langfuse":
-        return lambda fn: fn
-
-    from .langfuse_setup import observation
-
-    obs_type = as_type or observation_type_for(name)
 
     def deco(fn):
         @functools.wraps(fn)
         def wrapper(state):
+            provider = resolve_provider_name()
+            if provider != "langfuse":
+                result = fn(state)
+                if provider != "none":
+                    flush()
+                return result
+
+            from .langfuse_setup import observation
+
+            obs_type = as_type or observation_type_for(name)
             inp = summarize_input(state) if summarize_input else _state_summary(state)
             with observation(name, as_type=obs_type, input=inp) as span:
                 result = fn(state)
                 if span is not None:
-                    out = summarize_output(result) if summarize_output else _result_summary(result)
+                    if summarize_output:
+                        out = summarize_output(result)
+                        if isinstance(out, dict) and "stage" not in out:
+                            filled = _result_summary(result, state)
+                            if filled and filled.get("stage"):
+                                out = {**out, "stage": filled["stage"]}
+                    else:
+                        out = _result_summary(result, state)
                     span.update(output=out)
+                flush()
                 return result
 
         return wrapper
