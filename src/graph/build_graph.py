@@ -1349,6 +1349,19 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         label=label,
         score=score,
     )
+    try:
+        from observability.scores import emit_in_pipeline_judge_scores
+
+        emit_in_pipeline_judge_scores(
+            {
+                "judge_verdict": label,
+                "judge_score": score,
+                "judge_findings": findings,
+                "trace_id": state.get("trace_id"),
+            }
+        )
+    except Exception:
+        logger.exception("in_pipeline_judge_score_failed", doc_id=state.get("doc_id"))
     return {
         "judge_verdict": label,
         "judge_score": score,
@@ -1706,7 +1719,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     file_path_str = state.get("file_path", "")
     if not file_path_str:
         logger.error("archive_no_file_path", doc_id=manifest.doc_id)
-        return {"stage": PipelineStage.FAILED.value, "error_message": "No file path in state"}
+        return _finalize_aborted(dict(state), "No file path in state")
 
     file_path = Path(file_path_str)
     if not file_path.exists():
@@ -1716,7 +1729,9 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
             file_path = candidates[0]
         else:
             logger.error("archive_file_not_found", doc_id=manifest.doc_id, path=file_path_str)
-            return {"stage": PipelineStage.FAILED.value, "error_message": f"File not found: {file_path_str}"}
+            return _finalize_aborted(
+                dict(state), f"File not found: {file_path_str}"
+            )
 
     from agents.archivist import archive_document
     # Hash-chained audit trail: the new entry must link to the previous entry
@@ -1913,13 +1928,34 @@ def _persist_provenance(state: dict, run_id: str | None = None, metrics: dict | 
 def _resolved_models(state: dict) -> str:
     """Comma-joined model names actually used by this run (best-effort)."""
     try:
-        from pipeline.config import get_agent_config
+        from pipeline.config import get_agent_config, get_doc_class
 
-        names = []
-        for agent in ("sorter", "contracts_specialist", "reporter", "boss"):
-            cfg = get_agent_config(agent)
-            if cfg and cfg.get("model"):
-                names.append(f"{agent}={cfg['model']}")
+        names: list[str] = []
+        seen: set[str] = set()
+
+        def _add(agent: str) -> None:
+            if not agent or agent in seen:
+                return
+            seen.add(agent)
+            cfg = get_agent_config(agent) or {}
+            model = cfg.get("model")
+            if model:
+                names.append(f"{agent}={model}")
+
+        _add("sorter")
+        row = get_doc_class(state.get("doc_type") or "") or {}
+        _add(str(row.get("specialist") or ""))
+        if state.get("review_verdict"):
+            _add("sorter_reviewer")
+        if state.get("judge_verdict") and state.get("judge_verdict") != "skipped":
+            _add("judge")
+        if state.get("arbiter_decision"):
+            _add("arbiter")
+        if state.get("review_decision") in ("approved", "review") and (
+            state.get("escalation_reason") or ""
+        ).startswith("Boss:"):
+            _add("boss")
+        _add("reporter")
         return ", ".join(names)
     except Exception:
         return ""
@@ -2558,6 +2594,7 @@ def _execute_run(
                         expected=expected_fields,
                         matter_id=initial_state.get("matter_id"),
                         doc_text=initial_state.get("doc_text"),
+                        expected_class=expected_class,
                     )
                     judge_required = field_result.needs_judge_review
                     # A wrong classification must ALWAYS reach the LLM judge:

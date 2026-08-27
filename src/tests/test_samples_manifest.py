@@ -18,7 +18,7 @@ def _rows():
 
 def test_manifest_has_rows_and_unique_ids():
     rows = _rows()
-    assert len(rows) == 22
+    assert len(rows) == 25
     ids = [r["id"] for r in rows]
     assert len(ids) == len(set(ids)), "duplicate sample ids"
     for r in rows:
@@ -30,9 +30,24 @@ def test_manifest_has_six_samples_per_external_source():
     from collections import Counter
 
     counts = Counter(r.get("dataset") or "original" for r in _rows())
+    assert counts["original"] == 13
     assert counts["legalbench"] == 6
     assert counts["atticus"] == 6
     assert counts["pileoflaw"] == 0
+
+
+def test_manifest_covers_insurance_claim_contrast():
+    """Live-manifest insurance PDFs complement the local approved/denied/partial pack."""
+    rows = [r for r in _rows() if r["expected_doc_class"] == "insurance_claim"]
+    assert {r["id"] for r in rows} == {"insurance_01", "insurance_02", "insurance_03"}
+    determinations = set()
+    for r in rows:
+        fields = json.loads(r["expected_fields"])
+        determinations.add(fields["coverage_determination"])
+        assert r["expected_stage"] == "archived"
+        assert r.get("dataset") == "original"
+        assert not r["source"].startswith(("CUAD", "external/"))
+    assert determinations == {"approved", "denied", "partial"}
 
 
 def test_manifest_expected_classes_are_valid_taxonomy():

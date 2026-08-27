@@ -67,12 +67,16 @@ court opinions from the **`courtlistener_opinions`** subset of
 
 ## Synthetic PDFs — original text
 
-The PDFs for compliance, corporate, correspondence, and due diligence classes are
-generated from original `.txt` text under `docs/examples/sources/` by
-`scripts/prepare_samples.py` (ReportLab). The text is written for this project
+The PDFs for compliance, corporate, correspondence, insurance, and due diligence
+classes are generated from original `.txt` text under `docs/examples/sources/`
+by `scripts/prepare_samples.py` (ReportLab). The text is written for this project
 and is not copied from any dataset; it is styled after common document types
 (10-K annual report, state filing, bylaws, board resolution, demand letter,
-internal memo, due diligence report/checklist).
+internal memo, FNOL / coverage-determination letters, due diligence
+report/checklist). The three insurance letters
+(`docs/examples/sources/insurance/claim_{approved,denied,partial}.txt`)
+mirror the local eval-pack gold in `observability/local_eval_packs.py` so the
+live `--mock` pilot covers approved / denied / partial determinations.
 
 - License: original; free to use within this repository.
 - No attribution required.

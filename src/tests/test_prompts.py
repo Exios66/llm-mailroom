@@ -28,7 +28,7 @@ class TestPromptTemplates:
         from llm.prompts import prompt_templates
 
         templates = prompt_templates()
-        assert len(templates) == 14
+        assert len(templates) == 15
         for agent in (
             "sorter",
             "sorter_reviewer",
@@ -40,6 +40,7 @@ class TestPromptTemplates:
             "boss",
             "reporter",
             "pdf_transcriber",
+            "image_extractor",
             "judge",
             "judge-classification",
             "judge-correctness",

@@ -37,11 +37,11 @@ def records():
 
 
 def test_manifest_loads_all_rows_with_provenance(records):
-    assert len(records) == 22
+    assert len(records) == 25
     real = [r for r in records if r.is_real]
     synth = [r for r in records if not r.is_real]
     # Mirrors prepare_samples.is_real_sample: CUAD* or external/* = REAL.
-    assert len(real) == 15 and len(synth) == 7
+    assert len(real) == 15 and len(synth) == 10
     assert all(r.source.startswith(("CUAD", "external/")) for r in real)
     assert all(not r.source.startswith(("CUAD", "external/")) for r in synth)
 
@@ -99,9 +99,9 @@ def test_catalog_overlay_joins_by_filename_readonly(tmp_path):
     assert not other["in_catalog"] and other["catalog"] == {}
 
     s = summarize(joined)
-    assert s["total_samples"] == 22
+    assert s["total_samples"] == 25
     assert s["in_catalog"] == 1
-    assert s["by_observed_stage"] == {"archived": 1, "not_run": 21}
+    assert s["by_observed_stage"] == {"archived": 1, "not_run": 24}
 
 
 def test_text_table_lists_every_sample(records):

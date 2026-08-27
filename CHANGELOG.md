@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Dedicated extraction scoring for every live specialist, with post-hoc GT.** Hub official labels (CUAD clauses, MAUD questions, CMS columns, subclass tokens) still win. Remaining specialist schema fields are filled from conservative regexes over the source text (`observability/posthoc_gt.py`) so every included document — not just contracts — has scorable `expected_fields`. Each live extract class has a dedicated suite in `observability/specialist_suites.py` (`get_suite(doc_class)`). `merger_agreement` keeps sharing the `contracts_specialist` *agent* but uses the rebound MAUD suite, not CUAD families. HF reports add a per-specialist extraction table. `compliance_filing` stays out of Hub `--real` (zero rows); local pack + post-hoc labels cover mock/check. Post-hoc fills are provenance-tagged and never billed as official Hub annotations.
 
+- **Per-agent isolation eval.** `scripts/run_agent_eval.py` + `observability/agent_eval.py` score one LLM role against fixtures, local packs, and the live manifest without running the 13-node graph. `--real` is gated by `is_real_sample` the same way `run_pilot.py` is. Live Langfuse evaluators stay pipeline-level (`pipeline-result`) by design.
+
+- **Insurance-claim letters on the live pilot manifest.** Three synthetic mock-only PDFs (`insurance_01` approved / `insurance_02` denied / `insurance_03` partial) rendered from `docs/examples/sources/insurance/`, with schema-complete `expected_fields` matching the local contrast pack. `--mock` now covers all six live taxonomy classes (25 samples); `--real` still refuses the synthetics.
+
+- **`mailroom-image_extractor` managed prompt** plus production doctrine. Image extraction no longer borrows the sorter's prompt identity.
+
+- **Instruction-suite coverage for remaining LLM roles.** Skill markdown under `src/langchain_agents/skills/<agent>/` for specialists, reviewer, arbiter, boss, judge, reporter, pdf_transcriber, and image_extractor; `BaseAgent.system_prompt_with_skills()` appends them at call time.
+
 ### Changed
 
 - **Class / subclass examples come from Hugging Face, not invented stand-in text.** `pipeline/hf_corpora.py` registers the Lucius-Morningstar corpora. The targeted full corpus is `Lucius-Morningstar/docclass-merged` schema **v5** (1,210 docs, Hub SHA `d2c96ecb…`). One example of every type and subtype is the committed pack `notebooks/fixtures/huggingface/class_subclass_examples.json` (48 strata from `docclass-pilot`). `--mock` on `run_hf_pilot.py` uses that pack; `--examples` / `--dataset examples` loads the Hub pilot; `--dataset enron` (and `claims`, `cuad`, …) selects the other pipeline-ready Hub sets. `legalbench-full` stays a LegalBench CLI task pack, not a document-pipeline ingest. Local committed PDFs remain PDF-ingest fixtures — they are not the class catalog.
@@ -18,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Classification scoring no longer treats MAUD as CUAD.** Exact class match is the only class KPI (`observability.classification_scoring`). Predicting `contract` when GT is `merger_agreement` is a miss. HF `aligned_accuracy` is a deprecated JSON alias of exact (`aligned_equals_exact: true`); report markdown dropped the `aligned (merger≡contract)` headline and adds per-subclass strata. Grounded runs emit `class_correct` from `emit_pipeline_scores`. Dojo 0.11.0 `mailroom.align_doc_type` is not used.
 
 - **`merger_agreement` is a live MAUD class, not a CUAD contract alias.** Taxonomy, schema, sorter labels, HF `expected_doc_class`, and reconsideration GT comparison treat MAUD merger agreements as their own document class. Predicting `contract` when GT is `merger_agreement` is a class miss (Lane A). Extraction still uses `contracts_specialist` (shared `ContractExtraction` field map including `maud_clauses`). HF `ALIGN` no longer maps MAUD ≡ CUAD. Pilot `manifest.csv` files the six LegalBench MAUD samples as `merger_agreement` (not `contract`).
+
+- **Operational finalization.** `archive_node` missing-file paths call `_finalize_aborted` (failed bin + catalog). Watcher stale-claim reconcile retires to `failed/` when a terminal manifest exists, else requeues. Watcher exceptions after `claim_file` finalize the claim. `GET /health` reports `status=degraded` when the watcher lamp is `stale` or `missing`.
+
+- **Scoring completeness.** `judge_verify_node` emits in-pipeline judge scores; grounded runs emit `stage_correct`; field scoring attaches `deterministic_verdict` (CORRECT/PARTIAL/MISS) and treats class mismatch as MISS. Taxonomy documents `judge_band_high: 0.85` and that `conflict_threshold` is an unused compatibility knob.
 
 ### Added
 

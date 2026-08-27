@@ -233,6 +233,16 @@ JUDGE_CORRECTNESS = _block(
     ],
 )
 
+IMAGE_EXTRACTOR = _block(
+    "PRODUCTION DOCTRINE (mailroom pipeline):",
+    [
+        "Transcribe visible text; do not summarize, classify, or extract schema fields.",
+        "Illegible spans are [illegible], never guessed words.",
+        VISION_ADDITIVE,
+        "Confidence for transcription quality is recorded by the pipeline; do not invent facts from the image.",
+    ],
+)
+
 ARBITER = _block(
     "PRODUCTION DOCTRINE (mailroom pipeline):",
     [

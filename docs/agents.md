@@ -53,6 +53,20 @@ The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `lan
 
 ---
 
+### 1b. Sorter Reviewer (`agents/sorter_reviewer.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | `review_classify` (Lane A) |
+| **Trigger** | Medium-band classification that survived `retry_classify` |
+| **Input** | Document text (+ page images); **blind** to the sorter's answer |
+| **Output** | Independent `doc_type` + `contract_subtype` + `doc_subclass` + `confidence` |
+| **Personality** | Independent second opinion; agreement is computed by the graph, not the model |
+
+Fires only where the pipeline would previously have pinged a human. Independence is the point: the reviewer never sees the sorter's label. The graph node compares the two opinions and either applies the reviewer's class or escalates to human review.
+
+---
+
 ### 2. Contracts Specialist (`agents/contracts_specialist.py`)
 
 | Attribute | Value |
@@ -188,7 +202,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage.
 
-**Honest gap (dojo 0.11.0):** Hub rows are CMS DE-SynPUF source tables (`carrier`/`inpatient`/`outpatient`/`pde`). Typed extraction plus field-micro P/R/F1/F2 are scored. **`determination_consistency` and `amount_exactness` are registered scorers**; CMS GT is homogeneous (all `coverage_determination=approved` with empty `denial_reasons`), so Hub `determination_consistency` is **gated** (not a quality KPI on GT-shaped rows). A local contrast pack (approved / denied / partial) exercises the scorer off that tautology. Mailroom still records a local field invariant on traces. Candidate corpus EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda).
+**Honest gap (dojo 0.11.0):** Hub rows are CMS DE-SynPUF source tables (`carrier`/`inpatient`/`outpatient`/`pde`). Typed extraction plus field-micro P/R/F1/F2 are scored. **`determination_consistency` and `amount_exactness` are registered scorers**; CMS GT is homogeneous (all `coverage_determination=approved` with empty `denial_reasons`), so Hub `determination_consistency` is **gated** (not a quality KPI on GT-shaped rows). A local contrast pack (approved / denied / partial) exercises the scorer off that tautology. The same three determinations also live on the pilot manifest as synthetic mock-only PDFs (`insurance_01` approved / `insurance_02` denied / `insurance_03` partial, rendered from `docs/examples/sources/insurance/` by `prepare_samples.py`) so `--mock` pilots cover `insurance_claim` end-to-end; `--real` refuses them via `is_real_sample`. Mailroom still records a local field invariant on traces. Candidate corpus EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda).
 
 ---
 
@@ -277,17 +291,33 @@ A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`
 
 ---
 
+### 10b. Image Extractor (`agents/image_extractor.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | `ingest` (via `_read_file_text` / `_extract_text_from_image`) |
+| **Trigger** | Image file (jpg/png/gif/webp/tiff/bmp) |
+| **Input** | Image bytes as a data-URI |
+| **Output** | Visible text + confidence + method (`vision`) |
+| **Personality** | Faithful transcription of visible text — no interpretation |
+
+A vision LLM agent with its own `taxonomy.yaml` entry and Langfuse-managed prompt (`mailroom-image_extractor`). Transient provider failures retry through `retry_chat_completion`; persistent failure raises so ingest can route the document to review rather than silently substituting a fallback marker.
+
+---
+
 ### 11. Judge (`agents/judge.py`)
 
 | Attribute | Value |
 |---|---|
-| **Node** | None — offline evaluator (`scripts/run_quality_judges.py`) |
-| **Trigger** | Pilot run complete |
-| **Input** | Document text + extracted data (+ sorter reasoning) |
-| **Output** | Task-spec scores: completeness, classification, correctness |
+| **Node** | `judge_verify` (Lane B) **and** offline (`scripts/run_quality_judges.py`) |
+| **Trigger** | In-graph: grounded extraction in the ambiguous band (`low <= extraction_confidence < judge_band_high`). Offline: a finished pilot run. |
+| **Input** | Document text + extracted data (+ sorter reasoning, offline) |
+| **Output** | Completeness / classification / correctness scores + labels |
 | **Personality** | Expert legal reviewer; rubric-driven, evidence-citing |
 
-The Judge is not part of the document graph. It audits pipeline output against the **task specification** (taxonomy doc classes + extraction schemas):
+The Judge is **part of the document graph** as the gated Lane B completeness check (`judge_verify_node`). Most documents never see this call: clean high-confidence extractions skip it (zero added LLM calls). When it fires, verdicts land on state (`complete` proceeds, `partial`/`incomplete` go to the arbiter, hard failure fail-safes) and scores are emitted via `observability.scores.emit_in_pipeline_judge_scores`.
+
+The same agent also runs **offline** against a finished pilot (`scripts/run_quality_judges.py`) and audits pipeline output against the **task specification** (taxonomy doc classes + extraction schemas):
 
 | Method | Measures |
 |---|---|
@@ -295,7 +325,38 @@ The Judge is not part of the document graph. It audits pipeline output against t
 | `judge_classification` | Is the sorter's assigned class correct for the document? |
 | `judge_extraction_correctness` | Are extracted values factually accurate (no fabrication)? |
 
-Each dimension returns a score + label + reasoning, ingested as Langfuse scores on the document's trace. Run with `PYTHONPATH=src python src/scripts/run_quality_judges.py --real` (or `--mock`).
+Each dimension returns a score + label + reasoning, ingested as Langfuse scores on the document's trace. Offline run: `PYTHONPATH=src python src/scripts/run_quality_judges.py --real` (or `--mock`).
+
+---
+
+### 11b. Arbiter (`agents/arbiter.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | `arbiter` (Lane B) |
+| **Trigger** | In-pipeline judge verdict is `partial` or `incomplete` |
+| **Input** | Specialist extraction **and** the judge's findings |
+| **Output** | Bounded decision: `accept_with_caveats` / `retry_extraction` / `human_review` |
+| **Personality** | Final judgment authority; constrained to three outcomes |
+
+When the completeness judge rejects an extraction, the arbiter — not the raw pipeline — decides. `retry_extraction` is bounded by `arbiter_retry_count`; exhausted retries escalate to human review.
+
+---
+
+## Evaluating individual agents
+
+Live Langfuse evaluators stay **pipeline-level** (`pipeline-result` generation, two independent judges) by design. To score one agent without running the 13-node graph, use the local isolation harness:
+
+```bash
+PYTHONPATH=src python src/scripts/run_agent_eval.py --list
+PYTHONPATH=src python src/scripts/run_agent_eval.py --agent sorter --mock
+PYTHONPATH=src python src/scripts/run_agent_eval.py --agent insurance_claims_specialist --mock --n 3
+PYTHONPATH=src python src/scripts/run_agent_eval.py --agent all --mock --n 1 --self-check
+```
+
+`observability/agent_eval.py` loads labeled cases from test fixtures, local eval packs, and the live manifest; invokes a single agent; and scores with the same deterministic classifiers / field scorers the pipeline uses. `--real` is gated by `prepare_samples.is_real_sample` (CUAD / LegalBench only) — synthetic insurance / compliance / corporate / correspondence samples are mock-only, matching `run_pilot.py`.
+
+This is the methodology for iterating on a single specialist or the sorter without paying for a full document-pipeline run. It does **not** replace the live `mailroom-pipeline-judge` / `mailroom-pipeline-quality` evaluators.
 
 ---
 

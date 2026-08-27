@@ -115,11 +115,12 @@ def test_production_surface_has_no_docclass_arm():
     from llm.prompts import prompt_templates
 
     templates = prompt_templates()
-    assert len(templates) == 14
+    assert len(templates) == 15
     assert not any(key.endswith("_docclass_v0") for key in templates)
     assert all("DOCCLASS ARM CONTEXT" not in t for t in templates.values())
     # Supporting agents that are production-only (not a docclass role).
     assert "reporter" in templates and "pdf_transcriber" in templates
+    assert "image_extractor" in templates
 
 
 def test_sync_docclass_path_is_opt_in_and_namespaced():

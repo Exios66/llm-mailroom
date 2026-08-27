@@ -82,6 +82,45 @@ def mark_processing_dead(worker_id: str, file_name: str) -> Path:
     return dest
 
 
+TERMINAL_MANIFEST_STAGES = ("archived", "failed", "review")
+
+
+def terminal_manifest_for(filename: str) -> bool:
+    """True when a terminal-stage manifest already exists for this filename.
+
+    A stranded processing copy of an already-archived/failed/reviewed
+    document must be retired, not re-queued — otherwise it sits in the
+    inbox forever (``_is_already_processed`` skips it).
+    """
+    mdir = manifests_dir()
+    if not mdir.exists():
+        return False
+    for mf in mdir.glob("*.json"):
+        try:
+            data = json.loads(mf.read_text())
+        except Exception:
+            continue
+        if (
+            data.get("original_filename") == filename
+            and data.get("stage") in TERMINAL_MANIFEST_STAGES
+        ):
+            return True
+    return False
+
+
+def reconcile_stale_processing_file(file_path: Path) -> tuple[str, Path]:
+    """Retire or re-queue one stale processing claim.
+
+    Returns ``(action, dest)`` where action is ``"failed"`` when a
+    terminal manifest already exists, otherwise ``"requeue"``.
+    """
+    if terminal_manifest_for(file_path.name):
+        dest = mark_processing_dead(file_path.parent.name, file_path.name)
+        return "failed", dest
+    dest = requeue_stale_processing(file_path)
+    return "requeue", dest
+
+
 def _resolve(path_template: str) -> Path:
     cfg = _get_config()
     base = get_base_dir()

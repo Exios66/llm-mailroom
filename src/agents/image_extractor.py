@@ -6,18 +6,14 @@ For non-vision LLMs, falls back to a descriptive message indicating the image ty
 import base64
 import structlog
 from pathlib import Path
-from agents.base import BaseAgent, build_structured_schema
-from llm.client import get_llm
+from agents.base import BaseAgent
+from llm.prompt_doctrine import IMAGE_EXTRACTOR as _PRODUCTION_DOCTRINE
+from llm.prompts import get_managed_prompt
 from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
 
-
-class ImageExtractor(BaseAgent):
-    agent_name = "image_extractor"
-
-    def system_prompt(self) -> str:
-        return """You are an expert document image analyst. Your task is to extract all visible text
+SYSTEM_PROMPT_V0 = """You are an expert document image analyst. Your task is to extract all visible text
 from images of legal documents. This could be scanned contracts, photographed correspondence,
 screenshots of filings, or any image containing legal text.
 
@@ -29,6 +25,16 @@ Rules:
 5. If no text is present (e.g., a photo of a person or office), state that clearly.
 6. Do not interpret or analyze the content — just transcribe.
 7. Include a confidence score for the extraction quality."""
+
+SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
+
+
+class ImageExtractor(BaseAgent):
+    agent_name = "image_extractor"
+
+    def system_prompt(self) -> str:
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        return text
 
     def extract(self, file_path: Path) -> dict:
         ext = file_path.suffix.lower()
@@ -65,7 +71,7 @@ Rules:
                 self.client,
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self.system_prompt()},
+                    {"role": "system", "content": self.system_prompt_with_skills()},
                     {
                         "role": "user",
                         "content": [
@@ -77,9 +83,14 @@ Rules:
                         ],
                     },
                 ],
-                max_tokens=4096,
+                max_tokens=self._configured_max_tokens(),
                 run_deadline=get_run_deadline(),
-                **langfuse_call_attrs("image-extractor"),
+                **langfuse_call_attrs(self.agent_name),
+                **(
+                    {"langfuse_prompt": self._langfuse_prompt}
+                    if getattr(self, "_langfuse_prompt", None) is not None
+                    else {}
+                ),
             )
             record_usage(getattr(response, "usage", None), self.model)
             text = response.choices[0].message.content or ""
@@ -98,8 +109,3 @@ Rules:
         )
         logger.info("image_fallback_used", filename=filename)
         return {"text": text, "confidence": 0.1, "method": "fallback"}
-
-
-def extract_text_from_image(file_path: Path) -> dict:
-    extractor = ImageExtractor()
-    return extractor.extract(file_path)

@@ -64,6 +64,21 @@ class BaseAgent(ABC):
         except Exception:
             return _DEFAULT_MAX_INPUT_CHARS
 
+    def _skill_appendix(self) -> str:
+        """Domain skill files appended below the managed prompt (Langfuse
+        prompt linking stays on the versioned head)."""
+        try:
+            from langchain_agents.skills import load_skills
+
+            return load_skills(self.agent_name)
+        except Exception:
+            return ""
+
+    def system_prompt_with_skills(self, override: str | None = None) -> str:
+        head = override if override is not None else self.system_prompt()
+        skills = self._skill_appendix()
+        return f"{head}{skills}" if skills else head
+
     def _truncate_input(self, text: str) -> str:
         """Truncate document text to the agent's configured input budget,
         marking the truncation so downstream code can react to it."""
@@ -125,7 +140,7 @@ class BaseAgent(ABC):
         content = self._build_multimodal(user_message, pages)
 
         messages = [
-            {"role": "system", "content": system_prompt or self.system_prompt()},
+            {"role": "system", "content": self.system_prompt_with_skills(system_prompt)},
             {"role": "user", "content": content},
         ]
         kwargs = {"model": self.model, "messages": messages}

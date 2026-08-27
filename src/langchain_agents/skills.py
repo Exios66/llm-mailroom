@@ -19,6 +19,11 @@ The contracts specialist ships with:
   - ``contract-clauses.md`` — the 41 CUAD clause categories and the extraction
     schema's field expectations per agreement family.
 
+Mailroom BaseAgent roles (reviewer, arbiter, boss, judge, remaining
+specialists, reporter, transcribers) also drop skill files here; ``BaseAgent``
+appends them below the managed prompt so Langfuse prompt linking stays on
+the versioned head.
+
 Adding a skill = dropping a ``.md`` file in the agent's directory; the
 ``load_skills()`` loader picks it up at process start (no code change).
 """

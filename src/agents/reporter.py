@@ -59,6 +59,14 @@ Extracted data:
 Please compile this into a clean matter-record summary."""
 
     prompt_text, prompt_obj = get_managed_prompt("reporter", COMPILE_SYSTEM_PROMPT)
+    try:
+        from langchain_agents.skills import load_skills
+
+        skills = load_skills("reporter")
+        if skills:
+            prompt_text = f"{prompt_text}{skills}"
+    except Exception:
+        pass
     messages = [
         {"role": "system", "content": prompt_text},
         {"role": "user", "content": user_message},

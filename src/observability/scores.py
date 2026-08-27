@@ -9,9 +9,11 @@ Two score origins:
 - **Production** (`emit_pipeline_scores`): self-evident signals computed inside
   a run with no ground truth needed — parse errors, schema validity, routing
   outcome, and the confidence values (so calibration dashboards work offline).
-- **Pilot** (`scripts/run_pilot.py`, `scripts/run_completeness_judge.py`):
+- **Pilot** (`scripts/run_pilot.py`, `scripts/run_quality_judges.py`):
   ground-truth-derived scores (class/stage correctness, calibration error,
-  completeness) attached to the deterministic trace id.
+  completeness) attached to the deterministic trace id. In-pipeline Lane B
+  completeness (`judge_verify_node`) also emits `completeness` /
+  `completeness_label` / `judge_notes` when the judge actually fires.
 
 All helpers silently no-op when Langfuse is not the active backend, matching
 the tracing facade in `observability/tracing.py`.
@@ -49,6 +51,15 @@ SCORE_CONFIGS: list[dict] = [
         ],
     },
     {"name": "judge_notes", "data_type": "TEXT"},
+    {
+        "name": "deterministic_verdict",
+        "data_type": "CATEGORICAL",
+        "categories": [
+            {"label": "CORRECT", "value": 1.0},
+            {"label": "PARTIAL", "value": 0.5},
+            {"label": "MISS", "value": 0.0},
+        ],
+    },
     {"name": "classification_quality", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {
         "name": "classification_correct",
@@ -349,6 +360,74 @@ def create_trace_score(
         logger.warning("score_creation_failed", trace_id=trace_id, name=name, exc_info=True)
 
 
+def deterministic_verdict_label(
+    overall_score: float | None,
+    *,
+    needs_judge_review: bool = False,
+    class_mismatch: bool = False,
+) -> str:
+    """Map a deterministic field-score into CORRECT / PARTIAL / MISS.
+
+    Keeps the LLM-judge cost contract (clearly-wrong skips the LLM call) but
+    still leaves a verdict on the trace. Ambiguous-band fields are PARTIAL;
+    class mismatch is always MISS.
+    """
+    if class_mismatch:
+        return "MISS"
+    if needs_judge_review:
+        return "PARTIAL"
+    if overall_score is None:
+        return "PARTIAL"
+    try:
+        from pipeline.config import load_config
+
+        band = (load_config().get("field_scoring") or {}).get("ambiguous_band") or [0.5, 0.85]
+        low, high = float(band[0]), float(band[1])
+    except Exception:
+        low, high = 0.5, 0.85
+    score = float(overall_score)
+    if score >= high:
+        return "CORRECT"
+    if score <= low:
+        return "MISS"
+    return "PARTIAL"
+
+
+def emit_in_pipeline_judge_scores(state: dict) -> None:
+    """Attach Lane B completeness scores when the in-pipeline judge fired.
+
+    No-ops when tracing is disabled. Skipped verdicts emit nothing (the
+    cost contract is that clean runs add zero judge observations).
+    """
+    verdict = state.get("judge_verdict")
+    if not verdict or verdict in ("skipped",):
+        return
+    score = state.get("judge_score")
+    findings = state.get("judge_findings") or []
+    if isinstance(score, (int, float)) and not isinstance(score, bool):
+        score_trace("completeness", float(score), data_type="NUMERIC")
+    if verdict != "judge_error":
+        score_trace("completeness_label", str(verdict), data_type="CATEGORICAL")
+    notes = "\n".join(str(f) for f in findings if f)
+    if notes:
+        score_trace("judge_notes", notes, data_type="TEXT")
+    trace_id = state.get("trace_id")
+    if trace_id:
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            create_trace_score(
+                str(trace_id), "completeness", float(score), data_type="NUMERIC"
+            )
+        if verdict != "judge_error":
+            create_trace_score(
+                str(trace_id),
+                "completeness_label",
+                str(verdict),
+                data_type="CATEGORICAL",
+            )
+        if notes:
+            create_trace_score(str(trace_id), "judge_notes", notes, data_type="TEXT")
+
+
 def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
     """Check an extraction against the doc type's pydantic schema.
 
@@ -451,6 +530,9 @@ def emit_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
             from observability.classification_scoring import classes_match
 
             scores["class_correct"] = int(classes_match(expected, state.get("doc_type")))
+        expected_stage = gt.get("expected_stage")
+        if expected_stage:
+            scores["stage_correct"] = int(str(stage or "") == str(expected_stage))
     if is_enabled():
         for name, value in scores.items():
             score_trace(name, value, data_type=_score_data_type(name))

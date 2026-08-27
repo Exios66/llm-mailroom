@@ -80,6 +80,7 @@ FIXTURE_EXPECTATIONS = {
     "docs/examples/sources/corporate/*": ("corporate_record", None),
     "docs/examples/sources/correspondence/*": ("correspondence", None),
     "docs/examples/sources/compliance/*": ("compliance_filing", None),
+    "docs/examples/sources/insurance/*": ("insurance_claim", None),
     "docs/examples/sources/ambiguous/*": ("correspondence", None),
 }
 

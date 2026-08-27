@@ -67,7 +67,13 @@ confidence:
   high: 0.95
   low: 0.70        # below this → retry; still below after retry → human review
   retry_max: 1     # max retries before routing to review
-  conflict_threshold: 0.3  # extraction confidence gap below this → potential conflict
+  # Lane B completeness-judge band: low <= extraction_confidence < judge_band_high
+  # fires judge_verify. Clean high-confidence extractions skip (zero added LLM calls).
+  judge_band_high: 0.85
+  # Unused routing knob (kept for config-file compatibility). Matter conflicts
+  # escalate via deterministic same-class field comparison in
+  # graph/build_graph.py:_detect_conflict — not an extraction-confidence gap.
+  conflict_threshold: 0.3
 
 # Deterministic field-type-aware extraction scoring (issues #4/#5). The scorer
 # normalizes each field by its type (date/money/id exact-after-normalize, name

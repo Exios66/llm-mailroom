@@ -6,7 +6,7 @@ This directory contains example data and reference materials for the LLM-Mailroo
 
 ### `samples/`
 
-The **pilot sample set** — 22 curated legal PDFs spanning five of the six live document classes in `config/taxonomy.yaml` (`insurance_claim` is live but not in this set), used to pilot-test the pipeline and evaluate procedural changes.
+The **pilot sample set** — 25 curated legal PDFs spanning all six live document classes in `config/taxonomy.yaml`, used to pilot-test the pipeline and evaluate procedural changes.
 
 | Class | Count | Source |
 |-------|-------|--------|
@@ -15,6 +15,7 @@ The **pilot sample set** — 22 curated legal PDFs spanning five of the six live
 | `compliance_filing` | 2 | Synthetic 10-K excerpt (large) + state filing |
 | `corporate_record` | 2 | Bylaws + board resolution |
 | `correspondence` | 2 | Demand letter + internal memo |
+| `insurance_claim` | 3 | Synthetic FNOL / coverage letters (approved / denied / partial) |
 | `ambiguous` | 1 | Multi-topic memo → expects human review |
 
 **Key files:**

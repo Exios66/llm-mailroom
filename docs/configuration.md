@@ -40,14 +40,16 @@ Controls the branching logic in `graph/routing.py`. Tunable without code changes
 | `high` | 0.95 | Classification confidence ≥ this auto-continues to extraction; the band `[low, high)` is "classified but not clearly confident" → human review |
 | `low` | 0.70 | Below this: retry once; still below after retry → human review |
 | `retry_max` | 1 | Maximum retries before escalating to human review |
-| `conflict_threshold` | 0.3 | Extraction confidence gap below this → potential conflict → Boss |
+| `judge_band_high` | 0.85 | Lane B completeness-judge gate: `low <= extraction_confidence < judge_band_high` fires `judge_verify`. Clean high-confidence extractions skip (zero added LLM calls). |
+| `conflict_threshold` | 0.3 | **Unused routing knob** (kept for config-file compatibility). Matter conflicts escalate via deterministic same-class field comparison in `graph/build_graph.py:_detect_conflict`, not an extraction-confidence gap. |
 
 ```yaml
 confidence:
   high: 0.95
   low: 0.70
   retry_max: 1
-  conflict_threshold: 0.3
+  judge_band_high: 0.85
+  conflict_threshold: 0.3  # unused; conflicts are field-value comparison
 ```
 
 ### `doc_classes`
