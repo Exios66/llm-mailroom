@@ -176,6 +176,91 @@ def test_parse_hf_row_joins_insurance_ground_truth():
     assert mail["communication_type"] == "meeting_request"
 
 
+def test_parse_hf_row_joins_corporate_schema_gt_when_present():
+    from scripts.run_hf_pilot import expected_fields_for_sample, parse_hf_row
+
+    row = parse_hf_row({
+        "filename": "ex3-1.htm",
+        "doc_text": "BYLAWS OF REVENUE.COM " + "x" * 300,
+        "expected": "corporate_record",
+        "expected_subclass": "bylaws",
+        "entity_name": "Revenue.com Corporation",
+        "jurisdiction": "Nevada",
+        "key_provisions": '["annual meeting"]',
+    })
+    fields = expected_fields_for_sample(row)
+    assert fields["record_type"] == "bylaws"
+    assert fields["entity_name"] == "Revenue.com Corporation"
+    assert fields["jurisdiction"] == "Nevada"
+    assert fields["key_provisions"] == ["annual meeting"]
+
+
+def test_score_row_extraction_gates_homogeneous_insurance_gt():
+    from scripts.run_hf_pilot import score_row_extraction
+
+    expected = {
+        "coverage_determination": "approved",
+        "denial_reasons": [],
+        "claimed_amount": 110.0,
+        "claim_type": "carrier",
+        "insurer": "CMS Medicare",
+    }
+    predicted = dict(expected)
+    scored = score_row_extraction(predicted, expected, "insurance_claim")
+    assert scored is not None
+    assert scored["gt_homogeneity"] is True
+    assert scored["determination_consistency_is_quality"] is False
+    assert scored["determination_consistency"] == 1.0
+
+    denied_exp = {
+        "coverage_determination": "denied",
+        "denial_reasons": ["lapse"],
+        "claim_type": "auto",
+        "insurer": "Acme",
+    }
+    denied_pred = dict(denied_exp)
+    mixed = score_row_extraction(denied_pred, denied_exp, "insurance_claim")
+    assert mixed is not None
+    assert mixed.get("gt_homogeneity") is not True
+    assert mixed.get("determination_consistency_is_quality") is not False
+    assert mixed["determination_consistency"] == 1.0
+    bad = score_row_extraction(
+        {**denied_pred, "denial_reasons": []}, denied_exp, "insurance_claim"
+    )
+    assert bad["determination_consistency"] == 0.0
+    from scripts.run_hf_pilot import expected_fields_for_sample, parse_hf_row
+
+    row = parse_hf_row(
+        {
+            "filename": "cms_outpatient.txt",
+            "doc_text": "DESYNPUF CLM_ID 123 outpatient claim table " + "x" * 300,
+            "expected": "insurance_claim",
+            "expected_subclass": "outpatient",
+            "claim_number": "CLM-9",
+            "insurer": "CMS Medicare",
+            "claim_type": "outpatient",
+            "claimed_amount": "440.00",
+        }
+    )
+    assert row["expected_hf_class"] == "insurance_claim"
+    assert row["claim_type"] == "outpatient"
+    assert row["claim_number"] == "CLM-9"
+    fields = expected_fields_for_sample(row)
+    assert fields["claim_type"] == "outpatient"
+    assert fields["insurer"] == "CMS Medicare"
+
+    corp = expected_fields_for_sample({
+        "expected_hf_class": "corporate_record",
+        "expected_subclass": "articles_of_incorporation",
+    })
+    assert corp["record_type"] == "articles_of_incorporation"
+    mail = expected_fields_for_sample({
+        "expected_hf_class": "correspondence",
+        "expected_subclass": "meeting_request",
+    })
+    assert mail["communication_type"] == "meeting_request"
+
+
 def test_sorter_catalogs_come_from_dojo_without_replacing_hub_extract_tokens():
     from langchain_agents.doc_inventories import (
         CORPORATE_RECORD_TYPES,
