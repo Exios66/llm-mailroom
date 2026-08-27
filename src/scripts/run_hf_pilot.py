@@ -96,7 +96,8 @@ HF_LOCAL_PACK_CLASSES = (
     "compliance_filing",
 )
 # Live taxonomy files MAUD merger rows as merger_agreement (not contract).
-# Exact and aligned classification are identical — do not treat MAUD ≡ CUAD.
+# Exact class match is the only class KPI. Do not import
+# llm_dojo_scoring.mailroom.align_doc_type (v0.11.0 still maps MAUD ≡ CUAD).
 ALIGN: dict[str, str] = {}
 
 
@@ -390,12 +391,30 @@ def _usage_tokens(usage: list) -> int:
 
 
 def summarize_rows(rows: list[dict]) -> dict:
-    """Exact / aligned / subclass accuracy plus cost and stage mix."""
+    """Exact class / subclass accuracy plus cost and stage mix.
+
+    ``aligned_accuracy`` is a deprecated JSON alias of exact (The-Mailroom
+    readers). It is not a merger≡contract score — MAUD is its own class.
+    """
     from collections import Counter
 
+    from observability.classification_scoring import classes_match, score_exact_classification
+
+    def _row_exact(row: dict) -> bool:
+        if row.get("predicted") not in (None, ""):
+            return classes_match(row.get("expected"), row.get("predicted"))
+        return bool(row.get("exact_ok"))
+
     n = len(rows)
-    exact_n = sum(1 for r in rows if r.get("exact_ok"))
-    aligned_n = sum(1 for r in rows if r.get("aligned_ok"))
+    class_scores = score_exact_classification(
+        [r.get("expected") for r in rows],
+        [
+            r.get("predicted") if r.get("predicted") not in (None, "") else (
+                r.get("expected") if r.get("exact_ok") else ""
+            )
+            for r in rows
+        ],
+    )
     subclass_scored = [r for r in rows if r.get("subclass_ok") is not None]
     subclass_n = sum(1 for r in subclass_scored if r.get("subclass_ok"))
     costs = [float(r["llm_cost_usd"]) for r in rows if isinstance(r.get("llm_cost_usd"), (int, float))]
@@ -404,20 +423,22 @@ def summarize_rows(rows: list[dict]) -> dict:
     walls = [float(r["wall_time_s"]) for r in rows if isinstance(r.get("wall_time_s"), (int, float))]
     per_class: dict[str, dict] = {}
     per_specialist: dict[str, dict] = {}
+    per_subclass: dict[tuple[str, str], dict] = {}
     from observability.specialist_suites import specialist_for_class
 
     for row in rows:
         cls = row.get("expected") or "unknown"
         specialist = row.get("specialist") or specialist_for_class(cls) or "unknown"
+        sub = str(row.get("expected_subclass") or "").strip() or "_"
+        exact = _row_exact(row)
         bucket = per_class.setdefault(cls, {
-            "n": 0, "exact": 0, "aligned": 0, "subclass": 0, "subclass_n": 0,
+            "n": 0, "exact": 0, "subclass": 0, "subclass_n": 0,
             "cost_usd": 0.0, "tokens": 0, "tokens_known": False, "stages": Counter(),
             "extract_scores": [], "extract_f1": [], "gt_fields": [],
             "specialist": specialist,
         })
         bucket["n"] += 1
-        bucket["exact"] += int(bool(row.get("exact_ok")))
-        bucket["aligned"] += int(bool(row.get("aligned_ok")))
+        bucket["exact"] += int(exact)
         if row.get("subclass_ok") is not None:
             bucket["subclass_n"] += 1
             bucket["subclass"] += int(bool(row.get("subclass_ok")))
@@ -444,6 +465,14 @@ def summarize_rows(rows: list[dict]) -> dict:
             spec["extract_f1"].append(float(row["extraction_f1"]))
         if isinstance(row.get("extraction_gt_n_fields"), (int, float)):
             spec["gt_fields"].append(int(row["extraction_gt_n_fields"]))
+        stratum = per_subclass.setdefault((cls, sub), {
+            "n": 0, "exact": 0, "subclass": 0, "subclass_n": 0,
+        })
+        stratum["n"] += 1
+        stratum["exact"] += int(exact)
+        if row.get("subclass_ok") is not None:
+            stratum["subclass_n"] += 1
+            stratum["subclass"] += int(bool(row.get("subclass_ok")))
     scores = [
         float(r["extraction_overall_score"])
         for r in rows
@@ -462,12 +491,32 @@ def summarize_rows(rows: list[dict]) -> dict:
         if isinstance(r.get("determination_consistency"), (int, float))
         and (r.get("gt_homogeneity") or r.get("determination_consistency_is_quality") is False)
     ]
+    extra_keys = (
+        "maud_question_accuracy",
+        "maud_question_macro_accuracy",
+        "content_topic_accuracy",
+        "sentiment_accuracy",
+        "extraction_f1",
+        "extraction_precision",
+        "extraction_recall",
+        "entity_list_f1",
+    )
+    extra_means: dict[str, float] = {}
+    for key in extra_keys:
+        vals = [
+            float(r[key]) for r in rows
+            if isinstance(r.get(key), (int, float))
+        ]
+        if vals:
+            extra_means[f"{key}_mean"] = round(sum(vals) / len(vals), 3)
+            extra_means[f"{key}_n"] = len(vals)
     out = {
         "n": n,
-        "exact_n": exact_n,
-        "aligned_n": aligned_n,
-        "exact_accuracy": round(exact_n / n, 3) if n else 0.0,
-        "aligned_accuracy": round(aligned_n / n, 3) if n else 0.0,
+        "exact_n": class_scores["exact_n"],
+        "aligned_n": class_scores["aligned_n"],
+        "exact_accuracy": class_scores["exact_accuracy"],
+        "aligned_accuracy": class_scores["aligned_accuracy"],
+        "aligned_equals_exact": True,
         "subclass_n": len(subclass_scored),
         "subclass_correct": subclass_n,
         "subclass_accuracy": round(subclass_n / len(subclass_scored), 3) if subclass_scored else None,
@@ -481,9 +530,9 @@ def summarize_rows(rows: list[dict]) -> dict:
             cls: {
                 "n": v["n"],
                 "exact": v["exact"],
-                "aligned": v["aligned"],
+                "aligned": v["exact"],
                 "exact_accuracy": round(v["exact"] / v["n"], 3) if v["n"] else 0.0,
-                "aligned_accuracy": round(v["aligned"] / v["n"], 3) if v["n"] else 0.0,
+                "aligned_accuracy": round(v["exact"] / v["n"], 3) if v["n"] else 0.0,
                 "subclass_accuracy": (
                     round(v["subclass"] / v["subclass_n"], 3) if v["subclass_n"] else None
                 ),
@@ -527,6 +576,16 @@ def summarize_rows(rows: list[dict]) -> dict:
             }
             for name, v in sorted(per_specialist.items())
         },
+        "per_subclass": {
+            f"{cls}/{sub}": {
+                "n": v["n"],
+                "exact_accuracy": round(v["exact"] / v["n"], 3) if v["n"] else 0.0,
+                "subclass_accuracy": (
+                    round(v["subclass"] / v["subclass_n"], 3) if v["subclass_n"] else None
+                ),
+            }
+            for (cls, sub), v in sorted(per_subclass.items())
+        },
     }
     if scores:
         out["extraction_n"] = len(scores)
@@ -537,6 +596,7 @@ def summarize_rows(rows: list[dict]) -> dict:
     if gated_dc:
         out["determination_consistency_gated_n"] = len(gated_dc)
         out["determination_consistency_gated_mean"] = round(sum(gated_dc) / len(gated_dc), 3)
+    out.update(extra_means)
     return out
 
 
@@ -588,7 +648,7 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
         from observability.field_scoring import get_field_types
         from observability.suite_scoring import score_with_suite
 
-        scored_class = pipeline_class(doc_class) or doc_class
+        scored_class = doc_class
         suite_class = scored_class
         result, extras = score_with_suite(
             suite_class,
@@ -604,7 +664,7 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
         }
         for key, value in extras.items():
             out[key] = round(float(value), 3)
-        if (pipeline_class(doc_class) or doc_class) == "insurance_claim":
+        if doc_class == "insurance_claim":
             from observability.honest_gaps import (
                 determination_consistency_is_quality,
                 insurance_determination_consistent,
@@ -655,6 +715,12 @@ def enrich_sample_row(row: dict) -> dict:
         if catalog.get("contract_subtype") and not out.get("predicted_subtype"):
             out["predicted_subtype"] = catalog["contract_subtype"]
     extracted = out.get("extracted_data") or {}
+    if out.get("predicted") not in (None, ""):
+        from observability.classification_scoring import classes_match
+
+        exact = classes_match(out.get("expected"), out.get("predicted"))
+        out["exact_ok"] = exact
+        out["aligned_ok"] = exact
     if out.get("subclass_ok") is None and out.get("expected"):
         out["subclass_ok"] = subclass_ok(
             str(out.get("expected") or ""),
@@ -706,7 +772,6 @@ def render_metrics_markdown(report: dict) -> str:
         f"unique_matters = `{report.get('unique_matters')}`",
         f"- n = **{metrics.get('n', 0)}**  errors = **{report.get('errors', 0)}**",
         f"- exact accuracy = **{metrics.get('exact_accuracy')}**  "
-        f"aligned (merger≡contract) = **{metrics.get('aligned_accuracy')}**  "
         f"subclass = **{metrics.get('subclass_accuracy')}**",
         f"- cost USD = **{metrics.get('total_cost_usd')}**  "
         f"avg $/doc = {metrics.get('avg_cost_usd')}  "
@@ -719,6 +784,16 @@ def render_metrics_markdown(report: dict) -> str:
             f"- extraction overall (deterministic) mean = **{metrics['extraction_overall_mean']}** "
             f"over {metrics.get('extraction_n')} grounded docs"
         )
+    for key, label in (
+        ("maud_question_accuracy_mean", "MAUD question accuracy"),
+        ("content_topic_accuracy_mean", "correspondence topic accuracy"),
+        ("extraction_f1_mean", "extraction F1"),
+    ):
+        if metrics.get(key) is not None:
+            n_key = key.replace("_mean", "_n")
+            lines.append(
+                f"- {label} mean = **{metrics[key]}** over {metrics.get(n_key)} docs"
+            )
     if metrics.get("determination_consistency_mean") is not None:
         lines.append(
             f"- determination_consistency (mixed-GT quality) mean = "
@@ -828,6 +903,23 @@ def render_metrics_markdown(report: dict) -> str:
                 f"| {name} | {classes} | {stats.get('n')} | "
                 f"{stats.get('extraction_n')} | {stats.get('extraction_overall_mean')} | "
                 f"{stats.get('extraction_f1_mean')} | {stats.get('extraction_gt_fields_mean')} |"
+            )
+    if metrics.get("per_subclass"):
+        lines += [
+            "",
+            "## Per subclass (Hub class × subtype strata)",
+            "",
+            "Strata come from the v5 Hub inventories (`docclass-pilot` / "
+            "`docclass-merged`). Predicting `contract` for a `merger_agreement` "
+            "row is a class miss, not an aligned hit.",
+            "",
+            "| stratum | n | exact | subclass |",
+            "|---|---:|---:|---:|",
+        ]
+        for name, stats in (metrics.get("per_subclass") or {}).items():
+            lines.append(
+                f"| {name} | {stats.get('n')} | {stats.get('exact_accuracy')} | "
+                f"{stats.get('subclass_accuracy')} |"
             )
     lines += [
         "",
@@ -1215,6 +1307,14 @@ def check_contract() -> int:
     assert intake_out["intake_prep_completeness"] == 1.0
     assert pipeline_class("merger_agreement") == "merger_agreement"
     assert pipeline_class("insurance_claim") == "insurance_claim"
+    assert ALIGN == {}
+    from observability.classification_scoring import classes_match, score_exact_classification
+
+    assert classes_match("merger_agreement", "contract") is False
+    miss = score_exact_classification(["merger_agreement"], ["contract"])
+    assert miss["exact_accuracy"] == 0.0
+    assert miss["aligned_accuracy"] == 0.0
+    assert miss["aligned_equals_exact"] is True
     assert "compliance_filing" not in HF_CLASSES
     assert "compliance_filing" in HF_LOCAL_PACK_CLASSES
     for retired in ("court_opinion", "due_diligence"):
@@ -1359,6 +1459,7 @@ def check_contract() -> int:
     print("check ok", json.dumps({
         "intake": True,
         "align": ALIGN,
+        "aligned_equals_exact": True,
         "report_keys": sorted(report_keys),
         "sample_keys": sorted(sample_keys),
         "dataset": DATASET_ID,
@@ -1400,7 +1501,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     queued.write_text(_truncate_text(sample["text"], max_chars), encoding="utf-8")
 
     hf_class = sample["expected_hf_class"]
-    expect_type = pipeline_class(hf_class)
+    expect_type = hf_class
     expect = {"doc_type": expect_type, "conf": 0.96}
     ground_truth = {
         "expected": hf_class,
@@ -1470,7 +1571,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         "extraction_confidence": result.get("extraction_confidence"),
         "extracted_data": extracted,
         "exact_ok": predicted == hf_class,
-        "aligned_ok": pipeline_class(hf_class) == predicted or hf_class == predicted,
+        "aligned_ok": predicted == hf_class,  # deprecated alias of exact_ok
         "subclass_ok": subclass,
         "specialist": gt_meta.get("specialist"),
         "expected_fields": expected_fields,
@@ -1778,7 +1879,7 @@ def main() -> int:
                 "local_filename": local_name,
                 "matter_id": matter_id,
                 "expected": sample.get("expected_hf_class"),
-                "expected_doc_class": pipeline_class(sample.get("expected_hf_class") or ""),
+                "expected_doc_class": sample.get("expected_hf_class") or "",
                 "expected_subclass": sample.get("expected_subclass") or "",
                 "predicted": None,
                 "stage": "error",
@@ -1802,6 +1903,7 @@ def main() -> int:
             "metrics": {
                 "exact_accuracy": metrics.get("exact_accuracy"),
                 "aligned_accuracy": metrics.get("aligned_accuracy"),
+                "aligned_equals_exact": True,
                 "subclass_accuracy": metrics.get("subclass_accuracy"),
                 "total_cost_usd": metrics.get("total_cost_usd"),
                 "total_tokens": metrics.get("total_tokens"),
