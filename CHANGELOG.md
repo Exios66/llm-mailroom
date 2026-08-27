@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`extraction_category_presence` wired on grounded contract/MAUD runs.** Presence expectations are derived from Hub `cuad_clause_labels` or flattened `expected_fields.cuad_clauses`. The score is omitted when there is no CUAD presence GT (not emitted as 0.0).
 
+- **Project Cursor Agent Skills** under `.cursor/skills/` (companion to [local-mailroom-sandbox#4](https://github.com/Exios66/local-mailroom-sandbox/pull/4)). Router + dedicated skills for OpenRouter, Ollama, Modal, Langfuse, Phoenix, Braintrust, Hugging Face, LangGraph, dojo-scoring, and LegalBench so agents pick the stack this repo actually uses instead of inventing parallel providers or sinks.
+
 ### Fixed
 
 - **`deterministic_verdict` is not a `SCORE_CONFIGS` name.** It is still computed and attached on grounded field-scoring traces, but it is not in the dojo 0.11.0 registry, so listing it in `SCORE_CONFIGS` crashed module import (KANBAN-061).
