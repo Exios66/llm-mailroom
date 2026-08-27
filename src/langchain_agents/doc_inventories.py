@@ -91,6 +91,29 @@ INSURANCE_GT_KEYS: tuple[str, ...] = (
     "supporting_documents",
 )
 
+# Schema fields joined from Hub ground_truth when present. Corporate Hub rows
+# today only carry expected_subclass; extra columns are joined, never invented.
+CORPORATE_GT_KEYS: tuple[str, ...] = (
+    "entity_name",
+    "record_type",
+    "effective_date",
+    "key_provisions",
+    "signatories",
+    "jurisdiction",
+    "filing_number",
+)
+
+COMPLIANCE_GT_KEYS: tuple[str, ...] = (
+    "filing_type",
+    "regulatory_body",
+    "filing_date",
+    "due_date",
+    "entity_name",
+    "key_requirements",
+    "status",
+    "reference_number",
+)
+
 # Sorter subclass catalogs from llm-dojo-scoring 0.9.0 (PR #4). Hub extraction
 # inventories above stay narrower (corporate_record is five tokens; insurance
 # extract still accepts FNOL lines). Do not replace CORPORATE_RECORD_TYPES.

@@ -209,6 +209,9 @@ def test_hf_pilot_mock_writes_report(temp_base_dir, mock_openai_client, mock_lan
     assert payload["honesty"]["compliance_filing"]["in_hf_pilot"] is False
     assert payload["honesty"]["compliance_filing"]["in_corpus"] is False
     assert payload["honesty"]["corporate_record"]["in_corpus"] is True
+    assert payload["local_packs"]["compliance_filing"]["n"] == 2
+    assert payload["local_packs"]["insurance_contrast"]["gt_homogeneity"] is False
+    assert payload["local_packs"]["corporate_extraction"]["hub_extract_is_subclass_only"] is True
     md = reports[0].with_suffix(".md").read_text(encoding="utf-8")
     assert (reports[0].with_suffix(".md")).is_file()
     assert "exact accuracy" in md

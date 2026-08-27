@@ -94,13 +94,17 @@ The scoring layer both mailroom and entity-extraction consume:
 - **[claims-data-eda](https://github.com/Exios66/claims-data-eda)**:
   exploratory analysis toward an insurance-claims benchmark. Hub rows today
   are CMS DE-SynPUF source tables; dojo 0.10.0 ships
-  **`determination_consistency` / `amount_exactness`** as real scorers. The
-  remaining gap is CMS GT homogeneity (all-approved / empty denials), so
-  that score is degenerate on GT-shaped rows (documented in [Agents](agents.md)).
+  **`determination_consistency` / `amount_exactness`** as real scorers. CMS GT
+  is homogeneous (all-approved / empty denials), so Hub
+  `determination_consistency` is gated as a quality KPI. Mailroom exercises
+  the scorer on a local approved/denied/partial contrast pack (documented in
+  [Agents](agents.md)).
 - **Honesty (dojo 0.10.0 suites):** `compliance_filing` has zero
-  `docclass-merged` rows (HF pilot omits it). `corporate_record` has 39 Hub
-  subclass rows but **no external extraction benchmark**. `court_opinion` /
-  `due_diligence` are retired from live mailroom (`retired=True`).
+  `docclass-merged` rows (HF `--real` omits it; local fixture pack is
+  mock/check only). `corporate_record` has 39 Hub subclass rows and **no
+  external extraction benchmark**; schema-complete extraction GT is the
+  local pack. `court_opinion` / `due_diligence` are retired from live
+  mailroom (`retired=True`).
 - **[atticus-investigation](https://github.com/Exios66/atticus-investigation)**:
   LegalBench classification sibling — its methodology (prompt versions ×
   models, paired-bootstrap ablations) is the same doctrine this constellation

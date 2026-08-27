@@ -150,14 +150,43 @@ def test_guard_does_not_clamp_on_determination_inconsistency():
 
 
 def test_hf_report_honesty_excludes_zero_row_compliance():
-    from scripts.run_hf_pilot import hf_corpus_honesty, render_metrics_markdown
+    from scripts.run_hf_pilot import hf_corpus_honesty, render_metrics_markdown, summarize_rows
 
     honesty = hf_corpus_honesty()
     assert honesty["compliance_filing"]["in_hf_pilot"] is False
     assert honesty["compliance_filing"]["in_corpus"] is False
+    assert honesty["compliance_filing"]["local_pack"] == "compliance_filing"
     assert honesty["corporate_record"]["in_hf_pilot"] is True
+    assert honesty["corporate_record"]["local_pack"] == "corporate_extraction"
+    assert honesty["insurance_claim"]["hub_gt_homogeneous"] is True
     assert honesty["court_opinion"]["retired"] is True
     md = render_metrics_markdown({"session_id": "pilot-hf-test", "samples": [], "honesty": honesty})
     assert "Corpus honesty" in md
     assert "compliance_filing" in md
+    assert "local pack" in md.lower()
     assert "no external extraction benchmark" in md.lower() or "honest gap" in md.lower()
+
+    gated = summarize_rows([
+        {
+            "expected": "insurance_claim",
+            "exact_ok": True,
+            "aligned_ok": True,
+            "stage": "archived",
+            "llm_cost_usd": 0.0,
+            "determination_consistency": 1.0,
+            "gt_homogeneity": True,
+            "determination_consistency_is_quality": False,
+        },
+        {
+            "expected": "insurance_claim",
+            "exact_ok": True,
+            "aligned_ok": True,
+            "stage": "archived",
+            "llm_cost_usd": 0.0,
+            "determination_consistency": 1.0,
+            "gt_homogeneity": False,
+        },
+    ])
+    assert gated["determination_consistency_gated_n"] == 1
+    assert gated["determination_consistency_n"] == 1
+    assert "determination_consistency_mean" in gated

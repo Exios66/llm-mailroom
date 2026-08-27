@@ -1,0 +1,29 @@
+ACME INSURANCE COMPANY
+CLAIM DEPARTMENT - COVERAGE DETERMINATION
+
+Claim No.: 2026-CLM-062203
+Policy No.: HO-44-99012-C
+Date of Loss: January 8, 2026
+Date Filed: January 12, 2026
+
+INSURED: Priya Nair
+INSURER: Acme Insurance Company
+ADJUSTER: S. Alvarez, Property Claims
+CLAIM TYPE: Property - water damage to kitchen and adjacent living room
+
+DESCRIPTION OF LOSS:
+A supply-line failure under the kitchen sink flooded the first floor of the
+insured dwelling in Madison, Wisconsin. Cabinets, flooring, and drywall were
+damaged. The insured also claimed replacement of an unrelated aging dishwasher.
+
+CLAIMED AMOUNT: $11,400.00
+
+COVERAGE DETERMINATION: PARTIAL. Sudden and accidental water discharge is
+covered. Replacement of the pre-existing dishwasher is not.
+
+DENIAL REASONS:
+- Wear-and-tear / betterment: dishwasher replacement is not caused by the
+  covered water loss and is excluded as maintenance/betterment.
+
+SUPPORTING DOCUMENTS: plumber invoice dated January 9, 2026; photos of
+affected rooms; contents inventory including dishwasher.

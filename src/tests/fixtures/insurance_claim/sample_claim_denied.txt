@@ -1,0 +1,29 @@
+ACME INSURANCE COMPANY
+CLAIM DEPARTMENT - COVERAGE DETERMINATION
+
+Claim No.: 2026-CLM-055810
+Policy No.: AUTO-19-22014-B
+Date of Loss: February 2, 2026
+Date Filed: February 5, 2026
+
+INSURED: Riley Chen
+INSURER: Acme Insurance Company
+ADJUSTER: M. Okonkwo, Auto Claims
+CLAIM TYPE: Auto - collision damage to insured vehicle
+
+DESCRIPTION OF LOSS:
+The insured's 2019 Honda Civic struck a parking barrier in a private garage
+in Madison, Wisconsin. Front bumper and headlamp assembly were damaged.
+
+CLAIMED AMOUNT: $4,280.00
+
+COVERAGE DETERMINATION: DENIED.
+
+DENIAL REASONS:
+- Policy exclusion: collision coverage lapsed for non-payment effective
+  January 15, 2026; the loss occurred after the lapse.
+- Wear-and-tear / maintenance exclusion does not apply; the controlling
+  reason is the coverage lapse.
+
+SUPPORTING DOCUMENTS: police incident note (none); photos of bumper damage;
+declarations page showing lapse; cancellation notice dated January 10, 2026.
