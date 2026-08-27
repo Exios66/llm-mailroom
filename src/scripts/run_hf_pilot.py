@@ -1,25 +1,33 @@
 #!/usr/bin/env python3
-"""Hugging Face docclass-merged pilot — the runner The-Mailroom orchestrates.
+"""Hugging Face corpus pilot — the runner The-Mailroom orchestrates.
+
+Default corpus is ``Lucius-Morningstar/docclass-merged`` schema **v5** (the
+targeted full 1,210-doc surface). Class × subtype examples come from
+``docclass-pilot``. Any other pipeline-ready Lucius-Morningstar dataset
+(``--dataset enron`` / ``claims`` / ``cuad``) can be ingested the same way,
+including the 247k-row Enron correspondence corpus.
 
 ``scripts/run_production_pilot.py`` in The-Mailroom looks for this file and
 invokes ``--check`` / ``--real --per-class N``. Traces land in Langfuse under
-session ``pilot-hf-<UTC stamp>`` with tags ``mailroom``, ``pilot``,
-``source-docclass-merged`` (and ``docclass-prompts`` when that arm is on)
-so the visualizer FLOOR / TUI / Observatory can score them.
+session ``pilot-hf-<UTC stamp>`` with tags ``mailroom``, ``pilot``, and the
+corpus ``source-*`` tag (plus ``docclass-prompts`` when that arm is on).
 
-  --check   network-free contract (intake + scorer mapping + report schema)
-  --mock    pipeline machinery on tiny in-repo fixtures (no Hub, fake LLM)
-  --real    live Qwen via OpenRouter on a stratified HF subset
+  --check     network-free contract (intake + scorer mapping + report schema)
+  --mock      pipeline machinery on committed Hub class×subtype examples (fake LLM)
+  --real      live Qwen via OpenRouter on a stratified HF subset
+  --examples  use docclass-pilot (every class × subclass stratum)
+  --dataset   Lucius-Morningstar slug (merged / pilot / enron / claims / cuad)
   --docclass  opt-in KANBAN-090 docclass prompt variants for every agent
 
 Usage:
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --check
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --mock --per-class 1
+    PYTHONPATH=src python src/scripts/run_hf_pilot.py --mock --per-subclass 1
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 1
+    PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --examples
+    PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --dataset enron --per-subclass 1 --max-scan 8000
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 5 --docclass --max-scan 4000
-    PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 10 --docclass --max-scan 4000
     PYTHONPATH=src python src/scripts/run_hf_pilot.py --finalize data/hf_pilot/<stamp>
-    PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --resume data/hf_pilot/<stamp> --per-class 10 --docclass --max-scan 4000
     PYTHONPATH=src python src/scripts/run_quality_judges.py --real --hf-latest 5
 """
 
@@ -54,16 +62,26 @@ from langchain_agents.doc_inventories import (  # noqa: E402
     normalize_filing_type,
     normalize_record_type,
 )
-
-DATASET_ID = "Lucius-Morningstar/docclass-merged"
-VIEWER_BASE = "https://datasets-server.huggingface.co"
-HF_CLASSES = (
-    "contract",
-    "merger_agreement",
-    "corporate_record",
-    "correspondence",
-    "insurance_claim",
+from pipeline.hf_corpora import (  # noqa: E402
+    FULL_CORPUS_ID,
+    FULL_CORPUS_REVISION,
+    FULL_CORPUS_SCHEMA,
+    HUB_CLASSES,
+    active_corpus,
+    adapt_hub_row,
+    example_rows,
+    examples_by_class,
+    hub_sample,
+    pipeline_corpora,
+    resolve_corpus,
+    set_active_corpus,
 )
+
+DATASET_ID = FULL_CORPUS_ID
+DATASET_REVISION = FULL_CORPUS_REVISION
+DATASET_SCHEMA = FULL_CORPUS_SCHEMA
+VIEWER_BASE = "https://datasets-server.huggingface.co"
+HF_CLASSES = HUB_CLASSES
 # Zero-row / retired classes are scored by dojo suites but MUST NOT appear in
 # HF_CLASSES — compliance_filing has zero Hub rows; court/DD were retired.
 # A local mock/check pack still scores compliance (and insurance contrast /
@@ -79,41 +97,6 @@ HF_LOCAL_PACK_CLASSES = (
 # Live taxonomy files MAUD merger rows as merger_agreement (not contract).
 # Exact and aligned classification are identical — do not treat MAUD ≡ CUAD.
 ALIGN: dict[str, str] = {}
-
-_MOCK_DOCS = {
-    "contract": (
-        "hf_contract.txt",
-        "SERVICES AGREEMENT\n\nThis Services Agreement is entered into as of "
-        "January 1, 2024, by and between Acme Corp (\"Provider\") and Beta LLC "
-        "(\"Customer\"). Provider shall perform the services described in Exhibit A. "
-        "This Agreement is governed by the laws of Delaware.",
-    ),
-    "merger_agreement": (
-        "hf_merger_agreement.txt",
-        "AGREEMENT AND PLAN OF MERGER\n\nThis Agreement and Plan of Merger is "
-        "entered into by Parent Inc., Merger Sub Inc., and Target Corp. At the "
-        "Effective Time, Merger Sub shall merge with and into Target, and Target "
-        "shall be the surviving corporation. The merger consideration is all cash.",
-    ),
-    "corporate_record": (
-        "hf_corporate_record.txt",
-        "BYLAWS OF REVENUE.COM CORPORATION\n\nA Nevada Corporation\n\nARTICLE I "
-        "STOCKHOLDERS\nSection 1. Annual meetings of the stockholders of the "
-        "Corporation shall be held on a date set by the Board of Directors.",
-    ),
-    "correspondence": (
-        "hf_correspondence.txt",
-        "From: Jane Counsel <jane@firm.com>\nTo: Opposing Counsel\nDate: March 3, 2024\n"
-        "Subject: Demand for payment\n\nDear Counsel,\nThis letter demands payment of "
-        "the outstanding invoice under the parties' services agreement within 14 days.",
-    ),
-    "insurance_claim": (
-        "hf_insurance_claim.txt",
-        "CMS MEDICARE OUTPATIENT CLAIM\nInsurer: CMS Medicare\nInsured: LOPEZ, PATRICIA\n"
-        "Policy: 9C4BA446BC00112E\nClaim type: health\nDate of service: 2008-06-10\n"
-        "Diagnosis: congestive heart failure. No named adjuster is listed.",
-    ),
-}
 
 
 def pipeline_class(hf_class: str) -> str:
@@ -218,22 +201,39 @@ def select_stratified(
     max_chars: int,
     target_chars: int,
     classes: tuple[str, ...] = HF_CLASSES,
+    per_subclass: int = 0,
 ) -> list[dict]:
-    """Pick ``per_class`` docs per HF label closest to ``target_chars``."""
-    buckets: dict[str, list[dict]] = {c: [] for c in classes}
-    for row in rows:
+    """Pick Hub docs by class, or by class × subclass when ``per_subclass`` > 0.
+
+    Oversized docs stay in the pool (MAUD mergers are 100k–1M chars).
+    ``max_chars`` truncates the text at run time, not the sample set.
+    """
+    def _keep(row: dict) -> bool:
         cls = row.get("expected_hf_class")
-        if cls not in buckets:
-            continue
-        n = int(row.get("chars") or 0)
-        if n < 200:
-            continue
-        # Oversized docs stay in the pool (MAUD mergers are 100k–1M chars).
-        # ``max_chars`` truncates the text at run time, not the sample set.
-        buckets[cls].append(row)
+        if cls not in classes:
+            return False
+        return int(row.get("chars") or 0) >= 200
+
+    kept = [row for row in rows if _keep(row)]
     selected: list[dict] = []
+    if per_subclass and per_subclass > 0:
+        buckets: dict[tuple[str, str], list[dict]] = {}
+        for row in kept:
+            key = (
+                str(row.get("expected_hf_class") or ""),
+                str(row.get("expected_subclass") or "").strip() or "_",
+            )
+            buckets.setdefault(key, []).append(row)
+        for key in sorted(buckets):
+            cands = list(buckets[key])
+            cands.sort(key=lambda r: abs(int(r["chars"]) - target_chars))
+            selected.extend(cands[:per_subclass])
+        return selected
+    buckets_cls: dict[str, list[dict]] = {c: [] for c in classes}
+    for row in kept:
+        buckets_cls[row["expected_hf_class"]].append(row)
     for cls in classes:
-        cands = list(buckets[cls])
+        cands = list(buckets_cls[cls])
         cands.sort(key=lambda r: abs(int(r["chars"]) - target_chars))
         selected.extend(cands[:per_class])
     return selected
@@ -960,20 +960,45 @@ def _catalog_by_trace(trace_id: str) -> dict:
     }
 
 
-def _mock_samples(per_class: int) -> list[dict]:
-    out = []
-    for hf_class, (filename, text) in _MOCK_DOCS.items():
-        for i in range(per_class):
-            name = filename if i == 0 else f"{Path(filename).stem}_{i}{Path(filename).suffix}"
-            out.append({
-                "filename": name,
-                "text": text,
-                "expected_hf_class": hf_class,
-                "expected_subclass": "fixture",
-                "chars": len(text),
-            })
-    # Additive local packs: compliance (zero Hub rows), insurance contrast
-    # (mixed determinations), corporate schema extraction. Mock-only.
+def _mock_samples(per_class: int, *, per_subclass: int = 0) -> list[dict]:
+    """Hub class×subtype examples from the committed docclass-pilot snapshot.
+
+    Invented Acme/Beta stand-ins are not used — every mock document is a
+    truncated Hub row. Local eval packs still append compliance (zero Hub
+    rows) and honesty-gap contrast samples.
+    """
+    out: list[dict] = []
+    if per_subclass and per_subclass > 0:
+        buckets: dict[tuple[str, str], int] = {}
+        for row in example_rows():
+            key = (
+                str(row.get("expected") or ""),
+                str(row.get("expected_subclass") or "").strip() or "_",
+            )
+            n = buckets.get(key, 0)
+            if n >= per_subclass:
+                continue
+            sample = hub_sample(row)
+            if sample["expected_hf_class"] not in HF_CLASSES:
+                continue
+            if n:
+                stem = Path(sample["filename"]).stem
+                suff = Path(sample["filename"]).suffix or ".txt"
+                sample["filename"] = f"{stem}__{n}{suff}"
+            out.append(sample)
+            buckets[key] = n + 1
+    else:
+        for hf_class, row in examples_by_class().items():
+            if hf_class not in HF_CLASSES:
+                continue
+            sample = hub_sample(row)
+            for i in range(max(1, per_class)):
+                item = dict(sample)
+                if i:
+                    stem = Path(sample["filename"]).stem
+                    suff = Path(sample["filename"]).suffix or ".txt"
+                    item["filename"] = f"{stem}_{i}{suff}"
+                out.append(item)
     try:
         from observability.local_eval_packs import all_local_pack_samples
 
@@ -986,8 +1011,9 @@ def _mock_samples(per_class: int) -> list[dict]:
 def _viewer_rows(split: str, offset: int, length: int, *, config: str = "default") -> dict:
     import httpx
 
+    corpus = active_corpus()
     params = {
-        "dataset": DATASET_ID,
+        "dataset": corpus["id"],
         "config": config,
         "split": split,
         "offset": offset,
@@ -1009,11 +1035,23 @@ def _viewer_rows(split: str, offset: int, length: int, *, config: str = "default
     raise RuntimeError(f"HF viewer failed after 5 tries ({config}/{split} offset={offset}): {last}")
 
 
+def _scan_cap(max_scan: int) -> int | None:
+    """``max_scan <= 0`` means unlimited (do not use on the 247k Enron set)."""
+    if max_scan is None or int(max_scan) <= 0:
+        return None
+    return int(max_scan)
+
+
 def _paginate_viewer(*, split: str, max_scan: int, config: str) -> list[dict]:
     rows: list[dict] = []
     offset = 0
-    while offset < max_scan:
-        payload = _viewer_rows(split, offset, min(100, max_scan - offset), config=config)
+    cap = _scan_cap(max_scan)
+    limit = cap if cap is not None else 10**9
+    while offset < limit:
+        take = 100 if cap is None else min(100, limit - offset)
+        if take <= 0:
+            break
+        payload = _viewer_rows(split, offset, take, config=config)
         batch = payload.get("rows") or []
         if not batch:
             break
@@ -1037,14 +1075,21 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
     one of the five HF classes; ``expected_subclass`` is the second-level
     label (CUAD family, record type, claim subtype, merger consideration).
     """
+    corpus = active_corpus()
+    gt_config = corpus.get("gt_config")
+    if not gt_config:
+        return {}
     labels: dict[str, dict] = {}
     try:
         from datasets import load_dataset  # type: ignore
 
-        ds = load_dataset(DATASET_ID, "ground_truth", split=split)
-        raw_rows = [dict(row) for i, row in enumerate(ds) if i < max_scan]
+        kwargs: dict = {"split": split}
+        if corpus.get("revision"):
+            kwargs["revision"] = corpus["revision"]
+        ds = load_dataset(corpus["id"], gt_config, **kwargs)
+        raw_rows = _take_rows(ds, max_scan)
     except Exception:
-        raw_rows = _paginate_viewer(split=split, max_scan=max_scan, config="ground_truth")
+        raw_rows = _paginate_viewer(split=split, max_scan=max_scan, config=gt_config)
     for row in raw_rows:
         filename = str(row.get("filename") or "").strip()
         expected = str(row.get("expected") or "").strip()
@@ -1064,22 +1109,40 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
     return labels
 
 
+def _take_rows(ds, max_scan: int) -> list[dict]:
+    cap = _scan_cap(max_scan)
+    if cap is None:
+        return [dict(row) for row in ds]
+    return [dict(row) for i, row in enumerate(ds) if i < cap]
+
+
 def load_hf_rows(*, split: str, max_scan: int) -> list[dict]:
     """Load default-config text rows joined to ground_truth labels on filename."""
+    corpus = active_corpus()
     labels = load_ground_truth_labels(split=split, max_scan=max_scan)
     parsed: list[dict] = []
     try:
         from datasets import load_dataset  # type: ignore
 
-        ds = load_dataset(DATASET_ID, split=split)
-        default_rows = [dict(row) for i, row in enumerate(ds) if i < max_scan]
+        kwargs: dict = {"split": split}
+        if corpus.get("revision"):
+            kwargs["revision"] = corpus["revision"]
+        ds = load_dataset(corpus["id"], **kwargs)
+        default_rows = _take_rows(ds, max_scan)
     except Exception:
         default_rows = _paginate_viewer(split=split, max_scan=max_scan, config="default")
     for row in default_rows:
-        item = parse_hf_row(row, labels)
+        item = parse_hf_row(adapt_hub_row(row, corpus), labels)
         if item:
             parsed.append(item)
     return parsed
+
+
+def _trace_source() -> str:
+    """Langfuse ``source-*`` tag body for the active Hub corpus."""
+    corp = active_corpus()
+    tag = str(corp.get("source_tag") or f"source-{corp['slug']}")
+    return tag.removeprefix("source-")
 
 
 def _report_root() -> Path:
@@ -1164,6 +1227,20 @@ def check_contract() -> int:
     assert honesty["compliance_filing"]["local_pack"] == "compliance_filing"
     assert honesty["corporate_record"]["local_pack"] == "corporate_extraction"
     assert honesty["insurance_claim"]["hub_gt_homogeneous"] is True
+    assert DATASET_SCHEMA == "v5"
+    assert DATASET_ID == "Lucius-Morningstar/docclass-merged"
+    assert DATASET_REVISION
+    pack_classes = set(examples_by_class())
+    assert pack_classes == set(HF_CLASSES)
+    strata = {
+        (row["expected"], row.get("expected_subclass") or "")
+        for row in example_rows()
+    }
+    assert len(strata) == 48
+    slugs = {c["slug"] for c in pipeline_corpora()}
+    assert "enron-correspondence-dedup" in slugs
+    assert "cms-desynpuf-insurance-claims" in slugs
+    assert resolve_corpus("legalbench-full")["pipeline"] is False
     rows = [
         {"expected_hf_class": c, "chars": 6000 if c != "contract" else 5900, "filename": f"{c}.txt"}
         for c in HF_CLASSES
@@ -1183,9 +1260,13 @@ def check_contract() -> int:
         "report_keys": sorted(report_keys),
         "sample_keys": sorted(sample_keys),
         "dataset": DATASET_ID,
+        "schema": DATASET_SCHEMA,
+        "revision": DATASET_REVISION,
+        "example_strata": len(strata),
         "n_classes": len(HF_CLASSES),
         "honesty_excluded": list(HF_HONESTY_EXCLUDED),
         "local_pack_classes": list(HF_LOCAL_PACK_CLASSES),
+        "pipeline_datasets": sorted(slugs),
         "corporate_in_corpus": True,
         "compliance_in_corpus": False,
         "local_packs": {
@@ -1246,7 +1327,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
              patch("agents.base.get_llm", side_effect=_mock_get_llm), \
              patch.object(_LangChainBaseAgent, "llm", new=rp._make_mock_langchain_llm(expect)):
             result = run_pipeline(
-                queued, matter_id, source="docclass-merged",
+                queued, matter_id, source=_trace_source(),
                 ground_truth=ground_truth, session_id=session_id, run_id=run_id,
             )
     else:
@@ -1254,7 +1335,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
              patch("agents.base.get_llm", side_effect=rp._real_get_llm), \
              patch.object(_LangChainBaseAgent, "llm", new=rp._make_real_langchain_llm()):
             result = run_pipeline(
-                queued, matter_id, source="docclass-merged",
+                queued, matter_id, source=_trace_source(),
                 ground_truth=ground_truth, session_id=session_id, run_id=run_id,
             )
     wall = time.perf_counter() - started
@@ -1327,6 +1408,26 @@ def main() -> int:
         help="Rewrite metrics + report.md for an existing HF report (no LLM).",
     )
     parser.add_argument("--per-class", type=int, default=1)
+    parser.add_argument(
+        "--per-subclass",
+        type=int,
+        default=0,
+        help="Pick N documents per (class, subclass) stratum instead of "
+             "per-class. --examples implies --per-subclass 1.",
+    )
+    parser.add_argument(
+        "--dataset",
+        default="docclass-merged",
+        help="Lucius-Morningstar corpus slug or repo id (default: "
+             "docclass-merged v5). Aliases: v5/full, examples/pilot, "
+             "enron, claims, cuad.",
+    )
+    parser.add_argument(
+        "--examples",
+        action="store_true",
+        help="Use docclass-pilot (every class × subclass stratum of v5) "
+             "instead of the full merged corpus.",
+    )
     parser.add_argument("--split", default="train")
     parser.add_argument("--max-chars", type=int, default=25000)
     parser.add_argument("--target-chars", type=int, default=6000)
@@ -1396,6 +1497,21 @@ def main() -> int:
         if not key or key == "mock-key":
             parser.error("OPENROUTER_API_KEY is not set to a real key — refusing --real")
 
+    if args.examples:
+        corpus = set_active_corpus("docclass-pilot")
+        if args.per_subclass <= 0:
+            args.per_subclass = 1
+        # The 48-stratum pack is 138 rows; do not clip it at the default --max-scan.
+        args.max_scan = 0
+    else:
+        corpus = set_active_corpus(args.dataset)
+    if not corpus.get("pipeline"):
+        parser.error(
+            f"{corpus['id']} is not a document-pipeline ingest corpus "
+            f"({corpus.get('note') or corpus.get('role')})"
+        )
+    hub_classes = tuple(corpus.get("classes") or HF_CLASSES)
+
     import scripts.run_pilot as rp
 
     resume_report: dict = {}
@@ -1408,7 +1524,7 @@ def main() -> int:
     )
     session_id = str(resume_report.get("session_id") or f"pilot-hf-{stamp}")
     run_id = stamp
-    run_matter = str(resume_report.get("matter_id") or f"hf-docclass-merged-{stamp}")
+    run_matter = str(resume_report.get("matter_id") or f"hf-{corpus['slug']}-{stamp}")
     unique_matters = (
         bool(resume_report["unique_matters"])
         if resume_report and "unique_matters" in resume_report
@@ -1416,7 +1532,9 @@ def main() -> int:
     )
 
     if mock_mode:
-        samples = _mock_samples(max(1, args.per_class))
+        samples = _mock_samples(
+            max(1, args.per_class), per_subclass=args.per_subclass,
+        )
     else:
         raw = load_hf_rows(split=args.split, max_scan=args.max_scan)
         samples = select_stratified(
@@ -1424,19 +1542,29 @@ def main() -> int:
             per_class=max(1, args.per_class),
             max_chars=args.max_chars,
             target_chars=args.target_chars,
+            classes=hub_classes,
+            per_subclass=args.per_subclass,
         )
-        got = {c: 0 for c in HF_CLASSES}
-        for s in samples:
-            got[s["expected_hf_class"]] = got.get(s["expected_hf_class"], 0) + 1
-        missing = [c for c in HF_CLASSES if got.get(c, 0) < max(1, args.per_class)]
-        if missing:
-            raise SystemExit(
-                f"HF subset incomplete for {DATASET_ID} split={args.split} "
-                f"per_class={args.per_class}: got {len(samples)} samples "
-                f"(by class {got}); short classes {missing}. "
-                "Labels must come from config=ground_truth (expected / "
-                "expected_subclass), joined to default-config doc_text."
-            )
+        if args.per_subclass:
+            if not samples:
+                raise SystemExit(
+                    f"HF subset empty for {corpus['id']} split={args.split} "
+                    f"per_subclass={args.per_subclass}. Labels must come from "
+                    "config=ground_truth joined to default-config doc_text."
+                )
+        else:
+            got = {c: 0 for c in hub_classes}
+            for s in samples:
+                got[s["expected_hf_class"]] = got.get(s["expected_hf_class"], 0) + 1
+            missing = [c for c in hub_classes if got.get(c, 0) < max(1, args.per_class)]
+            if missing:
+                raise SystemExit(
+                    f"HF subset incomplete for {corpus['id']} split={args.split} "
+                    f"per_class={args.per_class}: got {len(samples)} samples "
+                    f"(by class {got}); short classes {missing}. "
+                    "Labels must come from config=ground_truth (expected / "
+                    "expected_subclass), joined to default-config doc_text."
+                )
 
     if resume_report.get("plan"):
         by_name = {s.get("filename"): s for s in samples}
@@ -1485,7 +1613,9 @@ def main() -> int:
             "run_id": run_id,
             "matter_id": run_matter,
             "unique_matters": unique_matters,
-            "dataset": DATASET_ID,
+            "dataset": corpus["id"],
+            "schema": corpus.get("schema"),
+            "revision": corpus.get("revision"),
             "split": args.split,
             "mode": "mock" if mock_mode else "real",
             "docclass_prompts": docclass_prompts_enabled(),

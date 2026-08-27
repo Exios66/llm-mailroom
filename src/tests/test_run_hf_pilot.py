@@ -79,7 +79,44 @@ def test_parse_hf_row_joins_ground_truth_labels():
     assert row["expected_subclass"] == "outpatient"
 
 
-def test_select_stratified_picks_nearest_to_target():
+def test_select_stratified_per_subclass_covers_every_stratum():
+    from scripts.run_hf_pilot import select_stratified
+
+    rows = [
+        {"expected_hf_class": "correspondence", "expected_subclass": "email",
+         "chars": 6000, "filename": "e1.txt"},
+        {"expected_hf_class": "correspondence", "expected_subclass": "memo",
+         "chars": 6100, "filename": "m1.txt"},
+        {"expected_hf_class": "correspondence", "expected_subclass": "memo",
+         "chars": 4000, "filename": "m2.txt"},
+        {"expected_hf_class": "contract", "expected_subclass": "license",
+         "chars": 5900, "filename": "c1.txt"},
+    ]
+    picked = select_stratified(
+        rows, per_class=1, max_chars=25000, target_chars=6000, per_subclass=1,
+        classes=("correspondence", "contract"),
+    )
+    names = {r["filename"] for r in picked}
+    assert names == {"e1.txt", "m1.txt", "c1.txt"}
+
+
+def test_mock_samples_come_from_hub_pack():
+    from scripts.run_hf_pilot import _mock_samples
+
+    samples = _mock_samples(1)
+    hub = [s for s in samples if s["expected_hf_class"] in HF_CLASSES
+           and not str(s.get("filename") or "").startswith("sample_")]
+    classes = {s["expected_hf_class"] for s in hub}
+    assert classes == set(HF_CLASSES)
+    assert all(s.get("expected_subclass") not in ("", "fixture") for s in hub)
+    all_strata = _mock_samples(1, per_subclass=1)
+    hub_strata = [
+        s for s in all_strata
+        if s["expected_hf_class"] in HF_CLASSES
+        and "sample_" not in str(s.get("filename") or "")
+    ]
+    assert len({(s["expected_hf_class"], s["expected_subclass"]) for s in hub_strata}) == 48
+
     rows = []
     for cls in HF_CLASSES:
         rows.append({"expected_hf_class": cls, "chars": 1000, "filename": f"{cls}-short.txt"})
@@ -157,6 +194,8 @@ def test_check_contract_prints_ok(capsys):
     assert "check ok" in out
     payload = json.loads(out.split("check ok ", 1)[1])
     assert payload["dataset"] == DATASET_ID
+    assert payload["schema"] == "v5"
+    assert payload["example_strata"] == 48
     assert payload["intake"] is True
 
 
@@ -180,7 +219,7 @@ def test_hf_pilot_mock_writes_report(temp_base_dir, mock_openai_client, mock_lan
     monkeypatch.setenv("MAILROOM_VISION_ENABLED", "0")
     from scripts import run_hf_pilot as mod
 
-    monkeypatch.setattr(mod, "_mock_samples", lambda per_class: [{
+    monkeypatch.setattr(mod, "_mock_samples", lambda per_class, per_subclass=0: [{
         "filename": "hf_contract.txt",
         "text": "SERVICES AGREEMENT between Acme and Beta. " * 20,
         "expected_hf_class": "contract",
@@ -377,4 +416,25 @@ def test_summarize_rows_includes_extraction_mean():
     ])
     assert summary["extraction_n"] == 2
     assert summary["extraction_overall_mean"] == 0.9
+
+
+def test_legalbench_full_rejected_as_pipeline_ingest(monkeypatch):
+    import sys
+    import pytest
+    from scripts import run_hf_pilot as mod
+
+    monkeypatch.setattr(sys, "argv", ["run_hf_pilot.py", "--mock", "--dataset", "legalbench-full"])
+    with pytest.raises(SystemExit):
+        mod.main()
+
+
+def test_scan_cap_none_means_unlimited():
+    from scripts.run_hf_pilot import _scan_cap, _take_rows
+
+    assert _scan_cap(0) is None
+    assert _scan_cap(-1) is None
+    assert _scan_cap(10) == 10
+    rows = _take_rows([{"i": i} for i in range(5)], 0)
+    assert len(rows) == 5
+    assert len(_take_rows([{"i": i} for i in range(5)], 2)) == 2
 

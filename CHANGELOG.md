@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Class / subclass examples come from Hugging Face, not invented stand-in text.** `pipeline/hf_corpora.py` registers the Lucius-Morningstar corpora. The targeted full corpus is `Lucius-Morningstar/docclass-merged` schema **v5** (1,210 docs, Hub SHA `d2c96ecb…`). One example of every type and subtype is the committed pack `notebooks/fixtures/huggingface/class_subclass_examples.json` (48 strata from `docclass-pilot`). `--mock` on `run_hf_pilot.py` uses that pack; `--examples` / `--dataset examples` loads the Hub pilot; `--dataset enron` (and `claims`, `cuad`, …) selects the other pipeline-ready Hub sets. `legalbench-full` stays a LegalBench CLI task pack, not a document-pipeline ingest. Local committed PDFs remain PDF-ingest fixtures — they are not the class catalog.
+
 - **`merger_agreement` is a live MAUD class, not a CUAD contract alias.** Taxonomy, schema, sorter labels, HF `expected_doc_class`, and reconsideration GT comparison treat MAUD merger agreements as their own document class. Predicting `contract` when GT is `merger_agreement` is a class miss (Lane A). Extraction still uses `contracts_specialist` (shared `ContractExtraction` field map including `maud_clauses`). HF `ALIGN` no longer maps MAUD ≡ CUAD. Pilot `manifest.csv` files the six LegalBench MAUD samples as `merger_agreement` (not `contract`).
 
 ### Added

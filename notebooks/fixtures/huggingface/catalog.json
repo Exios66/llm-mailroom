@@ -54,13 +54,12 @@
       "num_bytes": 35846923,
       "mailroom_classes": [
         "contract",
+        "merger_agreement",
         "corporate_record",
         "correspondence",
-        "compliance_filing",
-        "due_diligence",
-        "court_opinion"
+        "insurance_claim"
       ],
-      "role": "Merged document-classification training pack (SEC exhibits and mixed legal text).",
+      "role": "Docclass merged corpus v5 — targeted full 1,210-doc pipeline surface (CUAD + MAUD + S-1 records + Enron sample + CMS claims).",
       "text_fields": [
         "doc_text",
         "filename"
@@ -115,15 +114,16 @@
           "split": "test"
         }
       ],
-      "num_rows": 276,
+      "num_rows": 138,
       "num_bytes": 4131197,
       "mailroom_classes": [
         "contract",
+        "merger_agreement",
         "corporate_record",
         "correspondence",
-        "compliance_filing"
+        "insurance_claim"
       ],
-      "role": "Smaller pilot slice of the same docclass pack used for cheap experiments.",
+      "role": "Stratified class × subclass slice of docclass-merged v5 (48 strata, every type and subtype).",
       "text_fields": [
         "doc_text",
         "filename"
