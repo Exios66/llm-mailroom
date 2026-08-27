@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dedicated extraction scoring for every live specialist, with post-hoc GT.** Hub official labels (CUAD clauses, MAUD questions, CMS columns, subclass tokens) still win. Remaining specialist schema fields are filled from conservative regexes over the source text (`observability/posthoc_gt.py`) so every included document — not just contracts — has scorable `expected_fields`. Each live extract class has a dedicated suite in `observability/specialist_suites.py` (`get_suite(doc_class)`). `merger_agreement` keeps sharing the `contracts_specialist` *agent* but uses the rebound MAUD suite, not CUAD families. HF reports add a per-specialist extraction table. `compliance_filing` stays out of Hub `--real` (zero rows); local pack + post-hoc labels cover mock/check. Post-hoc fills are provenance-tagged and never billed as official Hub annotations.
+
 ### Changed
 
 - **Class / subclass examples come from Hugging Face, not invented stand-in text.** `pipeline/hf_corpora.py` registers the Lucius-Morningstar corpora. The targeted full corpus is `Lucius-Morningstar/docclass-merged` schema **v5** (1,210 docs, Hub SHA `d2c96ecb…`). One example of every type and subtype is the committed pack `notebooks/fixtures/huggingface/class_subclass_examples.json` (48 strata from `docclass-pilot`). `--mock` on `run_hf_pilot.py` uses that pack; `--examples` / `--dataset examples` loads the Hub pilot; `--dataset enron` (and `claims`, `cuad`, …) selects the other pipeline-ready Hub sets. `legalbench-full` stays a LegalBench CLI task pack, not a document-pipeline ingest. Local committed PDFs remain PDF-ingest fixtures — they are not the class catalog.

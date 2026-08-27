@@ -55,6 +55,7 @@ from langchain_agents.cuad_maud import (  # noqa: E402
 from langchain_agents.doc_inventories import (  # noqa: E402
     COMPLIANCE_GT_KEYS,
     CORPORATE_GT_KEYS,
+    CORRESPONDENCE_GT_KEYS,
     INSURANCE_GT_KEYS,
     coerce_gt_value,
     normalize_claim_type,
@@ -176,7 +177,7 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
             raw = row.get(key)
         if raw not in (None, ""):
             sample[key] = coerce_gt_value(raw)
-    extra_keys = CORPORATE_GT_KEYS + COMPLIANCE_GT_KEYS
+    extra_keys = CORPORATE_GT_KEYS + COMPLIANCE_GT_KEYS + CORRESPONDENCE_GT_KEYS
     for key in extra_keys:
         if key in sample:
             continue
@@ -402,11 +403,17 @@ def summarize_rows(rows: list[dict]) -> dict:
     calls = [int(r["llm_calls"]) for r in rows if isinstance(r.get("llm_calls"), (int, float))]
     walls = [float(r["wall_time_s"]) for r in rows if isinstance(r.get("wall_time_s"), (int, float))]
     per_class: dict[str, dict] = {}
+    per_specialist: dict[str, dict] = {}
+    from observability.specialist_suites import specialist_for_class
+
     for row in rows:
         cls = row.get("expected") or "unknown"
+        specialist = row.get("specialist") or specialist_for_class(cls) or "unknown"
         bucket = per_class.setdefault(cls, {
             "n": 0, "exact": 0, "aligned": 0, "subclass": 0, "subclass_n": 0,
             "cost_usd": 0.0, "tokens": 0, "tokens_known": False, "stages": Counter(),
+            "extract_scores": [], "extract_f1": [], "gt_fields": [],
+            "specialist": specialist,
         })
         bucket["n"] += 1
         bucket["exact"] += int(bool(row.get("exact_ok")))
@@ -419,6 +426,24 @@ def summarize_rows(rows: list[dict]) -> dict:
             bucket["tokens"] += int(row.get("llm_tokens") or 0)
             bucket["tokens_known"] = True
         bucket["stages"][row.get("stage") or "unknown"] += 1
+        if isinstance(row.get("extraction_overall_score"), (int, float)):
+            bucket["extract_scores"].append(float(row["extraction_overall_score"]))
+        if isinstance(row.get("extraction_f1"), (int, float)):
+            bucket["extract_f1"].append(float(row["extraction_f1"]))
+        if isinstance(row.get("extraction_gt_n_fields"), (int, float)):
+            bucket["gt_fields"].append(int(row["extraction_gt_n_fields"]))
+        spec = per_specialist.setdefault(specialist, {
+            "n": 0, "classes": set(), "extract_scores": [], "extract_f1": [],
+            "gt_fields": [],
+        })
+        spec["n"] += 1
+        spec["classes"].add(cls)
+        if isinstance(row.get("extraction_overall_score"), (int, float)):
+            spec["extract_scores"].append(float(row["extraction_overall_score"]))
+        if isinstance(row.get("extraction_f1"), (int, float)):
+            spec["extract_f1"].append(float(row["extraction_f1"]))
+        if isinstance(row.get("extraction_gt_n_fields"), (int, float)):
+            spec["gt_fields"].append(int(row["extraction_gt_n_fields"]))
     scores = [
         float(r["extraction_overall_score"])
         for r in rows
@@ -465,8 +490,42 @@ def summarize_rows(rows: list[dict]) -> dict:
                 "cost_usd": round(v["cost_usd"], 6),
                 "tokens": v["tokens"] if v["tokens_known"] else None,
                 "stages": dict(v["stages"]),
+                "specialist": v.get("specialist"),
+                "extraction_n": len(v["extract_scores"]),
+                "extraction_overall_mean": (
+                    round(sum(v["extract_scores"]) / len(v["extract_scores"]), 3)
+                    if v["extract_scores"] else None
+                ),
+                "extraction_f1_mean": (
+                    round(sum(v["extract_f1"]) / len(v["extract_f1"]), 3)
+                    if v["extract_f1"] else None
+                ),
+                "extraction_gt_fields_mean": (
+                    round(sum(v["gt_fields"]) / len(v["gt_fields"]), 2)
+                    if v["gt_fields"] else None
+                ),
             }
             for cls, v in sorted(per_class.items())
+        },
+        "per_specialist": {
+            name: {
+                "n": v["n"],
+                "classes": sorted(v["classes"]),
+                "extraction_n": len(v["extract_scores"]),
+                "extraction_overall_mean": (
+                    round(sum(v["extract_scores"]) / len(v["extract_scores"]), 3)
+                    if v["extract_scores"] else None
+                ),
+                "extraction_f1_mean": (
+                    round(sum(v["extract_f1"]) / len(v["extract_f1"]), 3)
+                    if v["extract_f1"] else None
+                ),
+                "extraction_gt_fields_mean": (
+                    round(sum(v["gt_fields"]) / len(v["gt_fields"]), 2)
+                    if v["gt_fields"] else None
+                ),
+            }
+            for name, v in sorted(per_specialist.items())
         },
     }
     if scores:
@@ -501,64 +560,24 @@ def hf_corpus_honesty() -> dict:
 
 
 def expected_fields_for_sample(sample: dict) -> dict:
-    """Hub GT clause/family/consideration/subclass payload used as expected_fields."""
-    expected_fields: dict = {}
-    if sample.get("cuad_clauses"):
-        expected_fields["cuad_clauses"] = list(sample["cuad_clauses"])
-    if sample.get("maud_clauses"):
-        expected_fields["maud_clauses"] = list(sample["maud_clauses"])
-    existing = sample.get("expected_fields")
-    if isinstance(existing, dict):
-        expected_fields.update({k: v for k, v in existing.items() if v not in (None, "")})
-    hf_class = sample.get("expected_hf_class") or sample.get("expected") or ""
-    subclass = sample.get("expected_subclass") or ""
-    if hf_class == "contract" and subclass:
-        from langchain_agents.sorter_agent import normalize_subtype
+    """Scorable specialist-schema labels: Hub catalog first, post-hoc fill.
 
-        expected_fields["cuad_family"] = normalize_subtype(subclass)
-    if hf_class == "merger_agreement" and subclass:
-        token = normalize_consideration(subclass)
-        if token:
-            expected_fields["merger_consideration"] = token
-    if hf_class == "corporate_record":
-        if subclass:
-            token = normalize_record_type(subclass)
-            expected_fields["record_type"] = token or subclass
-        for key in CORPORATE_GT_KEYS:
-            if key == "record_type" and expected_fields.get("record_type"):
-                continue
-            val = sample.get(key)
-            if val not in (None, ""):
-                expected_fields[key] = coerce_gt_value(val)
-    if hf_class == "correspondence" and subclass:
-        token = normalize_communication_type(subclass)
-        expected_fields["communication_type"] = token or subclass
-    if hf_class == "compliance_filing":
-        if subclass:
-            token = normalize_filing_type(subclass)
-            expected_fields["filing_type"] = token or subclass
-        for key in COMPLIANCE_GT_KEYS:
-            if key == "filing_type" and expected_fields.get("filing_type"):
-                continue
-            val = sample.get(key)
-            if val not in (None, ""):
-                expected_fields[key] = coerce_gt_value(val)
-    if hf_class == "insurance_claim":
-        claim = sample.get("claim_type") or subclass
-        token = normalize_claim_type(claim)
-        if token or claim:
-            expected_fields["claim_type"] = token or claim
-        for key in INSURANCE_GT_KEYS:
-            if key == "claim_type":
-                continue
-            val = sample.get(key)
-            if val not in (None, ""):
-                expected_fields[key] = coerce_gt_value(val)
-    for key in ("content_topic", "sentiment_label", "maud_clause_labels"):
-        val = sample.get(key)
-        if val not in (None, ""):
-            expected_fields[key] = coerce_gt_value(val)
-    return expected_fields
+    Official Hub / explicit ``expected_fields`` always win. Remaining
+    schema fields are parsed from document text so every live class can be
+    scored, not only CUAD/MAUD contracts.
+    """
+    from observability.extraction_gt import build_expected_fields
+
+    fields, _meta = build_expected_fields(sample)
+    return fields
+
+
+def expected_fields_meta(sample: dict) -> dict:
+    """Provenance for one sample's extraction GT (hub vs post-hoc)."""
+    from observability.extraction_gt import build_expected_fields
+
+    _fields, meta = build_expected_fields(sample)
+    return meta
 
 
 def score_row_extraction(extracted: dict | None, expected_fields: dict | None, doc_class: str) -> dict | None:
@@ -643,16 +662,25 @@ def enrich_sample_row(row: dict) -> dict:
             predicted_subtype=str(out.get("predicted_subtype") or ""),
             extracted=extracted if isinstance(extracted, dict) else {},
         )
-    expected_fields = expected_fields_for_sample({
-        "expected_hf_class": out.get("expected"),
-        "expected_subclass": out.get("expected_subclass"),
-        "cuad_clauses": out.get("cuad_clauses") or [],
-        "maud_clauses": out.get("maud_clauses") or [],
-        **{k: out.get(k) for k in ("content_topic", "sentiment_label", "maud_clause_labels") if out.get(k) not in (None, "")},
-        **{k: out.get(k) for k in INSURANCE_GT_KEYS if out.get(k) not in (None, "")},
-        **{k: out.get(k) for k in CORPORATE_GT_KEYS if out.get(k) not in (None, "")},
-        **{k: out.get(k) for k in COMPLIANCE_GT_KEYS if out.get(k) not in (None, "")},
-    })
+    expected_fields = out.get("expected_fields")
+    if not isinstance(expected_fields, dict) or not expected_fields:
+        payload = {
+            "expected_hf_class": out.get("expected"),
+            "expected_subclass": out.get("expected_subclass"),
+            "text": out.get("text") or "",
+            "cuad_clauses": out.get("cuad_clauses") or [],
+            "maud_clauses": out.get("maud_clauses") or [],
+            **{k: out.get(k) for k in ("content_topic", "sentiment_label", "maud_clause_labels") if out.get(k) not in (None, "")},
+            **{k: out.get(k) for k in INSURANCE_GT_KEYS if out.get(k) not in (None, "")},
+            **{k: out.get(k) for k in CORPORATE_GT_KEYS if out.get(k) not in (None, "")},
+            **{k: out.get(k) for k in COMPLIANCE_GT_KEYS if out.get(k) not in (None, "")},
+            **{k: out.get(k) for k in CORRESPONDENCE_GT_KEYS if out.get(k) not in (None, "")},
+        }
+        expected_fields = expected_fields_for_sample(payload)
+        meta = expected_fields_meta(payload)
+        out["extraction_gt_n_fields"] = meta.get("n_fields")
+        out["extraction_gt_n_posthoc"] = meta.get("n_posthoc")
+        out["specialist"] = meta.get("specialist")
     scored = score_row_extraction(
         extracted if isinstance(extracted, dict) else {},
         expected_fields,
@@ -711,10 +739,13 @@ def render_metrics_markdown(report: dict) -> str:
         "Gaps are suite metadata, not invented accuracy. `compliance_filing` stays "
         "out of Hub `--real` (zero Hub rows) and is scored by a **local pack** "
         "(mock/check only). `court_opinion` / `due_diligence` are retired. "
-        "`corporate_record` Hub rows remain subclass-only; schema-complete "
-        "extraction GT is the local pack. Insurance `determination_consistency` "
+        "`corporate_record` Hub official GT is still subclass-only; post-hoc "
+        "schema labels parsed from the S-1/exhibit text are now scored. "
+        "Insurance `determination_consistency` "
         "is a registered scorer; CMS Hub GT is homogeneous (all-approved), so "
-        "that extra is gated on Hub rows and exercised on the local contrast pack.",
+        "that extra is gated on Hub rows and exercised on the local contrast pack. "
+        "Every live specialist has a dedicated scoring suite; merger shares the "
+        "contracts *agent* but keeps its own MAUD suite.",
         "",
         "| class | in HF pilot | in_corpus | retired | local pack | honest gap |",
         "|---|---|---|---|---|---|",
@@ -769,16 +800,35 @@ def render_metrics_markdown(report: dict) -> str:
         "",
         "## Per class",
         "",
-        "| class | n | exact | aligned | subclass | cost USD | tokens | stages |",
-        "|---|---:|---:|---:|---:|---:|---:|---|",
+        "| class | specialist | n | exact | subclass | extract n | extract overall | extract F1 | GT fields |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for cls, stats in (metrics.get("per_class") or {}).items():
-        stage_mix = ", ".join(f"{k}:{v}" for k, v in sorted((stats.get("stages") or {}).items()))
         lines.append(
-            f"| {cls} | {stats.get('n')} | {stats.get('exact_accuracy')} | "
-            f"{stats.get('aligned_accuracy')} | {stats.get('subclass_accuracy')} | "
-            f"{stats.get('cost_usd')} | {stats.get('tokens')} | {stage_mix} |"
+            f"| {cls} | {stats.get('specialist') or ''} | {stats.get('n')} | "
+            f"{stats.get('exact_accuracy')} | {stats.get('subclass_accuracy')} | "
+            f"{stats.get('extraction_n')} | {stats.get('extraction_overall_mean')} | "
+            f"{stats.get('extraction_f1_mean')} | {stats.get('extraction_gt_fields_mean')} |"
         )
+    if metrics.get("per_specialist"):
+        lines += [
+            "",
+            "## Specialist extraction suites",
+            "",
+            "One dedicated suite per live specialist. `contracts_specialist` "
+            "extracts both CUAD `contract` and MAUD `merger_agreement`; each "
+            "class still has its own suite (CUAD families vs MAUD extras).",
+            "",
+            "| specialist | classes | n | extract n | overall | F1 | GT fields mean |",
+            "|---|---|---:|---:|---:|---:|---:|",
+        ]
+        for name, stats in (metrics.get("per_specialist") or {}).items():
+            classes = ", ".join(stats.get("classes") or [])
+            lines.append(
+                f"| {name} | {classes} | {stats.get('n')} | "
+                f"{stats.get('extraction_n')} | {stats.get('extraction_overall_mean')} | "
+                f"{stats.get('extraction_f1_mean')} | {stats.get('extraction_gt_fields_mean')} |"
+            )
     lines += [
         "",
         "## Samples",
@@ -1103,7 +1153,7 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
             "content_topic": row.get("content_topic"),
             "sentiment_label": row.get("sentiment_label"),
         }
-        for key in (*INSURANCE_GT_KEYS, *CORPORATE_GT_KEYS, *COMPLIANCE_GT_KEYS):
+        for key in (*INSURANCE_GT_KEYS, *CORPORATE_GT_KEYS, *COMPLIANCE_GT_KEYS, *CORRESPONDENCE_GT_KEYS):
             if row.get(key) not in (None, ""):
                 labels[filename][key] = row.get(key)
     return labels
@@ -1227,6 +1277,58 @@ def check_contract() -> int:
     assert honesty["compliance_filing"]["local_pack"] == "compliance_filing"
     assert honesty["corporate_record"]["local_pack"] == "corporate_extraction"
     assert honesty["insurance_claim"]["hub_gt_homogeneous"] is True
+    from observability.specialist_suites import (
+        LIVE_EXTRACT_CLASSES,
+        list_dedicated_suites,
+        specialists_with_suites,
+    )
+
+    suites = {row["doc_class"]: row for row in list_dedicated_suites()}
+    assert set(LIVE_EXTRACT_CLASSES) == set(suites)
+    for kind, row in suites.items():
+        assert row["specialist"], kind
+        assert row["schema_fields"], kind
+        assert get_suite(kind).doc_type == kind
+    mapping = specialists_with_suites()
+    assert mapping["contracts_specialist"] == ["contract", "merger_agreement"]
+    assert mapping["corporate_records_specialist"] == ["corporate_record"]
+    assert mapping["correspondence_specialist"] == ["correspondence"]
+    assert mapping["compliance_specialist"] == ["compliance_filing"]
+    assert mapping["insurance_claims_specialist"] == ["insurance_claim"]
+    from pipeline.hf_corpora import example_rows, hub_sample
+
+    by_class = {}
+    for raw in example_rows():
+        sample = hub_sample(raw)
+        cls = sample["expected_hf_class"]
+        if cls in by_class:
+            continue
+        fields = expected_fields_for_sample(sample)
+        meta = expected_fields_meta(sample)
+        by_class[cls] = (fields, meta)
+        assert meta["n_fields"] >= 2, (cls, meta)
+        assert meta["n_labeled"] >= 2, (cls, fields)
+    assert set(by_class) == set(HF_CLASSES)
+    cms_fields, cms_meta = by_class["insurance_claim"]
+    assert cms_fields.get("insurer")
+    assert cms_fields.get("claim_number")
+    assert cms_meta["n_posthoc"] >= 1
+    corp_fields, _ = by_class["corporate_record"]
+    assert corp_fields.get("record_type")
+    assert corp_fields.get("entity_name") or corp_fields.get("jurisdiction")
+    mail_fields, _ = by_class["correspondence"]
+    assert mail_fields.get("communication_type")
+    merger_fields, _ = by_class["merger_agreement"]
+    assert merger_fields.get("merger_consideration")
+    assert merger_fields.get("parties") or merger_fields.get("document_name")
+    contract_fields, _ = by_class["contract"]
+    assert contract_fields.get("cuad_family")
+    from observability.local_eval_packs import compliance_local_samples
+
+    compliance_sample = compliance_local_samples()[0]
+    compliance_gt = expected_fields_for_sample(compliance_sample)
+    assert compliance_gt.get("filing_type")
+    assert compliance_gt.get("entity_name")
     assert DATASET_SCHEMA == "v5"
     assert DATASET_ID == "Lucius-Morningstar/docclass-merged"
     assert DATASET_REVISION
@@ -1308,6 +1410,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     if sample.get("expected_subclass"):
         ground_truth["expected_subclass"] = sample["expected_subclass"]
     expected_fields = expected_fields_for_sample(sample)
+    gt_meta = expected_fields_meta(sample)
     if expected_fields:
         ground_truth["expected_fields"] = expected_fields
 
@@ -1369,6 +1472,11 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         "exact_ok": predicted == hf_class,
         "aligned_ok": pipeline_class(hf_class) == predicted or hf_class == predicted,
         "subclass_ok": subclass,
+        "specialist": gt_meta.get("specialist"),
+        "expected_fields": expected_fields,
+        "extraction_gt_n_fields": gt_meta.get("n_fields"),
+        "extraction_gt_n_posthoc": gt_meta.get("n_posthoc"),
+        "extraction_gt_coverage": gt_meta.get("coverage"),
         "wall_time_s": round(wall, 3),
         "llm_calls": rp._LLM_METRICS["calls"],
         "llm_cost_usd": round(rp._LLM_METRICS["cost_usd"], 6),
