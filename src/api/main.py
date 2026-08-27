@@ -388,10 +388,10 @@ async def resolve_review(
         logger.info("review_rejected", doc_id=doc_id)
         return {"status": "ok", "doc_id": doc_id, "decision": decision, "notes": notes}
 
-    # Approved → resume the pipeline with a FRESH extraction (never reuse the
-    # reviewed extraction data). Stateless: re-invoke the graph from the
-    # manifest, starting at the extraction stage, then compile → catalog →
-    # archive under the original doc_id.
+    # Approved → resume with a FRESH extraction (never reuse the reviewed
+    # payload). Prefers LangGraph Command(resume=...) on the parked interrupt
+    # checkpoint; falls back to a stateless extract invoke if the checkpointer
+    # was lost. Then compile → catalog → archive under the original doc_id.
     if not manifest.doc_type:
         raise HTTPException(
             409,
@@ -407,7 +407,7 @@ async def resolve_review(
         raise HTTPException(404, f"File not found in review bin: {review_file}")
 
     try:
-        result = await asyncio.to_thread(resume_from_review, manifest, review_file)
+        result = await asyncio.to_thread(resume_from_review, manifest, review_file, notes)
     except Exception as exc:
         logger.exception("review_resume_failed", doc_id=doc_id)
         raise HTTPException(500, f"Resume failed: {exc}")

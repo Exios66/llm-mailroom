@@ -42,6 +42,12 @@ def temp_base_dir():
             archive_dir(),
             manifests_dir(),
         )
+        try:
+            from graph.build_graph import reset_compiled_graph
+
+            reset_compiled_graph()
+        except Exception:
+            pass
         yield Path(tmpdir)
         os.environ.pop("MAILROOM_BASE_DIR", None)
 
