@@ -29,6 +29,11 @@ class DocumentManifest(BaseModel):
     trace_id: str | None = None
     escalation_reason: str | None = None
     review_decision: str | None = None
+    # LangGraph interrupt() thread id so in-process Command(resume=...) can
+    # continue the paused human_review node. Empty on older manifests and
+    # when the checkpointer was lost (process restart + MemorySaver) — resume
+    # then falls back to a fresh extract invoke.
+    checkpoint_thread_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

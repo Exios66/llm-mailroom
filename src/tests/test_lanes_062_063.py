@@ -208,6 +208,7 @@ class TestTopology:
             ("arbiter", "human_review"),
             ("arbiter", "compile_report"),
             ("arbiter", "arbiter"),
+            ("human_review", "extract"),
             ("boss_escalation", "boss_escalation"),
             ("compile_report", "catalog_write"),
             ("compile_report", "human_review"),

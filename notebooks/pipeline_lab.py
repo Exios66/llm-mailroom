@@ -113,6 +113,12 @@ class LabSandbox:
             load_config.cache_clear()
         except Exception:
             pass
+        try:
+            from graph.build_graph import reset_compiled_graph
+
+            reset_compiled_graph()
+        except Exception:
+            pass
 
         self.fake = FakeLangChainLLM()
         self.client = MagicMock()
@@ -352,7 +358,20 @@ def _install_step_recorder(store: dict[str, Any]) -> None:
 
             def wrapper(state):
                 before = _snapshot(state)
-                result = decorated(state)
+                try:
+                    result = decorated(state)
+                except BaseException:
+                    # interrupt() raises GraphInterrupt; still record the node
+                    # so HITL pauses show up in the lab path.
+                    store["steps"].append(
+                        {
+                            "node": name,
+                            "before": before,
+                            "after": before,
+                            "delta": {},
+                        }
+                    )
+                    raise
                 after = _snapshot({**state, **(result or {})})
                 store["steps"].append(
                     {
@@ -370,6 +389,10 @@ def _install_step_recorder(store: dict[str, Any]) -> None:
 
     bg.traced_node = recording_traced_node
     store["_original_traced_node"] = original
+    try:
+        bg.reset_compiled_graph()
+    except Exception:
+        pass
 
 
 def _uninstall_step_recorder(store: dict[str, Any]) -> None:
@@ -378,6 +401,11 @@ def _uninstall_step_recorder(store: dict[str, Any]) -> None:
     original = store.get("_original_traced_node")
     if original is not None:
         bg.traced_node = original
+        store["_original_traced_node"] = None
+    try:
+        bg.reset_compiled_graph()
+    except Exception:
+        pass
 
 
 def _snapshot(state: dict) -> dict[str, Any]:

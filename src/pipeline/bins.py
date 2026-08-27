@@ -204,12 +204,37 @@ def requeue_from_review(file_path: Path, worker_id: str) -> Path:
     return dest
 
 
-def move_to_review(file_path: Path, manifest) -> Path:
+def park_for_review(file_path: Path, manifest) -> tuple[Path, bool]:
+    """Move ``file_path`` into the review bin. Idempotent if already parked.
+
+    LangGraph ``interrupt()`` restarts the node from the beginning on resume,
+    so this must be an upsert: a second call with a missing processing-path
+    source still succeeds when the review dest already exists.
+
+    Returns ``(dest, newly_parked)``.
+    """
     dest_dir = review_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file_path.name
-    shutil.move(str(file_path), str(dest))
+    src = Path(file_path)
+    dest = dest_dir / src.name
+    dest_exists = dest.is_file()
+    src_exists = src.exists()
+    newly = False
+    if dest_exists:
+        newly = False
+    elif src_exists:
+        shutil.move(str(src), str(dest))
+        newly = True
+    else:
+        raise FileNotFoundError(
+            f"Cannot park for review: source {src} and dest {dest} are both missing"
+        )
     _save_manifest(manifest)
+    return dest, newly
+
+
+def move_to_review(file_path: Path, manifest) -> Path:
+    dest, _ = park_for_review(file_path, manifest)
     return dest
 
 

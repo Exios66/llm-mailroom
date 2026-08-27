@@ -286,7 +286,7 @@ class TestRoutingLogic:
 
     def test_after_human_review_approved(self):
         state = {"review_decision": "approved"}
-        assert after_human_review(state) == "compile_report"
+        assert after_human_review(state) == "extract"
 
     def test_after_human_review_rejected(self):
         state = {"review_decision": "rejected"}

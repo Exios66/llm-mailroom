@@ -212,6 +212,70 @@ class BaseAgent(ABC):
             logger.error("json_parse_failed", agent=self.agent_name, raw=raw[:200])
             return {"_raw": raw, "_parse_error": True}
 
+    def extract_chunked(
+        self,
+        doc_text: str,
+        chunk_chars: int = 90_000,
+        overlap_chars: int = 8_000,
+        pages: list[str] | None = None,
+        handoff_context: str | None = None,
+    ) -> dict:
+        """Extract a long document in overlapping windows and merge the passes.
+
+        Documents that fit in one window take the plain ``extract`` path so
+        chunking never changes small-document output. Longer documents are
+        split on paragraph boundaries (vendored ``_SpecialistBase`` splitter),
+        each window extracted, and merged (list union + first-non-null scalar
+        + max confidence). A chunk that fails to parse is skipped, not fatal.
+
+        Page images attach to the first window only (additive vision, bounded
+        cost). ``handoff_context`` is prefixed onto every window.
+        """
+        from langchain_agents.specialist_agents import _SpecialistBase
+
+        if handoff_context is None:
+            handoff_context = getattr(self, "handoff_context", None)
+        chunks = _SpecialistBase._split_chunks(doc_text, chunk_chars, overlap_chars)
+        self._last_n_chunks = len(chunks)
+        if len(chunks) == 1:
+            return self.extract(  # type: ignore[attr-defined]
+                doc_text, pages=pages, handoff_context=handoff_context
+            )
+        merged: dict | None = None
+        for index, chunk in enumerate(chunks, start=1):
+            header = (
+                f"EXTRACTION CHUNK {index} OF {len(chunks)} — this is one "
+                f"window of the document; extract every field occurrence "
+                f"present in THIS chunk."
+            )
+            chunk_handoff = "\n\n".join(p for p in (handoff_context, header) if p)
+            try:
+                result = self.extract(  # type: ignore[attr-defined]
+                    chunk,
+                    pages=pages if index == 1 else None,
+                    handoff_context=chunk_handoff,
+                )
+            except Exception as exc:  # noqa: BLE001 — one bad chunk must not abort
+                logger.warning(
+                    "chunk_call_failed",
+                    agent=self.agent_name,
+                    chunk=index,
+                    total=len(chunks),
+                    error=str(exc)[:200],
+                )
+                continue
+            if result.get("_parse_error"):
+                continue
+            merged = (
+                result
+                if merged is None
+                else _SpecialistBase._merge_extractions(merged, result)
+            )
+        self._last_chunked = True
+        if merged is None:
+            return {"_parse_error": True, "confidence": 0.0}
+        return merged
+
 
 def build_structured_schema(
     properties: dict,

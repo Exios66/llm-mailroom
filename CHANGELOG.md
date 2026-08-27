@@ -9,7 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LangGraph `interrupt()` HITL.** `human_review_node` parks the file in `review/` (idempotent upsert) and pauses with `interrupt()`. Approve resumes via `Command(resume={"decision": "approved"})` into a **fresh extract** (never the reviewed payload). Reject ends the run. A process-level compiled graph keeps the MemorySaver alive in-process (API embeds the watcher). After process restart the checkpoint is gone and `resume_from_review` falls back to today's re-invoke-from-extract. Manifests store `checkpoint_thread_id`.
+
+- **Chunked extraction for every live specialist.** Corporate records, correspondence, compliance, and insurance claims now use the same overlapping-window pass as contracts (`BaseAgent.extract_chunked`). Window size is capped at the agent's `max_input_chars`. `retry_extract_node` no longer hard-truncates to 25k chars — previous-attempt context rides in `handoff_context` so every window sees it.
+
+- **`extraction_category_presence` wired on grounded contract/MAUD runs.** Presence expectations are derived from Hub `cuad_clause_labels` or flattened `expected_fields.cuad_clauses`. The score is omitted when there is no CUAD presence GT (not emitted as 0.0).
+
 - **Project Cursor Agent Skills** under `.cursor/skills/` (companion to [local-mailroom-sandbox#4](https://github.com/Exios66/local-mailroom-sandbox/pull/4)). Router + dedicated skills for OpenRouter, Ollama, Modal, Langfuse, Phoenix, Braintrust, Hugging Face, LangGraph, dojo-scoring, and LegalBench so agents pick the stack this repo actually uses instead of inventing parallel providers or sinks.
+
+### Fixed
+
+- **`deterministic_verdict` is not a `SCORE_CONFIGS` name.** It is still computed and attached on grounded field-scoring traces, but it is not in the dojo 0.11.0 registry, so listing it in `SCORE_CONFIGS` crashed module import (KANBAN-061).
 
 - **Dedicated extraction scoring for every live specialist, with post-hoc GT.** Hub official labels (CUAD clauses, MAUD questions, CMS columns, subclass tokens) still win. Remaining specialist schema fields are filled from conservative regexes over the source text (`observability/posthoc_gt.py`) so every included document — not just contracts — has scorable `expected_fields`. Each live extract class has a dedicated suite in `observability/specialist_suites.py` (`get_suite(doc_class)`). `merger_agreement` keeps sharing the `contracts_specialist` *agent* but uses the rebound MAUD suite, not CUAD families. HF reports add a per-specialist extraction table. `compliance_filing` stays out of Hub `--real` (zero rows); local pack + post-hoc labels cover mock/check. Post-hoc fills are provenance-tagged and never billed as official Hub annotations.
 

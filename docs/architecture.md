@@ -133,9 +133,12 @@ flowchart LR
   `retry_extract`, `judge_verify` + `arbiter` (gated completeness
   verification + arbitration — KANBAN-063 Lane B), `human_review`,
   `boss_escalation`, `compile_report`, `catalog_write`, `archive`
-- MemorySaver by default (stateless design: human-review resume re-invokes
-  the graph from the manifest); opt back into on-disk `SqliteSaver`
-  (`data/checkpoints.db`) via `MAILROOM_CHECKPOINTER=sqlite`
+- MemorySaver by default, held on a **process-level compiled graph** so
+  `interrupt()` HITL can `Command(resume=...)` in the same process (the API
+  embeds the watcher). The filesystem review bin remains the durable park
+  across process restart; `resume_from_review` falls back to a fresh extract
+  invoke when the checkpoint is gone. Opt into on-disk `SqliteSaver`
+  (`data/checkpoints.db`) via `MAILROOM_CHECKPOINTER=sqlite`.
 
 ### LLM Client (`llm/client.py`, `llm/providers.py`, `llm/retry.py`, `llm/prompts.py`)
 - Thin OpenAI-compatible wrapper
@@ -279,18 +282,21 @@ boss_escalation ─┬─ transient (budget left) ─▶ boss_escalation
                  ├─ approved ─▶ compile_report
                  └─ review ───▶ human_review
 
-human_review ─┬─ approved ─▶ compile_report
+human_review ─┬─ interrupt() pause (file parked in review/)
+              ├─ approved ─▶ extract (fresh fields)
               └─ rejected ─▶ END (failed)
 ```
 
 ## Checkpointing
 
 LangGraph checkpoints the full state after each node. The checkpointer is
-**MemorySaver by default** (`graph/build_graph.py:_build_checkpointer()`) —
-the pipeline is deliberately stateless across restarts because human-review
-resume re-invokes the graph fresh from the document manifest (this also kills
-the unbounded per-doc checkpoint growth a persistent saver accumulates). Set
-`MAILROOM_CHECKPOINTER=sqlite` to opt back into the on-disk SqliteSaver at
+**MemorySaver by default**, held on a process-level compiled graph so
+`human_review_node` can pause with LangGraph `interrupt()` and resume with
+`Command(resume={"decision": "approved"})` without losing the thread. The
+filesystem review bin is still the durable park: after a process restart
+the MemorySaver is empty and `resume_from_review` re-invokes from extract
+using the manifest (this also keeps per-doc checkpoint growth bounded).
+Set `MAILROOM_CHECKPOINTER=sqlite` to opt into the on-disk SqliteSaver at
 `data/checkpoints.db` for debugging/resume-across-restart experiments.
 
 ## Audit Trail
@@ -308,7 +314,7 @@ Every state transition writes an `AuditLogEntry` to the database. Each entry:
 
 Before any LLM judge runs, grounded extractions are scored deterministically by `observability/field_scoring.py` — a field-type-aware scorer that is cheap, reproducible, and costs no API calls. Each field is compared according to its type (`doc_classes[].field_types` in `taxonomy.yaml`): `id`/`date`/`money` are parsed and normalized then exact-matched (a one-day-off date scores 0, not 0.95); `name` uses Jaro-Winkler + token-set ratio over normalized text (uppercase, punctuation/suffix-stripped); `free_text` uses SQuAD-style token F1; `entity_list` fields use optimal bipartite matching (scipy Hungarian) with precision/recall/F1, so reordered lists score correctly. An optional sentence-transformers embedding cosine similarity rescues lexically-distant-but-semantically-equal name/free-text fields below `embedding_rescue_below`.
 
-Judge escalation is gated by **per-field-type bands** (`field_scoring.type_bands`), calibrated by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are `never` (decisive both ways), money/free_text have calibrated numeric cutoffs, and name/entity-list trust only perfect scores (`[0.5, 1.0]`) — near-misses escalate to the LLM judge because Jaro-Winkler/token-set are typo-tolerant by design. `observability/langfuse_field_scoring.py` attaches `extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, and `entity_list_recall` to the document trace, and on grounded runs `graph/build_graph.py` suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both LLM-as-judge evaluator calls.
+Judge escalation is gated by **per-field-type bands** (`field_scoring.type_bands`), calibrated by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are `never` (decisive both ways), money/free_text have calibrated numeric cutoffs, and name/entity-list trust only perfect scores (`[0.5, 1.0]`) — near-misses escalate to the LLM judge because Jaro-Winkler/token-set are typo-tolerant by design. `observability/langfuse_field_scoring.py` attaches `extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, `entity_list_recall`, and — when CUAD presence ground truth is available on the run — `extraction_category_presence` to the document trace. Presence expectations are derived from Hub `cuad_clause_labels` or flattened `expected_fields.cuad_clauses`; the score is omitted (not emitted as 0.0) when there is no CUAD presence GT. On grounded runs `graph/build_graph.py` suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both LLM-as-judge evaluator calls.
 
 ### LLM-as-judge
 

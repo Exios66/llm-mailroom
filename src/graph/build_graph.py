@@ -1,11 +1,14 @@
 import functools
 import structlog
+import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command, interrupt
 
 from graph.state import DocumentState
 from graph.routing import (
@@ -51,12 +54,17 @@ SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | PDF_EXTENSIONS | {".txt", ".md", ".doc
 
 
 def _build_checkpointer():
-    """MemorySaver by default (stateless design: review resume re-invokes the
-    graph from the manifest, so no checkpoint persistence is needed — this also
-    kills the unbounded per-doc checkpoint growth of SqliteSaver).
+    """MemorySaver by default; a process-level compiled graph (see
+    ``get_compiled_graph``) keeps that saver alive so ``interrupt()`` HITL
+    can ``Command(resume=...)`` in the same process (API embeds the watcher).
 
-    Set MAILROOM_CHECKPOINTER=sqlite to opt back into the on-disk checkpointer
-    (debugging/resume-across-restart experiments only).
+    The filesystem review bin remains the durable park across process
+    restart: when MemorySaver is empty, ``resume_from_review`` falls back to
+    a fresh extract invoke from the manifest.
+
+    Set MAILROOM_CHECKPOINTER=sqlite to opt into the on-disk checkpointer
+    (debugging / resume-across-restart). Falls back to MemorySaver if SQLite
+    is unavailable.
     """
     import os
 
@@ -81,6 +89,32 @@ def _build_checkpointer():
     except Exception:
         logger.warning("sqlite_checkpointer_unavailable", fallback="memory")
     return MemorySaver()
+
+
+_compiled_graph = None
+_compiled_graph_lock = threading.Lock()
+
+
+def get_compiled_graph():
+    """Process-level compiled graph + checkpointer.
+
+    ``build_graph()`` still returns a fresh graph for tests that invoke it
+    directly. Pipeline entrypoints (``run_pipeline`` / ``resume_from_review``)
+    share this singleton so a MemorySaver checkpoint survives parking in
+    ``review/`` until ``Command(resume=...)``.
+    """
+    global _compiled_graph
+    with _compiled_graph_lock:
+        if _compiled_graph is None:
+            _compiled_graph = build_graph()
+        return _compiled_graph
+
+
+def reset_compiled_graph():
+    """Drop the process-level graph (tests change MAILROOM_BASE_DIR / saver)."""
+    global _compiled_graph
+    with _compiled_graph_lock:
+        _compiled_graph = None
 
 
 def _ensure_dirs():
@@ -435,22 +469,61 @@ def _chunk_config() -> dict:
         return {}
 
 
+def _specialist_input_budget(agent) -> int:
+    """Chars the specialist will actually send — cap chunk windows to this."""
+    if hasattr(agent, "_configured_max_input_chars"):
+        try:
+            return int(agent._configured_max_input_chars())
+        except Exception:
+            pass
+    budget = getattr(agent, "_max_input_chars", None)
+    if budget:
+        return int(budget)
+    return 90_000
+
+
+def _instantiate_specialist(agent_fn, handoff_context):
+    """Construct a specialist; pipeline agents do not take handoff_context."""
+    try:
+        return agent_fn(handoff_context=handoff_context)
+    except TypeError:
+        agent = agent_fn()
+        if handoff_context is not None:
+            agent.handoff_context = handoff_context
+        return agent
+
+
 def _run_chunked_extraction(agent_fn, doc_text, pages, handoff_context):
     """Run a specialist extraction, chunking long documents (v15+ pass).
 
     ``extract_chunked`` falls through to the plain single-pass ``extract``
     when the document fits in one window, so this never changes small-document
     output. ``pages`` (MAILROOM PATCH) are attached to the first chunk only.
+    Window size is capped at the agent's ``max_input_chars`` so a chunk is
+    never silently truncated inside ``extract()``.
     """
     cfg = _chunk_config()
     chunk_chars = int(cfg.get("chunk_chars", 90_000))
     overlap_chars = int(cfg.get("overlap_chars", 8_000))
-    agent = agent_fn(handoff_context=handoff_context)
-    if cfg.get("enabled", True):
-        return agent.extract_chunked(
-            doc_text, chunk_chars=chunk_chars, overlap_chars=overlap_chars, pages=pages
+    agent = _instantiate_specialist(agent_fn, handoff_context)
+    budget = _specialist_input_budget(agent)
+    overlap_chars = min(overlap_chars, max(0, budget // 8))
+    chunk_chars = min(chunk_chars, max(1_000, budget - overlap_chars))
+    if cfg.get("enabled", True) and hasattr(agent, "extract_chunked"):
+        kwargs = dict(
+            doc_text=doc_text,
+            chunk_chars=chunk_chars,
+            overlap_chars=overlap_chars,
+            pages=pages,
         )
-    return agent.extract(doc_text, pages=pages)
+        try:
+            return agent.extract_chunked(**kwargs, handoff_context=handoff_context)
+        except TypeError:
+            return agent.extract_chunked(**kwargs)
+    try:
+        return agent.extract(doc_text, pages=pages, handoff_context=handoff_context)
+    except TypeError:
+        return agent.extract(doc_text, pages=pages)
 
 
 def ingest_node(state: DocumentState) -> dict[str, Any]:
@@ -1163,28 +1236,28 @@ def _extract_corporate_records(
     doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
 ) -> dict:
     from agents.corporate_records_specialist import CorporateRecordsSpecialist
-    return CorporateRecordsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
+    return _run_chunked_extraction(CorporateRecordsSpecialist, doc_text, pages, handoff_context)
 
 
 def _extract_correspondence(
     doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
 ) -> dict:
     from agents.correspondence_specialist import CorrespondenceSpecialist
-    return CorrespondenceSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
+    return _run_chunked_extraction(CorrespondenceSpecialist, doc_text, pages, handoff_context)
 
 
 def _extract_compliance(
     doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
 ) -> dict:
     from agents.compliance_specialist import ComplianceSpecialist
-    return ComplianceSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
+    return _run_chunked_extraction(ComplianceSpecialist, doc_text, pages, handoff_context)
 
 
 def _extract_insurance_claims(
     doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
 ) -> dict:
     from agents.insurance_claims_specialist import InsuranceClaimsSpecialist
-    return InsuranceClaimsSpecialist().extract(doc_text, pages=pages, handoff_context=handoff_context)
+    return _run_chunked_extraction(InsuranceClaimsSpecialist, doc_text, pages, handoff_context)
 
 
 def retry_extract_node(state: DocumentState) -> dict[str, Any]:
@@ -1203,12 +1276,15 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         memory = recent_context(mem_name, doc_type=doc_type or "", k=3) if mem_name else ""
     except Exception:
         memory = ""
-    augmented_text = (
-        f"RE-EXTRACTION REQUESTED - previous extraction was low-confidence. "
-        f"Please re-examine this document independently. Previous attempt found: {prev_extracted}\n\n"
-        f"{doc_text[:25000]}"
-        + (f"\n\n{memory}" if memory else "")
+    augmented_prefix = (
+        "RE-EXTRACTION REQUESTED - previous extraction was low-confidence. "
+        "Please re-examine this document independently. "
+        f"Previous attempt found: {prev_extracted}"
     )
+    handoff_parts = [_build_handoff_context(state), augmented_prefix]
+    if memory:
+        handoff_parts.append(memory)
+    handoff_context = "\n\n".join(p for p in handoff_parts if p)
 
     dispatch = _build_specialist_dispatch()
     extractor = dispatch.get(_extract_dispatch_key(doc_type))
@@ -1216,9 +1292,8 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         update = _unsupported_extraction_update(state, doc_type)
         update["retry_count"] = state.get("retry_count", 0) + 1
         return update
-    handoff_context = _build_handoff_context(state)
     try:
-        result = extractor(augmented_text, doc_pages, handoff_context)
+        result = extractor(doc_text, doc_pages, handoff_context)
         result = _enrich_contract_result(result, state)
     except Exception as exc:
         from llm.retry import is_transient_error
@@ -1441,14 +1516,107 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
     return updates
 
 
+def _normalize_review_decision(value) -> str | None:
+    """Map a Command(resume=...) payload to approved/rejected, or None if invalid."""
+    if value in ("approved", "rejected"):
+        return value
+    if value is True:
+        return "approved"
+    if value is False:
+        return "rejected"
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in ("approved", "approve", "yes"):
+            return "approved"
+        if token in ("rejected", "reject", "no"):
+            return "rejected"
+        return None
+    if isinstance(value, dict):
+        inner = value.get("decision", value.get("approved"))
+        if inner is value:
+            return None
+        return _normalize_review_decision(inner)
+    return None
+
+
+def _thread_is_interrupted(graph, thread_id: str) -> bool:
+    """True when ``thread_id`` has a paused ``interrupt()`` checkpoint."""
+    if not thread_id or graph is None:
+        return False
+    try:
+        snap = graph.get_state({"configurable": {"thread_id": thread_id}})
+    except Exception:
+        return False
+    if snap is None:
+        return False
+    if getattr(snap, "interrupts", None):
+        return True
+    for task in getattr(snap, "tasks", None) or ():
+        if getattr(task, "interrupts", None):
+            return True
+    nxt = getattr(snap, "next", None) or ()
+    return "human_review" in nxt
+
+
+def _result_is_interrupted(result) -> bool:
+    if not isinstance(result, dict):
+        return False
+    if result.get("__interrupt__"):
+        return True
+    return False
+
+
+def _paused_review_result(result, initial_state, thread_id: str, trace_id: str) -> dict[str, Any]:
+    """Normalize an ``interrupt()`` pause into a review-bin pipeline result.
+
+    The node has already parked the file + catalog; its return value is not
+    applied until resume, so stage/review_decision must be synthesized here.
+    """
+    out = (
+        {k: v for k, v in result.items() if k != "__interrupt__"}
+        if isinstance(result, dict)
+        else dict(initial_state)
+    )
+    out["stage"] = PipelineStage.REVIEW.value
+    out["review_decision"] = out.get("review_decision") or "pending_review"
+    out["checkpoint_thread_id"] = thread_id
+    if trace_id and not out.get("trace_id"):
+        out["trace_id"] = trace_id
+    doc_id = out.get("doc_id") or initial_state.get("doc_id")
+    if doc_id:
+        try:
+            from pipeline.bins import load_manifest, save_manifest
+
+            manifest = load_manifest(doc_id)
+            if manifest is not None:
+                manifest.checkpoint_thread_id = thread_id
+                manifest.stage = PipelineStage.REVIEW
+                if not manifest.review_decision:
+                    manifest.review_decision = "pending_review"
+                manifest.touch()
+                save_manifest(manifest)
+        except Exception:
+            logger.exception("checkpoint_thread_persist_failed", doc_id=doc_id)
+    logger.info("pipeline_paused_for_review", doc_id=doc_id, thread_id=thread_id)
+    return out
+
+
 def human_review_node(state: DocumentState) -> dict[str, Any]:
+    """Park the document for a human, then ``interrupt()`` until they decide.
+
+    Side effects before ``interrupt()`` are idempotent (park upsert + catalog
+    upsert + manifest overwrite) because LangGraph restarts this node from
+    the beginning on ``Command(resume=...)``.
+    """
+    from pipeline.bins import park_for_review
+    from pipeline.reconsideration import collect_review_causes, format_causes
+
     file_path_str = state.get("file_path", "")
     esc_reason = state.get("escalation_reason", "Unknown reason")
     doc_id = state.get("doc_id", "")
+    thread_id = state.get("checkpoint_thread_id") or ""
 
     logger.info("human_review_required", doc_id=doc_id, reason=esc_reason)
-
-    from pipeline.reconsideration import collect_review_causes, format_causes
 
     causes = collect_review_causes(state)
     cause_line = format_causes(causes)
@@ -1458,6 +1626,8 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         else:
             esc_reason = cause_line
 
+    dest: Path | None = None
+    newly_parked = False
     if file_path_str:
         manifest = DocumentManifest(
             doc_id=doc_id,
@@ -1474,10 +1644,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             trace_id=state.get("trace_id"),
             classification_attempts=state.get("classification_attempts", 0),
             extraction_attempts=state.get("extraction_attempts", 0),
+            review_decision="pending_review",
+            checkpoint_thread_id=thread_id or None,
         )
-        move_to_review(Path(file_path_str), manifest)
-        # Persist the review position in the catalog so `/ops/status`
-        # review_queue and error-rate stats see it (they query the catalog).
+        dest, newly_parked = park_for_review(Path(file_path_str), manifest)
         _catalog_upsert(
             {
                 "doc_id": doc_id,
@@ -1485,7 +1655,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
                 "original_filename": state.get("original_filename", ""),
                 "doc_type": state.get("doc_type"),
                 "contract_subtype": state.get("contract_subtype"),
-            "doc_subclass": state.get("doc_subclass"),
+                "doc_subclass": state.get("doc_subclass"),
                 "classification_confidence": state.get("classification_confidence"),
                 "extraction_confidence": state.get("extraction_confidence"),
                 "extracted_data": state.get("extracted_data"),
@@ -1496,19 +1666,102 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             stage=PipelineStage.REVIEW.value,
         )
 
-    result = {
+    parked = {
         "stage": PipelineStage.REVIEW.value,
         "escalation_reason": esc_reason,
         "review_causes": causes,
-        # Sentinal for graph termination, NOT a human decision: the document
-        # was routed to review and is awaiting a human. "rejected" would leak
-        # into traces/manifests as a verdict the human never gave.
         "review_decision": "pending_review",
+        "checkpoint_thread_id": thread_id or None,
+        "file_path": str(dest) if dest is not None else file_path_str,
     }
-    # A-1: routing to human review is a compliance-record decision.
-    _emit_stage_audit({**state, **result}, "routed_to_review", actor="pipeline",
-                      detail={"reason": esc_reason})
-    return result
+    if newly_parked:
+        _emit_stage_audit(
+            {**state, **parked},
+            "routed_to_review",
+            actor="pipeline",
+            detail={"reason": esc_reason},
+        )
+
+    payload = {
+        "action": "human_review",
+        "doc_id": doc_id or "",
+        "matter_id": state.get("matter_id") or "DEFAULT",
+        "filename": state.get("original_filename") or "",
+        "doc_type": state.get("doc_type"),
+        "escalation_reason": esc_reason or "",
+        "review_causes": list(causes or []),
+        "classification_confidence": state.get("classification_confidence"),
+        "extraction_confidence": state.get("extraction_confidence"),
+    }
+    decision = None
+    while decision is None:
+        raw = interrupt(payload)
+        decision = _normalize_review_decision(raw)
+        if decision is None:
+            payload = {
+                **payload,
+                "action": "human_review_invalid",
+                "detail": "decision must be approved or rejected",
+            }
+
+    notes = ""
+    if isinstance(raw, dict):
+        notes = str(raw.get("notes") or "")
+
+    if decision == "approved":
+        logger.info("human_review_approved", doc_id=doc_id)
+        return {
+            "stage": PipelineStage.CLASSIFIED.value,
+            "escalation_reason": None,
+            "review_causes": causes,
+            "review_decision": "approved",
+            "extracted_data": None,
+            "extraction_confidence": None,
+            "extraction_attempts": 0,
+            "resume_extraction": True,
+            "conflict_detected": False,
+            "conflict_details": [],
+            "file_path": str(dest) if dest is not None else file_path_str,
+            "checkpoint_thread_id": thread_id or None,
+            "transient_error": False,
+        }
+
+    logger.info("human_review_rejected", doc_id=doc_id, notes=notes[:200] or None)
+    failed_path = str(dest) if dest is not None else file_path_str
+    if dest is not None and dest.exists():
+        failed_path = str(move_to_failed(dest))
+    _catalog_upsert(
+        {
+            "doc_id": doc_id,
+            "matter_id": state.get("matter_id", "DEFAULT"),
+            "original_filename": state.get("original_filename", ""),
+            "doc_type": state.get("doc_type"),
+            "stage": PipelineStage.FAILED.value,
+            "escalation_reason": esc_reason,
+            "trace_id": state.get("trace_id"),
+        },
+        stage=PipelineStage.FAILED.value,
+    )
+    if doc_id:
+        try:
+            from pipeline.bins import load_manifest, save_manifest
+
+            manifest = load_manifest(doc_id)
+            if manifest is not None:
+                manifest.stage = PipelineStage.FAILED
+                manifest.review_decision = "rejected"
+                manifest.touch()
+                save_manifest(manifest)
+        except Exception:
+            logger.exception("review_reject_manifest_failed", doc_id=doc_id)
+    return {
+        "stage": PipelineStage.FAILED.value,
+        "escalation_reason": esc_reason,
+        "review_causes": causes,
+        "review_decision": "rejected",
+        "file_path": failed_path,
+        "checkpoint_thread_id": thread_id or None,
+    }
 
 
 def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
@@ -1725,6 +1978,10 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     if not file_path.exists():
         processing_root = processing_dir()
         candidates = list(processing_root.rglob(state.get("original_filename", "*.txt")))
+        if not candidates:
+            review_candidate = review_dir() / state.get("original_filename", "")
+            if review_candidate.is_file():
+                candidates = [review_candidate]
         if candidates:
             file_path = candidates[0]
         else:
@@ -2118,7 +2375,7 @@ def build_graph(checkpointer=None):
     })
 
     workflow.add_conditional_edges("human_review", after_human_review, {
-        "compile_report": "compile_report",
+        "extract": "extract",
         "failed": END,
     })
 
@@ -2404,21 +2661,29 @@ def _execute_run(
     ground_truth: dict | None = None,
     session_id: str | None = None,
     run_id: str | None = None,
+    invoke_input=None,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
-    """Shared execution scaffold: build graph, open the per-doc trace (one trace
-    per document, deterministic id from `seed`), invoke, emit self-evident
-    scores, persist them. Used by both `run_pipeline` and `resume_from_review`.
+    """Shared execution scaffold: compile (or reuse) the graph, open the
+    per-doc trace (one trace per document, deterministic id from `seed`),
+    invoke, emit self-evident scores, persist them. Used by both
+    `run_pipeline` and `resume_from_review`.
 
     Enforces the hard run cutoff: a wall-clock deadline and a cumulative
     output-token budget (see pipeline/limits.py). Aborted runs are finalized to
     the failed bin and still scored + persisted, so every run produces core
     metrics (duration, tokens, cost, call count) for cross-run evaluation.
+
+    ``invoke_input`` + ``thread_id`` resume a paused ``interrupt()`` via
+    ``Command(resume=...)``. An interrupt pause is a successful review park,
+    not an aborted run.
     """
     import os
     from pipeline import limits
     from observability import tracing
 
     from observability import scores as pipeline_scores
+    from langgraph.errors import GraphInterrupt
 
     # O-4: bind log correlation context so every log line in this run carries
     # doc/matter/run identifiers (merge_contextvars is wired in logging.py but
@@ -2433,7 +2698,7 @@ def _execute_run(
         trace_id="",  # filled after the trace opens
     )
 
-    graph = build_graph()
+    graph = get_compiled_graph()
 
     # O-1: warm the score-config schema in a background thread (sticky-bounded
     # 10-min retry); never block the document path on Langfuse.
@@ -2443,16 +2708,23 @@ def _execute_run(
     deadline = started_at + float(limits.get_deadline_seconds())
     limits.reset_run_usage()
     limits.set_run_deadline(deadline)
+    thread_id = (
+        thread_id
+        or initial_state.get("checkpoint_thread_id")
+        or f"{seed}-run{attempt}-{uuid.uuid4().hex[:8]}"
+    )
     initial_state = {
         **initial_state,
         "run_deadline": deadline,
         "run_attempt": attempt,
+        "checkpoint_thread_id": thread_id,
     }
     if ground_truth:
         # Expected outcome for this document (pilot runs pass the manifest
         # ground truth). Carried into the `pipeline-result` generation so the
         # live evaluator can render a CORRECT/PARTIAL/MISS verdict.
         initial_state["ground_truth"] = ground_truth
+    payload = invoke_input if invoke_input is not None else initial_state
 
     # Environment resolution: per-context override (OBSERVABILITY_ENVIRONMENT,
     # set by entrypoints via pipeline.env.default_environment) wins; the
@@ -2514,7 +2786,7 @@ def _execute_run(
     # callback/instrumentation attached to the run, so the graph-level run
     # carries the same classification dimensions as the Langfuse trace.
     config = {
-        "configurable": {"thread_id": f"{seed}-run{attempt}"},
+        "configurable": {"thread_id": thread_id},
         "tags": tags,
         "metadata": trace_metadata,
     }
@@ -2535,9 +2807,13 @@ def _execute_run(
         # get_trace_id() is only valid inside the trace block.
         state_trace_id = tracing.get_trace_id() or ""
         initial_state = {**initial_state, "trace_id": state_trace_id}
+        if invoke_input is None:
+            payload = initial_state
         _run_log.bind_contextvars(trace_id=state_trace_id)
         try:
-            result = graph.invoke(initial_state, config)
+            result = graph.invoke(payload, config)
+        except GraphInterrupt:
+            result = {**initial_state, "__interrupt__": True}
         except (limits.RunDeadlineExceeded, limits.RunBudgetExceeded) as exc:
             logger.warning(
                 "run_aborted",
@@ -2549,6 +2825,8 @@ def _execute_run(
         except Exception:
             logger.exception("run_crashed", doc_id=initial_state.get("doc_id"))
             result = _finalize_aborted(initial_state, "unexpected error")
+        if _result_is_interrupted(result):
+            result = _paused_review_result(result, initial_state, thread_id, state_trace_id)
         # Ensure the trace id survives into the final state (ingest_node creates
         # the manifest with its own doc_id; the trace id must be attached even
         # when the graph never ran ingest, e.g. aborted runs).
@@ -2586,6 +2864,12 @@ def _execute_run(
             expected_class = (initial_state.get("ground_truth") or {}).get("expected_doc_class")
             if doc_class and extracted:
                 try:
+                    from observability.extraction_gt import presence_expectations_from_ground_truth
+
+                    presence = presence_expectations_from_ground_truth(
+                        initial_state.get("ground_truth") or {},
+                        doc_class,
+                    )
                     field_result = score_and_log_extraction(
                         trace_id=tracing.get_trace_id(),
                         doc_class=doc_class,
@@ -2595,6 +2879,7 @@ def _execute_run(
                         matter_id=initial_state.get("matter_id"),
                         doc_text=initial_state.get("doc_text"),
                         expected_class=expected_class,
+                        presence_expectations=presence,
                     )
                     judge_required = field_result.needs_judge_review
                     # A wrong classification must ALWAYS reach the LLM judge:
@@ -2710,15 +2995,16 @@ def run_pipeline(
     )
 
 
-def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
+def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str, Any]:
     """Resume a human-approved review document with a FRESH extraction.
 
-    Stateless resume: the file is requeued from the review bin into
-    processing/<worker>/, re-read, and the graph is re-invoked starting at the
-    extraction stage (skipping classification — the manifest's doc_type is
-    trusted from the reviewed run). The ORIGINAL doc_id is preserved so the
-    manifest, catalog record, audit chain, and Langfuse trace stay intact.
+    Prefers LangGraph ``Command(resume=...)`` on the parked ``interrupt()``
+    checkpoint (same process, MemorySaver still live). If the checkpoint is
+    gone (process restart + MemorySaver), falls back to the stateless
+    re-invoke: requeue from the review bin and start at extract under the
+    original ``doc_id``.
     """
+    from pipeline import limits
     from pipeline.bins import requeue_from_review, get_worker_id
 
     if not manifest.doc_type:
@@ -2727,6 +3013,39 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         )
 
     _ensure_dirs()
+    thread_id = getattr(manifest, "checkpoint_thread_id", None) or ""
+    graph = get_compiled_graph()
+    if thread_id and _thread_is_interrupted(graph, thread_id):
+        deadline = time.time() + float(limits.get_deadline_seconds())
+        logger.info(
+            "review_interrupt_resume",
+            doc_id=manifest.doc_id,
+            thread_id=thread_id,
+        )
+        return _execute_run(
+            {
+                "doc_id": manifest.doc_id,
+                "matter_id": manifest.matter_id,
+                "original_filename": manifest.original_filename,
+                "doc_type": manifest.doc_type,
+                "checkpoint_thread_id": thread_id,
+                "review_decision": "approved",
+            },
+            seed=Path(manifest.original_filename).stem,
+            attempt=0,
+            thread_id=thread_id,
+            invoke_input=Command(
+                resume={"decision": "approved", "notes": notes or ""},
+                update={"run_deadline": deadline},
+            ),
+            trace_input={
+                "filename": manifest.original_filename,
+                "matter_id": manifest.matter_id,
+                "resumed": True,
+                "interrupt_resume": True,
+            },
+        )
+
     worker_id = get_worker_id()
     queued = requeue_from_review(review_file, worker_id)
     doc_text, text_ok = _read_file_text(queued)
@@ -2780,9 +3099,14 @@ def resume_from_review(manifest, review_file: Path) -> dict[str, Any]:
         "run_attempt": 0,
     }
 
+    logger.info(
+        "review_stateless_resume",
+        doc_id=manifest.doc_id,
+        reason="no interrupt checkpoint",
+    )
     return _execute_run(
         initial_state,
-        seed=queued.stem,
+        seed=f"{queued.stem}-resume-{manifest.doc_id[:8]}",
         attempt=0,
         trace_input={"filename": queued.name, "matter_id": manifest.matter_id, "resumed": True},
     )

@@ -297,7 +297,7 @@ class _SpecialistBase(BaseAgent):
         failed = 0
         for index, chunk in enumerate(chunks, start=1):
             header = (f"EXTRACTION CHUNK {index} OF {len(chunks)} — this is one "
-                      f"window of the agreement; extract every family occurrence "
+                      f"window of the document; extract every field occurrence "
                       f"present in THIS chunk (see the system prompt's chunk duty).\n")
             user_message = (
                 f"{header}Extract fields from this {self._doc_label} document (chunk "

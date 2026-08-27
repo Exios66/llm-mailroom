@@ -22,7 +22,7 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 | `retry_classify` | Re-classify with a "re-evaluate" prompt when confidence was low |
 | `extract` | Routes to the right specialist LLM, stores `extracted_data` |
 | `retry_extract` | Re-extract with the previous attempt included as context |
-| `human_review` | Moves the file to `review/` for a person |
+| `human_review` | Parks the file in `review/` (idempotent upsert) and pauses the graph with LangGraph `interrupt()` until a human `Command(resume=...)` |
 | `boss_escalation` | Boss LLM adjudicates conflicts / repeated failures |
 | `compile_report` | Reporter LLM writes the matter-record summary |
 | `catalog_write` | Writes the document + matter to the database (best-effort) |
@@ -37,8 +37,9 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
   - Text extraction for images/PDFs (`_read_file_text` → `agents/image_extractor.py`, `agents/pdf_transcriber.py`).
   - Deterministic intake normalize (`agents/intake.py` → `llm_dojo_scoring.intake`) after transcription; nested span `normalize-intake` (The-Mailroom maps it to INGEST). Scored via `get_suite("intake")`.
   - Specialist dispatch via `_build_specialist_dispatch()` — **config-driven**: it walks `doc_classes` in `config/taxonomy.yaml` and maps each `specialist:` name to its extraction function (6 live classes / 5 specialists: contracts also covers MAUD `merger_agreement`, plus corporate records, correspondence, compliance, insurance claims). Graph construction asserts dispatch keys equal taxonomy keys; a missing arm fails fast instead of silently stub-extracting. `unknown` is a sorter routing token, not a dispatch key. Adding an agent means adding a taxonomy entry + dispatch case.
-  - The **checkpointer** (`_build_checkpointer`): SQLite-backed (`data/checkpoints.db`, via `langgraph.checkpoint.sqlite.SqliteSaver`) for crash-resume, with a `MemorySaver` fallback if anything fails.
-  - `run_pipeline(file_path, matter_id)` — convenience entrypoint that builds the graph and runs one document.
+  - The **checkpointer** (`_build_checkpointer`): **MemorySaver by default**, held on a process-level compiled graph (`get_compiled_graph`) so `interrupt()` HITL can resume in-process. Filesystem `review/` is the durable park; `resume_from_review` uses `Command(resume=...)` when a checkpoint exists, else re-invokes from extract. `MAILROOM_CHECKPOINTER=sqlite` opts into on-disk `SqliteSaver` at `data/checkpoints.db`.
+  - **Chunked extraction** (`_run_chunked_extraction`): every live specialist (contracts, corporate records, correspondence, compliance, insurance). Window size is capped at the agent's `max_input_chars`.
+  - `run_pipeline(file_path, matter_id)` — convenience entrypoint that reuses the process-level graph and runs one document.
   - **Judge gating**: for grounded runs with deterministic field scoring, `_emit_pipeline_result` suppresses the `pipeline-result` generation when the verdict is unambiguous (see `field_scoring.type_bands` in `taxonomy.yaml`) — saving both LLM-as-judge evaluator calls.
 - Conditionals are wired with `add_conditional_edges("classify", after_classify, {...})`; `after_classify` can return `"retry_classify"`, `"extract"`, or `"human_review"`.
 - Architecture doc: `docs/architecture.md`.
