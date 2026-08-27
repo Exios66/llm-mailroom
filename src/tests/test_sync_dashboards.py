@@ -93,3 +93,18 @@ class TestDimensionWidgets:
                     ],
                 })
             )
+
+
+class TestFirstPassWidgets:
+    def test_success_rate_widgets_are_live_and_pilot(self):
+        registered = _score_names()
+        widgets = [
+            w for w in sd.PERF_WIDGETS
+            if any(f.get("value") == "success_rate" for f in w.filters if f.get("column") == "name")
+        ]
+        assert len(widgets) == 2
+        for w in widgets:
+            envs = [f for f in w.filters if f["column"] == "environment"]
+            assert envs, f"{w.name} has no environment filter"
+            assert envs[0]["value"] == ["live", "pilot"]
+            assert "success_rate" in registered

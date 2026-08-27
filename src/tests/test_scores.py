@@ -92,6 +92,8 @@ class TestEmitPipelineScores:
             assert scores["total_tokens"] == 42
             assert scores["llm_call_count"] == 3
             assert scores["estimated_cost_usd"] == 0.001
+            assert scores["success_rate"] == 1
+            assert "class_correct" not in scores
         finally:
             os.environ.pop("OBSERVABILITY_PROVIDER", None)
 
@@ -130,4 +132,176 @@ def test_emit_pipeline_scores_class_correct_is_exact_not_aligned():
         assert miss["class_correct"] == 0
     finally:
         os.environ.pop("OBSERVABILITY_PROVIDER", None)
+
+
+class TestFirstPassSuccess:
+    """Production STP: no ground truth, no reroute/reprocess."""
+
+    def test_clean_archive_is_first_pass(self):
+        from observability.scores import first_pass_success
+
+        assert first_pass_success(
+            {
+                "stage": "archived",
+                "classification_attempts": 1,
+                "extraction_attempts": 1,
+                "judge_verdict": "skipped",
+            },
+            {
+                "stage_completed": 1,
+                "schema_valid": 1,
+                "parse_error": 0,
+                "guardrail_triggered": 0,
+                "run_aborted": 0,
+            },
+        ) is True
+
+    def test_does_not_require_ground_truth(self):
+        from observability.scores import emit_pipeline_scores
+        import os
+
+        os.environ["OBSERVABILITY_PROVIDER"] = "none"
+        try:
+            scores = emit_pipeline_scores(
+                {
+                    "stage": "archived",
+                    "doc_type": "contract",
+                    "classification_attempts": 1,
+                    "extraction_attempts": 1,
+                    "judge_verdict": "skipped",
+                    "extracted_data": {
+                        "parties": ["ACME", "Zenith"],
+                        "effective_date": "2024-01-15",
+                        "term_length": "3 years",
+                        "termination_clauses": [],
+                        "governing_law": "Delaware",
+                        "key_obligations": ["uptime"],
+                    },
+                }
+            )
+            assert "class_correct" not in scores
+            assert scores["success_rate"] == 1
+        finally:
+            os.environ.pop("OBSERVABILITY_PROVIDER", None)
+
+    def test_retry_is_not_first_pass(self):
+        from observability.scores import first_pass_success
+
+        assert first_pass_success(
+            {
+                "stage": "archived",
+                "classification_attempts": 2,
+                "extraction_attempts": 1,
+            },
+            {
+                "stage_completed": 1,
+                "schema_valid": 1,
+                "parse_error": 0,
+                "guardrail_triggered": 0,
+            },
+        ) is False
+
+    def test_lane_a_review_is_not_first_pass(self):
+        from observability.scores import first_pass_success
+
+        assert first_pass_success(
+            {
+                "stage": "archived",
+                "classification_attempts": 1,
+                "extraction_attempts": 1,
+                "review_verdict": "reviewer_agrees",
+            },
+            {
+                "stage_completed": 1,
+                "schema_valid": 1,
+                "parse_error": 0,
+                "guardrail_triggered": 0,
+            },
+        ) is False
+
+    def test_human_review_and_abort_are_not_first_pass(self):
+        from observability.scores import emit_pipeline_scores
+        import os
+
+        os.environ["OBSERVABILITY_PROVIDER"] = "none"
+        try:
+            reviewed = emit_pipeline_scores(
+                {
+                    "stage": "review",
+                    "doc_type": "contract",
+                    "review_decision": "pending_review",
+                    "extracted_data": {"parties": ["A"]},
+                },
+                metrics={"classification_attempts": 1, "extraction_attempts": 1},
+            )
+            assert reviewed["success_rate"] == 0
+            aborted = emit_pipeline_scores(
+                {
+                    "stage": "failed",
+                    "run_aborted": True,
+                    "extracted_data": {},
+                },
+                metrics={"run_aborted": 1},
+            )
+            assert aborted["success_rate"] == 0
+            assert aborted["stage_completed"] == 0
+        finally:
+            os.environ.pop("OBSERVABILITY_PROVIDER", None)
+
+    def test_guardrail_or_transient_retry_is_not_first_pass(self):
+        from observability.scores import first_pass_success
+
+        scores = {
+            "stage_completed": 1,
+            "schema_valid": 1,
+            "parse_error": 0,
+            "guardrail_triggered": 1,
+        }
+        assert first_pass_success(
+            {
+                "stage": "archived",
+                "classification_attempts": 1,
+                "extraction_attempts": 1,
+                "classification_guardrail": ["unknown class"],
+            },
+            scores,
+        ) is False
+        assert first_pass_success(
+            {
+                "stage": "archived",
+                "classification_attempts": 1,
+                "extraction_attempts": 1,
+                "transient_retries_classify": 1,
+            },
+            {
+                "stage_completed": 1,
+                "schema_valid": 1,
+                "parse_error": 0,
+                "guardrail_triggered": 0,
+            },
+        ) is False
+
+    def test_gt_class_miss_does_not_define_the_flag(self):
+        """Live traffic has no GT. A clean operational path still scores 1
+        even when a later pilot label would have been a class miss."""
+        from observability.scores import emit_pipeline_scores
+        import os
+
+        os.environ["OBSERVABILITY_PROVIDER"] = "none"
+        try:
+            scores = emit_pipeline_scores(
+                {
+                    "stage": "archived",
+                    "doc_type": "contract",
+                    "classification_attempts": 1,
+                    "extraction_attempts": 1,
+                    "judge_verdict": "skipped",
+                    "extracted_data": {"parties": ["A"]},
+                    "ground_truth": {"expected_doc_class": "correspondence"},
+                }
+            )
+            assert scores["class_correct"] == 0
+            assert scores["success_rate"] == 1
+        finally:
+            os.environ.pop("OBSERVABILITY_PROVIDER", None)
 

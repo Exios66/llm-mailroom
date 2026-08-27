@@ -103,3 +103,6 @@ def test_v1_ops_status(client):
     assert "stuck_documents" in body
     assert "review_queue" in body
     assert "error_rates" in body
+    assert "first_pass" in body
+    assert "first_pass_rate" in body
+    assert body["first_pass"] == 0
