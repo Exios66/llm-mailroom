@@ -230,6 +230,31 @@ async def get_documents_by_stage(stage: str) -> list[DocumentRecord]:
         return list(result.scalars().all())
 
 
+async def count_first_pass_throughput() -> dict[str, int | float | None]:
+    """Catalog counts for production STP (no ground truth).
+
+    ``first_pass`` is documents whose persisted scores mark ``success_rate``
+    as 1 — archived in one hop without retry/review/arbiter/boss. Missing
+    scores (runs from before this metric) are not counted as first-pass.
+    """
+    archived = await get_documents_by_stage("archived")
+    first_pass = 0
+    for record in archived:
+        value = (record.scores or {}).get("success_rate")
+        try:
+            if float(value) >= 0.5:
+                first_pass += 1
+        except (TypeError, ValueError):
+            continue
+    n_archived = len(archived)
+    rate = round(first_pass / n_archived, 4) if n_archived else None
+    return {
+        "archived": n_archived,
+        "first_pass": first_pass,
+        "first_pass_rate": rate,
+    }
+
+
 async def get_recent_documents(limit: int = 20) -> list[DocumentRecord]:
     """Most recently updated document records (for the /queue recent view)."""
     ensure_schema()

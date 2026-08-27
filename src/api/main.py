@@ -626,6 +626,12 @@ async def ops_status():
     stuck = await get_stuck_documents(stale_minutes=15)
     review_docs = await get_documents_by_stage("review")
     error_rates = await get_error_rate_by_doc_type()
+    try:
+        from storage.catalog import count_first_pass_throughput
+
+        throughput = await count_first_pass_throughput()
+    except Exception:
+        throughput = {"archived": 0, "first_pass": 0, "first_pass_rate": None}
 
     from pipeline.bins import is_ingestion_paused, get_pause_info
     from observability.tracing import flush_health
@@ -634,6 +640,9 @@ async def ops_status():
         "stuck_documents": len(stuck),
         "review_queue": len(review_docs),
         "error_rates": error_rates,
+        "archived": throughput.get("archived", 0),
+        "first_pass": throughput.get("first_pass", 0),
+        "first_pass_rate": throughput.get("first_pass_rate"),
         "ingestion_paused": is_ingestion_paused(),
         "pause_info": get_pause_info(),
         "observability": flush_health(),

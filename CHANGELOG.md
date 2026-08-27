@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-pass production STP score (`success_rate`).** Every finished run
+  emits the registered dojo metric as a 0/1 flag: archived in one pass with
+  no retry, Lane A, arbiter, boss, human review, guardrail, or transient
+  reprocess. No ground truth. Langfuse Performance dashboard charts the
+  live+pilot rate and count. `GET /ops/status` reports `first_pass` /
+  `first_pass_rate`. The-Mailroom metrics tiles FIRST PASS from this score.
+
 - **LangGraph `interrupt()` HITL.** `human_review_node` parks the file in `review/` (idempotent upsert) and pauses with `interrupt()`. Approve resumes via `Command(resume={"decision": "approved"})` into a **fresh extract** (never the reviewed payload). Reject ends the run. A process-level compiled graph keeps the MemorySaver alive in-process (API embeds the watcher). After process restart the checkpoint is gone and `resume_from_review` falls back to today's re-invoke-from-extract. Manifests store `checkpoint_thread_id`.
 
 - **Chunked extraction for every live specialist.** Corporate records, correspondence, compliance, and insurance claims now use the same overlapping-window pass as contracts (`BaseAgent.extract_chunked`). Window size is capped at the agent's `max_input_chars`. `retry_extract_node` no longer hard-truncates to 25k chars — previous-attempt context rides in `handoff_context` so every window sees it.

@@ -12,7 +12,7 @@ You use it to:
 - Approve/reject documents that landed in human review (`POST /review/{doc_id}/resolve`).
 - See the tamper-proof audit trail (`GET /audit/{doc_id}`).
 - List everything in a matter (`GET /matters/{matter_id}`).
-- See pipeline health/metrics (`GET /ops/status`, `GET /health` — `/health` reports `checks.watcher` live/stale/missing plus how recently the watcher heartbeat was touched, i.e. whether uploads are actually being drained).
+- See pipeline health/metrics (`GET /ops/status`, `GET /health` — `/health` reports `checks.watcher` live/stale/missing plus how recently the watcher heartbeat was touched, i.e. whether uploads are actually being drained). `/ops/status` includes `first_pass` / `first_pass_rate`: documents that archived in one hop with no reroute, scored without ground truth.
 
 ## Getting started
 

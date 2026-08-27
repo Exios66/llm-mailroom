@@ -218,7 +218,9 @@ class TestRunAbort:
             "classification_attempts",
             "extraction_attempts",
             "stage_completed",
+            "success_rate",
         ):
             assert key in record.scores, f"missing core metric {key}"
         assert record.scores["run_aborted"] == 0
         assert record.scores["stage_completed"] == 1
+        assert record.scores["success_rate"] == 1

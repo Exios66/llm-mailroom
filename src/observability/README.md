@@ -41,6 +41,13 @@ import time. Adding a score name here without registering it upstream fails
 fast with a `RuntimeError` naming the drifted entries — register new metrics
 in llm-dojo-scoring first, then use them here.
 
+**Production first-pass (`success_rate`, gt=none):** `emit_pipeline_scores`
+always attaches this registered 0/1 flag. 1 means the document archived in
+one hop (no retry / Lane A / arbiter / boss / human review / guardrail /
+transient self-loop). Incoming live documents are zero-shot; the flag does
+not consult `class_correct` or field GT. The-Mailroom tiles FIRST PASS from
+it; Langfuse Performance dashboard charts live+pilot rate and count.
+
 **Class KPIs after #38/#39:** exact class match is the only classification
 score. `merger_agreement` (MAUD) is not `contract` (CUAD). Dojo 0.11.0's
 `llm_dojo_scoring.mailroom.align_doc_type` still aliases them — mailroom

@@ -148,6 +148,20 @@ The scoring layer both mailroom and entity-extraction consume:
   0.99; reviewer still-wrong → human review; hollow extract or expected-field
   coverage below `confidence.low` → retry then review; failed `compile_report`
   withholds `catalog_write`.
+- **First-pass / STP metrics (production, no ground truth):** every finished
+  run now emits the registered dojo score `success_rate` (0/1). It is 1 only
+  when the document archived in one hop — no classify/extract retry, Lane A,
+  arbiter, boss, human review, guardrail, parse/schema failure, or transient
+  provider self-loop. Incoming live documents are zero-shot; this flag does
+  **not** consult `class_correct`, field GT, or the hosted LLM-judge overlay
+  (those stay eval-only). The-Mailroom metrics (pixel METRICS tab, hosted
+  Observatory, TUI `m`) tile **FIRST PASS** (count) and **FIRST-PASS RATE**
+  from that score, with a routing-path/`retried` fallback for traces emitted
+  before the producer score existed. Do not flatten FIRST PASS into ARCHIVED
+  (archived includes retries that later succeeded) or RECONSIDER (GT/judge
+  overlay). Langfuse **Mailroom Performance** dashboard charts the live+pilot
+  rate and count. `GET /ops/status` reports `first_pass` / `first_pass_rate`
+  from the catalog.
 - **Live floor (The-Mailroom [PR #16](https://github.com/Exios66/The-Mailroom/pull/16)):**
   the visualizer re-enriches in-flight traces every poll and reads producer
   liveness from `GET /health` (`checks.watcher`, `inbox_pending`). This
