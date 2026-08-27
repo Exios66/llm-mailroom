@@ -18,7 +18,7 @@ each lives. (All links verified 2026-08-23.)
 │  corpus feed repos     │──▶│        llm-mailroom          │
 │  Enron-Eval-Environment│   │  (this repo — the pipeline)  │
 │  claims-data-eda       │   └──────────┬───────────────────┘
-│  atticus-investigation │              │ pinned dependency @v0.9.0
+│  atticus-investigation │              │ pinned dependency @v0.10.0
 └────────────────────────┘              ▼
                           ┌──────────────────────────────┐
                           │     llm-dojo-scoring         │
@@ -41,7 +41,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | Repository | Role | Relationship to mailroom |
 |---|---|---|
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board and discussion log with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.9.0` / [PR #5](https://github.com/Exios66/llm-dojo-scoring/pull/5)); consumed through thin re-export shims |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.10.0` / [PR #7](https://github.com/Exios66/llm-dojo-scoring/pull/7)); consumed through thin re-export shims |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
@@ -78,7 +78,7 @@ The scoring layer both mailroom and entity-extraction consume:
   **agent profiles** covering every mailroom agent, and
   `DOC_TYPE_BUNDLES` keyed on the processed document classes with the
   explicit-fallback honesty resolver (`resolve_doc_bundle()`).
-- Pinned as a git dependency (`@v0.9.0` at time of writing); mailroom wires
+- Pinned as a git dependency (`@v0.10.0` at time of writing); mailroom wires
   its `taxonomy.yaml` scoring block onto package Settings via
   `observability/field_scoring.py` (a deprecation shim — imports should move
   to `llm_dojo_scoring.field_scoring`).
@@ -93,11 +93,11 @@ The scoring layer both mailroom and entity-extraction consume:
   (`enron-correspondence`, `enron-correspondence-dedup`, …).
 - **[claims-data-eda](https://github.com/Exios66/claims-data-eda)**:
   exploratory analysis toward an insurance-claims benchmark. Hub rows today
-  are CMS DE-SynPUF source tables; dojo 0.9.0 still flags
-  **determination-consistency scorers as pending**. Mailroom surfaces that
-  gap on traces/HF reports and runs a local determination invariant only
-  (documented in [Agents](agents.md)).
-- **Honesty (dojo 0.9.0 suites):** `compliance_filing` has zero
+  are CMS DE-SynPUF source tables; dojo 0.10.0 ships
+  **`determination_consistency` / `amount_exactness`** as real scorers. The
+  remaining gap is CMS GT homogeneity (all-approved / empty denials), so
+  that score is degenerate on GT-shaped rows (documented in [Agents](agents.md)).
+- **Honesty (dojo 0.10.0 suites):** `compliance_filing` has zero
   `docclass-merged` rows (HF pilot omits it). `corporate_record` has 39 Hub
   subclass rows but **no external extraction benchmark**. `court_opinion` /
   `due_diligence` are retired from live mailroom (`retired=True`).

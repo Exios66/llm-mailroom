@@ -101,7 +101,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `jurisdiction` | `str \| None` | State/country of incorporation |
 | `filing_number` | `str \| None` | Official filing reference |
 
-**Honest gap (dojo 0.9.0):** there is **no external extraction benchmark** for this class (nothing CUAD-shaped). The published `docclass-merged` set has 39 `corporate_record` rows with record-type subclasses; the suite scores typed extraction plus that catalog. Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold.
+**Honest gap (dojo 0.10.0):** there is **no external extraction benchmark** for this class (nothing CUAD/MAUD-shaped). The published `docclass-merged` set has 39 `corporate_record` rows with record-type subclasses; the suite scores typed extraction, field-micro P/R/F1/F2, plus that catalog. Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold.
 
 ---
 
@@ -154,7 +154,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `status` | `str \| None` | draft, filed, pending, overdue |
 | `reference_number` | `str \| None` | Accession/tracking number |
 
-**Honest gap (dojo 0.9.0):** `compliance_filing` has **zero rows** in `Lucius-Morningstar/docclass-merged`. The Hub SEC form-body inventory (`10-K`, `10-Q`, `8-K`, …) is the live subclass catalog; the suite scores typed extraction plus that inventory. The HF pilot (`scripts/run_hf_pilot.py`) therefore omits this class — it must not report a corpus accuracy at n=0.
+**Honest gap (dojo 0.10.0):** `compliance_filing` has **zero rows** in `Lucius-Morningstar/docclass-merged`. The Hub SEC form-body inventory (`10-K`, `10-Q`, `8-K`, …) is the live subclass catalog; the suite scores typed extraction plus that inventory. The HF pilot (`scripts/run_hf_pilot.py`) therefore omits this class — it must not report a corpus accuracy at n=0.
 
 ---
 
@@ -188,7 +188,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage.
 
-**Honest gap (dojo 0.9.0):** Hub rows are CMS DE-SynPUF source tables (`carrier`/`inpatient`/`outpatient`/`pde`). Typed extraction is scored; **determination-consistency and amount-exactness scorers are pending in the dojo registry** (current GT is all `coverage_determination=approved` with empty `denial_reasons`). Mailroom runs a **local field invariant** only (`denied` ⇒ non-empty reasons; `approved`/`pending` ⇒ empty reasons) and attaches it as trace metadata — it is not a SCORE_CONFIG. Candidate corpus EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda).
+**Honest gap (dojo 0.10.0):** Hub rows are CMS DE-SynPUF source tables (`carrier`/`inpatient`/`outpatient`/`pde`). Typed extraction plus field-micro P/R/F1/F2 are scored. **`determination_consistency` and `amount_exactness` are registered scorers**; the remaining gap is CMS GT homogeneity (all `coverage_determination=approved` with empty `denial_reasons`), so determination-consistency is degenerate on GT-shaped rows. Mailroom still records a local field invariant on traces. Candidate corpus EDA lives in [`claims-data-eda`](https://github.com/Exios66/claims-data-eda).
 
 ---
 
