@@ -168,3 +168,103 @@ def build_expected_fields(sample: dict) -> tuple[dict[str, Any], dict[str, Any]]
         **coverage,
     }
     return fields, meta
+
+
+def presence_expectations_from_ground_truth(
+    gt: dict[str, Any] | None,
+    doc_class: str | None = None,
+) -> dict[str, dict] | None:
+    """Build CUAD ``presence_expectations`` for ``extraction_category_presence``.
+
+    Returns ``None`` when there is nothing to score — callers must omit the
+    score rather than emit 0.0. Only ``contract`` / ``merger_agreement`` have
+    CUAD presence categories. Prefers an already-shaped
+    ``gt["presence_expectations"]``, then Hub ``cuad_clause_labels`` (empty
+    list = expected False; non-empty = True + first span), then flattened
+    ``expected_fields.cuad_clauses`` / ``gt["cuad_clauses"]`` lines.
+    """
+    if not isinstance(gt, dict):
+        return None
+    cls = str(
+        doc_class
+        or gt.get("expected_doc_class")
+        or gt.get("expected_hf_class")
+        or gt.get("expected")
+        or ""
+    )
+    if cls not in ("contract", "merger_agreement"):
+        return None
+    explicit = gt.get("presence_expectations")
+    if isinstance(explicit, dict) and explicit:
+        return explicit
+
+    expected_fields = gt.get("expected_fields")
+    if not isinstance(expected_fields, dict):
+        expected_fields = {}
+
+    labels = gt.get("cuad_clause_labels")
+    if labels in (None, ""):
+        labels = expected_fields.get("cuad_clause_labels")
+    if labels not in (None, ""):
+        built = _presence_from_cuad_label_map(labels)
+        if built:
+            return built
+
+    lines = expected_fields.get("cuad_clauses") or gt.get("cuad_clauses")
+    if lines:
+        return _presence_from_cuad_lines(lines)
+    return None
+
+
+def _presence_entry(expected: bool, answer: str = "") -> dict:
+    return {"expected": bool(expected), "answer": answer or "", "field": "cuad_clauses"}
+
+
+def _presence_from_cuad_label_map(raw: Any) -> dict[str, dict] | None:
+    from langchain_agents.cuad_maud import CUAD_CLAUSE_CATEGORIES, parse_json_obj
+
+    parsed = raw if isinstance(raw, dict) else parse_json_obj(raw)
+    if not isinstance(parsed, dict) or not parsed:
+        return None
+    folded = {str(key).strip().casefold(): value for key, value in parsed.items()}
+    out: dict[str, dict] = {}
+    for cat in CUAD_CLAUSE_CATEGORIES:
+        spans = folded.get(cat.casefold())
+        texts: list[str] = []
+        items = spans if isinstance(spans, list) else ([] if spans in (None, "") else [spans])
+        for span in items:
+            if span in (None, "", [], {}):
+                continue
+            if isinstance(span, dict):
+                text = str(span.get("text") or "").strip()
+            else:
+                text = str(span).strip()
+            if text:
+                texts.append(text)
+        out[cat] = _presence_entry(bool(texts), texts[0] if texts else "")
+    return out
+
+
+def _presence_from_cuad_lines(lines: Any) -> dict[str, dict] | None:
+    from langchain_agents.cuad_maud import CUAD_CLAUSE_CATEGORIES
+
+    if isinstance(lines, str):
+        lines = [lines]
+    if not isinstance(lines, list) or not lines:
+        return None
+    canon = {cat.casefold(): cat for cat in CUAD_CLAUSE_CATEGORIES}
+    present: dict[str, str] = {}
+    for line in lines:
+        if not isinstance(line, str) or ":" not in line:
+            continue
+        cat, _, rest = line.partition(":")
+        key = canon.get(cat.strip().casefold())
+        if not key or key in present:
+            continue
+        present[key] = rest.strip()
+    if not present:
+        return None
+    return {
+        cat: _presence_entry(cat in present, present.get(cat, ""))
+        for cat in CUAD_CLAUSE_CATEGORIES
+    }

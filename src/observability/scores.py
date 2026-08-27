@@ -57,15 +57,6 @@ SCORE_CONFIGS: list[dict] = [
         ],
     },
     {"name": "judge_notes", "data_type": "TEXT"},
-    {
-        "name": "deterministic_verdict",
-        "data_type": "CATEGORICAL",
-        "categories": [
-            {"label": "CORRECT", "value": 1.0},
-            {"label": "PARTIAL", "value": 0.5},
-            {"label": "MISS", "value": 0.0},
-        ],
-    },
     {"name": "classification_quality", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {
         "name": "classification_correct",
