@@ -410,6 +410,13 @@ def _diff(before: dict, after: dict) -> dict[str, tuple[Any, Any]]:
 # conftest fixtures).
 # ---------------------------------------------------------------------------
 
+CLASSIFY_MERGER_HIGH = {
+    "doc_type": "merger_agreement",
+    "contract_subtype": None,
+    "doc_subclass": "all_cash",
+    "confidence": 0.98,
+    "reasoning": "Agreement and Plan of Merger; all-cash consideration",
+}
 CLASSIFY_CONTRACT_HIGH = {
     "doc_type": "contract",
     "contract_subtype": "other",
@@ -491,6 +498,14 @@ JUDGE_PASS = JUDGE_COMPLETE  # alias: the "verdict: pass" lane-B fuel
 # ---------------------------------------------------------------------------
 # Doc text + per-class extraction presets (02/03/07 fuel)
 # ---------------------------------------------------------------------------
+
+DOC_MERGER = """AGREEMENT AND PLAN OF MERGER
+
+This Agreement and Plan of Merger is entered into by Parent Inc., Merger
+Sub Inc., and Target Corp. At the Effective Time, Merger Sub shall merge
+with and into Target, and Target shall be the surviving corporation. The
+merger consideration is all cash.
+"""
 
 DOC_CONTRACT = """MASTER SERVICES AGREEMENT
 
@@ -1274,6 +1289,14 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
         "specialist": "contracts_specialist",
         "path": "langchain",
     },
+    "merger_agreement": {
+        "text": DOC_MERGER,
+        "filename": "merger_agreement.txt",
+        "classification": CLASSIFY_MERGER_HIGH,
+        "extraction": EXTRACT_HIGH,
+        "specialist": "contracts_specialist",
+        "path": "langchain",
+    },
     "corporate_record": {
         "text": DOC_CORPORATE_RECORD,
         "filename": "bylaws.txt",
@@ -1315,8 +1338,9 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
 
 def script_all_specialists(client: MagicMock, extra: dict[str, dict] | None = None) -> MagicMock:
     """Script every legacy specialist marker plus the default judge/arbiter/boss
-    happy-path canned responses. Contracts still flow through FakeLangChainLLM
-    (LangChain path); this covers the other four live classes."""
+    happy-path canned responses. CUAD contracts and MAUD merger agreements still
+    flow through FakeLangChainLLM (LangChain path); this covers the other four
+    live classes."""
     canned = dict(LEGACY_SPECIALIST_CANNED)
     if extra:
         canned.update(extra)

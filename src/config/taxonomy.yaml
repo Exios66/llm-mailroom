@@ -143,7 +143,27 @@ doc_classes:
     label: "Contract / Agreement"
     schema: ContractExtraction
     specialist: contracts_specialist
-    description: "Formal agreements between parties: M&A, vendor, employment, NDAs, etc."
+    description: "CUAD commercial contracts and agreements (vendor, employment, NDA, license, etc.) — not MAUD merger agreements"
+    field_types:
+      document_name: name
+      parties: entity_list:name
+      effective_date: date
+      term_length: free_text
+      termination_clauses: entity_list:free_text
+      governing_law: name
+      key_obligations: entity_list:free_text
+      contract_value: money
+      renewal_terms: free_text
+      cuad_family: name
+      merger_consideration: name
+      cuad_clauses: entity_list:free_text
+      maud_clauses: entity_list:free_text
+
+  - key: merger_agreement
+    label: "Merger Agreement"
+    schema: ContractExtraction
+    specialist: contracts_specialist
+    description: "MAUD merger agreements (agreement and plan of merger) — a distinct class from CUAD commercial contracts. Subclass is consideration type (all_cash, all_stock, mixed, …)."
     field_types:
       document_name: name
       parties: entity_list:name

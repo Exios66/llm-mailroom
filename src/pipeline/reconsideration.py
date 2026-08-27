@@ -48,7 +48,10 @@ _EMPTY = (None, "", [], {})
 
 
 def align_class(token: Optional[str]) -> Optional[str]:
-    """Canonical class for GT comparison (``merger_agreement`` ≡ ``contract``)."""
+    """Canonical class for GT comparison. ``merger_agreement`` (MAUD) is
+    not equivalent to ``contract`` (CUAD). Extract aliases, if any, still
+    collapse for comparison.
+    """
     if not token:
         return None
     key = str(token).strip().lower()

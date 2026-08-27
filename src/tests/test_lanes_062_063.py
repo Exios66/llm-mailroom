@@ -447,7 +447,9 @@ class TestNodeBehavior:
         assert "maud_clauses" in merger
         assert "MAE Definition" in merger
         assert "Type of Consideration" in merger
-        assert "extract_class=contract" in merger
+        assert "doc_type=merger_agreement" in merger
+        # Live class — no extract alias rewrite onto CUAD contract.
+        assert "extract_class=contract" not in merger
 
     def test_handoff_context_lists_every_specialist_inventory(self):
         from graph.build_graph import _build_handoff_context

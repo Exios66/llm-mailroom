@@ -378,8 +378,9 @@ def _specialist_memory_name(doc_type: str) -> str | None:
 
     Unmapped / retired / unknown types return None — never fall back to
     contracts_specialist (that attributed the wrong agent's outcomes).
-    Extract aliases (``merger_agreement`` → ``contract``) use the target
-    specialist so retry memory stays on the agent that actually ran.
+    Extract aliases keep ``state['doc_type']``. ``merger_agreement`` is a
+    live taxonomy key and dispatches through its own specialist mapping
+    (shared ``contracts_specialist``).
     """
     try:
         from pipeline.config import load_config, resolve_extract_class

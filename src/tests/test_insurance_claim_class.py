@@ -2,7 +2,7 @@
 
 Network-free integration pins: schema registry, taxonomy, graph dispatch,
 classifier vocabulary, sorter prompt surface, fixture wiring. A native
-sibling of the four remaining live classes (five total after court_opinion
+sibling of the other live classes (six total after court_opinion
 and due_diligence were retired from the pipeline).
 """
 
@@ -21,7 +21,7 @@ def test_extraction_schemas_include_insurance_claim():
     from schemas.documents import get_extraction_schema
 
     assert get_extraction_schema("insurance_claim") is InsuranceClaimExtraction
-    assert len(EXTRACTION_SCHEMAS) == 5  # live pipeline classes
+    assert len(EXTRACTION_SCHEMAS) == 6  # live pipeline classes
 
 
 def test_insurance_schema_fields_are_scoring_ready():
@@ -67,7 +67,7 @@ def test_taxonomy_declares_class_and_specialist_block():
     assert ic["field_types"]["claim_number"] == "id"
     assert ic["field_types"]["claimed_amount"] == "money"
     assert ic["field_types"]["denial_reasons"] == "entity_list:free_text"
-    assert len(classes) == 5
+    assert len(classes) == 6
     agents = tax["agents"]
     assert "insurance_claims_specialist" in agents
     assert agents["insurance_claims_specialist"]["provider"] == "openrouter"
@@ -97,7 +97,7 @@ def test_sorter_doc_classes_table_contains_insurance_claim():
     from langchain_agents.sorter_agent import DOC_CLASSES, DOC_CLASS_KEYS
 
     assert "insurance_claim" in DOC_CLASS_KEYS
-    assert len(DOC_CLASSES) == 5
+    assert len(DOC_CLASSES) == 6
     entry = next(d for d in DOC_CLASSES if d["key"] == "insurance_claim")
     assert entry["label"] == "Insurance Claim"
 

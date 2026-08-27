@@ -22,7 +22,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 |---|---|
 | **Release** | [`v0.5.0`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.5.0) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
-| **Agents** | 13 LLM + procedural agents across 5 document classes |
+| **Agents** | 13 LLM + procedural agents across 6 document classes |
 | **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
 | **Observability** | Langfuse · Braintrust · Arize Phoenix — optional; the pipeline runs fine without any of them |
 | **Docs** | Canonical under [`docs/`](docs/) · browsable locally via [docmd](https://github.com/docmd-io/docmd) |
@@ -33,7 +33,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 This repository consists of:
 
 - A **python library + pipeline** (`src/`) — a LangGraph state machine that moves each document through classification, specialist extraction, quality gates, reporting, and archival.
-- **13 LLM + procedural agents across 5 document classes** — a sorter, five extraction specialists, a judge/arbiter quality lane, a boss escalation agent, a reporter, and procedural PDF/image workers (see [Agent Organization](#agent-organization)).
+- **13 LLM + procedural agents across 6 document classes** — a sorter, five extraction specialists (contracts also covers MAUD `merger_agreement`), a judge/arbiter quality lane, a boss escalation agent, a reporter, and procedural PDF/image workers (see [Agent Organization](#agent-organization)).
 - An **evaluation suite** — a 22-sample pilot with ground truth, deterministic field scoring, LLM-as-a-judge evaluators, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
 - **Canonical documentation** (`docs/`) — browsable locally with [docmd](https://github.com/docmd-io/docmd) (see [Browsing the Docs Locally](#browsing-the-docs-locally)).
 - A **dataset browser notebook** (`notebooks/`) — docile-style thin notebook over a reusable tool module.

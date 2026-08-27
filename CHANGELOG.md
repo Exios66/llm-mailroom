@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`merger_agreement` is a live MAUD class, not a CUAD contract alias.** Taxonomy, schema, sorter labels, HF `expected_doc_class`, and reconsideration GT comparison treat MAUD merger agreements as their own document class. Predicting `contract` when GT is `merger_agreement` is a class miss (Lane A). Extraction still uses `contracts_specialist` (shared `ContractExtraction` field map including `maud_clauses`). HF `ALIGN` no longer maps MAUD ≡ CUAD. Pilot `manifest.csv` files the six LegalBench MAUD samples as `merger_agreement` (not `contract`).
+
 ### Added
 
 - **Dojo 0.11.0 pin (scoring docs + prompt catalog).** `pyproject.toml` now pins `llm-dojo-scoring @v0.11.0` (`35f3584`). Formulas and T0 names are unchanged from 0.10.0. Mailroom consumes the new `MetricDef` `citation` / `inclusion` / `ground_truth` metadata (never invent `field_presence` as 0.0) and the importable `llm_dojo_scoring.prompts` catalog (anti-priming on live `prompt_templates()`, honest empty text for intake/archivist/proposed auditors). Production prompts stay owned here; the catalog is the scored snapshot.
