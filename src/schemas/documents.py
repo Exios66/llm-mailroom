@@ -79,6 +79,9 @@ class InsuranceClaimExtraction(BaseModel):
 
 EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
     "contract": ContractExtraction,
+    # MAUD merger agreements share the CUAD field map (parties, dates,
+    # maud_clauses, …) but are a distinct live class — not an extract alias.
+    "merger_agreement": ContractExtraction,
     "corporate_record": CorporateRecordExtraction,
     "correspondence": CorrespondenceExtraction,
     "compliance_filing": ComplianceFilingExtraction,

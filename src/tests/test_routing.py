@@ -81,8 +81,7 @@ class TestRoutingLogic:
         assert after_classify(state) == "human_review"
 
     def test_after_classify_merger_agreement_high_confidence_extracts(self):
-        # Extract alias: sorter may emit merger_agreement; contracts specialist
-        # owns the schema. Must not park the way retired classes do.
+        # merger_agreement is a live MAUD class, not an alias of CUAD contract.
         state = {
             "classification_confidence": 0.99,
             "classification_attempts": 1,

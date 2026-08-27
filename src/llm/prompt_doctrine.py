@@ -54,9 +54,11 @@ DOC_SUBCLASS = (
 )
 
 SEVEN_CLASSES = (
-    "The mailroom taxonomy has five primary classes: contract, "
-    "corporate_record, correspondence, compliance_filing, "
-    "insurance_claim. A demand letter about a contract is "
+    "The mailroom taxonomy has six primary classes: contract, "
+    "corporate_record, correspondence, compliance_filing, insurance_claim, "
+    "merger_agreement. merger_agreement is the MAUD class (agreement and "
+    "plan of merger); contract is the CUAD commercial-contract class — "
+    "they are not interchangeable. A demand letter about a contract is "
     "correspondence; an insurance policy is contract; FNOL/adjuster/"
     "coverage-denial paperwork is insurance_claim. A court opinion or "
     "due-diligence checklist/memo is not a mailroom class — set doc_type "
@@ -217,7 +219,7 @@ JUDGE_COMPLETENESS = _block(
 JUDGE_CLASSIFICATION = classification_doctrine(
     [
         "Grade doc_type and, for contracts, contract_subtype. A correct class with a missing subtype is not fully correct.",
-        "unknown is a valid assigned type when the document fits none of the five live classes; do not mark that incorrect merely because a nearby class exists.",
+        "unknown is a valid assigned type when the document fits none of the six live classes; do not mark that incorrect merely because a nearby class exists.",
     ]
 )
 

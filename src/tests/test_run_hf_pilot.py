@@ -16,10 +16,10 @@ from scripts.run_hf_pilot import (
 )
 
 
-def test_pipeline_class_aligns_merger_agreement():
-    assert pipeline_class("merger_agreement") == "contract"
+def test_pipeline_class_keeps_merger_agreement_distinct():
+    assert pipeline_class("merger_agreement") == "merger_agreement"
     assert pipeline_class("insurance_claim") == "insurance_claim"
-    assert ALIGN["merger_agreement"] == "contract"
+    assert ALIGN.get("merger_agreement") is None
 
 
 def test_parse_hf_row_reads_nested_metadata():
@@ -264,13 +264,13 @@ def test_summarize_rows_counts_cost_and_accuracy():
     rows = [
         {"expected": "contract", "exact_ok": True, "aligned_ok": True, "subclass_ok": True,
          "llm_cost_usd": 0.01, "llm_tokens": 100, "llm_calls": 2, "wall_time_s": 1.0, "stage": "archived"},
-        {"expected": "merger_agreement", "exact_ok": False, "aligned_ok": True, "subclass_ok": False,
+        {"expected": "merger_agreement", "exact_ok": False, "aligned_ok": False, "subclass_ok": False,
          "llm_cost_usd": 0.02, "llm_tokens": 200, "llm_calls": 3, "wall_time_s": 2.0, "stage": "review"},
     ]
     summary = summarize_rows(rows)
     assert summary["n"] == 2
     assert summary["exact_accuracy"] == 0.5
-    assert summary["aligned_accuracy"] == 1.0
+    assert summary["aligned_accuracy"] == 0.5
     assert summary["subclass_accuracy"] == 0.5
     assert summary["total_cost_usd"] == 0.03
     assert summary["total_tokens"] == 300

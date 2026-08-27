@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`merger_agreement` is a live MAUD class, not a CUAD contract alias.** Taxonomy, schema, sorter labels, HF `expected_doc_class`, and reconsideration GT comparison treat MAUD merger agreements as their own document class. Predicting `contract` when GT is `merger_agreement` is a class miss (Lane A). Extraction still uses `contracts_specialist` (shared `ContractExtraction` field map including `maud_clauses`). HF `ALIGN` no longer maps MAUD ≡ CUAD. Pilot `manifest.csv` files the six LegalBench MAUD samples as `merger_agreement` (not `contract`).
+
 ### Added
 
 - **Reconsideration beyond self-reported confidence (The-Mailroom PR #14).** `pipeline/reconsideration.py` mirrors the visualizer cause tokens. Ground-truth class misses go to Lane A even at 0.99 confidence (reviewer still-wrong → human review). Hollow extracts and expected-field coverage below `confidence.low` retry then review. Failed `compile_report` withholds `catalog_write` so incomplete reports cannot archive.

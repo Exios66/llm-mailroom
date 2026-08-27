@@ -58,7 +58,7 @@ The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `lan
 | Attribute | Value |
 |---|---|
 | **Node** | `extract`, `retry_extract` |
-| **Trigger** | `doc_type == contract` |
+| **Trigger** | `doc_type` is `contract` (CUAD) or `merger_agreement` (MAUD) |
 | **Input** | Contract text + `ContractExtraction` schema (+ page images) |
 | **Output** | Structured extraction + confidence |
 | **Personality** | Meticulous, formal, precise to a fault |
@@ -76,7 +76,7 @@ The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `lan
 | `contract_value` | `str \| None` | Total value |
 | `renewal_terms` | `str \| None` | Renewal conditions |
 
-The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): `contracts_specialist_v32` prompt (V31 eval-validated extraction + mailroom pipeline doctrine), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other four specialists accept the same optional `handoff_context` parameter.
+The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): `contracts_specialist_v32` prompt (V31 eval-validated extraction + mailroom pipeline doctrine), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts **two live classes** that share `ContractExtraction`: CUAD `contract` and MAUD `merger_agreement` (taxonomy `specialist: contracts_specialist`; they are not interchangeable labels). It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` / MAUD consideration + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other four specialists accept the same optional `handoff_context` parameter.
 
 ---
 
