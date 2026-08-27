@@ -273,7 +273,9 @@ See `.env.example` for the complete list:
 | `MAILROOM_CHECKPOINTER` | No | `memory` | LangGraph checkpointer backend: `memory` (MemorySaver default — stateless design, review resume re-invokes from the manifest) or `sqlite` (on-disk SqliteSaver at `<MAILROOM_BASE_DIR>/checkpoints.db`, for debugging/resume-across-restart experiments) |
 | `MAILROOM_JUDGE_VERIFY` | No | `on` | Kill-switch for the judge-verify exception lane (KANBAN-063): set `off`/`false`/`0`/`no` to skip gated completeness verification entirely. When on, the lane fires only on grounded extractions landing in the ambiguous band (`low <= confidence < judge_band_high`, default 0.85) — clean high-confidence extractions cost zero added judge calls |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
-| `WATCHER_POLL_INTERVAL_SECONDS` | No | `2` | Watcher poll interval |
+| `WATCHER_POLL_INTERVAL_SECONDS` | No | `1` | Inbox rescan interval (seconds) |
+| `MAILROOM_EMBED_WATCHER` | No | on (off under pytest) | API lifespan starts the inbox watcher. Set `0` when a dedicated `python -m pipeline.watcher` holds `watcher.lock` |
+| `WATCHER_STALE_SECONDS` | No | `15` | `/health` `checks.watcher` lamp: heartbeat older than this is `stale` |
 | `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |
 | `MAILROOM_VISION_ENABLED` | No | `true` | Enable/disable vision ingestion (overrides `vision.enabled` in taxonomy.yaml) |
 | `MAILROOM_VISION_MAX_PAGES` | No | `10` | Max PDF pages to render as images (0 = all pages; overrides `vision.max_pages`) |

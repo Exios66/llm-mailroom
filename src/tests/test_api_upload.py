@@ -115,6 +115,29 @@ class TestQueue:
         assert r.json()["queued_count"] == 0
 
 
+class TestHealthWatcherLamp:
+    def test_health_reports_missing_watcher_and_skips_meta(self, client):
+        from pipeline.bins import inbox_dir, write_inbox_meta
+
+        dest = inbox_dir() / "waiting.txt"
+        dest.write_bytes(b"hello")
+        write_inbox_meta(dest, upload_id="x", matter_id="M")
+        r = client.get("/health")
+        assert r.status_code == 200
+        checks = r.json()["checks"]
+        assert checks["watcher"] == "missing"
+        assert checks["watcher_embedded"] is False
+        assert checks["watcher_heartbeat_seconds_ago"] is None
+        assert checks["inbox_pending"] == 1
+
+    def test_health_lamp_live_after_heartbeat(self, client, temp_base_dir):
+        from pipeline import bins
+
+        bins.touch_watcher_heartbeat()
+        r = client.get("/health")
+        assert r.json()["checks"]["watcher"] == "live"
+
+
 class TestWatcherMatterInference:
     def test_sidecar_matter_id_wins_over_filename(self, temp_base_dir):
         from pipeline import watcher
@@ -172,3 +195,81 @@ class TestWatcherHeartbeat:
         bins.touch_watcher_heartbeat()
         age = bins.watcher_heartbeat_age()
         assert age is not None and 0 <= age < 10
+
+    def test_watcher_lamp_states(self, temp_base_dir):
+        from pipeline import bins
+
+        assert bins.watcher_lamp(None) == "missing"
+        assert bins.watcher_lamp(0.5) == "live"
+        assert bins.watcher_lamp(16.0) == "stale"
+
+    def test_inbox_pending_skips_meta_sidecars(self, temp_base_dir):
+        from pipeline import bins
+
+        inbox = bins.inbox_dir()
+        (inbox / "doc.txt").write_bytes(b"x")
+        (inbox / "doc.txt.meta").write_text("{}")
+        (inbox / "notes.md").write_bytes(b"y")
+        assert bins.count_inbox_pending() == 2
+
+
+class TestWatcherInboxEvents:
+    def test_modified_and_moved_schedule_process(self, temp_base_dir, monkeypatch):
+        from pipeline import watcher
+        from pipeline.bins import inbox_dir
+
+        scheduled = []
+        monkeypatch.setattr(
+            watcher.InboxHandler,
+            "_process",
+            lambda self, path: scheduled.append(path.name),
+        )
+
+        class ImmediateThread:
+            def __init__(self, target=None, args=(), daemon=None, **kwargs):
+                self._target = target
+                self._args = args
+
+            def start(self):
+                self._target(*self._args)
+
+        monkeypatch.setattr(watcher.threading, "Thread", ImmediateThread)
+        handler = watcher.InboxHandler("worker")
+        inbox = inbox_dir()
+        created = inbox / "a.txt"
+        created.write_bytes(b"x")
+        moved = inbox / "b.txt"
+        moved.write_bytes(b"y")
+
+        class _Evt:
+            def __init__(self, src, dest=None, is_directory=False):
+                self.src_path = str(src)
+                self.dest_path = str(dest or src)
+                self.is_directory = is_directory
+
+        handler.on_modified(_Evt(created))
+        handler.on_moved(_Evt(inbox / "elsewhere.txt", moved))
+        assert "a.txt" in scheduled
+        assert "b.txt" in scheduled
+
+    def test_meta_sidecar_ignored_on_modified(self, temp_base_dir, monkeypatch):
+        from pipeline import watcher
+        from pipeline.bins import inbox_dir
+
+        scheduled = []
+        monkeypatch.setattr(
+            watcher.InboxHandler,
+            "_process",
+            lambda self, path: scheduled.append(path.name),
+        )
+        handler = watcher.InboxHandler("worker")
+        meta = inbox_dir() / "a.txt.meta"
+        meta.write_text("{}")
+
+        class _Evt:
+            is_directory = False
+            src_path = str(meta)
+            dest_path = str(meta)
+
+        handler.on_modified(_Evt())
+        assert scheduled == []
