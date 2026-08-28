@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Aborted runs now carry a `failure_class`.** `run_pipeline` used to park every
+  crash as `unexpected error`. Timeouts, 401/403, 429s, I/O, and budget aborts
+  are classified (`llm_timeout` / `llm_auth` / `llm_rate_limit` / `io_error` /
+  `run_budget`) on the failed manifest, audit entry, and result state.
+- **REVIEW Complete rejects cross-class extraction payloads.** Operator
+  `extracted_data` is validated against the parked document's specialist schema;
+  correspondence fields on a contract manifest now 400 instead of archiving.
+- **Stale-claim requeue is idempotent.** If inbox already has the same bytes,
+  the processing copy is dropped. A different file at the same name gets a
+  `--stale` suffix instead of overwriting.
 - **Complete without a JSON body no longer 400s when extraction is already parked.**
   `POST /review/{doc_id}/resolve` `disposition=complete` used to require a
   non-empty `extracted_data` object, so The-Mailroom's Complete button failed
@@ -16,6 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or the operator accepted the parked fields). The producer now uses the
   parked manifest payload, accepts a JSON string, and only 400s when neither
   the body nor the manifest has extraction.
+
+### Added
+
+- **API token rotation.** `MAILROOM_API_TOKENS` (csv) adds live bearer keys;
+  `MAILROOM_API_TOKEN_REVOKED` subtracts retired ones. Primary
+  `MAILROOM_API_TOKEN` still works. Off-loopback bind still requires at least
+  one live token.
+
+### Notes
+
+- A forensic report claimed 22 `SCORE_CONFIGS` names were missing from
+  llm-dojo-scoring v0.12.1 and that pytest collection failed. Against the
+  installed 0.12.1 registry those names are present (0 missing; 768 tests
+  collect). `test_forensic_claimed_missing_scores_are_in_dojo_registry` is the
+  tripwire. Splitting `build_graph.py` remains known maintenance debt; this
+  change classifies failures instead of a risky node extract.
 
 ### Added
 

@@ -47,6 +47,25 @@ _DOC_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 _API_TOKEN = os.environ.get("MAILROOM_API_TOKEN", "").strip()
 
+
+def _csv_tokens(raw: str | None) -> set[str]:
+    return {part.strip() for part in (raw or "").split(",") if part.strip()}
+
+
+def active_api_tokens() -> set[str]:
+    """Live bearer tokens: ``MAILROOM_API_TOKEN`` plus ``MAILROOM_API_TOKENS``.
+
+    ``MAILROOM_API_TOKEN_REVOKED`` is subtracted so a rotated key can be
+    invalidated without restarting a second process. Empty set = loopback
+    unauthenticated mode (bind check still requires a token off-loopback).
+    """
+    tokens = set()
+    if _API_TOKEN:
+        tokens.add(_API_TOKEN)
+    tokens |= _csv_tokens(os.environ.get("MAILROOM_API_TOKENS", ""))
+    tokens -= _csv_tokens(os.environ.get("MAILROOM_API_TOKEN_REVOKED", ""))
+    return tokens
+
 # Upload guardrails (audit L-18): default 50 MB cap, 20 uploads/min burst.
 MAX_UPLOAD_BYTES = int(os.environ.get("MAILROOM_MAX_UPLOAD_BYTES", 50 * 1024 * 1024))
 _UPLOAD_WINDOW_SECONDS = 60
@@ -55,11 +74,13 @@ _upload_timestamps: list[float] = []
 
 
 def _require_token(request: Request) -> None:
-    """Dependency: reject requests without the bearer token (audit L-2)."""
-    if not _API_TOKEN:
+    """Dependency: reject requests without a live bearer token (audit L-2)."""
+    tokens = active_api_tokens()
+    if not tokens:
         return  # token disabled — see server bind note below; loopback-only default
     auth = request.headers.get("authorization", "")
-    if auth != f"Bearer {_API_TOKEN}":
+    prefix = "Bearer "
+    if not auth.startswith(prefix) or auth[len(prefix):].strip() not in tokens:
         raise HTTPException(401, "Missing or invalid API token")
 
 
@@ -549,6 +570,7 @@ async def resolve_review(doc_id: str, request: Request):
         copy_to_inbox,
         locate_document_file,
         resolve_complete_extracted,
+        validate_operator_extraction,
     )
 
     _validate_doc_id(doc_id)
@@ -669,6 +691,8 @@ async def resolve_review(doc_id: str, request: Request):
             extracted = resolve_complete_extracted(
                 payload.get("extracted_data"), manifest.extracted_data
             )
+            if manifest.doc_type:
+                extracted = validate_operator_extraction(manifest.doc_type, extracted)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
         from pipeline.bins import review_dir
@@ -1183,10 +1207,10 @@ if __name__ == "__main__":
     # override. When binding non-loopback, a bearer token is mandatory.
     host = os.environ.get("MAILROOM_API_HOST", "127.0.0.1")
     port = int(os.environ.get("MAILROOM_API_PORT", "8000"))
-    if host not in ("127.0.0.1", "localhost", "::1") and not _API_TOKEN:
+    if host not in ("127.0.0.1", "localhost", "::1") and not active_api_tokens():
         raise SystemExit(
             "Refusing to bind to a non-loopback address without MAILROOM_API_TOKEN "
-            "(audit L-2: unauthenticated API exposure)."
+            "or MAILROOM_API_TOKENS (audit L-2: unauthenticated API exposure)."
         )
     ensure_process_tracing()  # O-7: drop-warnings + flush/shutdown on exit
     uvicorn.run(app, host=host, port=port)
