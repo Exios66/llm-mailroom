@@ -43,6 +43,9 @@ CAUSE_LABELS: dict[str, str] = {
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
+# Dojo / Hub eval extras — scored by specialist suites but not in the
+# extraction schema or specialist prompts. Must not gate routing coverage.
+_EVAL_EXTRA_GT_KEYS = frozenset({"content_topic", "sentiment_label", "maud_clause_labels"})
 _TRUTHY_ZERO = frozenset({0, 0.0, "0", "false", "False", False})
 _EMPTY = (None, "", [], {})
 
@@ -109,15 +112,57 @@ def extraction_is_hollow(extracted: Any) -> bool:
     return True
 
 
+def routing_coverage_expected_fields(
+    expected_fields: Mapping[str, Any] | None,
+    doc_type: str | None = None,
+    *,
+    sources: Mapping[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Expected-field subset used by the extraction coverage routing gate.
+
+    Aligns with dojo ``peel_non_extraction_fields``: only registered schema
+    fields count, eval extras (``content_topic``, ``sentiment_label``, …) are
+    excluded, and post-hoc GT fills (regex-derived labels) do not park live
+    runs when the document never stated the field.
+    """
+    if not expected_fields:
+        return None
+    from observability.specialist_suites import schema_fields
+
+    allowed = frozenset(schema_fields(doc_type))
+    if not allowed:
+        allowed = frozenset(
+            key
+            for key, value in expected_fields.items()
+            if value not in _EMPTY and key not in _EVAL_EXTRA_GT_KEYS
+        )
+    src = sources or {}
+    filtered: dict[str, Any] = {}
+    for key, value in expected_fields.items():
+        if value in _EMPTY:
+            continue
+        if key in _EVAL_EXTRA_GT_KEYS:
+            continue
+        if allowed and key not in allowed:
+            continue
+        if str(src.get(key) or "").lower() == "posthoc":
+            continue
+        filtered[key] = value
+    return filtered or None
+
+
 def expected_field_coverage(
     extracted: Mapping[str, Any] | None,
     expected_fields: Mapping[str, Any] | None,
+    *,
+    coverage_fields: Mapping[str, Any] | None = None,
 ) -> float | None:
     """Fraction of non-empty expected fields that the extract surfaced."""
-    if not expected_fields:
+    expected = coverage_fields if coverage_fields is not None else expected_fields
+    if not expected:
         return None
     required = {
-        key: value for key, value in expected_fields.items() if value not in _EMPTY
+        key: value for key, value in expected.items() if value not in _EMPTY
     }
     if not required:
         return None
@@ -137,6 +182,8 @@ def coverage_below_floor(
     extracted: Mapping[str, Any] | None,
     expected_fields: Mapping[str, Any] | None,
     *,
+    doc_type: str | None = None,
+    sources: Mapping[str, str] | None = None,
     floor: float | None = None,
 ) -> bool:
     """True when grounded field coverage is below the visualizer floor."""
@@ -144,7 +191,10 @@ def coverage_below_floor(
         from pipeline.config import get_confidence_thresholds
 
         floor = float(get_confidence_thresholds().get("low", 0.70))
-    coverage = expected_field_coverage(extracted, expected_fields)
+    scoped = routing_coverage_expected_fields(
+        expected_fields, doc_type, sources=sources
+    )
+    coverage = expected_field_coverage(extracted, expected_fields, coverage_fields=scoped)
     if coverage is None:
         return False
     return coverage < floor

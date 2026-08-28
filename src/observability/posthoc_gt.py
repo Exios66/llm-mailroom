@@ -465,10 +465,20 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
     out: dict[str, Any] = {}
     notice = _label_value(
         head,
-        ("Notice ID", "Fill Reference", "Claim No.", "Claim Number", "CLAIM NO."),
+        (
+            "Notice ID",
+            "Fill Reference",
+            "Claim No.",
+            "Claim Number",
+            "CLAIM NO.",
+        ),
     )
     if notice:
         out["claim_number"] = notice.split()[0]
+    if not out.get("claim_number"):
+        m = re.search(r"Notice ID:\s*(\S+)", head, re.I)
+        if m:
+            out["claim_number"] = m.group(1).strip()
     policy = _label_value(head, ("Policy number", "Policy No.", "POLICY NO.", "Policy Number"))
     if policy:
         out["policy_number"] = policy.split()[0]
@@ -497,7 +507,16 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
     parsed = parse_date(loss) if loss else None
     if parsed:
         out["date_of_loss"] = parsed
-    filed = _label_value(head, ("Date Filed", "DATE FILED", "Date filed"))
+    filed = _label_value(
+        head,
+        (
+            "Date Filed",
+            "DATE FILED",
+            "Date filed",
+            "Discharge date",
+            "Claim period end",
+        ),
+    )
     if filed:
         parsed_filed = parse_date(filed)
         if parsed_filed:
@@ -514,6 +533,17 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
     money = first_money(amount or "") if amount else first_money(head)
     if money is not None:
         out["claimed_amount"] = money
+    if not out.get("claimed_amount"):
+        m = re.search(
+            r"Claim total paid by Medicare:\s*\$?\s*([\d,]+(?:\.\d{1,2})?)",
+            head,
+            re.I,
+        )
+        if m:
+            try:
+                out["claimed_amount"] = float(m.group(1).replace(",", ""))
+            except ValueError:
+                pass
     det = _label_value(head, ("COVERAGE DETERMINATION", "Coverage Determination", "Stated outcome (verbatim)"))
     if det:
         low = det.lower()
@@ -533,6 +563,22 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
         parts = [p.strip() for p in re.split(r"[;•\n]", docs) if p.strip()]
         if parts:
             out["supporting_documents"] = parts[:8]
+    if not out.get("supporting_documents"):
+        extras: list[str] = []
+        facility = _label_value(head, ("Facility provider number",))
+        if facility:
+            extras.append(f"facility provider {facility.split()[0]}")
+        for m in re.finditer(
+            r"(?:Attending/treating NPIs|NPIs?):\s*([0-9,\s]+)",
+            head,
+            re.I,
+        ):
+            for token in re.split(r"[,;\s]+", m.group(1)):
+                token = token.strip()
+                if token.isdigit():
+                    extras.append(f"provider NPI {token}")
+        if extras:
+            out["supporting_documents"] = extras[:8]
     return out
 
 
