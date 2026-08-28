@@ -259,7 +259,13 @@ def after_extraction(state: dict) -> Literal[
 
     gt = state.get("ground_truth") or {}
     expected_fields = gt.get("expected_fields") if isinstance(gt, dict) else None
-    if coverage_below_floor(extracted if isinstance(extracted, dict) else {}, expected_fields):
+    sources = gt.get("expected_fields_sources") if isinstance(gt, dict) else None
+    if coverage_below_floor(
+        extracted if isinstance(extracted, dict) else {},
+        expected_fields,
+        doc_type=state.get("doc_type"),
+        sources=sources if isinstance(sources, dict) else None,
+    ):
         if attempts <= retry_max:
             logger.info(
                 "extraction_coverage_retry",
