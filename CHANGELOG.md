@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Complete without a JSON body no longer 400s when extraction is already parked.**
+  `POST /review/{doc_id}/resolve` `disposition=complete` used to require a
+  non-empty `extracted_data` object, so The-Mailroom's Complete button failed
+  HTTP 400 when the REVIEW textarea was still empty (catalog probe in flight,
+  or the operator accepted the parked fields). The producer now uses the
+  parked manifest payload, accepts a JSON string, and only 400s when neither
+  the body nor the manifest has extraction.
+
 ### Added
 
 - **Parked-document source for The-Mailroom PR #20.** `GET /documents/{doc_id}/source`

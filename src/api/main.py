@@ -487,6 +487,14 @@ async def _parse_resolve_payload(request: Request) -> dict:
             raise HTTPException(400, "invalid JSON body")
         if not isinstance(body, dict):
             raise HTTPException(400, "JSON body must be an object")
+        extracted = body.get("extracted_data")
+        if isinstance(extracted, str):
+            from pipeline.review_resolve import coerce_extracted_data
+
+            try:
+                extracted = coerce_extracted_data(extracted)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
         return {
             "decision": str(body.get("decision") or "").strip(),
             "notes": str(body.get("notes") or ""),
@@ -495,7 +503,7 @@ async def _parse_resolve_payload(request: Request) -> dict:
             "doc_type": normalize_optional_str(body.get("doc_type")),
             "contract_subtype": body.get("contract_subtype"),
             "doc_subclass": body.get("doc_subclass"),
-            "extracted_data": body.get("extracted_data"),
+            "extracted_data": extracted,
         }
     form = await request.form()
     extracted_raw = form.get("extracted_data")
@@ -540,6 +548,7 @@ async def resolve_review(doc_id: str, request: Request):
         complete_human_extraction,
         copy_to_inbox,
         locate_document_file,
+        resolve_complete_extracted,
     )
 
     _validate_doc_id(doc_id)
@@ -656,9 +665,12 @@ async def resolve_review(doc_id: str, request: Request):
     if disposition == "complete":
         if decision != "approved":
             raise HTTPException(400, "disposition=complete requires decision=approved")
-        extracted = payload.get("extracted_data")
-        if not isinstance(extracted, dict) or not extracted:
-            raise HTTPException(400, "disposition=complete requires extracted_data object")
+        try:
+            extracted = resolve_complete_extracted(
+                payload.get("extracted_data"), manifest.extracted_data
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
         from pipeline.bins import review_dir
 
         review_file = review_dir() / manifest.original_filename
