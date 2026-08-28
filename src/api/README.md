@@ -9,7 +9,7 @@ You use it to:
 - Upload a document (`POST /upload`) — drops it in the inbox for the watcher to process. The upload carries a tracking `upload_id` and honors the submitted `matter_id` via a `<file>.meta` sidecar the watcher reads.
 - See the live inbox → processing queue (`GET /queue`) — queued uploads (with their metadata), in-flight worker claims, and recent documents.
 - Check where a document is in the pipeline (`GET /status/{doc_id}`).
-- Approve/reject/record/requeue/complete documents on human review (`POST /review/{doc_id}/resolve`, dispositions from The-Mailroom PR #18); list the tray (`GET /review/queue`) and look up by trace/filename (`GET /lookup`).
+- Approve/reject/record/requeue/complete documents on human review (`POST /review/{doc_id}/resolve`, dispositions from The-Mailroom PR #18/#20 — `doc_type` / `doc_subclass` class correction); list the tray (`GET /review/queue`), look up by trace/filename (`GET /lookup`), and read the parked file (`GET /documents/{doc_id}/source`, `?download=1` for original bytes).
 - See the tamper-proof audit trail (`GET /audit/{doc_id}`) or summarize the whole local audit DB (`GET /audit`).
 - List everything in a matter (`GET /matters/{matter_id}`).
 - See pipeline health/metrics (`GET /ops/status`, `GET /health` — `/health` reports `checks.watcher` live/stale/missing plus how recently the watcher heartbeat was touched, i.e. whether uploads are actually being drained). `/ops/status` includes `first_pass` / `first_pass_rate`: documents that archived in one hop with no reroute, scored without ground truth.
@@ -20,8 +20,11 @@ You use it to:
 python api/main.py        # serves on http://localhost:8000
 ```
 
-Then open `http://localhost:8000/docs` for an interactive test page (Swagger UI).
-
+Then open `http://localhost:8000/docs` for an interactive test page (Swagger UI)
+with Try-it-out buttons for every route. Day-to-day REVIEW actions (Approve /
+Reject / Requeue, class correction, Open original) should go through
+The-Mailroom's REVIEW desk when `MAILROOM_PIPELINE_URL` points here — no typed
+endpoints required.
 ## Technical reference
 
 - Single module: `main.py` defines `app = FastAPI(...)`. `python api/main.py` runs `uvicorn.run(app, host="0.0.0.0", port=8000)`. Equivalent: `uvicorn api.main:app --port 8000`.

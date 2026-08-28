@@ -188,6 +188,87 @@ def test_resolve_resume_override_doc_type_form_compat(client, temp_base_dir, moc
     assert r2.json()["resume"]["doc_type"] == "correspondence"
 
 
+def test_resolve_doc_type_alias_and_requeue_sidecar(client, temp_base_dir, mocker):
+    """The-Mailroom PR #20 sends doc_type (not override_doc_type)."""
+    from pipeline.bins import inbox_dir, read_inbox_meta, load_manifest
+
+    _park_review(temp_base_dir, doc_type="contract")
+    mocker.patch(
+        "graph.build_graph.resume_from_review",
+        return_value={
+            "stage": "archived",
+            "doc_type": "insurance_claim",
+            "extraction_confidence": 0.88,
+            "extraction_attempts": 1,
+        },
+    )
+    r = client.post(
+        "/review/doc-review-1/resolve",
+        headers=_auth(),
+        json={
+            "decision": "approved",
+            "disposition": "resume",
+            "doc_type": "insurance_claim",
+            "doc_subclass": "pde",
+            "notes": "sorter missed",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["class_override"]["doc_type"] == "insurance_claim"
+    assert body["class_override"]["doc_subclass"] == "pde"
+    m = load_manifest("doc-review-1")
+    assert m.doc_type == "insurance_claim"
+    assert m.doc_subclass == "pde"
+
+    # Requeue stamps class override onto the inbox sidecar
+    _park_review(temp_base_dir, doc_id="doc-rq", filename="claim.txt", doc_type="contract")
+    rq = client.post(
+        "/review/doc-rq/resolve",
+        headers=_auth(),
+        json={
+            "decision": "rejected",
+            "disposition": "requeue",
+            "doc_type": "insurance_claim",
+            "doc_subclass": "pde",
+        },
+    )
+    assert rq.status_code == 200, rq.text
+    inbox_name = rq.json()["inbox_file"]
+    meta = read_inbox_meta(inbox_dir() / inbox_name)
+    assert meta["doc_type"] == "insurance_claim"
+    assert meta["doc_subclass"] == "pde"
+    assert meta["note"] == "requeued_from_review"
+
+
+def test_document_source_text_and_download(client, temp_base_dir):
+    """GET /documents/{doc_id}/source — parked text pane + Open original."""
+    _park_review(temp_base_dir)
+    headers = _auth()
+    r = client.get("/documents/doc-review-1/source", headers=headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["doc_id"] == "doc-review-1"
+    assert body["filename"] == "parked.txt"
+    assert "Acme" in body["text"]
+    assert body["truncated"] is False
+    assert body["readable"] is True
+    assert body["bytes"] > 0
+
+    dl = client.get(
+        "/v1/documents/doc-review-1/source",
+        params={"download": "1"},
+        headers=headers,
+    )
+    assert dl.status_code == 200
+    assert b"Acme" in dl.content
+    assert "text" in (dl.headers.get("content-type") or "")
+
+    missing = client.get("/documents/nope/source", headers=headers)
+    assert missing.status_code == 404
+
+
 def test_audit_analyze_endpoint_and_script(client, temp_base_dir):
     _park_review(temp_base_dir)
     # Seed one audit row via resolve record
@@ -216,3 +297,4 @@ def test_v1_aliases_include_new_routes(client):
     assert "/v1/lookup" in paths
     assert "/v1/review/queue" in paths
     assert "/v1/audit" in paths
+    assert "/v1/documents/{doc_id}/source" in paths

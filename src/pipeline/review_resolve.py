@@ -1,6 +1,6 @@
 """Human-review resolve dispositions for the REVIEW tray / The-Mailroom proxy.
 
-Dispositions (The-Mailroom PR #18 contract):
+Dispositions (The-Mailroom PR #18 / #20 contract):
 
 - ``resume`` (default) — parked ``stage=review`` only. Approve re-extracts under
   the same ``doc_id``; reject moves to the failed bin.
@@ -9,14 +9,19 @@ Dispositions (The-Mailroom PR #18 contract):
 - ``requeue`` — copy the source file back to the inbox so the watcher
   resubmits a fresh run.
 
-Optional ``override_doc_type`` / subtype / subclass let an operator *reroute*
-classification before a resume. Optional ``extracted_data`` with
-``decision=approved`` and ``disposition=complete`` archives a human-finished
-extraction without another LLM pass.
+Optional ``doc_type`` / ``override_doc_type`` / subtype / subclass let an
+operator *reroute* classification before a resume (written onto the parked
+manifest) or stamp the inbox sidecar on requeue. Optional ``extracted_data``
+with ``decision=approved`` and ``disposition=complete`` archives a
+human-finished extraction without another LLM pass.
+
+Parked-document viewer (PR #20): ``GET /documents/{doc_id}/source`` returns
+extracted text JSON or ``?download=1`` original bytes.
 """
 
 from __future__ import annotations
 
+import mimetypes
 import shutil
 from pathlib import Path
 from typing import Any
@@ -29,6 +34,9 @@ logger = structlog.get_logger(__name__)
 
 DISPOSITIONS = frozenset({"resume", "record", "requeue", "complete"})
 DECISIONS = frozenset({"approved", "rejected"})
+
+# Cap parked-text pane size so REVIEW desks stay responsive on large PDFs.
+SOURCE_TEXT_CAP = 200_000
 
 
 def live_doc_types() -> set[str]:
@@ -99,27 +107,71 @@ def tray_actions_for(stage: str | None) -> list[dict[str, str]]:
     return actions
 
 
+def normalize_optional_str(value: Any) -> str | None:
+    """Empty / whitespace → None (visualizer sends '' for 'keep current')."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def resolve_doc_type_override(
+    *,
+    override_doc_type: Any = None,
+    doc_type: Any = None,
+) -> str | None:
+    """Prefer ``override_doc_type``; accept The-Mailroom ``doc_type`` alias."""
+    return normalize_optional_str(override_doc_type) or normalize_optional_str(doc_type)
+
+
 def apply_classification_override(
     manifest: DocumentManifest,
     *,
     override_doc_type: str | None = None,
+    doc_type: str | None = None,
     contract_subtype: str | None = None,
     doc_subclass: str | None = None,
-) -> DocumentManifest:
-    """Reroute classification fields on the manifest before resume/complete."""
-    if override_doc_type:
+) -> dict[str, str]:
+    """Reroute classification fields on the manifest before resume/complete.
+
+    Returns the applied override dict (may be empty) for audit / sidecar /
+    response ``class_override``. ``None`` means leave the field alone; an
+    empty string clears it. Prefer ``override_doc_type``; accept The-Mailroom
+    ``doc_type`` alias (PR #20).
+    """
+    applied: dict[str, str] = {}
+    kind = resolve_doc_type_override(
+        override_doc_type=override_doc_type, doc_type=doc_type
+    )
+    if kind:
         allowed = live_doc_types()
-        if override_doc_type not in allowed:
+        if kind not in allowed:
             raise ValueError(
-                f"override_doc_type must be one of {sorted(allowed)}; "
-                f"got {override_doc_type!r}"
+                f"doc_type must be one of {sorted(allowed)}; got {kind!r}"
             )
-        manifest.doc_type = override_doc_type
-    if contract_subtype is not None:
-        manifest.contract_subtype = contract_subtype or None
-    if doc_subclass is not None:
-        manifest.doc_subclass = doc_subclass or None
-    return manifest
+        manifest.doc_type = kind
+        applied["doc_type"] = kind
+
+    subclass_set = doc_subclass is not None
+    subtype_set = contract_subtype is not None
+    subclass = normalize_optional_str(doc_subclass) if subclass_set else None
+    subtype = normalize_optional_str(contract_subtype) if subtype_set else None
+
+    if subclass_set:
+        manifest.doc_subclass = subclass
+        if subclass:
+            applied["doc_subclass"] = subclass
+
+    if subtype_set:
+        manifest.contract_subtype = subtype
+        if subtype:
+            applied["contract_subtype"] = subtype
+    elif subclass and (kind or manifest.doc_type) == "contract":
+        # Visualizer sends doc_subclass; mirror for contract extract routing.
+        manifest.contract_subtype = subclass
+        applied["contract_subtype"] = subclass
+
+    return applied
 
 
 def locate_document_file(manifest: DocumentManifest) -> Path | None:
@@ -162,8 +214,14 @@ def copy_to_inbox(
     *,
     preferred_name: str | None = None,
     matter_id: str = "DEFAULT",
+    class_override: dict[str, str] | None = None,
 ) -> Path:
-    """Copy ``source`` into the inbox (collision-safe). Does not move the original."""
+    """Copy ``source`` into the inbox (collision-safe). Does not move the original.
+
+    When ``class_override`` is set (The-Mailroom PR #20), stamp those fields on
+    the inbox ``.meta`` sidecar so operators can see the intended reroute on
+    the requeued upload.
+    """
     from pipeline.bins import inbox_dir, write_inbox_meta
 
     inbox = inbox_dir()
@@ -177,14 +235,86 @@ def copy_to_inbox(
             dest = inbox / f"{stem}-requeue-{n}{suffix}"
             n += 1
     shutil.copy2(str(source), str(dest))
-    write_inbox_meta(
-        dest,
-        upload_id=f"requeue-{dest.stem[:8]}",
-        matter_id=matter_id or "DEFAULT",
-        original_filename=name,
-        note="requeued_from_review",
-    )
+    meta: dict[str, Any] = {
+        "upload_id": f"requeue-{dest.stem[:8]}",
+        "matter_id": matter_id or "DEFAULT",
+        "original_filename": name,
+        "note": "requeued_from_review",
+    }
+    if class_override:
+        for key in ("doc_type", "doc_subclass", "contract_subtype"):
+            if class_override.get(key):
+                meta[key] = class_override[key]
+    write_inbox_meta(dest, **meta)
     return dest
+
+
+def guess_content_type(path: Path) -> str:
+    ctype, _ = mimetypes.guess_type(str(path))
+    if ctype:
+        if ctype.startswith("text/") and "charset" not in ctype:
+            return f"{ctype}; charset=utf-8"
+        return ctype
+    return "application/octet-stream"
+
+
+def read_document_source(
+    manifest: DocumentManifest,
+    *,
+    max_chars: int = SOURCE_TEXT_CAP,
+) -> dict[str, Any]:
+    """Build the parked-document JSON payload for ``GET …/source``.
+
+    Locates the on-disk file across bins, extracts text (PDF/image via the
+    same helpers the pipeline uses), and truncates to ``max_chars``.
+    """
+    path = locate_document_file(manifest)
+    if path is None:
+        raise FileNotFoundError(
+            f"Source file not found for doc_id={manifest.doc_id}"
+        )
+    size = path.stat().st_size
+    content_type = guess_content_type(path)
+    text, readable = _extract_source_text(path)
+    truncated = False
+    if len(text) > max_chars:
+        text = text[:max_chars]
+        truncated = True
+    return {
+        "status": "ok",
+        "doc_id": manifest.doc_id,
+        "filename": path.name,
+        "content_type": content_type,
+        "text": text,
+        "truncated": truncated,
+        "bytes": size,
+        "readable": bool(readable and text.strip()),
+        "path": str(path),
+    }
+
+
+def _extract_source_text(path: Path) -> tuple[str, bool]:
+    """Best-effort text for the REVIEW pane (never raises)."""
+    ext = path.suffix.lower()
+    if ext in {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm", ".log"}:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            return text, bool(text.strip())
+        except OSError:
+            return "", False
+    try:
+        # Reuse pipeline transcription for PDF / image / docx.
+        from graph.build_graph import _read_file_text
+
+        return _read_file_text(path)
+    except Exception:
+        logger.exception("document_source_extract_failed", file=str(path))
+        try:
+            raw = path.read_bytes()
+            text = raw.decode("utf-8", errors="replace")
+            return text, bool(text.strip())
+        except OSError:
+            return f"[Unreadable file: {path.name}]", False
 
 def complete_human_extraction(
     manifest: DocumentManifest,

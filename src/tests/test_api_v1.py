@@ -21,6 +21,7 @@ V1_PATHS = [
     ("GET", "/v1/lookup"),
     ("GET", "/v1/review/queue"),
     ("POST", "/v1/review/{doc_id}/resolve"),
+    ("GET", "/v1/documents/{doc_id}/source"),
     ("GET", "/v1/status/{doc_id}"),
     ("GET", "/v1/matters/{matter_id}"),
     ("GET", "/v1/audit"),

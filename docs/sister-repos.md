@@ -41,7 +41,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | Repository | Role | Relationship to mailroom |
 |---|---|---|
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board and discussion log with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.11.0` / [PR #8](https://github.com/Exios66/llm-dojo-scoring/pull/8)); consumed through thin re-export shims |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog; local-vs-API serving suite in v0.12.x) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.11.0` / [PR #8](https://github.com/Exios66/llm-dojo-scoring/pull/8)); v0.12.0/v0.12.1 serving comparison ([PR #9](https://github.com/Exios66/llm-dojo-scoring/pull/9)/[#10](https://github.com/Exios66/llm-dojo-scoring/pull/10)) awaits a published `v0.12.1` tag before the consumer pin moves |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
@@ -170,14 +170,19 @@ The scoring layer both mailroom and entity-extraction consume:
   `on_moved` / `on_modified` inbox events so an upload appears on the floor
   within one poll tick. `MAILROOM_PIPELINE_URL` on the visualizer should
   point at this API (`http://127.0.0.1:8000`).
-- **REVIEW resolve (The-Mailroom [PR #18](https://github.com/Exios66/The-Mailroom/pull/18)):**
+- **REVIEW resolve (The-Mailroom [PR #18](https://github.com/Exios66/The-Mailroom/pull/18)
+  + [PR #20](https://github.com/Exios66/The-Mailroom/pull/20)):**
   the visualizer proxies operator decisions to this API — never holds producer
-  keys in the browser. Producer surface: `GET /lookup`, `GET /audit/{doc_id}`,
+  keys in the browser. REVIEW desk buttons (Approve / Reject / Requeue, class /
+  subtype selects, Open original / text pane) call the producer so operators
+  never type endpoints. Producer surface: `GET /lookup`, `GET /audit/{doc_id}`,
   `POST /review/{doc_id}/resolve` with `disposition=resume|record|requeue`
-  (plus mailroom-local `complete` + classification overrides for tray
-  reroute/finish). Set `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` on
-  the visualizer. Full audit parse: `GET /audit` /
-  `scripts/analyze_audit_db.py`.
+  (plus mailroom-local `complete`), optional `doc_type` / `doc_subclass`
+  (written to the parked manifest on resume; stamped on the inbox sidecar on
+  requeue), and `GET /documents/{doc_id}/source` (`?download=1` for original
+  bytes). Set `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` on the
+  visualizer (not `MAILROOM_API_URL`, which is TUI → visualizer `:8001`). Full
+  audit parse: `GET /audit` / `scripts/analyze_audit_db.py`.
 - **Governance:** fully governed member of the family — own `AGENTS.md`, own
   semver release train (v0.2.0), own test suite (never hits real Langfuse),
   own wiki. It is a downstream OBSERVER: dependency of no family repo — the

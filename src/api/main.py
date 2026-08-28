@@ -472,7 +472,13 @@ async def review_queue():
 
 
 async def _parse_resolve_payload(request: Request) -> dict:
-    """Accept JSON (The-Mailroom proxy) or form-urlencoded (legacy clients)."""
+    """Accept JSON (The-Mailroom proxy) or form-urlencoded (legacy clients).
+
+    The-Mailroom PR #20 sends ``doc_type`` / ``doc_subclass``; legacy clients
+    may still send ``override_doc_type``. Empty strings mean "keep current".
+    """
+    from pipeline.review_resolve import normalize_optional_str
+
     content_type = (request.headers.get("content-type") or "").lower()
     if "application/json" in content_type:
         try:
@@ -485,7 +491,8 @@ async def _parse_resolve_payload(request: Request) -> dict:
             "decision": str(body.get("decision") or "").strip(),
             "notes": str(body.get("notes") or ""),
             "disposition": str(body.get("disposition") or "resume").strip() or "resume",
-            "override_doc_type": body.get("override_doc_type"),
+            "override_doc_type": normalize_optional_str(body.get("override_doc_type")),
+            "doc_type": normalize_optional_str(body.get("doc_type")),
             "contract_subtype": body.get("contract_subtype"),
             "doc_subclass": body.get("doc_subclass"),
             "extracted_data": body.get("extracted_data"),
@@ -504,7 +511,8 @@ async def _parse_resolve_payload(request: Request) -> dict:
         "decision": str(form.get("decision") or "").strip(),
         "notes": str(form.get("notes") or ""),
         "disposition": str(form.get("disposition") or "resume").strip() or "resume",
-        "override_doc_type": form.get("override_doc_type"),
+        "override_doc_type": normalize_optional_str(form.get("override_doc_type")),
+        "doc_type": normalize_optional_str(form.get("doc_type")),
         "contract_subtype": form.get("contract_subtype"),
         "doc_subclass": form.get("doc_subclass"),
         "extracted_data": extracted,
@@ -513,11 +521,15 @@ async def _parse_resolve_payload(request: Request) -> dict:
 
 @app.post("/review/{doc_id}/resolve", dependencies=[Depends(_require_token)])
 async def resolve_review(doc_id: str, request: Request):
-    """Resolve a REVIEW / RECONSIDER item (The-Mailroom PR #18 dispositions).
+    """Resolve a REVIEW / RECONSIDER item (The-Mailroom PR #18 / #20).
 
     Body (JSON or form): ``decision`` (approved|rejected), optional ``notes``,
     ``disposition`` (resume|record|requeue|complete), optional classification
-    overrides, and optional ``extracted_data`` for ``complete``.
+    overrides (``doc_type`` or ``override_doc_type``, ``doc_subclass``,
+    ``contract_subtype``), and optional ``extracted_data`` for ``complete``.
+
+    Prefer the visualizer REVIEW desk buttons (Approve / Reject / Requeue) over
+    hand-rolled curls — they post here through ``MAILROOM_PIPELINE_URL``.
     """
     import asyncio
 
@@ -548,14 +560,19 @@ async def resolve_review(doc_id: str, request: Request):
         raise HTTPException(404, f"Manifest not found for doc_id: {doc_id}")
 
     try:
-        apply_classification_override(
+        class_override = apply_classification_override(
             manifest,
             override_doc_type=payload.get("override_doc_type"),
+            doc_type=payload.get("doc_type"),
             contract_subtype=payload.get("contract_subtype"),
             doc_subclass=payload.get("doc_subclass"),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+    if class_override and disposition in {"record", "requeue", "resume", "complete"}:
+        manifest.touch()
+        save_manifest(manifest)
 
     # --- record: paper trail only (any stage) ---------------------------------
     if disposition == "record":
@@ -565,6 +582,8 @@ async def resolve_review(doc_id: str, request: Request):
             "disposition": "record",
             "stage": manifest.stage.value if hasattr(manifest.stage, "value") else manifest.stage,
         }
+        if class_override:
+            detail["class_override"] = class_override
         if notes:
             prior = manifest.escalation_reason or ""
             tag = f"[review:{decision}] {notes}"
@@ -573,13 +592,16 @@ async def resolve_review(doc_id: str, request: Request):
             save_manifest(manifest)
         await _write_review_audit_entry(doc_id, manifest.matter_id, event, notes, detail=detail)
         logger.info("review_recorded", doc_id=doc_id, decision=decision)
-        return {
+        body = {
             "status": "ok",
             "doc_id": doc_id,
             "decision": decision,
             "disposition": "record",
             "notes": notes,
         }
+        if class_override:
+            body["class_override"] = class_override
+        return body
 
     # --- requeue: copy source → inbox ----------------------------------------
     if disposition == "requeue":
@@ -591,6 +613,7 @@ async def resolve_review(doc_id: str, request: Request):
                 source,
                 preferred_name=manifest.original_filename,
                 matter_id=manifest.matter_id,
+                class_override=class_override or None,
             )
         except Exception as exc:
             logger.exception("review_requeue_failed", doc_id=doc_id)
@@ -605,10 +628,11 @@ async def resolve_review(doc_id: str, request: Request):
                 "disposition": "requeue",
                 "inbox_file": dest.name,
                 "source": str(source),
+                **({"class_override": class_override} if class_override else {}),
             },
         )
         logger.info("review_requeued", doc_id=doc_id, inbox_file=dest.name)
-        return {
+        body = {
             "status": "ok",
             "doc_id": doc_id,
             "decision": decision,
@@ -616,6 +640,9 @@ async def resolve_review(doc_id: str, request: Request):
             "notes": notes,
             "inbox_file": dest.name,
         }
+        if class_override:
+            body["class_override"] = class_override
+        return body
 
     # Remaining dispositions require a parked review document.
     if manifest.stage != PipelineStage.REVIEW:
@@ -662,9 +689,13 @@ async def resolve_review(doc_id: str, request: Request):
             manifest.matter_id,
             "review_completed",
             notes,
-            detail={"disposition": "complete", "stage": result.get("stage")},
+            detail={
+                "disposition": "complete",
+                "stage": result.get("stage"),
+                **({"class_override": class_override} if class_override else {}),
+            },
         )
-        return {
+        body = {
             "status": "ok",
             "doc_id": doc_id,
             "decision": decision,
@@ -672,6 +703,9 @@ async def resolve_review(doc_id: str, request: Request):
             "notes": notes,
             "complete": result,
         }
+        if class_override:
+            body["class_override"] = class_override
+        return body
 
     # --- resume (default) ----------------------------------------------------
     if decision == "rejected":
@@ -685,22 +719,28 @@ async def resolve_review(doc_id: str, request: Request):
             manifest.matter_id,
             "review_rejected",
             notes,
-            detail={"disposition": "resume"},
+            detail={
+                "disposition": "resume",
+                **({"class_override": class_override} if class_override else {}),
+            },
         )
         logger.info("review_rejected", doc_id=doc_id)
-        return {
+        body = {
             "status": "ok",
             "doc_id": doc_id,
             "decision": decision,
             "disposition": "resume",
             "notes": notes,
         }
+        if class_override:
+            body["class_override"] = class_override
+        return body
 
     if not manifest.doc_type:
         raise HTTPException(
             409,
-            "Document has no classification to resume; set override_doc_type "
-            "or requeue to the inbox instead.",
+            "Document has no classification to resume; set doc_type "
+            "(or override_doc_type) or requeue to the inbox instead.",
         )
 
     from pipeline.bins import review_dir
@@ -722,10 +762,14 @@ async def resolve_review(doc_id: str, request: Request):
         manifest.matter_id,
         "review_approved",
         notes,
-        detail={"disposition": "resume", "resumed_stage": result.get("stage")},
+        detail={
+            "disposition": "resume",
+            "resumed_stage": result.get("stage"),
+            **({"class_override": class_override} if class_override else {}),
+        },
     )
     logger.info("review_approved_resumed", doc_id=doc_id, stage=result.get("stage"))
-    return {
+    body = {
         "status": "ok",
         "doc_id": doc_id,
         "decision": decision,
@@ -738,6 +782,49 @@ async def resolve_review(doc_id: str, request: Request):
             "extraction_attempts": result.get("extraction_attempts"),
         },
     }
+    if class_override:
+        body["class_override"] = class_override
+    return body
+
+
+@app.get("/documents/{doc_id}/source", dependencies=[Depends(_require_token)])
+async def document_source(doc_id: str, download: bool = False):
+    """Parked / bin document text or original bytes (The-Mailroom PR #20).
+
+    Default: JSON ``{filename, content_type, text, truncated, bytes, readable}``
+    for the REVIEW text pane. ``?download=1`` streams the original file.
+    Visualizer proxies this via ``GET /api/review/source`` — operators use the
+    Open original / text pane buttons, not a hand-typed URL.
+    """
+    from fastapi.responses import FileResponse
+
+    from pipeline.review_resolve import read_document_source
+
+    _validate_doc_id(doc_id)
+    manifest = load_manifest(doc_id)
+    if not manifest:
+        raise HTTPException(404, f"Manifest not found for doc_id: {doc_id}")
+
+    if download:
+        from pipeline.review_resolve import guess_content_type, locate_document_file
+
+        path = locate_document_file(manifest)
+        if path is None:
+            raise HTTPException(404, f"Source file not found for doc_id: {doc_id}")
+        return FileResponse(
+            path,
+            media_type=guess_content_type(path),
+            filename=path.name,
+        )
+
+    try:
+        return read_document_source(manifest)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception as exc:
+        logger.exception("document_source_failed", doc_id=doc_id)
+        raise HTTPException(500, f"Source read failed: {exc}")
+
 
 
 
@@ -1048,6 +1135,7 @@ def _mount_v1_aliases() -> None:
         "/lookup",
         "/review/queue",
         "/review/{doc_id}/resolve",
+        "/documents/{doc_id}/source",
         "/status/{doc_id}",
         "/matters/{matter_id}",
         "/audit",

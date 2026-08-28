@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parked-document source for The-Mailroom PR #20.** `GET /documents/{doc_id}/source`
+  returns extracted/transcribed text JSON for the REVIEW text pane;
+  `?download=1` streams original bytes ("Open original"). `/v1` alias included.
+  Resolve now accepts visualizer `doc_type` / `doc_subclass` (alias of
+  `override_doc_type`), returns `class_override`, and stamps class fields on
+  the inbox `.meta` sidecar for `requeue`. Prefer REVIEW desk buttons over
+  hand-typed curls; producer try-it-out remains at `/docs`.
+
 - **Human-review resolve for The-Mailroom PR #18 (producer half).** `GET /lookup`
   (by `doc_id` / `trace_id` / `filename`), `GET /review/queue` (REVIEW tray with
   available actions), and disposition-aware `POST /review/{doc_id}/resolve`
