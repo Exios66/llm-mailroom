@@ -354,6 +354,56 @@ def resolve_complete_extracted(submitted: Any, parked: Any = None) -> dict[str, 
     )
 
 
+_META_EXTRACT_KEYS = frozenset({"confidence", "reasoning", "mock_extraction"})
+
+
+def specialist_schema_keys(doc_type: str) -> frozenset[str]:
+    from schemas.documents import get_extraction_schema
+
+    model = get_extraction_schema(doc_type)
+    if model is None:
+        return frozenset()
+    return frozenset(model.model_fields)
+
+
+def all_specialist_schema_keys() -> frozenset[str]:
+    from schemas.documents import EXTRACTION_SCHEMAS
+
+    names: set[str] = set()
+    for model in EXTRACTION_SCHEMAS.values():
+        names.update(model.model_fields)
+    return frozenset(names) - _META_EXTRACT_KEYS
+
+
+def validate_operator_extraction(doc_type: str, extracted: dict[str, Any]) -> dict[str, Any]:
+    """Reject Complete payloads that do not match the parked document class.
+
+    Extra keys that belong to another specialist schema (e.g. correspondence
+    ``sender`` on a contract manifest) used to merge silently. Schema-invalid
+    values also used to archive.
+    """
+    from observability.scores import validate_extraction
+
+    payload = dict(extracted)
+    allowed = specialist_schema_keys(doc_type) | _META_EXTRACT_KEYS
+    foreign = sorted(
+        key
+        for key in payload
+        if key not in allowed
+        and not str(key).startswith("_")
+        and key in all_specialist_schema_keys()
+    )
+    if foreign:
+        raise ValueError(
+            f"extracted_data fields {foreign} belong to another specialist, "
+            f"not {doc_type}"
+        )
+    checks = validate_extraction(doc_type, payload)
+    if not checks.get("schema_valid"):
+        raise ValueError(f"extracted_data does not match the {doc_type} schema")
+    return payload
+
+
 def complete_human_extraction(
     manifest: DocumentManifest,
     review_file: Path,
@@ -370,6 +420,7 @@ def complete_human_extraction(
         raise ValueError("extracted_data must be a non-empty object for disposition=complete")
     if not manifest.doc_type:
         raise ValueError("Document has no classification to complete; set override_doc_type")
+    extracted_data = validate_operator_extraction(manifest.doc_type, extracted_data)
 
     conf = extracted_data.get("confidence")
     try:

@@ -295,7 +295,7 @@ def _build_handoff_context(state: DocumentState) -> str | None:
         if extract_class and extract_class != doc_type:
             context += f" extract_class={extract_class}"
     except Exception:
-        pass
+        logger.debug("extract_class_resolve_failed", doc_type=doc_type, exc_info=True)
     contract_subtype = state.get("contract_subtype")
     doc_subclass = state.get("doc_subclass")
     subtype = contract_subtype or doc_subclass
@@ -2434,13 +2434,13 @@ def _existing_processing_doc_id(original_filename: str) -> str | None:
     return None
 
 
-def _finalize_aborted(initial_state: dict, reason: str) -> dict:
+def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | None = None) -> dict:
     """Turn a run that hit a hard limit (or crashed) into a failed result.
 
     Moves the file to the failed bin with a manifest noting the abort, and
     returns a result dict that still carries doc/attempt fields so the run is
     scored (run_aborted=1) and visible in the catalog instead of stranding in
-    processing/.
+    processing/. ``failure_class`` distinguishes timeout vs auth vs I/O.
     """
     from pipeline.bins import move_to_failed, save_manifest
     from schemas.manifest import DocumentManifest, PipelineStage
@@ -2458,7 +2458,7 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
         stage=PipelineStage.FAILED,
         doc_type=state.get("doc_type"),
         contract_subtype=state.get("contract_subtype"),
-            doc_subclass=state.get("doc_subclass"),
+        doc_subclass=state.get("doc_subclass"),
         classification_confidence=state.get("classification_confidence"),
         classification_attempts=state.get("classification_attempts", 0),
         extracted_data=state.get("extracted_data"),
@@ -2474,6 +2474,12 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
     state["stage"] = PipelineStage.FAILED.value
     state["run_aborted"] = True
     state["error_message"] = f"run aborted: {reason}"
+    if failure_class:
+        state["failure_class"] = failure_class
+        tagged = f"run aborted [{failure_class}]: {reason}"
+        manifest.escalation_reason = tagged
+        state["error_message"] = tagged
+        state["escalation_reason"] = tagged
 
     file_path_str = state.get("file_path") or ""
     if file_path_str:
@@ -2492,7 +2498,12 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
     # A-1: a failed/aborted run is a compliance-record event (previously only
     # archived/reviewed runs left audit entries).
     try:
-        _emit_stage_audit(state, "run_aborted", actor="pipeline", detail={"reason": reason})
+        _emit_stage_audit(
+            state,
+            "run_aborted",
+            actor="pipeline",
+            detail={"reason": reason, "failure_class": failure_class or "unexpected"},
+        )
     except Exception:
         logger.exception("abort_audit_write_error", doc_id=manifest.doc_id)
     _maybe_export_warehouse(manifest.doc_id)
@@ -2830,16 +2841,35 @@ def _execute_run(
         except GraphInterrupt:
             result = {**initial_state, "__interrupt__": True}
         except (limits.RunDeadlineExceeded, limits.RunBudgetExceeded) as exc:
+            from pipeline.failures import classify_run_failure
+
+            classified = classify_run_failure(exc)
             logger.warning(
                 "run_aborted",
                 doc_id=initial_state.get("doc_id"),
-                reason=type(exc).__name__,
+                reason=classified["reason"],
+                failure_class=classified["failure_class"],
                 detail=str(exc),
             )
-            result = _finalize_aborted(initial_state, f"{type(exc).__name__}: {exc}")
-        except Exception:
-            logger.exception("run_crashed", doc_id=initial_state.get("doc_id"))
-            result = _finalize_aborted(initial_state, "unexpected error")
+            result = _finalize_aborted(
+                initial_state,
+                classified["reason"],
+                failure_class=classified["failure_class"],
+            )
+        except Exception as exc:
+            from pipeline.failures import classify_run_failure
+
+            classified = classify_run_failure(exc)
+            logger.exception(
+                "run_crashed",
+                doc_id=initial_state.get("doc_id"),
+                failure_class=classified["failure_class"],
+            )
+            result = _finalize_aborted(
+                initial_state,
+                classified["reason"],
+                failure_class=classified["failure_class"],
+            )
         if _result_is_interrupted(result):
             result = _paused_review_result(result, initial_state, thread_id, state_trace_id)
         # Ensure the trace id survives into the final state (ingest_node creates

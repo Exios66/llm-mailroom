@@ -86,4 +86,6 @@ class DocumentState(TypedDict, total=False):
     ground_truth: dict[str, Any]
     report_error: bool
     review_causes: list[str]
+    # Classified abort reason (llm_timeout / llm_auth / io_error / …).
+    failure_class: str | None
     messages: Annotated[list, add_messages]

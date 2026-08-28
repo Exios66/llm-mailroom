@@ -64,6 +64,31 @@ class TestAuth:
         )
         assert r.status_code == 401
 
+    def test_rotated_token_accepted_and_revoked_rejected(self, monkeypatch, temp_base_dir):
+        monkeypatch.setenv("MAILROOM_API_TOKEN", "old-key")
+        monkeypatch.setenv("MAILROOM_API_TOKENS", "new-key")
+        monkeypatch.setenv("MAILROOM_API_TOKEN_REVOKED", "old-key")
+        monkeypatch.setenv("MAILROOM_BASE_DIR", str(temp_base_dir))
+        monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+        for mod in ("api.main",):
+            if mod in sys.modules:
+                importlib.reload(sys.modules[mod])
+        from api.main import app
+
+        with TestClient(app) as c:
+            ok = c.post(
+                "/upload",
+                files={"file": ("a.txt", b"hello world", "text/plain")},
+                headers={"Authorization": "Bearer new-key"},
+            )
+            assert ok.status_code == 202
+            denied = c.post(
+                "/upload",
+                files={"file": ("b.txt", b"hello world", "text/plain")},
+                headers={"Authorization": "Bearer old-key"},
+            )
+            assert denied.status_code == 401
+
     def test_ops_endpoints_require_token(self, client):
         assert client.get("/ops/status").status_code == 401
         assert client.post("/ops/sweep").status_code == 401

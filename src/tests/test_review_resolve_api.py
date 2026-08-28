@@ -178,7 +178,7 @@ def test_resolve_complete_empty_object_uses_parked(client, temp_base_dir):
 
     _park_review(temp_base_dir)
     parked = load_manifest("doc-review-1")
-    parked.extracted_data = {"claim_number": "CL-9"}
+    parked.extracted_data = {"parties": ["Acme"], "confidence": 0.7}
     (manifests_dir() / "doc-review-1.json").write_text(parked.model_dump_json(indent=2))
 
     empty = client.post(
@@ -187,7 +187,7 @@ def test_resolve_complete_empty_object_uses_parked(client, temp_base_dir):
         json={"decision": "approved", "disposition": "complete", "extracted_data": {}},
     )
     assert empty.status_code == 200, empty.text
-    assert empty.json()["complete"]["extracted_data"]["claim_number"] == "CL-9"
+    assert empty.json()["complete"]["extracted_data"]["parties"] == ["Acme"]
 
 
 def test_resolve_complete_without_any_extracted_data_400(client, temp_base_dir):
@@ -347,7 +347,34 @@ def test_v1_aliases_include_new_routes(client):
     assert "/v1/documents/{doc_id}/source" in paths
 
 
-def test_resolve_complete_extracted_coercion():
+def test_resolve_complete_rejects_foreign_specialist_fields(client, temp_base_dir):
+    _park_review(temp_base_dir)
+    r = client.post(
+        "/review/doc-review-1/resolve",
+        headers=_auth(),
+        json={
+            "decision": "approved",
+            "disposition": "complete",
+            "extracted_data": {
+                "sender": "Pat",
+                "recipient": "Kim",
+                "communication_type": "email",
+                "confidence": 0.9,
+            },
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert "another specialist" in r.text
+
+
+def test_validate_operator_extraction_accepts_matching_schema():
+    from pipeline.review_resolve import validate_operator_extraction
+
+    out = validate_operator_extraction(
+        "contract",
+        {"parties": ["Acme"], "effective_date": "2024-01-01", "confidence": 0.9},
+    )
+    assert out["parties"] == ["Acme"]
     from pipeline.review_resolve import coerce_extracted_data, resolve_complete_extracted
 
     assert coerce_extracted_data(None) is None
