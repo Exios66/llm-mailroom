@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the inbox `.meta` sidecar for `requeue`. Prefer REVIEW desk buttons over
   hand-typed curls; producer try-it-out remains at `/docs`.
 
+- **Dojo 0.12.1 pin (serving comparison + scorecard).** `pyproject.toml` now pins
+  `llm-dojo-scoring @v0.12.1` (`5377f00`). Adds the `local_vs_api` serving
+  suite (`compare_serving` table/scorecard/cost card). v0.11.0 scoring formulas
+  unchanged; mailroom does not emit serving metrics until a caller records them.
+
 - **Human-review resolve for The-Mailroom PR #18 (producer half).** `GET /lookup`
   (by `doc_id` / `trace_id` / `filename`), `GET /review/queue` (REVIEW tray with
   available actions), and disposition-aware `POST /review/{doc_id}/resolve`
