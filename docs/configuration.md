@@ -249,7 +249,8 @@ See `.env.example` for the complete list:
 | `GENERIC_API_KEY` | No | — | Generic provider API key |
 | `GENERIC_BASE_URL` | No | — | Generic provider base URL |
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db` | Async database URL. SQLite by default; set a Postgres URL to switch |
-| `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
+| `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite + `warehouse/` Parquet files live) |
+| `MAILROOM_WAREHOUSE_EXPORT` | No | `auto` | After `archived`/`failed`, append rows to `data/warehouse/documents_YYYY-MM-DD.parquet` + matching audit file. `auto` = on when pyarrow is installed; `1`/`0` to force. Backfill: `scripts/export_warehouse.py`. |
 | `OBSERVABILITY_PROVIDER` | No | `auto` | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `phoenix` \| `none`. `auto` = Langfuse if key → Braintrust if key → local Arize Phoenix (cost-free) → `none` |
 | `OBSERVABILITY_ENVIRONMENT` | No | entrypoint default (`live`/`pilot`/`misc`/`mock`) | Environment label copied onto every Langfuse observation |
 | `LANGFUSE_PUBLIC_KEY` | No | `pk-lf-local` | Langfuse public key |

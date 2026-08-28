@@ -73,19 +73,22 @@ migration cost from today's ORM, and fit for "finished matters" cold storage.
 | Priority | Action |
 |---|---|
 | Now (shipped) | Keep SQLite; use `analyze_audit_db.py` / `GET /audit` + REVIEW dispositions |
-| Next | Optional nightly job: export archived/failed + audit chains → Parquet under `data/warehouse/` |
-| Optional | Read-only DuckDB notebook/CLI that `ATTACH`es `mailroom.db` for heavy audits |
+| Now (shipped) | Parquet warehouse: `storage/warehouse.py` + `scripts/export_warehouse.py`; routine hook on archive/failed |
+| Optional | Read-only DuckDB notebook/CLI that `ATTACH`es `mailroom.db` or reads `data/warehouse/*.parquet` |
 | When multi-host | Switch `DATABASE_URL` to Postgres; keep the same ORM models |
 | When compliance host is ephemeral | Add Litestream (or equivalent) backup of `mailroom.db` |
 
-### Suggested Parquet layout (future, not implemented here)
+### Suggested Parquet layout (implemented)
 
 ```
 data/warehouse/
-  documents_2026-08-27.parquet   # finished matters/docs
+  documents_2026-08-27.parquet   # finished matters/docs (archived + failed)
   audit_2026-08-27.parquet       # matching audit_log rows
   manifest.json                  # export watermark + schema version
 ```
+
+Routine export runs after archive/failed (`MAILROOM_WAREHOUSE_EXPORT=auto|1|0`).
+Backfill: `PYTHONPATH=src python src/scripts/export_warehouse.py [--full]`.
 
 Join key: `doc_id`. The-Mailroom can later point a "cold review" tray at the
 warehouse without touching the live writer.

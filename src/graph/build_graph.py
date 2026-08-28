@@ -1754,6 +1754,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
                 save_manifest(manifest)
         except Exception:
             logger.exception("review_reject_manifest_failed", doc_id=doc_id)
+    _maybe_export_warehouse(doc_id)
     return {
         "stage": PipelineStage.FAILED.value,
         "escalation_reason": esc_reason,
@@ -2022,7 +2023,20 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     )
 
     logger.info("pipeline_complete", doc_id=manifest.doc_id, archive=str(archive_path))
+    _maybe_export_warehouse(manifest.doc_id)
     return {"stage": PipelineStage.ARCHIVED.value}
+
+
+def _maybe_export_warehouse(doc_id: str) -> None:
+    """Best-effort Parquet cold-store export after a terminal stage (A-warehouse)."""
+    if not doc_id:
+        return
+    try:
+        from storage.warehouse import export_document_to_warehouse
+
+        export_document_to_warehouse(doc_id)
+    except Exception:
+        logger.exception("warehouse_export_hook_failed", doc_id=doc_id)
 
 
 def _run_coro(coro):
@@ -2481,6 +2495,7 @@ def _finalize_aborted(initial_state: dict, reason: str) -> dict:
         _emit_stage_audit(state, "run_aborted", actor="pipeline", detail={"reason": reason})
     except Exception:
         logger.exception("abort_audit_write_error", doc_id=manifest.doc_id)
+    _maybe_export_warehouse(manifest.doc_id)
     return state
 
 
