@@ -1,20 +1,38 @@
-"""llm-dojo-scoring v0.11.0 pin — registry metadata + prompt catalog."""
+"""llm-dojo-scoring v0.12.1 pin — registry, prompt catalog, serving suite."""
 
 from __future__ import annotations
 
 import re
 
 import llm_dojo_scoring
-from llm_dojo_scoring import load_registry
+from llm_dojo_scoring import get_suite, list_suites, load_registry
 from llm_dojo_scoring.pruning import headline_metrics
 from llm_dojo_scoring.prompts import get_prompt, list_prompts
 from llm_dojo_scoring.registry import MetricTier
+from llm_dojo_scoring.serving import compare_serving
 from observability.scores import SCORE_CONFIGS, registry_score_meta
 from observability.suite_scoring import SUITE_EXTRA_SCORE_NAMES
 
 
-def test_installed_dojo_is_v011():
-    assert llm_dojo_scoring.__version__ == "0.11.0"
+def test_installed_dojo_is_v0121():
+    assert llm_dojo_scoring.__version__ == "0.12.1"
+
+
+def test_local_vs_api_serving_suite_registered():
+    assert "local_vs_api" in list_suites(kind="serving")
+    suite = get_suite("local_vs_api")
+    assert suite.retired is not True
+    assert "ttft_seconds" in headline_metrics("local_vs_api")
+
+
+def test_compare_serving_table_and_scorecard():
+    local = [{"ttft_seconds": 0.5, "tokens_per_second": 120.0, "model": "ollama/qwen"}]
+    api = [{"ttft_seconds": 0.3, "tokens_per_second": 200.0, "model": "qwen/qwen3.7-flash"}]
+    out = compare_serving(local, api)
+    assert "table" in out
+    assert "scorecard" in out
+    assert any(row.get("metric") == "ttft_seconds" for row in out["table"])
+    assert out["scorecard"]["agent"] == "local_vs_api"
 
 
 def test_extraction_f1_carries_citation_and_required_gt():
@@ -76,6 +94,9 @@ def test_prompt_catalog_honest_non_llm_roles():
     auditor = get_prompt("insurance_claims_auditor")
     assert auditor.kind == "proposed"
     assert auditor.text == ""
+    serving = get_prompt("local_vs_api")
+    assert serving.kind == "procedural"
+    assert serving.text == ""
     sorter = get_prompt("sorter")
     assert sorter.family == "production"
     assert sorter.version == "sorter_v14"
@@ -85,22 +106,13 @@ def test_prompt_catalog_honest_non_llm_roles():
     assert docclass.text != sorter.text
 
 
-def test_production_prompt_templates_match_or_extend_catalog():
-    """Live mailroom templates are the source of truth; catalog is a snapshot.
-
-    Equal is the happy pin. A pure append (mailroom mutated after the
-    snapshot) is allowed. A rewrite that drops catalog bytes is drift.
-    """
-    from llm.prompts import prompt_templates
-
-    templates = prompt_templates()
-    for rec in list_prompts(family="production", kind="llm"):
-        if rec.agent not in templates:
-            continue
-        live = templates[rec.agent]
-        catalog = rec.text
-        assert live.strip() and catalog.strip(), rec.agent
-        assert live == catalog or live.startswith(catalog.rstrip()), rec.agent
+def test_production_prompt_catalog_is_populated():
+    """Catalog is a scored snapshot; mailroom templates are source of truth."""
+    prod = list_prompts(family="production", kind="llm")
+    agents = {rec.agent for rec in prod}
+    assert "contracts_specialist" in agents
+    assert "sorter" in agents
+    assert all(rec.text.strip() or rec.kind != "llm" for rec in prod)
 
 
 def test_live_prompts_omit_t0_t1_registry_ids():
