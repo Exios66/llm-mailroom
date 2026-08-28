@@ -1,10 +1,16 @@
 import os
 import json
+import hashlib
 import shutil
 import uuid
 from pathlib import Path
 from typing import Optional
+
+import structlog
+
 from .config import load_config
+
+logger = structlog.get_logger(__name__)
 
 
 _config = None
@@ -53,14 +59,45 @@ def list_stale_processing_files(stale_minutes: int = 60) -> list[Path]:
 def requeue_stale_processing(file_path: Path) -> Path:
     """Move a stale processing claim back to the inbox (L-1/A-18).
 
-    The watcher's ``_is_already_processed`` will skip it if a terminal
-    manifest already exists; otherwise it is re-claimed and re-run.
+    Idempotent: if the inbox already has the same bytes, drop the processing
+    copy instead of double-queuing. A different file at the same name gets a
+    ``--stale`` suffix so the original inbox document is not overwritten.
     """
     inbox = inbox_dir()
-    inbox.mkdir(parents=True, exist_ok=True)
+    try:
+        inbox.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.exception("inbox_mkdir_failed", path=str(inbox))
+        raise
     dest = inbox / file_path.name
+    if dest.exists():
+        if _same_file_bytes(file_path, dest):
+            file_path.unlink(missing_ok=True)
+            logger.info("stale_requeue_idempotent", dest=str(dest))
+            return dest
+        stem, suffix = file_path.stem, file_path.suffix
+        dest = inbox / f"{stem}--stale{suffix}"
+        counter = 2
+        while dest.exists():
+            dest = inbox / f"{stem}--stale{counter}{suffix}"
+            counter += 1
+        logger.warning(
+            "stale_requeue_collision",
+            source=str(file_path),
+            dest=str(dest),
+        )
     shutil.move(str(file_path), str(dest))
     return dest
+
+
+def _same_file_bytes(left: Path, right: Path) -> bool:
+    try:
+        if left.stat().st_size != right.stat().st_size:
+            return False
+        return hashlib.sha256(left.read_bytes()).digest() == hashlib.sha256(right.read_bytes()).digest()
+    except OSError:
+        logger.exception("stale_requeue_compare_failed", left=str(left), right=str(right))
+        return False
 
 
 def mark_processing_dead(worker_id: str, file_name: str) -> Path:
@@ -171,7 +208,11 @@ def manifests_dir() -> Path:
 
 def ensure_dirs(*dirs: Path):
     for d in dirs:
-        d.mkdir(parents=True, exist_ok=True)
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.exception("bin_mkdir_failed", path=str(d))
+            raise
 
 
 def claim_file(file_path: Path, worker_id: str) -> Path:
