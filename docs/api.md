@@ -196,16 +196,17 @@ proxy) or **form** (legacy clients).
 | `decision` | string | Yes | `approved` or `rejected` |
 | `notes` | string | No | Reviewer notes |
 | `disposition` | string | No | `resume` (default), `record`, `requeue`, or `complete` |
-| `override_doc_type` | string | No | Reroute classification to a live taxonomy class before resume/complete |
-| `contract_subtype` / `doc_subclass` | string | No | Optional subtype overrides |
+| `doc_type` | string | No | Reroute classification (The-Mailroom REVIEW desk). Alias of `override_doc_type` |
+| `override_doc_type` | string | No | Legacy alias for `doc_type` |
+| `contract_subtype` / `doc_subclass` | string | No | Optional subtype overrides (stamped on inbox sidecar for `requeue`) |
 | `extracted_data` | object | For `complete` | Human-finished extraction payload |
 
 **Dispositions:**
 | disposition | When | Effect |
 |---|---|---|
-| `resume` | `stage=review` | Approve → fresh extract under same `doc_id`; reject → failed bin |
+| `resume` | `stage=review` | Approve → fresh extract under same `doc_id` (class override written to manifest first); reject → failed bin |
 | `record` | any stage | Hash-chained audit + optional manifest note; file stays put |
-| `requeue` | source file locatable | Copy source back to inbox for a fresh watcher run |
+| `requeue` | source file locatable | Copy source back to inbox; class override stamped on `.meta` sidecar |
 | `complete` | `stage=review` + `decision=approved` | Archive with operator `extracted_data` (no LLM) |
 
 **Response:**
@@ -215,14 +216,48 @@ proxy) or **form** (legacy clients).
     "doc_id": "550e8400-e29b-41d4-a716-446655440000",
     "decision": "approved",
     "disposition": "resume",
-    "notes": "Classification confirmed — proceed"
+    "notes": "Classification confirmed — proceed",
+    "class_override": {"doc_type": "insurance_claim", "doc_subclass": "pde"}
 }
 ```
 
 **Errors:**
 - `400`: Invalid decision/disposition, or resume/complete on non-review stage
 - `404`: Manifest or source file not found
-- `409`: Approve/resume without classification (set `override_doc_type` or requeue)
+- `409`: Approve/resume without classification (set `doc_type` / `override_doc_type` or requeue)
+
+Use the visualizer REVIEW desk buttons (Approve / Reject / Requeue + type/subtype
+selects) rather than hand-typed curls. The visualizer proxies through
+`MAILROOM_PIPELINE_URL` → this endpoint. Producer try-it-out: `http://localhost:8000/docs`.
+
+---
+
+### Parked Document Source (REVIEW viewer)
+
+```
+GET /documents/{doc_id}/source
+GET /documents/{doc_id}/source?download=1
+```
+
+The-Mailroom [PR #20](https://github.com/Exios66/The-Mailroom/pull/20) parked-file
+viewer. Default JSON feeds the REVIEW text pane; `download=1` streams original
+bytes ("Open original"). Also under `/v1/...`.
+
+**Response (JSON):**
+```json
+{
+  "status": "ok",
+  "doc_id": "…",
+  "filename": "msa.pdf",
+  "content_type": "application/pdf",
+  "text": "…extracted or transcribed text…",
+  "truncated": false,
+  "bytes": 20480,
+  "readable": true
+}
+```
+
+**Errors:** `404` (manifest or file missing).
 
 ---
 
@@ -483,9 +518,13 @@ and status codes.
 GET  /v1/health
 POST /v1/upload
 GET  /v1/queue
+GET  /v1/lookup
+GET  /v1/review/queue
 POST /v1/review/{doc_id}/resolve
+GET  /v1/documents/{doc_id}/source
 GET  /v1/status/{doc_id}
 GET  /v1/matters/{matter_id}
+GET  /v1/audit
 GET  /v1/audit/{doc_id}
 GET  /v1/ops/status
 POST /v1/ops/sweep
@@ -493,3 +532,7 @@ POST /v1/ops/resume
 ```
 
 The unversioned routes (`GET /health`, `POST /upload`, …) continue to work during the deprecation window, then will be removed.
+
+**Operator UX:** prefer The-Mailroom REVIEW desk buttons (Approve / Reject /
+Requeue, class/subtype selects, Open original) over typing these paths. For
+local producer try-it-out without the visualizer, use Swagger at `/docs`.
