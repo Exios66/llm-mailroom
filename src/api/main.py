@@ -652,6 +652,9 @@ async def resolve_review(doc_id: str, request: Request):
             doc_record = result.pop("doc_record", None)
             if doc_record:
                 await write_document_record(doc_record)
+            from storage.warehouse import export_document_to_warehouse
+
+            export_document_to_warehouse(doc_id)
         except Exception:
             logger.exception("review_complete_catalog_failed", doc_id=doc_id)
         await _write_review_audit_entry(
@@ -800,6 +803,9 @@ async def _move_rejected_to_failed(doc_id: str, manifest) -> None:
         }
         await write_document_record(doc_record)
         logger.info("review_rejected_finalized", doc_id=doc_id)
+        from storage.warehouse import export_document_to_warehouse
+
+        export_document_to_warehouse(doc_id)
     except Exception:
         logger.exception("review_rejected_finalize_failed", doc_id=doc_id)
 
