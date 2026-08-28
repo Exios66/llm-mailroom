@@ -316,6 +316,44 @@ def _extract_source_text(path: Path) -> tuple[str, bool]:
         except OSError:
             return f"[Unreadable file: {path.name}]", False
 
+def coerce_extracted_data(value: Any) -> dict[str, Any] | None:
+    """Normalize operator ``extracted_data``. Empty / missing → ``None``.
+
+    The visualizer Complete button often posts before the catalog probe fills
+    the JSON field, or sends ``{}`` / a JSON string. Those must not 400 when
+    the parked manifest already has extraction.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        import json as _json
+
+        try:
+            value = _json.loads(text)
+        except Exception as exc:
+            raise ValueError("extracted_data must be a JSON object") from exc
+    if not isinstance(value, dict):
+        raise ValueError("extracted_data must be a JSON object")
+    return value or None
+
+
+def resolve_complete_extracted(submitted: Any, parked: Any = None) -> dict[str, Any]:
+    """Pick operator ``extracted_data``, else the parked manifest payload."""
+    chosen = coerce_extracted_data(submitted)
+    if chosen:
+        return chosen
+    chosen = coerce_extracted_data(parked)
+    if chosen:
+        return chosen
+    raise ValueError(
+        "disposition=complete requires extracted_data object "
+        "(none parked on this document)"
+    )
+
+
 def complete_human_extraction(
     manifest: DocumentManifest,
     review_file: Path,
