@@ -154,6 +154,53 @@ def test_resolve_complete_archives_without_llm(client, temp_base_dir):
     assert m.extracted_data["parties"] == ["Acme"]
 
 
+def test_resolve_complete_falls_back_to_parked_extracted_data(client, temp_base_dir):
+    """Visualizer Complete often omits extracted_data; use the parked payload."""
+    from pipeline.bins import archive_dir, load_manifest, manifests_dir
+
+    _park_review(temp_base_dir)
+    parked = load_manifest("doc-review-1")
+    parked.extracted_data = {"parties": ["Beta LLC"], "confidence": 0.7}
+    (manifests_dir() / "doc-review-1.json").write_text(parked.model_dump_json(indent=2))
+
+    missing = client.post(
+        "/review/doc-review-1/resolve",
+        headers=_auth(),
+        json={"decision": "approved", "disposition": "complete"},
+    )
+    assert missing.status_code == 200, missing.text
+    assert missing.json()["complete"]["extracted_data"]["parties"] == ["Beta LLC"]
+    assert (archive_dir("MATTER-R", "contract") / "parked.txt").exists()
+
+
+def test_resolve_complete_empty_object_uses_parked(client, temp_base_dir):
+    from pipeline.bins import load_manifest, manifests_dir
+
+    _park_review(temp_base_dir)
+    parked = load_manifest("doc-review-1")
+    parked.extracted_data = {"claim_number": "CL-9"}
+    (manifests_dir() / "doc-review-1.json").write_text(parked.model_dump_json(indent=2))
+
+    empty = client.post(
+        "/review/doc-review-1/resolve",
+        headers=_auth(),
+        json={"decision": "approved", "disposition": "complete", "extracted_data": {}},
+    )
+    assert empty.status_code == 200, empty.text
+    assert empty.json()["complete"]["extracted_data"]["claim_number"] == "CL-9"
+
+
+def test_resolve_complete_without_any_extracted_data_400(client, temp_base_dir):
+    _park_review(temp_base_dir)
+    r = client.post(
+        "/review/doc-review-1/resolve",
+        headers=_auth(),
+        json={"decision": "approved", "disposition": "complete"},
+    )
+    assert r.status_code == 400
+    assert "extracted_data" in r.text
+
+
 def test_resolve_resume_override_doc_type_form_compat(client, temp_base_dir, mocker):
     """Legacy form clients still work; override_doc_type enables reroute."""
     _park_review(temp_base_dir, doc_type=None)
@@ -298,3 +345,19 @@ def test_v1_aliases_include_new_routes(client):
     assert "/v1/review/queue" in paths
     assert "/v1/audit" in paths
     assert "/v1/documents/{doc_id}/source" in paths
+
+
+def test_resolve_complete_extracted_coercion():
+    from pipeline.review_resolve import coerce_extracted_data, resolve_complete_extracted
+
+    assert coerce_extracted_data(None) is None
+    assert coerce_extracted_data("") is None
+    assert coerce_extracted_data({}) is None
+    assert coerce_extracted_data('{"a": 1}') == {"a": 1}
+    assert resolve_complete_extracted({}, {"claim_number": "CL-1"}) == {"claim_number": "CL-1"}
+    assert resolve_complete_extracted({"a": 2}, {"a": 1}) == {"a": 2}
+    try:
+        resolve_complete_extracted(None, None)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "extracted_data" in str(exc)

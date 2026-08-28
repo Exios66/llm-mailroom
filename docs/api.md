@@ -199,7 +199,7 @@ proxy) or **form** (legacy clients).
 | `doc_type` | string | No | Reroute classification (The-Mailroom REVIEW desk). Alias of `override_doc_type` |
 | `override_doc_type` | string | No | Legacy alias for `doc_type` |
 | `contract_subtype` / `doc_subclass` | string | No | Optional subtype overrides (stamped on inbox sidecar for `requeue`) |
-| `extracted_data` | object | For `complete` | Human-finished extraction payload |
+| `extracted_data` | object | For `complete` if none parked | Human-finished extraction payload. Optional when the parked manifest already has fields. |
 
 **Dispositions:**
 | disposition | When | Effect |
@@ -207,7 +207,7 @@ proxy) or **form** (legacy clients).
 | `resume` | `stage=review` | Approve → fresh extract under same `doc_id` (class override written to manifest first); reject → failed bin |
 | `record` | any stage | Hash-chained audit + optional manifest note; file stays put |
 | `requeue` | source file locatable | Copy source back to inbox; class override stamped on `.meta` sidecar |
-| `complete` | `stage=review` + `decision=approved` | Archive with operator `extracted_data` (no LLM) |
+| `complete` | `stage=review` + `decision=approved` | Archive with operator `extracted_data` (no LLM). If the body omits it or sends `{}`, the parked manifest payload is used. |
 
 **Response:**
 ```json
