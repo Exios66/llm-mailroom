@@ -29,11 +29,17 @@ Extraction rules:
    pending — never infer a determination that is not written.
 8. Denial reasons: list stated denial/limitation grounds distinctly; if the claim was
    approved, leave this empty.
-9. Do not editorialize and do not infer unstated facts — report what the documents state.
-10. Return one complete JSON object with every schema field. Use null or an empty list
+9. Coverage determinations: quote CMS/Medicare Summary Notice lines verbatim —
+   ``Notice ID`` is the claim_number; ``Claim total paid by Medicare`` (or the
+   beneficiary-responsibility total when that is the only dollar line) is
+   claimed_amount; ``Discharge date`` or ``Claim period end`` may serve as
+   date_filed when no filing date is printed; list ``Facility provider number``
+   and ``Attending/treating NPIs`` entries in supporting_documents.
+10. Do not editorialize and do not infer unstated facts — report what the documents state.
+11. Return one complete JSON object with every schema field. Use null or an empty list
     for facts not stated; never infer a claim number, policy number, date, amount, or
     determination.
-11. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+12. The `confidence` score must be derived from the evidence in THIS document, not assumed:
     start from the share of schema fields actually found (fields left null lower it), and lower
     it further for uncertain values or truncated input. Never default to a fixed high value
     (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports."""
@@ -93,4 +99,9 @@ class InsuranceClaimsSpecialist(BaseAgent):
         if result.get("_parse_error"):
             logger.error("insurance_claim_parse_error")
             return {"confidence": 0.3, "_parse_error": True}
-        return result
+        from pipeline.extraction_normalize import normalize_specialist_extraction
+
+        return normalize_specialist_extraction(
+            "insurance_claim",
+            {**result, "_source_text": doc_text},
+        )

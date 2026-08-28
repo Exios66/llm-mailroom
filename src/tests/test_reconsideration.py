@@ -1,5 +1,9 @@
 """Objective reconsideration — aligned with The-Mailroom PR #14."""
 
+from pathlib import Path
+
+import pytest
+
 from graph.routing import (
     after_classify,
     after_extraction,
@@ -15,10 +19,12 @@ from pipeline.reconsideration import (
     align_class,
     class_misses_ground_truth,
     collect_review_causes,
+    coverage_below_floor,
     expected_field_coverage,
     extraction_is_hollow,
     format_causes,
     report_is_failed,
+    routing_coverage_expected_fields,
     should_reconsider,
 )
 
@@ -126,6 +132,79 @@ def test_expected_field_coverage_below_floor_retries():
     ) < 0.70
     assert after_extraction(state) == "retry_extract"
     assert after_extraction({**state, "extraction_attempts": 2}) == "human_review"
+
+
+def test_routing_coverage_excludes_eval_extras_and_posthoc():
+    expected = {
+        "sender": "Pat",
+        "recipient": "Kim",
+        "communication_type": "email",
+        "content_topic": "legal",
+        "sentiment_label": "neutral",
+        "communication_date": "2024-01-01",
+    }
+    scoped = routing_coverage_expected_fields(expected, "correspondence")
+    assert "content_topic" not in scoped
+    assert "sentiment_label" not in scoped
+    assert scoped["sender"] == "Pat"
+    extracted = {
+        "sender": "Pat",
+        "recipient": "Kim",
+        "communication_type": "email",
+        "communication_date": "2024-01-01",
+    }
+    assert coverage_below_floor(extracted, expected, doc_type="correspondence") is False
+
+    posthoc_expected = {
+        "claim_number": "123",
+        "insurer": "CMS Medicare",
+        "claimed_amount": 100.0,
+        "coverage_determination": "approved",
+    }
+    scoped_ins = routing_coverage_expected_fields(
+        posthoc_expected,
+        "insurance_claim",
+        sources={"claimed_amount": "posthoc", "claim_number": "hub"},
+    )
+    assert scoped_ins is not None
+    assert "claimed_amount" not in scoped_ins
+    assert scoped_ins["claim_number"] == "123"
+
+
+def test_correspondence_null_recipient_validates():
+    from observability.scores import validate_extraction
+
+    payload = {
+        "sender": "Acme Corp",
+        "recipient": None,
+        "additional_recipients": [],
+        "communication_type": "press_release",
+        "communication_date": "2001-07-18",
+        "key_points": ["Announcement"],
+        "demand_amount": None,
+        "action_items": [],
+        "urgency": "routine",
+        "referenced_communications": [],
+        "confidence": 0.9,
+    }
+    from pipeline.extraction_normalize import normalize_specialist_extraction
+
+    normalized = normalize_specialist_extraction("correspondence", payload)
+    assert validate_extraction("correspondence", normalized)["schema_valid"] is True
+
+
+def test_cms_posthoc_extracts_notice_id_and_amount():
+    from observability.posthoc_gt import extract_insurance_fields
+
+    text = Path(__file__).parents[1].joinpath(
+        "..", "data", "pipeline", "review", "inpatient_196101176981976_1.txt"
+    ).resolve()
+    if not text.is_file():
+        pytest.skip("pilot review artifact not present")
+    fields = extract_insurance_fields(text.read_text(encoding="utf-8"))
+    assert fields["claim_number"] == "196101176981976"
+    assert fields["claimed_amount"] == 9000.0
+    assert any("4900GV" in doc for doc in fields.get("supporting_documents", []))
 
 
 def test_full_coverage_high_confidence_still_reports():
