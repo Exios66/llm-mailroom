@@ -25,16 +25,19 @@ Extraction rules:
    as a number (e.g. 218440.00 for $218,440.00). Use null when no amount is
    demanded, including memos that merely reference an outstanding balance.
 5. Action items: what someone needs to DO as a result of this communication — deadlines included.
-6. Urgency: assess tone — is this routine, time-sensitive, or threatening?
+6. Press releases and wire-service articles: set recipient to null when there is no
+   named addressee (broadcast to media/investors). Use the issuing company or the
+   media-contact line at the end as sender when no From: header exists.
+7. Urgency: assess tone — is this routine, time-sensitive, or threatening?
    Neutral communications default to "routine" rather than null.
-7. Dates are critical — correspondence is often date-sensitive. Use the date the
+8. Dates are critical — correspondence is often date-sensitive. Use the date the
    communication was sent, not a referenced deadline.
-8. Referenced communications: track the narrative thread — list prior letters,
+9. Referenced communications: track the narrative thread — list prior letters,
    notices, or communications this message references (e.g. a prior demand letter).
 
-9. Do not infer or embellish facts. Preserve explicit details faithfully; concise
+10. Do not infer or embellish facts. Preserve explicit details faithfully; concise
    paraphrases are fine only when they retain the original meaning and conditions.
-10. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+11. The `confidence` score must be derived from the evidence in THIS document, not assumed:
     start from the share of schema fields actually found (fields left null lower it), and lower
     it further for uncertain values or truncated input. Never default to a fixed high value
     (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
@@ -60,8 +63,8 @@ class CorrespondenceSpecialist(BaseAgent):
     ) -> dict:
         schema = build_structured_schema(
             {
-                "sender": {"type": "string", "description": "Who sent the communication"},
-                "recipient": {"type": "string", "description": "Who received it"},
+                "sender": {"type": ["string", "null"], "description": "Who sent the communication"},
+                "recipient": {"type": ["string", "null"], "description": "Who received it; null for broadcast press releases"},
                 "additional_recipients": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -126,4 +129,6 @@ class CorrespondenceSpecialist(BaseAgent):
         if result.get("_parse_error"):
             logger.error("correspondence_parse_error")
             return {"confidence": 0.3, "_parse_error": True}
-        return result
+        from pipeline.extraction_normalize import normalize_specialist_extraction
+
+        return normalize_specialist_extraction("correspondence", result)

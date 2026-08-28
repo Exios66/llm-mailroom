@@ -34,8 +34,8 @@ class CorporateRecordExtraction(BaseModel):
 
 
 class CorrespondenceExtraction(BaseModel):
-    sender: str = ""
-    recipient: str = ""
+    sender: str | None = None
+    recipient: str | None = None
     additional_recipients: list[str] = Field(default_factory=list)
     communication_type: str = ""  # email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request
     communication_date: str | None = None

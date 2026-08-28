@@ -1514,6 +1514,8 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     gt_meta = expected_fields_meta(sample)
     if expected_fields:
         ground_truth["expected_fields"] = expected_fields
+    if gt_meta.get("sources"):
+        ground_truth["expected_fields_sources"] = gt_meta["sources"]
 
     rp._LLM_METRICS["calls"] = 0
     rp._LLM_METRICS["seconds"] = 0.0

@@ -148,6 +148,7 @@ CORRESPONDENCE = extraction_doctrine(
     "referenced_communications",
     [
         "A demand letter about a contract is still correspondence. demand_amount of 0 is a stated amount.",
+        "Press releases and wire articles often have no named recipient — use null, not a invented audience.",
         "communication_date is the date sent, not a referenced deadline.",
         "Neutral tone defaults to urgency 'routine', not null.",
     ],
@@ -169,6 +170,9 @@ INSURANCE_CLAIMS = extraction_doctrine(
     "coverage_determination, denial_reasons, supporting_documents",
     [
         "claim_number and policy_number are identifiers; never paraphrase them.",
+        "On CMS Medicare Summary Notices, Notice ID is the claim_number; Claim total "
+        "paid by Medicare is claimed_amount; provider/NPI lines belong in "
+        "supporting_documents.",
         "claimed_amount of 0 is a stated amount. Do not compute or convert amounts.",
         "coverage_determination only as written (approved, denied, partial, pending); never infer a denial.",
         "An insurance POLICY sold to the insured is a contract, not this schema — if you are reading a policy, still fill only claim-documentation fields that the text actually states.",
