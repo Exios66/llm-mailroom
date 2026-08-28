@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/reports/audits/2026-08-27-local-storage-alternatives-for-audit-and-review.md`
   (keep SQLite for live ops; Parquet/DuckDB as analytics companions).
 
+- **Parquet warehouse for finished documents.** `storage/warehouse.py` writes
+  `data/warehouse/documents_YYYY-MM-DD.parquet`, matching
+  `audit_YYYY-MM-DD.parquet`, and `manifest.json` (schema version + watermark).
+  Routine export after archive/failed (`MAILROOM_WAREHOUSE_EXPORT=auto|1|0`).
+  Backfill CLI: `scripts/export_warehouse.py` (`--full`, `--date`, `--doc-id`).
+
 - **First-pass production STP score (`success_rate`).** Every finished run
   emits the registered dojo metric as a 0/1 flag: archived in one pass with
   no retry, Lane A, arbiter, boss, human review, guardrail, or transient
