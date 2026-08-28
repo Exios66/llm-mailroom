@@ -96,5 +96,6 @@ warehouse without touching the live writer.
 ### Decision
 
 **Do not replace SQLite for the live catalog/audit.** Add analytics *beside*
-it (analyze CLI now; Parquet/DuckDB later). That maximizes review-tray
+it (analyze CLI + Parquet warehouse now; DuckDB read-only analytics optional).
+That maximizes review-tray
 reliability (lookups, resolve, requeue) while making full-history audits cheap.
