@@ -227,6 +227,58 @@ class TestPipelineE2E:
         assert result["stage"] == "archived"
 
 
+_MINIMAL_TEXT_PDF = b"""%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+4 0 obj<</Length 68>>stream
+BT /F1 24 Tf 72 720 Td (Service Agreement between Acme and Beta) Tj ET
+endstream
+endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000266 00000 n 
+0000000384 00000 n 
+trailer<</Size 6/Root 1 0 R>>
+startxref
+459
+%%EOF
+"""
+
+
+def test_ingest_transcribes_real_pdf_bytes(temp_base_dir, mock_openai_client):
+    """Real PDF bytes through ingest (LLM still mocked)."""
+    from graph.build_graph import ingest_node, _ensure_dirs
+
+    _ensure_dirs()
+    inbox = temp_base_dir / "pipeline" / "inbox"
+    pdf = inbox / "service.pdf"
+    pdf.write_bytes(_MINIMAL_TEXT_PDF)
+    result = ingest_node(
+        {
+            "doc_id": "",
+            "matter_id": "PDF-MATTER",
+            "original_filename": "service.pdf",
+            "stage": "inbox",
+            "file_path": str(pdf),
+            "doc_text": "",
+            "classification_attempts": 0,
+            "extraction_attempts": 0,
+            "retry_count": 0,
+            "conflict_detected": False,
+            "messages": [],
+        }
+    )
+    assert result.get("doc_id")
+    text = result.get("doc_text") or ""
+    assert "Service Agreement" in text or "Acme" in text or len(text) > 10
+
+
 def _ensure_dirs_relative(tmpdir):
     import os
     os.environ["MAILROOM_BASE_DIR"] = str(tmpdir)

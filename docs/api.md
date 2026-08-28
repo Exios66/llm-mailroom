@@ -16,7 +16,9 @@ PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 
 Each route below is also mounted under `/v1` (for example `GET /health` and
 `GET /v1/health` share the same handler). Prefer the `/v1` prefix. Management
-routes except health require a bearer token (`MAILROOM_API_TOKEN`).
+routes except health require a bearer token (`MAILROOM_API_TOKEN`, or a
+comma-separated `MAILROOM_API_TOKENS` set). Revoke a rotated key with
+`MAILROOM_API_TOKEN_REVOKED` without restarting a second process.
 
 ### Health Check
 
@@ -510,7 +512,7 @@ and status codes.
 - Prefer `/v1/...` for all new integrations. Unversioned routes will be removed after the deprecation window (see `CHANGELOG.md`).
 - Do not depend on undocumented response fields — only fields documented in this reference are stable.
 - Breaking changes are announced in `CHANGELOG.md` under the "Breaking changes" section of the release.
-- Every management endpoint except `GET /health` and `GET /v1/health` requires `Authorization: Bearer $MAILROOM_API_TOKEN`, including `GET /matters/{matter_id}` and `GET /v1/matters/{matter_id}`.
+- Every management endpoint except `GET /health` and `GET /v1/health` requires `Authorization: Bearer $MAILROOM_API_TOKEN` (or a token from `MAILROOM_API_TOKENS`), including `GET /matters/{matter_id}` and `GET /v1/matters/{matter_id}`. `MAILROOM_API_TOKEN_REVOKED` subtracts retired keys.
 
 ### `/v1` layout
 

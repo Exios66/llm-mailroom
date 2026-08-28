@@ -48,6 +48,39 @@ def test_requeue_moves_to_inbox(temp_base_dir):
     assert not f.exists()
 
 
+def test_requeue_idempotent_when_inbox_already_has_same_bytes(temp_base_dir):
+    from pipeline import bins
+
+    inbox = bins.inbox_dir()
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "doc.pdf").write_bytes(b"same")
+    proc = bins.processing_dir("worker-abc")
+    proc.mkdir(parents=True, exist_ok=True)
+    f = proc / "doc.pdf"
+    f.write_bytes(b"same")
+    dest = bins.requeue_stale_processing(f)
+    assert dest == inbox / "doc.pdf"
+    assert dest.read_bytes() == b"same"
+    assert not f.exists()
+    assert list(inbox.glob("doc*.pdf")) == [inbox / "doc.pdf"]
+
+
+def test_requeue_collision_keeps_different_inbox_file(temp_base_dir):
+    from pipeline import bins
+
+    inbox = bins.inbox_dir()
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "doc.pdf").write_bytes(b"original")
+    proc = bins.processing_dir("worker-abc")
+    proc.mkdir(parents=True, exist_ok=True)
+    f = proc / "doc.pdf"
+    f.write_bytes(b"stale copy")
+    dest = bins.requeue_stale_processing(f)
+    assert dest.name == "doc--stale.pdf"
+    assert (inbox / "doc.pdf").read_bytes() == b"original"
+    assert dest.read_bytes() == b"stale copy"
+
+
 def test_mark_processing_dead_retires_to_failed(temp_base_dir):
     from pipeline import bins
 
