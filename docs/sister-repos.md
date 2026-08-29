@@ -185,8 +185,14 @@ The scoring layer both mailroom and entity-extraction consume:
   (written to the parked manifest on resume; stamped on the inbox sidecar on
   requeue), and `GET /documents/{doc_id}/source` (`?download=1` for original
   bytes). Set `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` on the
-  visualizer (not `MAILROOM_API_URL`, which is TUI → visualizer `:8001`). Full
-  audit parse: `GET /audit` / `scripts/analyze_audit_db.py`.
+  visualizer (not `MAILROOM_API_URL`, which is TUI → visualizer `:8001`). The
+  producer must be **reachable from the visualizer process** — localhost
+  `:8000` for a laptop pair, or the published Hugging Face Docker Space
+  (`src/scripts/publish_space.py`, URL `https://<user>-mailroom-producer.hf.space`)
+  for the hosted Observatory. Local compose:
+  `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`.
+  `GET /health` advertises `producer` / `review_resolve`. Full audit parse:
+  `GET /audit` / `scripts/analyze_audit_db.py`.
 - **Governance:** fully governed member of the family — own `AGENTS.md`, own
   semver release train (v0.2.0), own test suite (never hits real Langfuse),
   own wiki. It is a downstream OBSERVER: dependency of no family repo — the

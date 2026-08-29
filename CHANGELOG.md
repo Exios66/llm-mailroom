@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reachable producer for The-Mailroom REVIEW resolve.** Root `Dockerfile`
+  serves `python -m api.main` on `0.0.0.0:7860` (Spaces convention;
+  off-loopback still requires `MAILROOM_API_TOKEN`). Local pair:
+  `deploy/docker-compose.producer.yml` on `:8000`. Hosted:
+  `src/scripts/publish_space.py` publishes a Docker Space
+  (`mailroom-producer`). Visualizer knobs stay
+  `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` (same value as
+  `MAILROOM_API_TOKEN`). `GET /health` advertises `producer` /
+  `review_resolve`. `MAILROOM_API_PORT` falls back to `PORT` for
+  Fly/Render/Spaces.
+
 - **API token rotation.** `MAILROOM_API_TOKENS` (csv) adds live bearer keys;
   `MAILROOM_API_TOKEN_REVOKED` subtracts retired ones. Primary
   `MAILROOM_API_TOKEN` still works. Off-loopback bind still requires at least

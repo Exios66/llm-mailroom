@@ -1,6 +1,6 @@
 ---
 name: huggingface
-description: Hugging Face Hub corpora for llm-mailroom (docclass-merged v5, run_hf_pilot, HF_TOKEN). Use for Hub datasets, class/subtype examples, Enron/CMS/CUAD pulls; prefer committed fixtures and --mock when network-free work is enough. Never invent stand-in class texts.
+description: Hugging Face Hub corpora for llm-mailroom (docclass-merged v5, run_hf_pilot, HF_TOKEN) and the producer Docker Space publisher (publish_space.py, MAILROOM_PIPELINE_URL). Use for Hub datasets, class/subtype examples, Enron/CMS/CUAD pulls, or publishing the REVIEW-resolve producer; prefer committed fixtures and --mock when network-free work is enough. Never invent stand-in class texts.
 ---
 
 # Hugging Face (pipeline corpora)
@@ -43,6 +43,21 @@ export HF_TOKEN=hf_...
 
 Modal/vLLM gated weights: [modal](../modal/SKILL.md). Full Hub CLI depth:
 Cursor **hf-cli** plugin skill — this skill stays mailroom-scoped.
+
+## Producer Space (REVIEW resolve)
+
+The-Mailroom Observatory needs a public HTTP producer
+(`MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN`). That image is this
+repo's root `Dockerfile` (`python -m api.main` on `:7860`), not a Hub
+dataset.
+
+```bash
+PYTHONPATH=src python src/scripts/publish_space.py --check
+HF_TOKEN=hf_... MAILROOM_API_TOKEN=change-me \
+  PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer
+```
+
+`--check` is network-free. Never bake tokens into the Space git tree.
 
 ## Boundaries
 

@@ -101,6 +101,8 @@ class TestHealthWatcherDegrades:
         body = r.json()
         assert body["checks"]["watcher"] == "missing"
         assert body["status"] == "degraded"
+        assert body["producer"] is True
+        assert body["review_resolve"] is True
 
     def test_live_watcher_lamp_ok_when_deps_ok(self, client, temp_base_dir):
         from pipeline import bins

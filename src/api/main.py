@@ -210,6 +210,8 @@ async def health():
     return {
         "status": overall,
         "service": "mailroom",
+        "producer": True,
+        "review_resolve": True,
         "checks": {
             "llm_provider": llm,
             "database": db,
@@ -1206,7 +1208,11 @@ if __name__ == "__main__":
     # Audit L-2: bind loopback by default; allow explicit MAILROOM_API_HOST
     # override. When binding non-loopback, a bearer token is mandatory.
     host = os.environ.get("MAILROOM_API_HOST", "127.0.0.1")
-    port = int(os.environ.get("MAILROOM_API_PORT", "8000"))
+    port = int(
+        os.environ.get("MAILROOM_API_PORT")
+        or os.environ.get("PORT")
+        or "8000"
+    )
     if host not in ("127.0.0.1", "localhost", "::1") and not active_api_tokens():
         raise SystemExit(
             "Refusing to bind to a non-loopback address without MAILROOM_API_TOKEN "
