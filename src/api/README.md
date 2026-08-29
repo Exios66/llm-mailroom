@@ -18,6 +18,10 @@ You use it to:
 
 ```bash
 python api/main.py        # serves on http://localhost:8000
+# reachable producer for The-Mailroom REVIEW resolve:
+#   docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build
+# then MAILROOM_PIPELINE_URL=http://127.0.0.1:8000
+#      MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
 ```
 
 Then open `http://localhost:8000/docs` for an interactive test page (Swagger UI)

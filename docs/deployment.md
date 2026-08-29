@@ -173,27 +173,50 @@ For higher volumes:
 
 ---
 
-## Docker Deployment (Full Stack)
+## Docker Deployment (producer for The-Mailroom)
 
-A production Docker setup would include the application as a service:
+REVIEW resolve on The-Mailroom still needs a **reachable** llm-mailroom
+producer (`MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN`). The
+visualizer proxies operator clicks here; the browser never holds the token.
 
-```yaml
-# Example addition to docker-compose.yml (not included by default)
-services:
-  mailroom-api:
-    build: .
-    command: PYTHONPATH=src python -m api.main
-    ports:
-      - "8000:8000"
-    environment:
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      # SQLite by default — data lives in the volume below.
-      - MAILROOM_BASE_DIR=/data
-      # API drains the inbox; omit or set 0 if a sidecar watcher service exists.
-      - MAILROOM_EMBED_WATCHER=1
-    volumes:
-      - mailroom_data:/data
+### Local (laptop pair)
+
+Set `MAILROOM_API_TOKEN` in `.env`, then:
+
+```bash
+docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build
 ```
+
+On The-Mailroom:
+
+```bash
+MAILROOM_PIPELINE_URL=http://127.0.0.1:8000
+MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+MAILROOM_PIPELINE_API_PREFIX=/v1
+```
+
+Try-it-out without the visualizer: `http://127.0.0.1:8000/docs`.
+`GET /health` reports `producer` / `review_resolve` plus the watcher lamp.
+
+### Hugging Face Docker Space (hosted Observatory)
+
+The root `Dockerfile` binds `0.0.0.0:7860` and refuses to start without
+`MAILROOM_API_TOKEN`. Publish (keys stay in the environment, never the
+Space git tree):
+
+```bash
+PYTHONPATH=src python src/scripts/publish_space.py --check
+HF_TOKEN=hf_... MAILROOM_API_TOKEN=change-me \
+  PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer
+```
+
+Then set The-Mailroom Space secrets to that URL and the same token. Keep
+the producer Space **public** so the Observatory can HTTP-call it; gate
+every non-health route with the bearer token. Space disk under `/data` is
+ephemeral — use the compose volume (or a VPS) when parked REVIEW files
+must survive sleep.
+
+See [`deploy/space/SPACE_README.md`](../deploy/space/SPACE_README.md).
 
 ---
 

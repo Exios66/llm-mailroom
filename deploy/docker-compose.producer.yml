@@ -1,0 +1,55 @@
+# Reachable llm-mailroom producer for The-Mailroom REVIEW resolve.
+#
+#   docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build
+#
+# Then on the visualizer (.env, not the browser):
+#   MAILROOM_PIPELINE_URL=http://127.0.0.1:8000
+#   MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+#   MAILROOM_PIPELINE_API_PREFIX=/v1
+#
+# MAILROOM_API_TOKEN is required (container binds 0.0.0.0).
+# Local try-it-out: http://127.0.0.1:8000/docs
+
+services:
+  producer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: mailroom-producer
+    container_name: mailroom-producer
+    ports:
+      - "${MAILROOM_API_PORT:-8000}:${MAILROOM_API_PORT:-8000}"
+    environment:
+      MAILROOM_API_HOST: "0.0.0.0"
+      MAILROOM_API_PORT: "${MAILROOM_API_PORT:-8000}"
+      MAILROOM_API_TOKEN: "${MAILROOM_API_TOKEN:?set MAILROOM_API_TOKEN for off-loopback bind}"
+      MAILROOM_API_TOKENS: "${MAILROOM_API_TOKENS:-}"
+      MAILROOM_API_TOKEN_REVOKED: "${MAILROOM_API_TOKEN_REVOKED:-}"
+      MAILROOM_BASE_DIR: /data
+      MAILROOM_EMBED_WATCHER: "1"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+      DEFAULT_PROVIDER: "${DEFAULT_PROVIDER:-openrouter}"
+      LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
+      LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+      LANGFUSE_HOST: "${LANGFUSE_HOST:-https://us.cloud.langfuse.com}"
+      OBSERVABILITY_PROVIDER: "${OBSERVABILITY_PROVIDER:-auto}"
+      OBSERVABILITY_ENVIRONMENT: live
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_FORMAT: json
+    volumes:
+      - mailroom_producer_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('MAILROOM_API_PORT','8000'), timeout=5)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mailroom_producer_data:

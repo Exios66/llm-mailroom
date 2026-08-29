@@ -1,3 +1,21 @@
+# Deploy — producer API + optional Modal vLLM
+
+The-Mailroom REVIEW resolve needs a **reachable** llm-mailroom producer
+(`MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN`). That is this repo's
+FastAPI process, not Modal vLLM.
+
+| Path | Command | Visualizer URL |
+|---|---|---|
+| Local Docker | `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build` | `http://127.0.0.1:8000` |
+| Hugging Face Space | `PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer` | `https://<user>-mailroom-producer.hf.space` |
+| Bare metal | `PYTHONPATH=src python -m api.main` | `http://127.0.0.1:8000` |
+
+`MAILROOM_PIPELINE_TOKEN` on the visualizer **is** `MAILROOM_API_TOKEN` here.
+Space card: [`space/SPACE_README.md`](space/SPACE_README.md). Off-loopback
+bind refuses to start without a token.
+
+---
+
 # Modal-deployed vLLM — offline serving capability (KANBAN-064)
 
 **Status: framework-in-place. OpenRouter remains llm-mailroom's primary LLM
