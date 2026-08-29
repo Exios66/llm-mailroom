@@ -17,6 +17,7 @@ already fits.
 | Default production LLM | OpenRouter via `get_llm(agent_name)` | [openrouter](../openrouter/SKILL.md) | Hardcoding a model in agent code; Ollama unless local was requested |
 | Local / offline inference | Ollama (`DEFAULT_PROVIDER=ollama`) | [ollama](../ollama/SKILL.md) | OpenRouter ids against Ollama |
 | Remote GPU OpenAI `/v1` | Modal `mailroom-vllm` | [modal](../modal/SKILL.md) | The sandbox app name `sandbox-vllm` |
+| Reachable REVIEW producer | Docker / HF Space (`MAILROOM_PIPELINE_URL`) | [huggingface](../huggingface/SKILL.md) (publisher) + [langfuse](../langfuse/SKILL.md) (visualizer knobs) | Pointing `MAILROOM_API_URL` at `:8000` |
 | Default tracing + The-Mailroom | Langfuse 4.x (`document-pipeline`) | [langfuse](../langfuse/SKILL.md) | Phoenix as the visualizer source |
 | Local cost-free OTEL UI | Arize Phoenix (`phoenix serve`) | [apache-phoenix](../apache-phoenix/SKILL.md) | Claiming Phoenix feeds The-Mailroom |
 | Hosted experiment / auto-improve loop | Braintrust | [braintrust](../braintrust/SKILL.md) | Braintrust as the default live sink |
@@ -55,6 +56,7 @@ No agent code names a provider/model. `taxonomy.yaml` `agents:` + `get_llm(agent
 | Env template | `.env.example` |
 | Providers | `src/llm/providers.py`, `docs/configuration.md` |
 | Compose | `src/config/docker/docker-compose.yml` |
+| REVIEW producer image | root `Dockerfile`, `deploy/docker-compose.producer.yml`, `src/scripts/publish_space.py` |
 | Modal app | `deploy/modal_vllm.py` |
 | Tracing | `src/observability/tracing.py` |
 | Hub corpora | `src/pipeline/hf_corpora.py` |
