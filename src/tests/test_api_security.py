@@ -38,6 +38,10 @@ class TestAuth:
     def test_health_open_without_token(self, client):
         r = client.get("/health")
         assert r.status_code == 200
+        body = r.json()
+        assert body["service"] == "mailroom"
+        assert body["producer"] is True
+        assert body["review_resolve"] is True
 
     def test_health_v1_open_without_token(self, client):
         r = client.get("/v1/health")

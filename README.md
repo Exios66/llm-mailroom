@@ -625,6 +625,8 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 
 </details>
 
+The-Mailroom REVIEW resolve needs this API reachable as `MAILROOM_PIPELINE_URL` (token = `MAILROOM_API_TOKEN`): `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`, or `PYTHONPATH=src python src/scripts/publish_space.py --check` for the hosted Space. See [`deploy/`](deploy/README.md).
+
 For fully local/offline serving, see [`deploy/`](deploy/README.md) (Modal+vLLM) and [Local Model Cutover](#local-model-cutover).
 
 ### Security

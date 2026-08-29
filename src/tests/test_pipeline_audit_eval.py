@@ -1,10 +1,27 @@
 """Production finalization, scoring completeness, and per-agent eval."""
 
+import importlib
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def client(monkeypatch, temp_base_dir):
+    monkeypatch.setenv("MAILROOM_API_TOKEN", "test-token-123")
+    monkeypatch.setenv("MAILROOM_BASE_DIR", str(temp_base_dir))
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+    for mod in ("api.main",):
+        if mod in sys.modules:
+            importlib.reload(sys.modules[mod])
+    from api.main import app
+
+    with TestClient(app) as c:
+        yield c
 
 
 class TestArchiveMissingFileFinalizes:
@@ -101,6 +118,8 @@ class TestHealthWatcherDegrades:
         body = r.json()
         assert body["checks"]["watcher"] == "missing"
         assert body["status"] == "degraded"
+        assert body["producer"] is True
+        assert body["review_resolve"] is True
 
     def test_live_watcher_lamp_ok_when_deps_ok(self, client, temp_base_dir):
         from pipeline import bins
