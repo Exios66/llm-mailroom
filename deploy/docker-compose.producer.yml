@@ -1,4 +1,5 @@
-# Reachable llm-mailroom producer for The-Mailroom REVIEW resolve.
+# Reachable llm-mailroom producer for The-Mailroom Observatory (PR #30).
+# Inbox Queue a document → POST /v1/upload; REVIEW → /v1/review/{id}/resolve.
 #
 #   docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build
 #

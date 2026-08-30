@@ -332,6 +332,26 @@ The pilot samples are mirrored into Langfuse datasets — one **per source corpu
 
 Production runs additionally emit self-evident scores with no ground truth (`parse_error`, `schema_valid`, `stage_completed`, `success_rate`, `guardrail_triggered`, confidence values) from `observability/scores.py`. `success_rate` is the production straight-through-processing flag: 1 only when the document archived in one pass with no retry, Lane A, arbiter, boss, human review, guardrail, or transient reprocess. Incoming live documents are zero-shot — this flag does not consult `class_correct`, field GT, or the hosted LLM-judge CORRECT/PARTIAL/MISS overlay. Pilot runs still add ground-truth scores (`class_correct`, `stage_correct`, `confidence_calibration_error`, `expected_field_presence`) for eval. All score configs are auto-created in Langfuse by `ensure_score_configs()`. The-Mailroom metrics page tiles FIRST PASS from this score (with a routing-path fallback for older traces).
 
+## The-Mailroom floor (Hugging Face Observatory)
+
+[The-Mailroom](https://github.com/Exios66/The-Mailroom) is the Langfuse-only
+visualizer (pixel console, hosted Observatory, TUI). The hosted floor is a
+Docker Space (`mailroom-observatory`, port 7860). Inbox **Queue a document**
+and REVIEW resolve still need **this** API as a reachable producer
+([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)):
+
+```
+MAILROOM_PIPELINE_URL=https://<user>-mailroom-producer.hf.space
+MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+MAILROOM_PIPELINE_API_PREFIX=/v1
+```
+
+`127.0.0.1:8000` works only when both processes share a host. Observatory
+`POST /api/inbox/enqueue` → producer `POST /v1/upload` (202). REVIEW →
+`POST /v1/review/{doc_id}/resolve`. `GET /health` advertises `producer`,
+`review_resolve`, and `inbox_upload`. Pairing checklist:
+[`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).
+
 ## Guardrails
 
 `pipeline/guards.py` validates agent output deterministically before routing: classification must be a taxonomy enum with a `[0,1]` confidence; extractions must JSON-parse and validate against their Pydantic schema. Violations clamp confidence below the `confidence.low` routing threshold so bad output goes to retry/review, are logged, recorded on state (`extraction_guardrail`), and scored (`guardrail_triggered`).

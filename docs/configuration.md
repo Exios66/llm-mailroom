@@ -281,6 +281,11 @@ See `.env.example` for the complete list:
 | `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
 | `MAILROOM_API_HOST` | No | `127.0.0.1` | Bind address. `0.0.0.0` requires a live token. Container/Space images set this. |
 | `MAILROOM_API_PORT` | No | `8000` (image: `7860`) | Listen port. Falls back to `PORT` for Spaces/Fly/Render. |
+
+The-Mailroom (not this process) reads `MAILROOM_PIPELINE_URL`,
+`MAILROOM_PIPELINE_TOKEN`, and `MAILROOM_PIPELINE_API_PREFIX=/v1`. A Space
+Observatory must use the public producer Space URL — see
+[`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).
 | `WATCHER_STALE_SECONDS` | No | `15` | `/health` `checks.watcher` lamp: heartbeat older than this is `stale` |
 | `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |
 | `MAILROOM_VISION_ENABLED` | No | `true` | Enable/disable vision ingestion (overrides `vision.enabled` in taxonomy.yaml) |

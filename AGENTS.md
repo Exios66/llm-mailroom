@@ -59,7 +59,7 @@ docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse
 PYTHONPATH=src python -m pipeline.watcher   # filesystem watcher (optional when the API embeds it)
 PYTHONPATH=src python -m api.main           # FastAPI on :8000 — embeds the inbox watcher by default
 docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build  # reachable producer for The-Mailroom REVIEW resolve
-PYTHONPATH=src python src/scripts/publish_space.py --check  # validate HF Docker Space payload (MAILROOM_PIPELINE_URL)
+PYTHONPATH=src python src/scripts/publish_space.py --check  # validate HF Docker Space payload (MAILROOM_PIPELINE_URL + Observatory pair)
 PYTHONPATH=src python -m pipeline.ops_monitor  # scheduled Boss sweep (optional)
 PYTHONPATH=src python src/scripts/cutover.py --list       # show agent→provider/model; also --recommend, --validate --agent <name>
 PYTHONPATH=src python src/scripts/prepare_samples.py          # build the pilot PDF set into data/samples/

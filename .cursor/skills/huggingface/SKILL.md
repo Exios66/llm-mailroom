@@ -44,12 +44,13 @@ export HF_TOKEN=hf_...
 Modal/vLLM gated weights: [modal](../modal/SKILL.md). Full Hub CLI depth:
 Cursor **hf-cli** plugin skill — this skill stays mailroom-scoped.
 
-## Producer Space (REVIEW resolve)
+## Producer Space (Observatory + REVIEW)
 
-The-Mailroom Observatory needs a public HTTP producer
-(`MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN`). That image is this
-repo's root `Dockerfile` (`python -m api.main` on `:7860`), not a Hub
-dataset.
+The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
+needs a public HTTP producer for Inbox **Queue a document**
+(`POST /v1/upload`) and REVIEW resolve. That image is this repo's root
+`Dockerfile` (`python -m api.main` on `:7860`), not a Hub dataset. The
+floor Space is published from The-Mailroom (`mailroom-observatory`).
 
 ```bash
 PYTHONPATH=src python src/scripts/publish_space.py --check
@@ -57,7 +58,16 @@ HF_TOKEN=hf_... MAILROOM_API_TOKEN=change-me \
   PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer
 ```
 
+Then set on The-Mailroom / its Space secrets:
+
+```
+MAILROOM_PIPELINE_URL=https://<user>-mailroom-producer.hf.space
+MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+MAILROOM_PIPELINE_API_PREFIX=/v1
+```
+
 `--check` is network-free. Never bake tokens into the Space git tree.
+Checklist: [`deploy/space/PAIRING.md`](../../../deploy/space/PAIRING.md).
 
 ## Boundaries
 

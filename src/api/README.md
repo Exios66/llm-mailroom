@@ -18,17 +18,20 @@ You use it to:
 
 ```bash
 python api/main.py        # serves on http://localhost:8000
-# reachable producer for The-Mailroom REVIEW resolve:
+# reachable producer for The-Mailroom Observatory (PR #30):
 #   docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build
 # then MAILROOM_PIPELINE_URL=http://127.0.0.1:8000
 #      MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+#      MAILROOM_PIPELINE_API_PREFIX=/v1
+# Space pair: deploy/space/PAIRING.md (Inbox Queue → POST /v1/upload)
 ```
 
 Then open `http://localhost:8000/docs` for an interactive test page (Swagger UI)
-with Try-it-out buttons for every route. Day-to-day REVIEW actions (Approve /
-Reject / Requeue, class correction, Open original) should go through
-The-Mailroom's REVIEW desk when `MAILROOM_PIPELINE_URL` points here — no typed
-endpoints required.
+with Try-it-out buttons for every route. Day-to-day Inbox **Queue a document**
+and REVIEW actions (Approve / Reject / Requeue, class correction, Open original)
+should go through The-Mailroom's Observatory when `MAILROOM_PIPELINE_URL` +
+`MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1` point here — no
+typed endpoints required.
 ## Technical reference
 
 - Single module: `main.py` defines `app = FastAPI(...)`. `python api/main.py` runs `uvicorn.run(app, host="0.0.0.0", port=8000)`. Equivalent: `uvicorn api.main:app --port 8000`.

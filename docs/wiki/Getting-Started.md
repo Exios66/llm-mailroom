@@ -94,6 +94,18 @@ If you configured observability, every LLM call is auto-traced — `OBSERVABILIT
 | `LANGFUSE_HOST` | No | `http://localhost:3000` |
 | `MAILROOM_BASE_DIR` | No | `./data` |
 | `DEFAULT_PROVIDER` | No | `openrouter` |
+| `MAILROOM_API_TOKEN` | Off-loopback | — |
+
+The-Mailroom Observatory (sister visualizer, [PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) does **not** read this `.env` for display — Langfuse is its source. Inbox **Queue a document** and REVIEW resolve need three knobs **on the visualizer**:
+
+```
+MAILROOM_PIPELINE_URL=http://127.0.0.1:8000
+# Space Observatory: https://<user>-mailroom-producer.hf.space
+MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+MAILROOM_PIPELINE_API_PREFIX=/v1
+```
+
+Pairing checklist: [deploy/space/PAIRING.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/space/PAIRING.md).
 
 ---
 
