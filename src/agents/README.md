@@ -6,7 +6,7 @@ This is the cast of characters. Each file is one **agent**: a specialist LLM "wo
 
 1. **Sorter** decides what kind of document it is (contract, corporate record, …).
 2. A **Specialist** (contracts, corporate records, correspondence, compliance, or insurance claims) reads the document and extracts structured facts. Unclassifiable / retired types (`unknown`) skip extraction and go to human review.
-3. **Reporter** writes a clean summary of everything that was extracted.
+3. **Report assembler** (procedural — no LLM) formats the extraction into `_report`.
 4. **Boss** steps in when there's a conflict or repeated low confidence and makes the final call.
 
 Three of these files are **not** LLM agents — they're plain code helpers:
@@ -25,7 +25,7 @@ Every agent gets its LLM model from `config/taxonomy.yaml` (see `config/` README
   - `_call_structured(...)` — LLM call using OpenAI JSON-schema mode; returns parsed `dict` (or `{"_parse_error": True, "_raw": ...}` on bad JSON).
   - `build_structured_schema(properties, required, ...)` — helper for JSON-schema payloads.
 - Specialist agents (`*_specialist.py`) expose `.extract(doc_text) -> dict` that includes a `confidence` field; the graph pops `confidence` and uses it for routing.
-- `reporter.py` — a plain function `compile_matter_record(manifest_data, report_llm, report_model)`, NOT a `BaseAgent`. Called from `graph/build_graph.py:compile_report_node`, which fetches its own LLM via `get_llm("reporter")`.
+- `reporter.py` — procedural `compile_matter_record(manifest_data)` (no LLM). Called from `graph/build_graph.py:compile_report_node`. Happy-path LLM calls stop at classify + extract; archivist is the durable sink.
 - `boss.py` — `BossAgent.adjudicate(manifest_data)` (in-graph escalation) and `BossAgent.analyze_system_metrics(metrics)` (used by `pipeline/ops_monitor.py`). Shared `BOSS_SYSTEM_PROMPT`.
 - `image_extractor.py` (`agent_name = "image_extractor"`) and `pdf_transcriber.py` (`agent_name = "pdf_transcriber"`) each have their own `taxonomy.yaml` `agents:` entry and Langfuse-managed prompt. They're invoked from `graph/build_graph.py` `_read_file_text()` based on file extension.
 - `docs/agents.md` documents the full roster, schemas, and the "add a new agent" checklist.
