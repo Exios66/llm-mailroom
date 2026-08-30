@@ -49,7 +49,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('MAILROOM_API_PORT','8000'), timeout=5)",
+          "import os,urllib.request; p=os.environ.get('PORT') or os.environ.get('MAILROOM_API_PORT','8000'); urllib.request.urlopen('http://127.0.0.1:%s/health' % p, timeout=5)",
         ]
       interval: 15s
       timeout: 5s

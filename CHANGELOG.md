@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Railway crash loop:** listen on platform `PORT` when set (wins over image
+  `MAILROOM_API_PORT=7860`), clearer off-loopback token exit on Railway, and
+  skip local Phoenix under `auto` on Railway unless `PHOENIX_ENDPOINT` is remote.
+
+### Added
+
+- **Railway deploy contract:** root `railway.json` (Dockerfile builder +
+  `/health` probe), `nixpacks.toml` fallback, and
+  [docs/deployment.md](docs/deployment.md) § Railway (required
+  `MAILROOM_API_TOKEN` + `OPENROUTER_API_KEY`).
+
 ### Changed
 
 - **llm-dojo-scoring pin → v0.12.2** ([upstream PR #11](https://github.com/Exios66/llm-dojo-scoring/pull/11)).
