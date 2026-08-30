@@ -1,0 +1,12 @@
+# Nixpacks fallback if a Railway service is not set to the Dockerfile builder.
+# Prefer railway.json (DOCKERFILE) — the image already installs git for the
+# llm-dojo-scoring pin and runs as non-root with HEALTHCHECK.
+
+[phases.setup]
+nixPkgs = ["python311", "gcc", "git"]
+
+[phases.install]
+cmds = ["pip install --upgrade pip", "pip install ."]
+
+[start]
+cmd = "PYTHONPATH=src python -m api.main"
