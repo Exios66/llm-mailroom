@@ -17,7 +17,7 @@ already fits.
 | Default production LLM | OpenRouter via `get_llm(agent_name)` | [openrouter](../openrouter/SKILL.md) | Hardcoding a model in agent code; Ollama unless local was requested |
 | Local / offline inference | Ollama (`DEFAULT_PROVIDER=ollama`) | [ollama](../ollama/SKILL.md) | OpenRouter ids against Ollama |
 | Remote GPU OpenAI `/v1` | Modal `mailroom-vllm` | [modal](../modal/SKILL.md) | The sandbox app name `sandbox-vllm` |
-| Reachable REVIEW producer | Docker / HF Space (`MAILROOM_PIPELINE_URL`) | [huggingface](../huggingface/SKILL.md) (publisher) + [langfuse](../langfuse/SKILL.md) (visualizer knobs) | Pointing `MAILROOM_API_URL` at `:8000` |
+| Reachable REVIEW / Inbox producer | Docker / HF Space (`MAILROOM_PIPELINE_URL` + token + `/v1`) | [huggingface](../huggingface/SKILL.md) (publisher) + [langfuse](../langfuse/SKILL.md) (visualizer knobs) | Pointing `MAILROOM_API_URL` at `:8000`; using `127.0.0.1` from a Space Observatory |
 | Default tracing + The-Mailroom | Langfuse 4.x (`document-pipeline`) | [langfuse](../langfuse/SKILL.md) | Phoenix as the visualizer source |
 | Local cost-free OTEL UI | Arize Phoenix (`phoenix serve`) | [apache-phoenix](../apache-phoenix/SKILL.md) | Claiming Phoenix feeds The-Mailroom |
 | Hosted experiment / auto-improve loop | Braintrust | [braintrust](../braintrust/SKILL.md) | Braintrust as the default live sink |
