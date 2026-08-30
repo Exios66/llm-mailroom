@@ -125,7 +125,7 @@ def test_sorter_sends_pages_when_vision(page_images, mock_langchain_llm):
     )
 
     assert doc_type == "contract"
-    assert conf == 0.95
+    assert conf == 0.99
     human = seen["messages"][-1]
     content = human.content
     assert isinstance(content, list)

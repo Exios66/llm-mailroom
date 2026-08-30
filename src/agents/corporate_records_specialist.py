@@ -1,6 +1,6 @@
 import structlog
-from agents.base import BaseAgent, build_structured_schema
-from langchain_agents.doc_inventories import RECORD_TYPE_DESCRIPTION
+from agents.base import BaseAgent
+from langchain_agents.specialist_agents import CORPORATE_RECORDS_SCHEMA
 from llm.prompt_doctrine import CORPORATE_RECORDS as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
@@ -16,15 +16,20 @@ Extraction rules:
 1. Identify the exact legal entity name as stated — do not abbreviate unless the document does.
 2. Categorize the record type precisely (bylaws, resolution, minutes, formation doc, etc.).
 3. Dates must be extracted exactly as written.
-4. Key provisions should capture the operative governance language.
-5. Signatories are the individuals who executed or approved the document.
-6. Every field must be grounded in the document text. No inference, no assumptions.
-7. Always return one complete JSON object containing every schema field. Use null or
-   an empty list when a field is not stated; never stop early or emit commentary.
-8. The `confidence` score must be derived from the evidence in THIS document, not assumed:
-   start from the share of schema fields actually found (fields left null lower it), and lower
-   it further for uncertain values or truncated input. Never default to a fixed high value
-   (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
+4. Signatories are the individuals who executed or approved the document.
+5. intent: one short controlled label for the document's purpose (e.g. record_filing,
+   authorize, amend_governance, appoint_officer, notice) — not a paragraph.
+6. subject_matter: one tight grounded sentence describing what the record is about.
+7. keywords: up to 8 salient terms/phrases grounded in the text; do not invent topics.
+8. Do NOT dump open-ended key_provisions lists — fold material points into
+   subject_matter / keywords instead.
+9. Every field must be grounded in the document text. No inference, no assumptions.
+10. Always return one complete JSON object containing every schema field. Use null or
+    an empty list when a field is not stated; never stop early or emit commentary.
+11. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+    start from the share of schema fields actually found (fields left null lower it), and lower
+    it further for uncertain values or truncated input. Never default to a fixed high value
+    (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
 
 Be methodical and thorough — corporate records are the backbone of the client's legal structure."""
 
@@ -44,44 +49,7 @@ class CorporateRecordsSpecialist(BaseAgent):
         pages: list[str] | None = None,
         handoff_context: str | None = None,
     ) -> dict:
-        schema = build_structured_schema(
-            {
-                "entity_name": {"type": "string", "description": "Legal entity name"},
-                "record_type": {
-                    "type": "string",
-                    "description": RECORD_TYPE_DESCRIPTION,
-                },
-                "effective_date": {
-                    "type": ["string", "null"],
-                    "description": "Date the record took effect",
-                },
-                "key_provisions": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Key governance provisions",
-                },
-                "signatories": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Individuals who signed or approved",
-                },
-                "jurisdiction": {
-                    "type": ["string", "null"],
-                    "description": "State/country of incorporation",
-                },
-                "filing_number": {
-                    "type": ["string", "null"],
-                    "description": "Official filing or document reference number",
-                },
-                "confidence": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
-            }
-        )
-        # Full transcription is ALWAYS the message body (no page content lost);
-        # page images are appended additively when the model is vision-capable.
+        schema = CORPORATE_RECORDS_SCHEMA
         max_chars = self._configured_max_input_chars()
         truncated = doc_text[:max_chars]
         if len(doc_text) > max_chars:

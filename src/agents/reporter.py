@@ -1,103 +1,95 @@
-import structlog
+"""Procedural matter-record assembler (reporter LLM retired).
 
-from llm.prompt_doctrine import REPORTER as _PRODUCTION_DOCTRINE
-from llm.prompts import get_managed_prompt
-from llm.retry import retry_chat_completion
-from observability.tracing import langfuse_call_attrs
+Compiles classification + extraction (+ optional arbiter caveats) into a
+structured summary suitable for ``extracted_data._report``. No LLM calls.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import structlog
 
 logger = structlog.get_logger(__name__)
 
 
-COMPILE_SYSTEM_PROMPT_V0 = """You are a big-picture legal report synthesizer at a transactional law firm.
-Your job is to take the extracted data from a document and produce a clean, structured summary
-suitable for inclusion in a matter record. You do not extract new data — you compile and refine
-what was already extracted by the specialist agents.
+# Procedural matter-record assembler — no LLM. Kept as a syncable template so
+# Langfuse prompt registry / cutover listings stay complete.
+COMPILE_SYSTEM_PROMPT_V0 = """You are a procedural matter-record assembler.
+You do not call an LLM. The pipeline formats classification and extraction
+fields into a structured summary for the archive sidecar and catalog.
 
-Rules:
-1. Summarize the extracted data clearly — this goes into a client-facing matter record.
-2. Preserve all key facts: parties, dates, obligations, risks, filing details.
-3. If extraction data is sparse or low-confidence, note it in the summary.
-4. Format the summary as clean structured text, not raw JSON.
-5. Do not add facts not present in the extracted data.
-6. Produce a confidence score reflecting the overall quality of the underlying extraction.
-7. Treat null, empty lists, redaction markers, and placeholders such as "[•]" as absent
-   information. Do not turn them into dates, names, statuses, or claims that the extraction
-   did not establish; say "not stated" when the report needs to mention the gap.
-8. Return only the matter-record summary. Do not claim that a fact was verified, is pending,
-   or requires follow-up unless that statement appears in the extracted data."""
+Include arbiter caveats when accept_with_caveats was decided.
+Do not invent facts beyond the extracted fields."""
 
-COMPILE_SYSTEM_PROMPT = COMPILE_SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
+COMPILE_SYSTEM_PROMPT = COMPILE_SYSTEM_PROMPT_V0
+
+
+def _fmt_value(value: Any) -> str:
+    if value is None or value == "" or value == [] or value == {}:
+        return "not stated"
+    if isinstance(value, (list, tuple)):
+        items = [str(v).strip() for v in value if v not in (None, "")]
+        return "; ".join(items) if items else "not stated"
+    if isinstance(value, dict):
+        try:
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            return str(value)
+    return str(value)
 
 
 def compile_matter_record(
     manifest_data: dict,
-    report_llm,
-    report_model: str,
-    temperature: float = 0.2,
+    report_llm=None,
+    report_model: str | None = None,
+    temperature: float = 0.0,
 ) -> dict:
+    """Assemble a deterministic matter-record summary from extracted fields.
+
+    ``report_llm`` / ``report_model`` / ``temperature`` are accepted for call-
+    site compatibility but ignored — the reporter agent is procedural.
+    """
+    del report_llm, report_model, temperature  # unused (procedural)
     doc_type = manifest_data.get("doc_type", "unknown")
     contract_subtype = manifest_data.get("contract_subtype")
     doc_subclass = manifest_data.get("doc_subclass")
-    extracted = manifest_data.get("extracted_data", {})
+    extracted = manifest_data.get("extracted_data", {}) or {}
     classification_confidence = manifest_data.get("classification_confidence")
     extraction_confidence = manifest_data.get("extraction_confidence")
 
     cleaned_extracted = {
-        k: v for k, v in (extracted or {}).items()
-        if k not in ("confidence", "reasoning")
+        k: v for k, v in extracted.items()
+        if k not in ("confidence", "reasoning", "_report")
     }
 
-    user_message = f"""Document type: {doc_type}
-Contract subtype: {contract_subtype}
-Document subclass: {doc_subclass}
-Classification confidence: {classification_confidence}
-Extraction confidence: {extraction_confidence}
-
-Extracted data:
-{cleaned_extracted}
-
-Please compile this into a clean matter-record summary."""
-
-    prompt_text, prompt_obj = get_managed_prompt("reporter", COMPILE_SYSTEM_PROMPT)
-    try:
-        from langchain_agents.skills import load_skills
-
-        skills = load_skills("reporter")
-        if skills:
-            prompt_text = f"{prompt_text}{skills}"
-    except Exception:
-        pass
-    messages = [
-        {"role": "system", "content": prompt_text},
-        {"role": "user", "content": user_message},
+    lines = [
+        f"Document type: {doc_type}",
+        f"Subclass: {doc_subclass or contract_subtype or 'not stated'}",
+        f"Classification confidence: {classification_confidence}",
+        f"Extraction confidence: {extraction_confidence}",
+        "",
+        "Extracted fields:",
     ]
-    from pipeline.config import get_agent_config
+    for key in sorted(cleaned_extracted.keys()):
+        lines.append(f"- {key}: {_fmt_value(cleaned_extracted[key])}")
 
-    try:
-        agent_config = get_agent_config("reporter")
-        max_tokens = agent_config.get("max_tokens", 2048)
-        reasoning_effort = agent_config.get("reasoning_effort")
-    except Exception:
-        max_tokens = 2048
-        reasoning_effort = None
-    kwargs = {
-        "model": report_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    if reasoning_effort:
-        kwargs["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
-    kwargs.update(langfuse_call_attrs("reporter"))
-    if prompt_obj is not None:
-        kwargs["langfuse_prompt"] = prompt_obj
-    from pipeline.limits import get_run_deadline, record_usage
+    arbiter_decision = manifest_data.get("arbiter_decision")
+    arbiter_reasoning = manifest_data.get("arbiter_reasoning")
+    arbiter_handoff = manifest_data.get("arbiter_handoff")
+    if arbiter_decision == "accept_with_caveats" or arbiter_reasoning or arbiter_handoff:
+        lines.append("")
+        lines.append("Caveats:")
+        if arbiter_decision:
+            lines.append(f"- arbiter_decision: {arbiter_decision}")
+        if arbiter_reasoning:
+            lines.append(f"- reasoning: {arbiter_reasoning}")
+        if arbiter_handoff:
+            lines.append(f"- handoff: {arbiter_handoff}")
 
-    kwargs["run_deadline"] = get_run_deadline()
-    response = retry_chat_completion(report_llm, **kwargs)
-    record_usage(getattr(response, "usage", None), report_model)
-    summary = response.choices[0].message.content or ""
-    logger.info("report_compiled", doc_type=doc_type, length=len(summary))
+    summary = "\n".join(lines).strip() + "\n"
+    logger.info("report_compiled", doc_type=doc_type, length=len(summary), procedural=True)
 
     return {
         "summary": summary,
@@ -107,4 +99,5 @@ Please compile this into a clean matter-record summary."""
         "extracted_data": cleaned_extracted,
         "classification_confidence": classification_confidence,
         "extraction_confidence": extraction_confidence,
+        "procedural": True,
     }

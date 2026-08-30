@@ -18,16 +18,12 @@ from graph.routing import (
 
 class TestLaneARouting:
     def test_medium_band_after_retry_goes_to_agent_review(self):
-        # KANBAN-062: a medium-band classification that survived the
-        # re-classification pass now gets an agent second opinion BEFORE any
-        # human sees it.
-        state = {"classification_confidence": 0.80, "doc_type": "contract"}
+        # Contract severity medium band [0.90, 0.98).
+        state = {"classification_confidence": 0.93, "doc_type": "contract"}
         assert after_retry_classify(state) == "review_classify"
 
     def test_high_confidence_post_retry_skips_lane(self):
-        # Retry resolved the ambiguity upward -> straight to extraction, lane
-        # untouched (hot-path behavior preserved).
-        state = {"classification_confidence": 0.97, "doc_type": "contract"}
+        state = {"classification_confidence": 0.98, "doc_type": "contract"}
         assert after_retry_classify(state) == "extract"
 
     def test_low_confidence_post_retry_still_human_review(self):
@@ -58,7 +54,7 @@ class TestLaneARouting:
         assert (
             after_review_classify({
                 "review_verdict": "reviewer_agrees_high",
-                "reviewer_confidence": 0.97,
+                "reviewer_confidence": 0.98,
                 "reviewer_doc_type": "contract",
             })
             == "extract"
@@ -101,27 +97,28 @@ class TestLaneARouting:
 class TestJudgeGate:
     def test_clean_run_never_enters_judge(self):
         # THE cost contract: high-confidence extractions keep today's path
-        # with zero added LLM calls.
+        # with zero added LLM calls. Global fallback band top is 0.95.
         assert judge_gate({"extraction_confidence": 0.99}) is False
         assert after_extraction_gated({"extraction_confidence": 0.99, "extraction_attempts": 1}) == "compile_report"
 
     def test_ambiguous_band_detours_to_judge(self):
-        assert judge_gate({"extraction_confidence": 0.75}) is True
-        assert after_extraction_gated({"extraction_confidence": 0.75, "extraction_attempts": 1}) == "judge_verify"
+        # Global fallback: low=0.88, judge_band_high=0.95.
+        assert judge_gate({"extraction_confidence": 0.90}) is True
+        assert after_extraction_gated({"extraction_confidence": 0.90, "extraction_attempts": 1}) == "judge_verify"
 
     def test_band_edges_exclusive(self):
-        assert judge_gate({"extraction_confidence": 0.70}) is True   # low edge inclusive
-        assert judge_gate({"extraction_confidence": 0.85}) is False  # band top exclusive
-        assert judge_gate({"extraction_confidence": 0.69}) is False  # below band = retry territory
+        assert judge_gate({"extraction_confidence": 0.88}) is True   # low edge inclusive
+        assert judge_gate({"extraction_confidence": 0.95}) is False  # band top exclusive
+        assert judge_gate({"extraction_confidence": 0.87}) is False  # below band = retry territory
         assert judge_gate({"extraction_confidence": None}) is False
 
     def test_kill_switch_env(self, monkeypatch):
         monkeypatch.setenv("MAILROOM_JUDGE_VERIFY", "off")
-        assert judge_gate({"extraction_confidence": 0.75}) is False
-        assert after_extraction_gated({"extraction_confidence": 0.75, "extraction_attempts": 1}) == "compile_report"
+        assert judge_gate({"extraction_confidence": 0.90}) is False
+        assert after_extraction_gated({"extraction_confidence": 0.90, "extraction_attempts": 1}) == "compile_report"
 
     def test_conflict_still_beats_gate(self):
-        state = {"extraction_confidence": 0.75, "extraction_attempts": 1, "conflict_detected": True}
+        state = {"extraction_confidence": 0.90, "extraction_attempts": 1, "conflict_detected": True}
         assert after_extraction_gated(state) == "boss_escalation"
 
     def test_gated_router_matches_plain_router_everywhere_else(self):
@@ -158,16 +155,25 @@ class TestLaneBRouting:
     def test_arbiter_accept_proceeds(self):
         assert after_arbiter({"arbiter_decision": "accept_with_caveats"}) == "compile_report"
 
-    def test_arbiter_retry_bounded_to_one(self):
-        # KANBAN-098: the bound is approval-INCLUSIVE. arbiter_node increments
-        # arbiter_retry_count when the arbiter ORDERS the retry, so the FIRST
-        # approval already arrives at this router carrying count == 1 and must
-        # still dispatch to retry_extract. A SECOND arbitration demanding yet
-        # another retry finds the budget spent (count == 2) and escalates.
+    def test_arbiter_retry_bounded_to_two(self):
+        # Approval-inclusive bound: arbiter_retry_max=2. Counts 1 and 2 still
+        # dispatch; count 3 (third demand) escalates.
         first_approval = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 1}
         assert after_arbiter(first_approval) == "retry_extract"
-        spent = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 2}
+        second = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 2}
+        assert after_arbiter(second) == "retry_extract"
+        spent = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 3}
         assert after_arbiter(spent) == "human_review"
+
+    def test_judge_max_passes_escalates(self):
+        assert after_judge({
+            "judge_verdict": "partial",
+            "judge_pass_count": 3,
+        }) == "human_review"
+        assert after_judge({
+            "judge_verdict": "partial",
+            "judge_pass_count": 1,
+        }) == "arbiter"
 
     def test_arbiter_human_review_escalates(self):
         assert after_arbiter({"arbiter_decision": "human_review"}) == "human_review"
@@ -347,10 +353,11 @@ class TestNodeBehavior:
             "doc_id": "d1",
             "doc_type": "contract",
             "doc_text": "src",
-            "extraction_confidence": 0.75,
+            "extraction_confidence": 0.93,
             "extracted_data": {"parties": "A/B", "_trace_id": "xyz", "reasoning": "chain-of-thought"},
         })
         assert result["judge_verdict"] == "incomplete"
+        assert result["judge_pass_count"] == 1
         assert seen["extracted"] == {"parties": "A/B"}         # metadata stripped
         assert seen["doc_text"] == "src"
 

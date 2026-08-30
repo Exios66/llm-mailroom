@@ -192,6 +192,8 @@ Set `MAILROOM_API_TOKEN` in `.env`, then:
 docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build
 ```
 
+The producer image is a multi-stage build that runs as non-root (`mailroom`, uid 10001), ships a `HEALTHCHECK` against `/health`, and the compose file sets `security_opt: no-new-privileges` plus `user: 10001:10001`. Langfuse compose secrets come from `.env` (`:?` required expansion) with pinned image tags. `PYTHONPATH=src python src/scripts/publish_space.py --check` asserts the Dockerfile baseline before publishing.
+
 On The-Mailroom:
 
 ```bash

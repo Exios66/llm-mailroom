@@ -101,7 +101,13 @@ def check_payload() -> list[str]:
         _die("Dockerfile must expose/bind 7860 (Spaces convention)")
     if "MAILROOM_API_HOST=0.0.0.0" not in docker:
         _die("Dockerfile must bind 0.0.0.0 (Spaces / The-Mailroom reachability)")
-    notes.append("Dockerfile: producer API on :7860")
+    if "USER mailroom" not in docker and "USER 10001" not in docker:
+        _die("Dockerfile must run as non-root (USER mailroom)")
+    if "HEALTHCHECK" not in docker:
+        _die("Dockerfile must declare HEALTHCHECK on /health")
+    if "AS builder" not in docker and " as builder" not in docker.lower():
+        _die("Dockerfile must use a multi-stage build (builder stage)")
+    notes.append("Dockerfile: producer API on :7860 (non-root, HEALTHCHECK, multi-stage)")
     if not PYPROJECT.is_file():
         _die("missing pyproject.toml")
     if not README.is_file():
