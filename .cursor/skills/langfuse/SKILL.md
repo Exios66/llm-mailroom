@@ -46,21 +46,25 @@ PYTHONPATH=src python src/scripts/sync_prompts.py
 
 ## The-Mailroom
 
-Visualizer is read-only Langfuse. REVIEW resolve still needs a **reachable
-producer** — point it at this API (local or the published Space):
+Visualizer is read-only Langfuse. Inbox enqueue + REVIEW resolve still
+need a **reachable producer** ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)).
+Two Hub Spaces: this producer (`mailroom-producer`) and The-Mailroom
+Observatory (`mailroom-observatory`). Point the visualizer at this API:
 
 ```bash
 MAILROOM_PIPELINE_URL=http://127.0.0.1:8000
+# Space Observatory: https://<user>-mailroom-producer.hf.space
 MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
-# MAILROOM_PIPELINE_API_PREFIX=/v1
+MAILROOM_PIPELINE_API_PREFIX=/v1
 ```
 
 Local: `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`  
-Hosted: `PYTHONPATH=src python src/scripts/publish_space.py --check` then `--repo <user>/mailroom-producer`.
+Hosted pair: [`deploy/space/PAIRING.md`](../../../deploy/space/PAIRING.md).
 
 Phoenix spans are **not** plottable there. Producer health lamp:
 `GET /health` → `checks.watcher` / `inbox_pending` plus `producer` /
-`review_resolve`.
+`review_resolve` / `inbox_upload`. Observatory `POST /api/inbox/enqueue`
+→ `POST /v1/upload`.
 
 ## Depth
 

@@ -35,4 +35,4 @@ The script clones the wiki repo into a temp dir, refreshes the mirrored pages fr
 - Wikis are separate git repos (`<repo>.wiki.git`). The script requires a wiki to exist on GitHub and push access.
 - `Getting-Started.md` summarizes the quickstart from the root `README.md`.
 - `Home.md` and `_Sidebar.md` are the wiki landing page and navigation; `_Footer.md` is the wiki footer.
-- Canonical repo documentation lives in `docs/` — including [`docs/sister-repos.md`](../sister-repos.md), the umbrella map of governed sibling repos referenced throughout the wiki.
+- Canonical repo documentation lives in `docs/` — including [`docs/sister-repos.md`](../sister-repos.md), the umbrella map of governed sibling repos referenced throughout the wiki. Observatory + producer Space pairing is [`deploy/space/PAIRING.md`](../../deploy/space/PAIRING.md).

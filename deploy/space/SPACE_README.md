@@ -7,18 +7,20 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Reachable llm-mailroom API for The-Mailroom REVIEW resolve
+short_description: Reachable llm-mailroom API for The-Mailroom floor + REVIEW
 ---
 
 # Mailroom Producer
 
 Hosted [llm-mailroom](https://github.com/Exios66/llm-mailroom) API — the
-**producer** The-Mailroom REVIEW desk needs for Approve / Reject / Record /
-Requeue / Complete.
+**producer** [The-Mailroom](https://github.com/Exios66/The-Mailroom)
+Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
+needs for Inbox **Queue a document**, REVIEW resolve, and the floor lamp.
 
-This Space is **not** the Observatory and **not** the pixel console. It
-serves FastAPI (`python -m api.main`) on **7860**. Point the visualizer at
-it:
+This Space is **not** the Observatory and **not** the pixel console. The
+floor lives on a second Space (`<user>/mailroom-observatory`). This
+image serves FastAPI (`python -m api.main`) on **7860**. Pair the floor
+with the three visualizer knobs (not read here):
 
 ```
 MAILROOM_PIPELINE_URL=https://<user>-mailroom-producer.hf.space
@@ -26,9 +28,14 @@ MAILROOM_PIPELINE_TOKEN=<same value as this Space's MAILROOM_API_TOKEN>
 MAILROOM_PIPELINE_API_PREFIX=/v1
 ```
 
-`GET /health` is open (watcher lamp + `producer` / `review_resolve` flags).
-Every other route requires `Authorization: Bearer $MAILROOM_API_TOKEN`.
-The browser never holds that token — The-Mailroom proxies from its server.
+`127.0.0.1:8000` is the laptop producer only — it is unreachable from a
+Space Observatory. Checklist: [PAIRING.md](PAIRING.md).
+
+`GET /health` is open (`producer` / `review_resolve` / `inbox_upload` plus
+the watcher lamp). Every other route requires
+`Authorization: Bearer $MAILROOM_API_TOKEN`. The browser never holds that
+token — The-Mailroom proxies `POST /api/inbox/enqueue` → `POST /v1/upload`
+and REVIEW → `POST /v1/review/{doc_id}/resolve`.
 
 ## Hugging Face dashboard
 

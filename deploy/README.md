@@ -1,16 +1,27 @@
 # Deploy — producer API + optional Modal vLLM
 
-The-Mailroom REVIEW resolve needs a **reachable** llm-mailroom producer
-(`MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN`). That is this repo's
-FastAPI process, not Modal vLLM.
+The-Mailroom ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
+needs a **reachable** llm-mailroom producer for the floor lamp, Inbox
+**Queue a document** (`POST /v1/upload`), and REVIEW resolve. That is this
+repo's FastAPI process, not Modal vLLM. Two Hub Spaces: this producer
+(`mailroom-producer`) plus The-Mailroom Observatory
+(`mailroom-observatory`). Pairing checklist:
+[`space/PAIRING.md`](space/PAIRING.md).
 
-| Path | Command | Visualizer URL |
+| Path | Command | Visualizer `MAILROOM_PIPELINE_URL` |
 |---|---|---|
 | Local Docker | `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build` | `http://127.0.0.1:8000` |
 | Hugging Face Space | `PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer` | `https://<user>-mailroom-producer.hf.space` |
 | Bare metal | `PYTHONPATH=src python -m api.main` | `http://127.0.0.1:8000` |
 
-`MAILROOM_PIPELINE_TOKEN` on the visualizer **is** `MAILROOM_API_TOKEN` here.
+Visualizer knobs (The-Mailroom process, not this one):
+
+```bash
+MAILROOM_PIPELINE_URL=…          # row above; never 127.0.0.1 from a Space
+MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+MAILROOM_PIPELINE_API_PREFIX=/v1
+```
+
 Space card: [`space/SPACE_README.md`](space/SPACE_README.md). Off-loopback
 bind refuses to start without a token.
 

@@ -45,7 +45,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
-| [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine rendering every pipeline run as an animated document conveyor — floor, review siding, inspector, sessions, metrics — plus a TUI console | **Downstream visualizer** — driven SOLELY by this repo's Langfuse project (nothing fabricated, no local fallback); mirrors the pipeline's trace contract in its schema layer |
+| [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine + hosted Observatory Space — floor, review siding, Inbox enqueue, inspector, sessions, metrics — plus a TUI console | **Downstream visualizer** — Langfuse-only display; Inbox / REVIEW proxy this API via `MAILROOM_PIPELINE_URL` + token + `/v1` ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) |
 | [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive graphify knowledge graph of this codebase | **Derived site** — build artifact only, never committed here |
 | [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Interactive graphify knowledge graph of the sister experiment loop | **Derived site** — companion map of the sister repo's code structure |
 
@@ -121,7 +121,7 @@ The scoring layer both mailroom and entity-extraction consume:
 
 ## The-Mailroom — the visual engine
 
-- **[The-Mailroom](https://github.com/Exios66/The-Mailroom)** (v0.2.0) renders
+- **[The-Mailroom](https://github.com/Exios66/The-Mailroom)** (v0.3+) renders
   every pipeline run as an animated conveyor of document envelopes — sorter,
   specialist bays, judge gate, boss's desk, reporter, archive — grouped into
   three rooms, plus a human-review siding queue, per-trace inspector,
@@ -173,7 +173,18 @@ The scoring layer both mailroom and entity-extraction consume:
   embeds the inbox watcher in the API lifespan by default, and treats
   `on_moved` / `on_modified` inbox events so an upload appears on the floor
   within one poll tick. `MAILROOM_PIPELINE_URL` on the visualizer should
-  point at this API (`http://127.0.0.1:8000`).
+  point at this API (`http://127.0.0.1:8000` on a shared host, or the
+  public producer Space URL when the Observatory is itself a Space).
+- **Inbox enqueue + Observatory cards (The-Mailroom [PR #30](https://github.com/Exios66/The-Mailroom/pull/30)):**
+  Observatory **Queue a document** proxies multipart files to
+  `POST /v1/upload` (202). Unconfigured visualizer returns 503 — no
+  fabricated catalog row. Cards show classification hit/miss/pending and a
+  headline strip; Langfuse snapshot cache (`MAILROOM_TRACE_CACHE_DIR`) is
+  visualizer-side. Pairing knobs:
+  `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` +
+  `MAILROOM_PIPELINE_API_PREFIX=/v1`. The-Mailroom `publish_space.py`
+  copies those as Observatory Space secrets/variables. Checklist:
+  [`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).
 - **REVIEW resolve (The-Mailroom [PR #18](https://github.com/Exios66/The-Mailroom/pull/18)
   + [PR #20](https://github.com/Exios66/The-Mailroom/pull/20)):**
   the visualizer proxies operator decisions to this API — never holds producer
