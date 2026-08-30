@@ -88,6 +88,26 @@ conveyor read Langfuse. Observatory-side cache knobs
 (`MAILROOM_TRACE_CACHE_DIR`, `MAILROOM_POLL_ENRICH=inflight`) stay on the
 visualizer — this producer does not set them.
 
+## Live pair (probed 2026-08-30)
+
+Published under the [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)
+Hub user (same org as the pipeline corpora). Re-probe anytime with
+`PYTHONPATH=src python src/scripts/probe_hosted_spaces.py`.
+
+| Role | Hub | Host | Probed state |
+|---|---|---|---|
+| **Observatory** | [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory) | `https://lucius-morningstar-mailroom-observatory.hf.space` | **RUNNING**. Langfuse floor: 74 traces, 27 REVIEW. Space commit `a137b58` (*Republish Observatory after #30*). |
+| **Producer** | [`Lucius-Morningstar/mailroom-producer`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-producer) | `https://lucius-morningstar-mailroom-producer.hf.space` | **Not published** (Hub 404). Inbox/REVIEW on the Observatory return an honest **503**. |
+
+```bash
+# visualizer knobs once the producer Space exists
+MAILROOM_PIPELINE_URL=https://lucius-morningstar-mailroom-producer.hf.space
+MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+MAILROOM_PIPELINE_API_PREFIX=/v1
+```
+
+Pilot write-up: [`docs/reports/pilots/2026-08-30-hosted-hugging-face-spaces-pair.md`](../../docs/reports/pilots/2026-08-30-hosted-hugging-face-spaces-pair.md).
+
 ## Laptop pair
 
 ```bash

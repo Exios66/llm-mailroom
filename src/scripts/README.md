@@ -50,6 +50,8 @@ This directory contains all operational and evaluation scripts for the LLM-Mailr
 | `analyze_audit_db.py` | Parse/summarize the full local audit DB (event/actor histograms, review events, chain health, optional catalog join). `--json`, `--no-verify`, `--join-catalog`. |
 | `export_warehouse.py` | Export terminal (`archived`/`failed`) catalog rows + matching audit chains to daily Parquet under `data/warehouse/` (`documents_YYYY-MM-DD.parquet`, `audit_YYYY-MM-DD.parquet`, `manifest.json`). `--full`, `--date`, `--doc-id`, `--since`. |
 | `new_report.py` | Scaffolds a new evaluation write-up / audit / report under `docs/reports/<kind>/` (`audits` \| `pilots` \| `evaluations`) with a dated kebab-case filename and a standard header. Use this for any future report — never drop reports in the repo root. Supports `--date` and `--dry-run`. |
+| `publish_space.py` | Publish the producer Docker Space (`--check` is network-free). Default Hub id `<whoami>/mailroom-producer`. |
+| `probe_hosted_spaces.py` | Probe the live `Lucius-Morningstar` Observatory + producer pair (`--offline` prints pins only). |
 | `calibrate_field_scoring.py` | Issue #4 calibration step: builds a labeled field sample from `docs/examples/samples/manifest.csv` ground truth (exact/format variants = correct; controlled perturbations = incorrect) and reports per-field-type score separation + calibrated `field_scoring.type_bands` cutoffs. Supports `--band LOW HIGH` to evaluate a candidate band and `--json` for machine-readable output. |
 
 ## Common Patterns
