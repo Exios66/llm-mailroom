@@ -23,7 +23,7 @@ flowchart TD
     ARBITER["arbitrate-verdict<br/>ArbiterAgent (KANBAN-063 Lane B)"]
     BOSS["adjudicate-conflict<br/>BossAgent"]
     REVIEW["route-for-review<br/>review bin (human)"]
-    REPORT["compile-report<br/>ReporterAgent"]
+    REPORT["compile-report<br/>(procedural)"]
     CATALOG["write-catalog<br/>SQLite documents + matters"]
     ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
     FAILED["FAILED"]
@@ -82,9 +82,9 @@ flowchart LR
 
     subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
         SORTER["SorterAgent"]
-        SPEC["7 specialists<br/>contracts, corporate records,<br/>due diligence, correspondence,<br/>compliance, court opinions, insurance claims"]
+        SPEC["5 specialists + merger via contracts<br/>corporate, correspondence,<br/>compliance, insurance"]
         BOSS["BossAgent"]
-        REPORTER["ReporterAgent"]
+        REPORTER["compile_report<br/>(procedural)"]
         PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
         JUDGE["JudgeAgent<br/>(offline evaluators)"]
     end
