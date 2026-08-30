@@ -11,7 +11,7 @@ repo's FastAPI process, not Modal vLLM. Two Hub Spaces: this producer
 | Path | Command | Visualizer `MAILROOM_PIPELINE_URL` |
 |---|---|---|
 | Local Docker | `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build` | `http://127.0.0.1:8000` |
-| Hugging Face Space | `PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer` | `https://<user>-mailroom-producer.hf.space` |
+| Hugging Face Space | `PYTHONPATH=src python src/scripts/publish_space.py --repo Lucius-Morningstar/mailroom-producer` | `https://lucius-morningstar-mailroom-producer.hf.space` |
 | Bare metal | `PYTHONPATH=src python -m api.main` | `http://127.0.0.1:8000` |
 
 Visualizer knobs (The-Mailroom process, not this one):

@@ -18,12 +18,13 @@ Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
 needs for Inbox **Queue a document**, REVIEW resolve, and the floor lamp.
 
 This Space is **not** the Observatory and **not** the pixel console. The
-floor lives on a second Space (`<user>/mailroom-observatory`). This
+floor lives on a second Space
+(`Lucius-Morningstar/mailroom-observatory` on the Hub). This
 image serves FastAPI (`python -m api.main`) on **7860**. Pair the floor
 with the three visualizer knobs (not read here):
 
 ```
-MAILROOM_PIPELINE_URL=https://<user>-mailroom-producer.hf.space
+MAILROOM_PIPELINE_URL=https://lucius-morningstar-mailroom-producer.hf.space
 MAILROOM_PIPELINE_TOKEN=<same value as this Space's MAILROOM_API_TOKEN>
 MAILROOM_PIPELINE_API_PREFIX=/v1
 ```

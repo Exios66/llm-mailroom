@@ -199,7 +199,7 @@ The scoring layer both mailroom and entity-extraction consume:
   visualizer (not `MAILROOM_API_URL`, which is TUI → visualizer `:8001`). The
   producer must be **reachable from the visualizer process** — localhost
   `:8000` for a laptop pair, or the published Hugging Face Docker Space
-  (`src/scripts/publish_space.py`, URL `https://<user>-mailroom-producer.hf.space`)
+  (`src/scripts/publish_space.py`, URL `https://lucius-morningstar-mailroom-producer.hf.space`)
   for the hosted Observatory. Local compose:
   `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`.
   `GET /health` advertises `producer` / `review_resolve`. Full audit parse:

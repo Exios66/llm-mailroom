@@ -81,7 +81,7 @@ Manifests: `data/manifests/<doc_id>.json`
 ## How do I monitor the pipeline?
 
 Four ways:
-1. **The-Mailroom Observatory** — hosted floor Space (`mailroom-observatory`) plus this producer Space (`mailroom-producer`). Langfuse for envelopes; Inbox / REVIEW go through `MAILROOM_PIPELINE_URL` ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)). Pairing: [deploy/space/PAIRING.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/space/PAIRING.md).
+1. **The-Mailroom Observatory** — live floor [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory) plus this producer Space (`mailroom-producer`). Langfuse for envelopes; Inbox / REVIEW go through `MAILROOM_PIPELINE_URL` ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)). Pairing: [deploy/space/PAIRING.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/space/PAIRING.md).
 2. **Langfuse UI** (`https://us.cloud.langfuse.com` or `http://localhost:3000`) — live traces of every LLM call
 3. **`/ops/status` endpoint** — pipeline-wide metrics (stuck docs, review backlog, error rates)
 4. **Ops monitor** — automated Boss sweeps with alerts
@@ -93,7 +93,7 @@ The visualizer is configured without a reachable producer. Set
 `MAILROOM_API_TOKEN`), and `MAILROOM_PIPELINE_API_PREFIX=/v1` on The-Mailroom.
 A Hugging Face Space Observatory cannot use `http://127.0.0.1:8000` — that
 loopback is inside the Observatory container, not this API. Publish this
-repo's producer Space and point the URL at `https://<user>-mailroom-producer.hf.space`.
+repo's producer Space and point the URL at `https://lucius-morningstar-mailroom-producer.hf.space`.
 
 ## Is this production-ready?
 
