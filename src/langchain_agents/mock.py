@@ -59,11 +59,11 @@ class FakeLangChainLLM:
         self.classification = classification or {
             "doc_type": "contract",
             "contract_subtype": "other",
-            "confidence": 0.95,
+            "confidence": 0.99,
             "reasoning": "mock",
         }
         self.extraction = extraction or {
-            "confidence": 0.9,
+            "confidence": 0.99,
             "document_name": "Mock Agreement",
             "parties": ["Mock Party"],
         }

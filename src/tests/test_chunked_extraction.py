@@ -40,7 +40,7 @@ def test_extract_chunked_splits_long_non_contract(mock_openai_client):
         return {
             "filing_type": "10-k",
             "confidence": 0.9,
-            "key_provisions": [f"chunk-{len(calls)}"],
+            "key_requirements": [f"chunk-{len(calls)}"],
         }
 
     agent.extract = fake_extract
@@ -48,7 +48,7 @@ def test_extract_chunked_splits_long_non_contract(mock_openai_client):
     result = agent.extract_chunked(text, chunk_chars=400, overlap_chars=40)
     assert len(calls) > 1
     assert result.get("confidence") == 0.9
-    assert "chunk-1" in (result.get("key_provisions") or [])
+    assert "chunk-1" in (result.get("key_requirements") or [])
 
 
 def test_extract_chunked_short_document_single_pass(mock_openai_client):

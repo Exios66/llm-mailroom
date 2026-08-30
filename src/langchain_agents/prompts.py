@@ -2547,6 +2547,21 @@ CONTRACTS_SPECIALIST_PROMPT_V32 = (
     CONTRACTS_SPECIALIST_PROMPT_V31.rstrip() + "\n\n" + _MAILROOM_CONTRACTS_DOCTRINE
 )
 
+# V33 — pared CUAD/MAUD product: key entities + fixed clause checklists only.
+# Retires open-ended key_obligations / termination_clauses dumps.
+_PARED_CLAUSE_CHECKLIST_DOCTRINE = """
+PARED EXTRACTION (mailroom): Do NOT emit open-ended key_obligations or
+termination_clauses — those fields are retired from the schema. Extract key
+entities (parties, dates, governing_law, value, renewal, family/consideration)
+plus present CUAD categories in cuad_clauses and answered MAUD questions in
+maud_clauses as '<Label>: <short evidence span>' lines only. Prefer precision
+over exhaustive obligation dumps.
+""".strip()
+
+CONTRACTS_SPECIALIST_PROMPT_V33 = (
+    CONTRACTS_SPECIALIST_PROMPT_V32.rstrip() + "\n\n" + _PARED_CLAUSE_CHECKLIST_DOCTRINE
+)
+
 # =============================================================================
 CORPORATE_RECORDS_SPECIALIST_PROMPT = """You are a legal extraction specialist focused on corporate records. Your job is to extract key fields from corporate governance documents.
 
@@ -2965,7 +2980,7 @@ PROMPT_VERSIONS = {
     "legalbench_task_v0": LEGALBENCH_TASK_PROMPT_V0,
 
     # Specialists
-    "contracts_specialist": CONTRACTS_SPECIALIST_PROMPT_V32,  # mailroom production alias
+    "contracts_specialist": CONTRACTS_SPECIALIST_PROMPT_V33,  # mailroom production alias
     "contracts_specialist_v1": CONTRACTS_SPECIALIST_PROMPT_V1,
     "contracts_specialist_v2": CONTRACTS_SPECIALIST_PROMPT_V2,
     "contracts_specialist_v3": CONTRACTS_SPECIALIST_PROMPT_V3,
@@ -2998,6 +3013,7 @@ PROMPT_VERSIONS = {
     "contracts_specialist_v30": CONTRACTS_SPECIALIST_PROMPT_V30,
     "contracts_specialist_v31": CONTRACTS_SPECIALIST_PROMPT_V31,
     "contracts_specialist_v32": CONTRACTS_SPECIALIST_PROMPT_V32,
+    "contracts_specialist_v33": CONTRACTS_SPECIALIST_PROMPT_V33,
     "contracts_specialist_v28": CONTRACTS_SPECIALIST_PROMPT_V28,
     "corporate_records_specialist": CORPORATE_RECORDS_SPECIALIST_PROMPT,
     "due_diligence_specialist": DUE_DILIGENCE_SPECIALIST_PROMPT,

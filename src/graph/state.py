@@ -81,6 +81,9 @@ class DocumentState(TypedDict, total=False):
     # separate counter so extraction retries and arbitration retries never
     # alias each other).
     arbiter_retry_count: int
+    # Completeness-judge invocations on this document (Lane B). Capped by
+    # confidence.judge_max_passes (= 1 + arbiter_retry_max).
+    judge_pass_count: int
     # Ground truth (pilot / HF eval). Live runs omit this; routing only
     # consults it when present so overconfident misses cannot auto-archive.
     ground_truth: dict[str, Any]

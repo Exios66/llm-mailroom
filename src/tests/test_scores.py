@@ -18,9 +18,8 @@ class TestValidateExtraction:
                 "parties": ["ACME", "Zenith"],
                 "effective_date": "2024-01-15",
                 "term_length": "3 years",
-                "termination_clauses": [],
+                "cuad_clauses": ["uptime"],
                 "governing_law": "Delaware",
-                "key_obligations": ["uptime"],
                 "contract_value": None,
                 "renewal_terms": None,
             },
@@ -173,9 +172,8 @@ class TestFirstPassSuccess:
                         "parties": ["ACME", "Zenith"],
                         "effective_date": "2024-01-15",
                         "term_length": "3 years",
-                        "termination_clauses": [],
+                        "cuad_clauses": ["uptime"],
                         "governing_law": "Delaware",
-                        "key_obligations": ["uptime"],
                     },
                 }
             )

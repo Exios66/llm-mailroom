@@ -35,14 +35,14 @@ class TestCatalogStageTracking:
             {
                 "doc_type": "contract",
                 "contract_subtype": "other",
-                "confidence": 0.96,
+                "confidence": 0.99,
                 "reasoning": "Service agreement",
             },
             {
                 "parties": ["Acme Corp", "Beta LLC"],
                 "effective_date": "2024-01-15",
                 "governing_law": "Delaware",
-                "confidence": 0.95,
+                "confidence": 0.99,
             },
         )
         assert result["stage"] == "archived"
@@ -99,7 +99,7 @@ class TestSubstantiveExtractionGuard:
             {
                 "doc_type": "contract",
                 "contract_subtype": "other",
-                "confidence": 0.96,
+                "confidence": 0.99,
                 "reasoning": "Contract",
             },
             {
@@ -107,7 +107,7 @@ class TestSubstantiveExtractionGuard:
                 "parties": [],
                 "effective_date": None,
                 "governing_law": None,
-                "confidence": 0.95,
+                "confidence": 0.99,
             },
         )
         assert result["stage"] == "review"
@@ -117,7 +117,7 @@ class TestSubstantiveExtractionGuard:
         from pipeline.guards import apply_extraction_guard
 
         guard, confidence = apply_extraction_guard(
-            "contract", {"parties": ["Acme"], "key_obligations": ["uptime"]}, 0.9, attempts=1
+            "contract", {"parties": ["Acme"], "cuad_clauses": ["uptime"]}, 0.9, attempts=1
         )
         assert guard["ok"] is True
         assert confidence == 0.9
@@ -135,14 +135,14 @@ class TestConflictDetection:
             {
                 "doc_type": "contract",
                 "contract_subtype": "other",
-                "confidence": 0.96,
+                "confidence": 0.99,
                 "reasoning": "Contract",
             },
             {
                 "parties": ["Acme Corp"],
                 "governing_law": "Delaware",
                 "effective_date": "2024-01-01",
-                "confidence": 0.95,
+                "confidence": 0.99,
             },
         )
         assert first["stage"] == "archived"
@@ -154,14 +154,14 @@ class TestConflictDetection:
         mock_langchain_llm.classification = {
             "doc_type": "contract",
             "contract_subtype": "other",
-            "confidence": 0.96,
+            "confidence": 0.99,
             "reasoning": "Contract",
         }
         mock_langchain_llm.extraction = {
             "parties": ["Acme Corp"],
             "governing_law": "New York",
             "effective_date": "2024-06-01",
-            "confidence": 0.95,
+            "confidence": 0.99,
         }
         from graph.build_graph import run_pipeline
 
@@ -187,14 +187,14 @@ class TestConflictDetection:
             {
                 "doc_type": "contract",
                 "contract_subtype": "other",
-                "confidence": 0.96,
+                "confidence": 0.99,
                 "reasoning": "Contract",
             },
             {
                 "parties": ["Acme Corp"],
                 "governing_law": "Delaware",
                 "effective_date": "2024-01-01",
-                "confidence": 0.95,
+                "confidence": 0.99,
             },
         )
         from tests.test_pipeline_e2e import _ensure_dirs_relative
@@ -204,14 +204,14 @@ class TestConflictDetection:
         mock_langchain_llm.classification = {
             "doc_type": "contract",
             "contract_subtype": "other",
-            "confidence": 0.96,
+            "confidence": 0.99,
             "reasoning": "Contract",
         }
         mock_langchain_llm.extraction = {
             "parties": ["Acme Corp"],
             "governing_law": "Delaware",
             "effective_date": "2024-01-01",
-            "confidence": 0.95,
+            "confidence": 0.99,
         }
         inbox = temp_base_dir / "pipeline" / "inbox"
         test_file = inbox / "contract_d.txt"
@@ -377,13 +377,13 @@ class TestAuditHashChaining:
             {
                 "doc_type": "contract",
                 "contract_subtype": "other",
-                "confidence": 0.96,
+                "confidence": 0.99,
                 "reasoning": "Service agreement",
             },
             {
                 "parties": ["Acme Corp"],
                 "governing_law": "Delaware",
-                "confidence": 0.95,
+                "confidence": 0.99,
             },
         )
         assert result["stage"] == "archived"
@@ -417,12 +417,12 @@ class TestTraceIdPropagation:
             {
                 "doc_type": "contract",
                 "contract_subtype": "other",
-                "confidence": 0.96,
+                "confidence": 0.99,
                 "reasoning": "Service agreement",
             },
             {
                 "parties": ["Acme Corp"],
-                "confidence": 0.95,
+                "confidence": 0.99,
             },
         )
         # OBSERVABILITY_PROVIDER=none in tests → deterministic trace id is None,
@@ -462,8 +462,9 @@ class TestReviewRejectionFinalizes:
         assert review_file.exists()
 
         # Simulate the API's reject path (via the endpoint helpers).
+        import asyncio
         from api.main import _move_rejected_to_failed
-        _move_rejected_to_failed(doc_id, manifest)
+        asyncio.run(_move_rejected_to_failed(doc_id, manifest))
 
         assert not review_file.exists()
         assert (failed_dir() / manifest.original_filename).exists()

@@ -80,17 +80,19 @@ Fires only where the pipeline would previously have pinged a human. Independence
 **Output schema fields:**
 | Field | Type | Description |
 |---|---|---|
-| `document_name` | `str \| None` | The name of the contract (e.g. 'Web Hosting Agreement') |
+| `document_name` | `str \| None` | The name of the contract |
 | `parties` | `list[str]` | All named parties |
 | `effective_date` | `str \| None` | Contract effective date |
 | `term_length` | `str \| None` | Duration |
-| `termination_clauses` | `list[str]` | Termination provisions |
 | `governing_law` | `str \| None` | Governing jurisdiction |
-| `key_obligations` | `list[str]` | Performance obligations |
-| `contract_value` | `str \| None` | Total value |
+| `contract_value` | `str \| None` | Total value / MAUD consideration token |
 | `renewal_terms` | `str \| None` | Renewal conditions |
+| `cuad_family` | `str \| None` | CUAD agreement family |
+| `merger_consideration` | `str \| None` | MAUD consideration token |
+| `cuad_clauses` | `list[str]` | Present CUAD categories as `"<label>: <evidence>"` |
+| `maud_clauses` | `list[str]` | Answered MAUD questions as `"<question>: <evidence>"` |
 
-The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): `contracts_specialist_v32` prompt (V31 eval-validated extraction + mailroom pipeline doctrine), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts **two live classes** that share `ContractExtraction`: CUAD `contract` and MAUD `merger_agreement` (taxonomy `specialist: contracts_specialist`; they are not interchangeable labels). It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` / MAUD consideration + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other four specialists accept the same optional `handoff_context` parameter.
+The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): production prompt `contracts_specialist_v33` (pared CUAD/MAUD checklists — no open-ended `key_obligations` / `termination_clauses`), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts **two live classes** that share `ContractExtraction`: CUAD `contract` and MAUD `merger_agreement` (taxonomy `specialist: contracts_specialist`; they are not interchangeable labels). It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` / MAUD consideration + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other four specialists accept the same optional `handoff_context` parameter.
 
 ---
 
@@ -110,12 +112,14 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `entity_name` | `str` | Legal entity name |
 | `record_type` | `str` | Hub extract tokens: `articles_of_incorporation`, `bylaws`, `powers_of_attorney`, `rights_instrument`, `other` (sorter catalog is wider) |
 | `effective_date` | `str \| None` | Date the record took effect |
-| `key_provisions` | `list[str]` | Key governance provisions |
+| `intent` | `str \| None` | Short controlled label (e.g. `record_governance`) |
+| `subject_matter` | `str \| None` | One grounded sentence |
+| `keywords` | `list[str]` | Up to 8 grounded terms |
 | `signatories` | `list[str]` | Who signed/approved |
 | `jurisdiction` | `str \| None` | State/country of incorporation |
 | `filing_number` | `str \| None` | Official filing reference |
 
-**Honest gap (dojo 0.11.0):** there is **no external extraction benchmark** for this class (nothing CUAD/MAUD-shaped). The published `docclass-merged` set has 39 `corporate_record` rows with record-type subclasses; Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold. Mailroom scores a **local extraction pack** (`observability.local_eval_packs`, mock/check only) with schema-complete `expected_fields` (entity_name, key_provisions, signatories, …) from committed fixtures. Extra Hub `ground_truth` columns are joined when present, never invented.
+**Honest gap (dojo 0.11.0):** there is **no external extraction benchmark** for this class (nothing CUAD/MAUD-shaped). The published `docclass-merged` set has 39 `corporate_record` rows with record-type subclasses; Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold. Mailroom scores a **local extraction pack** (`observability.local_eval_packs`, mock/check only) with schema-complete `expected_fields` (entity_name, subject_matter, keywords, signatories, …) from committed fixtures. Extra Hub `ground_truth` columns are joined when present, never invented.
 
 ---
 
@@ -137,11 +141,12 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `additional_recipients` | `list[str]` | Cc'd / copied parties |
 | `communication_type` | `str` | letter, email, memo, notice, demand, etc. |
 | `communication_date` | `str \| None` | When it was sent |
-| `key_points` | `list[str]` | Main points made |
+| `intent` | `str \| None` | Short controlled label (e.g. `demand_payment`) |
+| `subject_matter` | `str \| None` | One grounded sentence |
+| `keywords` | `list[str]` | Up to 8 grounded terms |
 | `demand_amount` | `float \| None` | Exact dollar amount demanded (demand letters) |
-| `action_items` | `list[str]` | Actions required |
+| `action_items` | `list[str]` | At most 3 concrete actions |
 | `urgency` | `str` | routine, time-sensitive, urgent, critical |
-| `referenced_communications` | `list[str]` | Prior letters/notices this message references |
 | `confidence` | `float` | Extraction confidence (evidence-derived) |
 
 ---
@@ -198,6 +203,10 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `coverage_determination` | `str` | approved, denied, partial, pending |
 | `denial_reasons` | `list[str]` | Stated denial reasons |
 | `supporting_documents` | `list[str]` | Documents referenced as supporting the claim |
+| `intent` | `str \| None` | Short controlled label (e.g. `coverage_denial`) |
+| `subject_matter` | `str \| None` | One grounded sentence |
+| `keywords` | `list[str]` | Up to 8 grounded terms |
+| `claim_checklist` | `list[str]` | Present claim categories as `"<Category>: <evidence>"` |
 | `confidence` | `float` | Extraction confidence (evidence-derived) |
 
 A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema registry, taxonomy doc_class + agent block, graph dispatch node, classifier vocabulary, and sorter prompt coverage.
@@ -212,17 +221,17 @@ Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (h
 
 ---
 
-### 7. Reporter (`agents/reporter.py`)
+### 7. Report assembler (`agents/reporter.py`)
 
 | Attribute | Value |
 |---|---|
 | **Node** | `compile_report` |
-| **Trigger** | Extraction complete, confidence sufficient |
-| **Input** | All manifest data for the document |
-| **Output** | Matter-record summary entry |
-| **Personality** | Big-picture synthesizer, clean summaries |
+| **Trigger** | Extraction complete, confidence sufficient (or arbiter `accept_with_caveats`) |
+| **Input** | Specialist extraction + optional arbiter caveats |
+| **Output** | Deterministic `_report` string on `extracted_data` |
+| **Personality** | none — procedural |
 
-The Reporter does NOT extract new data — it compiles and refines what the specialists already extracted. Its output goes into the `extracted_data._report` field.
+Happy-path LLM calls stop at classify + extract. `compile_report` is a **procedural** assembler (no `get_llm("reporter")`): it formats the specialist JSON plus any durable arbiter caveats into `extracted_data._report`. Archivist remains the success-path durable sink.
 
 ---
 

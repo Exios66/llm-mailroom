@@ -18,16 +18,15 @@ def _resp(content: str) -> MagicMock:
 
 
 LOW_CLASSIFY = '{"doc_type": "contract", "confidence": 0.40, "reasoning": "Unsure"}'
-HIGH_EXTRACT = '{"parties": ["Acme Corp"], "effective_date": "2024-01-01", "confidence": 0.95}'
-REPORT_TEXT = "Matter record: Acme Corp service agreement, effective 2024-01-01."
+HIGH_EXTRACT = '{"parties": ["Acme Corp"], "effective_date": "2024-01-01", "confidence": 0.99}'
 
 
 @pytest.fixture
 def phased_client(mocker, mock_langchain_llm):
     """Mock LLM clients with a scripted sequence: the LangChain sorter returns
-    low confidence twice (classify → retry → review), the LangChain contracts
-    specialist returns a high-confidence extraction on resume, and the reporter
-    (get_llm path) returns the matter record."""
+    low confidence twice (classify → retry → review); on resume the contracts
+    specialist returns a high-confidence extraction. compile_report is
+    procedural (no LLM)."""
     mock_langchain_llm.classification = {
         "doc_type": "contract",
         "contract_subtype": "other",
@@ -37,11 +36,14 @@ def phased_client(mocker, mock_langchain_llm):
     mock_langchain_llm.extraction = {
         "parties": ["Acme Corp"],
         "effective_date": "2024-01-01",
-        "confidence": 0.95,
+        "confidence": 0.99,
     }
-    contents = [REPORT_TEXT]
     client = MagicMock()
-    client.chat.completions.create.side_effect = [_resp(c) for c in contents]
+    # Lane B (judge/arbiter) should not run when extract ≥ class high (0.98);
+    # keep a spare response in case a review-path agent still calls get_llm.
+    client.chat.completions.create.side_effect = [
+        _resp('{"verdict": "complete", "score": 1.0, "findings": []}')
+    ]
     mocker.patch("llm.client.OpenAI", return_value=client)
     mocker.patch(
         "agents.base.BaseAgent.__init__",
@@ -103,14 +105,13 @@ class TestReviewResume:
         review_file = review_dir() / manifest.original_filename
         assert review_file.exists()
 
-        # Phase 2: approve → fresh extraction (extract + reporter use the next
-        # two scripted responses).
+        # Phase 2: approve → fresh extraction (procedural assemble → archive).
         resumed = resume_from_review(manifest, review_file)
 
         assert resumed.get("stage") == "archived"
         assert resumed.get("doc_id") == doc_id  # original doc_id preserved
         assert resumed.get("doc_type") == "contract"
-        assert resumed.get("extraction_confidence") == 0.95
+        assert resumed.get("extraction_confidence") == 0.99
         assert resumed.get("extraction_attempts") == 1  # fresh, single attempt
         assert resumed.get("extracted_data", {}).get("parties") == ["Acme Corp"]
 
@@ -123,6 +124,53 @@ class TestReviewResume:
         updated = load_manifest(doc_id)
         assert updated.stage.value == "archived"
         assert updated.review_decision == "approved"
+
+    def test_resume_soft_miss_reparks_review_not_failed(
+        self, temp_base_dir, mocker, mock_langchain_llm
+    ):
+        """Post-HITL extract that still misses tight gates returns to review,
+        never auto-failed solely because the doc once needed a human."""
+        from pipeline.bins import review_dir, load_manifest, failed_dir
+        from graph.build_graph import resume_from_review
+
+        mock_langchain_llm.classification = {
+            "doc_type": "contract",
+            "contract_subtype": "other",
+            "confidence": 0.40,
+            "reasoning": "Unsure",
+        }
+        mock_langchain_llm.extraction = {
+            "parties": ["Acme Corp"],
+            "effective_date": "2024-01-01",
+            "confidence": 0.91,  # contract low≤x<judge_band_high → Lane B
+        }
+        client = MagicMock()
+        # Judge incomplete + arbiter human_review → re-park review.
+        client.chat.completions.create.side_effect = [
+            _resp(
+                '{"label": "incomplete", "score": 0.2, '
+                '"findings": ["missing governing_law"], "reasoning": "gap"}'
+            ),
+            _resp(
+                '{"decision": "human_review", "reasoning": "blocking gap", '
+                '"fields_to_fix": ["governing_law"], "handoff_notes": "need law"}'
+            ),
+        ]
+        mocker.patch("llm.client.OpenAI", return_value=client)
+        mocker.patch(
+            "agents.base.BaseAgent.__init__",
+            lambda self, mock=client: setattr(self, "client", mock)
+            or setattr(self, "model", "test-model"),
+        )
+
+        result = _run_to_review(temp_base_dir, client)
+        doc_id = result["doc_id"]
+        manifest = load_manifest(doc_id)
+        review_file = review_dir() / manifest.original_filename
+        resumed = resume_from_review(manifest, review_file)
+        assert resumed.get("stage") == "review"
+        assert not (failed_dir() / manifest.original_filename).exists()
+        assert (review_dir() / manifest.original_filename).exists()
 
     def test_resume_requires_classification(self, temp_base_dir):
         from graph.build_graph import resume_from_review

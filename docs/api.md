@@ -223,13 +223,14 @@ proxy) or **form** (legacy clients).
 | `contract_subtype` / `doc_subclass` | string | No | Optional subtype overrides (stamped on inbox sidecar for `requeue`) |
 | `extracted_data` | object | For `complete` if none parked | Human-finished extraction payload. Optional when the parked manifest already has fields. |
 
-**Dispositions:**
-| disposition | When | Effect |
+**Dispositions → bins:**
+| disposition | When | Bin / effect |
 |---|---|---|
-| `resume` | `stage=review` | Approve → fresh extract under same `doc_id` (class override written to manifest first); reject → failed bin |
-| `record` | any stage | Hash-chained audit + optional manifest note; file stays put |
-| `requeue` | source file locatable | Copy source back to inbox; class override stamped on `.meta` sidecar |
-| `complete` | `stage=review` + `decision=approved` | Archive with operator `extracted_data` (no LLM). If the body omits it or sends `{}`, the parked manifest payload is used. |
+| `resume` | `decision=approved`, `stage=review` | Fresh extract under same `doc_id` → **archive** when gates pass; soft miss re-parks **review** (never auto-failed solely because HITL ran once). Class override written to manifest first. |
+| `resume` | `decision=rejected` | **failed** bin + catalog `stage=failed` |
+| `complete` | `decision=approved`, `stage=review` | **archive** with operator `extracted_data` (no specialist LLM). If the body omits it or sends `{}`, the parked manifest payload is used. |
+| `requeue` | source file locatable | Copy back to **inbox** (not failed); class override stamped on `.meta` sidecar |
+| `record` | any stage | Hash-chained audit + optional manifest note; **no bin move** |
 
 **Response:**
 ```json

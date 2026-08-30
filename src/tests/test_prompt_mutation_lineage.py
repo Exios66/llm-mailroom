@@ -51,6 +51,15 @@ def test_sorter_v14_is_pure_append_of_v12():
     assert LP.PROMPT_TEMPLATES()["sorter"] is LP.SORTER_PROMPT_V14
 
 
+def test_contracts_v33_is_pure_append_of_v32():
+    assert LP.CONTRACTS_SPECIALIST_PROMPT_V33.startswith(
+        LP.CONTRACTS_SPECIALIST_PROMPT_V32.rstrip()
+    )
+    assert "PARED EXTRACTION" in LP.CONTRACTS_SPECIALIST_PROMPT_V33
+    assert LP.PROMPT_TEMPLATES()["contracts_specialist_v32"] is LP.CONTRACTS_SPECIALIST_PROMPT_V32
+    assert LP.PROMPT_TEMPLATES()["contracts_specialist"] is LP.CONTRACTS_SPECIALIST_PROMPT_V33
+
+
 def test_contracts_v32_is_pure_append_of_v31():
     assert LP.CONTRACTS_SPECIALIST_PROMPT_V32.startswith(
         LP.CONTRACTS_SPECIALIST_PROMPT_V31.rstrip()
@@ -58,7 +67,7 @@ def test_contracts_v32_is_pure_append_of_v31():
     assert CONTRACTS in LP.CONTRACTS_SPECIALIST_PROMPT_V32
     assert "numeric zero" in LP.CONTRACTS_SPECIALIST_PROMPT_V32.lower()
     assert LP.PROMPT_TEMPLATES()["contracts_specialist_v31"] is LP.CONTRACTS_SPECIALIST_PROMPT_V31
-    assert LP.PROMPT_TEMPLATES()["contracts_specialist"] is LP.CONTRACTS_SPECIALIST_PROMPT_V32
+    assert LP.PROMPT_TEMPLATES()["contracts_specialist_v32"] is LP.CONTRACTS_SPECIALIST_PROMPT_V32
 
 
 def test_mailroom_specialist_prompts_are_pure_appends_of_v0():
@@ -80,7 +89,6 @@ def test_mailroom_specialist_prompts_are_pure_appends_of_v0():
 def test_supporting_prompts_are_pure_appends_of_v0():
     pairs = [
         (boss.BOSS_SYSTEM_PROMPT_V0, boss.BOSS_SYSTEM_PROMPT, BOSS),
-        (reporter.COMPILE_SYSTEM_PROMPT_V0, reporter.COMPILE_SYSTEM_PROMPT, REPORTER),
         (sorter_reviewer.REVIEWER_SYSTEM_PROMPT_V0, sorter_reviewer.REVIEWER_SYSTEM_PROMPT, SORTER_REVIEWER),
         (arbiter.ARBITER_SYSTEM_PROMPT_V0, arbiter.ARBITER_SYSTEM_PROMPT, ARBITER),
         (judge.SYSTEM_PROMPT_V0, judge.SYSTEM_PROMPT, JUDGE_COMPLETENESS),
@@ -91,12 +99,15 @@ def test_supporting_prompts_are_pure_appends_of_v0():
         assert current.startswith(v0.rstrip())
         assert doctrine in current
         assert current != v0
+    # Reporter is procedural (no LLM doctrine append).
+    assert reporter.COMPILE_SYSTEM_PROMPT == reporter.COMPILE_SYSTEM_PROMPT_V0
+    assert "procedural" in reporter.COMPILE_SYSTEM_PROMPT.lower()
 
 
 def test_production_templates_are_the_mutated_versions():
     templates = prompt_templates()
     assert templates["sorter"] == LP.SORTER_PROMPT_V14
-    assert templates["contracts_specialist"] == LP.CONTRACTS_SPECIALIST_PROMPT_V32
+    assert templates["contracts_specialist"] == LP.CONTRACTS_SPECIALIST_PROMPT_V33
     assert templates["corporate_records_specialist"] == corporate_records_specialist.SYSTEM_PROMPT
     assert templates["insurance_claims_specialist"] == insurance_claims_specialist.SYSTEM_PROMPT
     assert templates["sorter_reviewer"] == sorter_reviewer.REVIEWER_SYSTEM_PROMPT
@@ -114,7 +125,7 @@ def test_runtime_defaults_pin_the_new_versions():
     sorter_params = inspect.signature(SorterAgent.__init__).parameters
     assert sorter_params["prompt_version"].default == "sorter_v14"
     contracts_params = inspect.signature(ContractsSpecialist.__init__).parameters
-    assert contracts_params["prompt_version"].default == "contracts_specialist_v32"
+    assert contracts_params["prompt_version"].default == "contracts_specialist_v33"
 
 
 def test_doctrine_has_no_mustache_placeholders():
