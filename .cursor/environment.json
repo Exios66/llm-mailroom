@@ -1,0 +1,10 @@
+{
+  "name": "llm-mailroom",
+  "install": "pip install -e \".[dev,notebooks]\"",
+  "terminals": [
+    {
+      "name": "api",
+      "command": "PYTHONPATH=src python3 -m api.main"
+    }
+  ]
+}
