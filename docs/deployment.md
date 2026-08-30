@@ -212,11 +212,16 @@ Space git tree):
 ```bash
 PYTHONPATH=src python src/scripts/publish_space.py --check
 HF_TOKEN=hf_... MAILROOM_API_TOKEN=change-me \
-  PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer
+  PYTHONPATH=src python src/scripts/publish_space.py --repo Lucius-Morningstar/mailroom-producer
 ```
 
-Then set The-Mailroom Space secrets to that URL and the same token. Keep
-the producer Space **public** so the Observatory can HTTP-call it; gate
+Live Observatory (probed 2026-08-30):
+[`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
+at `https://lucius-morningstar-mailroom-observatory.hf.space`. The matching
+producer Space was **not** on the Hub at that probe — publish it, then set
+The-Mailroom Space secrets to
+`https://lucius-morningstar-mailroom-producer.hf.space` and the same token.
+Keep the producer Space **public** so the Observatory can HTTP-call it; gate
 every non-health route with the bearer token. Space disk under `/data` is
 ephemeral — use the compose volume (or a VPS) when parked REVIEW files
 must survive sleep.

@@ -341,12 +341,14 @@ and REVIEW resolve still need **this** API as a reachable producer
 ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)):
 
 ```
-MAILROOM_PIPELINE_URL=https://<user>-mailroom-producer.hf.space
+MAILROOM_PIPELINE_URL=https://lucius-morningstar-mailroom-producer.hf.space
 MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
 MAILROOM_PIPELINE_API_PREFIX=/v1
 ```
 
-`127.0.0.1:8000` works only when both processes share a host. Observatory
+Live Observatory: [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
+(`https://lucius-morningstar-mailroom-observatory.hf.space`). `127.0.0.1:8000`
+works only when both processes share a host. Observatory
 `POST /api/inbox/enqueue` → producer `POST /v1/upload` (202). REVIEW →
 `POST /v1/review/{doc_id}/resolve`. `GET /health` advertises `producer`,
 `review_resolve`, and `inbox_upload`. Pairing checklist:
