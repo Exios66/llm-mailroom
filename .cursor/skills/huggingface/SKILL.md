@@ -54,20 +54,25 @@ floor Space is published from The-Mailroom (`mailroom-observatory`).
 
 ```bash
 PYTHONPATH=src python src/scripts/publish_space.py --check
+PYTHONPATH=src python src/scripts/probe_hosted_spaces.py --offline
 HF_TOKEN=hf_... MAILROOM_API_TOKEN=change-me \
-  PYTHONPATH=src python src/scripts/publish_space.py --repo <user>/mailroom-producer
+  PYTHONPATH=src python src/scripts/publish_space.py --repo Lucius-Morningstar/mailroom-producer
 ```
 
-Then set on The-Mailroom / its Space secrets:
+Live pair (Hub user ``Lucius-Morningstar``): Observatory
+https://lucius-morningstar-mailroom-observatory.hf.space — producer
+https://lucius-morningstar-mailroom-producer.hf.space. Then set on
+The-Mailroom / its Space secrets:
 
 ```
-MAILROOM_PIPELINE_URL=https://<user>-mailroom-producer.hf.space
+MAILROOM_PIPELINE_URL=https://lucius-morningstar-mailroom-producer.hf.space
 MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
 MAILROOM_PIPELINE_API_PREFIX=/v1
 ```
 
 `--check` is network-free. Never bake tokens into the Space git tree.
 Checklist: [`deploy/space/PAIRING.md`](../../../deploy/space/PAIRING.md).
+Re-probe: `PYTHONPATH=src python src/scripts/probe_hosted_spaces.py`.
 
 ## Boundaries
 

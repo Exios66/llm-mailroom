@@ -59,6 +59,9 @@ def test_space_card_frontmatter_and_token_contract():
     assert "POST /v1/upload" in text
     assert "mailroom-observatory" in text
     assert "The-Mailroom/pull/30" in text
+    assert "lucius-morningstar-mailroom-observatory.hf.space" in text
+    assert "Lucius-Morningstar/mailroom-producer" in text
+    assert "probe_hosted_spaces.py" in text
 
 
 def test_stage_space_tree_strips_dotenv(tmp_path):

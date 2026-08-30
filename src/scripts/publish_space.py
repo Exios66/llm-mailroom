@@ -292,7 +292,8 @@ def publish(args: argparse.Namespace) -> int:
     print("  MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN")
     print("  MAILROOM_PIPELINE_API_PREFIX=/v1")
     print("Then from The-Mailroom checkout, publish the floor Space with those")
-    print("three knobs in the environment: --repo <user>/mailroom-observatory")
+    print("three knobs in the environment: --repo Lucius-Morningstar/mailroom-observatory")
+    print("Live floor: https://lucius-morningstar-mailroom-observatory.hf.space")
     print("Pairing checklist: deploy/space/PAIRING.md")
     print("build Spaces → Logs (Docker image on :7860)")
     return 0
