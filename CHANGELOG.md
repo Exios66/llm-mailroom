@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `review_resolve`. `MAILROOM_API_PORT` falls back to `PORT` for
   Fly/Render/Spaces.
 
+- **Visualizer PR #30 pairing (Observatory + Inbox upload).** The-Mailroom
+  Observatory **Queue a document** proxies `POST /v1/upload` (202). Health
+  advertises `inbox_upload`. The three visualizer knobs are documented
+  everywhere operators look (`MAILROOM_PIPELINE_URL` +
+  `MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1`). A Space
+  Observatory cannot use `127.0.0.1` — it needs the public producer Space
+  URL. Checklist: `deploy/space/PAIRING.md`. `publish_space.py` prints those
+  knobs after a Hub publish.
+
 - **API token rotation.** `MAILROOM_API_TOKENS` (csv) adds live bearer keys;
   `MAILROOM_API_TOKEN_REVOKED` subtracts retired ones. Primary
   `MAILROOM_API_TOKEN` still works. Off-loopback bind still requires at least

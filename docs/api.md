@@ -10,9 +10,13 @@ PYTHONPATH=src python -m api.main
 PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-The-Mailroom REVIEW resolve needs this process reachable as
-`MAILROOM_PIPELINE_URL` (token = `MAILROOM_API_TOKEN`). Off-loopback bind
-requires a token. Container / Space:
+The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
+needs this process reachable as `MAILROOM_PIPELINE_URL` (token =
+`MAILROOM_API_TOKEN`, prefix `/v1`). Inbox **Queue a document** posts
+`POST /v1/upload`; REVIEW posts `POST /v1/review/{doc_id}/resolve`. A
+Hugging Face Space floor cannot use `127.0.0.1` — use the producer Space
+URL. Pairing: [`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).
+Off-loopback bind requires a token. Container / Space:
 
 ```bash
 docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build
@@ -42,8 +46,9 @@ Checks the API plus best-effort dependency health: LLM provider connectivity (re
 {
     "status": "ok",
     "service": "mailroom",
-    "producer": true,
-    "review_resolve": true,
+        "producer": true,
+        "review_resolve": true,
+        "inbox_upload": true,
     "checks": {
         "llm_provider": {
             "status": "ok",
@@ -66,7 +71,7 @@ Checks the API plus best-effort dependency health: LLM provider connectivity (re
 
 `status` is `"ok"` when all checks pass, `"degraded"` when any dependency is unreachable (e.g. provider resolution fails, missing API key, or the models endpoint is down). Dependency checks are best-effort and never block the response.
 
-`checks.watcher` is the producer lamp The-Mailroom reads (`live` / `stale` / `missing`; stale after 15s without a heartbeat). `watcher_heartbeat_seconds_ago` is the age of the watcher's liveness beacon. `inbox_pending` counts processable inbox documents (not `.meta` upload sidecars). `producer` / `review_resolve` advertise the REVIEW contract (`GET /lookup`, `POST /review/{doc_id}/resolve`, `GET /documents/{doc_id}/source`). The API embeds the inbox watcher by default (`MAILROOM_EMBED_WATCHER=1`) so uploads drain without a second process; set `0` when a dedicated `python -m pipeline.watcher` already holds `watcher.lock`.
+`checks.watcher` is the producer lamp The-Mailroom reads (`live` / `stale` / `missing`; stale after 15s without a heartbeat). `watcher_heartbeat_seconds_ago` is the age of the watcher's liveness beacon. `inbox_pending` counts processable inbox documents (not `.meta` upload sidecars). `producer` / `review_resolve` / `inbox_upload` advertise the The-Mailroom contract (`GET /lookup`, `POST /review/{doc_id}/resolve`, `GET /documents/{doc_id}/source`, `POST /upload`). The API embeds the inbox watcher by default (`MAILROOM_EMBED_WATCHER=1`) so uploads drain without a second process; set `0` when a dedicated `python -m pipeline.watcher` already holds `watcher.lock`.
 
 ---
 
@@ -77,6 +82,10 @@ POST /upload
 ```
 
 Upload a document to the pipeline inbox. The watcher picks it up automatically and runs the pipeline — no new pipeline run needs to be initialized per upload; the inbox is the queue.
+
+The-Mailroom Observatory **Queue a document** ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
+proxies `POST /api/inbox/enqueue` here as `POST /v1/upload` (same multipart
+fields, same **202**). Prefer `/v1/upload` for new clients.
 
 The uploaded file is written to the inbox and a small `<file>.meta` sidecar persists the upload metadata (the submitted `matter_id`, a tracking `upload_id`, upload time, size). The watcher reads the sidecar so the document is filed under the matter you submitted. `matter_id` is honored directly — it does **not** fall back to the filename heuristic when provided.
 
@@ -546,6 +555,10 @@ POST /v1/ops/resume
 
 The unversioned routes (`GET /health`, `POST /upload`, …) continue to work during the deprecation window, then will be removed.
 
-**Operator UX:** prefer The-Mailroom REVIEW desk buttons (Approve / Reject /
-Requeue, class/subtype selects, Open original) over typing these paths. For
-local producer try-it-out without the visualizer, use Swagger at `/docs`.
+**Operator UX:** prefer The-Mailroom Observatory / pixel REVIEW desk
+(Approve / Reject / Requeue, class/subtype selects, Open original) and
+Inbox **Queue a document** over typing these paths. The visualizer
+proxies through `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` +
+`MAILROOM_PIPELINE_API_PREFIX=/v1`. For local producer try-it-out without
+the visualizer, use Swagger at `/docs`. Two-Space pair:
+[`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).

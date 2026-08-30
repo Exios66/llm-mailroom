@@ -5,10 +5,11 @@ Uses the committed root Dockerfile (``python -m api.main``, port 7860).
 Tokens stay in the environment / Space secrets — this script never writes
 them into the Space git tree.
 
-The-Mailroom REVIEW resolve needs a reachable producer:
+The-Mailroom Observatory (PR #30) needs a reachable producer:
 
     MAILROOM_PIPELINE_URL=https://<user>-mailroom-producer.hf.space
     MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
+    MAILROOM_PIPELINE_API_PREFIX=/v1
 
 Usage::
 
@@ -284,9 +285,15 @@ def publish(args: argparse.Namespace) -> int:
         shutil.rmtree(staging, ignore_errors=True)
 
     url = f"https://huggingface.co/spaces/{repo_id}"
+    space_http = f"https://{repo_id.replace('/', '-')}.hf.space"
     print(f"published {url}")
-    print("Set The-Mailroom MAILROOM_PIPELINE_URL to this Space URL")
-    print("Set The-Mailroom MAILROOM_PIPELINE_TOKEN to MAILROOM_API_TOKEN")
+    print("Observatory pairing (The-Mailroom PR #30) — set on the visualizer:")
+    print(f"  MAILROOM_PIPELINE_URL={space_http}")
+    print("  MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN")
+    print("  MAILROOM_PIPELINE_API_PREFIX=/v1")
+    print("Then from The-Mailroom checkout, publish the floor Space with those")
+    print("three knobs in the environment: --repo <user>/mailroom-observatory")
+    print("Pairing checklist: deploy/space/PAIRING.md")
     print("build Spaces → Logs (Docker image on :7860)")
     return 0
 

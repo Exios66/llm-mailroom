@@ -212,6 +212,7 @@ async def health():
         "service": "mailroom",
         "producer": True,
         "review_resolve": True,
+        "inbox_upload": True,
         "checks": {
             "llm_provider": llm,
             "database": db,
@@ -231,6 +232,11 @@ async def upload_document(
     file: UploadFile = File(...),
     matter_id: str = Form(default="DEFAULT"),
 ):
+    """Queue a file into the inbox (The-Mailroom PR #30 Inbox proxy).
+
+    The Observatory ``POST /api/inbox/enqueue`` forwards multipart here as
+    ``POST /v1/upload``. Returns 202; the embedded watcher drains the file.
+    """
     from pipeline.config import load_config
     from pipeline.bins import is_ingestion_paused, write_inbox_meta
 
