@@ -14,7 +14,7 @@ from graph.routing import (
 class TestRoutingLogic:
     def test_after_classify_high_confidence_routes_to_extract(self):
         state = {
-            "classification_confidence": 0.95,
+            "classification_confidence": 0.98,
             "classification_attempts": 1,
             "doc_type": "contract",
         }
@@ -22,29 +22,25 @@ class TestRoutingLogic:
 
     def test_after_classify_medium_confidence_routes_to_review(self):
         # Medium band (low <= confidence < high): classified but not clearly
-        # confident (e.g. multi-topic memo). L-9: the first medium-confidence
-        # result gets ONE re-classification pass; only after that retry does it
-        # go to human review.
+        # confident. First passes get re-classification; past retry_max → review.
         state = {
             "classification_confidence": 0.90,
             "classification_attempts": 1,
             "doc_type": "correspondence",
         }
         assert after_classify(state) == "retry_classify"
-        exhausted = {**state, "classification_attempts": 2}
+        exhausted = {**state, "classification_attempts": 3}
         assert after_classify(exhausted) == "human_review"
 
     def test_after_classify_medium_confidence_exhausts_no_retry_budget(self):
-        # The medium band uses the confidence retry budget (L-9) — a fresh doc
-        # with 0 attempts gets its re-classification pass, and once the budget
-        # is spent it routes to review.
+        # Contract severity: medium band is [0.90, 0.98).
         state = {
-            "classification_confidence": 0.80,
+            "classification_confidence": 0.93,
             "classification_attempts": 0,
             "doc_type": "contract",
         }
         assert after_classify(state) == "retry_classify"
-        assert after_classify({**state, "classification_attempts": 2}) == "human_review"
+        assert after_classify({**state, "classification_attempts": 3}) == "human_review"
 
     def test_after_classify_low_confidence_first_attempt_retry(self):
         state = {
@@ -57,7 +53,7 @@ class TestRoutingLogic:
     def test_after_classify_low_confidence_max_retries_review(self):
         state = {
             "classification_confidence": 0.50,
-            "classification_attempts": 2,
+            "classification_attempts": 3,
             "doc_type": "contract",
         }
         assert after_classify(state) == "human_review"
@@ -141,7 +137,7 @@ class TestRoutingLogic:
     def test_after_extraction_low_confidence_max_retries_review(self):
         state = {
             "extraction_confidence": 0.50,
-            "extraction_attempts": 2,
+            "extraction_attempts": 3,
             "conflict_detected": False,
         }
         assert after_extraction(state) == "human_review"
@@ -162,7 +158,7 @@ class TestRoutingLogic:
             "doc_type": "contract",
             "extracted_data": {"parties": "not-a-list"},
             "extraction_confidence": 0.95,
-            "extraction_attempts": 2,
+            "extraction_attempts": 3,
             "conflict_detected": False,
         }
         assert after_extraction(state) == "human_review"

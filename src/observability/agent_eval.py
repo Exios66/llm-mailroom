@@ -304,18 +304,14 @@ def invoke_agent(agent_name: str, case: dict[str, Any]) -> dict[str, Any]:
         )
     if agent_name == "reporter":
         from agents.reporter import compile_matter_record
-        from llm.client import get_llm
 
-        client, model = get_llm("reporter")
         return compile_matter_record(
             {
                 "doc_type": doc_class,
                 "extracted_data": case.get("expected_fields") or {},
                 "classification_confidence": 0.9,
                 "extraction_confidence": 0.9,
-            },
-            client,
-            model,
+            }
         )
     if agent_name == "pdf_transcriber":
         path = case.get("path")

@@ -24,3 +24,4 @@ htmlcov
 .idea
 .vscode
 *.mp4
+deploy

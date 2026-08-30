@@ -1,6 +1,6 @@
 import structlog
-from agents.base import BaseAgent, build_structured_schema
-from langchain_agents.doc_inventories import COMMUNICATION_TYPE_DESCRIPTION
+from agents.base import BaseAgent
+from langchain_agents.specialist_agents import CORRESPONDENCE_SCHEMA
 from llm.prompt_doctrine import CORRESPONDENCE as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
@@ -16,34 +16,26 @@ Extraction rules:
 1. Identify sender, recipient, and any additional recipients (cc'd/copied parties) precisely —
    full names, titles if present, entities.
 2. Determine the communication type: letter, email, memo, notice, demand, etc.
-3. Key points: preserve every distinct material fact, obligation, breach, demand,
-   deadline, remedy, and waiver stated in the communication. Do not compress
-   separate contractual terms into a summary that loses a condition or section
-   reference. For a demand letter, retain the payment terms, amount, cure
-   demand, consequences of nonpayment, and any interest, costs, or fees stated.
-4. Demand amount: for demand letters, extract the exact dollar amount demanded
-   as a number (e.g. 218440.00 for $218,440.00). Use null when no amount is
-   demanded, including memos that merely reference an outstanding balance.
-5. Action items: what someone needs to DO as a result of this communication — deadlines included.
-6. Press releases and wire-service articles: set recipient to null when there is no
-   named addressee (broadcast to media/investors). Use the issuing company or the
-   media-contact line at the end as sender when no From: header exists.
-7. Urgency: assess tone — is this routine, time-sensitive, or threatening?
-   Neutral communications default to "routine" rather than null.
-8. Dates are critical — correspondence is often date-sensitive. Use the date the
-   communication was sent, not a referenced deadline.
-9. Referenced communications: track the narrative thread — list prior letters,
-   notices, or communications this message references (e.g. a prior demand letter).
-
-10. Do not infer or embellish facts. Preserve explicit details faithfully; concise
-   paraphrases are fine only when they retain the original meaning and conditions.
-11. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+3. intent: one short controlled label (e.g. demand_payment, notice, request_information,
+   threaten_litigation, acknowledge, schedule_meeting).
+4. subject_matter: one tight grounded sentence about what the communication is about.
+5. keywords: up to 8 salient terms/phrases grounded in the text; do not invent topics.
+6. action_items: at most 3 concrete actions with deadlines if stated.
+7. Demand amount: for demand letters, extract the exact dollar amount demanded
+   as a number (e.g. 218440.00 for $218,440.00). Use null when no amount is demanded.
+8. Press releases and wire-service articles: set recipient to null when there is no
+   named addressee. Use the issuing company or media-contact line as sender when needed.
+9. Urgency: routine, time-sensitive, urgent, or critical. Neutral defaults to "routine".
+10. Dates are critical — use the date the communication was sent, not a referenced deadline.
+11. Do NOT dump long key_points lists — use intent / subject_matter / keywords instead.
+12. Do not infer or embellish facts.
+13. The `confidence` score must be derived from the evidence in THIS document, not assumed:
     start from the share of schema fields actually found (fields left null lower it), and lower
     it further for uncertain values or truncated input. Never default to a fixed high value
-    (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports.
+    (e.g. 0.90 or 0.95).
 
 Use the explicit text as the source of truth. Return one complete JSON object with every
-schema field; use null for unstated optional values and do not infer urgency from tone alone."""
+schema field; use null for unstated optional values."""
 
 SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
@@ -61,55 +53,7 @@ class CorrespondenceSpecialist(BaseAgent):
         pages: list[str] | None = None,
         handoff_context: str | None = None,
     ) -> dict:
-        schema = build_structured_schema(
-            {
-                "sender": {"type": ["string", "null"], "description": "Who sent the communication"},
-                "recipient": {"type": ["string", "null"], "description": "Who received it; null for broadcast press releases"},
-                "additional_recipients": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Cc'd or otherwise copied parties",
-                },
-                "communication_type": {
-                    "type": "string",
-                    "description": COMMUNICATION_TYPE_DESCRIPTION,
-                },
-                "communication_date": {
-                    "type": ["string", "null"],
-                    "description": "Date the communication was sent",
-                },
-                "key_points": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Main substantive points made",
-                },
-                "demand_amount": {
-                    "type": ["number", "null"],
-                    "description": "Exact dollar amount demanded (demand letters only)",
-                },
-                "action_items": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Actions required, with deadlines if stated",
-                },
-                "urgency": {
-                    "type": "string",
-                    "description": "Urgency level: routine, time-sensitive, urgent, critical",
-                },
-                "referenced_communications": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Prior letters, notices, or communications this message references",
-                },
-                "confidence": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0,
-                },
-            }
-        )
-        # Full transcription is ALWAYS the message body (no page content lost);
-        # page images are appended additively when the model is vision-capable.
+        schema = CORRESPONDENCE_SCHEMA
         max_chars = self._configured_max_input_chars()
         truncated = doc_text[:max_chars]
         if len(doc_text) > max_chars:

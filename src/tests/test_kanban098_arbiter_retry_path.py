@@ -4,14 +4,12 @@ Regression pin for the trap demonstrated in ``notebooks/03_review_lanes.ipynb``:
 ``arbiter_node`` increments ``arbiter_retry_count`` AT APPROVAL TIME (the
 retrying extract node keys off that count to weave the fix-list into its
 prompt), so the FIRST approval already arrives at ``after_arbiter`` carrying
-``count == 1``. The old router demanded ``count < 1`` and silently converted
-every approved retry into a human escalation — each half was unit-green while
-the composition dead-ended. Fix: the bound is approval-INCLUSIVE (``<= 1``);
-only a SECOND arbitration demanding another retry finds the budget spent.
+``count == 1``. The bound is approval-INCLUSIVE (``<= arbiter_retry_max``);
+with ``arbiter_retry_max: 2``, the third demand escalates.
 
 These pins drive the REAL graph through the network-free sandbox seam:
 approve -> retry_extract -> re-judge -> compile -> archive, plus the
-still-bounded second-demand escalation. Network-free by construction.
+still-bounded third-demand escalation. Network-free by construction.
 """
 
 from __future__ import annotations
@@ -20,9 +18,8 @@ import pytest
 
 from notebooks import pipeline_lab as lab
 
-# Medium-band extraction (0.80): inside the judge gate [low, 0.85), so every
-# extraction lands on Lane B — same fuel notebook 03 uses for this scenario.
-X80 = {**lab.EXTRACT_HIGH, "confidence": 0.80}
+# Contract severity judge band: [0.90, 0.97). Land every extraction on Lane B.
+X93 = {**lab.EXTRACT_HIGH, "confidence": 0.93}
 
 
 @pytest.fixture()
@@ -42,7 +39,7 @@ def _approved_retry_run(env: dict) -> dict:
         env,
         lab.DOC_CONTRACT,
         classification=lab.CLASSIFY_CONTRACT_HIGH,
-        extraction=X80,
+        extraction=X93,
         filename="kanban098_approved_retry.txt",
     )
 
@@ -54,8 +51,6 @@ def test_first_approved_retry_dispatches_not_escalates(lab_env) -> None:
     nodes = [s["node"] for s in r["steps"]]
 
     assert "arbitrate-verdict" in nodes, nodes
-    # "extract" and "retry_extract" share the traced name "extract-fields";
-    # the one that matters here is the occurrence AFTER the arbiter.
     assert "route-for-review" not in nodes, (
         f"approved retry escalated to humans anyway ({' -> '.join(nodes)})"
     )
@@ -64,8 +59,6 @@ def test_first_approved_retry_dispatches_not_escalates(lab_env) -> None:
         "arbiter-approved retry dead-ended instead of firing retry_extract "
         f"(path: {' -> '.join(nodes)})"
     )
-    # The scripted second judge pass scored the RETRIED extraction complete,
-    # proving the graph came back through judge_verify after the retry.
     assert final.get("judge_verdict") == "complete", final.get("judge_verdict")
 
 
@@ -81,27 +74,28 @@ def test_first_approved_retry_archives_clean(lab_env) -> None:
     )
 
 
-def test_second_retry_demand_past_bound_still_escalates(lab_env) -> None:
-    """The bound survives the fix: retry does NOT repair the extraction ->
-    second arbitration demanding another retry escalates to human review."""
+def test_third_retry_demand_past_bound_still_escalates(lab_env) -> None:
+    """Lane B budgets force escalation: two arbiter-approved retries, then
+    judge_max_passes / arbiter_retry_max stop further ping-pong."""
     lab.script_client(
         lab_env["client"],
-        judge=[lab.JUDGE_PARTIAL, lab.JUDGE_PARTIAL],  # retried extraction still partial
+        judge=[lab.JUDGE_PARTIAL, lab.JUDGE_PARTIAL, lab.JUDGE_PARTIAL],
         arbiter=lab.ARBITER_RETRY,
     )
     r = lab.run_document(
         lab_env,
         lab.DOC_CONTRACT,
         classification=lab.CLASSIFY_CONTRACT_HIGH,
-        extraction=X80,
-        filename="kanban098_second_demand.txt",
+        extraction=X93,
+        filename="kanban098_third_demand.txt",
     )
     final = r["final"]
     nodes = [s["node"] for s in r["steps"]]
 
-    # Exactly ONE retry fired (initial extract + one retry = 2 occurrences of
-    # the shared "extract-fields" trace name), then the spent budget forced
-    # escalation.
-    assert nodes.count("extract-fields") == 2, nodes
+    # initial extract + two arbiter-approved retries = 3 extract-fields
+    assert nodes.count("extract-fields") == 3, nodes
+    # Two arbiter approvals; the third incomplete judge pass hits
+    # judge_max_passes and escalates without a third arbiter increment.
     assert final.get("arbiter_retry_count") == 2, final.get("arbiter_retry_count")
+    assert final.get("judge_pass_count", 0) >= 3 or "route-for-review" in nodes
     assert "route-for-review" in nodes, nodes

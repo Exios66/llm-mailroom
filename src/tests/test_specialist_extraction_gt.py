@@ -104,7 +104,7 @@ def test_posthoc_gt_fills_hub_examples_for_every_hf_class():
 
     mail, _ = by_class["correspondence"]
     assert mail["communication_type"]
-    assert mail.get("sender") or mail.get("recipient") or mail.get("key_points")
+    assert mail.get("sender") or mail.get("recipient") or mail.get("subject_matter") or mail.get("keywords")
 
     merger, _ = by_class["merger_agreement"]
     assert merger["merger_consideration"]

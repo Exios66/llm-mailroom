@@ -72,6 +72,10 @@ def test_insurance_claims_specialist_happy_path(mock_openai_client):
         "coverage_determination": "pending",
         "denial_reasons": [],
         "supporting_documents": ["contractor estimate"],
+        "intent": "coverage_pending",
+        "subject_matter": "hail damage to roof and detached garage",
+        "keywords": ["property", "hail", "pending"],
+        "claim_checklist": ["Coverage Determination: pending"],
         "confidence": 0.82,
     }
     mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
@@ -81,7 +85,9 @@ def test_insurance_claims_specialist_happy_path(mock_openai_client):
     agent.client = mock_openai_client
     agent.model = "test-model"
     result = agent.extract("FNOL form text ...")
-    assert result == payload
+    for key, value in payload.items():
+        assert result.get(key) == value, key
+    assert result.get("confidence") == 0.82
 
 
 class TestContractsSpecialist:
@@ -91,9 +97,11 @@ class TestContractsSpecialist:
             "parties": ["ACME Corporation", "Zenith Technologies LLC"],
             "effective_date": "2024-01-15",
             "term_length": "3 years",
-            "termination_clauses": ["30-day material breach", "60-day convenience", "insolvency"],
+            "cuad_clauses": [
+                "Termination For Convenience: 60-day convenience",
+                "Anti-Assignment: insolvency",
+            ],
             "governing_law": "Delaware",
-            "key_obligations": ["monthly status reports", "99.9% uptime"],
             "contract_value": "$2,500,000",
             "renewal_terms": "Automatic 1-year renewal",
             "confidence": 0.93,
@@ -112,9 +120,8 @@ class TestContractsSpecialist:
             "parties": [],
             "effective_date": None,
             "term_length": None,
-            "termination_clauses": [],
+            "cuad_clauses": [],
             "governing_law": None,
-            "key_obligations": [],
             "contract_value": None,
             "renewal_terms": None,
             "confidence": 0.30,
@@ -170,7 +177,9 @@ class TestCorporateRecordsSpecialist:
         mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
             '{"entity_name": "Meridian Holdings, Inc.", "record_type": "bylaws", '
             '"effective_date": "2023-02-01", '
-            '"key_provisions": ["Annual meeting on 2nd Tuesday of May", "Board size 3-9"], '
+            '"intent": "record_governance", '
+            '"subject_matter": "Amended bylaws for Meridian Holdings", '
+            '"keywords": ["annual meeting", "board size", "Delaware"], '
             '"signatories": ["Thomas Meridian", "Elizabeth Warren"], '
             '"jurisdiction": "Delaware", "filing_number": "DE-2023-884721", "confidence": 0.94}'
         )
@@ -190,10 +199,12 @@ class TestCorrespondenceSpecialist:
             '"additional_recipients": [], '
             '"communication_date": "2024-06-12", '
             '"communication_type": "demand letter", '
-            '"key_points": ["Infringement of U.S. Patent 10,234,567", "OptiChip product line"], '
+            '"intent": "demand_payment", '
+            '"subject_matter": "Infringement of U.S. Patent 10,234,567 on OptiChip", '
+            '"keywords": ["patent", "OptiChip", "cease and desist"], '
             '"demand_amount": 250000.0, '
             '"action_items": ["Cease and desist", "Provide accounting", "Enter negotiations within 14 days"], '
-            '"urgency": "critical", "referenced_communications": [], "confidence": 0.96}'
+            '"urgency": "critical", "confidence": 0.96}'
         )
         from agents.correspondence_specialist import CorrespondenceSpecialist
         agent = CorrespondenceSpecialist()

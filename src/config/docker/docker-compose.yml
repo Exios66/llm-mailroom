@@ -1,43 +1,46 @@
 version: "3.8"
 
+# LOCAL DEV ONLY — secrets must come from the environment / .env
+# (see .env.example). Do not commit real passwords or NEXTAUTH secrets.
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: mailroom-postgres
     environment:
-      POSTGRES_USER: mailroom
-      POSTGRES_PASSWORD: mailroom
-      POSTGRES_DB: mailroom
+      POSTGRES_USER: ${POSTGRES_USER:-mailroom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env for local Langfuse}
+      POSTGRES_DB: ${POSTGRES_DB:-mailroom}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mailroom"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24-alpine
+    image: clickhouse/clickhouse-server:24.8-alpine
     container_name: mailroom-clickhouse
     environment:
-      CLICKHOUSE_DB: langfuse
-      CLICKHOUSE_USER: langfuse
-      CLICKHOUSE_PASSWORD: langfuse
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-langfuse}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env for local Langfuse}
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user langfuse --password langfuse --query 'SELECT 1'"]
+      test: ["CMD-SHELL", "clickhouse-client --user $$CLICKHOUSE_USER --password $$CLICKHOUSE_PASSWORD --query 'SELECT 1'"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   langfuse-server:
-    image: langfuse/langfuse:2
+    image: langfuse/langfuse:2.93.0
     container_name: mailroom-langfuse
     depends_on:
       postgres:
@@ -45,26 +48,26 @@ services:
       clickhouse:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://mailroom:mailroom@postgres:5432/mailroom
-      NEXTAUTH_SECRET: change-me-to-a-random-secret-in-production
-      NEXTAUTH_URL: http://localhost:3000
-      SALT: change-me-to-a-random-salt-in-production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailroom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mailroom}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      SALT: ${SALT:?set SALT in .env}
       CLICKHOUSE_URL: http://clickhouse:8123
-      CLICKHOUSE_USER: langfuse
-      CLICKHOUSE_PASSWORD: langfuse
-      CLICKHOUSE_DB: langfuse
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-langfuse}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
     ports:
       - "3000:3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/auth/signin || exit 0"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/auth/signin || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   # === Local LLM (Phase 10 — not used until cutover) ===
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.6.5
     container_name: mailroom-ollama
     ports:
       - "11434:11434"

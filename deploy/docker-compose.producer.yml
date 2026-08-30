@@ -18,6 +18,9 @@ services:
       dockerfile: Dockerfile
     image: mailroom-producer
     container_name: mailroom-producer
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${MAILROOM_API_PORT:-8000}:${MAILROOM_API_PORT:-8000}"
     environment:

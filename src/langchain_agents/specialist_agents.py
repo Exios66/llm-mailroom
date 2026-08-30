@@ -132,9 +132,7 @@ CONTRACTS_SCHEMA = build_structured_schema({
     "parties": _string_array("The names of the contracting parties"),
     "effective_date": _nullable_string("YYYY-MM-DD (ISO)"),
     "term_length": _nullable_string("The full duration or term of the agreement, including any riders"),
-    "termination_clauses": _string_array("Conditions under which the agreement can be terminated (verbatim operative language)"),
     "governing_law": _nullable_string("The jurisdiction whose laws govern the agreement (governing-law sentence only)"),
-    "key_obligations": _string_array("Major obligations of each party (verbatim operative language, one item per obligation)"),
     "contract_value": _nullable_string("The monetary value or consideration"),
     "renewal_terms": _nullable_string("Renewal, extension, or rollover terms (automatic or otherwise)"),
     "cuad_family": _nullable_string(
@@ -150,7 +148,8 @@ CONTRACTS_SCHEMA = build_structured_schema({
     ),
     "cuad_clauses": _string_array(
         "Present CUAD clause categories (the 41 Atticus names) as "
-        "'<Category>: <verbatim operative span>'. Omit absent categories."
+        "'<Category>: <short verbatim evidence span>'. Omit absent categories. "
+        "Do NOT dump open-ended obligation lists — answer the fixed CUAD checklist only."
     ),
     "maud_clauses": _string_array(
         "Answered MAUD questions as '<Question>: <Answer>' using the exact "
@@ -170,10 +169,17 @@ CORPORATE_RECORDS_SCHEMA = build_structured_schema({
     "entity_name": _nullable_string("Legal entity name as stated"),
     "record_type": _nullable_string(RECORD_TYPE_DESCRIPTION),
     "effective_date": _nullable_string("Date the record took effect (ISO or as written)"),
-    "key_provisions": _string_array("Key governance provisions, verbatim where short"),
     "signatories": _string_array("Individuals who signed or approved"),
     "jurisdiction": _nullable_string("State/country of incorporation"),
     "filing_number": _nullable_string("Official filing or document reference number"),
+    "intent": _nullable_string(
+        "Primary purpose as a short controlled label, e.g. record_filing, authorize, "
+        "amend_governance, appoint_officer, notice — one label, not a paragraph"
+    ),
+    "subject_matter": _nullable_string("One tight grounded sentence: what this record is about"),
+    "keywords": _string_array(
+        "Up to 8 salient terms/phrases grounded in the text (no invented topics)"
+    ),
 })
 
 CORRESPONDENCE_SCHEMA = build_structured_schema({
@@ -182,12 +188,16 @@ CORRESPONDENCE_SCHEMA = build_structured_schema({
     "additional_recipients": _string_array("Cc'd or otherwise copied parties"),
     "communication_type": _nullable_string(COMMUNICATION_TYPE_DESCRIPTION),
     "communication_date": _nullable_string("Date the communication was sent"),
-    "key_points": _string_array("Main substantive points made"),
     "demand_amount": _nullable_string("Exact dollar amount demanded (demand letters only)"),
-    "action_items": _string_array("Actions required, with deadlines if stated"),
+    "action_items": _string_array("At most 3 concrete actions required, with deadlines if stated"),
     "urgency": _nullable_string("Urgency level: routine, time-sensitive, urgent, critical"),
-    "referenced_communications": _string_array(
-        "Prior letters, notices, or communications this message references"
+    "intent": _nullable_string(
+        "Primary communicative purpose as a short controlled label, e.g. demand_payment, "
+        "notice, request_information, threaten_litigation, acknowledge, schedule_meeting"
+    ),
+    "subject_matter": _nullable_string("One tight grounded sentence: what this communication is about"),
+    "keywords": _string_array(
+        "Up to 8 salient terms/phrases grounded in the text (no invented topics)"
     ),
 })
 
@@ -197,7 +207,7 @@ COMPLIANCE_FILING_SCHEMA = build_structured_schema({
     "filing_date": _nullable_string("Date the filing was submitted"),
     "due_date": _nullable_string("Statutory or regulatory deadline"),
     "entity_name": _nullable_string("Entity making the filing"),
-    "key_requirements": _string_array("Regulatory requirements being satisfied"),
+    "key_requirements": _string_array("At most 5 regulatory requirements being satisfied"),
     "status": _nullable_string("draft, filed, pending, overdue, etc."),
     "reference_number": _nullable_string("Accession, control, or tracking number"),
 })
@@ -216,6 +226,21 @@ INSURANCE_CLAIMS_SCHEMA = build_structured_schema({
     "coverage_determination": _nullable_string("Outcome as stated: approved, denied, partial, pending"),
     "denial_reasons": _string_array("Stated denial/limitation grounds, if denied"),
     "supporting_documents": _string_array("Referenced supporting documents"),
+    "intent": _nullable_string(
+        "Primary claim purpose as a short controlled label, e.g. coverage_denial, "
+        "coverage_approval, demand_payment, notice_of_loss, reservation_of_rights, "
+        "request_information"
+    ),
+    "subject_matter": _nullable_string("One tight grounded sentence: what this claim document is about"),
+    "keywords": _string_array(
+        "Up to 8 salient terms/phrases grounded in the text (no invented topics)"
+    ),
+    "claim_checklist": _string_array(
+        "Present claim checklist answers as '<Category>: <short evidence>'. "
+        "Categories: Coverage Determination, Policy Limits, Exclusions Cited, "
+        "Deductible, Reservation Of Rights, Timely Notice, Proof Of Loss, "
+        "Subrogation, Independent Medical Exam, Amount Consistency. Omit absent."
+    ),
 })
 
 SPECIALIST_SCHEMAS = {

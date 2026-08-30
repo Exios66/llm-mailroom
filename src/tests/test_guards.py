@@ -134,9 +134,8 @@ class TestGuardExtraction:
                 "parties": ["ACME"],
                 "effective_date": "2024-01-15",
                 "term_length": "3 years",
-                "termination_clauses": [],
+                "cuad_clauses": ["uptime"],
                 "governing_law": "Delaware",
-                "key_obligations": ["uptime"],
                 "contract_value": None,
                 "renewal_terms": None,
             },
@@ -172,7 +171,7 @@ class TestApplyExtractionGuard:
         from pipeline.guards import apply_extraction_guard
 
         guard, confidence = apply_extraction_guard(
-            "contract", {"parties": ["ACME"], "key_obligations": []}, 0.9, attempts=1
+            "contract", {"parties": ["ACME"], "cuad_clauses": []}, 0.9, attempts=1
         )
         assert guard["ok"] is True
         assert confidence == 0.9

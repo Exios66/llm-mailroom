@@ -37,9 +37,7 @@ CONTRACT_GT_KEYS: tuple[str, ...] = (
     "parties",
     "effective_date",
     "term_length",
-    "termination_clauses",
     "governing_law",
-    "key_obligations",
     "contract_value",
     "renewal_terms",
     "cuad_family",
@@ -89,6 +87,18 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
         if subclass:
             token = normalize_record_type(subclass)
             expected_fields["record_type"] = token or subclass
+        # Legacy Hub column → semantic enrichment
+        legacy_provisions = sample.get("key_provisions")
+        if legacy_provisions and not expected_fields.get("subject_matter"):
+            coerced = coerce_gt_value(legacy_provisions)
+            if isinstance(coerced, list) and coerced:
+                _put(expected_fields, "subject_matter", str(coerced[0])[:240])
+                _put(
+                    expected_fields,
+                    "keywords",
+                    [" ".join(str(p).split()[:4]) for p in coerced[:8]],
+                )
+                _put(expected_fields, "intent", "record_governance")
         for key in CORPORATE_GT_KEYS:
             if key == "record_type" and expected_fields.get("record_type"):
                 continue
@@ -99,6 +109,17 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
         if subclass:
             token = normalize_communication_type(subclass)
             expected_fields["communication_type"] = token or subclass
+        legacy_points = sample.get("key_points")
+        if legacy_points and not expected_fields.get("subject_matter"):
+            coerced = coerce_gt_value(legacy_points)
+            if isinstance(coerced, list) and coerced:
+                _put(expected_fields, "subject_matter", str(coerced[0])[:240])
+                _put(
+                    expected_fields,
+                    "keywords",
+                    [" ".join(str(p).split()[:4]) for p in coerced[:8]],
+                )
+                _put(expected_fields, "intent", "correspondence")
         for key in CORRESPONDENCE_GT_KEYS:
             if key == "communication_type" and expected_fields.get("communication_type"):
                 continue

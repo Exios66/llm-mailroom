@@ -276,7 +276,7 @@ def test_normalize_consideration_tokens():
     assert normalize_consideration("Mixed Cash/Stock Election") == "mixed_cash_stock_election"
     assert infer_merger_consideration({"contract_value": "all stock"}) == "all_stock"
     assert infer_merger_consideration({
-        "key_obligations": ["Merger consideration is cash and stock"]
+        "maud_clauses": ["Type of Consideration: cash and stock"]
     }) == "mixed_cash_stock"
 
 

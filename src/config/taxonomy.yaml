@@ -61,21 +61,51 @@ cost_models:
     output_per_million: 0.87
 
 confidence:
-  # high is the auto-continue gate for classification: confidence >= high → extract → archive.
-  # Recalibrated to 0.95 from observed sorter behavior (pilot, Aug 2026): every unambiguously
-  # classifiable document scored >= 0.95, while the deliberately multi-topic memo (ambiguous_01)
-  # scored 0.90 — which must route to human review, not archive. The band [low, high) is
-  # "classified but not clearly confident" → human review (see graph/routing.py:after_classify).
-  high: 0.95
-  low: 0.70        # below this → retry; still below after retry → human review
-  retry_max: 1     # max retries before routing to review
-  # Lane B completeness-judge band: low <= extraction_confidence < judge_band_high
-  # fires judge_verify. Clean high-confidence extractions skip (zero added LLM calls).
-  judge_band_high: 0.85
+  # Global fallbacks (used before doc_type is known). Per-class severity overrides
+  # live under by_class and win once classification is set — see
+  # pipeline/config.py:get_confidence_thresholds.
+  # Critical legal/insurance work needs near-certain confidence to auto-continue;
+  # the band [low, high) is "classified but not clearly confident" → Lane A / review.
+  high: 0.97
+  low: 0.88        # below this → retry; still below after retry_max → human review
+  retry_max: 2     # classify + extract confidence retries before review
+  # Lane B: low <= extraction_confidence < judge_band_high fires judge_verify.
+  # Clean high-confidence extractions skip (zero added LLM calls).
+  judge_band_high: 0.95
+  # Approval-inclusive arbiter fix-list re-extracts (after_arbiter).
+  arbiter_retry_max: 2
+  # One completeness judge pass per extraction attempt (initial + each
+  # arbiter-approved retry). Keep = 1 + arbiter_retry_max.
+  judge_max_passes: 3
   # Unused routing knob (kept for config-file compatibility). Matter conflicts
   # escalate via deterministic same-class field comparison in
   # graph/build_graph.py:_detect_conflict — not an extraction-confidence gap.
   conflict_threshold: 0.3
+  by_class:
+    contract:
+      high: 0.98
+      low: 0.90
+      judge_band_high: 0.97
+    merger_agreement:
+      high: 0.98
+      low: 0.90
+      judge_band_high: 0.97
+    insurance_claim:
+      high: 0.98
+      low: 0.90
+      judge_band_high: 0.97
+    compliance_filing:
+      high: 0.97
+      low: 0.88
+      judge_band_high: 0.95
+    corporate_record:
+      high: 0.96
+      low: 0.86
+      judge_band_high: 0.94
+    correspondence:
+      high: 0.95
+      low: 0.85
+      judge_band_high: 0.92
 
 # Deterministic field-type-aware extraction scoring (issues #4/#5). The scorer
 # normalizes each field by its type (date/money/id exact-after-normalize, name
@@ -106,11 +136,11 @@ field_scoring:
   # Fields whose expected value is a containment match: share of the EXPECTED
   # text's (stopword-filtered) tokens covered by the prediction. For verbatim-
   # clause fields whose label is one sentence of a longer passage.
-  containment_fields: [governing_law, term_length, renewal_terms]
+  containment_fields: [governing_law, term_length, renewal_terms, subject_matter]
   # Fields whose ground-truth label set is a PARTIAL sample (not exhaustive):
   # the reported list score becomes ground-truth coverage (recall), not F1 —
   # extra correct extractions don't cut the score.
-  partial_gt_fields: [parties, key_obligations, termination_clauses]
+  partial_gt_fields: [parties, keywords, cuad_clauses, maud_clauses, claim_checklist, action_items]
   # Factuality audit: every predicted list item / scalar value is verified
   # against the source document (normalized token coverage; dates parsed from
   # candidates in any format) — items that neither match a ground-truth label
@@ -157,9 +187,7 @@ doc_classes:
       parties: entity_list:name
       effective_date: date
       term_length: free_text
-      termination_clauses: entity_list:free_text
       governing_law: name
-      key_obligations: entity_list:free_text
       contract_value: money
       renewal_terms: free_text
       cuad_family: name
@@ -177,9 +205,7 @@ doc_classes:
       parties: entity_list:name
       effective_date: date
       term_length: free_text
-      termination_clauses: entity_list:free_text
       governing_law: name
-      key_obligations: entity_list:free_text
       contract_value: money
       renewal_terms: free_text
       cuad_family: name
@@ -196,10 +222,12 @@ doc_classes:
       entity_name: name
       record_type: name
       effective_date: date
-      key_provisions: entity_list:free_text
       signatories: entity_list:name
       jurisdiction: name
       filing_number: id
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
 
   - key: correspondence
     label: "Correspondence"
@@ -212,11 +240,12 @@ doc_classes:
       additional_recipients: entity_list
       communication_type: name
       communication_date: date
-      key_points: entity_list
       demand_amount: money
       action_items: entity_list
       urgency: name
-      referenced_communications: entity_list
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
 
   - key: compliance_filing
     label: "Compliance Filing"
@@ -252,6 +281,10 @@ doc_classes:
       coverage_determination: name
       denial_reasons: entity_list:free_text
       supporting_documents: entity_list
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
+      claim_checklist: entity_list:free_text
 
 file_extensions:
   - .txt
@@ -347,15 +380,17 @@ agents:
     max_input_chars: 60000
     reasoning_effort: none
 
+  # Reporter is procedural (no LLM): compile_report assembles a deterministic
+  # matter record from classification + extraction. Entry kept for cutover
+  # listings / prompt registry compatibility; get_llm("reporter") is unused.
   reporter:
     provider: openrouter
     model: qwen/qwen3.7-flash
-    temperature: 0.2
-    max_tokens: 3072
+    temperature: 0.0
+    max_tokens: 512
     max_input_chars: 40000
-    # Reports are synthesis, not analysis; reserve the completion budget for
-    # visible output instead of hidden reasoning tokens.
     reasoning_effort: none
+    procedural: true
 
   boss:
     provider: openrouter

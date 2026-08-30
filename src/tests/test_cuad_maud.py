@@ -79,7 +79,7 @@ def test_enrich_fills_family_and_consideration():
     assert contract["cuad_family"] == "distributor"
     assert contract["cuad_clauses"] == ["Parties: A"]
     merger = enrich_contract_extraction(
-        {"contract_value": "all cash", "key_obligations": ["Target survives"]},
+        {"contract_value": "all cash", "maud_clauses": []},
         doc_type="merger_agreement",
     )
     assert merger["merger_consideration"] == "all_cash"

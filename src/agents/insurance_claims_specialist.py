@@ -1,6 +1,6 @@
 import structlog
-from agents.base import BaseAgent, build_structured_schema
-from langchain_agents.doc_inventories import CLAIM_TYPE_DESCRIPTION
+from agents.base import BaseAgent
+from langchain_agents.specialist_agents import INSURANCE_CLAIMS_SCHEMA
 from llm.prompt_doctrine import INSURANCE_CLAIMS as _PRODUCTION_DOCTRINE
 from llm.prompts import get_managed_prompt
 
@@ -16,33 +16,28 @@ health, life, and workers' compensation lines; both open claims and final
 determinations.
 
 Extraction rules:
-1. Claim and policy numbers: transcribe them exactly as printed (claim no., policy
-   no., FNOL reference); these are identifiers, never paraphrase them.
-2. Parties: name the insurer and the insured party as stated on the documents.
-3. Claim type: classify the line of business (auto, property, liability, health,
-   life, workers_comp) from the documents themselves; use "other" only when none fits.
-4. Dates and amounts: capture date of loss, filing date, and claimed amount exactly
-   as stated; do not compute or convert amounts.
-5. Adjuster: name the adjuster only if the documents identify one.
-6. Damages description: summarize the loss/damages as described by the documents.
-7. Coverage determination: quote the outcome as stated — approved, denied, partial,
-   pending — never infer a determination that is not written.
-8. Denial reasons: list stated denial/limitation grounds distinctly; if the claim was
-   approved, leave this empty.
-9. Coverage determinations: quote CMS/Medicare Summary Notice lines verbatim —
-   ``Notice ID`` is the claim_number; ``Claim total paid by Medicare`` (or the
-   beneficiary-responsibility total when that is the only dollar line) is
-   claimed_amount; ``Discharge date`` or ``Claim period end`` may serve as
-   date_filed when no filing date is printed; list ``Facility provider number``
-   and ``Attending/treating NPIs`` entries in supporting_documents.
-10. Do not editorialize and do not infer unstated facts — report what the documents state.
-11. Return one complete JSON object with every schema field. Use null or an empty list
-    for facts not stated; never infer a claim number, policy number, date, amount, or
-    determination.
-12. The `confidence` score must be derived from the evidence in THIS document, not assumed:
+1. Claim and policy numbers: transcribe them exactly as printed; never paraphrase IDs.
+2. Parties: name the insurer and the insured party as stated.
+3. Claim type: classify the line of business from the documents; use "other" only when none fits.
+4. Dates and amounts: capture date of loss, filing date, and claimed amount exactly as stated.
+5. Adjuster: name the adjuster only if identified.
+6. Damages description: summarize the loss/damages as described.
+7. Coverage determination: quote the outcome as stated — approved, denied, partial, pending.
+8. Denial reasons: list stated denial/limitation grounds; empty when approved.
+9. intent: one short controlled label (e.g. coverage_denial, coverage_approval,
+   demand_payment, notice_of_loss, reservation_of_rights, request_information).
+10. subject_matter: one tight grounded sentence about what this claim document is about.
+11. keywords: up to 8 salient grounded terms/phrases.
+12. claim_checklist: present-only answers as '<Category>: <short evidence>' for
+    Coverage Determination, Policy Limits, Exclusions Cited, Deductible,
+    Reservation Of Rights, Timely Notice, Proof Of Loss, Subrogation,
+    Independent Medical Exam, Amount Consistency. Omit absent categories.
+13. Do not editorialize or infer unstated facts.
+14. Return one complete JSON object with every schema field.
+15. The `confidence` score must be derived from the evidence in THIS document, not assumed:
     start from the share of schema fields actually found (fields left null lower it), and lower
     it further for uncertain values or truncated input. Never default to a fixed high value
-    (e.g. 0.90 or 0.95) — use the full 0.0-1.0 range and pick the number the evidence supports."""
+    (e.g. 0.90 or 0.95)."""
 
 SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
 
@@ -60,26 +55,7 @@ class InsuranceClaimsSpecialist(BaseAgent):
         pages: list[str] | None = None,
         handoff_context: str | None = None,
     ) -> dict:
-        schema = build_structured_schema(
-            {
-                "claim_number": {"type": ["string", "null"], "description": "Claim number exactly as printed (CLAIM NO., FNOL ref.)"},
-                "policy_number": {"type": ["string", "null"], "description": "Policy number exactly as printed"},
-                "insurer": {"type": "string", "description": "Named insurance company / carrier"},
-                "insured_party": {"type": "string", "description": "Named insured or claimant"},
-                "claim_type": {"type": "string", "description": CLAIM_TYPE_DESCRIPTION},
-                "date_of_loss": {"type": ["string", "null"], "description": "Date the loss/event occurred, if stated"},
-                "date_filed": {"type": ["string", "null"], "description": "Date the claim was filed, if stated"},
-                "claimed_amount": {"type": ["number", "null"], "description": "Amount claimed/demanded in USD, if stated"},
-                "adjuster": {"type": ["string", "null"], "description": "Named adjuster handling the claim, if stated; null when absent"},
-                "damages_description": {"type": "string", "description": "Summary of the loss/damages as described"},
-                "coverage_determination": {"type": "string", "description": "Outcome as stated: approved, denied, partial, pending"},
-                "denial_reasons": {"type": "array", "items": {"type": "string"}, "description": "Stated denial/limitation grounds, if denied"},
-                "supporting_documents": {"type": "array", "items": {"type": "string"}, "description": "Referenced supporting documents (police report, receipts, medical records, etc.)"},
-                "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            }
-        )
-        # Full transcription is ALWAYS the message body (no page content lost);
-        # page images are appended additively when the model is vision-capable.
+        schema = INSURANCE_CLAIMS_SCHEMA
         max_chars = self._configured_max_input_chars()
         truncated = doc_text[:max_chars]
         if len(doc_text) > max_chars:

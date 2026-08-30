@@ -240,7 +240,7 @@ class TestFieldTypesFromConfig:
         assert ft["effective_date"] == "date"
         assert ft["contract_value"] == "money"
         assert ft["parties"] == "entity_list:name"
-        assert ft["termination_clauses"] == "entity_list:free_text"
+        assert ft["cuad_clauses"] == "entity_list:free_text"
 
     def test_unknown_class_returns_empty(self):
         assert get_field_types("not_a_class") == {}
@@ -262,7 +262,7 @@ class TestScoreExtraction:
             "effective_date": "2020-01-02",
             "contract_value": "$250,000",
             "governing_law": "Florida",
-            "termination_clauses": ["Either party may terminate with notice"],
+            "cuad_clauses": ["Either party may terminate with notice"],
         }
         result = score_extraction("contract", get_field_types("contract"), dict(expected), expected)
         assert isinstance(result, ExtractionScoreResult)
@@ -270,7 +270,7 @@ class TestScoreExtraction:
         assert result.field_scores == {k: 1.0 for k in expected}
         assert result.ambiguous_fields == []
         assert not result.needs_judge_review
-        assert set(result.entity_list_scores) == {"parties", "termination_clauses"}
+        assert set(result.entity_list_scores) == {"parties", "cuad_clauses"}
 
     def test_null_expected_fields_not_scored(self):
         expected = {"effective_date": "2020-01-02", "renewal_terms": None}
@@ -289,11 +289,11 @@ class TestScoreExtraction:
         # escalates to the LLM judge (partial list match). Note: the contract
         # schema's governing_law/term_length/renewal_terms are containment
         # fields now, so exact clause matches are decisive (never ambiguous).
-        expected = {"termination_clauses": [
+        expected = {"cuad_clauses": [
             "termination for convenience upon thirty days' notice",
             "termination on change of control",
         ]}
-        predicted = {"termination_clauses": ["termination for convenience upon thirty days' notice"]}
+        predicted = {"cuad_clauses": ["termination for convenience upon thirty days' notice"]}
         result = score_extraction("contract", get_field_types("contract"), predicted, expected)
         assert result.ambiguous_fields
         assert result.needs_judge_review is True

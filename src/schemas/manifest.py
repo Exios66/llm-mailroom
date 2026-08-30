@@ -29,6 +29,15 @@ class DocumentManifest(BaseModel):
     trace_id: str | None = None
     escalation_reason: str | None = None
     review_decision: str | None = None
+    # Lane B arbitration — durable on archive AND review/failed terminals.
+    arbiter_decision: str | None = None
+    arbiter_reasoning: str | None = None
+    arbiter_handoff: str | None = None
+    arbiter_fields_to_fix: list[str] | None = None
+    arbiter_retry_count: int = 0
+    judge_verdict: str | None = None
+    judge_score: float | None = None
+    judge_findings: list[str] | None = None
     # LangGraph interrupt() thread id so in-process Command(resume=...) can
     # continue the paused human_review node. Empty on older manifests and
     # when the checkpointer was lost (process restart + MemorySaver) — resume

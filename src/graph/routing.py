@@ -44,6 +44,12 @@ def _transient_decision(state: dict, *, retry_target: str) -> Literal["retry", "
     return "human_review"
 
 
+def _thresholds_for(state: Mapping[str, Any] | dict) -> dict:
+    """Class-aware confidence / Lane B budgets from taxonomy severity tiers."""
+    doc_type = state.get("doc_type") or state.get("reviewer_doc_type")
+    return get_confidence_thresholds(doc_type if isinstance(doc_type, str) else None)
+
+
 def after_classify(state: dict) -> Literal[
     "classify", "retry_classify", "review_classify", "extract", "human_review"
 ]:
@@ -55,10 +61,10 @@ def after_classify(state: dict) -> Literal[
     confidence = state.get("classification_confidence")
     attempts = state.get("classification_attempts", 0)
     doc_type = state.get("doc_type")
-    thresholds = get_confidence_thresholds()
+    thresholds = _thresholds_for(state)
     low = thresholds.get("low", 0.70)
     high = thresholds.get("high", 0.95)
-    retry_max = thresholds.get("retry_max", 1)
+    retry_max = thresholds.get("retry_max", 2)
 
     if not is_extractable_doc_type(doc_type):
         logger.warning("unknown_doc_type", doc_type=doc_type)
@@ -150,7 +156,7 @@ def after_retry_classify(state: dict) -> Literal[
     # retry now goes to the agent second opinion instead of straight to a
     # human.
     confidence = state.get("classification_confidence")
-    thresholds = get_confidence_thresholds()
+    thresholds = _thresholds_for(state)
     low = thresholds.get("low", 0.70)
     high = thresholds.get("high", 0.95)
     if confidence is not None and low <= confidence < high:
@@ -204,9 +210,9 @@ def after_extraction(state: dict) -> Literal[
 
     confidence = state.get("extraction_confidence")
     attempts = state.get("extraction_attempts", 0)
-    thresholds = get_confidence_thresholds()
+    thresholds = _thresholds_for(state)
     low = thresholds.get("low", 0.70)
-    retry_max = thresholds.get("retry_max", 1)
+    retry_max = thresholds.get("retry_max", 2)
     conflict = state.get("conflict_detected", False)
 
     if conflict:
@@ -318,7 +324,7 @@ def judge_gate(state: Mapping[str, Any]) -> bool:
     if os.environ.get("MAILROOM_JUDGE_VERIFY", "on").lower() in ("off", "false", "0", "no"):
         return False
     confidence = state.get("extraction_confidence")
-    thresholds = get_confidence_thresholds()
+    thresholds = _thresholds_for(state)
     low = thresholds.get("low", 0.70)
     band_high = float(thresholds.get("judge_band_high", 0.85))
     return confidence is not None and low <= confidence < band_high
@@ -412,7 +418,7 @@ def after_review_classify(state: dict) -> Literal["review_classify", "extract", 
     verdict = state.get("review_verdict")
     confidence = state.get("reviewer_confidence")
     doc_type = state.get("reviewer_doc_type")
-    thresholds = get_confidence_thresholds()
+    thresholds = _thresholds_for(state)
     high = thresholds.get("high", 0.95)
     if (
         verdict in ("reviewer_overrides", "reviewer_agrees_high")
@@ -452,10 +458,11 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     """KANBAN-063 (Lane B): judge outcome router.
 
     ``complete`` (or a skipped/gated-out pass-through) proceeds; ``partial``/
-    ``incomplete`` goes to the arbiter. Transient judge errors self-loop on
-    the judge's OWN per-node budget (L-13) before escalating; a judge that
-    hard-fails after the gate flagged the doc escalates to humans (fail-safe:
-    the flag said this doc needs scrutiny).
+    ``incomplete`` goes to the arbiter — unless ``judge_pass_count`` already
+    exhausted ``judge_max_passes``, in which case escalate to humans.
+    Transient judge errors self-loop on the judge's OWN per-node budget (L-13)
+    before escalating; a judge that hard-fails after the gate flagged the doc
+    escalates to humans (fail-safe: the flag said this doc needs scrutiny).
     """
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="judge_verify") == "retry":
@@ -466,6 +473,17 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
         return "human_review"
     if verdict in (None, "", "skipped", "complete"):
         return "compile_report"
+    thresholds = _thresholds_for(state)
+    max_passes = int(thresholds.get("judge_max_passes", 3) or 3)
+    passes = int(state.get("judge_pass_count") or 0)
+    if passes >= max_passes and verdict in ("partial", "incomplete"):
+        logger.info(
+            "judge_max_passes_exhausted",
+            passes=passes,
+            max_passes=max_passes,
+            doc_id=state.get("doc_id"),
+        )
+        return "human_review"
     return "arbiter"
 
 
@@ -475,16 +493,14 @@ def after_arbiter(state: dict) -> Literal[
     """KANBAN-063 (Lane B): arbiter outcome router, with the retry bound.
 
     ``accept_with_caveats`` proceeds; ``retry_extraction`` re-runs extraction
-    exactly once per document (the bound — compounding arbitration loops are
-    the failure mode this prevents); anything else (or a retry demand past
-    the bound) escalates to human review with the handoff summary attached.
+    up to ``arbiter_retry_max`` times per document (approval-inclusive bound);
+    anything else (or a retry demand past the bound) escalates to human review
+    with the handoff summary attached.
 
     KANBAN-098: the bound is approval-INCLUSIVE. ``arbiter_node`` increments
     ``arbiter_retry_count`` at approval time (so the retrying extract node can
     weave the fix-list into its prompt), meaning the FIRST approval already
-    arrives here with a count of 1. Hence ``<= 1``: the first approved retry
-    dispatches to ``retry_extract``; only a SECOND arbitration demanding
-    another retry finds a spent budget and escalates to human review.
+    arrives here with a count of 1. Hence ``<= arbiter_retry_max``.
 
     Transient provider errors self-loop on the arbiter's OWN per-node budget
     (L-13) before escalating fail-safe to humans.
@@ -496,11 +512,15 @@ def after_arbiter(state: dict) -> Literal[
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
         return "compile_report"
-    if decision == "retry_extraction" and state.get("arbiter_retry_count", 0) <= 1:
+    thresholds = _thresholds_for(state)
+    arbiter_retry_max = int(thresholds.get("arbiter_retry_max", 2) or 2)
+    if decision == "retry_extraction" and state.get("arbiter_retry_count", 0) <= arbiter_retry_max:
         logger.info(
             "arbiter_retry_approved",
             doc_id=state.get("doc_id"),
             fields=state.get("judge_findings"),
+            arbiter_retry_count=state.get("arbiter_retry_count"),
+            arbiter_retry_max=arbiter_retry_max,
         )
         return "retry_extract"
     logger.info(
@@ -512,11 +532,11 @@ def after_arbiter(state: dict) -> Literal[
 
 
 def after_report(state: dict) -> Literal["catalog_write", "human_review"]:
-    """Withhold catalog writes when compile_report failed.
+    """Route after procedural matter-record assembly.
 
-    A fallback ``_report`` with ``error: True`` used to flow into
-    ``catalog_write`` → archive. The-Mailroom then treated those archives as
-    done despite incomplete reporting. Park for human review instead.
+    The reporter LLM is retired; compile_report always assembles a structured
+    record. Keep the fail-safe for a broken assembler (``report_error``) so a
+    bad assemble still parks for humans rather than archiving empty reports.
     """
     from pipeline.reconsideration import report_is_failed
 

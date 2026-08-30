@@ -4,7 +4,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -303,8 +303,8 @@ def _build_handoff_context(state: DocumentState) -> str | None:
         context += f" contract_subtype={contract_subtype}"
         context += (
             " CUAD family extraction: capture that family's characteristic "
-            "operative clauses verbatim in key_obligations and "
-            "termination_clauses (grant of license, resale/purchase, "
+            "operative clauses as present-only cuad_clauses lines "
+            "'<Category>: <short evidence>' (grant of license, resale/purchase, "
             "franchise fees, maintenance/support, joint-venture sharing, "
             "non-compete covenants, etc. as the family requires)."
         )
@@ -312,10 +312,10 @@ def _build_handoff_context(state: DocumentState) -> str | None:
         context += f" doc_subclass={doc_subclass}"
     if doc_type == "merger_agreement":
         context += (
-            " MAUD extraction: set contract_value to the merger-consideration "
-            "token all_cash|all_stock|mixed_cash_stock|"
-            "mixed_cash_stock_election|other; put the surviving corporation, "
-            "exchange ratio, and Effective Time into key_obligations."
+            " MAUD extraction: set merger_consideration / contract_value to the "
+            "merger-consideration token all_cash|all_stock|mixed_cash_stock|"
+            "mixed_cash_stock_election|other; put answered MAUD questions into "
+            "maud_clauses as '<Question>: <short evidence>'."
         )
     confidence = state.get("classification_confidence")
     if confidence is not None:
@@ -963,11 +963,22 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     )
     reviewer_reasoning = str(result.get("reasoning", ""))
 
-    high = get_confidence_thresholds().get("high", 0.95)
+    # Class-aware high: agree uses sorter class; override uses the reviewer's
+    # proposed class (severity of the label they want to win).
+    agree_high = get_confidence_thresholds(sorter_type).get("high", 0.97)
+    override_high = get_confidence_thresholds(reviewer_type).get("high", 0.97)
     if reviewer_type == sorter_type:
-        verdict = "reviewer_agrees_high" if reviewer_confidence >= high else "reviewer_agrees_low"
+        verdict = (
+            "reviewer_agrees_high"
+            if reviewer_confidence >= agree_high
+            else "reviewer_agrees_low"
+        )
     else:
-        verdict = "reviewer_overrides" if reviewer_confidence >= high else "reviewer_conflicts"
+        verdict = (
+            "reviewer_overrides"
+            if reviewer_confidence >= override_high
+            else "reviewer_conflicts"
+        )
 
     logger.info(
         "review_classified",
@@ -1441,6 +1452,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         "judge_verdict": label,
         "judge_score": score,
         "judge_findings": findings,
+        "judge_pass_count": int(state.get("judge_pass_count") or 0) + 1,
         "transient_error": False,
     }
 
@@ -1448,8 +1460,10 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
 def arbiter_node(state: DocumentState) -> dict[str, Any]:
     """KANBAN-063 (Lane B): arbitration on a failed judge verdict.
 
-    Bounded decisions only (accept_with_caveats / one retry with the fix-list
-    attached / human_review). Any arbiter failure escalates fail-safe.
+    Bounded decisions only (accept_with_caveats / retry with fix-list up to
+    ``arbiter_retry_max`` / human_review). Any arbiter failure escalates
+    fail-safe. Decisions are audited immediately and later copied onto the
+    terminal manifest (archive or review/failed).
     """
     from agents.arbiter import ArbiterAgent
     from llm.retry import is_transient_error
@@ -1512,6 +1526,20 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         doc_id=state.get("doc_id"),
         decision=decision,
         retry_count=updates.get("arbiter_retry_count", state.get("arbiter_retry_count", 0)),
+    )
+    _emit_stage_audit(
+        {**state, **updates},
+        "arbiter_decided",
+        actor="arbiter",
+        detail={
+            "decision": decision,
+            "reasoning": updates.get("arbiter_reasoning"),
+            "handoff": updates.get("arbiter_handoff"),
+            "fields_to_fix": updates.get("arbiter_fields_to_fix"),
+            "arbiter_retry_count": updates.get(
+                "arbiter_retry_count", state.get("arbiter_retry_count", 0)
+            ),
+        },
     )
     return updates
 
@@ -1646,6 +1674,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             extraction_attempts=state.get("extraction_attempts", 0),
             review_decision="pending_review",
             checkpoint_thread_id=thread_id or None,
+            **_lane_b_manifest_fields(state),
         )
         dest, newly_parked = park_for_review(Path(file_path_str), manifest)
         _catalog_upsert(
@@ -1658,7 +1687,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
                 "doc_subclass": state.get("doc_subclass"),
                 "classification_confidence": state.get("classification_confidence"),
                 "extraction_confidence": state.get("extraction_confidence"),
-                "extracted_data": state.get("extracted_data"),
+                "extracted_data": {
+                    **(state.get("extracted_data") or {} if isinstance(state.get("extracted_data"), dict) else {}),
+                    "_lane_b": _lane_b_manifest_fields(state),
+                },
                 "escalation_reason": esc_reason,
                 "trace_id": state.get("trace_id"),
                 "stage": PipelineStage.REVIEW.value,
@@ -1679,7 +1711,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             {**state, **parked},
             "routed_to_review",
             actor="pipeline",
-            detail={"reason": esc_reason},
+            detail={
+                "reason": esc_reason,
+                **{k: v for k, v in _lane_b_manifest_fields(state).items() if v not in (None, [], 0)},
+            },
         )
 
     payload = {
@@ -1718,6 +1753,11 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "extracted_data": None,
             "extraction_confidence": None,
             "extraction_attempts": 0,
+            "classification_attempts": 0,
+            # Fair Lane B budget on the corrected run; keep last arbiter_* /
+            # judge_* fields on state for the eventual archive trail.
+            "arbiter_retry_count": 0,
+            "judge_pass_count": 0,
             "resume_extraction": True,
             "conflict_detected": False,
             "conflict_details": [],
@@ -1836,7 +1876,8 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
 
 
 def compile_report_node(state: DocumentState) -> dict[str, Any]:
-    from llm.client import get_llm
+    """Procedural matter-record assembly (reporter LLM retired)."""
+    from agents.reporter import compile_matter_record
 
     extracted = state.get("extracted_data") or {}
     if not isinstance(extracted, dict):
@@ -1846,21 +1887,18 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
         "matter_id": state.get("matter_id"),
         "doc_type": state.get("doc_type"),
         "contract_subtype": state.get("contract_subtype"),
-            "doc_subclass": state.get("doc_subclass"),
+        "doc_subclass": state.get("doc_subclass"),
         "classification_confidence": state.get("classification_confidence"),
         "extraction_confidence": state.get("extraction_confidence"),
         "extracted_data": extracted,
+        "arbiter_decision": state.get("arbiter_decision"),
+        "arbiter_reasoning": state.get("arbiter_reasoning"),
+        "arbiter_handoff": state.get("arbiter_handoff"),
     }
 
     try:
-        llm_client, model = get_llm("reporter")
-        from agents.reporter import compile_matter_record
-        report = compile_matter_record(manifest_data, llm_client, model)
+        report = compile_matter_record(manifest_data)
     except Exception as exc:
-        # A reporter blip must not drop a successfully extracted document
-        # (same fail-safe as L-10 for the Boss). Keep the fields on a
-        # fallback _report (error=True); after_report then withholds
-        # catalog_write and parks for human review instead of archiving.
         logger.exception("report_compile_failed", doc_id=state.get("doc_id"))
         report = {
             "summary": (
@@ -1877,7 +1915,7 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
             "error": True,
         }
 
-    logger.info("report_compiled", doc_id=state.get("doc_id"))
+    logger.info("report_compiled", doc_id=state.get("doc_id"), procedural=True)
     return {
         "extracted_data": {
             **extracted,
@@ -1951,6 +1989,22 @@ def catalog_write_node(state: DocumentState) -> dict[str, Any]:
     return {}
 
 
+def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
+    """Copy judge/arbiter state onto a DocumentManifest / catalog payload."""
+    fields_to_fix = state.get("arbiter_fields_to_fix")
+    findings = state.get("judge_findings")
+    return {
+        "arbiter_decision": state.get("arbiter_decision"),
+        "arbiter_reasoning": state.get("arbiter_reasoning"),
+        "arbiter_handoff": state.get("arbiter_handoff"),
+        "arbiter_fields_to_fix": list(fields_to_fix) if fields_to_fix else None,
+        "arbiter_retry_count": int(state.get("arbiter_retry_count") or 0),
+        "judge_verdict": state.get("judge_verdict"),
+        "judge_score": state.get("judge_score"),
+        "judge_findings": list(findings) if findings else None,
+    }
+
+
 def archive_node(state: DocumentState) -> dict[str, Any]:
     manifest = DocumentManifest(
         doc_id=state.get("doc_id", ""),
@@ -1959,7 +2013,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         stage=PipelineStage.ARCHIVED,
         doc_type=state.get("doc_type", "unknown"),
         contract_subtype=state.get("contract_subtype"),
-            doc_subclass=state.get("doc_subclass"),
+        doc_subclass=state.get("doc_subclass"),
         classification_confidence=state.get("classification_confidence"),
         extracted_data=state.get("extracted_data"),
         extraction_confidence=state.get("extraction_confidence"),
@@ -1968,6 +2022,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         review_decision=state.get("review_decision"),
         classification_attempts=state.get("classification_attempts", 0),
         extraction_attempts=state.get("extraction_attempts", 0),
+        **_lane_b_manifest_fields(state),
     )
 
     file_path_str = state.get("file_path", "")
@@ -3108,7 +3163,7 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         "contract_subtype": manifest.contract_subtype,
         "doc_subclass": getattr(manifest, "doc_subclass", None),
         "classification_confidence": manifest.classification_confidence,
-        "classification_attempts": manifest.classification_attempts,
+        "classification_attempts": 0,
         "extracted_data": None,  # fresh extraction — never reuse the reviewed data
         "extraction_confidence": None,
         "extraction_attempts": 0,
@@ -3126,20 +3181,21 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         "transient_error": False,
         "transient_retries_classify": 0,
         "transient_retries_extract": 0,
-        # KANBAN-062/063 lane state — fresh per run, never inherited from a
-        # reviewed document's earlier attempt.
+        # Retain prior Lane B trail from the parked manifest for archive audit;
+        # reset attempt counters so the corrected run gets a fair QA budget.
         "reviewer_doc_type": None,
         "reviewer_contract_subtype": None,
         "reviewer_doc_subclass": None,
         "reviewer_confidence": None,
         "review_verdict": None,
-        "judge_verdict": None,
-        "judge_score": None,
-        "judge_findings": [],
-        "arbiter_decision": None,
-        "arbiter_reasoning": None,
-        "arbiter_handoff": None,
-        "arbiter_fields_to_fix": [],
+        "judge_verdict": getattr(manifest, "judge_verdict", None),
+        "judge_score": getattr(manifest, "judge_score", None),
+        "judge_findings": list(getattr(manifest, "judge_findings", None) or []),
+        "judge_pass_count": 0,
+        "arbiter_decision": getattr(manifest, "arbiter_decision", None),
+        "arbiter_reasoning": getattr(manifest, "arbiter_reasoning", None),
+        "arbiter_handoff": getattr(manifest, "arbiter_handoff", None),
+        "arbiter_fields_to_fix": list(getattr(manifest, "arbiter_fields_to_fix", None) or []),
         "arbiter_retry_count": 0,
         "run_attempt": 0,
     }

@@ -89,6 +89,10 @@ INSURANCE_GT_KEYS: tuple[str, ...] = (
     "coverage_determination",
     "denial_reasons",
     "supporting_documents",
+    "intent",
+    "subject_matter",
+    "keywords",
+    "claim_checklist",
 )
 
 # Schema fields joined from Hub ground_truth when present. Corporate Hub rows
@@ -97,7 +101,9 @@ CORPORATE_GT_KEYS: tuple[str, ...] = (
     "entity_name",
     "record_type",
     "effective_date",
-    "key_provisions",
+    "intent",
+    "subject_matter",
+    "keywords",
     "signatories",
     "jurisdiction",
     "filing_number",
@@ -123,11 +129,12 @@ CORRESPONDENCE_GT_KEYS: tuple[str, ...] = (
     "additional_recipients",
     "communication_type",
     "communication_date",
-    "key_points",
+    "intent",
+    "subject_matter",
+    "keywords",
     "demand_amount",
     "action_items",
     "urgency",
-    "referenced_communications",
 )
 
 # Sorter subclass catalogs from llm-dojo-scoring 0.9.0 (PR #4). Hub extraction

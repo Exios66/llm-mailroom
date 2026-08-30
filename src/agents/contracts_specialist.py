@@ -38,7 +38,7 @@ class ContractsSpecialist(_LangChainContractsSpecialist):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        prompt_version: str = "contracts_specialist_v32",
+        prompt_version: str = "contracts_specialist_v33",
         handoff_context: str | None = None,
     ):
         super().__init__(model=model, api_key=api_key, prompt_version=prompt_version)

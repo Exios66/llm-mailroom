@@ -159,10 +159,14 @@ _CORPORATE_EXTRACTION: tuple[dict[str, Any], ...] = (
             "entity_name": "Meridian Holdings, Inc.",
             "record_type": "bylaws",
             "effective_date": "2023-02-01",
-            "key_provisions": [
-                "The annual meeting of stockholders shall be held on the second Tuesday of May",
-                "The Board shall consist of not less than three (3) nor more than nine (9) directors",
-                "The officers of the Corporation shall include a President, a Secretary, and a Treasurer",
+            "intent": "record_governance",
+            "subject_matter": (
+                "The annual meeting of stockholders shall be held on the second Tuesday of May"
+            ),
+            "keywords": [
+                "annual meeting",
+                "Board of directors",
+                "officers",
             ],
             "signatories": ["Thomas Meridian", "Elizabeth Warren"],
             "jurisdiction": "Delaware",
@@ -178,10 +182,12 @@ _CORPORATE_EXTRACTION: tuple[dict[str, Any], ...] = (
             "entity_name": "Meridian Holdings, Inc.",
             "record_type": "other",
             "effective_date": "2024-03-15",
-            "key_provisions": [
-                "Authorization of Series B Preferred Stock Financing",
-                "Certificate of Designation for the Series B Preferred Stock is approved",
-                "officers are authorized to file the Certificate of Designation with the Delaware Secretary of State",
+            "intent": "authorize_financing",
+            "subject_matter": "Authorization of Series B Preferred Stock Financing",
+            "keywords": [
+                "Series B",
+                "Certificate of Designation",
+                "Delaware Secretary of State",
             ],
             "signatories": ["Thomas Meridian", "Elizabeth Warren", "James Chen"],
             "jurisdiction": "Delaware",

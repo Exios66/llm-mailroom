@@ -37,19 +37,27 @@ Controls the branching logic in `graph/routing.py`. Tunable without code changes
 
 | Key | Default | Description |
 |---|---|---|
-| `high` | 0.95 | Classification confidence ≥ this auto-continues to extraction; the band `[low, high)` is "classified but not clearly confident" → human review |
-| `low` | 0.70 | Below this: retry once; still below after retry → human review |
-| `retry_max` | 1 | Maximum retries before escalating to human review |
-| `judge_band_high` | 0.85 | Lane B completeness-judge gate: `low <= extraction_confidence < judge_band_high` fires `judge_verify`. Clean high-confidence extractions skip (zero added LLM calls). |
+| `high` | 0.97 (global fallback) | Classification/extraction confidence ≥ this auto-continues; per-class overrides apply after `doc_type` is known |
+| `low` | 0.88 (global fallback) | Below this: retry while `attempts <= retry_max`, then human review |
+| `retry_max` | 2 | Maximum classify/extract retries before escalating to human review |
+| `judge_band_high` | 0.95 (global) | Lane B completeness-judge gate: `low <= extraction_confidence < judge_band_high` fires `judge_verify` |
+| `arbiter_retry_max` | 2 | Max arbiter-approved re-extract loops (approval-inclusive) |
+| `judge_max_passes` | 3 | `1 + arbiter_retry_max` — one completeness judge per extraction attempt |
 | `conflict_threshold` | 0.3 | **Unused routing knob** (kept for config-file compatibility). Matter conflicts escalate via deterministic same-class field comparison in `graph/build_graph.py:_detect_conflict`, not an extraction-confidence gap. |
+| `by_class` | (severity map) | Per-class `high` / `low` / `judge_band_high` for critical contracts/mergers/insurance, high compliance, elevated corporate, standard correspondence |
 
 ```yaml
 confidence:
-  high: 0.95
-  low: 0.70
-  retry_max: 1
-  judge_band_high: 0.85
+  high: 0.97
+  low: 0.88
+  retry_max: 2
+  judge_band_high: 0.95
+  arbiter_retry_max: 2
+  judge_max_passes: 3
   conflict_threshold: 0.3  # unused; conflicts are field-value comparison
+  by_class:
+    contract: { severity: critical, high: 0.98, low: 0.90, judge_band_high: 0.97 }
+    # … merger_agreement, insurance_claim, compliance_filing, corporate_record, correspondence
 ```
 
 ### `doc_classes`
