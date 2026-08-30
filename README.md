@@ -473,10 +473,10 @@ Prefer the `/v1` prefix; unversioned routes remain during the deprecation window
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/v1/health` | Health check (includes LLM provider + DB dependency checks) |
-| `POST` | `/v1/upload` | Upload document to inbox |
+| `GET` | `/v1/health` | Health check (watcher lamp + `producer` / `review_resolve` / `inbox_upload`) |
+| `POST` | `/v1/upload` | Queue a document (The-Mailroom Inbox proxy; 202) |
 | `GET` | `/v1/queue` | Current processing queue (inbox + in-flight documents) |
-| `POST` | `/v1/review/{doc_id}/resolve` | Resolve human review (approved/rejected) |
+| `POST` | `/v1/review/{doc_id}/resolve` | Resolve human review (Approve / Reject / Record / Requeue / Complete) |
 | `GET` | `/v1/status/{doc_id}` | Document pipeline status |
 | `GET` | `/v1/matters/{matter_id}` | All documents in a matter |
 | `GET` | `/v1/audit/{doc_id}` | Hash-chained audit trail + validity check |
@@ -589,7 +589,7 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |
-| [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine — renders every run as an animated document conveyor from this repo's Langfuse traces (web + TUI) | **Downstream visualizer** — Langfuse-only data source; mirrors the pipeline trace contract |
+| [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine + hosted Observatory Space — Langfuse floor, Inbox enqueue, REVIEW resolve (web + TUI) | **Downstream visualizer** — Langfuse-only display; proxies Inbox / REVIEW to this API (`MAILROOM_PIPELINE_URL`) |
 | [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive knowledge graph of this codebase | **Derived site** (graphify build artifact) |
 | [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Knowledge graph of the sister loop | **Derived site** |
 | [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
@@ -625,7 +625,7 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 
 </details>
 
-The-Mailroom REVIEW resolve needs this API reachable as `MAILROOM_PIPELINE_URL` (token = `MAILROOM_API_TOKEN`): `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`, or `PYTHONPATH=src python src/scripts/publish_space.py --check` for the hosted Space. See [`deploy/`](deploy/README.md).
+The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) needs this API reachable as `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1` (Inbox **Queue a document** → `POST /v1/upload`; REVIEW → `POST /v1/review/{doc_id}/resolve`). Local: `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`. Hosted pair (producer Space + Observatory floor): [`deploy/space/PAIRING.md`](deploy/space/PAIRING.md). A Space floor cannot use `127.0.0.1`.
 
 For fully local/offline serving, see [`deploy/`](deploy/README.md) (Modal+vLLM) and [Local Model Cutover](#local-model-cutover).
 
@@ -646,5 +646,6 @@ For fully local/offline serving, see [`deploy/`](deploy/README.md) (Modal+vLLM) 
 - [Testing](docs/testing.md) — testing strategy and fixtures
 - [Local Models](docs/local-models.md) — local model cutover guide
 - [Sister Repositories](docs/sister-repos.md) — the llm-mailroom umbrella: entity-extraction, llm-dojo-scoring, corpus feeds, derived sites
+- [Visualizer pairing](deploy/space/PAIRING.md) — Observatory Space + this producer (`MAILROOM_PIPELINE_URL` / token / `/v1`)
 - [Reports](docs/reports/README.md) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
 - [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `docs/wiki/` via `docs/wiki/sync-wiki.sh`)

@@ -50,7 +50,15 @@ def test_space_card_frontmatter_and_token_contract():
     assert "app_port: 7860" in card
     assert "MAILROOM_PIPELINE_URL" in card
     assert "MAILROOM_PIPELINE_TOKEN" in card
+    assert "MAILROOM_PIPELINE_API_PREFIX" in card
     assert "MAILROOM_API_TOKEN" in card
+    assert "/v1/upload" in card
+    pairing = REPO_ROOT / "deploy" / "space" / "PAIRING.md"
+    text = pairing.read_text(encoding="utf-8")
+    assert "MAILROOM_PIPELINE_API_PREFIX=/v1" in text
+    assert "POST /v1/upload" in text
+    assert "mailroom-observatory" in text
+    assert "The-Mailroom/pull/30" in text
 
 
 def test_stage_space_tree_strips_dotenv(tmp_path):

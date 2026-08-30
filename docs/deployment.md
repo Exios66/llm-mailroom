@@ -175,9 +175,14 @@ For higher volumes:
 
 ## Docker Deployment (producer for The-Mailroom)
 
-REVIEW resolve on The-Mailroom still needs a **reachable** llm-mailroom
-producer (`MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN`). The
-visualizer proxies operator clicks here; the browser never holds the token.
+The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
+needs a **reachable** llm-mailroom producer for the floor lamp, Inbox
+**Queue a document** (`POST /v1/upload`), and REVIEW resolve
+(`MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` +
+`MAILROOM_PIPELINE_API_PREFIX=/v1`). The visualizer proxies operator
+clicks here; the browser never holds the token. Two Hub Spaces — this
+producer and The-Mailroom `mailroom-observatory` — are documented in
+[`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).
 
 ### Local (laptop pair)
 
