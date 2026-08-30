@@ -100,7 +100,7 @@ The-Mailroom Observatory (sister visualizer, [PR #30](https://github.com/Exios66
 
 ```
 MAILROOM_PIPELINE_URL=http://127.0.0.1:8000
-# Space Observatory: https://<user>-mailroom-producer.hf.space
+# Space Observatory: https://lucius-morningstar-mailroom-producer.hf.space
 MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
 MAILROOM_PIPELINE_API_PREFIX=/v1
 ```
