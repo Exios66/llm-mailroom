@@ -1,0 +1,146 @@
+# Auto-bump llm-dojo-scoring when a new release is published upstream.
+#
+# Triggers:
+#   1. repository_dispatch (type: dojo-scoring-released) — preferred; fire from
+#      llm-dojo-scoring's release workflow with client_payload.tag = "vX.Y.Z"
+#   2. schedule — daily poll of GitHub Releases as a backstop
+#   3. workflow_dispatch — manual bump (optional tag input)
+#
+# Opens a PR on cursor/bump-dojo-scoring-<tag> when the pin is behind.
+# Requires a PAT (or GitHub App token) with contents:write + pull-requests:write
+# stored as DOJO_BUMP_TOKEN, OR rely on GITHUB_TOKEN with workflow permissions.
+
+name: Bump llm-dojo-scoring
+
+on:
+  repository_dispatch:
+    types: [dojo-scoring-released]
+  schedule:
+    # Daily 06:15 UTC — backstop if dojo forgets to dispatch
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Explicit dojo tag (e.g. v0.12.2). Empty = latest GitHub release."
+        required: false
+        type: string
+      dry_run:
+        description: "If true, only print the planned bump (no PR)."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bump-dojo-scoring
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so the bot can open PRs against main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve target tag
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG=""
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            TAG="${{ github.event.client_payload.tag }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          fi
+          if [ -z "${TAG}" ]; then
+            TAG=$(gh api repos/Exios66/llm-dojo-scoring/releases/latest --jq .tag_name)
+          fi
+          case "${TAG}" in
+            v*) ;;
+            *) TAG="v${TAG}" ;;
+          esac
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved target tag: ${TAG}"
+
+      - name: Check whether a bump is needed
+        id: check
+        run: |
+          set +e
+          python src/scripts/bump_dojo_scoring.py --check --tag "${{ steps.target.outputs.tag }}"
+          code=$?
+          set -e
+          # --check exits 0 when current == target, 2 when behind
+          if [ "${code}" -eq 0 ]; then
+            echo "needs_bump=false" >> "$GITHUB_OUTPUT"
+            echo "Already on ${{ steps.target.outputs.tag }}."
+          else
+            echo "needs_bump=true" >> "$GITHUB_OUTPUT"
+            echo "Pin is behind ${{ steps.target.outputs.tag }} (check exit ${code})."
+          fi
+
+      - name: Dry-run preview
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          python src/scripts/bump_dojo_scoring.py --apply --tag "${{ steps.target.outputs.tag }}" --dry-run
+
+      - name: Apply bump on a branch
+        if: ${{ steps.check.outputs.needs_bump == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.target.outputs.tag }}"
+          BRANCH="cursor/bump-dojo-scoring-${TAG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${BRANCH}" origin/main
+          python src/scripts/bump_dojo_scoring.py --apply --tag "${TAG}"
+          if git diff --quiet; then
+            echo "No file changes after apply — nothing to commit."
+            exit 0
+          fi
+          git add -A
+          git commit -m "deps: bump llm-dojo-scoring to ${TAG}"
+          git push -u origin "${BRANCH}" --force-with-lease
+
+      - name: Open or update pull request
+        if: ${{ steps.check.outputs.needs_bump == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        env:
+          GH_TOKEN: ${{ secrets.DOJO_BUMP_TOKEN != '' && secrets.DOJO_BUMP_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.target.outputs.tag }}"
+          BRANCH="cursor/bump-dojo-scoring-${TAG}"
+          TITLE="deps: bump llm-dojo-scoring to ${TAG}"
+          BODY=$(cat <<EOF
+          ## Summary
+          Automatic bump of the \`llm-dojo-scoring\` git pin to **${TAG}**.
+
+          Triggered by: \`${{ github.event_name }}\`.
+
+          ## Checklist
+          - [ ] CI green
+          - [ ] \`pytest src/tests/test_dojo_v012.py -q\` passes with the new pin
+          - [ ] CHANGELOG / skill notes look right
+
+          Generated by \`.github/workflows/bump-dojo-scoring.yml\`.
+          EOF
+          )
+          EXISTING=$(gh pr list --head "${BRANCH}" --json number --jq '.[0].number // empty')
+          if [ -n "${EXISTING}" ]; then
+            echo "PR #${EXISTING} already open for ${BRANCH}; pushing updates is enough."
+            gh pr edit "${EXISTING}" --title "${TITLE}" --body "${BODY}"
+          else
+            gh pr create --base main --head "${BRANCH}" --title "${TITLE}" --body "${BODY}"
+          fi

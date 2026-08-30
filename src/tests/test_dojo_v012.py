@@ -1,4 +1,4 @@
-"""llm-dojo-scoring v0.12.1 pin — registry, prompt catalog, serving suite."""
+"""llm-dojo-scoring v0.12.2 pin — registry, prompt catalog, serving suite."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from observability.scores import SCORE_CONFIGS, registry_score_meta
 from observability.suite_scoring import SUITE_EXTRA_SCORE_NAMES
 
 
-def test_installed_dojo_is_v0121():
-    assert llm_dojo_scoring.__version__ == "0.12.1"
+def test_installed_dojo_is_v0122():
+    assert llm_dojo_scoring.__version__ == "0.12.2"
 
 
 def test_local_vs_api_serving_suite_registered():
