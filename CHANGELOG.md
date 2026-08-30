@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **llm-dojo-scoring pin → v0.12.2** ([upstream PR #11](https://github.com/Exios66/llm-dojo-scoring/pull/11)).
+  Additive: `jellyfish` is a core dojo dependency; new `tracing` / `all`
+  extras. Scoring formulas unchanged from v0.12.1.
+
+### Added
+
+- **Auto-bump automation** for dojo releases:
+  `src/scripts/bump_dojo_scoring.py` (`--check` / `--apply`) plus
+  `.github/workflows/bump-dojo-scoring.yml` (triggered by
+  `repository_dispatch` type `dojo-scoring-released`, daily cron backstop,
+  and `workflow_dispatch`). Opens a pin-bump PR when mailroom is behind.
+  Wiring notes: [docs/sister-repos.md](docs/sister-repos.md).
+
 ## [v0.6.0] - 2026-08-30
 
 Minor release: **pared LLM load** for the live document pipeline. Happy-path

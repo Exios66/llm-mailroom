@@ -1,13 +1,13 @@
 ---
 name: dojo-scoring
-description: llm-dojo-scoring pin and mailroom scoring suites (v0.12.1). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
+description: llm-dojo-scoring pin and mailroom scoring suites (v0.12.2). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
 ---
 
 # llm-dojo-scoring (pinned engine)
 
 **When:** Extraction/classification KPIs, specialist suites, field types,
 honesty gaps, Langfuse score configs.  
-Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.12.1`
+Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.12.2`
 
 ## Rules
 
@@ -35,10 +35,14 @@ Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.
 | Score configs | `observability/scores.py` |
 | Taxonomy `field_types:` | `src/config/taxonomy.yaml` |
 
-v0.12.1 is additive on 0.11.0 formulas. Serving comparison lives in
+v0.12.2 is additive on prior formulas. Serving comparison lives in
 `llm_dojo_scoring.serving` (`get_suite("local_vs_api")`). Production
 `prompt_templates()` stay in this repo; `llm_dojo_scoring.prompts` is the
 scored snapshot (anti-priming).
+
+Bump the pin with `src/scripts/bump_dojo_scoring.py` (or wait for
+`.github/workflows/bump-dojo-scoring.yml` when dojo publishes). See
+[docs/sister-repos.md](../../../docs/sister-repos.md).
 
 ## Related
 
