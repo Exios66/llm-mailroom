@@ -192,7 +192,10 @@ def test_parse_hf_row_joins_corporate_schema_gt_when_present():
     assert fields["record_type"] == "bylaws"
     assert fields["entity_name"] == "Revenue.com Corporation"
     assert fields["jurisdiction"] == "Nevada"
-    assert fields["key_provisions"] == ["annual meeting"]
+    assert fields.get("subject_matter") or fields.get("keywords")
+    assert "annual meeting" in str(fields.get("subject_matter") or "") or any(
+        "annual" in str(k).lower() for k in (fields.get("keywords") or [])
+    )
 
 
 def test_score_row_extraction_gates_homogeneous_insurance_gt():

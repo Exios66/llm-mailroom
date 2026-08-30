@@ -163,7 +163,7 @@ def prompt_templates() -> dict[str, str]:
         # missing from this registry and so never synced to Langfuse.
         "sorter": _langchain_prompt("sorter_v14"),
         "sorter_reviewer": sorter_reviewer.REVIEWER_SYSTEM_PROMPT,
-        "contracts_specialist": _langchain_prompt("contracts_specialist_v32"),
+        "contracts_specialist": _langchain_prompt("contracts_specialist_v33"),
         "corporate_records_specialist": corporate_records_specialist.SYSTEM_PROMPT,
         "correspondence_specialist": correspondence_specialist.SYSTEM_PROMPT,
         "compliance_specialist": compliance_specialist.SYSTEM_PROMPT,

@@ -133,7 +133,13 @@ def test_export_cli_json(warehouse_env, temp_base_dir, capsys):
     sys.argv = ["export_warehouse.py", "--full", "--json"]
     assert main() == 0
     out = capsys.readouterr().out.strip()
-    start = out.find("{")
+    # Prefer the last JSON object on stdout (structlog noise may precede it
+    # when LOG_LEVEL was already configured by an earlier test).
+    start = out.rfind("\n{")
+    if start >= 0:
+        start += 1
+    else:
+        start = out.find("{")
     assert start >= 0, out
     payload = json.loads(out[start:])
     assert payload["exported_documents"] >= 1

@@ -27,9 +27,25 @@ def get_doc_class(doc_type: str) -> dict | None:
     return None
 
 
-def get_confidence_thresholds() -> dict:
+def get_confidence_thresholds(doc_type: str | None = None) -> dict:
+    """Return confidence / Lane B budgets, optionally merged with per-class severity.
+
+    Global keys always present. When ``doc_type`` resolves to a ``by_class``
+    entry, that class's ``high`` / ``low`` / ``judge_band_high`` override the
+    globals. Retry budgets (``retry_max``, ``arbiter_retry_max``,
+    ``judge_max_passes``) stay global unless a class entry sets them.
+    """
     cfg = load_config()
-    return cfg.get("confidence", {})
+    base = dict(cfg.get("confidence", {}) or {})
+    by_class = base.pop("by_class", None) or {}
+    if doc_type:
+        resolved = resolve_extract_class(doc_type) or doc_type
+        overrides = by_class.get(resolved) if isinstance(by_class, dict) else None
+        if isinstance(overrides, dict):
+            for key, value in overrides.items():
+                if value is not None:
+                    base[key] = value
+    return base
 
 
 def get_all_doc_types() -> list[str]:

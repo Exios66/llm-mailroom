@@ -110,7 +110,8 @@ def test_hollow_extraction_retries_then_reviews():
     }
     assert extraction_is_hollow(hollow["extracted_data"]) is True
     assert after_extraction(hollow) == "retry_extract"
-    assert after_extraction({**hollow, "extraction_attempts": 2}) == "human_review"
+    assert after_extraction({**hollow, "extraction_attempts": 2}) == "retry_extract"
+    assert after_extraction({**hollow, "extraction_attempts": 3}) == "human_review"
 
 
 def test_expected_field_coverage_below_floor_retries():
@@ -131,7 +132,8 @@ def test_expected_field_coverage_below_floor_retries():
         state["extracted_data"], state["ground_truth"]["expected_fields"]
     ) < 0.70
     assert after_extraction(state) == "retry_extract"
-    assert after_extraction({**state, "extraction_attempts": 2}) == "human_review"
+    assert after_extraction({**state, "extraction_attempts": 2}) == "retry_extract"
+    assert after_extraction({**state, "extraction_attempts": 3}) == "human_review"
 
 
 def test_routing_coverage_excludes_eval_extras_and_posthoc():
@@ -180,11 +182,12 @@ def test_correspondence_null_recipient_validates():
         "additional_recipients": [],
         "communication_type": "press_release",
         "communication_date": "2001-07-18",
-        "key_points": ["Announcement"],
+        "intent": "announce",
+        "subject_matter": "Announcement",
+        "keywords": ["Announcement"],
         "demand_amount": None,
         "action_items": [],
         "urgency": "routine",
-        "referenced_communications": [],
         "confidence": 0.9,
     }
     from pipeline.extraction_normalize import normalize_specialist_extraction

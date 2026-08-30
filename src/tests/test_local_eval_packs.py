@@ -67,7 +67,7 @@ def test_score_local_packs_exercises_scorer_not_hub_accuracy():
     corporate = packs["corporate_extraction"]
     assert corporate["hub_extract_is_subclass_only"] is True
     assert "entity_name" in corporate["schema_fields"]
-    assert "key_provisions" in corporate["schema_fields"]
+    assert "subject_matter" in corporate["schema_fields"]
     assert "signatories" in corporate["schema_fields"]
     assert corporate["perfect_extract"]["n"] == 2
     assert corporate["perfect_extract"]["extraction_overall_mean"] is not None

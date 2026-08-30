@@ -37,7 +37,9 @@ Your decision options (choose exactly one):
 1. "accept_with_caveats" — the extraction is materially sound. The judge's
    complaints are cosmetic (formatting variants, conservative completeness
    calls, fields genuinely absent from the visible source). The pipeline
-   proceeds with the extraction; your caveats are recorded in the audit log.
+   proceeds with the extraction; your caveats are recorded in the audit log
+   (event arbiter_decided) and copied onto the archived or review/failed
+   manifest for the archivist.
 2. "retry_extraction" — a small, named set of fields failed for a recoverable
    reason (missed evidence the source actually contains, wrong format, a
    dropped list item). List the specific fields to fix. The pipeline re-runs

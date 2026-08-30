@@ -193,6 +193,31 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
             raw = row.get(key)
         if raw not in (None, ""):
             sample[key] = coerce_gt_value(raw)
+    # Legacy Hub columns → pared semantic enrichment fields.
+    legacy_provisions = coerce_gt_value(
+        gt.get("key_provisions")
+        if gt.get("key_provisions") not in (None, "")
+        else row.get("key_provisions")
+    )
+    if isinstance(legacy_provisions, list) and legacy_provisions:
+        sample.setdefault("subject_matter", str(legacy_provisions[0])[:240])
+        sample.setdefault(
+            "keywords",
+            [" ".join(str(p).split()[:4]) for p in legacy_provisions[:8]],
+        )
+        sample.setdefault("intent", "record_governance")
+    legacy_points = coerce_gt_value(
+        gt.get("key_points")
+        if gt.get("key_points") not in (None, "")
+        else row.get("key_points")
+    )
+    if isinstance(legacy_points, list) and legacy_points:
+        sample.setdefault("subject_matter", str(legacy_points[0])[:240])
+        sample.setdefault(
+            "keywords",
+            [" ".join(str(p).split()[:4]) for p in legacy_points[:8]],
+        )
+        sample.setdefault("intent", "correspondence")
     return sample
 
 
@@ -1370,7 +1395,7 @@ def check_contract() -> int:
     corp_pack = packs["corporate_extraction"]
     assert corp_pack["hub_extract_is_subclass_only"] is True
     assert "entity_name" in corp_pack["schema_fields"]
-    assert "key_provisions" in corp_pack["schema_fields"]
+    assert "subject_matter" in corp_pack["schema_fields"]
     assert corp_pack["perfect_extract"]["n"] >= 2
     honesty = hf_corpus_honesty()
     assert honesty["compliance_filing"]["in_hf_pilot"] is False

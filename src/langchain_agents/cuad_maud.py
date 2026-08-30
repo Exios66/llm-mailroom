@@ -189,9 +189,13 @@ def infer_merger_consideration(extracted: dict | None) -> str:
             token = normalize_consideration(line.split(":", 1)[-1])
             if token:
                 return token
-    blobs = data.get("key_obligations") or []
-    if isinstance(blobs, list):
-        return normalize_consideration(" ".join(str(x) for x in blobs))
+    blobs = []
+    for key in ("maud_clauses", "cuad_clauses", "key_obligations"):
+        val = data.get(key) or []
+        if isinstance(val, list):
+            blobs.extend(str(x) for x in val)
+    if blobs:
+        return normalize_consideration(" ".join(blobs))
     return ""
 
 # Inventory fields are document-specific (not matter identity) and empty is a

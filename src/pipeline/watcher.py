@@ -18,6 +18,8 @@ from .logging import setup_logging
 
 setup_logging()
 
+logger = structlog.get_logger(__name__)
+
 # O-1: kick the score-config warm-up off the document path at startup.
 from observability.scores import warmup_score_configs
 from observability.tracing import install_on_dropped

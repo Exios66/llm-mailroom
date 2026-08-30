@@ -279,7 +279,7 @@ def extraction_diagnostics(
     metrics["entity_list_precision"] = _field_bucket(precision)
     metrics["entity_list_recall"] = _field_bucket(recall)
     metrics["entity_list_raw_f1"] = _field_bucket(raw_f1)
-    ko = "key_obligations"
+    ko = "cuad_clauses"
     if precision.get(ko):
         metrics["list_precision"] = _mean(precision[ko])
         metrics["list_recall"] = _mean(recall[ko])
