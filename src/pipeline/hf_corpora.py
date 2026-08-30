@@ -22,7 +22,7 @@ from typing import Any
 ORG = "Lucius-Morningstar"
 FULL_CORPUS_SCHEMA = "v5"
 FULL_CORPUS_ID = f"{ORG}/docclass-merged"
-FULL_CORPUS_REVISION = "5d69bccae172f19c199ba6317f57c3390b7178a9"
+FULL_CORPUS_REVISION = "1d4753578d91aae09033b359bc32dc1b431e4c20"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in docclass-merged v5. Not the same as the six live
