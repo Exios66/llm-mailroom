@@ -7,182 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.6.0] - 2026-08-30
+
+Minor release: **pared LLM load** for the live document pipeline. Happy-path
+archive is classify + extract only (two generations), then a procedural
+matter-record assemble → catalog → archivist. Extraction schemas drop
+open-ended obligation dumps in favor of CUAD/MAUD/insurance checklists and a
+semantic trio where specified. Severity-aware gates and higher retry budgets
+tighten auto-archive while HITL remains a recovery path into archive.
+
+### Changed
+
+- **Happy-path LLM count = 2.** `compile_report` / `agents/reporter.py` is
+  procedural (no `get_llm("reporter")`). Archivist remains the success-path
+  durable sink.
+- **Pared extraction schemas.** Contracts/mergers: key entities +
+  `cuad_clauses` / `maud_clauses`. Insurance: key entities + semantic trio +
+  `claim_checklist`. Corporate/correspondence: key entities + `intent` /
+  `subject_matter` / `keywords`. Compliance stays slim key entities. Retired
+  product fields: open `key_obligations` / `termination_clauses` /
+  `key_provisions` / long `key_points`.
+- **Severity-aware confidence gates** in `taxonomy.yaml` (`by_class`):
+  critical contracts/mergers/insurance (`high=0.98`), high compliance
+  (`0.97`), elevated corporate (`0.96`), standard correspondence (`0.95`).
+  Budgets: `retry_max=2`, `arbiter_retry_max=2`, `judge_max_passes=3`.
+- **Arbiter/judge fields** persist on archive and review/failed manifests,
+  sidecars, catalog, and audit.
+- **HITL bin mapping** documented and pinned: approved resume/complete →
+  archive; reject → failed; requeue → inbox; post-resume soft miss re-parks
+  review.
+- **Docker producer hardening:** multi-stage non-root image, `HEALTHCHECK`,
+  compose `no-new-privileges`, Langfuse compose secrets via env passthrough
+  (GitGuardian-clean empty mappings).
+
 ### Fixed
 
-- **Aborted runs now carry a `failure_class`.** `run_pipeline` used to park every
-  crash as `unexpected error`. Timeouts, 401/403, 429s, I/O, and budget aborts
-  are classified (`llm_timeout` / `llm_auth` / `llm_rate_limit` / `io_error` /
-  `run_budget`) on the failed manifest, audit entry, and result state.
+- **Aborted runs now carry a `failure_class`.** Timeouts, 401/403, 429s, I/O,
+  and budget aborts are classified on the failed manifest, audit entry, and
+  result state.
 - **REVIEW Complete rejects cross-class extraction payloads.** Operator
-  `extracted_data` is validated against the parked document's specialist schema;
-  correspondence fields on a contract manifest now 400 instead of archiving.
-- **Stale-claim requeue is idempotent.** If inbox already has the same bytes,
-  the processing copy is dropped. A different file at the same name gets a
-  `--stale` suffix instead of overwriting.
-- **Complete without a JSON body no longer 400s when extraction is already parked.**
-  `POST /review/{doc_id}/resolve` `disposition=complete` used to require a
-  non-empty `extracted_data` object, so The-Mailroom's Complete button failed
-  HTTP 400 when the REVIEW textarea was still empty (catalog probe in flight,
-  or the operator accepted the parked fields). The producer now uses the
-  parked manifest payload, accepts a JSON string, and only 400s when neither
-  the body nor the manifest has extraction.
+  `extracted_data` is validated against the parked document's specialist schema.
+- **Stale-claim requeue is idempotent.** Duplicate inbox bytes are dropped;
+  name collisions get a `--stale` suffix.
+- **Complete without a JSON body** uses the parked manifest payload when the
+  operator accepts existing extraction.
 
 ### Added
 
 - **Reachable producer for The-Mailroom REVIEW resolve.** Root `Dockerfile`
-  serves `python -m api.main` on `0.0.0.0:7860` (Spaces convention;
-  off-loopback still requires `MAILROOM_API_TOKEN`). Local pair:
-  `deploy/docker-compose.producer.yml` on `:8000`. Hosted:
-  `src/scripts/publish_space.py` publishes a Docker Space
-  (`mailroom-producer`). Visualizer knobs stay
-  `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` (same value as
-  `MAILROOM_API_TOKEN`). `GET /health` advertises `producer` /
-  `review_resolve`. `MAILROOM_API_PORT` falls back to `PORT` for
-  Fly/Render/Spaces.
-
-- **Visualizer PR #30 pairing (Observatory + Inbox upload).** The-Mailroom
-  Observatory **Queue a document** proxies `POST /v1/upload` (202). Health
-  advertises `inbox_upload`. The three visualizer knobs are documented
-  everywhere operators look (`MAILROOM_PIPELINE_URL` +
-  `MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1`). A Space
-  Observatory cannot use `127.0.0.1` — it needs the public producer Space
-  URL. Checklist: `deploy/space/PAIRING.md`. `publish_space.py` prints those
-  knobs after a Hub publish.
-
-- **API token rotation.** `MAILROOM_API_TOKENS` (csv) adds live bearer keys;
-  `MAILROOM_API_TOKEN_REVOKED` subtracts retired ones. Primary
-  `MAILROOM_API_TOKEN` still works. Off-loopback bind still requires at least
-  one live token.
+  serves `python -m api.main` on `0.0.0.0:7860`. Local pair:
+  `deploy/docker-compose.producer.yml`. Hosted Space publisher:
+  `src/scripts/publish_space.py`.
+- **Visualizer Observatory pairing** (`MAILROOM_PIPELINE_URL` + token +
+  `/v1` prefix). Checklist: `deploy/space/PAIRING.md`.
+- **API token rotation** via `MAILROOM_API_TOKENS` /
+  `MAILROOM_API_TOKEN_REVOKED`.
+- **Parked-document source** `GET /documents/{doc_id}/source` for the REVIEW
+  text pane (`?download=1` for bytes).
+- **Dojo 0.12.1 pin** (`llm-dojo-scoring`).
 
 ### Notes
 
-- A forensic report claimed 22 `SCORE_CONFIGS` names were missing from
-  llm-dojo-scoring v0.12.1 and that pytest collection failed. Against the
-  installed 0.12.1 registry those names are present (0 missing; 768 tests
-  collect). `test_forensic_claimed_missing_scores_are_in_dojo_registry` is the
-  tripwire. Splitting `build_graph.py` remains known maintenance debt; this
-  change classifies failures instead of a risky node extract.
-
-### Added
-
-- **Parked-document source for The-Mailroom PR #20.** `GET /documents/{doc_id}/source`
-  returns extracted/transcribed text JSON for the REVIEW text pane;
-  `?download=1` streams original bytes ("Open original"). `/v1` alias included.
-  Resolve now accepts visualizer `doc_type` / `doc_subclass` (alias of
-  `override_doc_type`), returns `class_override`, and stamps class fields on
-  the inbox `.meta` sidecar for `requeue`. Prefer REVIEW desk buttons over
-  hand-typed curls; producer try-it-out remains at `/docs`.
-
-- **Dojo 0.12.1 pin (serving comparison + scorecard).** `pyproject.toml` now pins
-  `llm-dojo-scoring @v0.12.1` (`5377f00`). Adds the `local_vs_api` serving
-  suite (`compare_serving` table/scorecard/cost card). v0.11.0 scoring formulas
-  unchanged; mailroom does not emit serving metrics until a caller records them.
-
-- **Human-review resolve for The-Mailroom PR #18 (producer half).** `GET /lookup`
-  (by `doc_id` / `trace_id` / `filename`), `GET /review/queue` (REVIEW tray with
-  available actions), and disposition-aware `POST /review/{doc_id}/resolve`
-  accepting JSON or form: `resume` (default approve→re-extract / reject→failed),
-  `record` (audit paper trail, file stays put), `requeue` (copy source → inbox),
-  `complete` (archive with human `extracted_data`, no LLM). Optional
-  `override_doc_type` / subtype / subclass reroutes classification before
-  resume/complete. `/v1` aliases for the new routes. Module:
-  `pipeline/review_resolve.py`.
-
-- **Full local audit DB analysis.** `GET /audit` plus CLI
-  `scripts/analyze_audit_db.py` (`--json`, `--no-verify`, `--join-catalog`)
-  summarize event/actor histograms, review events, and hash-chain health across
-  every document. Storage alternatives write-up:
-  `docs/reports/audits/2026-08-27-local-storage-alternatives-for-audit-and-review.md`
-  (keep SQLite for live ops; Parquet/DuckDB as analytics companions).
-
-- **Parquet warehouse for finished documents.** `storage/warehouse.py` writes
-  `data/warehouse/documents_YYYY-MM-DD.parquet`, matching
-  `audit_YYYY-MM-DD.parquet`, and `manifest.json` (schema version + watermark).
-  Routine export after archive/failed (`MAILROOM_WAREHOUSE_EXPORT=auto|1|0`).
-  Backfill CLI: `scripts/export_warehouse.py` (`--full`, `--date`, `--doc-id`).
-
-- **First-pass production STP score (`success_rate`).** Every finished run
-  emits the registered dojo metric as a 0/1 flag: archived in one pass with
-  no retry, Lane A, arbiter, boss, human review, guardrail, or transient
-  reprocess. No ground truth. Langfuse Performance dashboard charts the
-  live+pilot rate and count. `GET /ops/status` reports `first_pass` /
-  `first_pass_rate`. The-Mailroom metrics tiles FIRST PASS from this score.
-
-- **LangGraph `interrupt()` HITL.** `human_review_node` parks the file in `review/` (idempotent upsert) and pauses with `interrupt()`. Approve resumes via `Command(resume={"decision": "approved"})` into a **fresh extract** (never the reviewed payload). Reject ends the run. A process-level compiled graph keeps the MemorySaver alive in-process (API embeds the watcher). After process restart the checkpoint is gone and `resume_from_review` falls back to today's re-invoke-from-extract. Manifests store `checkpoint_thread_id`.
-
-- **Chunked extraction for every live specialist.** Corporate records, correspondence, compliance, and insurance claims now use the same overlapping-window pass as contracts (`BaseAgent.extract_chunked`). Window size is capped at the agent's `max_input_chars`. `retry_extract_node` no longer hard-truncates to 25k chars — previous-attempt context rides in `handoff_context` so every window sees it.
-
-- **`extraction_category_presence` wired on grounded contract/MAUD runs.** Presence expectations are derived from Hub `cuad_clause_labels` or flattened `expected_fields.cuad_clauses`. The score is omitted when there is no CUAD presence GT (not emitted as 0.0).
-
-- **Project Cursor Agent Skills** under `.cursor/skills/` (companion to [local-mailroom-sandbox#4](https://github.com/Exios66/local-mailroom-sandbox/pull/4)). Router + dedicated skills for OpenRouter, Ollama, Modal, Langfuse, Phoenix, Braintrust, Hugging Face, LangGraph, dojo-scoring, and LegalBench so agents pick the stack this repo actually uses instead of inventing parallel providers or sinks.
-
-### Fixed
-
-- **`deterministic_verdict` is not a `SCORE_CONFIGS` name.** It is still computed and attached on grounded field-scoring traces, but it is not in the dojo 0.11.0 registry, so listing it in `SCORE_CONFIGS` crashed module import (KANBAN-061).
-
-- **Dedicated extraction scoring for every live specialist, with post-hoc GT.** Hub official labels (CUAD clauses, MAUD questions, CMS columns, subclass tokens) still win. Remaining specialist schema fields are filled from conservative regexes over the source text (`observability/posthoc_gt.py`) so every included document — not just contracts — has scorable `expected_fields`. Each live extract class has a dedicated suite in `observability/specialist_suites.py` (`get_suite(doc_class)`). `merger_agreement` keeps sharing the `contracts_specialist` *agent* but uses the rebound MAUD suite, not CUAD families. HF reports add a per-specialist extraction table. `compliance_filing` stays out of Hub `--real` (zero rows); local pack + post-hoc labels cover mock/check. Post-hoc fills are provenance-tagged and never billed as official Hub annotations.
-
-- **Per-agent isolation eval.** `scripts/run_agent_eval.py` + `observability/agent_eval.py` score one LLM role against fixtures, local packs, and the live manifest without running the 13-node graph. `--real` is gated by `is_real_sample` the same way `run_pilot.py` is. Live Langfuse evaluators stay pipeline-level (`pipeline-result`) by design.
-
-- **Insurance-claim letters on the live pilot manifest.** Three synthetic mock-only PDFs (`insurance_01` approved / `insurance_02` denied / `insurance_03` partial) rendered from `docs/examples/sources/insurance/`, with schema-complete `expected_fields` matching the local contrast pack. `--mock` now covers all six live taxonomy classes (25 samples); `--real` still refuses the synthetics.
-
-- **`mailroom-image_extractor` managed prompt** plus production doctrine. Image extraction no longer borrows the sorter's prompt identity.
-
-- **Instruction-suite coverage for remaining LLM roles.** Skill markdown under `src/langchain_agents/skills/<agent>/` for specialists, reviewer, arbiter, boss, judge, reporter, pdf_transcriber, and image_extractor; `BaseAgent.system_prompt_with_skills()` appends them at call time.
-
-### Changed
-
-- **Class / subclass examples come from Hugging Face, not invented stand-in text.** `pipeline/hf_corpora.py` registers the Lucius-Morningstar corpora. The targeted full corpus is `Lucius-Morningstar/docclass-merged` schema **v5** (1,210 docs, Hub SHA `d2c96ecb…`). One example of every type and subtype is the committed pack `notebooks/fixtures/huggingface/class_subclass_examples.json` (48 strata from `docclass-pilot`). `--mock` on `run_hf_pilot.py` uses that pack; `--examples` / `--dataset examples` loads the Hub pilot; `--dataset enron` (and `claims`, `cuad`, …) selects the other pipeline-ready Hub sets. `legalbench-full` stays a LegalBench CLI task pack, not a document-pipeline ingest. Local committed PDFs remain PDF-ingest fixtures — they are not the class catalog.
-
-- **Classification scoring no longer treats MAUD as CUAD.** Exact class match is the only class KPI (`observability.classification_scoring`). Predicting `contract` when GT is `merger_agreement` is a miss. HF `aligned_accuracy` is a deprecated JSON alias of exact (`aligned_equals_exact: true`); report markdown dropped the `aligned (merger≡contract)` headline and adds per-subclass strata. Grounded runs emit `class_correct` from `emit_pipeline_scores`. Dojo 0.11.0 `mailroom.align_doc_type` is not used.
-
-- **`merger_agreement` is a live MAUD class, not a CUAD contract alias.** Taxonomy, schema, sorter labels, HF `expected_doc_class`, and reconsideration GT comparison treat MAUD merger agreements as their own document class. Predicting `contract` when GT is `merger_agreement` is a class miss (Lane A). Extraction still uses `contracts_specialist` (shared `ContractExtraction` field map including `maud_clauses`). HF `ALIGN` no longer maps MAUD ≡ CUAD. Pilot `manifest.csv` files the six LegalBench MAUD samples as `merger_agreement` (not `contract`).
-
-- **Operational finalization.** `archive_node` missing-file paths call `_finalize_aborted` (failed bin + catalog). Watcher stale-claim reconcile retires to `failed/` when a terminal manifest exists, else requeues. Watcher exceptions after `claim_file` finalize the claim. `GET /health` reports `status=degraded` when the watcher lamp is `stale` or `missing`.
-
-- **Scoring completeness.** `judge_verify_node` emits in-pipeline judge scores; grounded runs emit `stage_correct`; field scoring attaches `deterministic_verdict` (CORRECT/PARTIAL/MISS) and treats class mismatch as MISS. Taxonomy documents `judge_band_high: 0.85` and that `conflict_threshold` is an unused compatibility knob.
-
-### Added
-
-- **Live-floor producer contract (The-Mailroom PR #16).** `python -m api.main` embeds the inbox watcher by default (`MAILROOM_EMBED_WATCHER=1`; set `0` when a dedicated watcher process holds `watcher.lock`). Inbox handling listens for `on_moved` / `on_modified` as well as `on_created`, and the periodic rescan default is 1s. Each `traced_node` publishes `output.stage` and `flush()`es so envelopes move on the next visualizer poll. `GET /health` reports `checks.watcher` (`live`/`stale`/`missing`), `checks.watcher_embedded`, and `inbox_pending` that counts processable documents only (not `.meta` sidecars).
-
-- **Dojo 0.11.0 pin (scoring docs + prompt catalog).** `pyproject.toml` now pins `llm-dojo-scoring @v0.11.0` (`35f3584`). Formulas and T0 names are unchanged from 0.10.0. Mailroom consumes the new `MetricDef` `citation` / `inclusion` / `ground_truth` metadata (never invent `field_presence` as 0.0) and the importable `llm_dojo_scoring.prompts` catalog (anti-priming on live `prompt_templates()`, honest empty text for intake/archivist/proposed auditors). Production prompts stay owned here; the catalog is the scored snapshot.
-
-- **Reconsideration beyond self-reported confidence (The-Mailroom PR #14).** `pipeline/reconsideration.py` mirrors the visualizer cause tokens. Ground-truth class misses go to Lane A even at 0.99 confidence (reviewer still-wrong → human review). Hollow extracts and expected-field coverage below `confidence.low` retry then review. Failed `compile_report` withholds `catalog_write` so incomplete reports cannot archive.
-
-- **Local eval packs for remaining 0.10.0 honesty gaps.** Hub CMS `determination_consistency` is gated when GT is all-approved / empty denials (not reported as a quality KPI). A local approved/denied/partial contrast pack exercises the registered scorer. `compliance_filing` stays out of `HF_CLASSES` (zero Hub rows) and is scored from committed fixtures on `--check` / `--mock` only. `corporate_record` keeps Hub as subclass-only; a local schema-complete extraction pack is the extraction benchmark, and extra Hub GT columns are joined when present.
-
-- **Dojo 0.10.0 pin + field-micro / claims extras.** `pyproject.toml` now pins `llm-dojo-scoring @v0.10.0` (`3261cdd`). Grounded runs emit registered `extraction_f1` / `extraction_f2` / `extraction_precision` / `extraction_recall` / `entity_list_f1` plus insurance `determination_consistency` / `amount_exactness` (single-doc `suite.score` still returns `ExtractionScoreResult`; mailroom attaches those extras). Remaining honesty: CMS GT homogeneity, zero-row compliance, no external corporate extraction benchmark, retired court/DD.
-
-- **Dojo 0.9.0 honesty gaps, pinned rather than papered over.** Suite metadata (`honest_gap`, `in_corpus`, `retired`) is attached to grounded-run / `pipeline-result` metadata and to HF pilot `report.json` + `report.md`. Insurance determination-consistency is **not** a new SCORE_CONFIG (the name is not in the installed registry); mailroom runs a local `coverage_determination` ↔ `denial_reasons` invariant and records it as metadata. `compliance_filing` stays out of `HF_CLASSES` (zero Hub rows). `corporate_record` is scored as typed extraction + Hub subclass catalog, not as a CUAD-class extraction benchmark. Retired `court_opinion` / `due_diligence` stay parked (`list_suites(live_only=True)` excludes them; LegalBench remains the court benchmark).
-
-- **Dojo intake clerk profile (PR #5).** Pinned `llm-dojo-scoring` to `@v0.9.0` (PR #5 merge `f815544`) which replaces the emit-only `intake` stub with a computable pre-sorter prep profile. `agents/intake.py` is now a thin wrapper over `llm_dojo_scoring.intake` (byte-compatible `deterministic_normalize` / `looks_messy` / `intake_span_output`); mailroom still owns the `normalize-intake` span. Live ingest scores via `get_suite("intake")` (`intake_prep_completeness`, changed/messy rates, hyphen/blank counts).
-
-- **Dojo 0.9.0 specialist scoring suites + sorter subclass catalogs.** Pinned `llm-dojo-scoring` to the PR #4 merge (`c3dbe9da`) which ships dedicated `get_suite()` scoring for every specialist (Enron topic/sentiment extras on correspondence, MAUD per-question extraction on `merger_agreement`, WER/CER on the transcribers) and per-class sorter subclass catalogs. The sorter now emits `doc_subclass` alongside CUAD-only `contract_subtype`; grounded runs and the HF pilot score through `get_suite` so those extras land as Langfuse scores. Hub extraction inventories are unchanged (corporate_record stays five tokens).
-
-- **Intake clerk + HF docclass pilot runner (The-Mailroom production contract).** Procedural `agents/intake.py` (`deterministic_normalize` / `looks_messy`, byte-compatible with The-Mailroom's `mailroom_ui/intake_normalize.py`) runs after transcription and emits verb-first span `normalize-intake` under ingest. New `scripts/run_hf_pilot.py` (`--check` / `--mock` / `--real`) loads a stratified `Lucius-Morningstar/docclass-merged` subset, traces each doc as `document-pipeline` under session `pilot-hf-<UTC stamp>` with tags `mailroom`/`pilot`/`source-docclass-merged`, and writes `data/hf_pilot/<stamp>/report.json` for The-Mailroom `eval_pipeline.py`. Ground truth (`expected_hf_class`, `expected_doc_class`, `expected_subclass`) is on trace input and metadata. Reference production session: `pilot-hf-20260825T044207Z`.
-
-- **HF eval scale + LLM-as-a-judge overlay.** `run_hf_pilot.py` defaults to a unique `matter_id` per document (opt in to the old shared-matter Boss-conflict path with `--shared-matter`), writes `report.json` + `report.md` after every sample with exact/aligned/subclass accuracy plus cost/token/call/extraction metrics, and can `--finalize` an older report or `--resume` an interrupted corpus run. `run_quality_judges.py --hf-report` / `--hf-latest N` runs the classification/completeness/correctness judges on those reports and attaches scores to the existing `document-pipeline` traces.
-
-- **CUAD + MAUD clause inventory on the contracts specialist.** Schema, taxonomy `field_types`, and structured output now carry `cuad_family`, `merger_consideration`, `cuad_clauses` (all 41 Atticus categories as `'<Category>: <verbatim span>'`), and `maud_clauses` (`'<Question>: <Answer>'` for all 22 LegalBench MAUD questions, using Hub valid_class strings). Hub `ground_truth` columns `cuad_clause_labels` / `maud_clause_labels` join onto HF pilot rows as `expected_fields`. Handoff lists the full CUAD+MAUD inventory; post-extract enrich fills family/consideration when omitted. Same-class Boss conflicts skip inventory fields. Contracts specialist `max_tokens` is 8192 so a full clause inventory can complete.
-
-- **Hub subclass inventories on every specialist.** Corporate records, correspondence, compliance, and insurance claims now share the same hardening path as contracts: canonical Hub tokens in schema descriptions, extract-node handoff, post-extract enrich, Boss conflict-skip, and HF `expected_fields` join. Sorter/reviewer/judge/boss docclass rules discriminate SEC exhibit wrappers (charter/bylaws/rights BODY = `corporate_record`) from form bodies (`compliance_filing`), CMS/DE-SynPUF tables (`insurance_claim`: `pde`/`inpatient`/`outpatient`/`carrier`) from filings, and readable email/memo text (`correspondence`) from `unknown`. Production `prompt_templates()` bytes are unchanged. Specialist `max_tokens` is 8192.
-
-- **Docclass runtime arm + merger extract alias.** `MAILROOM_DOCCLASS_PROMPTS=1` (or `run_hf_pilot.py --docclass`) fetches namespaced `mailroom-docclass-<key>` prompts for every classification-chain agent, with the in-repo KANBAN-090 append as fallback. Production `mailroom-<agent>` templates stay untouched. Extract alias `merger_agreement` → `contract` lets the sorter emit the HF/MAUD label while the contracts specialist extracts; `state["doc_type"]` stays `merger_agreement` so exact HF accuracy can score 1.0. Retired `court_opinion` / `due_diligence` still park. Traces pick up a `docclass-prompts` tag when the arm is on.
-
-### Changed
-
-- **Pin `llm-dojo-scoring` `@v0.9.0`.** `pyproject.toml` now uses the tagged release (`git+…@v0.9.0`, target `f815544`) instead of a raw merge SHA.
-
-- **Langfuse data-model + batching.** The SDK client now receives release, environment, and optional `flush_at` / `flush_interval` / timeout / sample-rate from env. The `document-pipeline` root is a **chain**; graph nodes use specific observation types (`agent` / `evaluator` / `retriever` / `generation` / `span`) instead of a generic span. Short-lived scripts call `ensure_process_tracing()` so process exit runs `flush()` then `shutdown()`. LegalBench question observations are the stable name `answer-question` (index lives in metadata). Optional `MAILROOM_TRACE_USER_ID` propagates as `user_id`.
-
-- Sorter and sorter_reviewer `reasoning_effort` is `none` so Qwen 3.7-Flash reserves the completion budget for JSON (production HF runs hit `LengthFinishReasonError` with medium reasoning).
-- Langfuse score transport aliases `extraction_overall_verified_precision` → `extraction_verified_precision` (35-character config name limit).
-- LLM retry: 429/upstream quota waits use `rate_limit_base_delay` (8s, cap 60s) and 5 attempts. HF pilots default embeddings off and insert a 1.5s gap between documents so corpus runs do not stampede the shared OpenRouter pool.
-
-### Fixed
-
-- Insurance-claim schema accepts `adjuster: null` (CMS / DE-SynPUF rows have no named adjuster). JSON schema type is `["string", "null"]` so a valid extract no longer fails `schema_valid` and parks in REVIEW.
+- Audit write-up:
+  `docs/reports/audits/2026-08-30-pare-llm-load-tight-gates-hitl-bins-docker.md`.
+- PRs: #58 (pare LLM load), #59 (GitGuardian compose passthrough).
 
 ## [v0.5.0] - 2026-08-25
 
@@ -625,7 +513,8 @@ Minor release covering everything since v0.4.1. Live pipeline is **five document
 - File moves in `pipeline/bins.py` now use `shutil.move`; default file-extension fallback added.
 - Watcher and ops-monitor robustness fixes; audit log writer made async-safe; `Matter.opened_at` made timezone-aware.
 
-[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.6.0...HEAD
+[v0.6.0]: https://github.com/Exios66/llm-mailroom/compare/v0.5.0...v0.6.0
 [v0.5.0]: https://github.com/Exios66/llm-mailroom/compare/v0.4.1...v0.5.0
 [v0.4.1]: https://github.com/Exios66/llm-mailroom/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/Exios66/llm-mailroom/compare/v0.3.2...v0.4.0
