@@ -18,7 +18,7 @@ each lives. (All links verified 2026-08-23.)
 │  corpus feed repos     │──▶│        llm-mailroom          │
 │  Enron-Eval-Environment│   │  (this repo — the pipeline)  │
 │  claims-data-eda       │   └──────────┬───────────────────┘
-│  atticus-investigation │              │ pinned dependency @v0.12.1
+│  atticus-investigation │              │ pinned dependency @v0.12.2
 └────────────────────────┘              ▼
                           ┌──────────────────────────────┐
                           │     llm-dojo-scoring         │
@@ -41,7 +41,7 @@ HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
 | Repository | Role | Relationship to mailroom |
 |---|---|---|
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board and discussion log with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog, `local_vs_api` serving comparison) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.12.1` / [PR #10](https://github.com/Exios66/llm-dojo-scoring/pull/10)); v0.12.0 local-vs-API suite + v0.12.1 scorecard/table ([PR #9](https://github.com/Exios66/llm-dojo-scoring/pull/9)/[#10](https://github.com/Exios66/llm-dojo-scoring/pull/10)) |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog, `local_vs_api` serving comparison) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.12.2` / [PR #11](https://github.com/Exios66/llm-dojo-scoring/pull/11)); auto-bump via `.github/workflows/bump-dojo-scoring.yml` |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
@@ -78,10 +78,15 @@ The scoring layer both mailroom and entity-extraction consume:
   **agent profiles** covering every mailroom agent, and
   `DOC_TYPE_BUNDLES` keyed on the processed document classes with the
   explicit-fallback honesty resolver (`resolve_doc_bundle()`).
-- Pinned as a git dependency (`@v0.12.1` at time of writing); mailroom wires
+- Pinned as a git dependency (`@v0.12.2` at time of writing); mailroom wires
   its `taxonomy.yaml` scoring block onto package Settings via
   `observability/field_scoring.py` (a deprecation shim — imports should move
   to `llm_dojo_scoring.field_scoring`).
+- **v0.12.2** ([PR #11](https://github.com/Exios66/llm-dojo-scoring/pull/11))
+  is additive core-dependency alignment: `jellyfish>=1.0` moves into the
+  base install (no silent `difflib` fallback), plus new optional extras
+  `tracing` / `all` (and `openai` on the `embeddings` extra). Scoring
+  formulas from v0.12.1 are unchanged.
 - **v0.12.1** ([PR #10](https://github.com/Exios66/llm-dojo-scoring/pull/10))
   adds the `local_vs_api` serving suite: `compare_serving` tables, scorecards,
   and cost cards for local-vs-API-key runs. Document-pipeline scoring formulas
@@ -91,6 +96,40 @@ The scoring layer both mailroom and entity-extraction consume:
   `citation` / `inclusion` / `ground_truth`; `llm_dojo_scoring.prompts`
   vendors production + docclass templates with metric names in catalog
   metadata only (anti-priming). `field_presence` stays unemitted.
+
+### Auto-bump when dojo publishes
+
+Mailroom keeps the dojo pin current via
+`.github/workflows/bump-dojo-scoring.yml` and
+`src/scripts/bump_dojo_scoring.py`:
+
+1. **Preferred:** from `llm-dojo-scoring`'s release workflow, fire a
+   `repository_dispatch` at this repo:
+
+   ```yaml
+   - name: Notify llm-mailroom to bump pin
+     uses: peter-evans/repository-dispatch@v3
+     with:
+       token: ${{ secrets.MAILROOM_DISPATCH_TOKEN }}  # PAT with repo scope on llm-mailroom
+       repository: Exios66/llm-mailroom
+       event-type: dojo-scoring-released
+       client-payload: '{"tag": "v0.12.2"}'  # use github.event.release.tag_name
+   ```
+
+2. **Backstop:** the workflow also runs on a daily cron and via
+   `workflow_dispatch` (optional tag / dry-run inputs), polling
+   `Exios66/llm-dojo-scoring` releases/latest.
+
+3. When the pin is behind, the workflow opens (or updates) a PR on
+   `cursor/bump-dojo-scoring-<tag>` that rewrites `pyproject.toml` plus the
+   documented pin references. Merge after CI is green.
+
+Local check / apply:
+
+```bash
+PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check
+PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
+```
 
 ## Corpus feeds
 
