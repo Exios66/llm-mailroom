@@ -14,13 +14,13 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
-[![Release](https://img.shields.io/badge/release-v0.5.0-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.5.0)
+[![Release](https://img.shields.io/badge/release-v0.6.0-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.6.0)
 
 </div>
 
 | At a glance | |
 |---|---|
-| **Release** | [`v0.5.0`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.5.0) — see [CHANGELOG.md](CHANGELOG.md) |
+| **Release** | [`v0.6.0`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.6.0) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
 | **Agents** | LLM + procedural agents across 6 document classes (happy path: classify + extract only) |
 | **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
@@ -293,9 +293,11 @@ doc_classes:
 
 # Adjust thresholds:
 confidence:
-  high: 0.95       # classification >= this → auto-continue to extraction
-  low: 0.70        # below this → retry → still low → human review
-  retry_max: 1     # max retries before routing to review
+  high: 0.97       # global fallback; per-class by_class overrides after type known
+  low: 0.88        # below this → retry → still low → human review
+  retry_max: 2     # max classify/extract retries before routing to review
+  arbiter_retry_max: 2
+  judge_max_passes: 3  # 1 + arbiter_retry_max
 
 # Transient-failure LLM retries (connection errors, 429, 5xx):
 llm_retry:
