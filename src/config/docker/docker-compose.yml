@@ -9,7 +9,8 @@ services:
     container_name: mailroom-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mailroom}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env for local Langfuse}
+      # Value is an env substitution only (no committed credential).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
       POSTGRES_DB: ${POSTGRES_DB:-mailroom}
     ports:
       - "5432:5432"
@@ -27,7 +28,8 @@ services:
     environment:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-langfuse}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env for local Langfuse}
+      # Value is an env substitution only (no committed credential).
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?required}
     ports:
       - "8123:8123"
       - "9000:9000"
