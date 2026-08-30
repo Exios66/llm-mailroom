@@ -46,6 +46,9 @@ from .bins import (
 )
 from graph.build_graph import build_graph, run_pipeline
 
+logger = structlog.get_logger(__name__)
+
+
 def _finalize_claimed_on_error(claimed: Path | None, matter_id: str, reason: str) -> None:
     """Move a claimed file to failed/ if run_pipeline raised outside the graph.
 
