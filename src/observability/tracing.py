@@ -50,6 +50,16 @@ def resolve_provider_name() -> str:
     if os.environ.get("PHOENIX_TRACING", "enabled").strip().lower() in (
         "1", "true", "enabled", "yes", "on"
     ):
+        # Railway (and similar) has no local `phoenix serve`. Defaulting auto →
+        # phoenix there only burns memory against localhost:6006; skip unless
+        # the operator pointed PHOENIX_ENDPOINT at a real collector.
+        on_railway = bool(
+            os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID")
+        )
+        endpoint = os.environ.get("PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
+        local_only = ("localhost" in endpoint) or ("127.0.0.1" in endpoint)
+        if on_railway and local_only:
+            return "none"
         return "phoenix"
     return "none"
 

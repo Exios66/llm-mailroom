@@ -27,6 +27,8 @@ def _clear_observability_env(monkeypatch):
     monkeypatch.delenv("PHOENIX_ENDPOINT", raising=False)
     monkeypatch.delenv("PHOENIX_SERVICE_NAME", raising=False)
     monkeypatch.delenv("PHOENIX_PROJECT", raising=False)
+    monkeypatch.delenv("RAILWAY_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("RAILWAY_PROJECT_ID", raising=False)
     monkeypatch.setattr(langfuse_setup, "_langfuse_client", None)
     monkeypatch.setattr(braintrust_setup, "_configured", False)
 
@@ -44,6 +46,15 @@ class TestProviderResolution:
     def test_auto_prefers_langfuse_when_keys_present(self, monkeypatch):
         monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
         assert tracing.resolve_provider_name() == "langfuse"
+
+    def test_auto_skips_local_phoenix_on_railway(self, monkeypatch):
+        monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+        assert tracing.resolve_provider_name() == "none"
+
+    def test_auto_allows_remote_phoenix_on_railway(self, monkeypatch):
+        monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+        monkeypatch.setenv("PHOENIX_ENDPOINT", "https://phoenix.example.com/v1/traces")
+        assert tracing.resolve_provider_name() == "phoenix"
 
     def test_auto_uses_braintrust_when_only_braintrust_key(self, monkeypatch):
         monkeypatch.setenv("BRAINTRUST_API_KEY", "bt-test")
