@@ -25,7 +25,9 @@ from typing import Any
 ORG = "Lucius-Morningstar"
 FULL_CORPUS_SCHEMA = "v7"
 FULL_CORPUS_ID = f"{ORG}/docclass-merged"
-FULL_CORPUS_REVISION = "fc1f211c48e5f1f5a1a01c02f9e56c0e16e70a5f0"
+# v7 tip fc1f211c (issue #5 intent hydration + card bump); b3ec9ee7 is the
+# latest ground-truth push (intent/subject_matter/keywords for corpora).
+FULL_CORPUS_REVISION = "b3ec9ee7de3f2ca4f3b26e26d6989509d3b1121e"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in docclass-merged v7. Not the same as the six live
