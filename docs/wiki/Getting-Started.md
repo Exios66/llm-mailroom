@@ -9,11 +9,21 @@
 
 ## Step 1: Clone and Configure
 
+Standalone checkout (lightest path — this page's steps below):
+
 ```bash
-git clone <repo-url>
+git clone https://github.com/Exios66/llm-mailroom
 cd llm-mailroom
 cp .env.example .env
 ```
+
+Inside the **monorepo** ([mailroom-dev](https://github.com/Exios66/mailroom-dev)),
+this repo is already present as `packages/llm-mailroom` (git subtree) and the
+whole constellation installs with one `uv sync` at the monorepo root — skip
+Step 2's `pip install` and run `PYTHONPATH=src python -m api.main` from
+`packages/llm-mailroom`. The monorepo is the source of truth for
+cross-repository development; see
+[`docs/sister-repos.md`](https://github.com/Exios66/llm-mailroom/blob/main/docs/sister-repos.md).
 
 Edit `.env` with your OpenRouter key:
 
