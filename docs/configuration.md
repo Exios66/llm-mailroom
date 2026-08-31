@@ -6,13 +6,20 @@ This is the single source of truth for document classification, pipeline behavio
 
 ### Structure
 
+Top-level keys:
+
 ```yaml
-pipeline:
-  bins:                         # Filesystem paths (supports {base_dir} variable)
-  confidence:                   # Thresholds for routing decisions
-  doc_classes:                  # Document type definitions
-  file_extensions:              # Accepted file types
-  agents:                       # Per-agent model/provider configs
+pipeline:                      # bins + pdf_direct_chars_per_page
+llm_retry:                     # transient-failure retry tuning
+run_limits:                    # per-run deadline / token budget
+chunking:                      # chunked-extraction windows
+cost_models:                   # per-1M-token pricing for estimated_cost_usd
+confidence:                    # routing thresholds (high/low/retry/bands)
+field_scoring:                 # deterministic field-type-aware scorer
+vision:                        # additive page-image ingestion
+doc_classes:                   # document type definitions
+file_extensions:               # accepted file types
+agents:                        # per-agent model/provider configs
 ```
 
 ### `pipeline.bins`
@@ -101,18 +108,19 @@ doc_classes:
     label: "Correspondence"
     schema: CorrespondenceExtraction
     specialist: correspondence_specialist
-    description: "Letters, emails, memos, notices between parties or with regulators"
+    description: "Letters, emails, memos, notices, demand letters, press releases, meeting requests"
     field_types:
       sender: name
       recipient: name
       additional_recipients: entity_list
       communication_type: name
       communication_date: date
-      key_points: entity_list
       demand_amount: money
       action_items: entity_list
       urgency: name
-      referenced_communications: entity_list
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
 
   - key: compliance_filing
     label: "Compliance Filing"
@@ -126,6 +134,11 @@ doc_classes:
     specialist: insurance_claims_specialist
     description: "FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"
 ```
+
+> `merger_agreement` (MAUD) is a sixth live class: it reuses `ContractExtraction`
+> and the `contracts_specialist`, and its `field_types` mirror `contract`'s
+> (see `src/config/taxonomy.yaml`). The two labels are distinct classes, not
+> interchangeable.
 
 ### `field_scoring`
 
@@ -195,6 +208,14 @@ file_extensions:
   - .pdf
   - .docx
   - .md
+  - .jpg
+  - .jpeg
+  - .png
+  - .gif
+  - .bmp
+  - .webp
+  - .tiff
+  - .tif
 ```
 
 ### `agents`
@@ -214,17 +235,17 @@ Per-agent model and provider configuration. This is where agent-by-agent local m
 agents:
   sorter:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 2048
 
   contracts_specialist:
     provider: openrouter
-    model: openai/gpt-4o
+    model: qwen/qwen3.7-flash
     temperature: 0.1
-    max_tokens: 4096
+    max_tokens: 8192
 
-  # ... (one entry per agent; includes pdf_transcriber and judge)
+  # ... (one entry per agent; includes pdf_transcriber, image_extractor and judge)
 ```
 
 ### `llm_retry`
@@ -233,9 +254,10 @@ Transient-failure retry for LLM calls (`llm/retry.py`). Retries only connection 
 
 | Field | Default | Description |
 |---|---|---|
-| `max_attempts` | 3 | Max attempts including the first |
+| `max_attempts` | 5 | Max attempts including the first |
 | `base_delay` | 1.0 | Initial backoff seconds (doubles per attempt) |
-| `max_delay` | 30.0 | Backoff ceiling in seconds |
+| `rate_limit_base_delay` | 8.0 | Initial backoff for 429 / rate-limit responses |
+| `max_delay` | 60.0 | Backoff ceiling in seconds |
 | `jitter` | 0.3 | Random jitter fraction applied to each delay |
 
 ### `pipeline.pdf_direct_chars_per_page`
@@ -282,7 +304,7 @@ See `.env.example` for the complete list:
 | `PHOENIX_SERVICE_NAME` | No | `mailroom` | OTel service name |
 | `PHOENIX_PROJECT` | No | `mailroom` | Phoenix openinference project name |
 | `MAILROOM_CHECKPOINTER` | No | `memory` | LangGraph checkpointer backend: `memory` (MemorySaver default — process-level compiled graph so `interrupt()` HITL can resume in-process; review bin is the durable park, with extract-invoke fallback if the checkpoint is gone) or `sqlite` (on-disk SqliteSaver at `<MAILROOM_BASE_DIR>/checkpoints.db`, for debugging/resume-across-restart experiments) |
-| `MAILROOM_JUDGE_VERIFY` | No | `on` | Kill-switch for the judge-verify exception lane (KANBAN-063): set `off`/`false`/`0`/`no` to skip gated completeness verification entirely. When on, the lane fires only on grounded extractions landing in the ambiguous band (`low <= confidence < judge_band_high`, default 0.85) — clean high-confidence extractions cost zero added judge calls |
+| `MAILROOM_JUDGE_VERIFY` | No | `on` | Kill-switch for the judge-verify exception lane (KANBAN-063): set `off`/`false`/`0`/`no` to skip gated completeness verification entirely. When on, the lane fires on ANY extraction landing in the ambiguous band (`low <= confidence < judge_band_high`, effective default 0.95 from the `confidence:` config, per-class overrides apply) — clean high-confidence extractions cost zero added judge calls. Not ground-truth-gated: it guards extraction confidence, not whether a run is a pilot |
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `1` | Inbox rescan interval (seconds) |
 | `MAILROOM_EMBED_WATCHER` | No | on (off under pytest) | API lifespan starts the inbox watcher. Set `0` when a dedicated `python -m pipeline.watcher` holds `watcher.lock` |

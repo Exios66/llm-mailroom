@@ -18,6 +18,6 @@ This is the manual for the project — deeper, more detailed versions of everyth
 
 ## Technical reference
 
-- `docs/` is the **single source of truth** for repository documentation. `docs/wiki/` contains only GitHub-wiki-native pages (Home, Getting-Started, FAQ, _Sidebar, _Footer) and is pushed to the GitHub wiki via `docs/docs/wiki/sync-wiki.sh` — it is **not** a mirror of `docs/`.
+- `docs/` is the **single source of truth** for repository documentation. `docs/wiki/` contains only GitHub-wiki-native pages (Home, Getting-Started, FAQ, _Sidebar, _Footer) and is pushed to the GitHub wiki via `docs/wiki/sync-wiki.sh` — it is **not** a mirror of `docs/`.
 - `docs/agents.md` is an architecture doc about the pipeline's LLM agents — it is NOT an instruction file for coding assistants (that's `AGENTS.md` at the repo root).
 - This repo is also `packages/llm-mailroom` in the [mailroom-dev](https://github.com/Exios66/mailroom-dev) monorepo (uv workspace + git subtree). `docs/sister-repos.md` § mailroom-dev covers the subtree sync contract and the monorepo task board; cross-repo work is claimed there before editing (cards `HUB-00N`).

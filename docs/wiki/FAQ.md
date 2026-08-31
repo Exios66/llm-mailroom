@@ -2,19 +2,20 @@
 
 ## What is Mailroom?
 
-Mailroom is a multi-agent pipeline that ingests legal documents, classifies them, routes them to specialist agents for structured extraction, compiles the results into a matter record, and archives everything with a full audit trail.
+Mailroom is a multi-agent pipeline that ingests legal documents, classifies them, routes them to specialist agents for structured extraction, compiles the results into a matter record, and archives everything with a full, tamper-evident audit trail. One **LangGraph state machine run per document** (13 nodes), with retries, second-opinion review lanes, judge/arbiter quality gates, and human review routing.
 
 ## What document types does it handle?
 
-Seven first-class document classes:
+Six live taxonomy classes:
 
-- **Contracts** (MSAs, NDAs, employment agreements, etc. — 25 CUAD subtypes)
-- **Corporate Records** (bylaws, resolutions, board minutes, cap tables)
-- **Due Diligence** (checklists, disclosure schedules, diligence memos)
+- **Contracts** (CUAD commercial agreements — 25 agreement families: MSAs, NDAs, licenses, distribution, …)
+- **Merger Agreements** (MAUD — a distinct class reusing the contracts specialist)
+- **Corporate Records** (articles, bylaws, powers of attorney, rights instruments, other)
 - **Correspondence** (demand letters, legal notices, memos — corpus from the CMU Enron dataset)
-- **Compliance Filings** (SEC filings, state registrations, regulatory docs)
-- **Court Opinions** (published decisions, memorandum opinions, rulings)
-- **Insurance Claims** (FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters)
+- **Compliance Filings** (SEC filings, state filings)
+- **Insurance Claims** (FNOL lines + CMS DE-SynPUF `carrier`/`inpatient`/`outpatient`/`pde` claim types; coverage determinations approved/denied/partial)
+
+**Due diligence** and **court opinions** were retired from the live pipeline in v0.5.0 — they classify as `unknown` (human review), and there is no specialist dispatch for them. LegalBench remains the court-opinion benchmark surface.
 
 Adding a new class touches a known surface list (schema registry, taxonomy, specialist agent, graph dispatch, classifier vocabulary, sorter prompt) — see [the repo docs](https://github.com/Exios66/llm-mailroom/tree/main/docs).
 
@@ -22,13 +23,13 @@ Adding a new class touches a known surface list (schema registry, taxonomy, spec
 
 LangGraph provides:
 - A defined, explicit state machine — agents don't freely negotiate what happens next
-- Conditional edges for confidence-based routing, plus exception lanes: an agent second-opinion reviewer for exhausted medium-band classifications, and a gated judge→arbiter completeness-verification path for grounded extractions
+- Conditional edges for confidence-based routing, plus exception lanes: an agent second-opinion reviewer for exhausted medium-band classifications (Lane A), and a gated judge→arbiter completeness-verification path for grounded extractions (Lane B)
 - Human-in-the-loop via review routing (`human_review` node) for ambiguous or failed cases
 - In-memory checkpointing by default; opt-in SQLite persistence (`MAILROOM_CHECKPOINTER=sqlite`) for resume-across-restart experiments
 
 ## Can I use local models instead of OpenRouter?
 
-Yes. Set `DEFAULT_PROVIDER=ollama` in `.env`, or configure per-agent in `config/taxonomy.yaml`. See [Local Model Cutover](https://github.com/Exios66/llm-mailroom/blob/main/docs/local-models.md).
+Yes. Set `DEFAULT_PROVIDER=ollama` in `.env`, or configure per-agent in `config/taxonomy.yaml`. A pre-built Modal+vLLM serving app lives in `deploy/` (see [`docs/local-models.md`](https://github.com/Exios66/llm-mailroom/blob/main/docs/local-models.md)).
 
 ## What happens if the database is unavailable?
 
@@ -40,11 +41,11 @@ The pipeline degrades gracefully:
 
 ## What happens if Langfuse is unavailable?
 
-The system runs without it. The `observability/langfuse_setup.py` module has a noop client that handles all calls gracefully. The audit log is independent of Langfuse.
+The system runs without it. Tracing is backend-agnostic via `observability/tracing.py`: `OBSERVABILITY_PROVIDER=auto` picks Langfuse if a key is set, else Braintrust if a key is set, else the local cost-free Arize Phoenix backend, else `none` — tracing never silently turns off, and the audit log is independent of any observability backend.
 
 ## How does document claiming work?
 
-Watcher uses `os.rename()` to atomically move files from `/pipeline/inbox/` to `/pipeline/processing/<worker_id>/`. `os.rename` is atomic on the same filesystem, so no two workers can claim the same file. No external locking needed.
+Files move only through `pipeline/bins.py` helpers (`claim_file`, `move_to_*`, `save_manifest`) — never direct `os.rename`/`shutil.move` in node/agent code. The watcher atomically claims files from `/pipeline/inbox/` into `/pipeline/processing/<worker_id>/`; `os.rename` (via `move_to_*`) is atomic on the same filesystem, so no two workers can claim the same file.
 
 ## How does the audit trail work?
 
@@ -53,8 +54,8 @@ Every state transition writes an `AuditLogEntry` to the `audit_log` table. Each 
 ## What's the Boss agent?
 
 The Boss has two roles:
-1. **In-graph**: adjudicates conflicts when extraction data contradicts existing matter records
-2. **Ops-monitor**: separate process that sweeps the catalog for stuck documents, error spikes, and review backlogs
+1. **In-graph** (`boss_escalation` node): adjudicates conflicts when extraction data contradicts existing matter records or confidence stays low after retries
+2. **Ops-monitor** (`pipeline/ops_monitor.py`): separate scheduled process that sweeps the catalog for stuck documents, error spikes, and review backlogs
 
 Both share the same system-prompt "voice" but are triggered differently and see different data.
 
@@ -62,28 +63,27 @@ Both share the same system-prompt "voice" but are triggered differently and see 
 
 Matters are auto-created when you upload a document with a new `matter_id`. You don't need to create matters explicitly. The catalog records the matter on first document ingestion.
 
-## Does this support PDFs and DOCX?
+## Does this support PDFs and images?
 
-The `file_extensions` in `config/taxonomy.yaml` include `.pdf` and `.docx`. PDFs are transcribed by `agents/pdf_transcriber.py` and images by `agents/image_extractor.py`. DOCX is read as raw text via `read_text` in `ingest_node` (for production-grade DOCX support you'd add a `python-docx` extraction step).
+The `file_extensions` in `config/taxonomy.yaml` include `.txt`, `.pdf`, `.docx`, `.md`, plus image types (jpg/png/gif/webp/tiff/bmp). PDFs are transcribed by `agents/pdf_transcriber.py` (`pdfplumber`/`pypdf` direct pass for text-based files, LLM markdown reformat for scanned/garbled) and images by `agents/image_extractor.py`. Vision ingestion (page images appended to prompts for vision-capable models) is additive — the full text transcription is always the message body.
 
 ## What's the scale target?
 
-v1 targets pilot scale: dozens of documents/day per matter. The threaded watcher and single-process design is sufficient. For higher volumes, Redis-based queuing and multiple workers are planned as deferred work.
+Pilot scale: dozens of documents/day per matter. The threaded watcher and single-process design is sufficient. For higher volumes, Redis-based queuing and multiple workers are planned as deferred work.
 
 ## Where are my files stored?
 
-During processing: `data/pipeline/` (inbox, processing, classified, review, failed)
-After processing: `data/archive/<matter_id>/<doc_type>/`
-Manifests: `data/manifests/<doc_id>.json`
-
-`MAILROOM_BASE_DIR` controls the root (`./data` by default).
+Configurable bins under `MAILROOM_BASE_DIR` (default `./data`):
+- During processing: `pipeline/inbox`, `pipeline/processing/<worker_id>/` (plus `pipeline/classified/`, `pipeline/review/`, `pipeline/failed/`)
+- After processing: `archive/<matter_id>/<doc_type>/` with a manifest JSON sidecar in `manifests/<doc_id>.json`
+- Catalog + audit log: SQLite `mailroom.db` (Postgres via `DATABASE_URL`); crash-resume checkpoints: `checkpoints.db`
 
 ## How do I monitor the pipeline?
 
 Four ways:
 1. **The-Mailroom Observatory** — live floor [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory) plus this producer Space (`mailroom-producer`). Langfuse for envelopes; Inbox / REVIEW go through `MAILROOM_PIPELINE_URL` ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)). Pairing: [deploy/space/PAIRING.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/space/PAIRING.md).
 2. **Langfuse UI** (`https://us.cloud.langfuse.com` or `http://localhost:3000`) — live traces of every LLM call
-3. **`/ops/status` endpoint** — pipeline-wide metrics (stuck docs, review backlog, error rates)
+3. **`/ops/status` endpoint** — pipeline-level metrics (stuck docs, review backlog, error rates, first-pass rate)
 4. **Ops monitor** — automated Boss sweeps with alerts
 
 ## Why does Observatory REVIEW / Queue a document return 503?

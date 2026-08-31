@@ -58,8 +58,10 @@ pip install -e ".[dev]"
 ## 3. Database
 
 **Nothing to do** — SQLite tables are auto-created on first use. You'll see
-`data/mailroom.db` (catalog + audit log) and `data/checkpoints.db` (crash-resume
-state) appear after the first document is processed.
+`data/mailroom.db` (catalog + audit log) appear after the first document is
+processed. `data/checkpoints.db` (LangGraph crash-resume state) is **opt-in**:
+set `MAILROOM_CHECKPOINTER=sqlite` to use the on-disk SqliteSaver; the default
+checkpointer is in-memory (MemorySaver), so no checkpoint file is written.
 
 If you opted for Postgres, start it and initialize:
 
@@ -141,7 +143,7 @@ Use `systemd`, `supervisord`, or Docker to manage the three processes:
 
 ### Database
 
-- **Default:** a local SQLite file (`data/mailroom.db`). Back it up along with `data/checkpoints.db` and `/archive`.
+- **Default:** a local SQLite file (`data/mailroom.db`). Back it up along with `data/checkpoints.db` (present only when `MAILROOM_CHECKPOINTER=sqlite` is on) and `/archive`.
 - The audit log is append-only — size will grow over time.
 - For higher volume or multi-process setups, switch to Postgres via `DATABASE_URL` and consider partitioning `audit_log` by date for long-term retention.
 
@@ -241,7 +243,7 @@ The audit log is the compliance record — backup strategy is a critical concern
 | Artifact | Path | Purpose | Frequency |
 |---|---|---|---|
 | Catalog DB | `data/mailroom.db` | matters, documents, audit_log | Daily (or continuous) |
-| Crash-resume checkpoints | `data/checkpoints.db` | LangGraph in-flight state | Daily |
+| Crash-resume checkpoints | `data/checkpoints.db` | LangGraph in-flight state (only when `MAILROOM_CHECKPOINTER=sqlite` is set; default MemorySaver writes nothing) | Daily |
 | Archived documents | `data/archive/` | Final durable document copies | Continuous (as docs are archived) |
 | Manifests | `data/manifests/` | Self-contained per-document records (mirror of manifest JSON) | Daily |
 | Mirrored run logs | `data/langfuse_logs/` | Offline analysis copies of traces | Optional — only if you use `sync_langfuse_logs.py` |
