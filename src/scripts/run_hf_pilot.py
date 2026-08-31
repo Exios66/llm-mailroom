@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Hugging Face corpus pilot — the runner The-Mailroom orchestrates.
 
-Default corpus is ``Lucius-Morningstar/docclass-merged`` schema **v5** (the
-targeted full 1,210-doc surface). Class × subtype examples come from
+Default corpus is ``Lucius-Morningstar/docclass-merged`` schema **v7** (the
+targeted full 1,650-doc surface; v7 = issue #5 correspondence intent
+hydration). Class × subtype examples come from
 ``docclass-pilot``. Any other pipeline-ready Lucius-Morningstar dataset
 (``--dataset enron`` / ``claims`` / ``cuad``) can be ingested the same way,
 including the 247k-row Enron correspondence corpus.
@@ -934,7 +935,7 @@ def render_metrics_markdown(report: dict) -> str:
             "",
             "## Per subclass (Hub class × subtype strata)",
             "",
-            "Strata come from the v5 Hub inventories (`docclass-pilot` / "
+            "Strata come from the Hub inventories (`docclass-pilot` / "
             "`docclass-merged`). Predicting `contract` for a `merger_agreement` "
             "row is a class miss, not an aligned hit.",
             "",
@@ -1454,7 +1455,7 @@ def check_contract() -> int:
     compliance_gt = expected_fields_for_sample(compliance_sample)
     assert compliance_gt.get("filing_type")
     assert compliance_gt.get("entity_name")
-    assert DATASET_SCHEMA == "v5"
+    assert DATASET_SCHEMA == "v7"
     assert DATASET_ID == "Lucius-Morningstar/docclass-merged"
     assert DATASET_REVISION
     pack_classes = set(examples_by_class())
@@ -1655,13 +1656,13 @@ def main() -> int:
         "--dataset",
         default="docclass-merged",
         help="Lucius-Morningstar corpus slug or repo id (default: "
-             "docclass-merged v5). Aliases: v5/full, examples/pilot, "
+             "docclass-merged v7). Aliases: v5/v7/full, examples/pilot, "
              "enron, claims, cuad.",
     )
     parser.add_argument(
         "--examples",
         action="store_true",
-        help="Use docclass-pilot (every class × subclass stratum of v5) "
+        help="Use docclass-pilot (every class × subclass stratum) "
              "instead of the full merged corpus.",
     )
     parser.add_argument("--split", default="train")

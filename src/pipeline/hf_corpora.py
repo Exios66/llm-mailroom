@@ -1,11 +1,14 @@
 """Lucius-Morningstar Hugging Face corpora the mailroom pipeline can ingest.
 
-``Lucius-Morningstar/docclass-merged`` schema **v5** is the targeted full
-corpus (1,210 documents: CUAD contracts, MAUD merger agreements, S-1
+``Lucius-Morningstar/docclass-merged`` schema **v7** is the targeted full
+corpus (1,650 documents: CUAD contracts, MAUD merger agreements, S-1
 corporate records, Enron correspondence sample, CMS insurance claims).
+v7 adds correspondence intent hydration (issue #5): every correspondence row
+carries a canonical 8-class intent plus `intent_source` / `intent_confidence`
+/ `intent_status` provenance on the `ground_truth` config.
 
 Class × subclass examples come from ``docclass-pilot`` (a deterministic
-stratified slice of that v5 parent — every type and every subtype stratum).
+stratified slice of that parent — every type and every subtype stratum).
 Other published Lucius-Morningstar datasets are first-class pipeline inputs
 too, including the 247k-row Enron correspondence corpus.
 
@@ -20,12 +23,14 @@ from pathlib import Path
 from typing import Any
 
 ORG = "Lucius-Morningstar"
-FULL_CORPUS_SCHEMA = "v5"
+FULL_CORPUS_SCHEMA = "v7"
 FULL_CORPUS_ID = f"{ORG}/docclass-merged"
+# v7 tip fc1f211c (issue #5 intent hydration + card bump); b3ec9ee7 is the
+# latest ground-truth push (intent/subject_matter/keywords for corpora).
 FULL_CORPUS_REVISION = "b3ec9ee7de3f2ca4f3b26e26d6989509d3b1121e"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
-# Hub HF classes present in docclass-merged v5. Not the same as the six live
+# Hub HF classes present in docclass-merged v7. Not the same as the six live
 # taxonomy keys: compliance_filing is live in the pipeline but absent on Hub.
 HUB_CLASSES: tuple[str, ...] = (
     "contract",
@@ -48,7 +53,7 @@ CORPORA: dict[str, dict[str, Any]] = {
         "schema": FULL_CORPUS_SCHEMA,
         "role": "full_corpus",
         "pipeline": True,
-        "n_docs": 1210,
+        "n_docs": 1650,
         "classes": HUB_CLASSES,
         "gt_config": "ground_truth",
         "row_shape": "docclass",
@@ -150,6 +155,7 @@ CORPORA: dict[str, dict[str, Any]] = {
 
 _ALIASES = {
     "v5": "docclass-merged",
+    "v7": "docclass-merged",
     "full": "docclass-merged",
     "merged": "docclass-merged",
     "examples": "docclass-pilot",

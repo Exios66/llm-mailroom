@@ -194,7 +194,7 @@ def test_check_contract_prints_ok(capsys):
     assert "check ok" in out
     payload = json.loads(out.split("check ok ", 1)[1])
     assert payload["dataset"] == DATASET_ID
-    assert payload["schema"] == "v5"
+    assert payload["schema"] == "v7"
     assert payload["example_strata"] == 48
     assert payload["align"] == {}
     assert payload["aligned_equals_exact"] is True
