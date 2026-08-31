@@ -30,6 +30,14 @@ def test_generated_pdf_transcribes_short_text(tmp_path):
 
 def test_prepare_samples_materializes_manifest(tmp_path, monkeypatch):
     monkeypatch.setenv("MAILROOM_BASE_DIR", str(tmp_path))
+    from pathlib import Path as _Path
+
+    from scripts.prepare_samples import REAL_CONTRACTS_DIR
+
+    if not REAL_CONTRACTS_DIR.is_dir():
+        pytest.skip(
+            "docs/examples/samples/ absent (pruned heavy asset; see upstream repo)"
+        )
     from scripts.prepare_samples import prepare_samples
 
     samples_dir = prepare_samples(tmp_path)
