@@ -35,6 +35,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `workflow_dispatch`). Opens a pin-bump PR when mailroom is behind.
   Wiring notes: [docs/sister-repos.md](docs/sister-repos.md).
 
+### Changed
+
+- **Docs aligned with the mailroom-dev monorepo:** documented the
+  `Exios66/mailroom-dev` hub (uv workspace + git-subtree packages,
+  `scripts/sync_packages.py` status/pull/push, hub task board
+  `governance/TASKS.md` with `HUB-00N` cards) across
+  [README.md](README.md) (umbrella table + monorepo install note),
+  [docs/sister-repos.md](docs/sister-repos.md) (reworked as the umbrella map
+  with the monorepo at the center; added `agent-mailroom` /
+  `local-mailroom-sandbox` members and subtree sync contract),
+  [AGENTS.md](AGENTS.md) (new § Monorepo development), [docs/README.md](docs/README.md)
+  (13-node wording fix), [docs/configuration.md](docs/configuration.md)
+  (`MAILROOM_API_TOKENS`, `MAILROOM_API_TOKEN_REVOKED`,
+  `MAILROOM_MAX_UPLOAD_BYTES`, `MAILROOM_UPLOAD_RATE` added to the env table),
+  and [docs/wiki/](docs/wiki/) (monorepo-first dev path in Getting-Started,
+  umbrella + Monorepo links in Home/_Sidebar).
+
 ## [v0.6.0] - 2026-08-30
 
 Minor release: **pared LLM load** for the live document pipeline. Happy-path

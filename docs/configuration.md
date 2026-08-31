@@ -287,6 +287,10 @@ See `.env.example` for the complete list:
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `1` | Inbox rescan interval (seconds) |
 | `MAILROOM_EMBED_WATCHER` | No | on (off under pytest) | API lifespan starts the inbox watcher. Set `0` when a dedicated `python -m pipeline.watcher` holds `watcher.lock` |
 | `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
+| `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
+| `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |
+| `MAILROOM_MAX_UPLOAD_BYTES` | No | `52428800` (50 MB) | `POST /v1/upload` size cap |
+| `MAILROOM_UPLOAD_RATE` | No | `20` | Uploads allowed per 60 s window |
 | `MAILROOM_API_HOST` | No | `127.0.0.1` | Bind address. `0.0.0.0` requires a live token. Container/Space images set this. |
 | `MAILROOM_API_PORT` | No | `8000` (image: `7860`) | Image/local listen port. When the platform injects `PORT` (Railway / Fly / Render / Heroku), **`PORT` wins** so the edge proxy can reach the process. |
 
