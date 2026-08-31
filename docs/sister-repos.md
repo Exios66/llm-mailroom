@@ -2,52 +2,99 @@
 
 llm-mailroom does not fly alone. It is the pipeline at the center of a small
 constellation of governed repositories — each with its own repo, board
-discipline, and release train — plus derived artifacts hosted elsewhere. This
-page maps who's who, what flows between them, and where the canonical state of
-each lives. (All links verified 2026-08-23.)
+discipline, and release train — plus derived artifacts hosted elsewhere. Since
+2026-08-30 the whole constellation also lives as **one monorepo**
+([`mailroom-dev`](https://github.com/Exios66/mailroom-dev)): every family
+repo is a git-subtree package under `packages/`, wired as a single `uv`
+workspace, with the monorepo as the **source of truth for active
+development**. This page maps who's who, what flows between them, and where
+the canonical state of each lives. (Links verified 2026-08-23; monorepo
+verified 2026-08-30.)
 
 ```
                         ┌──────────────────────────────┐
-                        │   llm-entity-extraction      │
-                        │   prompt-experiment loop     │
-                        │   (sister repo, shared board)│
+                        │          mailroom-dev        │
+                        │  THE MONOREPO — uv workspace │
+                        │  git-subtree packages + hub  │
+                        │  task board (TASKS.md)       │
                         └──────────┬───────────────────┘
-              champion prompts     │    shared kanban board
-              (version keys)       ▼    governs BOTH repos
+            sync_packages.py      │ subtree pull / push
+            (status/pull/push)    ▼
 ┌────────────────────────┐   ┌──────────────────────────────┐
-│  corpus feed repos     │──▶│        llm-mailroom          │
-│  Enron-Eval-Environment│   │  (this repo — the pipeline)  │
-│  claims-data-eda       │   └──────────┬───────────────────┘
-│  atticus-investigation │              │ pinned dependency @v0.12.2
-└────────────────────────┘              ▼
-                          ┌──────────────────────────────┐
-                          │     llm-dojo-scoring         │
-                          │  upstream scoring engine     │
-                          └──────────────────────────────┘
+│  llm-entity-extraction │   │        llm-mailroom          │
+│  prompt-experiment loop│   │  (this repo — the pipeline)  │
+└──────────┬─────────────┘   └──────────┬───────────────────┘
+           │            ┌───────────────┴───────────────┐
+           ▼            ▼                               ▼
+┌────────────────────────┐   ┌──────────────────────────────┐
+│  llm-dojo-scoring      │◀──│        The-Mailroom          │
+│  scoring engine        │   │   pixel-art visual engine    │
+└────────────────────────┘   └──────────┬───────────────────┘
+                 │                      ▼
+                 │        (reads this repo's Langfuse project — US cloud:
+                 │         every envelope, badge, verdict, metric on screen)
+┌────────────────────────┐
+│ agent-mailroom |       │  sibling stand-alone mailrooms / sandboxes live
+│ local-mailroom-sandbox │  in the monorepo too (same law, independent train)
+└────────────────────────┘
 
-                          ┌──────────────────────────────┐
-                          │        The-Mailroom          │
-                          │   pixel-art visual engine    │
-                          └──────────────────────────────┘
-             reads this repo's Langfuse project (US cloud) — every envelope,
-             badge, verdict, and metric on screen is trace-derived
-
-derived artifact: llm-mailroom-graph (graphify knowledge-graph site)
-HF datasets:      Lucius-Morningstar/* (published eval/corpus surfaces)
+corpus feeds:   Enron-Evaluation-Environment, claims-data-eda   (virtual members)
+derived site:   llm-mailroom-graph (graphify knowledge-graph site)
+HF datasets:    Lucius-Morningstar/* (published eval/corpus surfaces)
 ```
 
 ## At a glance
 
 | Repository | Role | Relationship to mailroom |
 |---|---|---|
-| [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board and discussion log with this repo |
+| [mailroom-dev](https://github.com/Exios66/mailroom-dev) | **Monorepo / hub** — every constellation repo as a git-subtree `packages/` member in ONE uv workspace; hub task board `governance/TASKS.md`; sub-package sync driver `scripts/sync_packages.py` | **Development source of truth for cross-repo work** — this repo is `packages/llm-mailroom` there; sync via subtree `pull`/`push` (issue #2, HUB-001/002) |
+| [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board with this repo |
 | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog, `local_vs_api` serving comparison) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.12.2` / [PR #11](https://github.com/Exios66/llm-dojo-scoring/pull/11)); auto-bump via `.github/workflows/bump-dojo-scoring.yml` |
-| [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops |
-| [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source |
+| [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops. Virtual monorepo member (no build) |
+| [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source. Virtual monorepo member (no build) |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
 | [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine + hosted Observatory Space — floor, review siding, Inbox enqueue, inspector, sessions, metrics — plus a TUI console | **Downstream visualizer** — Langfuse-only display; Inbox / REVIEW proxy this API via `MAILROOM_PIPELINE_URL` + token + `/v1` ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) |
+| [agent-mailroom](https://github.com/Exios66/agent-mailroom) | Self-contained mailroom: one state machine per document, specialist agents at desks (Electron/TUI/live floor) | **Sibling implementation** — same doctrine, independent train; monorepo member (`packages/agent-mailroom`) |
+| [local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox) | Local-first experiment sandbox (Ollama, vLLM, llama.cpp) | **Sibling sandbox** — local-model experiments; monorepo member (`packages/local-mailroom-sandbox`) |
 | [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive graphify knowledge graph of this codebase | **Derived site** — build artifact only, never committed here |
 | [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Interactive graphify knowledge graph of the sister experiment loop | **Derived site** — companion map of the sister repo's code structure |
+
+## mailroom-dev — the monorepo (since 2026-08-30)
+
+The Mailroom Umbrella's single checkout: `git clone Exios66/mailroom-dev`
+reproduces **every** family repo under `packages/` (git subtrees, own
+history), and one `uv sync` installs the whole workspace editable against a
+single `uv.lock` — no cross-repo pip installs, no import-path juggling.
+
+- **Layout**: `packages/<name>/` per standalone repo — this repo is
+  `packages/llm-mailroom`. `Enron-Evaluation-Environment`, `claims-data-eda`
+  and `llm-mailroom-graph` are **virtual members** (`package = false`): their
+  data/code stays colocated but nothing installs from them.
+- **Workspace rules** (monorepo `AGENTS.md`): member `pyproject.toml` files
+  **keep their published git pins** — dev redirection happens ONLY through
+  `[tool.uv.sources]` tables (this repo's table currently redirects
+  `llm-dojo-scoring` to the workspace). `pip install .` inside the package /
+  subtree keeps using the pins, so Docker/Railway/HF Spaces builds are
+  unaffected.
+- **Sub-package sync**: `python scripts/sync_packages.py {status|pull|push|snapshot}`
+  reconciles the subtree mirrors with `Exios66/*` (baseline cursor
+  `scripts/packages_sync.json`; `status` recomputes live drift). The monorepo
+  is the **dev source of truth**; standalone-repo fixes that already landed
+  here win merges unless the upstream supersedes them.
+- **Cross-repo task board**: `governance/TASKS.md` (hub scope: workspace
+  wiring, cross-package governance, sync, docs, releases). Read it before any
+  hub-scope work; package-scoped work keeps each package's own board (e.g.
+  the entity repo's `MESSAGE_BOARD.md`).
+- **Test gates**: suites run one package per pytest invocation (`uv run pytest
+  packages/llm-mailroom/src/tests`, …) — several packages ship colliding
+  top-level `tests` packages.
+- **Heavy assets pruned**: example PDFs, demo screenshots, report archives are
+  NOT in the monorepo (see `docs/examples/samples/` note in
+  [Agents](agents.md)); monorepo tests skip when a pruned fixture is absent.
+
+Every package still carries its own `AGENTS.md`, docs, tests and deploy
+configs — this page (and this repo's `docs/`) remain canonical for the
+pipeline; the monorepo root `README.md` is the hub manual.
 
 ## llm-entity-extraction — the sister loop
 
@@ -123,6 +170,11 @@ Mailroom keeps the dojo pin current via
 3. When the pin is behind, the workflow opens (or updates) a PR on
    `cursor/bump-dojo-scoring-<tag>` that rewrites `pyproject.toml` plus the
    documented pin references. Merge after CI is green.
+
+> In the **monorepo**, the nested `.github/workflows/` is not read by GitHub
+> (only the hub root's workflows are) — the auto-bump is **release-time only**
+> there: run `src/scripts/bump_dojo_scoring.py --check/--apply` manually when
+> cutting a mailroom release, then `sync_packages.py push` the pin change.
 
 Local check / apply:
 
@@ -278,8 +330,18 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
 - Every repo above runs the same working agreement: read the board first,
   no card = no work, append-only prompt versioning, changelog entry in the
   ship commit, evidence before "done".
+- **Hub-scope work is tracked on the monorepo board**
+  (`mailroom-dev/governance/TASKS.md`, cards `HUB-00N`) — cross-package
+  wiring, sub-package sync and docs alignments are claimed there before
+  editing, and committed with `HUB-00N:` references. Standalone-package work
+  keeps each package's own board (`read the board first` applies on both
+  sides).
 - Cross-repo changes ride **one card + one issue** with both repos'
-  CHANGELOGs updated in the same pass.
+  CHANGELOGs updated in the same pass. Docs that describe the constellation
+  (this page, wiki pages, README umbrella sections) are maintained in the
+  standalone repo and arrive in the monorepo via subtree `pull` — and vice
+  versa on `push`.
 - Dependency pins are audited after every upstream release (pin ↔ tag ↔
   import-time validation must agree across `pyproject.toml`,
-  `requirements*.txt`, and installed provenance).
+  `requirements*.txt`, and installed provenance). In the monorepo the pins
+  keep their published meaning; `[tool.uv.sources]` redirects are dev-only.

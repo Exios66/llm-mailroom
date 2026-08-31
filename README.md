@@ -109,6 +109,14 @@ Optional install profiles — take only what you need:
 pip install -e ".[embeddings]"   # etc.
 ```
 
+> **In the monorepo** ([`mailroom-dev`](https://github.com/Exios66/mailroom-dev)):
+> this repo is `packages/llm-mailroom` via git subtree. Skip `pip install` —
+> `uv sync` at the monorepo root installs every workspace member (this package
+> editable) from one `uv.lock`. Release/deploy images still `pip install .`
+> from this (or the subtree) directory, where the published pins in
+> `pyproject.toml` keep their standalone meaning (see
+> [`docs/sister-repos.md`](docs/sister-repos.md)).
+
 ---
 
 ## Architecture
@@ -586,6 +594,7 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 
 | Repository | Role | Relationship |
 |---|---|---|
+| [mailroom-dev](https://github.com/Exios66/mailroom-dev) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (HUB-001/002); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop (prompt versions × models over CUAD/LegalBench/MAUD) | **Sister repo** — source of the vendored sorter/contracts prompts; shares ONE kanban board with this repo |
 | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.12.2` in `pyproject.toml` |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
@@ -595,6 +604,15 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 | [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive knowledge graph of this codebase | **Derived site** (graphify build artifact) |
 | [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Knowledge graph of the sister loop | **Derived site** |
 | [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
+
+**Developing in the monorepo:** cross-repository work happens in
+[`mailroom-dev`](https://github.com/Exios66/mailroom-dev) — one `uv sync`
+in its root installs every family member (`packages/llm-mailroom` included,
+editable) against a single shared `uv.lock`. Branch/subtree discipline,
+sync commands, and the monorepo task board (`governance/TASKS.md`) are
+documented in `docs/sister-repos.md` § mailroom-dev. This repo remains the
+standalone mirror + deploy source (Docker/Railway/HF Space build from here
+or from the subtree copy — both are the same tree).
 
 ### Deployment
 
