@@ -318,7 +318,7 @@ Minor release covering everything since v0.4.1. Live pipeline is **five document
   `phoenix` (with `PHOENIX_TRACING=disabled` → `none`), and explicit
   `phoenix` provider selection is covered.
 
-## [Unreleased]
+## [Released backlog — v0.4.0 → v0.6.0 era]
 
 ### Added
 - **Braintrust + OpenRouter skills for all agents**: `braintrust`

@@ -148,22 +148,22 @@ flowchart TD
     START --> INGEST
     INGEST --> CLASSIFY
 
-    CLASSIFY -- "confidence >= 0.95" --> EXTRACT
-    CLASSIFY -- "0.70 <= confidence < 0.95" --> REVIEW
-    CLASSIFY -- "confidence < 0.70, attempts <= retry_max" --> RETRY_CLASS
+    CLASSIFY -- "confidence >= high (0.97)" --> EXTRACT
+    CLASSIFY -- "low <= confidence < high (0.88–0.97)" --> REVIEW
+    CLASSIFY -- "confidence < low, attempts <= retry_max" --> RETRY_CLASS
     CLASSIFY -- "unknown type / still low after retries" --> REVIEW
-    RETRY_CLASS -- "confidence >= 0.95" --> EXTRACT
+    RETRY_CLASS -- "confidence >= high" --> EXTRACT
     RETRY_CLASS -- "medium band exhausted (Lane A)" --> REVIEW_CLASS
     RETRY_CLASS -- "medium or still low confidence" --> REVIEW
     REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
     REVIEW_CLASS -- "anything else" --> REVIEW
 
-    EXTRACT -- "confidence >= 0.70" --> REPORT
+    EXTRACT -- "confidence >= low" --> REPORT
     EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
     EXTRACT -- "conflict detected" --> BOSS
-    EXTRACT -- "judge gate fires (grounded run)" --> JUDGE
+    EXTRACT -- "judge gate fires (ambiguous band)" --> JUDGE
     EXTRACT -- "still low confidence" --> REVIEW
-    RETRY_EXTRACT -- "confidence >= 0.70" --> REPORT
+    RETRY_EXTRACT -- "confidence >= low" --> REPORT
     RETRY_EXTRACT -- "still low confidence" --> REVIEW
 
     JUDGE -- "complete or skipped" --> REPORT
@@ -188,7 +188,7 @@ The agent roster (13 agents) as declared in `config/taxonomy.yaml` — every LLM
 ```mermaid
 flowchart TB
     subgraph CLASSIFY["Classification"]
-        SORTER["SorterAgent<br/>5 doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v14)"]
+        SORTER["SorterAgent<br/>6 doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v14)"]
         REVIEWER["SorterReviewerAgent<br/>second opinion on medium-confidence<br/>classifications (Lane A)"]
     end
 
@@ -309,9 +309,11 @@ confidence:
 
 # Transient-failure LLM retries (connection errors, 429, 5xx):
 llm_retry:
-  max_attempts: 3
+  max_attempts: 5
   base_delay: 1.0
-  max_delay: 30.0
+  rate_limit_base_delay: 8.0
+  max_delay: 60.0
+  jitter: 0.3
 
 # PDF transcription: skip the LLM reformat pass for text-based PDFs whose
 # extraction yields at least this many chars/page (scanned PDFs still go to LLM):
@@ -409,7 +411,7 @@ PYTHONPATH=src python src/scripts/sync_evaluators.py --disable   # pause the rul
 The pilot samples are mirrored into the **`mailroom-pilot` Langfuse dataset** (PDF text + ground truth incl. per-field `expected_fields` + manifest metadata) for experiments and judge calibration:
 
 ```bash
-PYTHONPATH=src python src/scripts/sync_dataset.py            # 30 items, deterministic ids (upsert-safe)
+PYTHONPATH=src python src/scripts/sync_dataset.py            # 25 items, deterministic ids (upsert-safe)
 PYTHONPATH=src python src/scripts/sync_dataset.py --include contract
 ```
 
@@ -525,23 +527,23 @@ data/
 
 ```bash
 # Run all tests
-pytest tests/ -v
+pytest src/tests/ -v
 
 # Run specific test suites
-pytest tests/test_agents/ -v
-pytest tests/test_routing.py -v
-pytest tests/test_audit_log.py -v
-pytest tests/test_pipeline_e2e.py -v
+pytest src/tests/test_agents/ -v
+pytest src/tests/test_routing.py -v
+pytest src/tests/test_audit_log.py -v
+pytest src/tests/test_pipeline_e2e.py -v
 
 # With coverage
-pytest tests/ --cov=. --cov-report=html
+pytest src/tests/ --cov=src --cov-report=html
 ```
 
-Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mocked (see `tests/conftest.py`).
+Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mocked (see `src/tests/conftest.py`).
 
 ### Pilot Testing & Evaluation
 
-A ready-made set of **30 pilot samples** lives in `docs/examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset, LegalBench MAUD merger agreements, public-domain Pile of Law court opinions, plus original text for the other doc classes — see `docs/examples/README.md`). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
+A ready-made set of **25 pilot samples** lives in `docs/examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset, LegalBench MAUD merger agreements, public-domain Pile of Law court opinions, plus original text for the other doc classes — see `docs/examples/README.md`). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
 
 ```bash
 # Build the sample PDFs into data/samples/ (gitignored)

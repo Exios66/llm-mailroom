@@ -67,7 +67,7 @@ Set a single environment variable to switch ALL agents to local:
 export DEFAULT_PROVIDER=ollama
 ```
 
-All agents will now use Ollama with whatever model is specified in `config/taxonomy.yaml`. If you haven't changed the per-agent models, they'll default to `qwen3:7b` (the Ollama default).
+All agents will now use Ollama with whatever model is specified in `config/taxonomy.yaml`. The agent `model:` value is taken from the taxonomy (defaults today to `qwen/qwen3.7-flash`), never from an Ollama-side default — so with `DEFAULT_PROVIDER=ollama` run `src/scripts/cutover.py --list` first and pull a model with the same name (or move each agent per Phase 2).
 
 ---
 
@@ -84,9 +84,12 @@ Move agents one at a time, validating each before moving the next. This minimize
 | 3 | **Correspondence Specialist** | Medium | Narrative text, moderate complexity |
 | 4 | **Corporate Records Specialist** | Medium | Hierarchical data, moderate complexity |
 | 5 | **Contracts Specialist** | Medium-High | Complex extraction, legal precision |
-| 6 | **Due Diligence Specialist** | High | Risk detection nuance |
-| 7 | **Reporter** | Medium | Summarization — lower stakes |
-| 8 | **Boss** | Medium | Adjudication — lower frequency |
+| 6 | **Insurance Claims Specialist** | High | Coverage-determination nuance |
+| 7 | **Boss** | Medium | Adjudication — lower frequency |
+
+> The **reporter** is procedural (`get_llm("reporter")` is unused) and
+> **due-diligence / court-opinion** specialists were retired in v0.5.0 — neither
+> has a model to cut over.
 
 ### Using the Cutover Utility
 
@@ -115,8 +118,8 @@ Edit `config/taxonomy.yaml`:
 ```yaml
 agents:
   sorter:
-    provider: ollama          # ← changed from openrouter
-    model: qwen3:7b           # ← changed from openai/gpt-4o
+    provider: ollama            # ← changed from openrouter
+    model: qwen3:7b             # ← changed from qwen/qwen3.7-flash
     temperature: 0.1
 ```
 
@@ -254,7 +257,7 @@ Page images are only attached when the agent's model matches a `vision.models` s
 
 - Use quantized models (`qwen3:7b-q4_K_M` for GGUF quants)
 - Enable GPU passthrough in Docker Compose
-- Reduce context window (agents truncate to 12K-25K chars already)
+- Reduce context window (agents run per-agent `max_input_chars` budgets from 12K chars for the sorter/reviewer up to 100K for the contracts specialist — set yours accordingly)
 - Check the model actually runs on GPU: `docker exec mailroom-ollama ollama ps` (a CPU-only model will be listed without a GPU line)
 
 ### OOM / out-of-memory
@@ -276,5 +279,5 @@ Page images are only attached when the agent's model matches a `vision.models` s
 Smaller local models are often over-confident or under-confident. If everything lands in `review`:
 
 1. Verify the agent model actually serves the taxonomy classes (a model not fine-tuned for legal text may classify poorly).
-2. Compare against OpenRouter with `scripts/run_vision_sweep.py --real` or a pilot diff: `PYTHONPATH=src python src/scripts/run_pilot.py --real --baseline data/pilot_report_baseline.json`.
+2. Compare against OpenRouter with `PYTHONPATH=src python src/scripts/run_vision_sweep.py --real` or a pilot diff: `PYTHONPATH=src python src/scripts/run_pilot.py --real --baseline data/pilot_report_baseline.json`.
 3. Adjust `confidence.high` / `confidence.low` in `taxonomy.yaml` — thresholds are config, not code.

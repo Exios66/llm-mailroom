@@ -29,7 +29,7 @@ Key design points:
 - When a managed prompt is active, it's passed to the OpenAI call as `langfuse_prompt=`, linking each generation to its exact prompt version in the trace UI.
 - Every agent has a distinct system prompt ("personality") aligned with its role
 
-**Two of the agents — the Sorter and the Contracts Specialist — are vendored LangChain agents** (from `github.com/Exios66/llm-entity-extraction`, kept in sync with that repo's append-only prompt lineage — last verified against its `main` @ `08f9bd7`, 2026-08-23), imported into `langchain_agents/` with mailroom plumbing adapted in (pages/vision, run-deadline checks, per-call usage accounting — each adaptation marked `MAILROOM PATCH`). They use `langchain-openai`'s `ChatOpenAI` + `with_structured_output` instead of the mailroom's `agents/base.py` plumbing, and their system prompts resolve **by version key** through `langchain_agents/prompts.py:PROMPT_VERSIONS`: the production aliases are `"sorter"` → `SORTER_PROMPT_V14` (V12 CUAD-subtype lineage + mailroom pipeline doctrine; V13 remains a frozen insurance-class experiment derived from V0) and `"contracts_specialist"` → `CONTRACTS_SPECIALIST_PROMPT_V32` (V31 eval-validated extraction + mailroom pipeline doctrine). The full eval history rides along in-repo (`sorter_v0…v14`, vision v0–v1, `contracts_specialist_v1…v32`) so evaluation loops can pin exactly one version per experiment — they bypass `get_managed_prompt`/Langfuse prompt linking (generations are still auto-traced via the langfuse-openai SDK patch). All other agents follow the `BaseAgent` contract below.
+**Two of the agents — the Sorter and the Contracts Specialist — are vendored LangChain agents** (from `github.com/Exios66/llm-entity-extraction`, kept in sync with that repo's append-only prompt lineage — re-vendored to the sibling's current HEAD on 2026-08-15), imported into `langchain_agents/` with mailroom plumbing adapted in (pages/vision, run-deadline checks, per-call usage accounting — each adaptation marked `MAILROOM PATCH`). They use `langchain-openai`'s `ChatOpenAI` + `with_structured_output` instead of the mailroom's `agents/base.py` plumbing, and their system prompts resolve **by version key** through `langchain_agents/prompts.py:PROMPT_VERSIONS`: the production aliases are `"sorter"` → `SORTER_PROMPT_V14` (V12 CUAD-subtype lineage + mailroom pipeline doctrine; V13 remains a frozen insurance-class experiment derived from V0) and `"contracts_specialist"` → `CONTRACTS_SPECIALIST_PROMPT_V33` (V32 + pared checklist doctrine — no open-ended `key_obligations` / `termination_clauses`). The full eval history rides along in-repo (`sorter_v0…v14`, vision v0–v1, `contracts_specialist_v1…v33`) so evaluation loops can pin exactly one version per experiment — they bypass `get_managed_prompt`/Langfuse prompt linking (generations are still auto-traced via the langfuse-openai SDK patch). All other agents follow the `BaseAgent` contract below.
 
 ---
 
@@ -319,7 +319,7 @@ A vision LLM agent with its own `taxonomy.yaml` entry and Langfuse-managed promp
 | Attribute | Value |
 |---|---|
 | **Node** | `judge_verify` (Lane B) **and** offline (`scripts/run_quality_judges.py`) |
-| **Trigger** | In-graph: grounded extraction in the ambiguous band (`low <= extraction_confidence < judge_band_high`). Offline: a finished pilot run. |
+| **Trigger** | In-graph: any extraction in the ambiguous band (`low <= extraction_confidence < judge_band_high`). Offline: a finished pilot run. |
 | **Input** | Document text + extracted data (+ sorter reasoning, offline) |
 | **Output** | Completeness / classification / correctness scores + labels |
 | **Personality** | Expert legal reviewer; rubric-driven, evidence-citing |
@@ -348,7 +348,7 @@ Each dimension returns a score + label + reasoning, ingested as Langfuse scores 
 | **Output** | Bounded decision: `accept_with_caveats` / `retry_extraction` / `human_review` |
 | **Personality** | Final judgment authority; constrained to three outcomes |
 
-When the completeness judge rejects an extraction, the arbiter — not the raw pipeline — decides. `retry_extraction` is bounded by `arbiter_retry_count`; exhausted retries escalate to human review.
+When the completeness judge rejects an extraction, the arbiter — not the raw pipeline — decides. `retry_extraction` is bounded by `arbiter_retry_max` (`retry_extraction` approval-inclusive; the state counter `arbiter_retry_count` is compared against it); exhausted retries escalate to human review.
 
 ---
 
