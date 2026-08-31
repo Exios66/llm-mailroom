@@ -31,17 +31,17 @@ tests/
 pytest -v
 
 # By test file
-pytesttest_agents/test_sorter.py -v
-pytesttest_agents/test_specialists.py -v
-pytesttest_routing.py -v
-pytesttest_audit_log.py -v
-pytesttest_pipeline_e2e.py -v
+pytest src/tests/test_agents/test_sorter.py -v
+pytest src/tests/test_agents/test_specialists.py -v
+pytest src/tests/test_routing.py -v
+pytest src/tests/test_audit_log.py -v
+pytest src/tests/test_pipeline_e2e.py -v
 
 # By test name pattern
 pytest -v -k "sorter"
 
 # With coverage
-pytest --cov=. --cov-report=html --cov-report=term
+pytest --cov=src --cov-report=html --cov-report=term
 
 # With verbose output
 pytest -v -s
@@ -53,20 +53,20 @@ pytest -v -s
 
 ### Agent Unit Tests (`test_agents/`)
 
-**37 tests** covering:
+**36 tests** covering:
 - Sorter: classification across all doc types, low-confidence cases, JSON parse errors, output validation
 - Contracts Specialist: extraction accuracy, confidence scoring
 - Corporate Records Specialist: entity/record extraction
-- Due Diligence Specialist: risk flag detection
 - Correspondence Specialist: action item extraction
 - Compliance Specialist: filing type identification
+- Insurance Claims Specialist: claim extraction, parse-error lane
 - Boss Agent: adjudication decisions, system metrics analysis
 
 All LLM calls are **mocked** — tests assert schema conformance and confidence-path branching without real API calls.
 
 ### Routing Tests (`test_routing.py`)
 
-**12 tests** covering every conditional edge:
+**33 tests** covering every conditional edge:
 - High confidence → proceed
 - Low confidence → retry → retry again → human review
 - Conflict detection → Boss escalation
@@ -75,7 +75,7 @@ All LLM calls are **mocked** — tests assert schema conformance and confidence-
 
 ### Audit Log Tests (`test_audit_log.py`)
 
-**9 tests** covering:
+**11 tests** covering:
 - Hash computation and chaining
 - Chain verification (valid chains)
 - Tamper detection (modified hash)
@@ -85,11 +85,13 @@ All LLM calls are **mocked** — tests assert schema conformance and confidence-
 
 ### E2E Pipeline Tests (`test_pipeline_e2e.py`)
 
-**4 tests** covering full pipeline runs:
+**6 tests** covering full pipeline runs:
 - Happy path: contract document → archived
 - Low confidence path: ambiguous document → review
+- Medium confidence path: route to human review
 - Ingest node: manifest creation and file reading
 - Full pipeline with mocked LLM: correspondence → archived
+- Ingest: real PDF bytes transcription
 
 These tests spin up a complete LangGraph graph with all 13 nodes and mock the LLM layer, verifying:
 - State flows through all nodes correctly
@@ -215,8 +217,8 @@ In `pyproject.toml`:
 ```toml
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
-pythonpath = ["."]
+testpaths = ["src/tests"]
+pythonpath = ["src", "."]
 ```
 
 Tests auto-discover asyncio fixtures. No `@pytest.mark.asyncio` decorator needed for sync tests — the graph now uses sync nodes.

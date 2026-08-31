@@ -46,7 +46,7 @@ flowchart TD
     EXTRACT -- "no conflict, judge gate off/skip" --> REPORT
     EXTRACT -- "hollow payload or expected-field coverage < low" --> RETRY_EXTRACT
     EXTRACT -- "conflict detected" --> BOSS
-    EXTRACT -- "judge gate fires (grounded run)" --> JUDGE
+    EXTRACT -- "judge gate fires (ambiguous band)" --> JUDGE
     EXTRACT -- "still low confidence" --> REVIEW
     EXTRACT -. "transient error, per-node budget left" .-> EXTRACT
     RETRY_EXTRACT -- "confidence >= low" --> REPORT
@@ -122,7 +122,7 @@ flowchart LR
 ### Watcher (`pipeline/watcher.py`)
 - Uses `watchdog` to monitor `/pipeline/inbox/` for new files
 - Debounces file events to avoid double-processing
-- Claims files via atomic `os.rename` into `/pipeline/processing/<worker_id>/`
+- Claims files via atomic `shutil.move` (via `pipeline/bins.py:claim_file`) into `/pipeline/processing/<worker_id>/`
 - Spawns a LangGraph run per document in a daemon thread
 
 ### LangGraph Engine (`graph/build_graph.py`)
@@ -194,8 +194,8 @@ retry budget still fires.
 ### 3. Confidence Check
 Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
 - **Unknown / retired / empty `doc_type`**: human review immediately (never extract)
-- **Confidence >= `high` (0.95)** on a live class: straight to extraction
-- **`low` (0.70) <= Confidence < `high` (0.95)**: one `retry_classify`, then Lane A (`review_classify`) if still medium
+- **Confidence >= `high` (0.97 global; per-class `by_class` overrides — e.g. contract/merger/insurance 0.98, correspondence 0.95)** on a live class: straight to extraction
+- **`low` (0.88 global) <= Confidence < `high`**: one `retry_classify`, then Lane A (`review_classify`) if still medium
 - **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`, then human review
 - **Lane A reviewer** may also emit `unknown`; `after_review_classify` only extracts a live taxonomy class at high confidence
 
@@ -236,7 +236,7 @@ Writes document and matter records to the database (best-effort — pipeline con
 | `review_classify` | Sorter Reviewer | Agent second opinion when the medium band is exhausted (KANBAN-062) |
 | `extract` | Specialist | Extract structured data per doc-type |
 | `retry_extract` | Specialist | Re-extract with context from prior attempt |
-| `judge_verify` | Judge (in-graph) | Gated completeness verification of grounded extractions (KANBAN-063) |
+| `judge_verify` | Judge (in-graph) | Gated completeness verification of any extraction landing in the ambiguous band (KANBAN-063) |
 | `arbiter` | Arbiter | Adjudicate partial/incomplete judge verdicts (KANBAN-063) |
 | `human_review` | — | Pause for human decision |
 | `boss_escalation` | Boss (in-graph) | Adjudicate conflicts |
@@ -265,7 +265,7 @@ review_classify ─┬─ high-confidence live class ─▶ extract
 extract ─┬─ unsupported / non-taxonomy type ─▶ human_review (no retry)
          ├─ no conflict, judge gate off/skip ──▶ compile_report
          ├─ conflict detected ─────────────────▶ boss_escalation
-         ├─ judge gate fires (grounded run) ───▶ judge_verify
+         ├─ judge gate fires (ambiguous band) ─▶ judge_verify
          ├─ attempts <= retry_max ─────────────▶ retry_extract
          └─ otherwise ─────────────────────────▶ human_review
 
