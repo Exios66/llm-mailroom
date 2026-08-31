@@ -1,4 +1,4 @@
-"""Hugging Face corpus registry — docclass-merged v5 is the full surface."""
+"""Hugging Face corpus registry — docclass-merged v7 is the full surface."""
 
 from pipeline.hf_corpora import (
     FULL_CORPUS_ID,
@@ -16,16 +16,17 @@ from pipeline.hf_corpora import (
 )
 
 
-def test_v5_full_corpus_is_docclass_merged():
-    corp = resolve_corpus("v5")
+def test_v7_full_corpus_is_docclass_merged():
+    corp = resolve_corpus("v7")
     assert corp["id"] == FULL_CORPUS_ID
-    assert corp["schema"] == FULL_CORPUS_SCHEMA == "v5"
+    assert corp["schema"] == FULL_CORPUS_SCHEMA == "v7"
     assert corp["revision"] == FULL_CORPUS_REVISION
-    assert corp["n_docs"] == 1210
+    assert corp["n_docs"] == 1650
     assert corp["pipeline"] is True
     assert tuple(corp["classes"]) == HUB_CLASSES
     assert "merger_agreement" in corp["classes"]
     assert "compliance_filing" not in corp["classes"]
+    assert resolve_corpus("v5")["slug"] == "docclass-merged"
 
 
 def test_pipeline_corpora_include_enron_and_claims():
@@ -44,7 +45,7 @@ def test_pipeline_corpora_include_enron_and_claims():
     assert resolve_corpus("legalbench-full")["pipeline"] is False
 
 
-def test_class_subclass_pack_covers_every_v5_stratum():
+def test_class_subclass_pack_covers_every_stratum():
     rows = example_rows()
     strata = {(r["expected"], r.get("expected_subclass") or "") for r in rows}
     assert len(strata) == 48

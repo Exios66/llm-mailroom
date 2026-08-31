@@ -311,12 +311,15 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
 - **[llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/)**
   — companion graphify map of the sister experiment loop's codebase.
 - **Hugging Face — [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)** —
-  the family's published dataset surface. **`docclass-merged` schema v5**
-  (1,210 docs, Hub SHA `d2c96ecb…`) is the targeted full pipeline corpus
-  (CUAD contracts, MAUD merger agreements, S-1 corporate records, Enron
-  correspondence sample, CMS insurance claims). **`docclass-pilot`** is the
+  the family's published dataset surface. **`docclass-merged` schema v7**
+  (1,650 docs, Hub SHA `fc1f211c…`, v7 = issue #5 correspondence intent
+  hydration: canonical 8-class intents + `intent_source` / `intent_confidence`
+  / `intent_status` provenance on the ground_truth config) is the targeted
+  full pipeline corpus (CUAD contracts, MAUD merger agreements, S-1
+  corporate records, Enron correspondence sample, CMS insurance claims).
+  **`docclass-pilot`** is the
   class × subclass example pack (48 strata — every type and subtype in that
-  v5 parent). Other pipeline-ready Hub sets (`enron-correspondence-dedup`
+  parent). Other pipeline-ready Hub sets (`enron-correspondence-dedup`
   ~247k, `cms-desynpuf-insurance-claims`, `mailroom-cuad-contracts[-full]`)
   ingest the same way via `run_hf_pilot.py --dataset`. `legalbench-full` is
   a LegalBench CLI task pack, not a document-pipeline ingest. One split rule
