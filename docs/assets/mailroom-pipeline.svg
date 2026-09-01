@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+<title id="title">LLM Mailroom operational pipeline</title>
+<desc id="desc">Six-phase legal document pipeline with classification, extraction, Judge and Arbiter, Boss escalation, human review, catalog and archive.</desc>
+<defs>
+  <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#334155"/></marker>
+  <marker id="redarrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#b4533c"/></marker>
+  <style>
+    .bg{fill:#f8faf9}.box{fill:#e7f3ef;stroke:#176b5b;stroke-width:2}.esc{fill:#fff1ec;stroke:#b4533c;stroke-width:2}.title{font:700 30px Arial;fill:#16332d}.head{font:700 20px Arial;fill:#174f43}.body{font:15px Arial;fill:#334155}.small{font:13px Arial;fill:#475569}.num{font:700 16px Arial;fill:#fff}.circle{fill:#176b5b}.line{stroke:#334155;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.rline{stroke:#b4533c;stroke-width:2.5;stroke-dasharray:8 7;fill:none;marker-end:url(#redarrow)}
+  </style>
+</defs>
+<rect class="bg" width="1400" height="900"/>
+<text x="60" y="58" class="title">LLM MAILROOM · OPERATIONAL PIPELINE</text>
+<text x="60" y="88" class="small">13-node LangGraph implementation → six operator-visible phases · one state-machine run per document</text>
+
+<!-- Main lane -->
+<circle class="circle" cx="95" cy="155" r="20"/><text x="89" y="161" class="num">1</text>
+<rect class="box" x="130" y="115" rx="12" width="500" height="90"/>
+<text x="155" y="148" class="head">INGEST</text><text x="155" y="174" class="body">ingest · claim · normalize intake · build manifest</text><text x="155" y="194" class="small">Input: inbox / API · PDF text + optional vision inputs</text>
+
+<circle class="circle" cx="95" cy="280" r="20"/><text x="89" y="286" class="num">2</text>
+<rect class="box" x="130" y="240" rx="12" width="500" height="105"/>
+<text x="155" y="273" class="head">CLASSIFY</text><text x="155" y="299" class="body">SorterAgent → class + confidence</text><text x="155" y="321" class="small">classify → retry_classify → review_classify (Lane A)</text><text x="155" y="339" class="small">Unknown / exhausted confidence → HUMAN REVIEW</text>
+
+<circle class="circle" cx="95" cy="430" r="20"/><text x="89" y="436" class="num">3</text>
+<rect class="box" x="130" y="375" rx="12" width="500" height="115"/>
+<text x="155" y="408" class="head">EXTRACT</text><text x="155" y="434" class="body">class specialist → structured fields + confidence</text><text x="155" y="456" class="small">extract → retry_extract · schema/guardrail gates</text><text x="155" y="477" class="small">Ambiguous completeness → JUDGE → ARBITER · conflicts → BOSS</text>
+
+<circle class="circle" cx="95" cy="555" r="20"/><text x="89" y="561" class="num">4</text>
+<rect class="box" x="130" y="520" rx="12" width="500" height="75"/>
+<text x="155" y="552" class="head">COMPILE</text><text x="155" y="578" class="body">compile_report · deterministic matter-record assembly</text>
+
+<circle class="circle" cx="95" cy="660" r="20"/><text x="89" y="666" class="num">5</text>
+<rect class="box" x="130" y="625" rx="12" width="500" height="75"/>
+<text x="155" y="657" class="head">CATALOG</text><text x="155" y="683" class="body">catalog_write · SQLite documents + matters</text>
+
+<circle class="circle" cx="95" cy="765" r="20"/><text x="89" y="771" class="num">6</text>
+<rect class="box" x="130" y="730" rx="12" width="500" height="75"/>
+<text x="155" y="762" class="head">ARCHIVE</text><text x="155" y="788" class="body">archive · file + manifest + hash-chained audit</text>
+
+<path class="line" d="M380 205 L380 240"/><path class="line" d="M380 345 L380 375"/><path class="line" d="M380 490 L380 520"/><path class="line" d="M380 595 L380 625"/><path class="line" d="M380 700 L380 730"/>
+
+<!-- Human review -->
+<rect class="esc" x="760" y="180" rx="12" width="540" height="125"/>
+<text x="790" y="215" class="head" fill="#8d3f2b">HUMAN REVIEW</text>
+<text x="790" y="244" class="body">Governance boundary: inspect evidence → disposition → rationale → resume</text>
+<text x="790" y="268" class="small">Approve · correct classification · reconcile extraction · reject</text>
+<text x="790" y="289" class="small">Durable park: pipeline/review · recovery uses manifest if checkpoint is gone</text>
+
+<!-- Judge / Arbiter -->
+<rect class="esc" x="760" y="365" rx="12" width="540" height="115"/>
+<text x="790" y="400" class="head" fill="#8d3f2b">JUDGE → ARBITER · LANE B</text>
+<text x="790" y="428" class="body">Completeness gate → stand · re-extract · human review</text>
+<text x="790" y="452" class="small">Judge max passes: 3 · Arbiter retry max: 2 · field scoring is deterministic</text>
+
+<!-- Boss -->
+<rect class="esc" x="760" y="540" rx="12" width="540" height="105"/>
+<text x="790" y="575" class="head" fill="#8d3f2b">BOSS ESCALATION</text>
+<text x="790" y="603" class="body">Matter-level conflict adjudication</text>
+<text x="790" y="626" class="small">Approved → compile · review required → human review</text>
+
+<!-- arrows to escalation -->
+<path class="rline" d="M630 292 C690 292 700 245 760 245"/><text x="645" y="267" class="small" fill="#8d3f2b">low / unknown</text>
+<path class="rline" d="M630 430 L760 420"/><text x="655" y="414" class="small" fill="#8d3f2b">ambiguous band</text>
+<path class="rline" d="M630 462 C690 500 700 575 760 590"/><text x="652" y="515" class="small" fill="#8d3f2b">conflict</text>
+<path class="rline" d="M1030 480 L1030 305"/><text x="1045" y="395" class="small" fill="#8d3f2b">unresolvable</text>
+<path class="rline" d="M760 425 C700 425 685 455 630 455"/><text x="650" y="475" class="small" fill="#8d3f2b">re-extract</text>
+<path class="rline" d="M760 590 C690 590 680 555 630 555"/><text x="650" y="570" class="small" fill="#8d3f2b">approved</text>
+<path class="rline" d="M1030 645 L1030 680 L630 680"/><text x="820" y="672" class="small" fill="#8d3f2b">review / reject path</text>
+
+<!-- Threshold card -->
+<rect x="760" y="690" rx="12" width="540" height="130" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="790" y="723" class="head">CURRENT ROUTING DEFAULTS</text>
+<text x="790" y="750" class="small">Global: high 0.97 · low 0.88 · retry_max 2 · judge_band_high 0.95</text>
+<text x="790" y="775" class="small">Class overrides: contract/merger/insurance high 0.98 · correspondence high 0.95</text>
+<text x="790" y="800" class="small">Source of truth: src/config/taxonomy.yaml · thresholds are configuration, not code constants</text>
+
+<!-- legend -->
+<rect x="60" y="840" width="1240" height="35" rx="8" fill="#fff" stroke="#cbd5e1"/>
+<rect x="80" y="851" width="16" height="14" fill="#e7f3ef" stroke="#176b5b"/><text x="106" y="863" class="small">Automated stage</text>
+<rect x="255" y="851" width="16" height="14" fill="#fff1ec" stroke="#b4533c"/><text x="281" y="863" class="small">Human / adjudication</text>
+<line x1="470" y1="858" x2="520" y2="858" stroke="#b4533c" stroke-width="2.5" stroke-dasharray="8 7"/><text x="532" y="863" class="small">Escalation / feedback</text>
+<text x="760" y="863" class="small">Repository: Exios66/llm-mailroom · docs/operational-procedure.md</text>
+</svg>
