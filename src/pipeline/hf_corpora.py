@@ -27,9 +27,10 @@ from typing import Any
 ORG = "Lucius-Morningstar"
 FULL_CORPUS_SCHEMA = "v7"
 FULL_CORPUS_ID = f"{ORG}/docclass-merged"
-# v7 tip fc1f211c (issue #5 intent hydration + card bump); b3ec9ee7 is the
-# latest ground-truth push (intent/subject_matter/keywords for corpora).
-FULL_CORPUS_REVISION = "b3ec9ee7de3f2ca4f3b26e26d6989509d3b1121e"
+# v7 tip bb57c5ad (issue #5 fix: intent_source aeslc_join on the 162
+# join-assisted rows; supersedes 1acd2600 hydration + fc1f211c card bump).
+# Pinned per the corpus plan §44 — never evaluate against unpinned main.
+FULL_CORPUS_REVISION = "bb57c5ad00333d239ea456fe3f2298c3ba5b5108"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in docclass-merged v7 — identical to the canonical
