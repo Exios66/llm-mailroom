@@ -335,6 +335,7 @@ class Watcher:
         self.observer = Observer()
         self._running = False
         self._lock: _WatcherLock | None = None
+        self._gmail_poller = None
 
     def start(self):
         global _watcher_owned
@@ -375,6 +376,15 @@ class Watcher:
             # appeared between watchdog events. Cheap and idempotent — already-
             # processed files are skipped by `_is_already_processed`.
             threading.Thread(target=self._rescan_loop, daemon=True).start()
+
+            # Gmail intake channel (HUB-037): when MAILROOM_GMAIL_ENABLED=1,
+            # the mailbox poller runs INSIDE this watcher process so the
+            # watcher.lock holder remains the single intake authority. The
+            # poller only drops attachments into the inbox — the drain path
+            # below (watchdog events + rescan) is unchanged.
+            from .gmail_intake import start_embedded_poller
+
+            self._gmail_poller = start_embedded_poller()
         except Exception:
             self.stop()
             raise
@@ -418,6 +428,10 @@ class Watcher:
 
     def stop(self):
         global _watcher_owned
+        from .gmail_intake import stop_embedded_poller
+
+        stop_embedded_poller(self._gmail_poller)
+        self._gmail_poller = None
         if self._running:
             self.observer.stop()
             self.observer.join(timeout=5)
