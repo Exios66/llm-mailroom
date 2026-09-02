@@ -1,6 +1,6 @@
 """CUAD families + 41 clause categories and MAUD consideration / clause labels.
 
-Hub ground truth (``Lucius-Morningstar/docclass-merged`` config ``ground_truth``)
+Hub ground truth (``Lucius-Morningstar/mailroom-corpus`` config ``ground_truth``)
 stores:
 
 - ``expected_subclass`` — CUAD family (contracts) or MAUD consideration token

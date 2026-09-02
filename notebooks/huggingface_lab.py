@@ -29,7 +29,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures" / "huggingface"
 
 # Hub repo id → local snapshot filename (the slug after the org).
 _SNAPSHOT_NAME = {
-    "Lucius-Morningstar/docclass-merged": "docclass-merged.json",
+    "Lucius-Morningstar/mailroom-corpus": "docclass-merged.json",
     "Lucius-Morningstar/docclass-pilot": "docclass-pilot.json",
     "Lucius-Morningstar/enron-correspondence-dedup": "enron-correspondence-dedup.json",
     "Lucius-Morningstar/cms-desynpuf-insurance-claims": "cms-desynpuf-insurance-claims.json",

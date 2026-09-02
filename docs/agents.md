@@ -173,7 +173,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `status` | `str \| None` | draft, filed, pending, overdue |
 | `reference_number` | `str \| None` | Accession/tracking number |
 
-**Honest gap (dojo 0.11.0):** `compliance_filing` has **zero rows** in `Lucius-Morningstar/docclass-merged`. The Hub SEC form-body inventory (`10-K`, `10-Q`, `8-K`, …) is the live subclass catalog; the suite scores typed extraction plus that inventory. The HF pilot (`scripts/run_hf_pilot.py`) therefore omits this class from Hub `--real` — it must not report a corpus accuracy at n=0. A **local pack** of committed fixtures (10-K + state filing) is scored on `--check` / `--mock` only.
+**Honest gap (dojo 0.11.0):** `compliance_filing` has **zero rows** in `Lucius-Morningstar/mailroom-corpus`. The Hub SEC form-body inventory (`10-K`, `10-Q`, `8-K`, …) is the live subclass catalog; the suite scores typed extraction plus that inventory. The HF pilot (`scripts/run_hf_pilot.py`) therefore omits this class from Hub `--real` — it must not report a corpus accuracy at n=0. A **local pack** of committed fixtures (10-K + state filing) is scored on `--check` / `--mock` only.
 
 ---
 

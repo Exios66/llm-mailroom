@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hugging Face corpus pilot — the runner The-Mailroom orchestrates.
 
-Default corpus is ``Lucius-Morningstar/docclass-merged`` schema **v7** (the
+Default corpus is ``Lucius-Morningstar/mailroom-corpus`` schema **v7** (the
 targeted full 1,650-doc surface; v7 = issue #5 correspondence intent
 hydration). Class × subtype examples come from
 ``docclass-pilot``. Any other pipeline-ready Lucius-Morningstar dataset
@@ -1463,7 +1463,7 @@ def check_contract() -> int:
     assert compliance_gt.get("filing_type")
     assert compliance_gt.get("entity_name")
     assert DATASET_SCHEMA == "v7"
-    assert DATASET_ID == "Lucius-Morningstar/docclass-merged"
+    assert DATASET_ID == "Lucius-Morningstar/mailroom-corpus"
     assert DATASET_REVISION
     pack_classes = set(examples_by_class())
     assert pack_classes == set(HF_CLASSES)

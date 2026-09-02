@@ -72,7 +72,7 @@ def test_class_subclass_examples_pack_is_v5_pilot():
     from notebooks.huggingface_lab import class_subclass_examples
 
     pack = class_subclass_examples()
-    assert pack["parent"] == "Lucius-Morningstar/docclass-merged"
+    assert pack["parent"] == "Lucius-Morningstar/mailroom-corpus"
     assert pack["schema"] == "v5"
     assert pack["n_strata"] == 48
     assert len(pack["examples"]) == 48

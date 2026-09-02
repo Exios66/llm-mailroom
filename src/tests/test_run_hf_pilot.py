@@ -377,7 +377,7 @@ def test_finalize_report_writes_metrics_and_markdown(tmp_path):
     report_path = tmp_path / "report.json"
     report_path.write_text(json.dumps({
         "session_id": "pilot-hf-test",
-        "dataset": "Lucius-Morningstar/docclass-merged",
+        "dataset": "Lucius-Morningstar/mailroom-corpus",
         "split": "train",
         "mode": "real",
         "errors": 0,
