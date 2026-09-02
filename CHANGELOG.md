@@ -34,10 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review → archive → aborted manifests and live traces tag `source-gmail`;
   fixing this also fixed a latent `existing_file_failed` bug (the
   `_infer_matter_id` method lived only on `InboxHandler`, so startup-scan /
-  rescan claims on `Watcher` crashed). **Smoke test:**
+  rescan claims on `Watcher` crashed). **Check reaction:** at watcher claim
+  time the source email is reacted to with the `✅` Gmail label (IMAP
+  `X-GM-LABELS` via UTF-8 bytes — imaplib ASCII-encodes str args; one
+  reaction per Message-ID even for multi-attachment emails; best-effort
+  daemon thread; `MAILROOM_GMAIL_REACTIONS=0` disables;
+  `MAILROOM_GMAIL_REACTION_LABEL` overrides the emoji). **Smoke test:**
   `src/scripts/gmail_smoke_test.py` exercises Gmail + watcher connectivity
   end-to-end with an example insurance claim (committed FNOL fixture):
-  default network-free mock (PASS verified), `--real` sends via SMTP and
+  default network-free mock (PASS verified — connectivity, route, watcher,
+  awareness, classify, reaction), `--real` sends via SMTP and
   sweeps the real mailbox, `--llm real` adds real LLM cost. **Secrets:**
   `GMAIL_APP_PASSWORD` + `GMAIL_ADDRESS` registered in GitHub Actions secret
   managers on `Exios66/mailroom-dev` and `Exios66/llm-mailroom`.

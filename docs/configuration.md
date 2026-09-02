@@ -318,6 +318,8 @@ See `.env.example` for the complete list:
 | `MAILROOM_GMAIL_DEFAULT_MATTER_ID` | No | `DEFAULT` | Matter used when the subject has no `[M:<matter_id>]` tag |
 | `MAILROOM_GMAIL_MAX_ATTACHMENT_MB` | No | `50` | Per-attachment size cap (larger attachments are skipped, message still marked seen) |
 | `MAILROOM_GMAIL_ALLOWED_SENDERS` | No | — | CSV allowlist of sender addresses (lowercased); empty = accept all |
+| `MAILROOM_GMAIL_REACTIONS` | No | `1` | When the watcher claims a Gmail-channel attachment, react to the source email with the check emoji (a Gmail label via IMAP `X-GM-LABELS`) — the "picked up for processing" ack. Best-effort: a reaction failure never disturbs the claim. Set `0` to disable |
+| `MAILROOM_GMAIL_REACTION_LABEL` | No | `✅` | The emoji-named Gmail label applied as the reaction (auto-created best-effort) |
 | `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
 | `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
 | `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |

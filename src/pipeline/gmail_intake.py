@@ -60,6 +60,9 @@ DEFAULT_POLL_SECONDS = 60.0
 DEFAULT_MAX_ATTACHMENT_MB = 50
 IMAP_TIMEOUT_SECONDS = 30
 _STATE_KEEP_MESSAGE_IDS = 2000
+# The "check" reaction: an emoji-named Gmail label applied to the source
+# message when the watcher picks the attachment up for processing (HUB-037).
+DEFAULT_REACTION_LABEL = "✅"
 
 # Matter routing: subject tag ``[M:<matter_id>]`` (watcher files the document
 # under this matter via the inbox meta sidecar).
@@ -79,6 +82,7 @@ _STATUS: dict = {
     "last_error": None,
     "messages_seen": 0,
     "attachments_queued": 0,
+    "reactions_sent": 0,
 }
 
 
@@ -118,6 +122,126 @@ def gmail_address() -> str:
 def gmail_app_password() -> str:
     """App password with the display spaces stripped (Gmail shows them grouped)."""
     return str(os.environ.get("GMAIL_APP_PASSWORD", "")).replace(" ", "").strip()
+
+
+def reactions_enabled() -> bool:
+    """Whether the watcher should react to source emails (default on)."""
+    load_env()
+    return str(os.environ.get("MAILROOM_GMAIL_REACTIONS", "1")).strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+        "",
+    )
+
+
+def reaction_label() -> str:
+    """The emoji label applied as the reaction (default ✅)."""
+    load_env()
+    label = os.environ.get("MAILROOM_GMAIL_REACTION_LABEL", "").strip()
+    return label or DEFAULT_REACTION_LABEL
+
+
+# One reaction per message even when an email carried several attachments —
+# the label is idempotent, but each claim would otherwise open its own IMAP
+# connection for the same Message-ID.
+_REACTION_ATTEMPTED: set[str] = set()
+_REACTION_LOCK = threading.Lock()
+
+
+def react_to_message(
+    message_id: str,
+    *,
+    config: dict | None = None,
+    imap_factory=None,
+) -> bool:
+    """React to the source email with the check emoji (a Gmail label).
+
+    Applied by the WATCHER at claim time — the moment the document has hit
+    the inbox and been picked up for processing. Never raises: a reaction
+    failure must not disturb the document path (logged, retried on the next
+    claim of the same message). Returns True when the label was applied.
+    """
+    if not message_id:
+        return False
+    with _REACTION_LOCK:
+        if message_id in _REACTION_ATTEMPTED:
+            return True
+        _REACTION_ATTEMPTED.add(message_id)
+
+    cfg = config or load_config()
+    label = reaction_label()
+    ok = False
+    error_detail = ""
+    client = None
+    try:
+        factory = (
+            imap_factory
+            or _INJECTED_IMAP_FACTORY
+            or (lambda: imaplib.IMAP4_SSL(cfg["imap_host"], cfg["imap_port"], timeout=IMAP_TIMEOUT_SECONDS))
+        )
+        client = factory()
+        client.login(cfg["address"], cfg["password"])
+        typ, _ = client.select(cfg["folder"], readonly=False)
+        if typ != "OK":
+            raise GmailIntakeError(f"cannot select folder {cfg['folder']!r}")
+        # Best-effort label creation (Gmail auto-creates on STORE in most
+        # cases; CREATE makes it deterministic). Already-exists errors ignored.
+        try:
+            client.create(f'"{label}"'.encode("utf-8"))
+        except Exception:
+            pass
+        # Bytes args: imaplib encodes str args as ASCII — the emoji label
+        # must ride through as pre-encoded UTF-8 bytes.
+        typ, data = client.uid(
+            "SEARCH", None, f'HEADER Message-ID "{message_id}"'.encode("utf-8")
+        )
+        uids = (data[0] or b"").split() if typ == "OK" and data else []
+        for uid in uids:
+            typ, _ = client.uid(
+                "STORE",
+                uid,
+                "+X-GM-LABELS",
+                f'"{label}"'.encode("utf-8"),
+            )
+            if typ == "OK":
+                ok = True
+                logger.info("gmail_reaction_applied", message_id=message_id, label=label)
+    except Exception as exc:
+        error_detail = f"{type(exc).__name__}: {exc}"
+        logger.warning(
+            "gmail_reaction_failed",
+            message_id=message_id,
+            label=label,
+            error=error_detail,
+        )
+    finally:
+        if client is not None:
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+    if ok:
+        _record_status(reactions_sent=_STATUS["reactions_sent"] + 1)
+    else:
+        # Allow a later claim of the same message to retry the reaction.
+        with _REACTION_LOCK:
+            _REACTION_ATTEMPTED.discard(message_id)
+    return ok
+
+
+# Test/smoke seam: when set, EVERY IMAP access in this module (poll sweeps and
+# reactions) goes through this factory instead of a real imaplib connection —
+# network-free evidence without env surgery.
+_INJECTED_IMAP_FACTORY = None
+
+
+def set_imap_factory(factory) -> None:
+    """Inject an IMAP client factory (test/smoke seam). Pass None to reset."""
+    global _INJECTED_IMAP_FACTORY
+    _INJECTED_IMAP_FACTORY = factory
 
 
 def load_config() -> dict:
@@ -318,7 +442,11 @@ def poll_once(
     state = _load_state()
     processed_ids: list[str] = state.get("processed_message_ids", [])
 
-    factory = imap_factory or (lambda: imaplib.IMAP4_SSL(cfg["imap_host"], cfg["imap_port"], timeout=IMAP_TIMEOUT_SECONDS))
+    factory = (
+        imap_factory
+        or _INJECTED_IMAP_FACTORY
+        or (lambda: imaplib.IMAP4_SSL(cfg["imap_host"], cfg["imap_port"], timeout=IMAP_TIMEOUT_SECONDS))
+    )
     client = None
     try:
         client = factory()

@@ -45,6 +45,8 @@ class FakeIMAP:
         self._messages = messages
         self._ignore_store = ignore_store
         self.seen: set[str] = set()
+        self.labels: dict[str, list[str]] = {}
+        self.store_calls = 0
         self.logged_in = False
         self.selected = None
 
@@ -56,19 +58,43 @@ class FakeIMAP:
         return ("OK", [b"1"])
 
     def uid(self, command, *args):
-        if command == "search":
+        command = command.upper()  # real imaplib does the same
+        if command == "SEARCH":
+            criteria = " ".join(
+                a.decode("utf-8", "ignore") if isinstance(a, bytes) else str(a)
+                for a in args
+                if a is not None
+            )
+            if "Message-ID" in criteria:
+                mid = criteria.split("Message-ID", 1)[1].strip().strip('"')
+                matches = [
+                    u
+                    for u, raw in self._messages.items()
+                    if mid in raw.decode("utf-8", "ignore")
+                ]
+                return ("OK", [" ".join(matches).encode()])
             unseen = " ".join(u for u in self._messages if u not in self.seen)
             return ("OK", [unseen.encode()])
-        if command == "fetch":
+        if command == "FETCH":
             uid = self._arg(args[0])
             data = self._messages.get(uid)
             if data is None:
                 return ("OK", [None])
             header = b"1 (UID " + uid.encode() + b" RFC822 {" + str(len(data)).encode() + b"}"
             return ("OK", [(header, data), b")"])
-        if command == "store":
+        if command == "STORE":
             uid = self._arg(args[0])
-            if not self._ignore_store:
+            self.store_calls += 1
+            flags = " ".join(
+                a.decode("utf-8", "ignore") if isinstance(a, bytes) else str(a)
+                for a in args[1:]
+            )
+            if "X-GM-LABELS" in flags:
+                # Gmail reaction: emoji label arrives as pre-encoded UTF-8 bytes.
+                self.labels.setdefault(uid, []).append(
+                    flags.split("X-GM-LABELS", 1)[1].strip()
+                )
+            elif not self._ignore_store:
                 self.seen.add(uid)
             return ("OK", [b"OK"])
         raise AssertionError(f"unexpected imap command {command!r}")
@@ -347,3 +373,74 @@ def test_finalize_aborted_carries_intake_meta(temp_base_dir):
     assert mine and mine[0]["stage"] == "failed"
     assert mine[0]["intake"]["source"] == "gmail"
     assert mine[0]["intake"]["message_id"] == "<msg-abort@example.com>"
+
+
+# ── check-emoji reaction at watcher claim time (HUB-037) ──────────────────
+
+
+def test_react_to_message_applies_check_label(temp_base_dir):
+    raw = _message(
+        "docs",
+        attachments=({"d.pdf": _pdf_bytes()}),
+        message_id="<react-1@example.com>",
+    )
+    client = FakeIMAP({"7": raw})
+    ok = gmail_intake.react_to_message(
+        "<react-1@example.com>", config=_cfg(), imap_factory=lambda: client
+    )
+    assert ok is True
+    assert client.labels["7"] == ['"✅"']  # emoji rides as UTF-8 bytes
+    assert gmail_intake.status()["reactions_sent"] == 1
+
+
+def test_react_dedups_per_message_within_and_across_claims(temp_base_dir):
+    raw = _message(
+        "docs",
+        attachments=({"d.pdf": _pdf_bytes()}),
+        message_id="<react-2@example.com>",
+    )
+    # One email, several attachments → several claims → ONE reaction.
+    client = FakeIMAP({"1": raw})
+    assert gmail_intake.react_to_message("<react-2@example.com>", config=_cfg(), imap_factory=lambda: client)
+    assert gmail_intake.react_to_message("<react-2@example.com>", config=_cfg(), imap_factory=lambda: client)
+    assert client.store_calls == 1  # second call short-circuited
+
+
+def test_react_missing_message_returns_false_and_allows_retry(temp_base_dir):
+    client = FakeIMAP({})
+    ok = gmail_intake.react_to_message(
+        "<react-3@example.com>", config=_cfg(), imap_factory=lambda: client
+    )
+    assert ok is False
+    # A failed reaction is not marked attempted — a later claim retries.
+    assert gmail_intake.react_to_message(
+        "<react-3@example.com>", config=_cfg(), imap_factory=lambda: client
+    ) is False
+    assert client.store_calls == 0
+
+
+def test_reactions_gate_and_label_config(monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_REACTIONS", "0")
+    assert gmail_intake.reactions_enabled() is False
+    monkeypatch.setenv("MAILROOM_GMAIL_REACTIONS", "1")
+    monkeypatch.setenv("MAILROOM_GMAIL_REACTION_LABEL", "✔ Done")
+    assert gmail_intake.reactions_enabled() is True
+    assert gmail_intake.reaction_label() == "✔ Done"
+    monkeypatch.delenv("MAILROOM_GMAIL_REACTION_LABEL")
+    assert gmail_intake.reaction_label() == "✅"
+
+
+def test_watcher_claim_dispatches_reaction(temp_base_dir, mocker):
+    from pipeline.watcher import _notify_intake_reaction
+
+    spy = mocker.patch("pipeline.gmail_intake.react_to_message", return_value=True)
+    _notify_intake_reaction(
+        {"source": "gmail", "message_id": "<msg-react@example.com>"}, async_mode=False
+    )
+    spy.assert_called_once_with("<msg-react@example.com>")
+
+    # Non-gmail sources and sidecars without a message id never react.
+    spy.reset_mock()
+    _notify_intake_reaction({"source": "upload", "upload_id": "x"}, async_mode=False)
+    _notify_intake_reaction({"source": "gmail"}, async_mode=False)
+    assert spy.call_count == 0
