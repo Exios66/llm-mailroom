@@ -65,12 +65,8 @@ def test_render_pdf_pages_produces_data_uris(pdf_fixture):
 def test_render_caps_pages():
     from llm.vision import render_pdf_pages
 
-    sample = Path("docs/examples/samples/contract/contract_03_service_agreement.pdf")
-    if not sample.is_file():
-        pytest.skip("docs/examples/samples/ absent (pruned heavy asset; see upstream repo)")
-
     # A positive cap bounds the image budget…
-    ten = render_pdf_pages(sample, cap=10)
+    ten = render_pdf_pages(Path("docs/examples/samples/contract/contract_03_service_agreement.pdf"), cap=10)
     assert len(ten) == 10
     # …while cap=0 (or None) means "ALL pages" — no document content is ever
     # dropped by the page cap.

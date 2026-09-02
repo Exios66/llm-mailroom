@@ -6,13 +6,6 @@ Resolves the latest published GitHub Release on Exios66/llm-dojo-scoring
 the documented pin references. Used by humans and by
 ``.github/workflows/bump-dojo-scoring.yml``.
 
-RELEASE-TIME ONLY: in the mailroom-hub monorepo, development resolves
-``llm-dojo-scoring`` from the workspace (``[tool.uv.sources]`` redirect) —
-the pin here matters only when cutting a release / building deploy images.
-The companion auto-bump workflow is inert inside the monorepo (nested
-``.github/`` is not read by GitHub); run this script manually at release
-time.
-
 Examples::
 
     PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check

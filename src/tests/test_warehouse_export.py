@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -119,9 +119,7 @@ def test_routine_export_document_sync(warehouse_env, temp_base_dir):
 
     _seed_terminal_doc(temp_base_dir, doc_id="wh-routine")
     assert export_document_to_warehouse("wh-routine") is True
-    # The routine export stamps by UTC date (V-6/V-7 convention) — a local
-    # date.today() lags UTC on west-of-UTC machines in the evening.
-    stamp = datetime.now(timezone.utc).date()
+    stamp = date.today()
     path = daily_documents_path(stamp)
     assert path.is_file()
     rows = warehouse_env.parquet.read_table(path).to_pylist()
