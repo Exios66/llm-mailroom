@@ -130,6 +130,7 @@ def _bound_prompt_versions() -> dict[str, str]:
         "judge-classification": "production",
         "judge-correctness": "production",
         "arbiter": "production",
+        "gmail_triage": "production",
     }
 
 
@@ -146,6 +147,7 @@ def prompt_templates() -> dict[str, str]:
         contracts_specialist,
         corporate_records_specialist,
         correspondence_specialist,
+        gmail_triage,
         insurance_claims_specialist,
         image_extractor,
         judge,
@@ -176,4 +178,5 @@ def prompt_templates() -> dict[str, str]:
         "judge-classification": judge.CLASSIFICATION_SYSTEM_PROMPT,
         "judge-correctness": judge.CORRECTNESS_SYSTEM_PROMPT,
         "arbiter": arbiter.ARBITER_SYSTEM_PROMPT,
+        "gmail_triage": gmail_triage.TRIAGE_SYSTEM_PROMPT,
     }

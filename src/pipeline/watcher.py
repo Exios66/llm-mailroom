@@ -325,6 +325,44 @@ def _notify_intake_reaction(intake_meta: dict, *, async_mode: bool = True) -> No
         logger.exception("gmail_reaction_dispatch_failed", message_id=str(message_id))
 
 
+def _notify_intake_triage(file_path: Path, intake_meta: dict) -> None:
+    """Pre-pipeline intake triage for Gmail-channel documents (HUB-037).
+
+    Runs BEFORE ``run_pipeline`` on Gmail-intake attachments: reads the same
+    document text the pipeline will see and produces the advisory intake log
+    (primary doc class, subclass when discernible, confidence, gist,
+    keywords) that rides ``intake_meta["triage"]`` into the terminal manifest
+    and the completion echo. Advisory by design — the read never influences
+    the pipeline's own classification or routing. Fails soft: a missing key,
+    rate limit, or provider error must never block a claim (logged; the
+    pipeline proceeds without a triage record). Disable with
+    ``MAILROOM_GMAIL_TRIAGE=0``.
+    """
+    if not intake_meta or intake_meta.get("source") != "gmail":
+        return
+    try:
+        from .gmail_intake import triage_enabled
+
+        if not triage_enabled():
+            return
+        from agents.gmail_triage import GmailTriageAgent
+        from graph.build_graph import _read_file_text
+
+        doc_text, _ = _read_file_text(file_path)
+        agent = GmailTriageAgent()
+        result = agent.triage(doc_text, filename=file_path.name)
+        if isinstance(result, dict) and result:
+            intake_meta["triage"] = result
+            logger.info(
+                "gmail_triage_complete",
+                file=str(file_path),
+                doc_class=result.get("primary_doc_class"),
+                confidence=result.get("confidence"),
+            )
+    except Exception:
+        logger.exception("gmail_triage_failed", file=str(file_path))
+
+
 class InboxHandler(FileSystemEventHandler):
     def __init__(self, worker_id: str):
         self.worker_id = worker_id
@@ -412,6 +450,7 @@ class InboxHandler(FileSystemEventHandler):
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
+            _notify_intake_triage(claimed, intake_meta)
             logger.info(
                 "file_claimed",
                 file=str(claimed),
@@ -572,6 +611,7 @@ class Watcher:
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
+            _notify_intake_triage(claimed, intake_meta)
             logger.info(
                 "existing_file_claimed",
                 file=str(claimed),
