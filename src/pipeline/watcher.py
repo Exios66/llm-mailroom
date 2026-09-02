@@ -294,6 +294,37 @@ def _intake_context(path: Path) -> tuple[str, dict]:
     return _infer_matter_id(path), _intake_meta_from_sidecar(read_inbox_meta(path))
 
 
+def _notify_intake_reaction(intake_meta: dict, *, async_mode: bool = True) -> None:
+    """React to the source email with a check emoji once it is claimed.
+
+    Fires ONLY for Gmail-channel documents (``source: gmail`` in the intake
+    sidecar) at the moment the watcher picks the attachment up for
+    processing. Best-effort and asynchronous (daemon thread): a reaction can
+    never delay or fail a claim. Disable with MAILROOM_GMAIL_REACTIONS=0.
+    """
+    if not intake_meta or intake_meta.get("source") != "gmail":
+        return
+    message_id = intake_meta.get("message_id")
+    if not message_id:
+        return
+    try:
+        from .gmail_intake import reactions_enabled, react_to_message
+
+        if not reactions_enabled():
+            return
+        if async_mode:
+            threading.Thread(
+                target=react_to_message,
+                args=(str(message_id),),
+                name="gmail-reaction",
+                daemon=True,
+            ).start()
+        else:
+            react_to_message(str(message_id))
+    except Exception:
+        logger.exception("gmail_reaction_dispatch_failed", message_id=str(message_id))
+
+
 class InboxHandler(FileSystemEventHandler):
     def __init__(self, worker_id: str):
         self.worker_id = worker_id
@@ -380,6 +411,7 @@ class InboxHandler(FileSystemEventHandler):
                 return
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
+            _notify_intake_reaction(intake_meta)
             logger.info(
                 "file_claimed",
                 file=str(claimed),
@@ -539,6 +571,7 @@ class Watcher:
                 return
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
+            _notify_intake_reaction(intake_meta)
             logger.info(
                 "existing_file_claimed",
                 file=str(claimed),

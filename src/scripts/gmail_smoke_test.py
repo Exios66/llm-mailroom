@@ -45,8 +45,8 @@ import email.utils
 import json
 import os
 import smtplib
-import sys
 import tempfile
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -148,11 +148,16 @@ def _mock_get_llm(agent_name: str):
 
 
 class _FakeIMAP:
-    """Minimal imaplib.IMAP4_SSL stand-in serving one pre-loaded message."""
+    """Minimal imaplib.IMAP4_SSL stand-in serving one pre-loaded message.
+
+    Records ``X-GM-LABELS`` stores so the watcher's check-emoji reaction is
+    provable without network.
+    """
 
     def __init__(self, messages: dict[str, bytes]):
         self._messages = messages
         self.seen: set[str] = set()
+        self.labels: dict[str, list[str]] = {}
 
     def login(self, user, password):
         pass
@@ -161,17 +166,40 @@ class _FakeIMAP:
         return ("OK", [b"1"])
 
     def uid(self, command, *args):
-        if command == "search":
+        command = command.upper()  # real imaplib does the same
+        if command == "SEARCH":
+            criteria = " ".join(
+                a.decode("utf-8", "ignore") if isinstance(a, bytes) else str(a)
+                for a in args
+                if a is not None
+            )
+            if "Message-ID" in criteria:
+                mid = criteria.split("Message-ID", 1)[1].strip().strip('"')
+                matches = [
+                    u
+                    for u, raw in self._messages.items()
+                    if mid in raw.decode("utf-8", "ignore")
+                ]
+                return ("OK", [" ".join(matches).encode()])
             unseen = " ".join(u for u in self._messages if u not in self.seen)
             return ("OK", [unseen.encode()])
-        if command == "fetch":
+        if command == "FETCH":
             uid = args[0].decode() if isinstance(args[0], bytes) else str(args[0])
             data = self._messages[uid]
             header = b"1 (UID " + uid.encode() + b" RFC822 {" + str(len(data)).encode() + b"}"
             return ("OK", [(header, data), b")"])
-        if command == "store":
+        if command == "STORE":
             uid = args[0].decode() if isinstance(args[0], bytes) else str(args[0])
-            self.seen.add(uid)
+            flags = " ".join(
+                a.decode("utf-8", "ignore") if isinstance(a, bytes) else str(a)
+                for a in args[1:]
+            )
+            if "X-GM-LABELS" in flags:
+                self.labels.setdefault(uid, []).append(
+                    flags.split("X-GM-LABELS", 1)[1].strip()
+                )
+            else:
+                self.seen.add(uid)
             return ("OK", [b"OK"])
         raise AssertionError(f"unexpected imap command {command!r}")
 
@@ -276,12 +304,16 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     scratch = _prepare_base_dir()
     raw, message_id, attachment_name = build_smoke_email(matter_id, fixture)
 
-    # [connectivity] poll_once over a fake IMAP client.
+    # [connectivity] poll_once over a fake IMAP client; the same fake also
+    # serves the watcher's reaction (module-level seam), so the ✅ label
+    # application is provable network-free.
     from pipeline import gmail_intake
 
+    messages = {"1": raw}
+    gmail_intake.set_imap_factory(lambda: _FakeIMAP(messages))
     report = gmail_intake.poll_once(
         config=gmail_intake.load_config(),
-        imap_factory=lambda: _FakeIMAP({"1": raw}),
+        imap_factory=lambda: _FakeIMAP(messages),
     )
     checks.append(
         (
@@ -329,6 +361,21 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
             f"doc_type={(manifest or {}).get('doc_type')}",
         )
     )
+
+    # [reaction] the watcher reacted to the source email with the ✅ label
+    # (async daemon thread — bounded wait, then read the status counter).
+    deadline = time.time() + 5
+    while time.time() < deadline and gmail_intake.status()["reactions_sent"] < 1:
+        time.sleep(0.1)
+    reacted = gmail_intake.status()["reactions_sent"] >= 1
+    checks.append(
+        (
+            "reaction: source email reacted with the check emoji (✅ label)",
+            reacted,
+            f"reactions_sent={gmail_intake.status()['reactions_sent']}",
+        )
+    )
+    gmail_intake.set_imap_factory(None)  # reset the seam
     print(f"scratch base dir: {scratch}")
     return checks
 
@@ -339,6 +386,10 @@ def run_real(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
 
     scratch = _prepare_base_dir()
     raw, message_id, attachment_name = build_smoke_email(matter_id, fixture)
+    from pipeline import gmail_intake
+
+    gmail_intake.set_imap_factory(None)  # real run: never inherit an injected factory
+    reactions_before = gmail_intake.status()["reactions_sent"]
 
     try:
         _send_via_smtp(raw)
@@ -352,10 +403,7 @@ def run_real(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
         return checks
 
     # Give Gmail a moment to deliver, then sweep the real mailbox.
-    import time
-
     time.sleep(5)
-    from pipeline import gmail_intake
 
     report = gmail_intake.poll_once()
     checks.append(
@@ -408,6 +456,17 @@ def run_real(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
                 f"doc_type={(manifest or {}).get('doc_type')}",
             )
         )
+    # [reaction] the watcher reacted to OUR email on the real mailbox.
+    deadline = time.time() + 10
+    while time.time() < deadline and gmail_intake.status()["reactions_sent"] <= reactions_before:
+        time.sleep(0.2)
+    checks.append(
+        (
+            "reaction: ✅ label applied to the source message (real mailbox)",
+            gmail_intake.status()["reactions_sent"] > reactions_before,
+            f"reactions_sent={gmail_intake.status()['reactions_sent']} (before: {reactions_before})",
+        )
+    )
     print(f"scratch base dir: {scratch}")
     return checks
 
