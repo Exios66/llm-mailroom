@@ -320,6 +320,42 @@ See `.env.example` for the complete list:
 | `MAILROOM_GMAIL_ALLOWED_SENDERS` | No | — | CSV allowlist of sender addresses (lowercased); empty = accept all |
 | `MAILROOM_GMAIL_REACTIONS` | No | `1` | When the watcher claims a Gmail-channel attachment, react to the source email with the check emoji (a Gmail label via IMAP `X-GM-LABELS`) — the "picked up for processing" ack. Best-effort: a reaction failure never disturbs the claim. Set `0` to disable |
 | `MAILROOM_GMAIL_REACTION_LABEL` | No | `✅` | The emoji-named Gmail label applied as the reaction (auto-created best-effort) |
+| `MAILROOM_GMAIL_ECHOES` | No | `1` (with channel on) | When a Gmail-intake document reaches a terminal stage (archived/review/failed), reply on the source email thread with the completion report: status, classification, extraction, archive entry (path + sha256) and the verified audit chain |
+| `MAILROOM_GMAIL_SMTP_HOST` | No | `smtp.gmail.com` | SMTP host for the echo replies (same app password) |
+| `MAILROOM_GMAIL_SMTP_PORT` | No | `465` | SMTP SSL port for the echo replies |
+
+### Emailing the mailroom (Gmail intake format contract)
+
+There is **no subject keyword to trigger pickup** — every email arriving at
+the mailbox is swept automatically (every `MAILROOM_GMAIL_POLL_SECONDS`, default 60).
+`RE:` / `FWD:` prefixes are irrelevant. The format rules that DO matter:
+
+| Rule | Detail |
+|---|---|
+| **Attach the document** | Only attachments are processed — the email body is never read. Body-only emails are marked seen and skipped (logged as `gmail_message_no_processable_attachments`) |
+| **Accepted extensions** | `file_extensions` in `config/taxonomy.yaml`: `.pdf`, `.txt`, `.docx`, `.md`, `.jpg`, `.jpeg`, `.png`, `.gif` (anything else is skipped, message still acknowledged) |
+| **Size** | ≤ `MAILROOM_GMAIL_MAX_ATTACHMENT_MB` (default 50 MB) per attachment |
+| **Matter routing (optional)** | Put `[M:<matter_id>]` in the subject — e.g. `Hail damage FNOL [M:MORNINGSTAR-001]`. Allowed chars: `A-Z a-z 0-9 _ . -` (≤64). Without the tag the document files under `MAILROOM_GMAIL_DEFAULT_MATTER_ID` (default `DEFAULT`) |
+| **Multiple attachments** | Each accepted attachment becomes its own document under the same matter; one email per document is cleanest for traceability |
+
+Worked example:
+
+```
+To:      llmmailroom@gmail.com
+Subject: Hail damage FNOL [M:MORNINGSTAR-001]
+Attach:  claim_2026-03-14.pdf
+```
+
+What you get back: the ✅ label appears on the email the moment the watcher
+claims the attachment for processing (the intake acknowledgement); the
+document then flows inbox → classify → extract → archive/review like any
+upload, with `intake.source: gmail` + the sender/subject recorded on the
+manifest for audit. When it reaches a terminal stage the mailroom **replies
+on the same thread** with a completion report — STATUS, doc_id/matter,
+classification + confidence, the extraction report, the archive entry (path
++ sha256 for archived documents, or the failure/review reason), and the full
+audit trail with the hash-chain verification verdict — so the email thread
+itself is the notification surface.
 | `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
 | `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
 | `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |

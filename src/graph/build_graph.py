@@ -1719,6 +1719,13 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             },
         )
 
+    # Completion echo (HUB-037): a Gmail-intake document parked for review
+    # still reports its outcome on the source email thread — dispatched AFTER
+    # the routed_to_review audit entry so the echo's audit trail is complete.
+    from pipeline.gmail_intake import dispatch_intake_echo
+
+    dispatch_intake_echo(manifest.model_dump(mode="json"))
+
     payload = {
         "action": "human_review",
         "doc_id": doc_id or "",
@@ -2081,6 +2088,11 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     )
 
     logger.info("pipeline_complete", doc_id=manifest.doc_id, archive=str(archive_path))
+    # Completion echo (HUB-037): Gmail-intake documents get the outcome
+    # (archive entry + audit chain) replied onto their source email thread.
+    from pipeline.gmail_intake import dispatch_intake_echo
+
+    dispatch_intake_echo(manifest.model_dump(mode="json"))
     _maybe_export_warehouse(manifest.doc_id)
     return {"stage": PipelineStage.ARCHIVED.value}
 
@@ -2565,6 +2577,11 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         )
     except Exception:
         logger.exception("abort_audit_write_error", doc_id=manifest.doc_id)
+    # Completion echo (HUB-037): failed Gmail-intake runs report on-thread
+    # too — AFTER the run_aborted audit entry so the trail is complete.
+    from pipeline.gmail_intake import dispatch_intake_echo
+
+    dispatch_intake_echo(manifest.model_dump(mode="json"))
     _maybe_export_warehouse(manifest.doc_id)
     return state
 
