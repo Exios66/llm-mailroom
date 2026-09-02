@@ -455,7 +455,7 @@ CLASSIFY_CONTRACT_HIGH = {
 CLASSIFY_CONTRACT_MEDIUM = {
     "doc_type": "contract",
     "contract_subtype": "other",
-    "confidence": 0.92,
+    "confidence": 0.80,
     "reasoning": "Likely a contract but the header is ambiguous",
 }
 CLASSIFY_CONTRACT_LOW = {
@@ -606,10 +606,10 @@ REVIEWER_AGREE = {
     "reasoning": "MSA caption, defined terms, governing-law clause - a contract.",
 }
 REVIEWER_OVERRIDE = {
-    "doc_type": "compliance_filing",
+    "doc_type": "court_opinion",
     "contract_subtype": None,
     "confidence": 0.97,
-    "reasoning": "SEC letterhead, 8-K item references, filing deadline language.",
+    "reasoning": "Caption 'UNITED STATES DISTRICT COURT', docket number, OPINION AND ORDER.",
 }
 
 
@@ -1225,7 +1225,7 @@ CLASSIFY_INSURANCE_HIGH = {
     "doc_type": "insurance_claim",
     "contract_subtype": None,
     "doc_subclass": "carrier",
-    "confidence": 0.98,
+    "confidence": 0.97,
     "reasoning": "FNOL form, claim/policy numbers, insurer, date of loss",
 }
 CLASSIFY_UNKNOWN = {

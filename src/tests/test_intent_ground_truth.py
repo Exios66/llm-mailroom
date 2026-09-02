@@ -31,14 +31,6 @@ LABELED = ("corporate_record", "correspondence", "insurance_claim")
 
 MANIFEST = Path(__file__).resolve().parent.parent.parent / "docs/examples/samples/manifest.csv"
 
-# docs/examples/ is a pruned heavy asset in the monorepo (sample PDFs +
-# manifest). The upstream llm-mailroom repo is the reference for these.
-pytestmark = pytest.mark.skipif(
-    not MANIFEST.is_file(),
-    reason="docs/examples/samples/manifest.csv absent (pruned heavy asset; see upstream repo)",
-)
-
-
 
 def _manifest_rows():
     with MANIFEST.open() as fh:

@@ -1,0 +1,209 @@
+FORM 10-K
+ANNUAL REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+
+For the fiscal year ended December 31, 2024
+Commission File Number 001-39420
+
+NORTHWIND LOGISTICS CORPORATION
+(Exact name of registrant as specified in its charter)
+
+Delaware
+(State or other jurisdiction of incorporation)
+47-3891023
+(I.R.S. Employer Identification No.)
+4100 Harbor Way, Suite 300
+Oakland, California 94612
+(Address of principal executive offices and zip code)
+(510) 555-0142
+(Registrant's telephone number, including area code)
+
+Securities registered pursuant to Section 12(b) of the Act:
+Title of each class: Common Stock, par value $0.001 per share
+Trading Symbol: NWLD
+Name of each exchange on which registered: The Nasdaq Stock Market LLC
+
+PART I
+
+ITEM 1. BUSINESS
+
+Northwind Logistics Corporation ("Northwind," "the Company," "we," "us," or "our") is a technology-enabled
+third-party logistics provider that offers freight brokerage, dedicated contract carriage, and managed
+transportation services to customers across the United States and Canada. We were founded in 2012 and became
+a public company in 2021. Our principal services include (i) truckload and less-than-truckload freight
+brokerage, (ii) dedicated fleet operations under long-term transportation agreements, (iii) intermodal
+brokerage connecting rail and truck networks, and (iv) supply chain analytics and visibility software offered
+on a software-as-a-service basis.
+
+We generate revenue primarily from customer contracts that are secured through our direct sales force and a
+network of independent agent representatives. No single customer accounted for more than 8% of our revenue in
+fiscal 2024. As of December 31, 2024, we employed 1,248 people, of whom 612 were professional staff and 636
+were drivers and operational personnel.
+
+Our industry is highly competitive. We compete with national asset-based carriers, large freight brokerages,
+and digital freight marketplaces. Key competitive factors include price, network density, carrier reliability,
+technology, and service quality. We believe our differentiated analytics platform, which we market under the
+trade name "HarborIQ," provides us with a meaningful advantage in carrier selection and lane profitability.
+
+ITEM 1A. RISK FACTORS
+
+Investing in our common stock involves a high degree of risk. In addition to the other information contained
+in this Annual Report on Form 10-K, you should carefully consider the risks described below.
+
+Risks Related to Our Business and Industry
+
+Our operating results depend on the volume of freight we move and the rates we are able to charge, both of
+which are subject to significant cyclical volatility. Downturns in general economic conditions, including
+recessions, inflationary pressure, or disruptions to supply chains, have in the past materially reduced the
+volume of freight available and compressed our margins. A sustained decline in macroeconomic conditions would
+have a material adverse effect on our revenue, profitability, and cash flows.
+
+We depend on third-party carriers to move freight, and any disruption in the capacity available in our
+network, including reductions in the number of owner-operators, could impair our ability to serve customers.
+If we are unable to secure sufficient carrier capacity at economical rates, our revenue and customer retention
+may decline.
+
+Litigation, regulatory enforcement, and evolving labor and employment laws may result in increased costs and
+liabilities. Claims that we are a joint employer of our independent contractor carriers, or challenges to the
+classification of independent contractors under state law, could expose us to material financial and
+reputational harm.
+
+Risks Related to Technology and Data
+
+Our HarborIQ platform relies on the collection and processing of large volumes of data. A cybersecurity
+incident, including a breach of the data of our customers or carriers, could disrupt our operations, result in
+the loss or compromise of confidential information, and subject us to significant liability and regulatory
+penalties. We maintain insurance coverage, but our coverage may be insufficient for the full scope of a
+sophisticated attack.
+
+Risks Related to Our Common Stock
+
+Our stock price has been and may continue to be volatile. The market price of our common stock could fluctuate
+significantly in response to quarterly variations in our operating results, changes in financial estimates by
+securities analysts, general market conditions, and other factors beyond our control.
+
+ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS
+
+Overview
+
+Fiscal 2024 was a year of disciplined execution for Northwind. We delivered $412.3 million in revenue, an
+increase of 6.1% compared with $388.6 million in fiscal 2023, driven primarily by growth in dedicated contract
+carriage and intermodal volume. Gross margin improved 90 basis points to 17.4%, reflecting better carrier
+procurement and tighter lane management enabled by HarborIQ.
+
+Results of Operations
+
+Revenue. Revenue increased by $23.7 million, or 6.1%, to $412.3 million in fiscal 2024. Freight brokerage
+revenue decreased 1.2% to $241.8 million on lower spot-market rates, while dedicated contract carriage revenue
+increased 18.3% to $124.5 million due to the addition of 14 new dedicated fleet engagements. Intermodal and
+other revenue increased 9.4% to $46.0 million.
+
+Cost of revenue and gross margin. Cost of revenue increased 4.7% to $340.6 million, driven by increased
+fuel costs and insurance premiums. As a result, gross margin expanded from 16.5% to 17.4%.
+
+Selling, general, and administrative expenses. SG&A expenses increased 8.2% to $52.1 million, primarily due
+to investments in our sales organization and technology headcount.
+
+Net income. Net income for fiscal 2024 was $18.9 million, compared with $16.2 million in fiscal 2023. Diluted
+earnings per share was $0.71, compared with $0.62 in the prior year.
+
+Liquidity and Capital Resources
+
+As of December 31, 2024, we held $63.4 million in cash and cash equivalents and $22.0 million available under
+our revolving credit facility. Cash flows from operating activities were $27.1 million during fiscal 2024,
+compared with $24.4 million in fiscal 2023. We believe our existing cash, cash equivalents, and available
+borrowings are sufficient to meet our anticipated operating and capital expenditure requirements for at least
+the next twelve months. We have no material off-balance sheet arrangements.
+
+ITEM 8. FINANCIAL STATEMENTS AND SUPPLEMENTARY DATA
+
+CONSOLIDATED BALANCE SHEETS
+As of December 31, 2024 and 2023
+(in thousands, except share data)
+
+                                                2024          2023
+ASSETS
+Current assets:
+  Cash and cash equivalents                    63,432        48,115
+  Accounts receivable, net                    108,224        96,877
+  Prepaid expenses and other                   14,608        11,339
+Total current assets                          186,264       156,331
+Property and equipment, net                    91,720        84,108
+Operating lease right-of-use assets            38,442        31,998
+Other long-term assets                          7,815         6,204
+Total assets                                 324,241       278,641
+
+LIABILITIES AND STOCKHOLDERS' EQUITY
+Current liabilities:
+  Accounts payable                             78,114        71,286
+  Accrued expenses                             24,530        21,945
+  Current portion of long-term debt             4,800         4,800
+Total current liabilities                     107,444        98,031
+Long-term debt, net                            38,200        43,000
+Operating lease liabilities                   34,620        28,410
+Other long-term liabilities                    11,905         9,884
+Total liabilities                             192,169       179,325
+Total stockholders' equity                    132,072        99,316
+Total liabilities and stockholders' equity    324,241       278,641
+
+CONSOLIDATED STATEMENTS OF OPERATIONS
+For the years ended December 31, 2024, 2023, and 2022
+(in thousands, except per share data)
+
+                                     2024        2023        2022
+Revenue                             412,340     388,602     361,119
+Cost of revenue                    (340,648)   (325,310)   (301,448)
+Gross profit                         71,692      63,292      59,671
+Selling, general, and
+  administrative                    (52,118)    (48,174)    (44,901)
+Income from operations               19,574      15,118      14,770
+Interest expense, net               (1,204)      (1,110)       (976)
+Income before income taxes           18,370      14,008      13,794
+Income tax expense                  (2,310)      (1,768)      (1,729)
+Net income                           16,060      12,240      12,065
+Net income attributable to
+  noncontrolling interest             (160)        (125)        (98)
+Net income attributable to
+  Northwind Logistics
+  Corporation                        15,900      12,115      11,967
+Basic earnings per share               0.73        0.61        0.61
+Diluted earnings per share             0.71        0.62        0.62
+
+ITEM 9. CHANGES IN AND DISAGREEMENTS WITH ACCOUNTANTS ON ACCOUNTING AND FINANCIAL DISCLOSURE
+
+None.
+
+ITEM 9A. CONTROLS AND PROCEDURES
+
+Evaluation of Disclosure Controls and Procedures
+
+Our management, with the participation of our principal executive officer and principal financial officer,
+has evaluated the effectiveness of our disclosure controls and procedures as of December 31, 2024. Based on
+that evaluation, our principal executive officer and principal financial officer concluded that our disclosure
+controls and procedures were effective at the reasonable assurance level.
+
+Management's Report on Internal Control Over Financial Reporting
+
+Management is responsible for establishing and maintaining adequate internal control over financial reporting.
+Under the supervision of our principal executive officer and principal financial officer, management assessed
+the effectiveness of our internal control over financial reporting as of December 31, 2024 based on the
+criteria set forth by the Committee of Sponsoring Organizations of the Treadway Commission (COSO) in Internal
+Control - Integrated Framework (2013). Based on this assessment, management concluded that our internal control
+over financial reporting was effective as of December 31, 2024.
+
+PART IV
+
+ITEM 15. EXHIBITS, FINANCIAL STATEMENT SCHEDULES
+
+The following documents are filed as part of this report:
+(a) Consolidated financial statements.
+(b) Financial statement schedules: none.
+(c) Exhibits: the exhibits listed in the Exhibit Index are incorporated by reference.
+
+SIGNATURES
+
+Pursuant to the requirements of Section 13 or 15(d) of the Securities Exchange Act of 1934, the registrant
+has duly caused this report to be signed on its behalf by the undersigned, thereunto duly authorized.
+
+NORTHWIND LOGISTICS CORPORATION
+By: /s/ Margaret Chen, Chief Executive Officer
+Date: February 27, 2025

@@ -11,8 +11,6 @@ every glob must match ≥1 fixture, and the matcher must actually engage.
 import importlib.util
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = REPO_ROOT / "src" / "scripts" / "validate_pipeline.py"
 
@@ -41,8 +39,6 @@ def test_every_glob_matches_at_least_one_fixture():
         if not key.endswith("/*"):
             continue
         d = REPO_ROOT / key[:-2]
-        if not d.is_dir():
-            pytest.skip(f"glob directory absent (pruned heavy asset in monorepo): {key}")
         assert d.is_dir(), f"glob directory missing: {key}"
         assert any(d.glob("*")), f"glob matches zero fixtures: {key}"
 
@@ -52,8 +48,6 @@ def test_matcher_engages_for_every_entry():
     for key, (expected_cls, expected_subtype) in vp.FIXTURE_EXPECTATIONS.items():
         if key.endswith("/*"):
             d = REPO_ROOT / key[:-2]
-            if not d.is_dir():
-                pytest.skip(f"glob directory absent (pruned heavy asset in monorepo): {key}")
             path = sorted(d.glob("*"))[0]
         else:
             path = REPO_ROOT / key
