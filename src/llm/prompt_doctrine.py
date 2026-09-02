@@ -223,7 +223,7 @@ JUDGE_COMPLETENESS = _block(
 JUDGE_CLASSIFICATION = classification_doctrine(
     [
         "Grade doc_type and, for contracts, contract_subtype. A correct class with a missing subtype is not fully correct.",
-        "unknown is a valid assigned type when the document fits none of the six live classes; do not mark that incorrect merely because a nearby class exists.",
+        "unknown is a valid assigned type when the document fits none of the five live classes; do not mark that incorrect merely because a nearby class exists.",
     ]
 )
 

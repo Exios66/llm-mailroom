@@ -12,7 +12,9 @@ stratified slice of that parent — every type and every subtype stratum).
 Other published Lucius-Morningstar datasets are first-class pipeline inputs
 too, including the 247k-row Enron correspondence corpus.
 
-``compliance_filing`` has zero Hub rows (honest gap). Court/DD are retired.
+``compliance_filing`` is retired from the canonical five-class surface (zero
+Hub rows; retained in ``taxonomy.yaml`` as ``status: retired`` machinery).
+Court/DD are retired.
 """
 
 from __future__ import annotations
@@ -30,8 +32,10 @@ FULL_CORPUS_ID = f"{ORG}/docclass-merged"
 FULL_CORPUS_REVISION = "b3ec9ee7de3f2ca4f3b26e26d6989509d3b1121e"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
-# Hub HF classes present in docclass-merged v7. Not the same as the six live
-# taxonomy keys: compliance_filing is live in the pipeline but absent on Hub.
+# Hub HF classes present in docclass-merged v7 — identical to the canonical
+# five-class live taxonomy (docs/v7-taxonomy.md). taxonomy.yaml carries a
+# sixth configured entry (compliance_filing, marked status: retired):
+# retained machinery with zero Hub rows, not a corpus class.
 HUB_CLASSES: tuple[str, ...] = (
     "contract",
     "merger_agreement",

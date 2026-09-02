@@ -247,7 +247,15 @@ doc_classes:
       subject_matter: free_text
       keywords: entity_list:name
 
+  # RETIRED 2026-09-01 (docs/v7-taxonomy.md): removed from the canonical
+  # five-class surface (Hub corpus, sorter fallback table, pipeline diagram).
+  # This entry is RETAINED MACHINERY — the config path still resolves and
+  # dispatches it (zero Hub rows; local eval packs only). `status: retired`
+  # is the machine-readable marker the taxonomy-parity gate honors: do not
+  # treat this as a live corpus class, and do not remove the entry without a
+  # release decision (local packs + specialist dispatch still reference it).
   - key: compliance_filing
+    status: retired
     label: "Compliance Filing"
     schema: ComplianceFilingExtraction
     specialist: compliance_specialist
