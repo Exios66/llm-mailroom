@@ -10,6 +10,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # src/
 
 @pytest.fixture(autouse=True)
 def _set_test_env():
+    # Freeze .env loading FIRST (module-global `_loaded` latch): production
+    # code paths that call load_env() mid-test must never re-inject gitignored
+    # .env values after the pops below (deterministic hermeticity — otherwise
+    # tests pass/fail depending on which module happened to import first).
+    from pipeline.env import load_env as _load_env
+
+    _load_env()
     os.environ.setdefault("OPENROUTER_API_KEY", "test-key-not-real")
     os.environ.setdefault("MAILROOM_BASE_DIR", os.environ.get("MAILROOM_BASE_DIR", "/tmp/mailroom-test"))
     # Keep tests hermetic: never pick up the real .env Langfuse/Braintrust keys
@@ -18,6 +25,11 @@ def _set_test_env():
     # Production .env may enable the docclass arm, force vision off, or pin
     # DEFAULT_PROVIDER; tests must stay hermetic unless a case opts in.
     os.environ["MAILROOM_DOCCLASS_PROMPTS"] = "0"
+    # Gmail intake (HUB-037) is opt-in in production (.env); tests must never
+    # pick the real credentials up and start network polls.
+    os.environ["MAILROOM_GMAIL_ENABLED"] = "0"
+    for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"):
+        os.environ.pop(k, None)
     os.environ.pop("MAILROOM_VISION_ENABLED", None)
     os.environ.pop("DEFAULT_PROVIDER", None)
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",

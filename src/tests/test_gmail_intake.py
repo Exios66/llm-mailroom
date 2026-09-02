@@ -1,0 +1,349 @@
+"""Gmail intake channel (HUB-037) — network-free tests.
+
+Every test drives ``poll_once`` through a fake IMAP client; no socket is
+ever opened. The channel is opt-in (``MAILROOM_GMAIL_ENABLED=1``) and
+conftest keeps it disabled for the whole suite, so a production ``.env``
+with real credentials can never leak network polls into tests.
+"""
+
+import email.message
+
+import pytest
+
+from pipeline import gmail_intake
+
+
+def _pdf_bytes() -> bytes:
+    return b"%PDF-1.4\n% fake attachment for tests\n"
+
+
+def _message(
+    subject: str,
+    sender: str = "sender@example.com",
+    attachments=(),
+    message_id: str = "<msg-1@example.com>",
+) -> bytes:
+    msg = email.message.EmailMessage()
+    msg["From"] = sender
+    msg["To"] = "llmmailroom@gmail.com"
+    msg["Subject"] = subject
+    msg["Message-ID"] = message_id
+    msg["Date"] = "Tue, 01 Sep 2026 12:00:00 +0000"
+    msg.set_content("please process the attached documents")
+    for filename, payload in dict(attachments).items():
+        subtype = "pdf" if filename.endswith(".pdf") else "octet-stream"
+        msg.add_attachment(
+            payload, maintype="application", subtype=subtype, filename=filename
+        )
+    return msg.as_bytes()
+
+
+class FakeIMAP:
+    """Minimal imaplib.IMAP4_SSL stand-in (uid commands only, as used by the poller)."""
+
+    def __init__(self, messages: dict[str, bytes], ignore_store: bool = False):
+        self._messages = messages
+        self._ignore_store = ignore_store
+        self.seen: set[str] = set()
+        self.logged_in = False
+        self.selected = None
+
+    def login(self, user, password):
+        self.logged_in = True
+
+    def select(self, folder, readonly=False):
+        self.selected = folder
+        return ("OK", [b"1"])
+
+    def uid(self, command, *args):
+        if command == "search":
+            unseen = " ".join(u for u in self._messages if u not in self.seen)
+            return ("OK", [unseen.encode()])
+        if command == "fetch":
+            uid = self._arg(args[0])
+            data = self._messages.get(uid)
+            if data is None:
+                return ("OK", [None])
+            header = b"1 (UID " + uid.encode() + b" RFC822 {" + str(len(data)).encode() + b"}"
+            return ("OK", [(header, data), b")"])
+        if command == "store":
+            uid = self._arg(args[0])
+            if not self._ignore_store:
+                self.seen.add(uid)
+            return ("OK", [b"OK"])
+        raise AssertionError(f"unexpected imap command {command!r}")
+
+    @staticmethod
+    def _arg(value) -> str:
+        return value.decode() if isinstance(value, bytes) else str(value)
+
+    def logout(self):
+        pass
+
+
+def _cfg(**overrides) -> dict:
+    base = {
+        "address": "llmmailroom@gmail.com",
+        "password": "apppassword1234",
+        "imap_host": "imap.gmail.com",
+        "imap_port": 993,
+        "folder": "INBOX",
+        "poll_seconds": 60.0,
+        "default_matter_id": "DEFAULT",
+        "allowed_senders": set(),
+        "max_attachment_bytes": 50 * 1024 * 1024,
+    }
+    base.update(overrides)
+    return base
+
+
+# ── gating ────────────────────────────────────────────────────────────────
+
+
+def test_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("MAILROOM_GMAIL_ENABLED", raising=False)
+    monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
+    monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
+    assert gmail_intake.gmail_intake_enabled() is False
+    assert gmail_intake.start_embedded_poller() is None
+
+
+def test_enabled_requires_credentials(monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
+    monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
+    assert gmail_intake.gmail_intake_enabled() is False
+
+
+def test_enabled_with_credentials(monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "axfo qgzf osej wrqd")
+    assert gmail_intake.gmail_intake_enabled() is True
+    assert gmail_intake.gmail_app_password() == "axfoqgzfosejwrqd"
+
+
+# ── matter routing ────────────────────────────────────────────────────────
+
+
+def test_parse_matter_id_tag():
+    assert gmail_intake.parse_matter_id("Invoice scan [M:Smith-001] urgent") == "Smith-001"
+    assert gmail_intake.parse_matter_id("no tag here") is None
+    assert gmail_intake.parse_matter_id(None) is None
+
+
+def test_attachment_delivered_with_meta_sidecar(temp_base_dir):
+    client = FakeIMAP(
+        {
+            "1": _message(
+                "Contract bundle [M:MATTER-7]",
+                attachments=({"contract.pdf": _pdf_bytes()}),
+            )
+        }
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["connected"] is True
+    assert report["attachments_queued"] == 1
+    assert report["messages_seen"] == 1
+    assert report["marked_seen"] == 1
+    assert report["errors"] == []
+
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    delivered = list(inbox_dir().glob("*.pdf"))
+    assert len(delivered) == 1
+    assert delivered[0].read_bytes() == _pdf_bytes()
+    meta = read_inbox_meta(delivered[0])
+    assert meta["matter_id"] == "MATTER-7"
+    assert meta["source"] == "gmail"
+    assert meta["message_id"] == "<msg-1@example.com>"
+    assert meta["sender"] == "sender@example.com"
+    assert meta["original_filename"] == "contract.pdf"
+
+
+def test_default_matter_id_without_subject_tag(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("no tag", attachments=({"doc.txt": b"hello"}), message_id="<msg-2@example.com>")}
+    )
+    report = gmail_intake.poll_once(config=_cfg(default_matter_id="LOBBY"), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1
+
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    meta = read_inbox_meta(next(inbox_dir().glob("*.txt")))
+    assert meta["matter_id"] == "LOBBY"
+
+
+# ── guards ────────────────────────────────────────────────────────────────
+
+
+def test_unaccepted_extension_skipped_but_seen(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("payload", attachments=({"malware.exe": b"MZ..."}), message_id="<msg-3@example.com>")}
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["skipped_extension"] == 1
+    assert report["attachments_queued"] == 0
+    assert report["marked_seen"] == 1  # never re-polled forever
+
+    from pipeline.bins import list_inbox_files
+
+    assert list_inbox_files() == []
+
+
+def test_attachment_over_size_cap_skipped(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("big", attachments=({"big.pdf": b"x" * 4096}), message_id="<msg-4@example.com>")}
+    )
+    report = gmail_intake.poll_once(
+        config=_cfg(max_attachment_bytes=1024), imap_factory=lambda: client
+    )
+    assert report["skipped_size"] == 1
+    assert report["attachments_queued"] == 0
+
+
+def test_sender_allowlist_rejects_others(temp_base_dir):
+    client = FakeIMAP(
+        {
+            "1": _message("from stranger", sender="stranger@evil.example", attachments=({"c.pdf": _pdf_bytes()}), message_id="<msg-5@example.com>"),
+            "2": _message("from client", sender="client@firm.example", attachments=({"c2.pdf": _pdf_bytes()}), message_id="<msg-6@example.com>"),
+        }
+    )
+    report = gmail_intake.poll_once(
+        config=_cfg(allowed_senders={"client@firm.example"}), imap_factory=lambda: client
+    )
+    assert report["skipped_sender"] == 1
+    assert report["attachments_queued"] == 1
+
+
+# ── dedup + idempotency ───────────────────────────────────────────────────
+
+
+def test_state_dedup_prevents_double_queue_when_seen_mark_fails(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("docs", attachments=({"d.pdf": _pdf_bytes()}), message_id="<msg-7@example.com>")},
+        ignore_store=True,  # \Seen marking silently lost
+    )
+    first = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert first["attachments_queued"] == 1
+
+    second = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert second["already_processed"] == 1
+    assert second["attachments_queued"] == 0
+
+    from pipeline.bins import inbox_dir
+
+    assert len(list(inbox_dir().glob("*.pdf"))) == 1
+
+
+def test_same_name_attachments_uniquified(temp_base_dir):
+    client = FakeIMAP(
+        {
+            "1": _message("first", attachments=({"scan.pdf": b"one"}), message_id="<msg-8@example.com>"),
+            "2": _message("second", attachments=({"scan.pdf": b"two"}), message_id="<msg-9@example.com>"),
+        }
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 2
+
+    from pipeline.bins import inbox_dir
+
+    names = sorted(p.name for p in inbox_dir().glob("*.pdf"))
+    assert names == ["scan-1.pdf", "scan.pdf"]
+
+
+# ── status surface (what /health reports) ─────────────────────────────────
+
+
+def test_status_snapshot_accumulates(temp_base_dir):
+    before = gmail_intake.status()
+    client = FakeIMAP(
+        {"1": _message("docs", attachments=({"d.pdf": _pdf_bytes()}), message_id="<msg-10@example.com>")}
+    )
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    after = gmail_intake.status()
+    assert after["messages_seen"] == before["messages_seen"] + 1
+    assert after["attachments_queued"] == before["attachments_queued"] + 1
+    assert after["last_error"] is None
+    assert "password" not in after  # never leak credentials via status
+
+
+def test_poll_once_without_credentials_never_connects(temp_base_dir):
+    report = gmail_intake.poll_once(config=_cfg(address="", password=""))
+    assert report["connected"] is False
+    assert report["errors"] == ["missing_credentials"]
+
+
+# ── watcher → pipeline intake awareness (HUB-037) ─────────────────────────
+
+
+def test_watcher_passes_intake_meta_and_source_to_pipeline(temp_base_dir, mocker):
+    from pipeline.bins import inbox_dir, write_inbox_meta
+    from pipeline.watcher import Watcher
+
+    inbox_file = inbox_dir() / "fnol_smoke.txt"
+    inbox_file.write_text("ACME INSURANCE COMPANY — FNOL")
+    write_inbox_meta(
+        inbox_file,
+        source="gmail",
+        matter_id="MATTER-9",
+        message_id="<msg-watch@example.com>",
+        sender="client@firm.example",
+        subject="FNOL [M:MATTER-9]",
+    )
+
+    spy = mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "d1"})
+    Watcher()._process_existing(inbox_file)
+
+    assert spy.call_count == 1
+    args, kwargs = spy.call_args
+    assert args[1] == "MATTER-9"  # matter routed from the sidecar
+    assert kwargs["source"] == "gmail"
+    assert kwargs["intake_meta"]["message_id"] == "<msg-watch@example.com>"
+    assert kwargs["intake_meta"]["sender"] == "client@firm.example"
+
+
+def test_intake_meta_defaults_upload_source_for_bare_sidecar(temp_base_dir):
+    from pipeline.watcher import _intake_meta_from_sidecar
+
+    # /upload sidecars carry no `source` key — the manifest still records the route.
+    assert _intake_meta_from_sidecar({"upload_id": "abc"}) == {
+        "upload_id": "abc",
+        "source": "upload",
+    }
+    # Gmail sidecars pass their keys through; unknown sidecar keys never leak.
+    assert _intake_meta_from_sidecar(
+        {"source": "gmail", "message_id": "<x>", "secret_field": "nope"}
+    ) == {"source": "gmail", "message_id": "<x>"}
+    assert _intake_meta_from_sidecar(None) == {}
+
+
+def test_finalize_aborted_carries_intake_meta(temp_base_dir):
+    from pathlib import Path
+
+    from graph.build_graph import _finalize_aborted
+    from pipeline.bins import processing_dir, get_worker_id, load_manifest
+
+    proc = processing_dir(get_worker_id())
+    proc.mkdir(parents=True, exist_ok=True)
+    stranded = proc / "aborted_fnol.txt"
+    stranded.write_text("FNOL that will crash")
+
+    _finalize_aborted(
+        {
+            "file_path": str(stranded),
+            "original_filename": "aborted_fnol.txt",
+            "matter_id": "MATTER-9",
+            "intake_meta": {"source": "gmail", "message_id": "<msg-abort@example.com>"},
+        },
+        "watcher pipeline exception",
+    )
+
+    from pipeline.bins import manifests_dir
+    import json
+
+    manifests = [json.loads(m.read_text()) for m in manifests_dir().glob("*.json")]
+    mine = [m for m in manifests if m.get("original_filename") == "aborted_fnol.txt"]
+    assert mine and mine[0]["stage"] == "failed"
+    assert mine[0]["intake"]["source"] == "gmail"
+    assert mine[0]["intake"]["message_id"] == "<msg-abort@example.com>"
