@@ -455,7 +455,7 @@ CLASSIFY_CONTRACT_HIGH = {
 CLASSIFY_CONTRACT_MEDIUM = {
     "doc_type": "contract",
     "contract_subtype": "other",
-    "confidence": 0.80,
+    "confidence": 0.92,
     "reasoning": "Likely a contract but the header is ambiguous",
 }
 CLASSIFY_CONTRACT_LOW = {
@@ -1225,7 +1225,7 @@ CLASSIFY_INSURANCE_HIGH = {
     "doc_type": "insurance_claim",
     "contract_subtype": None,
     "doc_subclass": "carrier",
-    "confidence": 0.97,
+    "confidence": 0.98,
     "reasoning": "FNOL form, claim/policy numbers, insurer, date of loss",
 }
 CLASSIFY_UNKNOWN = {
