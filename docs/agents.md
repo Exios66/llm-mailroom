@@ -119,7 +119,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `jurisdiction` | `str \| None` | State/country of incorporation |
 | `filing_number` | `str \| None` | Official filing reference |
 
-**Honest gap (dojo 0.11.0):** there is **no external extraction benchmark** for this class (nothing CUAD/MAUD-shaped). The published `docclass-merged` set has 39 `corporate_record` rows with record-type subclasses; Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold. Mailroom scores a **local extraction pack** (`observability.local_eval_packs`, mock/check only) with schema-complete `expected_fields` (entity_name, subject_matter, keywords, signatories, …) from committed fixtures. Extra Hub `ground_truth` columns are joined when present, never invented.
+**Honest gap (dojo 0.11.0):** there is **no external extraction benchmark** for this class (nothing CUAD/MAUD-shaped). The published `mailroom-corpus` set has 39 `corporate_record` rows with record-type subclasses; Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold. Mailroom scores a **local extraction pack** (`observability.local_eval_packs`, mock/check only) with schema-complete `expected_fields` (entity_name, subject_matter, keywords, signatories, …) from committed fixtures. Extra Hub `ground_truth` columns are joined when present, never invented.
 
 ---
 
@@ -217,7 +217,7 @@ A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema reg
 
 ### Retired classes (`court_opinion`, `due_diligence`)
 
-Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (human review); there is no specialist dispatch, extraction schema, or managed prompt. Dojo keeps historical suites with `retired=True` (`list_suites(live_only=True)` excludes them). **Court opinions:** LegalBench remains the real benchmark surface. **Due diligence:** zero rows in `docclass-merged`.
+Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (human review); there is no specialist dispatch, extraction schema, or managed prompt. Dojo keeps historical suites with `retired=True` (`list_suites(live_only=True)` excludes them). **Court opinions:** LegalBench remains the real benchmark surface. **Due diligence:** zero rows in `mailroom-corpus`.
 
 ---
 
