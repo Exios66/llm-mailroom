@@ -29,8 +29,12 @@ from langchain_agents.prompts import get_prompt
 
 logger = structlog.get_logger(__name__)
 
-# MAILROOM PATCH: canonical live production taxonomy. Retired classes are not
-# sorter outputs; they resolve to ``unknown`` and therefore route to review.
+# MAILROOM PATCH: canonical live production taxonomy — the five-class
+# fallback table the taxonomy-parity gate checks. Retired classes are not
+# sorter outputs here; they resolve to ``unknown`` and route to review. The
+# live label set prefers taxonomy.yaml via ``get_sorter_label_set()``; that
+# config still carries the retired ``compliance_filing`` entry as a
+# ``status: retired`` remnant — see docs/v7-taxonomy.md §4.
 DOC_CLASSES = [
     {"key": "contract", "label": "Contract / Agreement", "description": "CUAD commercial contracts and agreements (vendor, employment, NDA, license, etc.) — not MAUD merger agreements"},
     {"key": "merger_agreement", "label": "Merger Agreement", "description": "MAUD merger agreements (agreement and plan of merger) — a distinct class from CUAD commercial contracts. Subclass is consideration type (all_cash, all_stock, mixed, …)."},
