@@ -162,6 +162,10 @@ class _FakeIMAP:
     def login(self, user, password):
         pass
 
+    def enable(self, capability):
+        self.enabled = capability
+        return ("OK", [b"ENABLED"])
+
     def select(self, folder, readonly=False):
         return ("OK", [b"1"])
 
