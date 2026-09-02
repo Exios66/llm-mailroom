@@ -2742,6 +2742,7 @@ def _execute_run(
     ground_truth: dict | None = None,
     session_id: str | None = None,
     run_id: str | None = None,
+    dataset: dict | None = None,
     invoke_input=None,
     thread_id: str | None = None,
 ) -> dict[str, Any]:
@@ -3114,6 +3115,7 @@ def run_pipeline(
         ground_truth=ground_truth,
         session_id=session_id,
         run_id=run_id,
+        dataset=dataset,
         trace_input=trace_input,
     )
 
