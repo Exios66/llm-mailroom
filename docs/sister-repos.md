@@ -200,7 +200,7 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
   the scorer on a local approved/denied/partial contrast pack (documented in
   [Agents](agents.md)).
 - **Honesty (dojo 0.11.0 suites):** `compliance_filing` has zero
-  `docclass-merged` rows (HF `--real` omits it; local fixture pack is
+  `mailroom-corpus` rows (HF `--real` omits it; local fixture pack is
   mock/check only). `corporate_record` has 39 Hub subclass rows and **no
   external extraction benchmark**; schema-complete extraction GT is the
   local pack. `court_opinion` / `due_diligence` are retired from live
@@ -231,7 +231,7 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
   at this repo's `src/config/taxonomy.yaml` live instead of its bundled mirror.
   Current intake contract: span `normalize-intake` (INGEST), agent `intake`,
   HF runner `src/scripts/run_hf_pilot.py` (session `pilot-hf-<stamp>`, tag
-  `source-docclass-merged` on the v5 full corpus — other Hub sets use their
+  `source-mailroom-corpus` on the v5 full corpus — other Hub sets use their
   own `source-*` tag from `pipeline/hf_corpora.py`, ground truth on trace
   input/metadata including `expected_hf_class`). Production session
   `pilot-hf-20260825T044207Z` is the reference five-doc Qwen 3.7-Flash subset.
@@ -311,7 +311,7 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
 - **[llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/)**
   — companion graphify map of the sister experiment loop's codebase.
 - **Hugging Face — [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)** —
-  the family's published dataset surface. **`docclass-merged` schema v7**
+   the family's published dataset surface. **`mailroom-corpus` schema v7**
   (1,650 docs, Hub SHA `fc1f211c…`, v7 = issue #5 correspondence intent
   hydration: canonical 8-class intents + `intent_source` / `intent_confidence`
   / `intent_status` provenance on the ground_truth config) is the targeted
