@@ -1,6 +1,6 @@
 """Lucius-Morningstar Hugging Face corpora the mailroom pipeline can ingest.
 
-``Lucius-Morningstar/docclass-merged`` schema **v7** is the targeted full
+``Lucius-Morningstar/mailroom-corpus`` schema **v7** is the targeted full
 corpus (1,650 documents: CUAD contracts, MAUD merger agreements, S-1
 corporate records, Enron correspondence sample, CMS insurance claims).
 v7 adds correspondence intent hydration (issue #5): every correspondence row

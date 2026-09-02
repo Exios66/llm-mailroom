@@ -5,8 +5,8 @@
   "honesty": "Offline snapshot of Hub metadata + Dataset Viewer first-rows. Live cells behind NB-OPT-IN-NETWORK refresh from the API.",
   "datasets": [
     {
-      "id": "Lucius-Morningstar/docclass-merged",
-      "url": "https://huggingface.co/datasets/Lucius-Morningstar/docclass-merged",
+      "id": "Lucius-Morningstar/mailroom-corpus",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus",
       "downloads": 62,
       "likes": 1,
       "last_modified": "2026-08-24T15:55:44.000Z",

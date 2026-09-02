@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Derive + publish the intent/subject_matter/keywords ground truth for
-``Lucius-Morningstar/docclass-merged`` (ground_truth config).
+``Lucius-Morningstar/mailroom-corpus`` (ground_truth config).
 
 The plan (KANBAN-07x): for ``corporate_record``, ``correspondence``, and
 ``insurance_claim`` the pipeline ground truth now includes three purpose/gist
