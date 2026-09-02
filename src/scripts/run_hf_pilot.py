@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Hugging Face corpus pilot — the runner The-Mailroom orchestrates.
 
-Default corpus is ``Lucius-Morningstar/mailroom-corpus`` schema **v7** (the
-targeted full 1,650-doc surface; v7 = issue #5 correspondence intent
-hydration). Class × subtype examples come from
+Default corpus is ``Lucius-Morningstar/mailroom-corpus`` schema **v8** (the
+targeted full 2,000-doc surface; v8 = HUB-028 insurance LOB expansion +
+full GT conformance, hardened at `eafe1ab4` — HUB-032). Class × subtype
+examples come from
 ``docclass-pilot``. Any other pipeline-ready Lucius-Morningstar dataset
 (``--dataset enron`` / ``claims`` / ``cuad``) can be ingested the same way,
 including the 247k-row Enron correspondence corpus.
@@ -1462,7 +1463,7 @@ def check_contract() -> int:
     compliance_gt = expected_fields_for_sample(compliance_sample)
     assert compliance_gt.get("filing_type")
     assert compliance_gt.get("entity_name")
-    assert DATASET_SCHEMA == "v7"
+    assert DATASET_SCHEMA == "v8"
     assert DATASET_ID == "Lucius-Morningstar/mailroom-corpus"
     assert DATASET_REVISION
     pack_classes = set(examples_by_class())

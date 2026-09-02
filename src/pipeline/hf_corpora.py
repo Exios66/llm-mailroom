@@ -1,11 +1,13 @@
 """Lucius-Morningstar Hugging Face corpora the mailroom pipeline can ingest.
 
-``Lucius-Morningstar/mailroom-corpus`` schema **v7** is the targeted full
-corpus (1,650 documents: CUAD contracts, MAUD merger agreements, S-1
-corporate records, Enron correspondence sample, CMS insurance claims).
-v7 adds correspondence intent hydration (issue #5): every correspondence row
-carries a canonical 8-class intent plus `intent_source` / `intent_confidence`
-/ `intent_status` provenance on the `ground_truth` config.
+``Lucius-Morningstar/mailroom-corpus`` schema **v8** is the targeted full
+corpus (2,000 documents: CUAD contracts, MAUD merger agreements, S-1
+corporate records, Enron correspondence sample, CMS insurance claims +
+the v8 synthetic LOB expansion — GNOTHEIA property, BDR auto).
+v8 adds the insurance LOB expansion and full GT conformance (HUB-028);
+the §84 hardened release (HUB-032) adds the evaluation-contract columns
+(identity, provenance, matter) on the `ground_truth` config.
+The five-class live taxonomy is unchanged (docs/v7-taxonomy.md).
 
 Class × subclass examples come from ``docclass-pilot`` (a deterministic
 stratified slice of that parent — every type and every subtype stratum).
@@ -25,21 +27,22 @@ from pathlib import Path
 from typing import Any
 
 ORG = "Lucius-Morningstar"
-FULL_CORPUS_SCHEMA = "v7"
+FULL_CORPUS_SCHEMA = "v8"
 # Renamed 2026-09-02 per human directive: the Hub repo was `docclass-merged`
 # ("docclass" was always a placeholder) — now `mailroom-corpus`. The Hub
 # serves a redirect from the old id, and the internal corpus SLUG below stays
 # `docclass-merged` (historical traces carry the immutable
 # `source-docclass-merged` tag; slug/aliases are plumbing, not identity).
 FULL_CORPUS_ID = f"{ORG}/mailroom-corpus"
-# v7 tip bb57c5ad (issue #5 fix: intent_source aeslc_join on the 162
-# join-assisted rows; supersedes 1acd2600 hydration + fc1f211c card bump).
+# v8 hardened tip eafe1ab4 (HUB-032: §84 hardened release rebuilt on the v8
+# base — 2,000-row ground_truth on top of the HUB-028 LOB expansion;
+# supersedes bb57c5ad v7 / bba2f750 v8 data tip).
 # Pinned per the corpus plan §44 — never evaluate against unpinned main.
 # Pin survives the rename (move_repo preserves git history).
-FULL_CORPUS_REVISION = "bb57c5ad00333d239ea456fe3f2298c3ba5b5108"
+FULL_CORPUS_REVISION = "eafe1ab4c0d330d8f9c7a5fb254155e75d290828"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
-# Hub HF classes present in mailroom-corpus (v7) — identical to the canonical
+# Hub HF classes present in mailroom-corpus (v8) — identical to the canonical
 # five-class live taxonomy (docs/v7-taxonomy.md). taxonomy.yaml carries a
 # sixth configured entry (compliance_filing, marked status: retired):
 # retained machinery with zero Hub rows, not a corpus class.
@@ -64,7 +67,7 @@ CORPORA: dict[str, dict[str, Any]] = {
         "schema": FULL_CORPUS_SCHEMA,
         "role": "full_corpus",
         "pipeline": True,
-        "n_docs": 1650,
+        "n_docs": 2000,
         "classes": HUB_CLASSES,
         "gt_config": "ground_truth",
         "row_shape": "docclass",
@@ -167,6 +170,7 @@ CORPORA: dict[str, dict[str, Any]] = {
 _ALIASES = {
     "v5": "docclass-merged",
     "v7": "docclass-merged",
+    "v8": "docclass-merged",
     "full": "docclass-merged",
     "merged": "docclass-merged",
     # renamed 2026-09-02: Hub repo mailroom-corpus (formerly docclass-merged)

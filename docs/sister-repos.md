@@ -311,12 +311,13 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
 - **[llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/)**
   — companion graphify map of the sister experiment loop's codebase.
 - **Hugging Face — [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)** —
-   the family's published dataset surface. **`mailroom-corpus` schema v7**
-  (1,650 docs, Hub SHA `fc1f211c…`, v7 = issue #5 correspondence intent
-  hydration: canonical 8-class intents + `intent_source` / `intent_confidence`
-  / `intent_status` provenance on the ground_truth config) is the targeted
-  full pipeline corpus (CUAD contracts, MAUD merger agreements, S-1
-  corporate records, Enron correspondence sample, CMS insurance claims).
+   the family's published dataset surface. **`mailroom-corpus` schema v8**
+  (2,000 docs, hardened tip `eafe1ab4…`, v8 = HUB-028 insurance LOB
+  expansion — GNOTHEIA property + BDR auto — with full GT conformance, and
+  HUB-032's §84 hardened ground_truth columns: identity, evaluation
+  contract, matter/group) is the targeted full pipeline corpus (CUAD
+  contracts, MAUD merger agreements, S-1 corporate records, Enron
+  correspondence sample, CMS insurance claims).
   **`docclass-pilot`** is the
   class × subclass example pack (48 strata — every type and subtype in that
   parent). Other pipeline-ready Hub sets (`enron-correspondence-dedup`

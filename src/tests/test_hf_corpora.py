@@ -1,4 +1,4 @@
-"""Hugging Face corpus registry — docclass-merged v7 is the full surface."""
+"""Hugging Face corpus registry — docclass-merged v8 is the full surface."""
 
 from pipeline.hf_corpora import (
     FULL_CORPUS_ID,
@@ -16,17 +16,21 @@ from pipeline.hf_corpora import (
 )
 
 
-def test_v7_full_corpus_is_docclass_merged():
-    corp = resolve_corpus("v7")
+def test_v8_full_corpus_is_docclass_merged():
+    corp = resolve_corpus("v8")
     assert corp["id"] == FULL_CORPUS_ID
-    assert corp["schema"] == FULL_CORPUS_SCHEMA == "v7"
+    assert corp["schema"] == FULL_CORPUS_SCHEMA == "v8"
     assert corp["revision"] == FULL_CORPUS_REVISION
-    assert corp["n_docs"] == 1650
+    assert corp["n_docs"] == 2000
     assert corp["pipeline"] is True
     assert tuple(corp["classes"]) == HUB_CLASSES
     assert "merger_agreement" in corp["classes"]
     assert "compliance_filing" not in corp["classes"]
+    # v5/v7 aliases resolve to the same slug — the registry carries ONE full
+    # corpus entry; the HUB-019 v7 freeze stays resolvable as a Hub commit
+    # (bb57c5ad) for historical traces, not as a separate registry surface.
     assert resolve_corpus("v5")["slug"] == "docclass-merged"
+    assert resolve_corpus("v7") is resolve_corpus("v8")
 
 
 def test_pipeline_corpora_include_enron_and_claims():
