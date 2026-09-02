@@ -97,7 +97,7 @@ def test_sorter_doc_classes_table_contains_insurance_claim():
     from langchain_agents.sorter_agent import DOC_CLASSES, DOC_CLASS_KEYS
 
     assert "insurance_claim" in DOC_CLASS_KEYS
-    assert len(DOC_CLASSES) == 6
+    assert len(DOC_CLASSES) == 5
     entry = next(d for d in DOC_CLASSES if d["key"] == "insurance_claim")
     assert entry["label"] == "Insurance Claim"
 
