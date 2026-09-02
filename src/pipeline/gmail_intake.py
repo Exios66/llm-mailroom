@@ -183,6 +183,13 @@ def react_to_message(
         )
         client = factory()
         client.login(cfg["address"], cfg["password"])
+        # RFC 6855: quoted strings are 7-bit unless UTF8=ACCEPT is enabled —
+        # without this Gmail answers BAD "Could not parse command" on the
+        # emoji label (the exact failure mode seen live).
+        try:
+            client.enable("UTF8=ACCEPT")
+        except Exception:
+            pass
         typ, _ = client.select(cfg["folder"], readonly=False)
         if typ != "OK":
             raise GmailIntakeError(f"cannot select folder {cfg['folder']!r}")
@@ -517,6 +524,13 @@ def poll_once(
                 report["attachments_queued"] += queued
                 if queued == 0:
                     report["skipped_no_attachments"] += 1
+                    logger.info(
+                        "gmail_message_no_processable_attachments",
+                        message_id=message_id,
+                        sender=sender,
+                        subject=subject[:120],
+                        detail="no accepted-extension attachment — message marked seen only",
+                    )
                 processed_ids.append(message_id)
                 if _mark_seen(client, uid):
                     report["marked_seen"] += 1
