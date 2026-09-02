@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Gmail intake channel (HUB-037):** the agent mailbox
+  (`llmmailroom@gmail.com`, opt-in via `MAILROOM_GMAIL_ENABLED=1` +
+  `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD`) is a second intake route.
+  `pipeline/gmail_intake.py` (stdlib IMAP SSL — no new deps) runs inside the
+  watcher (`Watcher.start()` → `start_embedded_poller()`; standalone
+  `python -m pipeline.gmail_intake` for debug) and drops accepted attachments
+  into the SAME inbox bin the watcher drains, with the `/upload`
+  `<file>.meta` sidecar convention — matter routing via a subject
+  `[M:<matter_id>]` tag or `MAILROOM_GMAIL_DEFAULT_MATTER_ID`. Handled
+  messages are marked `\Seen` and their `Message-ID`s recorded in
+  `<base>/gmail_intake_state.json` (a lost seen-mark can never double-queue);
+  sender allowlist + attachment size cap guards included; `/health` reports
+  the channel as `checks.gmail_intake`. Tests stay hermetic (conftest forces
+  the channel off; 17 network-free tests). **Intake awareness:** the watcher
+  passes the sidecar provenance into the pipeline — `DocumentManifest.intake`
+  (source gmail/upload, message_id, sender, subject) now rides ingest →
+  review → archive → aborted manifests and live traces tag `source-gmail`;
+  fixing this also fixed a latent `existing_file_failed` bug (the
+  `_infer_matter_id` method lived only on `InboxHandler`, so startup-scan /
+  rescan claims on `Watcher` crashed). **Smoke test:**
+  `src/scripts/gmail_smoke_test.py` exercises Gmail + watcher connectivity
+  end-to-end with an example insurance claim (committed FNOL fixture):
+  default network-free mock (PASS verified), `--real` sends via SMTP and
+  sweeps the real mailbox, `--llm real` adds real LLM cost. **Secrets:**
+  `GMAIL_APP_PASSWORD` + `GMAIL_ADDRESS` registered in GitHub Actions secret
+  managers on `Exios66/mailroom-dev` and `Exios66/llm-mailroom`.
+
 - **Railway deploy contract:** root `railway.json` (Dockerfile builder +
   `/health` probe), `nixpacks.toml` fallback, and
   [docs/deployment.md](docs/deployment.md) § Railway (required

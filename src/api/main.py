@@ -200,6 +200,9 @@ async def health():
     tracing_health = flush_health()
     heartbeat_age = watcher_heartbeat_age()
     lamp = watcher_lamp(heartbeat_age)
+    from pipeline.gmail_intake import status as gmail_intake_status
+
+    gmail = gmail_intake_status()
     overall = "ok" if (llm["status"] == "ok" and db["status"] == "ok") else "degraded"
     if paused or not tracing_health["healthy"]:
         overall = "degraded"
@@ -223,6 +226,7 @@ async def health():
             "inbox_pending": count_inbox_pending(),
             "watcher_heartbeat_seconds_ago": heartbeat_age,
             "observability": tracing_health,
+            "gmail_intake": gmail,
         },
     }
 

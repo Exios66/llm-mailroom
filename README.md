@@ -638,10 +638,15 @@ PYTHONPATH=src python -m api.main &
 # 5. (Optional) dedicated watcher only if MAILROOM_EMBED_WATCHER=0
 # PYTHONPATH=src python -m pipeline.watcher &
 
-# 6. (Optional) Run the ops monitor
+# 6. (Optional) Gmail intake channel — the agent mailbox as a second intake
+#    route (opt-in via .env: MAILROOM_GMAIL_ENABLED=1 + GMAIL_ADDRESS +
+#    GMAIL_APP_PASSWORD). When enabled it runs INSIDE the watcher; standalone:
+# PYTHONPATH=src python -m pipeline.gmail_intake &
+
+# 7. (Optional) Run the ops monitor
 PYTHONPATH=src python -m pipeline.ops_monitor &
 
-# 7. (Optional) Mirror run logs for analysis
+# 8. (Optional) Mirror run logs for analysis
 PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 ```
 

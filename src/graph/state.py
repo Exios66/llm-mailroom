@@ -56,6 +56,11 @@ class DocumentState(TypedDict, total=False):
     # Attempt number of this pipeline run for a document (observability: trace
     # tags/metadata + seed suffix beyond the first run).
     run_attempt: int
+    # Intake provenance (HUB-037): metadata from the inbox `<file>.meta`
+    # sidecar the watcher read at claim time (`source`: gmail / upload,
+    # message_id, sender, subject, ...). Manifests carry it through every
+    # terminal stage so the audit record shows HOW each document arrived.
+    intake_meta: dict[str, Any]
     # KANBAN-062 (Lane A): independent second opinion from the sorter_reviewer
     # agent on medium-band classifications. The original sorter answer is
     # preserved untouched; `review_verdict` records the lane outcome

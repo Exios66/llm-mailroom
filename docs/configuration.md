@@ -308,6 +308,16 @@ See `.env.example` for the complete list:
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `1` | Inbox rescan interval (seconds) |
 | `MAILROOM_EMBED_WATCHER` | No | on (off under pytest) | API lifespan starts the inbox watcher. Set `0` when a dedicated `python -m pipeline.watcher` holds `watcher.lock` |
+| `MAILROOM_GMAIL_ENABLED` | No | off | Gmail intake channel (HUB-037): poll the agent mailbox and drop accepted attachments into the inbox. Explicit opt-in (`1`/`true`/`yes`/`on`); needs `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD`. Runs inside the watcher; `/health` reports `checks.gmail_intake` |
+| `GMAIL_ADDRESS` | Yes (when channel on) | — | Mailbox address (e.g. `llmmailroom@gmail.com`). Secret — `.env` only |
+| `GMAIL_APP_PASSWORD` | Yes (when channel on) | — | Gmail 2FA app password (16 chars; display spaces tolerated/stripped). Secret — `.env` only |
+| `MAILROOM_GMAIL_IMAP_HOST` | No | `imap.gmail.com` | IMAP SSL host |
+| `MAILROOM_GMAIL_IMAP_PORT` | No | `993` | IMAP SSL port |
+| `MAILROOM_GMAIL_FOLDER` | No | `INBOX` | Mailbox folder polled |
+| `MAILROOM_GMAIL_POLL_SECONDS` | No | `60` | Seconds between sweeps |
+| `MAILROOM_GMAIL_DEFAULT_MATTER_ID` | No | `DEFAULT` | Matter used when the subject has no `[M:<matter_id>]` tag |
+| `MAILROOM_GMAIL_MAX_ATTACHMENT_MB` | No | `50` | Per-attachment size cap (larger attachments are skipped, message still marked seen) |
+| `MAILROOM_GMAIL_ALLOWED_SENDERS` | No | — | CSV allowlist of sender addresses (lowercased); empty = accept all |
 | `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
 | `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
 | `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |

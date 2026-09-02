@@ -49,7 +49,12 @@ from graph.build_graph import build_graph, run_pipeline
 logger = structlog.get_logger(__name__)
 
 
-def _finalize_claimed_on_error(claimed: Path | None, matter_id: str, reason: str) -> None:
+def _finalize_claimed_on_error(
+    claimed: Path | None,
+    matter_id: str,
+    reason: str,
+    intake_meta: dict | None = None,
+) -> None:
     """Move a claimed file to failed/ if run_pipeline raised outside the graph.
 
     The graph's ``_finalize_aborted`` already handles crashes inside
@@ -66,6 +71,7 @@ def _finalize_claimed_on_error(claimed: Path | None, matter_id: str, reason: str
                 "file_path": str(claimed),
                 "original_filename": claimed.name,
                 "matter_id": matter_id or "DEFAULT",
+                **({"intake_meta": dict(intake_meta)} if intake_meta else {}),
             },
             reason,
         )
@@ -220,6 +226,74 @@ def _is_already_processed(path: Path) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Intake provenance (HUB-037) — shared by BOTH handler classes.
+#
+# `_infer_matter_id` is module-level on purpose: `Watcher._process_existing`
+# calls it too, and historically only `InboxHandler` carried the method (a
+# latent bug — any inbox file found by the startup scan / periodic rescan
+# instead of a watchdog event crashed into `existing_file_failed`).
+# ---------------------------------------------------------------------------
+
+_MATTER_ID_SUFFIX_MAX = 10
+
+
+def _infer_matter_id(path: Path) -> str:
+    """Matter id for an inbox file: meta sidecar > parent folder > name suffix.
+
+    Upload metadata wins: `/upload` (and the Gmail poller) write a
+    `<file>.meta` sidecar carrying the submitted matter_id, so the document is
+    filed under the matter the caller chose instead of a filename heuristic.
+    The sidecar is read while the file is still in the inbox (before claim
+    moves it).
+    """
+    meta = read_inbox_meta(path)
+    if meta and meta.get("matter_id"):
+        return str(meta["matter_id"])
+    parent_matter = path.parent.name
+    if parent_matter and parent_matter != inbox_dir().name:
+        return parent_matter
+    stem = path.stem
+    parts = stem.rsplit("_", 1)
+    if (
+        len(parts) == 2
+        and parts[1].upper() == parts[1]
+        and len(parts[1]) <= _MATTER_ID_SUFFIX_MAX
+    ):
+        return parts[1]
+    return "DEFAULT"
+
+
+# Intake-provenance keys copied from the inbox `<file>.meta` sidecar into the
+# document manifest (`DocumentManifest.intake`). A whitelist — never the raw
+# sidecar. A sidecar without a `source` key is the API `/upload` route;
+# Gmail sidecars carry `source: gmail`.
+_INTAKE_META_KEYS = (
+    "source",
+    "sender",
+    "subject",
+    "message_id",
+    "received_at",
+    "upload_id",
+    "uploaded_at",
+    "original_filename",
+)
+
+
+def _intake_meta_from_sidecar(meta: dict | None) -> dict:
+    if not meta:
+        return {}
+    intake = {k: meta[k] for k in _INTAKE_META_KEYS if meta.get(k) is not None}
+    if "source" not in intake:
+        intake["source"] = "upload"
+    return intake
+
+
+def _intake_context(path: Path) -> tuple[str, dict]:
+    """(matter_id, intake_meta) for an inbox file, read BEFORE claim_file moves it."""
+    return _infer_matter_id(path), _intake_meta_from_sidecar(read_inbox_meta(path))
+
+
 class InboxHandler(FileSystemEventHandler):
     def __init__(self, worker_id: str):
         self.worker_id = worker_id
@@ -281,12 +355,16 @@ class InboxHandler(FileSystemEventHandler):
         dest = getattr(event, "dest_path", None) or event.src_path
         self._schedule(Path(dest))
 
+    # Intake provenance is resolved by the module-level `_intake_context`
+    # (shared with Watcher._process_existing — see its comment above).
+
     def _process(self, path: Path):
         if not _mark_active(path.name):
             logger.info("file_already_processing", file=str(path))
             return
         claimed = None
         matter_id = "DEFAULT"
+        intake_meta: dict = {}
         try:
             if is_ingestion_paused():
                 # Leave the file in the inbox (never claim it). The periodic
@@ -301,32 +379,31 @@ class InboxHandler(FileSystemEventHandler):
                 logger.info("file_skipped_already_processed", file=str(path))
                 return
             claimed = claim_file(path, self.worker_id)
-            matter_id = self._infer_matter_id(path)
-            logger.info("file_claimed", file=str(claimed), matter_id=matter_id)
-            result = run_pipeline(claimed, matter_id)
+            matter_id, intake_meta = _intake_context(path)
+            logger.info(
+                "file_claimed",
+                file=str(claimed),
+                matter_id=matter_id,
+                intake_source=intake_meta.get("source"),
+            )
+            result = run_pipeline(
+                claimed,
+                matter_id,
+                source=intake_meta.get("source"),
+                intake_meta=intake_meta or None,
+            )
             logger.info("pipeline_complete", doc_id=result.get("doc_id"), matter_id=matter_id)
         except Exception:
             logger.exception("pipeline_failed", file=str(path))
-            _finalize_claimed_on_error(claimed, matter_id, "watcher pipeline exception")
+            _finalize_claimed_on_error(
+                claimed, matter_id, "watcher pipeline exception", intake_meta=intake_meta or None
+            )
         finally:
             _unmark_active(path.name)
 
     def _infer_matter_id(self, path: Path) -> str:
-        # Upload metadata wins: `/upload` writes a `<file>.meta` sidecar
-        # carrying the submitted matter_id, so the document is filed under the
-        # matter the caller chose instead of a filename heuristic. The sidecar
-        # is read while the file is still in the inbox (before claim moves it).
-        meta = read_inbox_meta(path)
-        if meta and meta.get("matter_id"):
-            return str(meta["matter_id"])
-        parent_matter = path.parent.name
-        if parent_matter and parent_matter != inbox_dir().name:
-            return parent_matter
-        stem = path.stem
-        parts = stem.rsplit("_", 1)
-        if len(parts) == 2 and parts[1].upper() == parts[1] and len(parts[1]) <= 10:
-            return parts[1]
-        return "DEFAULT"
+        # Delegate to the module-level implementation (shared with Watcher).
+        return _infer_matter_id(path)
 
 
 class Watcher:
@@ -449,6 +526,7 @@ class Watcher:
             return
         claimed = None
         matter_id = "DEFAULT"
+        intake_meta: dict = {}
         try:
             if is_ingestion_paused():
                 logger.info("ingestion_paused_by_ops_monitor", file=str(path))
@@ -460,12 +538,24 @@ class Watcher:
                 logger.info("file_skipped_already_processed", file=str(path))
                 return
             claimed = claim_file(path, self.worker_id)
-            matter_id = self._infer_matter_id(path)
-            logger.info("existing_file_claimed", file=str(claimed), matter_id=matter_id)
-            run_pipeline(claimed, matter_id)
+            matter_id, intake_meta = _intake_context(path)
+            logger.info(
+                "existing_file_claimed",
+                file=str(claimed),
+                matter_id=matter_id,
+                intake_source=intake_meta.get("source"),
+            )
+            run_pipeline(
+                claimed,
+                matter_id,
+                source=intake_meta.get("source"),
+                intake_meta=intake_meta or None,
+            )
         except Exception:
             logger.exception("existing_file_failed", file=str(path))
-            _finalize_claimed_on_error(claimed, matter_id, "watcher existing-file exception")
+            _finalize_claimed_on_error(
+                claimed, matter_id, "watcher existing-file exception", intake_meta=intake_meta or None
+            )
         finally:
             _unmark_active(path.name)
 

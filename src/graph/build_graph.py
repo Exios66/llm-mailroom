@@ -567,6 +567,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         original_filename=file_path.name,
         stage=PipelineStage.PROCESSING,
         trace_id=state.get("trace_id"),
+        intake=state.get("intake_meta") or None,
     )
     manifest.touch()
     save_manifest(manifest)
@@ -1674,6 +1675,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             extraction_attempts=state.get("extraction_attempts", 0),
             review_decision="pending_review",
             checkpoint_thread_id=thread_id or None,
+            intake=state.get("intake_meta") or None,
             **_lane_b_manifest_fields(state),
         )
         dest, newly_parked = park_for_review(Path(file_path_str), manifest)
@@ -2022,6 +2024,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         review_decision=state.get("review_decision"),
         classification_attempts=state.get("classification_attempts", 0),
         extraction_attempts=state.get("extraction_attempts", 0),
+        intake=state.get("intake_meta") or None,
         **_lane_b_manifest_fields(state),
     )
 
@@ -2521,6 +2524,7 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         extraction_attempts=state.get("extraction_attempts", 0),
         escalation_reason=f"run aborted: {reason}",
         trace_id=state.get("trace_id"),
+        intake=state.get("intake_meta") or None,
     )
     if aborted_doc_id:
         manifest_kwargs["doc_id"] = aborted_doc_id
@@ -3064,6 +3068,7 @@ def run_pipeline(
     session_id: str | None = None,
     run_id: str | None = None,
     dataset: dict | None = None,
+    intake_meta: dict | None = None,
 ) -> dict[str, Any]:
     _ensure_dirs()
 
@@ -3093,6 +3098,10 @@ def run_pipeline(
         "transient_retries_extract": 0,
         "run_attempt": attempt,
     }
+    if intake_meta:
+        # Intake provenance (HUB-037): carried by state so every manifest
+        # construction site (ingest / review / archive / aborted) records it.
+        initial_state["intake_meta"] = dict(intake_meta)
 
     # Attempt 0 keeps the bare filename stem as the deterministic trace seed
     # (backwards-compatible with ground-truth score ingestion in run_pilot.py);

@@ -43,6 +43,10 @@ class DocumentManifest(BaseModel):
     # when the checkpointer was lost (process restart + MemorySaver) — resume
     # then falls back to a fresh extract invoke.
     checkpoint_thread_id: str | None = None
+    # Intake provenance (HUB-037): how the document entered the mailroom —
+    # `source` (`gmail` / `upload`), plus channel metadata (message_id, sender,
+    # subject, received_at / uploaded_at). None = a bare filesystem drop.
+    intake: dict | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
