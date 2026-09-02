@@ -105,8 +105,9 @@ def test_recover_script_requeues_stale(monkeypatch, temp_base_dir, capsys):
     _touch_old(f)
 
     env = dict(os.environ, MAILROOM_BASE_DIR=str(temp_base_dir))
+    script = Path(__file__).resolve().parents[1] / "scripts" / "recover_processing.py"
     r = subprocess.run(
-        [sys.executable, "src/scripts/recover_processing.py", "--apply", "--stale-minutes", "60"],
+        [sys.executable, str(script), "--apply", "--stale-minutes", "60"],
         capture_output=True, text=True, env=env,
     )
     assert r.returncode == 0, r.stderr
