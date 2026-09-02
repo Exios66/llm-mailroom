@@ -710,6 +710,23 @@ def echoes_enabled() -> bool:
     )
 
 
+def triage_enabled() -> bool:
+    """Whether the pre-pipeline Gmail intake triage pass is on (default: with the channel).
+
+    The triage read runs at watcher claim time on Gmail-channel documents
+    (free OpenRouter model, advisory — see ``agents/gmail_triage.py``).
+    Set ``MAILROOM_GMAIL_TRIAGE=0`` to disable; failures always fail soft.
+    """
+    if not gmail_intake_enabled():
+        return False
+    return str(os.environ.get("MAILROOM_GMAIL_TRIAGE", "1")).strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
 def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_valid: bool | None = None) -> str:
     """Render the completion report for one terminal manifest (plain text)."""
     stage = str(manifest.get("stage") or "unknown").upper()
@@ -731,6 +748,24 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
         lines.append(f"subclass:  {manifest.get('doc_subclass')}")
     lines.append(f"confidence: {manifest.get('classification_confidence') if manifest.get('classification_confidence') is not None else 'n/a'}")
     lines.append("")
+
+    # Advisory pre-pipeline intake read (HUB-037): the free-model triage log,
+    # carried on the intake meta for Gmail-channel documents.
+    triage = intake.get("triage")
+    if isinstance(triage, dict) and triage:
+        lines.append("-- INTAKE TRIAGE (pre-pipeline) " + "-" * 29)
+        lines.append(f"doc_type:  {triage.get('primary_doc_class') or 'n/a'}")
+        if triage.get("doc_subclass"):
+            lines.append(f"subclass:  {triage.get('doc_subclass')}")
+        conf = triage.get("confidence")
+        lines.append(f"confidence: {conf if conf is not None else 'n/a'}")
+        gist = str(triage.get("gist") or "").strip()
+        if gist:
+            lines.append(f"gist:      {gist}")
+        keywords = triage.get("keywords") or []
+        if keywords:
+            lines.append(f"keywords:  {', '.join(str(k) for k in keywords)}")
+        lines.append("")
 
     extracted = manifest.get("extracted_data")
     lines.append("-- EXTRACTION " + "-" * 46)

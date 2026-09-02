@@ -16,6 +16,9 @@ What it proves, leg by leg:
                    matter routed from the subject ``[M:<id>]`` tag; a real
                    run also tags the trace ``source-gmail``
     [classify]     the document classifies as ``insurance_claim``
+    [triage]       the advisory pre-pipeline intake read
+                   (``intake.triage``: primary class + gist) rode into the
+                   manifest and appears in the completion echo
 
 Modes:
 
@@ -84,6 +87,14 @@ MOCK_EXTRACTION = {
     "confidence": 0.99,
 }
 
+MOCK_TRIAGE = {
+    "primary_doc_class": "insurance_claim",
+    "doc_subclass": "other",
+    "confidence": 0.97,
+    "gist": "An insurance first notice of loss (FNOL) for hail damage.",
+    "keywords": ["FNOL", "hail damage", "policy", "claim"],
+}
+
 
 def _now_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -129,7 +140,9 @@ def _mock_get_llm(agent_name: str):
     def create(**kwargs):
         last_msg = (kwargs.get("messages") or [{}])[-1]
         user_content = last_msg.get("content", "") if isinstance(last_msg, dict) else ""
-        if "Classify this legal document" in user_content or "RE-EVALUATION REQUESTED" in user_content:
+        if user_content.startswith("File: ") and "Document text:" in user_content:
+            content = json.dumps(MOCK_TRIAGE)  # gmail intake triage (free model)
+        elif "Classify this legal document" in user_content or "RE-EVALUATION REQUESTED" in user_content:
             content = json.dumps(MOCK_CLASSIFICATION)
         elif "ADJUDICATION REQUEST" in user_content:
             content = json.dumps(
@@ -385,6 +398,16 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
         )
     )
 
+    # [triage] the advisory pre-pipeline read rode into the manifest intake.
+    triage = (intake or {}).get("triage") or {}
+    checks.append(
+        (
+            "triage: intake.triage (pre-pipeline read) carried on the manifest",
+            triage.get("primary_doc_class") == "insurance_claim" and bool(triage.get("gist")),
+            f"triage.doc_class={triage.get('primary_doc_class')} gist={str(triage.get('gist'))[:60]!r}",
+        )
+    )
+
     # [reaction] the watcher reacted to the source email with the ✅ label
     # (async daemon thread — bounded wait, then read the status counter).
     deadline = time.time() + 5
@@ -412,10 +435,12 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
         _, to, raw = smtp.sent[0]
         msg = _email.message_from_bytes(raw)
         echo_detail = f"to={to[0]} subject={msg['Subject']!r} in_reply_to={msg['In-Reply-To']}"
+        body = msg.get_payload() or ""
+        echo_detail += f" triage_in_body={'INTAKE TRIAGE' in body}"
     checks.append(
         (
             "echo: completion report replied on the source email thread",
-            echo_ok,
+            echo_ok and "triage_in_body=True" in echo_detail,
             echo_detail,
         )
     )

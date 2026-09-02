@@ -321,6 +321,7 @@ See `.env.example` for the complete list:
 | `MAILROOM_GMAIL_REACTIONS` | No | `1` | When the watcher claims a Gmail-channel attachment, react to the source email with the check emoji (a Gmail label via IMAP `X-GM-LABELS`) — the "picked up for processing" ack. Best-effort: a reaction failure never disturbs the claim. Set `0` to disable |
 | `MAILROOM_GMAIL_REACTION_LABEL` | No | `✅` | The emoji-named Gmail label applied as the reaction (auto-created best-effort) |
 | `MAILROOM_GMAIL_ECHOES` | No | `1` (with channel on) | When a Gmail-intake document reaches a terminal stage (archived/review/failed), reply on the source email thread with the completion report: status, classification, extraction, archive entry (path + sha256) and the verified audit chain |
+| `MAILROOM_GMAIL_TRIAGE` | No | `1` (with channel on) | Pre-pipeline intake triage (HUB-037): at watcher claim time a free OpenRouter model (`z-ai/glm-5.2:free`, advisory) reads the document and produces the intake log (primary class, subclass, confidence, gist, keywords) that rides `intake.triage` into the manifest and the echo. Advisory — never influences the pipeline's own classification. Fails soft; set `0` to disable |
 | `MAILROOM_GMAIL_SMTP_HOST` | No | `smtp.gmail.com` | SMTP host for the echo replies (same app password) |
 | `MAILROOM_GMAIL_SMTP_PORT` | No | `465` | SMTP SSL port for the echo replies |
 
@@ -355,7 +356,11 @@ on the same thread** with a completion report — STATUS, doc_id/matter,
 classification + confidence, the extraction report, the archive entry (path
 + sha256 for archived documents, or the failure/review reason), and the full
 audit trail with the hash-chain verification verdict — so the email thread
-itself is the notification surface.
+itself is the notification surface. If `MAILROOM_GMAIL_TRIAGE` is on (the
+default with the channel), the report also carries an **INTAKE TRIAGE
+(pre-pipeline)** section: the free-model read of the document (primary doc
+class, subclass, confidence, one-sentence gist, keywords) made before the
+full pipeline ran — an accurate first glance, never the final word.
 | `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
 | `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
 | `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |

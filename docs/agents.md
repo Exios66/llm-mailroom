@@ -348,7 +348,33 @@ Each dimension returns a score + label + reasoning, ingested as Langfuse scores 
 | **Output** | Bounded decision: `accept_with_caveats` / `retry_extraction` / `human_review` |
 | **Personality** | Final judgment authority; constrained to three outcomes |
 
-When the completeness judge rejects an extraction, the arbiter — not the raw pipeline — decides. `retry_extraction` is bounded by `arbiter_retry_max` (`retry_extraction` approval-inclusive; the state counter `arbiter_retry_count` is compared against it); exhausted retries escalate to human review.
+When the completeness judge rejects an extraction, the arbiter — not the raw
+pipeline — decides. `retry_extraction` is bounded by `arbiter_retry_max` (`retry_extraction`
+approval-inclusive; the state counter `arbiter_retry_count` is compared against it); exhausted retries escalate to human review.
+
+---
+
+### 12. Gmail intake triage (`agents/gmail_triage.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | none — runs BEFORE `run_pipeline` at watcher claim time (Gmail channel only) |
+| **Trigger** | `intake.source == "gmail"` and `MAILROOM_GMAIL_TRIAGE` on (default with the channel) |
+| **Input** | The same `doc_text` the pipeline will read (via `graph.build_graph._read_file_text`) |
+| **Output** | `intake.triage`: `primary_doc_class` + `doc_subclass` + `confidence` + `gist` + `keywords` |
+| **Personality** | Fast, grounded intake clerk — the accurate log, not the final word |
+
+The ONLY agent on a free OpenRouter model (`z-ai/glm-5.2:free`, $0 in
+`cost_models`, rate-limited). It is **advisory by design**: the read rides
+`intake_meta["triage"]` into the terminal manifest (and the completion echo's
+"INTAKE TRIAGE (pre-pipeline)" section) but never influences the sorter or
+specialists — the full pipeline classifies and extracts untouched. Fails
+soft: no `OPENROUTER_API_KEY`, rate limit, or provider error ever blocks a
+claim (logged; the pipeline proceeds without a triage record). Output is
+clamped to the live taxonomy vocabulary by `validate_triage` (unknown class →
+`unknown`, confidence 0.0–1.0, ≤6 keywords, 300-char gist). Registration:
+`llm/prompts.py:prompt_templates()` (synced with `scripts/sync_prompts.py`),
+agent config in `config/taxonomy.yaml`.
 
 ---
 
