@@ -26,14 +26,20 @@ from typing import Any
 
 ORG = "Lucius-Morningstar"
 FULL_CORPUS_SCHEMA = "v7"
-FULL_CORPUS_ID = f"{ORG}/docclass-merged"
+# Renamed 2026-09-02 per human directive: the Hub repo was `docclass-merged`
+# ("docclass" was always a placeholder) — now `mailroom-corpus`. The Hub
+# serves a redirect from the old id, and the internal corpus SLUG below stays
+# `docclass-merged` (historical traces carry the immutable
+# `source-docclass-merged` tag; slug/aliases are plumbing, not identity).
+FULL_CORPUS_ID = f"{ORG}/mailroom-corpus"
 # v7 tip bb57c5ad (issue #5 fix: intent_source aeslc_join on the 162
 # join-assisted rows; supersedes 1acd2600 hydration + fc1f211c card bump).
 # Pinned per the corpus plan §44 — never evaluate against unpinned main.
+# Pin survives the rename (move_repo preserves git history).
 FULL_CORPUS_REVISION = "bb57c5ad00333d239ea456fe3f2298c3ba5b5108"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
-# Hub HF classes present in docclass-merged v7 — identical to the canonical
+# Hub HF classes present in mailroom-corpus (v7) — identical to the canonical
 # five-class live taxonomy (docs/v7-taxonomy.md). taxonomy.yaml carries a
 # sixth configured entry (compliance_filing, marked status: retired):
 # retained machinery with zero Hub rows, not a corpus class.
@@ -163,6 +169,9 @@ _ALIASES = {
     "v7": "docclass-merged",
     "full": "docclass-merged",
     "merged": "docclass-merged",
+    # renamed 2026-09-02: Hub repo mailroom-corpus (formerly docclass-merged)
+    "corpus": "docclass-merged",
+    "mailroom-corpus": "docclass-merged",
     "examples": "docclass-pilot",
     "pilot": "docclass-pilot",
     "enron": "enron-correspondence-dedup",
@@ -204,7 +213,7 @@ def active_corpus() -> dict[str, Any]:
 
 
 def adapt_hub_row(row: dict[str, Any], corpus: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Normalize a Hub row into the docclass-merged shape parse_hf_row expects."""
+    """Normalize a Hub row into the mailroom-corpus shape parse_hf_row expects."""
     corp = corpus or active_corpus()
     shape = corp.get("row_shape") or "docclass"
     data = dict(row or {})

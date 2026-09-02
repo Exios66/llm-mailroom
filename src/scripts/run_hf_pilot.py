@@ -943,7 +943,7 @@ def render_metrics_markdown(report: dict) -> str:
             "## Per subclass (Hub class × subtype strata)",
             "",
             "Strata come from the Hub inventories (`docclass-pilot` / "
-            "`docclass-merged`). Predicting `contract` for a `merger_agreement` "
+            "`mailroom-corpus`). Predicting `contract` for a `merger_agreement` "
             "row is a class miss, not an aligned hit.",
             "",
             "| stratum | n | exact | subclass |",
@@ -1663,9 +1663,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--dataset",
-        default="docclass-merged",
+        default="docclass-merged",  # internal slug (Hub id: mailroom-corpus)
         help="Lucius-Morningstar corpus slug or repo id (default: "
-             "docclass-merged v7). Aliases: v5/v7/full, examples/pilot, "
+             "mailroom-corpus v7). Aliases: v5/v7/full/corpus, examples/pilot, "
              "enron, claims, cuad.",
     )
     parser.add_argument(
