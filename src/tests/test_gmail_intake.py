@@ -393,7 +393,7 @@ def test_react_to_message_applies_check_label(temp_base_dir):
         "<react-1@example.com>", config=_cfg(), imap_factory=lambda: client
     )
     assert ok is True
-    assert client.labels["7"] == ['"✅"']  # emoji rides as UTF-8 bytes
+    assert client.labels["7"] == ['("&JwU-")']  # ✅ rides as RFC 3501 mUTF-7
     assert gmail_intake.status()["reactions_sent"] == 1
 
 
@@ -408,6 +408,12 @@ def test_react_dedups_per_message_within_and_across_claims(temp_base_dir):
     assert gmail_intake.react_to_message("<react-2@example.com>", config=_cfg(), imap_factory=lambda: client)
     assert gmail_intake.react_to_message("<react-2@example.com>", config=_cfg(), imap_factory=lambda: client)
     assert client.store_calls == 1  # second call short-circuited
+
+
+def test_mutf7_encoding():
+    assert gmail_intake._to_mutf7("✅") == b"&JwU-"
+    assert gmail_intake._to_mutf7("✔ Done") == b"&JxQ- Done"
+    assert gmail_intake._to_mutf7("ascii") == b"ascii"
 
 
 def test_react_missing_message_returns_false_and_allows_retry(temp_base_dir):
@@ -448,3 +454,131 @@ def test_watcher_claim_dispatches_reaction(temp_base_dir, mocker):
     _notify_intake_reaction({"source": "upload", "upload_id": "x"}, async_mode=False)
     _notify_intake_reaction({"source": "gmail"}, async_mode=False)
     assert spy.call_count == 0
+
+
+# ── completion echo on the source thread (HUB-037) ────────────────────────
+
+
+class FakeSMTP:
+    def __init__(self):
+        self.sent = []
+        self.logged_in = False
+
+    def login(self, user, password):
+        self.logged_in = True
+
+    def sendmail(self, frm, to, raw):
+        self.sent.append((frm, to, raw))
+
+    def quit(self):
+        pass
+
+
+def _echo_manifest() -> dict:
+    return {
+        "doc_id": "d-echo-1",
+        "matter_id": "M-1",
+        "original_filename": "fnol.pdf",
+        "stage": "archived",
+        "doc_type": "insurance_claim",
+        "doc_subclass": "other",
+        "classification_confidence": 0.98,
+        "extracted_data": {"insurer": "Acme", "confidence": 0.97, "_report": "Report text"},
+        "intake": {
+            "source": "gmail",
+            "message_id": "<echo-1@example.com>",
+            "sender": "client@firm.example",
+            "subject": "FNOL [M:M-1]",
+            "received_at": "2026-09-02T13:00:00-05:00",
+        },
+    }
+
+
+def test_send_intake_echo_replies_on_source_thread(temp_base_dir, monkeypatch):
+    import email as _email
+
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    fake = FakeSMTP()
+    gmail_intake.set_smtp_factory(lambda: fake)
+    try:
+        ok = gmail_intake.send_intake_echo(_echo_manifest())
+        assert ok is True
+        assert len(fake.sent) == 1
+        frm, to, raw = fake.sent[0]
+        assert to == ["client@firm.example"]
+        msg = _email.message_from_bytes(raw)
+        assert msg["In-Reply-To"] == "<echo-1@example.com>"
+        assert msg["Subject"] == "Re: FNOL [M:M-1]"
+        body = msg.get_payload()
+        assert "STATUS: ARCHIVED" in body
+        assert "d-echo-1" in body
+        assert "insurance_claim" in body
+        # Dedup: the same (doc, stage) echo is sent exactly once.
+        assert gmail_intake.send_intake_echo(_echo_manifest()) is True
+        assert len(fake.sent) == 1
+    finally:
+        gmail_intake.set_smtp_factory(None)
+
+
+def test_echo_skips_non_gmail_and_disabled_channel(temp_base_dir, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    fake = FakeSMTP()
+    gmail_intake.set_smtp_factory(lambda: fake)
+    gmail_intake._ECHO_DONE.clear()
+    try:
+        # /upload document — no gmail provenance → no echo.
+        m = _echo_manifest()
+        m["intake"] = {"source": "upload", "upload_id": "x"}
+        assert gmail_intake.send_intake_echo(m) is False
+        # Channel master switch off → no echo even for gmail docs.
+        monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "0")
+        assert gmail_intake.send_intake_echo(_echo_manifest()) is False
+        assert fake.sent == []
+    finally:
+        gmail_intake.set_smtp_factory(None)
+
+
+def test_build_echo_body_renders_archive_entry_and_audit():
+    import json as _json
+
+    manifest = _echo_manifest()
+    rows = [
+        {
+            "event": "ingested",
+            "actor": "pipeline",
+            "timestamp": "2026-09-02T18:00:00Z",
+            "detail": _json.dumps({"file_sha256": "aa11", "size_bytes": 88345}),
+        },
+        {
+            "event": "archived",
+            "actor": "archivist",
+            "timestamp": "2026-09-02T18:01:00Z",
+            "detail": _json.dumps(
+                {
+                    "archive_path": "archive/M-1/insurance_claim/fnol.pdf",
+                    "file_sha256": "bb22",
+                    "size_bytes": 88345,
+                }
+            ),
+        },
+    ]
+    body = gmail_intake.build_echo_body(manifest, rows, True)
+    assert "STATUS: ARCHIVED" in body
+    assert "archive/M-1/insurance_claim/fnol.pdf" in body
+    assert "bb22" in body
+    assert "hash chain intact" in body
+    assert "ingested" in body
+    assert "archived" in body
+
+    # Failed terminal: shows the reason, no archive block.
+    m2 = _echo_manifest()
+    m2["stage"] = "failed"
+    m2["escalation_reason"] = "llm_auth"
+    body2 = gmail_intake.build_echo_body(m2, [], None)
+    assert "STATUS: FAILED" in body2
+    assert "llm_auth" in body2
+    assert "audit chain unavailable" in body2

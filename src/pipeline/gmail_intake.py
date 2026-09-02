@@ -43,6 +43,7 @@ import imaplib
 import json
 import os
 import re
+import smtplib
 import threading
 import time
 import uuid
@@ -63,6 +64,8 @@ _STATE_KEEP_MESSAGE_IDS = 2000
 # The "check" reaction: an emoji-named Gmail label applied to the source
 # message when the watcher picks the attachment up for processing (HUB-037).
 DEFAULT_REACTION_LABEL = "✅"
+DEFAULT_SMTP_HOST = "smtp.gmail.com"
+DEFAULT_SMTP_PORT = 465
 
 # Matter routing: subject tag ``[M:<matter_id>]`` (watcher files the document
 # under this matter via the inbox meta sidecar).
@@ -83,7 +86,18 @@ _STATUS: dict = {
     "messages_seen": 0,
     "attachments_queued": 0,
     "reactions_sent": 0,
+    "echoes_sent": 0,
 }
+
+# Test/smoke seam: when set, EVERY SMTP access in this module (echo emails)
+# goes through this factory instead of a real smtplib connection.
+_INJECTED_SMTP_FACTORY = None
+
+
+def set_smtp_factory(factory) -> None:
+    """Inject an SMTP client factory (test/smoke seam). Pass None to reset."""
+    global _INJECTED_SMTP_FACTORY
+    _INJECTED_SMTP_FACTORY = factory
 
 
 def _record_status(**updates) -> None:
@@ -150,6 +164,38 @@ _REACTION_ATTEMPTED: set[str] = set()
 _REACTION_LOCK = threading.Lock()
 
 
+def _to_mutf7(label: str) -> bytes:
+    """RFC 3501 modified-UTF-7 encoding for IMAP label/mailbox names.
+
+    Gmail over IMAP cannot take non-ASCII label bytes in quoted strings (no
+    UTF8=ACCEPT support — the server answers ``BAD Could not parse command``)
+    and rejects literals in the X-GM-LABELS position. mUTF-7 is pure ASCII on
+    the wire and Gmail decodes it back to the emoji label in the UI
+    (``✅`` → ``&JwU-`` — verified live).
+    """
+    import base64
+
+    out = bytearray()
+    buf = ""
+
+    def _flush():
+        nonlocal buf
+        if buf:
+            out.extend(
+                b"&" + base64.b64encode(buf.encode("utf-16-be")).rstrip(b"=") + b"-"
+            )
+            buf = ""
+
+    for ch in label:
+        if ord(ch) < 0x80:
+            _flush()
+            out += ch.encode("ascii")
+        else:
+            buf += ch
+    _flush()
+    return bytes(out)
+
+
 def react_to_message(
     message_id: str,
     *,
@@ -183,24 +229,17 @@ def react_to_message(
         )
         client = factory()
         client.login(cfg["address"], cfg["password"])
-        # RFC 6855: quoted strings are 7-bit unless UTF8=ACCEPT is enabled —
-        # without this Gmail answers BAD "Could not parse command" on the
-        # emoji label (the exact failure mode seen live).
-        try:
-            client.enable("UTF8=ACCEPT")
-        except Exception:
-            pass
         typ, _ = client.select(cfg["folder"], readonly=False)
         if typ != "OK":
             raise GmailIntakeError(f"cannot select folder {cfg['folder']!r}")
+        wire_label = b'("' + _to_mutf7(label) + b'")'
         # Best-effort label creation (Gmail auto-creates on STORE in most
         # cases; CREATE makes it deterministic). Already-exists errors ignored.
         try:
-            client.create(f'"{label}"'.encode("utf-8"))
+            client.create(b'"' + _to_mutf7(label) + b'"')
         except Exception:
             pass
-        # Bytes args: imaplib encodes str args as ASCII — the emoji label
-        # must ride through as pre-encoded UTF-8 bytes.
+        # RFC 3501 search by Message-ID (verified live against Gmail).
         typ, data = client.uid(
             "SEARCH", None, f'HEADER Message-ID "{message_id}"'.encode("utf-8")
         )
@@ -210,7 +249,7 @@ def react_to_message(
                 "STORE",
                 uid,
                 "+X-GM-LABELS",
-                f'"{label}"'.encode("utf-8"),
+                wire_label,
             )
             if typ == "OK":
                 ok = True
@@ -268,6 +307,8 @@ def load_config() -> dict:
         "password": gmail_app_password(),
         "imap_host": os.environ.get("MAILROOM_GMAIL_IMAP_HOST", DEFAULT_IMAP_HOST),
         "imap_port": int(os.environ.get("MAILROOM_GMAIL_IMAP_PORT", DEFAULT_IMAP_PORT)),
+        "smtp_host": os.environ.get("MAILROOM_GMAIL_SMTP_HOST", DEFAULT_SMTP_HOST),
+        "smtp_port": int(os.environ.get("MAILROOM_GMAIL_SMTP_PORT", DEFAULT_SMTP_PORT)),
         "folder": os.environ.get("MAILROOM_GMAIL_FOLDER", DEFAULT_FOLDER),
         "poll_seconds": max(1.0, poll_seconds),
         "default_matter_id": os.environ.get("MAILROOM_GMAIL_DEFAULT_MATTER_ID", "DEFAULT"),
@@ -644,3 +685,229 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ---------------------------------------------------------------------------
+# Completion echo (HUB-037): when a Gmail-intake document reaches a terminal
+# stage, reply on the source thread with the outcome — classification,
+# extraction report, archive entry (path + sha256) and the verified audit
+# chain. The ✅ reaction proves pickup; the echo proves the pipeline happened.
+# ---------------------------------------------------------------------------
+
+_ECHO_DONE: set[tuple[str, str]] = set()
+_ECHO_LOCK = threading.Lock()
+
+
+def echoes_enabled() -> bool:
+    """Whether terminal-stage completion echoes are on (default: with the channel)."""
+    if not gmail_intake_enabled():
+        return False
+    return str(os.environ.get("MAILROOM_GMAIL_ECHOES", "1")).strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_valid: bool | None = None) -> str:
+    """Render the completion report for one terminal manifest (plain text)."""
+    stage = str(manifest.get("stage") or "unknown").upper()
+    intake = manifest.get("intake") or {}
+    lines: list[str] = []
+    lines.append("MAILROOM COMPLETION REPORT")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append(f"STATUS: {stage}")
+    lines.append(f"document:  {manifest.get('original_filename', '')}")
+    lines.append(f"doc_id:    {manifest.get('doc_id', '')}")
+    lines.append(f"matter:    {manifest.get('matter_id', '')}")
+    lines.append(f"received:  {intake.get('received_at', 'n/a')} via Gmail from {intake.get('sender', 'n/a')}")
+    lines.append("")
+
+    lines.append("-- CLASSIFICATION " + "-" * 44)
+    lines.append(f"doc_type:  {manifest.get('doc_type') or 'n/a'}")
+    if manifest.get("doc_subclass"):
+        lines.append(f"subclass:  {manifest.get('doc_subclass')}")
+    lines.append(f"confidence: {manifest.get('classification_confidence') if manifest.get('classification_confidence') is not None else 'n/a'}")
+    lines.append("")
+
+    extracted = manifest.get("extracted_data")
+    lines.append("-- EXTRACTION " + "-" * 46)
+    if isinstance(extracted, dict) and extracted:
+        report = extracted.get("_report")
+        if report:
+            lines.append(str(report))
+        payload = {k: v for k, v in extracted.items() if k not in ("_report",) and v not in (None, [], "")}
+        if payload:
+            lines.append(json.dumps(payload, indent=2, default=str))
+        conf = extracted.get("confidence")
+        if conf is not None:
+            lines.append(f"extraction confidence: {conf}")
+    else:
+        lines.append("no extraction on this terminal record")
+    lines.append("")
+
+    lines.append("-- ARCHIVE ENTRY " + "-" * 44)
+    if stage == "ARCHIVED":
+        for row in audit_rows or []:
+            if row.get("event") == "archived":
+                detail = row.get("detail")
+                if isinstance(detail, str):
+                    try:
+                        detail = json.loads(detail)
+                    except Exception:
+                        detail = {"detail": detail}
+                if isinstance(detail, dict):
+                    for key in ("archive_path", "file_sha256", "size_bytes", "prev_hash", "entry_hash"):
+                        if detail.get(key) is not None:
+                            lines.append(f"{key}: {detail[key]}")
+                break
+        else:
+            lines.append("archive detail unavailable in audit chain")
+    else:
+        why = manifest.get("escalation_reason") or manifest.get("error_message") or ""
+        lines.append(f"not archived — stage {stage}" + (f": {why}" if why else ""))
+    lines.append("")
+
+    lines.append("-- AUDIT TRAIL " + "-" * 46)
+    if audit_rows:
+        for row in audit_rows:
+            ts = str(row.get("timestamp", ""))
+            lines.append(f"  {ts}  {row.get('event', '')}  (actor: {row.get('actor', '')})")
+        if chain_valid is None:
+            lines.append("chain verification: unavailable")
+        else:
+            lines.append(f"chain verification: {'OK — hash chain intact' if chain_valid else 'BROKEN — investigate immediately'}")
+    else:
+        lines.append("audit chain unavailable")
+    lines.append("")
+
+    if manifest.get("trace_id"):
+        lines.append(f"trace_id: {manifest['trace_id']}")
+    lines.append(f"echo generated: {_now_iso()}")
+    lines.append("")
+    lines.append("— the mailroom agent (automated message)")
+    return "\n".join(lines)
+
+
+def _load_audit_rows(doc_id: str) -> tuple[list[dict], bool | None]:
+    """Audit chain rows + hash-chain verdict for the echo body (best-effort)."""
+    try:
+        import asyncio
+
+        from storage.audit_log import get_audit_chain
+        from schemas.audit import AuditLogEntry, verify_chain
+
+        records = asyncio.run(get_audit_chain(doc_id))
+        entries = [
+            AuditLogEntry(
+                entry_id=r["entry_id"],
+                doc_id=doc_id,
+                matter_id=r.get("matter_id") or "",
+                event=r["event"],
+                actor=r["actor"],
+                detail=r["detail"],
+                prev_hash=r["prev_hash"],
+                entry_hash=r["entry_hash"],
+                timestamp=r["timestamp"],
+            )
+            for r in records
+        ]
+        return records, verify_chain(entries)
+    except Exception:
+        logger.exception("gmail_echo_audit_read_failed", doc_id=doc_id)
+        return [], None
+
+
+def send_intake_echo(manifest: dict) -> bool:
+    """Reply on the source Gmail thread with the terminal-stage report.
+
+    Called by the graph at every terminal manifest (archived / review /
+    failed). Best-effort: never raises, retried by a later terminal event of
+    the same document if the send fails. Returns True when sent.
+    """
+    intake = (manifest or {}).get("intake") or {}
+    doc_id = str((manifest or {}).get("doc_id") or "")
+    stage = str((manifest or {}).get("stage") or "")
+    message_id = intake.get("message_id")
+    sender = intake.get("sender")
+    if not (intake.get("source") == "gmail" and message_id and sender):
+        return False
+    if not echoes_enabled():
+        return False
+    dedup_key = (doc_id, stage)
+    with _ECHO_LOCK:
+        if dedup_key in _ECHO_DONE:
+            return True
+        _ECHO_DONE.add(dedup_key)
+
+    ok = False
+    client = None
+    try:
+        cfg = load_config()
+        audit_rows, chain_valid = _load_audit_rows(doc_id)
+        body = build_echo_body(manifest, audit_rows, chain_valid)
+
+        msg = email.message.EmailMessage()
+        msg["From"] = cfg["address"]
+        msg["To"] = str(sender)
+        original_subject = str(intake.get("subject") or manifest.get("original_filename") or "mailroom intake")
+        msg["Subject"] = f"Re: {original_subject}"
+        msg["In-Reply-To"] = str(message_id)
+        msg["References"] = str(message_id)
+        msg["Date"] = email.utils.formatdate(localtime=False)
+        msg["Message-ID"] = f"<mailroom-echo-{doc_id or uuid.uuid4().hex[:12]}-{stage}@mailroom.local>"
+        msg.set_content(body)
+
+        factory = _INJECTED_SMTP_FACTORY or (
+            lambda: smtplib.SMTP_SSL(cfg["smtp_host"], cfg["smtp_port"], timeout=IMAP_TIMEOUT_SECONDS)
+        )
+        client = factory()
+        client.login(cfg["address"], cfg["password"])
+        client.sendmail(cfg["address"], [str(sender)], msg.as_bytes())
+        ok = True
+        _record_status(echoes_sent=_STATUS["echoes_sent"] + 1)
+        logger.info(
+            "gmail_echo_sent",
+            doc_id=doc_id,
+            stage=stage,
+            to=sender,
+            message_id=message_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "gmail_echo_failed",
+            doc_id=doc_id,
+            stage=stage,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    finally:
+        if client is not None:
+            try:
+                client.quit()
+            except Exception:
+                pass
+    if not ok:
+        # A failed echo must be retried by a later terminal event.
+        with _ECHO_LOCK:
+            _ECHO_DONE.discard(dedup_key)
+    return ok
+
+
+def dispatch_intake_echo(manifest) -> None:
+    """Fire the completion echo off the document path (daemon thread, never raises)."""
+    try:
+        if not isinstance(manifest, dict):
+            manifest = manifest.model_dump(mode="json") if hasattr(manifest, "model_dump") else dict(manifest)
+        intake = manifest.get("intake") or {}
+        if intake.get("source") != "gmail" or not echoes_enabled():
+            return
+        threading.Thread(
+            target=send_intake_echo,
+            args=(manifest,),
+            name="gmail-echo",
+            daemon=True,
+        ).start()
+    except Exception:
+        logger.exception("gmail_echo_dispatch_failed")

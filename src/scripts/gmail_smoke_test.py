@@ -211,6 +211,22 @@ class _FakeIMAP:
         pass
 
 
+class _FakeSMTP:
+    """Records sendmail calls so the completion echo is provable without network."""
+
+    def __init__(self):
+        self.sent = []
+
+    def login(self, user, password):
+        pass
+
+    def sendmail(self, frm, to, raw):
+        self.sent.append((frm, to, raw))
+
+    def quit(self):
+        pass
+
+
 def _prepare_base_dir() -> Path:
     """Scratch MAILROOM_BASE_DIR so smoke runs never pollute real bins."""
     scratch = Path(tempfile.mkdtemp(prefix="gmail-smoke-"))
@@ -304,6 +320,7 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     # Hermetic: fake mailbox credentials when the real .env is absent.
     os.environ.setdefault("GMAIL_ADDRESS", "smoke@example.com")
     os.environ.setdefault("GMAIL_APP_PASSWORD", "smoke-smoke-smoke-sm")
+    os.environ.setdefault("MAILROOM_GMAIL_ENABLED", "1")
 
     scratch = _prepare_base_dir()
     raw, message_id, attachment_name = build_smoke_email(matter_id, fixture)
@@ -341,6 +358,8 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     )
 
     # [watcher] + [awareness] + [classify]: the watcher's exact claim path.
+    smtp = _FakeSMTP()
+    gmail_intake.set_smtp_factory(lambda: smtp)
     manifest, _ = _run_watcher_route(delivered, llm_mode)
     checks.append(
         (
@@ -379,6 +398,28 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
             f"reactions_sent={gmail_intake.status()['reactions_sent']}",
         )
     )
+
+    # [echo] the pipeline replied on the source thread with the completion
+    # report (async daemon thread — bounded wait, then inspect what was sent).
+    deadline = time.time() + 10
+    while time.time() < deadline and gmail_intake.status()["echoes_sent"] < 1:
+        time.sleep(0.1)
+    echo_ok = bool(smtp.sent)
+    echo_detail = "no echo captured"
+    if echo_ok:
+        import email as _email
+
+        _, to, raw = smtp.sent[0]
+        msg = _email.message_from_bytes(raw)
+        echo_detail = f"to={to[0]} subject={msg['Subject']!r} in_reply_to={msg['In-Reply-To']}"
+    checks.append(
+        (
+            "echo: completion report replied on the source email thread",
+            echo_ok,
+            echo_detail,
+        )
+    )
+    gmail_intake.set_smtp_factory(None)  # reset the seam
     gmail_intake.set_imap_factory(None)  # reset the seam
     print(f"scratch base dir: {scratch}")
     return checks

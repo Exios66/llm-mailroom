@@ -36,10 +36,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_infer_matter_id` method lived only on `InboxHandler`, so startup-scan /
   rescan claims on `Watcher` crashed). **Check reaction:** at watcher claim
   time the source email is reacted to with the `✅` Gmail label (IMAP
-  `X-GM-LABELS` via UTF-8 bytes — imaplib ASCII-encodes str args; one
+  `X-GM-LABELS` in RFC 3501 modified-UTF-7 — Gmail rejects raw UTF-8 label
+  bytes and literals in that position, live-verified; mUTF-7 `&JwU-`
+  decodes to ✅ in the UI; one
   reaction per Message-ID even for multi-attachment emails; best-effort
   daemon thread; `MAILROOM_GMAIL_REACTIONS=0` disables;
-  `MAILROOM_GMAIL_REACTION_LABEL` overrides the emoji). **Smoke test:**
+  `MAILROOM_GMAIL_REACTION_LABEL` overrides the emoji). **Completion
+  echo:** every terminal manifest (archived / review / failed) of a
+  Gmail-intake document replies on the source email thread
+  (`In-Reply-To`-threaded, To: the original sender) with the completion
+  report — status, doc_id/matter, classification + confidence, the
+  extraction report, the archive entry (path + sha256) or the
+  failure/review reason, and the audit chain with hash-chain verification —
+  so the thread itself is the notification surface (dedup per
+  `(doc_id, stage)`; retried on the next terminal event if the send fails;
+  `MAILROOM_GMAIL_ECHOES=0` disables; `MAILROOM_GMAIL_SMTP_HOST/PORT`
+  override the SMTP endpoint). **Smoke test:**
   `src/scripts/gmail_smoke_test.py` exercises Gmail + watcher connectivity
   end-to-end with an example insurance claim (committed FNOL fixture):
   default network-free mock (PASS verified — connectivity, route, watcher,
