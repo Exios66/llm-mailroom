@@ -81,6 +81,13 @@ from pipeline.hf_corpora import (  # noqa: E402
 
 DATASET_ID = FULL_CORPUS_ID
 DATASET_REVISION = FULL_CORPUS_REVISION
+# §45 evaluation-trace identity (HUB-022): rides on every pilot trace so any
+# experiment is reproducible from dataset revision + taxonomy surface.
+DATASET_IDENTITY = {
+    "name": DATASET_ID,
+    "revision": DATASET_REVISION,
+    "taxonomy_version": FULL_CORPUS_SCHEMA,
+}
 DATASET_SCHEMA = FULL_CORPUS_SCHEMA
 VIEWER_BASE = "https://datasets-server.huggingface.co"
 HF_CLASSES = HUB_CLASSES
@@ -1561,6 +1568,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
             result = run_pipeline(
                 queued, matter_id, source=_trace_source(),
                 ground_truth=ground_truth, session_id=session_id, run_id=run_id,
+                dataset=DATASET_IDENTITY,
             )
     else:
         with patch("llm.client.get_llm", side_effect=rp._real_get_llm), \
@@ -1569,6 +1577,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
             result = run_pipeline(
                 queued, matter_id, source=_trace_source(),
                 ground_truth=ground_truth, session_id=session_id, run_id=run_id,
+                dataset=DATASET_IDENTITY,
             )
     wall = time.perf_counter() - started
     predicted = result.get("doc_type")

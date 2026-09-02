@@ -2843,6 +2843,7 @@ def _execute_run(
         trace_metadata["source"] = source
     if run_id:
         trace_metadata["run_id"] = run_id
+    trace_metadata.update(dataset_trace_metadata(dataset))
     public_gt = _public_ground_truth(ground_truth)
     for key, value in public_gt.items():
         trace_metadata[key] = value
@@ -3032,6 +3033,27 @@ def _execute_run(
     return result
 
 
+def dataset_trace_metadata(dataset: dict | None) -> dict[str, str]:
+    """§45 evaluation-trace identity (HUB-022 P0 residual): every evaluation
+    trace records dataset_name, dataset_revision, taxonomy_version.
+    matter_id rides as session_id and run_id is the simulation-run surrogate
+    (already on the trace). Empty dict when unset — live (non-corpus) runs
+    carry no dataset identity rather than a fabricated one.
+    """
+    if not isinstance(dataset, dict):
+        return {}
+    out: dict[str, str] = {}
+    for meta_key, src in (
+        ("dataset_name", "name"),
+        ("dataset_revision", "revision"),
+        ("taxonomy_version", "taxonomy_version"),
+    ):
+        value = dataset.get(src)
+        if value not in (None, ""):
+            out[meta_key] = str(value)
+    return out
+
+
 def run_pipeline(
     file_path: Path,
     matter_id: str = "DEFAULT",
@@ -3040,6 +3062,7 @@ def run_pipeline(
     ground_truth: dict | None = None,
     session_id: str | None = None,
     run_id: str | None = None,
+    dataset: dict | None = None,
 ) -> dict[str, Any]:
     _ensure_dirs()
 
