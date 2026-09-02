@@ -11,7 +11,7 @@ every successful run can be graded against them.
 
 Workflow:
 
-1. Fetch the pinned revision of ``docclass-merged`` — ``default`` config rows
+1. Fetch the pinned revision of ``mailroom-corpus`` — ``default`` config rows
    (``doc_text`` per filename) joined to the ``ground_truth`` config rows
    (``expected`` / ``expected_subclass`` + existing GT columns) on filename.
 2. Keep only the three purpose-labeled classes; the rest of the table passes
@@ -611,7 +611,7 @@ def check_contract() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Derive + publish purpose/gist GT to docclass-merged.")
+    parser = argparse.ArgumentParser(description="Derive + publish purpose/gist GT to mailroom-corpus.")
     parser.add_argument("--check", action="store_true", help="Network-free contract checks.")
     parser.add_argument("--real", action="store_true", help="LLM labeler from document text.")
     parser.add_argument("--mock", action="store_true", help="Deterministic labeler (machinery only).")
