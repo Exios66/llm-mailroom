@@ -704,6 +704,7 @@ class Watcher:
         self._running = False
         self._lock: _WatcherLock | None = None
         self._gmail_poller = None
+        self._relations_sweeper = None
 
     def start(self):
         global _watcher_owned
@@ -753,6 +754,12 @@ class Watcher:
             from .gmail_intake import start_embedded_poller
 
             self._gmail_poller = start_embedded_poller()
+
+            # Relations sweeper (HUB-040): the regular archive association
+            # sweep — same embedded pattern, watermark-incremental, fail-soft.
+            from .relations import start_embedded_relations_scanner
+
+            self._relations_sweeper = start_embedded_relations_scanner()
         except Exception:
             self.stop()
             raise
@@ -797,9 +804,12 @@ class Watcher:
     def stop(self):
         global _watcher_owned
         from .gmail_intake import stop_embedded_poller
+        from .relations import stop_embedded_relations_scanner
 
         stop_embedded_poller(self._gmail_poller)
         self._gmail_poller = None
+        stop_embedded_relations_scanner(getattr(self, "_relations_sweeper", None))
+        self._relations_sweeper = None
         if self._running:
             self.observer.stop()
             self.observer.join(timeout=5)
