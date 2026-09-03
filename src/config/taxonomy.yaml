@@ -281,7 +281,7 @@ doc_classes:
     label: "Insurance Claim"
     schema: InsuranceClaimExtraction
     specialist: insurance_claims_specialist
-    description: "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters, and CMS/DE-SynPUF claim tables (inpatient, outpatient, PDE, carrier)"
+    description: "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters, CMS/DE-SynPUF claim tables (inpatient, outpatient, PDE, carrier), and the v8 synthetic LOB lines — property FNOL bundles, auto decision letters"
     field_types:
       claim_number: id
       policy_number: id

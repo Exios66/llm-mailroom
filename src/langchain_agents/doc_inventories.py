@@ -306,7 +306,7 @@ _DOJO_SORTER_SUBCLASSES: dict[str, tuple[str, ...]] = {
         "officer_certificate", "other",
     ),
     "correspondence": CORRESPONDENCE_TYPES,
-    "insurance_claim": ("carrier", "inpatient", "outpatient", "pde"),
+    "insurance_claim": ("carrier", "inpatient", "outpatient", "pde", "property", "auto"),
     "compliance_filing": COMPLIANCE_FILING_TYPES,
     "due_diligence": (),
     "court_opinion": (),
