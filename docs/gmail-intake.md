@@ -84,6 +84,15 @@ workflow use — never committed.
   the GitHub secret manager); rotate it like any credential.
 - Set `MAILROOM_GMAIL_ALLOWED_SENDERS` in production so only known senders
   can queue documents; the allowlist compares lowercased addresses.
+  **Pilot roster (HUB-039):** `exios4@gmail.com`,
+  `jjburleson@wisc.edu`, `axios337@gmail.com`,
+  `exios4@protonmail.com` (expansion later per the human).
+- **Free-only pilot guardrail:** set `MAILROOM_LLM_FREE_ONLY=1` while the
+  pilot key must not touch paid models — `get_llm` then refuses to resolve
+  any non-free model (cost-table $0, or an OpenRouter `:free` suffix), so
+  even a stray multi-document email cannot spend: its documents fail-soft
+  park instead. Unset it in full production, where paid agents are the
+  designed handler for multi-document emails and inbox/CLI uploads.
 - Reactions/echoes reveal document status to the original sender only
   (echoes reply To: the sender, threaded via `In-Reply-To`); keep the
   mailbox address unlisted.
@@ -261,7 +270,7 @@ document after a Pathway-B handoff, and everything when
 `MAILROOM_GMAIL_TRIAGE=0` runs the standard 13-node graph **per document**:
 
 ```
- ingest (transcription: direct PDF text / paid LLM transcription for scans /
+ intake (transcription: direct PDF text / paid LLM transcription for scans /
          vision OCR for images + intake normalization)
    → classify (sorter; retry + independent sorter-reviewer lanes)
    → extract (doc-class specialist; handoff context; retry lane)

@@ -7,7 +7,7 @@ This is the **engine room**. Mailroom is built on **LangGraph**: for every docum
 The journey of a document:
 
 ```
-ingest → classify → (extract | retry_classify | human_review) → extract → compile_report
+intake → classify → (extract | retry_classify | human_review) → extract → compile_report
       → catalog_write → archive
 ```
 
@@ -17,7 +17,7 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 
 | Node | What it does |
 |---|---|
-| `ingest` | Reads the file, deterministic `normalize-intake`, creates the manifest, moves file to `processing/` |
+| `intake` | Reads the file, deterministic `normalize-intake`, gated LLM triage/clean/prepare, creates the manifest, moves file to `processing/` |
 | `classify` | Sorter LLM decides `doc_type` + confidence |
 | `retry_classify` | Re-classify with a "re-evaluate" prompt when confidence was low |
 | `extract` | Routes to the right specialist LLM, stores `extracted_data` |

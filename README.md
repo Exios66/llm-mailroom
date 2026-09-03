@@ -129,7 +129,7 @@ One **LangGraph state machine run per document** — 13 nodes, MemorySaver-check
 flowchart TD
     START([START]) --> INGEST
 
-    INGEST["ingest-document<br/>claim file, read text, create manifest"]
+    INTAKE["intake-document<br/>claim file, read text, create manifest"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
     REVIEW_CLASS["classify-document (reviewer)<br/>agent second opinion (Lane A)"]

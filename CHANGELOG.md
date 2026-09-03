@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`MAILROOM_LLM_FREE_ONLY` pilot guardrail (HUB-039):** when enabled,
+  `llm/client.py:get_llm` refuses to resolve ANY model that is not free —
+  taxonomy `cost_models` prices both 0.0, or unregistered with an OpenRouter
+  `:free` suffix — BEFORE any client exists, so a paid-model resolution can
+  never become a paid request (documents fail-soft park instead of
+  spending). Opt-in and reversible: on during the Gmail free-triage pilot
+  (the key must not touch paid models), unset/`0` in full production where
+  paid agents handle multi-document emails and inbox/CLI uploads by design.
+  9 tests (`src/tests/test_llm_free_only.py`).
+
 - **Gmail intake channel (HUB-037):** the agent mailbox
   (`llmmailroom@gmail.com`, opt-in via `MAILROOM_GMAIL_ENABLED=1` +
   `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD`) is a second intake route.
@@ -30,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the channel as `checks.gmail_intake`. Tests stay hermetic (conftest forces
   the channel off; 17 network-free tests). **Intake awareness:** the watcher
   passes the sidecar provenance into the pipeline — `DocumentManifest.intake`
-  (source gmail/upload, message_id, sender, subject) now rides ingest →
+  (source gmail/upload, message_id, sender, subject) now rides intake →
   review → archive → aborted manifests and live traces tag `source-gmail`;
   fixing this also fixed a latent `existing_file_failed` bug (the
   `_infer_matter_id` method lived only on `InboxHandler`, so startup-scan /

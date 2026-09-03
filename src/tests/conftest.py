@@ -35,6 +35,9 @@ def _set_test_env():
         os.environ.pop(k, None)
     os.environ.pop("MAILROOM_VISION_ENABLED", None)
     os.environ.pop("DEFAULT_PROVIDER", None)
+    # HUB-039 free-only guardrail is opt-in via .env; tests must stay hermetic
+    # unless a case opts in explicitly (test_llm_free_only.py sets it itself).
+    os.environ.pop("MAILROOM_LLM_FREE_ONLY", None)
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
               "LANGFUSE_BASE_URL", "BRAINTRUST_API_KEY"):
         os.environ.pop(k, None)

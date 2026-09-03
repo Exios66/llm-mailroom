@@ -77,7 +77,7 @@ bench"); 11 also uses `huggingface_lab.py` and 12 uses `legalbench_lab.py`.
 
 ### 01 — `happy_path_run.ipynb` (the example pipeline run) ★ Jack's ask
 
-- **Goal:** one contract document, end to end: ingest → classify (high
+- **Goal:** one contract document, end to end: intake → classify (high
   confidence) → extract → judge gate skipped (above band) → compile →
   catalog → archive. Every agent's input, output, and role narrated at its
   station.

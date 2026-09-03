@@ -13,7 +13,7 @@ Do not introduce a second orchestrator.
 
 - One graph run per document. Node signature:
   `node(state: DocumentState) -> dict[str, Any]` (partial updates).
-- 13 nodes: `ingest`, `classify`, `retry_classify`, `review_classify`,
+- 13 nodes: `intake`, `classify`, `retry_classify`, `review_classify`,
   `extract`, `retry_extract`, `judge_verify`, `arbiter`, `human_review`,
   `boss_escalation`, `compile_report`, `catalog_write`, `archive`.
 - Conditional edges live in `graph/routing.py` only.
