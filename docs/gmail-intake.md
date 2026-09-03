@@ -270,7 +270,7 @@ document after a Pathway-B handoff, and everything when
 `MAILROOM_GMAIL_TRIAGE=0` runs the standard 13-node graph **per document**:
 
 ```
- ingest (transcription: direct PDF text / paid LLM transcription for scans /
+ intake (transcription: direct PDF text / paid LLM transcription for scans /
          vision OCR for images + intake normalization)
    → classify (sorter; retry + independent sorter-reviewer lanes)
    → extract (doc-class specialist; handoff context; retry lane)

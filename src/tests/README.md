@@ -23,7 +23,7 @@ pytest tests/ --cov=. --cov-report=html # coverage report
 - **`test_agents/`** — unit tests for the Sorter, all 6 specialists, and Boss. Asserts schema conformance and confidence-path behavior against mocked LLM output.
 - **`test_routing.py`** — every conditional edge: high confidence → proceed, low → retry, still low → review, conflict → Boss, Boss → report/review, review → report/failed.
 - **`test_audit_log.py`** — hash chaining, tamper detection, broken-link detection.
-- **`test_pipeline_e2e.py`** — builds the whole 11-node graph and runs documents through it (happy path → archived, ambiguous → review, ingest → manifest).
+- **`test_pipeline_e2e.py`** — builds the whole 11-node graph and runs documents through it (happy path → archived, ambiguous → review, intake → manifest).
 
 ## Technical reference
 
