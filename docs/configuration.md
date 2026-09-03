@@ -308,6 +308,38 @@ See `.env.example` for the complete list:
 | `MAILROOM_BASE_DIR` | No | `./data` | Pipeline filesystem root (also where SQLite files live) |
 | `WATCHER_POLL_INTERVAL_SECONDS` | No | `1` | Inbox rescan interval (seconds) |
 | `MAILROOM_EMBED_WATCHER` | No | on (off under pytest) | API lifespan starts the inbox watcher. Set `0` when a dedicated `python -m pipeline.watcher` holds `watcher.lock` |
+| `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
+| `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
+| `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |
+| `MAILROOM_MAX_UPLOAD_BYTES` | No | `52428800` (50 MB) | `POST /v1/upload` size cap |
+| `MAILROOM_UPLOAD_RATE` | No | `20` | Uploads allowed per 60 s window |
+| `MAILROOM_API_HOST` | No | `127.0.0.1` | Bind address. `0.0.0.0` requires a live token. Container/Space images set this. |
+| `MAILROOM_API_PORT` | No | `8000` (image: `7860`) | Image/local listen port. When the platform injects `PORT` (Railway / Fly / Render / Heroku), **`PORT` wins** so the edge proxy can reach the process. |
+| `WATCHER_STALE_SECONDS` | No | `15` | `/health` `checks.watcher` lamp: heartbeat older than this is `stale` |
+| `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |
+| `MAILROOM_VISION_ENABLED` | No | `true` | Enable/disable vision ingestion (overrides `vision.enabled` in taxonomy.yaml) |
+| `MAILROOM_VISION_MAX_PAGES` | No | `10` | Max PDF pages to render as images (0 = all pages; overrides `vision.max_pages`) |
+| `MAILROOM_VISION_DPI` | No | `150` | Render DPI for page images (overrides `vision.dpi`) |
+| `MAILROOM_PILOT_COST_ABORT` | No | `2.00` (HF pilot) / `0.20` (committed-sample `run_pilot.py`) | Cumulative USD cap; abort the pilot when exceeded |
+| `MAILROOM_DOCCLASS_PROMPTS` | No | off | Opt-in KANBAN-090 docclass prompt arm (`1`/`true`/`yes`/`on`). Runtime fetches `mailroom-docclass-<key>` with the in-repo append as fallback; production `mailroom-<agent>` templates are unchanged. `run_hf_pilot.py --docclass` sets this. |
+
+The-Mailroom (not this process) reads `MAILROOM_PIPELINE_URL`,
+`MAILROOM_PIPELINE_TOKEN`, and `MAILROOM_PIPELINE_API_PREFIX=/v1`. A Space
+Observatory must use the public producer Space URL — see
+[`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).
+
+### Gmail intake channel (HUB-037)
+
+The agent mailbox (`llmmailroom@gmail.com`) is a second intake route: an
+IMAP poller (running inside the watcher process) drops accepted attachments
+into the SAME inbox the watcher drains. The full operator guide — subject-line
+contract, upload best practices, every pathway a document takes from Gmail
+into the pipeline (free single-document triage lane, capability handoff,
+multi-document full pipeline), completion echoes, and troubleshooting — is
+[`docs/gmail-intake.md`](gmail-intake.md).
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
 | `MAILROOM_GMAIL_ENABLED` | No | off | Gmail intake channel (HUB-037): poll the agent mailbox and drop accepted attachments into the inbox. Explicit opt-in (`1`/`true`/`yes`/`on`); needs `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD`. Runs inside the watcher; `/health` reports `checks.gmail_intake` |
 | `GMAIL_ADDRESS` | Yes (when channel on) | — | Mailbox address (e.g. `llmmailroom@gmail.com`). Secret — `.env` only |
 | `GMAIL_APP_PASSWORD` | Yes (when channel on) | — | Gmail 2FA app password (16 chars; display spaces tolerated/stripped). Secret — `.env` only |
@@ -325,11 +357,12 @@ See `.env.example` for the complete list:
 | `MAILROOM_GMAIL_SMTP_HOST` | No | `smtp.gmail.com` | SMTP host for the echo replies (same app password) |
 | `MAILROOM_GMAIL_SMTP_PORT` | No | `465` | SMTP SSL port for the echo replies |
 
-### Emailing the mailroom (Gmail intake format contract)
+#### Emailing the mailroom (Gmail intake format contract)
 
 There is **no subject keyword to trigger pickup** — every email arriving at
-the mailbox is swept automatically (every `MAILROOM_GMAIL_POLL_SECONDS`, default 60).
-`RE:` / `FWD:` prefixes are irrelevant. The format rules that DO matter:
+the mailbox is swept automatically (every `MAILROOM_GMAIL_POLL_SECONDS`,
+default 60). `RE:` / `FWD:` prefixes are irrelevant. The format rules that
+DO matter:
 
 | Rule | Detail |
 |---|---|
@@ -360,35 +393,15 @@ deterministic capability pre-check rejects the document (longer than the free
 model's input budget, image-only, or a scanned PDF): it is then honestly
 handed off to the full paid pipeline, with `intake.triage_handoff` recording
 the reason and the completion report noting "triage handoff: … — handled by
-the full pipeline". A
-**multi-document email** drops the triage approach: every attachment flows
-inbox → classify → extract → archive/review like any upload, with
-`intake.source: gmail` + `intake.route: pipeline` + the sender/subject
-recorded on the manifest for audit. Terminal-stage pipeline documents get the
-completion report on the same thread — STATUS, doc_id/matter, classification +
-confidence, the extraction report, the archive entry (path + sha256 for
-archived documents, or the failure/review reason), and the full audit trail
-with the hash-chain verification verdict — so the email thread itself is the
-notification surface.
-| `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
-| `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
-| `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |
-| `MAILROOM_MAX_UPLOAD_BYTES` | No | `52428800` (50 MB) | `POST /v1/upload` size cap |
-| `MAILROOM_UPLOAD_RATE` | No | `20` | Uploads allowed per 60 s window |
-| `MAILROOM_API_HOST` | No | `127.0.0.1` | Bind address. `0.0.0.0` requires a live token. Container/Space images set this. |
-| `MAILROOM_API_PORT` | No | `8000` (image: `7860`) | Image/local listen port. When the platform injects `PORT` (Railway / Fly / Render / Heroku), **`PORT` wins** so the edge proxy can reach the process. |
-
-The-Mailroom (not this process) reads `MAILROOM_PIPELINE_URL`,
-`MAILROOM_PIPELINE_TOKEN`, and `MAILROOM_PIPELINE_API_PREFIX=/v1`. A Space
-Observatory must use the public producer Space URL — see
-[`deploy/space/PAIRING.md`](../deploy/space/PAIRING.md).
-| `WATCHER_STALE_SECONDS` | No | `15` | `/health` `checks.watcher` lamp: heartbeat older than this is `stale` |
-| `OPS_MONITOR_INTERVAL_SECONDS` | No | `300` | Ops monitor sweep interval |
-| `MAILROOM_VISION_ENABLED` | No | `true` | Enable/disable vision ingestion (overrides `vision.enabled` in taxonomy.yaml) |
-| `MAILROOM_VISION_MAX_PAGES` | No | `10` | Max PDF pages to render as images (0 = all pages; overrides `vision.max_pages`) |
-| `MAILROOM_VISION_DPI` | No | `150` | Render DPI for page images (overrides `vision.dpi`) |
-| `MAILROOM_PILOT_COST_ABORT` | No | `2.00` (HF pilot) / `0.20` (committed-sample `run_pilot.py`) | Cumulative USD cap; abort the pilot when exceeded |
-| `MAILROOM_DOCCLASS_PROMPTS` | No | off | Opt-in KANBAN-090 docclass prompt arm (`1`/`true`/`yes`/`on`). Runtime fetches `mailroom-docclass-<key>` with the in-repo append as fallback; production `mailroom-<agent>` templates are unchanged. `run_hf_pilot.py --docclass` sets this. |
+the full pipeline". A **multi-document email** drops the triage approach:
+every attachment flows inbox → classify → extract → archive/review like any
+upload, with `intake.source: gmail` + `intake.route: pipeline` + the
+sender/subject recorded on the manifest for audit. Terminal-stage pipeline
+documents get the completion report on the same thread — STATUS, doc_id/
+matter, classification + confidence, the extraction report, the archive entry
+(path + sha256 for archived documents, or the failure/review reason), and the
+full audit trail with the hash-chain verification verdict — so the email
+thread itself is the notification surface.
 
 ## Provider Configuration
 

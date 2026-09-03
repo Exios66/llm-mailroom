@@ -644,7 +644,9 @@ PYTHONPATH=src python -m api.main &
 # PYTHONPATH=src python -m pipeline.gmail_intake &
 #    Email format: just attach the document (.pdf/.txt/.docx/.md/.jpg/.png);
 #    optionally put [M:<matter_id>] in the subject to route the matter. No
-#    subject keyword is required. See docs/configuration.md § Emailing the mailroom.
+#    subject keyword is required. Full guide (upload best practices, subject-
+#    line contract, single-doc free-triage vs multi-doc full-pipeline
+#    pathways, echoes, troubleshooting): docs/gmail-intake.md
 
 # 7. (Optional) Run the ops monitor
 PYTHONPATH=src python -m pipeline.ops_monitor &
