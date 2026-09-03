@@ -1,24 +1,34 @@
 """Gmail + watcher connectivity smoke test (HUB-037).
 
 End-to-end proof that the agent mailbox intake channel works and that the
-pipeline is AWARE of it — using an example insurance claim (the committed
-FNOL fixtures under ``src/tests/fixtures/insurance_claim/``).
+watcher is AWARE of it — using an example insurance claim (the committed
+FNOL fixtures under ``src/tests/fixtures/insurance_claim/``). Two emails
+are swept: a SINGLE-document email and a MULTI-document (bundle) email, so
+the single-vs-bundle routing contract is proven on both lanes.
 
 What it proves, leg by leg:
 
-    [connectivity] an email carrying an insurance-claim attachment is fetched
-                   off the mailbox by the Gmail intake poller (IMAP sweep)
-    [route]        the attachment lands in the SAME inbox bin the watcher
-                   drains, with the ``<file>.meta`` sidecar
-    [watcher]      the watcher claims it and runs the full 13-node pipeline
-                   to a terminal stage (archived for a clean FNOL fixture)
-    [awareness]    the manifest records ``intake.source == "gmail"`` and the
-                   matter routed from the subject ``[M:<id>]`` tag; a real
-                   run also tags the trace ``source-gmail``
-    [classify]     the document classifies as ``insurance_claim``
-    [triage]       the advisory pre-pipeline intake read
-                   (``intake.triage``: primary class + gist) rode into the
-                   manifest and appears in the completion echo
+    [connectivity] both emails are fetched off the mailbox by the Gmail
+                   intake poller (IMAP sweep)
+    [route]        the SINGLE-document attachment lands in the SAME inbox
+                   bin with a ``route: triage`` sidecar; the bundle's two
+                   attachments carry ``route: pipeline``
+    [triage-lane]  the single-document upload is handled by the FREE triage
+                   lane — core pipeline steps WITHOUT the paid agents: the
+                   terminal manifest is archived with ``intake.triage``
+                   (primary class + gist) and NO pipeline extraction
+    [triage-audit] the lane's audit entries live in their own section
+                   (``triage_ingested`` / ``triage_classified`` /
+                   ``triage_archived`` — never the pipeline vocabulary)
+    [pipeline-route] the multi-document upload runs the FULL paid pipeline
+                   to a terminal stage (archived for a clean FNOL fixture),
+                   with extraction — and the triage read is DROPPED (no
+                   ``intake.triage`` on those manifests)
+    [classify]     the pipeline-route document classifies as
+                   ``insurance_claim``
+    [echo]         completion reports reply on the source email threads;
+                   the single-document echo carries the INTAKE TRIAGE
+                   section, the pipeline echo does not
 
 Modes:
 
@@ -26,7 +36,7 @@ Modes:
     # scratch MAILROOM_BASE_DIR. Safe anywhere; proves the machinery.
     PYTHONPATH=src python src/scripts/gmail_smoke_test.py
 
-    # Real connectivity: SENDS the smoke email to the agent mailbox via
+    # Real connectivity: SENDS the smoke emails to the agent mailbox via
     # SMTP (same app password), then polls the REAL mailbox over IMAP. All
     # currently-unseen messages are drained (marked seen; their attachments
     # queue into the scratch inbox) — run it on a quiet mailbox.
@@ -100,19 +110,32 @@ def _now_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def build_smoke_email(matter_id: str, fixture: Path) -> tuple[bytes, str, str]:
-    """Build the smoke email: FNOL fixture attached, ``[M:<matter>]`` subject tag.
+def build_smoke_email(
+    matter_id: str,
+    fixture: Path,
+    attachment_name: str | None = None,
+    *,
+    stamp: str | None = None,
+    subject_prefix: str = "FNOL smoke",
+    n_attachments: int = 1,
+) -> tuple[bytes, str, list[str]]:
+    """Build a smoke email: FNOL fixture(s) attached, ``[M:<matter>]`` subject tag.
 
-    Returns ``(raw_bytes, message_id, attachment_filename)``.
+    ``n_attachments=1`` produces a single-document upload (triage lane);
+    ``n_attachments=2`` produces a multi-document upload (full pipeline).
+    Returns ``(raw_bytes, message_id, attachment_filenames)``.
     """
-    stamp = _now_stamp()
+    stamp = stamp or _now_stamp()
     message_id = f"<gmail-smoke-{uuid.uuid4().hex[:12]}@mailroom.local>"
-    attachment_name = f"insurance_fnol_smoke_{stamp}.txt"
+    attachment_names = [
+        attachment_name or (f"insurance_fnol_smoke_{stamp}.txt" if n_attachments == 1 else f"insurance_fnol_bundle_{stamp}_a.txt"),
+        f"insurance_fnol_bundle_{stamp}_b.txt",
+    ][:n_attachments]
     msg = email.message.EmailMessage()
     address = os.environ.get("GMAIL_ADDRESS", "llmmailroom@gmail.com")
     msg["From"] = address
     msg["To"] = address
-    msg["Subject"] = f"FNOL smoke {stamp} [M:{matter_id}]"
+    msg["Subject"] = f"{subject_prefix} {stamp} [M:{matter_id}]"
     msg["Message-ID"] = message_id
     msg["Date"] = email.utils.formatdate(localtime=False)
     msg.set_content(
@@ -120,13 +143,14 @@ def build_smoke_email(matter_id: str, fixture: Path) -> tuple[bytes, str, str]:
         "insurance claim (FNOL) for the watcher to process."
     )
     payload = fixture.read_bytes()
-    msg.add_attachment(
-        payload,
-        maintype="application",
-        subtype="octet-stream",
-        filename=attachment_name,
-    )
-    return msg.as_bytes(), message_id, attachment_name
+    for name in attachment_names:
+        msg.add_attachment(
+            payload,
+            maintype="application",
+            subtype="octet-stream",
+            filename=name,
+        )
+    return msg.as_bytes(), message_id, attachment_names
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +351,7 @@ def _send_via_smtp(raw: bytes) -> None:
 
 
 def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bool, str]]:
-    """Network-free smoke: fake IMAP serves the smoke email; scratch bins."""
+    """Network-free smoke: fake IMAP serves both smoke emails; scratch bins."""
     checks: list[tuple[str, bool, str]] = []
 
     # Hermetic: fake mailbox credentials when the real .env is absent.
@@ -336,79 +360,123 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     os.environ.setdefault("MAILROOM_GMAIL_ENABLED", "1")
 
     scratch = _prepare_base_dir()
-    raw, message_id, attachment_name = build_smoke_email(matter_id, fixture)
+    from pipeline import gmail_intake
+
+    # [emails] one single-document email + one multi-document (bundle) email.
+    single_raw, single_mid, single_names = build_smoke_email(matter_id, fixture)
+    bundle_raw, bundle_mid, bundle_names = build_smoke_email(
+        matter_id,
+        fixture,
+        subject_prefix="BUNDLE smoke",
+        n_attachments=2,
+    )
+    stamp = _now_stamp()
 
     # [connectivity] poll_once over a fake IMAP client; the same fake also
     # serves the watcher's reaction (module-level seam), so the ✅ label
     # application is provable network-free.
-    from pipeline import gmail_intake
-
-    messages = {"1": raw}
-    gmail_intake.set_imap_factory(lambda: _FakeIMAP(messages))
+    messages = {"1": single_raw, "2": bundle_raw}
+    fake_imap = _FakeIMAP(messages)
+    gmail_intake.set_imap_factory(lambda: fake_imap)  # also serves the watcher's ✅ reactions
     report = gmail_intake.poll_once(
         config=gmail_intake.load_config(),
-        imap_factory=lambda: _FakeIMAP(messages),
+        imap_factory=lambda: fake_imap,
     )
     checks.append(
         (
-            "connectivity: IMAP sweep fetched the message",
-            report["connected"] and report["messages_seen"] == 1,
-            f"messages_seen={report['messages_seen']} errors={report['errors']}",
+            "connectivity: IMAP sweep fetched both messages",
+            report["connected"] and report["messages_seen"] == 2,
+            f"messages_seen={report['messages_seen']} queued={report['attachments_queued']} errors={report['errors']}",
         )
     )
 
-    # [route] attachment + sidecar in the inbox.
+    # [route] the poller stamps the single-vs-bundle routing contract.
     from pipeline.bins import inbox_dir, read_inbox_meta
 
-    delivered = inbox_dir() / attachment_name
-    meta = read_inbox_meta(delivered) if delivered.exists() else None
+    single_path = inbox_dir() / single_names[0]
+    single_meta = read_inbox_meta(single_path) if single_path.exists() else None
     checks.append(
         (
-            "route: attachment + meta sidecar landed in the inbox",
-            delivered.exists() and meta is not None and meta.get("message_id") == message_id,
-            str(delivered if delivered.exists() else "MISSING"),
+            "route: single-document email carries route=triage",
+            single_meta is not None and single_meta.get("route") == "triage",
+            f"route={single_meta.get('route') if single_meta else 'NO SIDECAR'}",
+        )
+    )
+    bundle_paths = [inbox_dir() / n for n in bundle_names]
+    bundle_metas = [read_inbox_meta(p) if p.exists() else None for p in bundle_paths]
+    checks.append(
+        (
+            "route: multi-document email carries route=pipeline on every attachment",
+            len(bundle_metas) == 2
+            and all(m is not None and m.get("route") == "pipeline" for m in bundle_metas),
+            f"routes={[m.get('route') if m else None for m in bundle_metas]}",
         )
     )
 
-    # [watcher] + [awareness] + [classify]: the watcher's exact claim path.
+    # [triage-lane] + [pipeline-route]: the watcher's exact claim path on each
+    # delivered file — the single-doc file takes the free-triage lane, the
+    # bundle files take the full paid pipeline.
     smtp = _FakeSMTP()
     gmail_intake.set_smtp_factory(lambda: smtp)
-    manifest, _ = _run_watcher_route(delivered, llm_mode)
+    single_manifest, _ = _run_watcher_route(single_path, llm_mode)
+    bundle_manifests = [_run_watcher_route(p, llm_mode)[0] for p in bundle_paths]
+
+    single_intake = (single_manifest or {}).get("intake") or {}
+    triage = single_intake.get("triage") or {}
     checks.append(
         (
-            "watcher: claimed + full pipeline to a terminal stage",
-            manifest is not None and manifest.get("stage") == "archived",
-            f"stage={manifest.get('stage') if manifest else 'NO MANIFEST'}",
-        )
-    )
-    intake = (manifest or {}).get("intake") or {}
-    checks.append(
-        (
-            "awareness: manifest records intake.source=gmail + routed matter",
-            intake.get("source") == "gmail"
-            and (manifest or {}).get("matter_id") == matter_id,
-            f"intake.source={intake.get('source')} matter_id={(manifest or {}).get('matter_id')}",
-        )
-    )
-    checks.append(
-        (
-            "classify: doc_type == insurance_claim",
-            (manifest or {}).get("doc_type") == "insurance_claim",
-            f"doc_type={(manifest or {}).get('doc_type')}",
+            "triage-lane: single-doc handled by the triage lane (archived, no paid extraction)",
+            single_manifest is not None
+            and single_manifest.get("stage") == "archived"
+            and triage.get("primary_doc_class") == "insurance_claim"
+            and not single_manifest.get("extracted_data"),
+            f"stage={single_manifest.get('stage') if single_manifest else 'NO MANIFEST'} "
+            f"triage.class={triage.get('primary_doc_class')} extracted={'yes' if single_manifest and single_manifest.get('extracted_data') else 'no'}",
         )
     )
 
-    # [triage] the advisory pre-pipeline read rode into the manifest intake.
-    triage = (intake or {}).get("triage") or {}
+    # [triage-audit] the lane's audit entries live in their own section.
+    import asyncio
+
+    from storage.audit_log import get_audit_chain
+
+    audit_events = []
+    if single_manifest:
+        audit_rows = asyncio.run(get_audit_chain(single_manifest["doc_id"]))
+        audit_events = [r["event"] for r in audit_rows]
     checks.append(
         (
-            "triage: intake.triage (pre-pipeline read) carried on the manifest",
-            triage.get("primary_doc_class") == "insurance_claim" and bool(triage.get("gist")),
-            f"triage.doc_class={triage.get('primary_doc_class')} gist={str(triage.get('gist'))[:60]!r}",
+            "triage-audit: audit entries namespaced triage_* (own section)",
+            audit_events == ["triage_ingested", "triage_classified", "triage_archived"],
+            f"events={audit_events}",
         )
     )
 
-    # [reaction] the watcher reacted to the source email with the ✅ label
+    checks.append(
+        (
+            "pipeline-route: bundle documents ran the full paid pipeline",
+            len(bundle_manifests) == 2
+            and all(m is not None and m.get("stage") == "archived" and m.get("extracted_data") for m in bundle_manifests),
+            f"stages={[m.get('stage') if m else None for m in bundle_manifests]}",
+        )
+    )
+    checks.append(
+        (
+            "no-triage-on-multi: bundle manifests carry NO intake.triage",
+            all((not ((m or {}).get("intake") or {}).get("triage")) for m in bundle_manifests),
+            "triage dropped for multi-document uploads",
+        )
+    )
+    bundle_doc_type = (bundle_manifests[0] or {}).get("doc_type") if bundle_manifests else None
+    checks.append(
+        (
+            "classify: pipeline-route doc_type == insurance_claim",
+            bundle_doc_type == "insurance_claim",
+            f"doc_type={bundle_doc_type}",
+        )
+    )
+
+    # [reaction] the watcher reacted to the source emails with the ✅ label
     # (async daemon thread — bounded wait, then read the status counter).
     deadline = time.time() + 5
     while time.time() < deadline and gmail_intake.status()["reactions_sent"] < 1:
@@ -416,33 +484,35 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     reacted = gmail_intake.status()["reactions_sent"] >= 1
     checks.append(
         (
-            "reaction: source email reacted with the check emoji (✅ label)",
+            "reaction: source emails reacted with the check emoji (✅ label)",
             reacted,
             f"reactions_sent={gmail_intake.status()['reactions_sent']}",
         )
     )
 
-    # [echo] the pipeline replied on the source thread with the completion
-    # report (async daemon thread — bounded wait, then inspect what was sent).
+    # [echo] completion reports replied on the source threads (async daemon
+    # threads — bounded wait, then inspect what was sent). The triage-lane
+    # echo carries the INTAKE TRIAGE section; the pipeline echoes do not.
     deadline = time.time() + 10
-    while time.time() < deadline and gmail_intake.status()["echoes_sent"] < 1:
+    while time.time() < deadline and gmail_intake.status()["echoes_sent"] < 3:
         time.sleep(0.1)
-    echo_ok = bool(smtp.sent)
-    echo_detail = "no echo captured"
-    if echo_ok:
+    echo_triage = echo_pipeline = False
+    if smtp.sent:
         import email as _email
 
-        _, to, raw = smtp.sent[0]
-        msg = _email.message_from_bytes(raw)
-        echo_detail = f"to={to[0]} subject={msg['Subject']!r} in_reply_to={msg['In-Reply-To']}"
-        payload = msg.get_payload(decode=True)
-        body = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else (payload or "")
-        echo_detail += f" triage_in_body={'INTAKE TRIAGE' in body}"
+        for _, to, raw in smtp.sent:
+            msg = _email.message_from_bytes(raw)
+            payload = msg.get_payload(decode=True)
+            body = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else (payload or "")
+            if "INTAKE TRIAGE" in body:
+                echo_triage = True
+            else:
+                echo_pipeline = True
     checks.append(
         (
-            "echo: completion report replied on the source email thread",
-            echo_ok and "triage_in_body=True" in echo_detail,
-            echo_detail,
+            "echo: triage-lane echo carries INTAKE TRIAGE; pipeline echoes do not",
+            echo_triage and echo_pipeline,
+            f"sent={len(smtp.sent)} triage_echo={echo_triage} pipeline_echo={echo_pipeline}",
         )
     )
     gmail_intake.set_smtp_factory(None)  # reset the seam
@@ -456,16 +526,23 @@ def run_real(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     checks: list[tuple[str, bool, str]] = []
 
     scratch = _prepare_base_dir()
-    raw, message_id, attachment_name = build_smoke_email(matter_id, fixture)
+    single_raw, single_mid, single_names = build_smoke_email(matter_id, fixture)
+    bundle_raw, bundle_mid, bundle_names = build_smoke_email(
+        matter_id,
+        fixture,
+        subject_prefix="BUNDLE smoke",
+        n_attachments=2,
+    )
     from pipeline import gmail_intake
 
     gmail_intake.set_imap_factory(None)  # real run: never inherit an injected factory
     reactions_before = gmail_intake.status()["reactions_sent"]
 
     try:
-        _send_via_smtp(raw)
+        _send_via_smtp(single_raw)
+        _send_via_smtp(bundle_raw)
         sent = True
-        detail = "delivered to the mailbox via SMTP SSL"
+        detail = "both smoke emails delivered to the mailbox via SMTP SSL"
     except Exception as exc:
         sent = False
         detail = f"{type(exc).__name__}: {exc}"
@@ -487,53 +564,76 @@ def run_real(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
 
     from pipeline.bins import inbox_dir, read_inbox_meta
 
-    delivered = None
-    for candidate in inbox_dir().glob("*.txt"):
-        meta = read_inbox_meta(candidate) or {}
-        if meta.get("message_id") == message_id:
-            delivered = candidate
-            break
+    def _find_delivered(filenames):
+        for candidate in inbox_dir().glob("*.txt"):
+            meta = read_inbox_meta(candidate) or {}
+            if meta.get("original_filename") in filenames:
+                return candidate, meta
+        return None, None
+
+    single_path, single_meta = _find_delivered(single_names)
     checks.append(
         (
-            "route: OUR attachment (+sidecar) landed in the inbox",
-            delivered is not None,
-            str(delivered) if delivered else f"{attachment_name} not found in {inbox_dir()}",
+            "route: single-document email carries route=triage (real mailbox)",
+            single_meta is not None and single_meta.get("route") == "triage",
+            str(single_path) if single_meta else "single-doc attachment not found",
         )
     )
-    if delivered is None:
+    bundle_paths = []
+    bundle_metas = []
+    for name in bundle_names:
+        path, meta = _find_delivered([name])
+        if path is not None:
+            bundle_paths.append(path)
+            bundle_metas.append(meta)
+    checks.append(
+        (
+            "route: multi-document email carries route=pipeline (real mailbox)",
+            len(bundle_metas) == 2
+            and all(m is not None and m.get("route") == "pipeline" for m in bundle_metas),
+            f"bundle sidecars={len(bundle_metas)}",
+        )
+    )
+    if single_path is None or len(bundle_paths) != 2:
         return checks
 
-    manifest, _ = _run_watcher_route(delivered, llm_mode)
+    single_manifest, _ = _run_watcher_route(single_path, llm_mode)
     checks.append(
         (
-            "watcher: claimed + full pipeline to a terminal stage",
-            manifest is not None and manifest.get("stage") in ("archived", "review", "failed"),
-            f"stage={manifest.get('stage') if manifest else 'NO MANIFEST'}",
+            "triage-lane: single-doc handled by the free triage lane (archived)",
+            single_manifest is not None
+            and single_manifest.get("stage") in ("archived", "review", "failed")
+            and (single_manifest.get("intake") or {}).get("triage"),
+            f"stage={single_manifest.get('stage') if single_manifest else 'NO MANIFEST'} "
+            f"triage={bool((single_manifest or {}).get('intake', {}).get('triage'))}",
         )
     )
-    intake = (manifest or {}).get("intake") or {}
+    bundle_manifests = [_run_watcher_route(p, llm_mode)[0] for p in bundle_paths]
     checks.append(
         (
-            "awareness: manifest records intake.source=gmail + routed matter",
-            intake.get("source") == "gmail" and (manifest or {}).get("matter_id") == matter_id,
-            f"intake.source={intake.get('source')} matter_id={(manifest or {}).get('matter_id')}",
+            "pipeline-route: bundle documents ran the full paid pipeline",
+            len(bundle_manifests) == 2
+            and all(m is not None and m.get("stage") in ("archived", "review", "failed") for m in bundle_manifests)
+            and all((not ((m or {}).get("intake") or {}).get("triage")) for m in bundle_manifests),
+            "triage dropped for multi-document uploads",
         )
     )
     if llm_mode == "real":
+        bundle_doc_type = (bundle_manifests[0] or {}).get("doc_type") if bundle_manifests else None
         checks.append(
             (
-                "classify: doc_type == insurance_claim (real LLM)",
-                (manifest or {}).get("doc_type") == "insurance_claim",
-                f"doc_type={(manifest or {}).get('doc_type')}",
+                "classify: pipeline-route doc_type == insurance_claim (real LLM)",
+                bundle_doc_type == "insurance_claim",
+                f"doc_type={bundle_doc_type}",
             )
         )
-    # [reaction] the watcher reacted to OUR email on the real mailbox.
+    # [reaction] the watcher reacted to OUR emails on the real mailbox.
     deadline = time.time() + 10
     while time.time() < deadline and gmail_intake.status()["reactions_sent"] <= reactions_before:
         time.sleep(0.2)
     checks.append(
         (
-            "reaction: ✅ label applied to the source message (real mailbox)",
+            "reaction: ✅ label applied to the source messages (real mailbox)",
             gmail_intake.status()["reactions_sent"] > reactions_before,
             f"reactions_sent={gmail_intake.status()['reactions_sent']} (before: {reactions_before})",
         )

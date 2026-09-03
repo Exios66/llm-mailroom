@@ -373,6 +373,21 @@ completion echo — without calling any paid agent. Emails with **two or more
 accepted attachments drop the triage approach** and run the FULL paid
 pipeline per document (`route: pipeline`; triage is never dispatched).
 
+**Capability pre-check + honest handoff.** Before the lane runs, a
+deterministic, LLM-free check (`pipeline/watcher.py:_triage_capability_check`)
+verifies the free team can actually handle the single document — no doomed
+runs. Documents beyond the free models' reach are handed off to the full paid
+pipeline: image-only inputs (`image_requires_vision`), scanned PDFs with no
+direct text (`scanned_pdf_requires_transcription`), unreadable inputs, or a
+deterministic text length above the `gmail_triage` `max_input_chars` budget
+(`exceeds_free_budget:N>M`) — **merger agreements are typically excessively
+long and almost always exceed the free models' classification capability**.
+The handoff reason rides `intake.triage_handoff` onto the terminal manifest
+and the completion echo ("triage handoff: … — handled by the full pipeline").
+Every canonical doc type — contract, merger_agreement, insurance_claim,
+corporate_record, correspondence — is validated through the lane (test
+matrix) and accepted when within the free capability envelope.
+
 The triage read is **advisory by design** and never overrules the pipeline
 agents (it is only dispatched on single-document Gmail instances, where no
 pipeline run happens — the overrule guard is the standing invariant).

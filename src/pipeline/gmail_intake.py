@@ -95,6 +95,7 @@ _STATUS: dict = {
     "messages_seen": 0,
     "attachments_queued": 0,
     "reactions_sent": 0,
+    "reactions_failed": 0,
     "echoes_sent": 0,
 }
 
@@ -281,6 +282,7 @@ def react_to_message(
     if ok:
         _record_status(reactions_sent=_STATUS["reactions_sent"] + 1)
     else:
+        _record_status(reactions_failed=_STATUS.get("reactions_failed", 0) + 1)
         # Allow a later claim of the same message to retry the reaction.
         with _REACTION_LOCK:
             _REACTION_ATTEMPTED.discard(message_id)
@@ -547,6 +549,8 @@ def poll_once(
                 # the message — ONE accepted attachment = single-document
                 # upload (free-triage lane); TWO OR MORE = multi-document
                 # upload (full paid pipeline, triage dropped).
+                from .bins import accepted_extensions
+
                 accepted = []
                 for filename, content in extract_attachments(msg):
                     if _extension_of(filename) not in accepted_extensions():
@@ -795,6 +799,14 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
             lines.append(f"keywords:  {', '.join(str(k) for k in keywords)}")
         lines.append("")
 
+    # Honest handoff (HUB-037): the free triage capability pre-check rejected
+    # this document (too long / vision-only / unreadable) and the full paid
+    # pipeline handled it instead.
+    handoff = intake.get("triage_handoff")
+    if handoff:
+        lines.append(f"triage handoff: {handoff} — handled by the full pipeline")
+        lines.append("")
+
     extracted = manifest.get("extracted_data")
     lines.append("-- EXTRACTION " + "-" * 46)
     if isinstance(extracted, dict) and extracted:
@@ -899,6 +911,20 @@ def send_intake_echo(manifest: dict) -> bool:
         return False
     if not echoes_enabled():
         return False
+    # Reaction guarantee (HUB-037): the claim-time ✅ reaction is best-effort
+    # and a failed attempt is only retried on a LATER claim — but a
+    # single-document triage-lane document has exactly ONE claim, so a
+    # claim-time failure would leave the sender without the "picked up"
+    # acknowledgement forever. Retry the reaction now that the document has
+    # reached a terminal stage. Deduped per Message-ID: a reaction that
+    # already succeeded (or is still in flight) is never re-sent, and
+    # MAILROOM_GMAIL_REACTIONS=0 stays respected. Best-effort — a failed
+    # retry must never block the completion echo.
+    try:
+        if reactions_enabled():
+            react_to_message(str(message_id))
+    except Exception:
+        logger.warning("gmail_echo_reaction_retry_failed", message_id=str(message_id), exc_info=True)
     dedup_key = (doc_id, stage)
     with _ECHO_LOCK:
         if dedup_key in _ECHO_DONE:
