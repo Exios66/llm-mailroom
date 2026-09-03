@@ -357,6 +357,7 @@ multi-document full pipeline), completion echoes, and troubleshooting — is
 | `MAILROOM_LLM_INTAKE` | No | `1` | LLM-assisted intake pass (HUB-038): the intake agent (`agents/intake.py`) adds a fused TRIAGE (advisory read → manifest `intake.triage` + sorter prior), CLEAN (structural repair of messy text, re-normalized deterministically), and PREPARE (section map) pass on top of the deterministic clerk. **No-truncation doctrine:** documents are never truncated — over-budget documents are processed in overlapping sliding windows and merged. The LLM pass fires ONLY for messy or over-sorter-budget documents (clean short docs pay zero); set `0` to disable (fully deterministic intake) |
 | `MAILROOM_GMAIL_SMTP_HOST` | No | `smtp.gmail.com` | SMTP host for the echo replies (same app password) |
 | `MAILROOM_GMAIL_SMTP_PORT` | No | `465` | SMTP SSL port for the echo replies |
+| `MAILROOM_LLM_FREE_ONLY` | No | off | Free-only pilot guardrail (HUB-039): when on (`1`/`true`/`yes`/`on`), `get_llm` refuses to resolve ANY model that is not free — `cost_models` prices both 0.0, or unregistered with an OpenRouter `:free` suffix. A paid-model resolution raises BEFORE any client exists, so documents fail-soft park instead of spending; the free triage lane is unaffected. Unset/`0` in full production, where paid agents handle multi-document emails and inbox/CLI uploads |
 
 #### Emailing the mailroom (Gmail intake format contract)
 
