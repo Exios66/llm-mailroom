@@ -29,6 +29,15 @@ Routing and guards:
 - Attachment size is capped (``MAILROOM_GMAIL_MAX_ATTACHMENT_MB``, default 50).
 - Optional sender allowlist (``MAILROOM_GMAIL_ALLOWED_SENDERS`` csv; empty =
   accept all).
+- **Single vs bundle routing (HUB-037)**: an email carrying exactly ONE
+  accepted attachment is a *single document upload* and each sidecar records
+  ``route: triage`` — the watcher then dispatches it to the free-triage lane
+  (triage team performs the core pipeline steps: deterministic prep → triage
+  classification → auditable-hash archive with its own ``triage_*`` audit
+  section → completion echo; no paid pipeline agents). An email carrying TWO
+  OR MORE accepted attachments is a *multi-document upload*: ``route:
+  pipeline``, the triage approach is dropped, and every attachment runs the
+  FULL paid pipeline.
 - Handled messages are marked ``\\Seen``; the ``Message-ID`` header is recorded
   in a bounded state file (``<base>/gmail_intake_state.json``) so a seen-mark
   failure can never double-queue an email.
@@ -533,8 +542,23 @@ def poll_once(
 
                 subject = str(msg.get("Subject") or "")
                 matter_id = parse_matter_id(subject) or cfg["default_matter_id"]
-                queued = 0
+                # Single vs bundle routing (HUB-037): count the attachments
+                # that WOULD be delivered (extension + size guards) and route
+                # the message — ONE accepted attachment = single-document
+                # upload (free-triage lane); TWO OR MORE = multi-document
+                # upload (full paid pipeline, triage dropped).
+                accepted = []
                 for filename, content in extract_attachments(msg):
+                    if _extension_of(filename) not in accepted_extensions():
+                        report["skipped_extension"] += 1
+                        continue
+                    if len(content) > cfg["max_attachment_bytes"]:
+                        report["skipped_size"] += 1
+                        continue
+                    accepted.append((filename, content))
+                route = "triage" if len(accepted) == 1 else "pipeline"
+                queued = 0
+                for filename, content in accepted:
                     meta = {
                         "matter_id": matter_id,
                         "source": "gmail",
@@ -542,6 +566,7 @@ def poll_once(
                         "sender": sender,
                         "subject": subject[:200],
                         "received_at": _received_at(msg),
+                        "route": route,
                         "upload_id": uuid.uuid4().hex[:12],
                         "size": len(content),
                         "original_filename": filename,
@@ -561,6 +586,7 @@ def poll_once(
                         matter_id=matter_id,
                         sender=sender,
                         message_id=message_id,
+                        route=route,
                     )
                 report["attachments_queued"] += queued
                 if queued == 0:
@@ -711,12 +737,13 @@ def echoes_enabled() -> bool:
 
 
 def triage_enabled() -> bool:
-    """Whether the pre-pipeline Gmail intake triage pass is on (default: with the channel).
+    """Whether the single-document Gmail triage lane is on (default: with the channel).
 
-    The triage read runs at watcher claim time on Gmail-channel documents
-    (the registry's most capable OpenRouter model, advisory — see
-    ``agents/gmail_triage.py``). Set ``MAILROOM_GMAIL_TRIAGE=0`` to disable;
-    failures always fail soft.
+    The triage lane runs at watcher claim time for emails carrying exactly
+    ONE accepted attachment (free OpenRouter model, advisory — see
+    ``agents/gmail_triage.py``). Set ``MAILROOM_GMAIL_TRIAGE=0`` to disable
+    (single-document emails then take the full paid pipeline); failures
+    always fail soft.
     """
     if not gmail_intake_enabled():
         return False

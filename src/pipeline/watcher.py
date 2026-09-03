@@ -274,6 +274,7 @@ _INTAKE_META_KEYS = (
     "subject",
     "message_id",
     "received_at",
+    "route",
     "upload_id",
     "uploaded_at",
     "original_filename",
@@ -325,42 +326,165 @@ def _notify_intake_reaction(intake_meta: dict, *, async_mode: bool = True) -> No
         logger.exception("gmail_reaction_dispatch_failed", message_id=str(message_id))
 
 
-def _notify_intake_triage(file_path: Path, intake_meta: dict) -> None:
-    """Pre-pipeline intake triage for Gmail-channel documents (HUB-037).
+def _is_triage_route(intake_meta: dict) -> bool:
+    """Whether this claimed file takes the single-document free-triage lane.
 
-    Runs BEFORE ``run_pipeline`` on Gmail-intake attachments: reads the same
-    document text the pipeline will see and produces the advisory intake log
-    (primary doc class, subclass when discernible, confidence, gist,
-    keywords) that rides ``intake_meta["triage"]`` into the terminal manifest
-    and the completion echo. Advisory by design — the read never influences
-    the pipeline's own classification or routing. Fails soft: a missing key,
-    rate limit, or provider error must never block a claim (logged; the
-    pipeline proceeds without a triage record). Disable with
-    ``MAILROOM_GMAIL_TRIAGE=0``.
+    Only ``route: triage`` (one accepted attachment per Gmail email, stamped
+    by the poller) qualifies — multi-document emails and every other intake
+    route run the full paid pipeline. Disabled triage (``MAILROOM_GMAIL_TRIAGE=0``)
+    or a gate error falls back to the full pipeline: never a crash.
     """
-    if not intake_meta or intake_meta.get("source") != "gmail":
-        return
+    if not intake_meta or intake_meta.get("route") != "triage":
+        return False
     try:
         from .gmail_intake import triage_enabled
 
-        if not triage_enabled():
-            return
-        from agents.gmail_triage import GmailTriageAgent
-        from graph.build_graph import _read_file_text
-
-        doc_text, _ = _read_file_text(file_path)
-        agent = GmailTriageAgent()
-        result = agent.triage(doc_text, filename=file_path.name)
-        if isinstance(result, dict) and result:
-            intake_meta["triage"] = result
-            logger.info(
-                "gmail_triage_complete",
-                file=str(file_path),
-                doc_class=result.get("primary_doc_class"),
-                confidence=result.get("confidence"),
-            )
+        return triage_enabled()
     except Exception:
-        logger.exception("gmail_triage_failed", file=str(file_path))
+        logger.exception("triage_gate_failed")
+        return False
+
+
+def _file_sha256(path: Path) -> str:
+    """Best-effort sha256 of a file (audit A-7, triage lane)."""
+    import hashlib
+
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        logger.warning("triage_sha256_failed", file=str(path))
+        return ""
+
+
+def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
+    """Single-document Gmail intake → the free-triage lane (HUB-037).
+
+    The free OpenRouter triage team handles single-document Gmail uploads
+    (`route: triage`) and performs the CORE steps of the full pipeline —
+    deterministic preparation (text read + intake normalization, never an
+    LLM), the triage classification read (advisory, free model), the
+    auditable-hash archive with a terminal manifest, and the completion
+    echo — WITHOUT the paid pipeline agents. Multi-document emails
+    (`route: pipeline`) never reach this lane.
+
+    Advisory by design: the triage read never overrules the pipeline agents.
+    Audit entries live in their OWN section (`triage_ingested` /
+    `triage_classified` / `triage_archived` — never the pipeline's
+    `ingested/classified/extracted/archived` vocabulary) so the stored
+    audits are never conflated. Fail-soft: any error parks the document to
+    `failed/` via the watcher's abort path — the intake must never crash.
+    """
+    from schemas.audit import build_audit_entry
+    from schemas.manifest import DocumentManifest, PipelineStage
+    from agents.gmail_triage import GmailTriageAgent
+    from agents.intake import apply_intake
+    from graph.build_graph import _read_file_text, _latest_audit_hash, _write_audit_log
+    from pipeline.bins import archive_dir, move_to_archive, save_manifest
+
+    doc_text, _ = _read_file_text(claimed)
+    raw_text = doc_text
+    doc_text, intake_stats = apply_intake(doc_text, filename=claimed.name)
+
+    agent = GmailTriageAgent()
+    triage = agent.triage(doc_text, filename=claimed.name)
+    intake_meta = dict(intake_meta)
+    intake_meta["triage"] = triage
+
+    manifest = DocumentManifest(
+        matter_id=matter_id,
+        original_filename=claimed.name,
+        stage=PipelineStage.ARCHIVED,
+        doc_type=triage.get("primary_doc_class") or "unknown",
+        doc_subclass=triage.get("doc_subclass"),
+        classification_confidence=triage.get("confidence"),
+        classification_attempts=1,
+        intake=intake_meta,
+    )
+    manifest.touch()
+
+    # Own audit section (HUB-037): the triage lane's hash-chained entries use
+    # the `triage_*` event vocabulary so they are never conflated with the
+    # paid pipeline's stage events.
+    prev = _latest_audit_hash(manifest.doc_id)
+    events = [
+        (
+            "triage_ingested",
+            "triage",
+            {
+                "file_sha256": _file_sha256(claimed),
+                "chars": len(doc_text),
+                "intake_changed": intake_stats.get("changed"),
+                "intake_messy": intake_stats.get("messy"),
+                "original_filename": claimed.name,
+            },
+        ),
+        (
+            "triage_classified",
+            "gmail_triage",
+            {
+                "doc_type": triage.get("primary_doc_class"),
+                "doc_subclass": triage.get("doc_subclass"),
+                "confidence": triage.get("confidence"),
+                "gist": triage.get("gist"),
+                "keywords": triage.get("keywords"),
+            },
+        ),
+    ]
+    for event, actor, detail in events:
+        entry = build_audit_entry(
+            manifest.doc_id, matter_id, event, actor, detail, prev_hash=prev
+        )
+        _write_audit_log(entry)
+        prev = entry.entry_hash
+
+    archive_path = move_to_archive(
+        claimed, matter_id, manifest.doc_type or "unknown", doc_id=manifest.doc_id
+    )
+    manifest_path = save_manifest(manifest)
+    sidecar = None
+    try:
+        sidecar = archive_dir(matter_id, manifest.doc_type or "unknown") / f"{archive_path.stem}.json"
+        sidecar.write_text(manifest.model_dump_json(indent=2))
+    except Exception:
+        logger.warning("triage_archive_sidecar_failed", doc_id=manifest.doc_id)
+
+    archived_sha256 = _file_sha256(archive_path)
+    archived_entry = build_audit_entry(
+        manifest.doc_id,
+        matter_id,
+        "triage_archived",
+        "archivist",
+        {
+            "archive_path": str(archive_path),
+            "manifest_path": str(manifest_path),
+            "archive_sidecar": str(sidecar) if sidecar else None,
+            "doc_type": manifest.doc_type,
+            "file_sha256": archived_sha256,
+            "confidence": triage.get("confidence"),
+            "route": "triage",
+        },
+        prev_hash=prev,
+    )
+    _write_audit_log(archived_entry)
+
+    logger.info(
+        "triage_lane_complete",
+        doc_id=manifest.doc_id,
+        file=str(archive_path),
+        matter_id=matter_id,
+        doc_class=triage.get("primary_doc_class"),
+        confidence=triage.get("confidence"),
+    )
+
+    # Completion echo on the source thread (same contract as the pipeline).
+    from .gmail_intake import dispatch_intake_echo
+
+    dispatch_intake_echo(manifest.model_dump(mode="json"))
+    return {"doc_id": manifest.doc_id, "stage": "archived"}
 
 
 class InboxHandler(FileSystemEventHandler):
@@ -450,20 +574,28 @@ class InboxHandler(FileSystemEventHandler):
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
-            _notify_intake_triage(claimed, intake_meta)
-            logger.info(
-                "file_claimed",
-                file=str(claimed),
-                matter_id=matter_id,
-                intake_source=intake_meta.get("source"),
-            )
-            result = run_pipeline(
-                claimed,
-                matter_id,
-                source=intake_meta.get("source"),
-                intake_meta=intake_meta or None,
-            )
-            logger.info("pipeline_complete", doc_id=result.get("doc_id"), matter_id=matter_id)
+            if _is_triage_route(intake_meta):
+                logger.info(
+                    "file_claimed_triage",
+                    file=str(claimed),
+                    matter_id=matter_id,
+                    intake_source=intake_meta.get("source"),
+                )
+                _run_triage_lane(claimed, matter_id, intake_meta)
+            else:
+                logger.info(
+                    "file_claimed",
+                    file=str(claimed),
+                    matter_id=matter_id,
+                    intake_source=intake_meta.get("source"),
+                )
+                result = run_pipeline(
+                    claimed,
+                    matter_id,
+                    source=intake_meta.get("source"),
+                    intake_meta=intake_meta or None,
+                )
+                logger.info("pipeline_complete", doc_id=result.get("doc_id"), matter_id=matter_id)
         except Exception:
             logger.exception("pipeline_failed", file=str(path))
             _finalize_claimed_on_error(
@@ -611,19 +743,27 @@ class Watcher:
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
-            _notify_intake_triage(claimed, intake_meta)
-            logger.info(
-                "existing_file_claimed",
-                file=str(claimed),
-                matter_id=matter_id,
-                intake_source=intake_meta.get("source"),
-            )
-            run_pipeline(
-                claimed,
-                matter_id,
-                source=intake_meta.get("source"),
-                intake_meta=intake_meta or None,
-            )
+            if _is_triage_route(intake_meta):
+                logger.info(
+                    "existing_file_claimed_triage",
+                    file=str(claimed),
+                    matter_id=matter_id,
+                    intake_source=intake_meta.get("source"),
+                )
+                _run_triage_lane(claimed, matter_id, intake_meta)
+            else:
+                logger.info(
+                    "existing_file_claimed",
+                    file=str(claimed),
+                    matter_id=matter_id,
+                    intake_source=intake_meta.get("source"),
+                )
+                run_pipeline(
+                    claimed,
+                    matter_id,
+                    source=intake_meta.get("source"),
+                    intake_meta=intake_meta or None,
+                )
         except Exception:
             logger.exception("existing_file_failed", file=str(path))
             _finalize_claimed_on_error(

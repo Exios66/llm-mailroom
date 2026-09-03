@@ -1,17 +1,19 @@
-"""Gmail intake triage agent — pre-pipeline preliminary classification (HUB-037).
+"""Gmail intake triage agent — free-model single-document lane (HUB-037).
 
-Runs BEFORE the full pipeline on Gmail-intake documents: reads the extracted
-document text and produces the intake log the user is echoed on the source
-email thread — primary doc class, subclass when discernible, confidence,
-one-sentence gist, keywords. Per human directive (2026-09-02) the preliminary
-classification rides the most capable OpenRouter model in the registry
-(``deepseek/deepseek-v4-pro``); ``processing deterministic preparation``
-(intake normalization) stays procedural and never calls an LLM.
+The free OpenRouter triage team. Dispatched ONLY on single-document Gmail
+inbox instances (one accepted attachment per email): performs the CORE steps
+of the full pipeline — deterministic preparation (text read + intake
+normalization, never an LLM), the triage classification read (primary doc
+class, subclass when discernible, confidence, one-sentence gist, keywords),
+the auditable-hash archive, and the completion echo — WITHOUT the paid
+pipeline agents. Multi-document emails (2+ attachments) drop the triage
+approach and run the FULL paid pipeline (no triage dispatch).
 
 Advisory by design: the triage result never overrides the pipeline's own
 classification — it rides `intake_meta["triage"]` into the manifest and the
-audit chain, and the full pipeline hands off to its paid-model agents
-untouched. Fails soft: a triage failure must never block the pipeline.
+audit chain (`triage_*` event section, never conflated with the pipeline's
+`ingested/classified/extracted/archived` vocabulary). Fails soft: a triage
+failure must never block the intake.
 """
 
 from __future__ import annotations
