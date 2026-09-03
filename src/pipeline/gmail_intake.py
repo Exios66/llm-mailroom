@@ -714,8 +714,9 @@ def triage_enabled() -> bool:
     """Whether the pre-pipeline Gmail intake triage pass is on (default: with the channel).
 
     The triage read runs at watcher claim time on Gmail-channel documents
-    (free OpenRouter model, advisory — see ``agents/gmail_triage.py``).
-    Set ``MAILROOM_GMAIL_TRIAGE=0`` to disable; failures always fail soft.
+    (the registry's most capable OpenRouter model, advisory — see
+    ``agents/gmail_triage.py``). Set ``MAILROOM_GMAIL_TRIAGE=0`` to disable;
+    failures always fail soft.
     """
     if not gmail_intake_enabled():
         return False

@@ -50,12 +50,6 @@ chunking:
 # synced to the Langfuse model registry via scripts/sync_models.py.
 # Update from the OpenRouter model page; unknown models estimate cost as 0.
 cost_models:
-  # HUB-037 Gmail triage: free-tier OpenRouter model ($0 — account key still
-  # required; rate-limited). Runs ONLY the pre-pipeline Gmail triage pass;
-  # every pipeline agent keeps its own paid-model entry below.
-  z-ai/glm-5.2:free:
-    input_per_million: 0.0
-    output_per_million: 0.0
   qwen/qwen3.7-flash:
     input_per_million: 0.03
     output_per_million: 0.13
@@ -323,14 +317,17 @@ file_extensions:
 # To cut over locally: change provider to "ollama", model to e.g. "qwen3:7b"
 # Setting DEFAULT_PROVIDER env var overrides the provider globally.
 agents:
-  # HUB-037: specialized Gmail pre-pipeline triage agent — the ONLY agent on
-  # a free OpenRouter model. Runs BEFORE the full pipeline on Gmail-intake
-  # documents: primary doc class + subclass (when discernible) + gist, echoed
-  # to the user as the accurate intake log. Every other agent below keeps its
-  # paid model — the free pass hands off to them untouched.
+  # HUB-037: specialized Gmail pre-pipeline triage agent — the preliminary
+  # sorter read for Gmail-intake documents, run BEFORE the full pipeline:
+  # primary doc class + subclass (when discernible) + gist, echoed to the
+  # user as the accurate intake log. Per human directive (2026-09-02) the
+  # preliminary classification rides the MOST CAPABLE OpenRouter model in the
+  # registry (deepseek/deepseek-v4-pro — the repo's vetted pro tier, already
+  # in cost_models + the Langfuse model registry); it stays advisory — the
+  # pipeline's own agents classify and extract untouched below.
   gmail_triage:
     provider: openrouter
-    model: z-ai/glm-5.2:free
+    model: deepseek/deepseek-v4-pro
     temperature: 0.1
     max_tokens: 700
     max_input_chars: 12000
