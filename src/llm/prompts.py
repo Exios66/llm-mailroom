@@ -132,6 +132,7 @@ def _bound_prompt_versions() -> dict[str, str]:
         "arbiter": "production",
         "gmail_triage": "production",
         "intake": "production",
+        "relations": "production",
     }
 
 
@@ -154,6 +155,7 @@ def prompt_templates() -> dict[str, str]:
         intake,
         judge,
         pdf_transcriber,
+        relations,
         reporter,
         sorter,
         sorter_reviewer,
@@ -182,4 +184,5 @@ def prompt_templates() -> dict[str, str]:
         "arbiter": arbiter.ARBITER_SYSTEM_PROMPT,
         "gmail_triage": gmail_triage.TRIAGE_SYSTEM_PROMPT,
         "intake": intake.INTAKE_SYSTEM_PROMPT,
+        "relations": relations.RELATIONS_SYSTEM_PROMPT,
     }
