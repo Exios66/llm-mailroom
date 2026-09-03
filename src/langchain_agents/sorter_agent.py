@@ -40,7 +40,7 @@ DOC_CLASSES = [
     {"key": "merger_agreement", "label": "Merger Agreement", "description": "MAUD merger agreements (agreement and plan of merger) — a distinct class from CUAD commercial contracts. Subclass is consideration type (all_cash, all_stock, mixed, …)."},
     {"key": "corporate_record", "label": "Corporate Record", "description": "Bylaws, articles/certificates of incorporation, powers of attorney, stockholder rights instruments, specimen stock (including those filed as SEC exhibits)"},
     {"key": "correspondence", "label": "Correspondence", "description": "Letters, emails, memos, notices, demand letters, press releases, meeting requests"},
-    {"key": "insurance_claim", "label": "Insurance Claim", "description": "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters, and CMS/DE-SynPUF claim tables (inpatient, outpatient, PDE, carrier)"},
+    {"key": "insurance_claim", "label": "Insurance Claim", "description": "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters, CMS/DE-SynPUF claim tables (inpatient, outpatient, PDE, carrier), and the v8 synthetic LOB lines — property FNOL bundles, auto decision letters"},
 ]
 
 DOC_CLASS_KEYS = [d["key"] for d in DOC_CLASSES]
