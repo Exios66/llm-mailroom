@@ -95,6 +95,12 @@ _DATE_FIELDS = (
 _EMBEDDER = None
 _EMBEDDER_LOCK = threading.Lock()
 
+# Hard bound on the real embedder call — the first dojo model use can trigger
+# a multi-minute SentenceTransformer download (O-10 is why field_scoring
+# preloads OFF the document path); a hung download must degrade to "cosine
+# signal skipped", never stall the sweeper/scan thread.
+_EMBED_TIMEOUT_SECONDS = 90.0
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -170,12 +176,30 @@ def set_embedder(embedder) -> None:
         _EMBEDDER = embedder
 
 
+def embeddings_enabled() -> bool:
+    """Whether the REAL embedder (dojo sentence-transformers) may be used.
+
+    The injected test seam bypasses this check. Kill it in hermetic test runs
+    (conftest) and anywhere the model download is unwanted — the cosine
+    signal then simply skips and the other signals flow."""
+    load_env()
+    return str(os.environ.get("MAILROOM_RELATIONS_EMBEDDINGS", "1")).strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+        "",
+    )
+
+
 def _embed(texts: list[str]) -> list[list[float]] | None:
     """Embed texts via the injected seam or the dojo model. Returns None when
     embeddings are unavailable (fail-soft — the cosine signal just skips)."""
     with _EMBEDDER_LOCK:
         embedder = _EMBEDDER
     if embedder is None:
+        if not embeddings_enabled():
+            return None
         try:
             from observability.field_scoring import get_embedding_model
 
@@ -187,7 +211,11 @@ def _embed(texts: list[str]) -> list[list[float]] | None:
             logger.debug("relations_embedder_unavailable")
             return None
     try:
-        return embedder(texts)
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(embedder, texts)
+            return future.result(timeout=_EMBED_TIMEOUT_SECONDS)
     except Exception:
         logger.debug("relations_embed_failed")
         return None
@@ -800,3 +828,39 @@ def stop_embedded_relations_scanner(sweeper: RelationsSweeper | None) -> None:
         sweeper.stop()
     except Exception:
         logger.exception("relations_sweeper_stop_failed")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI: ``PYTHONPATH=src python -m pipeline.relations_scan [--full]
+    [--doc DOC_ID] [--verify-ledger]``"""
+    import argparse
+
+    load_env()
+    parser = argparse.ArgumentParser(description="Relations scanner (HUB-040)")
+    parser.add_argument("--full", action="store_true", help="sweep ALL archived documents")
+    parser.add_argument("--doc", help="scan a single document id")
+    parser.add_argument("--verify-ledger", action="store_true", help="verify the hash chain and exit")
+    args = parser.parse_args(argv)
+
+    if args.verify_ledger:
+        ok, count = verify_ledger()
+        print(f"relations ledger: {'OK — hash chain intact' if ok else 'BROKEN — investigate immediately'} ({count} entries)")
+        return 0 if ok else 1
+    if args.doc:
+        report = scan_document(args.doc)
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    report = sweep(limit=None if args.full else None)  # batch size from config; --full keeps sweeping
+    if args.full:
+        while report.get("pending_remaining", 0) > 0:
+            more = sweep()
+            report["scanned"] += more.get("scanned", 0)
+            report["edges_new"] += more.get("edges_new", 0)
+            report["edges_updated"] += more.get("edges_updated", 0)
+            report["pending_remaining"] = more.get("pending_remaining", 0)
+    print(json.dumps(report, indent=2, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

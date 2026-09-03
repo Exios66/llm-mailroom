@@ -51,7 +51,7 @@ Rules:
 - Ground everything in the provided evidence. Never invent parties, dates, or document contents.
 - Reject (confidence < 0.3) candidates that look coincidental — coincidence is worse than silence in a matter file.
 - relation_type MUST be from the list — never invent types.
-Respond with a single JSON object only: {{"judgments": [...]}}"""
+Respond with a single JSON object of shape: {"judgments": [{"source_doc_id": "...", "target_doc_id": "...", "relation_type": "...", "confidence": 0.0, "rationale": "..."}]}"""
 
 
 def _relations_system_prompt() -> str:

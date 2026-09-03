@@ -38,6 +38,10 @@ def _set_test_env():
     # HUB-039 free-only guardrail is opt-in via .env; tests must stay hermetic
     # unless a case opts in explicitly (test_llm_free_only.py sets it itself).
     os.environ.pop("MAILROOM_LLM_FREE_ONLY", None)
+    # HUB-040 relations layer is deterministic + free and safe in tests, but
+    # the REAL dojo embedder triggers a network model download — hermetic runs
+    # use the injection seam (set_embedder) instead.
+    os.environ["MAILROOM_RELATIONS_EMBEDDINGS"] = "0"
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
               "LANGFUSE_BASE_URL", "BRAINTRUST_API_KEY"):
         os.environ.pop(k, None)
