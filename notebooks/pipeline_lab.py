@@ -914,7 +914,7 @@ def resume_review(lab, doc_id: str, filename: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 NODE_AGENT_ROLES = {
-    "ingest-document": ("pdf_transcriber / image_extractor (conditional)", "Reads the raw file, extracts text + page images, assigns doc_id"),
+    "intake-document": ("intake agent (clerk + LLM-assisted)", "Reads the raw file, extracts text + page images, runs the intake agent, assigns doc_id"),
     "classify-document": ("sorter (+ sorter_reviewer Lane A, judge-classification)", "Labels doc_type + confidence; bands decide what happens next"),
     "extract-fields": ("class specialist (+ judge/arbiter Lane B)", "Fills the class schema's typed fields"),
     "judge-verify": ("judge (completeness)", "Ambiguous-band extractions get verified before archiving"),
@@ -979,7 +979,7 @@ def band_report() -> dict[str, float]:
 # short node name → traced span name (the Langfuse contract), from the
 # add_node calls in graph/build_graph.py.
 NODE_SPAN_NAMES = {
-    "ingest": "ingest-document",
+    "intake": "intake-document",
     "classify": "classify-document",
     "retry_classify": "classify-document",
     "review_classify": "classify-document",

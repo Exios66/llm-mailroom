@@ -255,7 +255,7 @@ def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
 def entry_route(state: dict) -> str:
     """Entry router: a review-resume re-invocation starts at fresh extraction
     (doc_type already known from the manifest); everything else goes through
-    normal ingest → classify.
+    normal intake → classify.
 
     The `review_decision == "approved"` guard is deliberate: only the
     resume-from-review path sets it, so a crashed/partial run can never be
@@ -269,7 +269,7 @@ def entry_route(state: dict) -> str:
         and state.get("doc_type")
     ):
         return "extract"
-    return "ingest"
+    return "intake"
 
 
 def _build_handoff_context(state: DocumentState) -> str | None:
@@ -526,7 +526,27 @@ def _run_chunked_extraction(agent_fn, doc_text, pages, handoff_context):
         return agent.extract(doc_text, pages=pages)
 
 
-def ingest_node(state: DocumentState) -> dict[str, Any]:
+def intake_node(state: DocumentState) -> dict[str, Any]:
+    """The intake node — the FIRST node of the pipeline (HUB-038).
+
+    The INTAKE agent IS the ingest specialist: "ingest" and "intake" are the
+    same step (the split was an unintentional naming mistake — unified
+    2026-09-03). This one node performs the full ingest + intake work:
+
+    1. Claim + transcribe the file (``_read_file_text``).
+    2. Run the deterministic intake clerk (``apply_intake`` — the dojo gold
+       baseline, never skipped).
+    3. Run the LLM-assisted intake agent (``IntakeAgent``) when gated
+       (messy / over-sorter-budget): TRIAGE (advisory read), CLEAN
+       (structural repair, re-normalized), PREPARE (section map) — sliding
+       windows, never truncated.
+    4. Write the processing manifest + catalog record + the ``ingested``
+       compliance audit event (A-1/A-7).
+
+    The intake work product is what the sorter depends on: the advisory
+    triage rides ``state.intake_prep`` and is fed to ``classify`` as a labeled
+    prior; cleaning and section maps refine the text the sorter reads.
+    """
     _ensure_dirs()
     worker_id = get_worker_id()
 
@@ -621,7 +641,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
     save_manifest(manifest)
 
     logger.info(
-        "ingest",
+        "intake",
         doc_id=manifest.doc_id,
         file=file_path.name,
         chars=len(doc_text),
@@ -656,7 +676,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
     )
     # Carry the hash in state so archive verification + provenance persistence
     # can compare against it (A-7).
-    ingest_state = {
+    intake_state = {
         "doc_id": manifest.doc_id,
         "matter_id": matter_id,
         "original_filename": file_path.name,
@@ -686,7 +706,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         },
         stage=PipelineStage.PROCESSING.value,
     )
-    return ingest_state
+    return intake_state
 
 
 def classify_node(state: DocumentState) -> dict[str, Any]:
@@ -2131,7 +2151,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
 
     _write_audit_log(audit_entry)
 
-    # Final conveyor position: the catalog record (created at ingest/catalog
+    # Final conveyor position: the catalog record (created at intake/catalog
     # write) must show archived, not classified — archive is the terminal stage.
     _catalog_upsert(
         {
@@ -2437,7 +2457,7 @@ def build_graph(checkpointer=None):
     # Node names stay stable (best practice); per-run values go in metadata.
     # Every node is bounded: the run deadline and token budget are enforced at
     # each boundary so a stuck run is cut off as soon as its budget is spent.
-    workflow.add_node("ingest", traced_node("ingest-document")(_bounded(ingest_node)))
+    workflow.add_node("intake", traced_node("intake-document")(_bounded(intake_node)))
     workflow.add_node("classify", traced_node("classify-document")(_bounded(classify_node)))
     workflow.add_node("retry_classify", traced_node("classify-document")(_bounded(retry_classify_node)))
     # KANBAN-062 (Lane A): agent second opinion on exhausted medium-band
@@ -2456,10 +2476,10 @@ def build_graph(checkpointer=None):
     workflow.add_node("archive", traced_node("archive-document")(_bounded(archive_node)))
 
     workflow.add_conditional_edges(START, entry_route, {
-        "ingest": "ingest",
+        "intake": "intake",
         "extract": "extract",
     })
-    workflow.add_edge("ingest", "classify")
+    workflow.add_edge("intake", "classify")
 
     workflow.add_conditional_edges("classify", after_classify, {
         "classify": "classify",  # transient-error self-loop (same node, LLM-level retry)
@@ -2541,10 +2561,10 @@ def build_graph(checkpointer=None):
 def _existing_processing_doc_id(original_filename: str) -> str | None:
     """Find the doc_id of an in-flight manifest for this filename.
 
-    A run that crashed after ingest already saved a processing-stage manifest
+    A run that crashed after intake already saved a processing-stage manifest
     (and a catalog row); the abort path must reuse that doc_id so the failed
     manifest/catalog record supersede the same document instead of orphaning
-    the ingest manifest and minting a second identity.
+    the intake manifest and minting a second identity.
     """
     if not original_filename:
         return None
@@ -2581,7 +2601,7 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
     from schemas.manifest import DocumentManifest, PipelineStage
 
     state = dict(initial_state)
-    # Reuse the ingest manifest's doc_id when the run crashed after ingest, so
+    # Reuse the intake manifest's doc_id when the run crashed after intake, so
     # the aborted manifest supersedes the processing manifest (same identity).
     # Passed explicitly — DocumentManifest would otherwise mint a fresh UUID.
     aborted_doc_id = state.get("doc_id") or _existing_processing_doc_id(
@@ -3015,9 +3035,9 @@ def _execute_run(
             )
         if _result_is_interrupted(result):
             result = _paused_review_result(result, initial_state, thread_id, state_trace_id)
-        # Ensure the trace id survives into the final state (ingest_node creates
+        # Ensure the trace id survives into the final state (intake_node creates
         # the manifest with its own doc_id; the trace id must be attached even
-        # when the graph never ran ingest, e.g. aborted runs).
+        # when the graph never ran intake, e.g. aborted runs).
         if not result.get("trace_id"):
             result["trace_id"] = state_trace_id
 
@@ -3182,7 +3202,7 @@ def run_pipeline(
     }
     if intake_meta:
         # Intake provenance (HUB-037): carried by state so every manifest
-        # construction site (ingest / review / archive / aborted) records it.
+        # construction site (intake / review / archive / aborted) records it.
         initial_state["intake_meta"] = dict(intake_meta)
 
     # Attempt 0 keeps the bare filename stem as the deterministic trace seed

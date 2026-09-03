@@ -258,7 +258,7 @@ class TestConflictDetection:
 
 class TestAbortedRunReusesDocId:
     def test_abort_reuses_ingest_doc_id(self, temp_base_dir, mock_openai_client):
-        from graph.build_graph import _existing_processing_doc_id, ingest_node, _ensure_dirs
+        from graph.build_graph import _existing_processing_doc_id, intake_node, _ensure_dirs
         _ensure_dirs()
 
         inbox = temp_base_dir / "pipeline" / "inbox"
@@ -272,7 +272,7 @@ class TestAbortedRunReusesDocId:
             "stage": "inbox",
             "file_path": str(test_file),
         }
-        ingested = ingest_node(state)
+        ingested = intake_node(state)
         doc_id = ingested["doc_id"]
         assert doc_id != ""
 
@@ -280,7 +280,7 @@ class TestAbortedRunReusesDocId:
         assert found == doc_id
 
     def test_finalize_aborted_keeps_ingest_doc_id(self, temp_base_dir, mock_openai_client):
-        from graph.build_graph import _finalize_aborted, ingest_node, _ensure_dirs
+        from graph.build_graph import _finalize_aborted, intake_node, _ensure_dirs
         from pipeline.bins import load_manifest
         _ensure_dirs()
 
@@ -295,7 +295,7 @@ class TestAbortedRunReusesDocId:
             "stage": "inbox",
             "file_path": str(test_file),
         }
-        ingested = ingest_node(state)
+        ingested = intake_node(state)
         ingest_doc_id = ingested["doc_id"]
 
         aborted = _finalize_aborted(

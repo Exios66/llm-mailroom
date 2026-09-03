@@ -137,7 +137,7 @@ def test_sorter_sends_pages_when_vision(page_images, mock_langchain_llm):
 
 
 def test_ingest_produces_doc_pages(tmp_path, temp_base_dir):
-    from graph.build_graph import ingest_node
+    from graph.build_graph import intake_node
 
     from scripts.prepare_samples import generate_pdf_from_text
 
@@ -147,7 +147,7 @@ def test_ingest_produces_doc_pages(tmp_path, temp_base_dir):
     generate_pdf_from_text(src, pdf)
 
     state = {"file_path": str(pdf), "matter_id": "M-VISION"}
-    out = ingest_node(state)
+    out = intake_node(state)
     assert out["doc_pages"]
     assert out["doc_pages"][0].startswith("data:image/png;base64,")
     assert out["doc_text"]
