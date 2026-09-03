@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the channel as `checks.gmail_intake`. Tests stay hermetic (conftest forces
   the channel off; 17 network-free tests). **Intake awareness:** the watcher
   passes the sidecar provenance into the pipeline — `DocumentManifest.intake`
-  (source gmail/upload, message_id, sender, subject) now rides ingest →
+  (source gmail/upload, message_id, sender, subject) now rides intake →
   review → archive → aborted manifests and live traces tag `source-gmail`;
   fixing this also fixed a latent `existing_file_failed` bug (the
   `_infer_matter_id` method lived only on `InboxHandler`, so startup-scan /
