@@ -38,7 +38,7 @@ def test_intake_span_output_has_eval_keys():
 
 
 def test_ingest_applies_intake(temp_base_dir):
-    from graph.build_graph import ingest_node, _ensure_dirs
+    from graph.build_graph import intake_node, _ensure_dirs
     from graph.state import DocumentState
 
     _ensure_dirs()
@@ -54,7 +54,7 @@ def test_ingest_applies_intake(temp_base_dir):
         "doc_text": "",
         "messages": [],
     }
-    result = ingest_node(state)
+    result = intake_node(state)
     assert "agreement" in result["doc_text"]
     assert "\n\n\n" not in result["doc_text"]
     assert result["intake_changed"] is True

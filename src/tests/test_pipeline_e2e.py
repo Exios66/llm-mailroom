@@ -148,8 +148,8 @@ class TestPipelineE2E:
         # ...and the document flowed on through extraction to archive:
         assert result.get("stage") == "archived"
 
-    def test_ingest_node_creates_manifest(self, temp_base_dir):
-        from graph.build_graph import ingest_node, _ensure_dirs
+    def test_intake_node_creates_manifest(self, temp_base_dir):
+        from graph.build_graph import intake_node, _ensure_dirs
         _ensure_dirs()
 
         inbox = temp_base_dir / "pipeline" / "inbox"
@@ -178,7 +178,7 @@ class TestPipelineE2E:
             "messages": [],
         }
 
-        result = ingest_node(state)
+        result = intake_node(state)
         assert result["doc_id"] != ""
         assert result["stage"] == "processing"
         assert result["doc_text"] == "Test ingest content."
@@ -253,13 +253,13 @@ startxref
 
 def test_ingest_transcribes_real_pdf_bytes(temp_base_dir, mock_openai_client):
     """Real PDF bytes through ingest (LLM still mocked)."""
-    from graph.build_graph import ingest_node, _ensure_dirs
+    from graph.build_graph import intake_node, _ensure_dirs
 
     _ensure_dirs()
     inbox = temp_base_dir / "pipeline" / "inbox"
     pdf = inbox / "service.pdf"
     pdf.write_bytes(_MINIMAL_TEXT_PDF)
-    result = ingest_node(
+    result = intake_node(
         {
             "doc_id": "",
             "matter_id": "PDF-MATTER",

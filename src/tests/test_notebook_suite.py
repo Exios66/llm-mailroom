@@ -95,7 +95,7 @@ def test_step_capture_reports_nodes_in_graph_order() -> None:
             filename="guard_order.txt",
         )
         nodes = [s["node"] for s in r["steps"]]
-        assert nodes[:2] == ["ingest-document", "classify-document"], nodes
+        assert nodes[:2] == ["intake-document", "classify-document"], nodes
         assert all(nodes), "empty node names in capture"
 
 

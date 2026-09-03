@@ -164,7 +164,7 @@ def _result_summary(result: dict, state: dict | None = None):
 # chain = the pipeline as a whole; span = remaining units of work.
 NODE_OBSERVATION_TYPES = {
     "document-pipeline": "chain",
-    "ingest-document": "span",
+    "intake-document": "span",
     "normalize-intake": "span",
     "extract-image-text": "retriever",
     "transcribe-pdf": "retriever",
