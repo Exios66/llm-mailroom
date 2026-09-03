@@ -65,10 +65,10 @@ def _run_to_review(temp_base_dir, phased_client) -> dict:
 
 
 class TestReviewResume:
-    def test_entry_route_resume_skips_ingest_and_classify(self):
+    def test_entry_route_resume_skips_intake_and_classify(self):
         from graph.build_graph import entry_route
 
-        assert entry_route({"resume_extraction": True, "doc_type": "contract"}) == "ingest"
+        assert entry_route({"resume_extraction": True, "doc_type": "contract"}) == "intake"
         # The approved-guard is deliberate: only the resume-from-review path
         # sets review_decision, so a crashed/partial run can never skip
         # classification.
@@ -78,9 +78,9 @@ class TestReviewResume:
             )
             == "extract"
         )
-        assert entry_route({"resume_extraction": True, "doc_type": None}) == "ingest"
-        assert entry_route({"resume_extraction": False}) == "ingest"
-        assert entry_route({}) == "ingest"
+        assert entry_route({"resume_extraction": True, "doc_type": None}) == "intake"
+        assert entry_route({"resume_extraction": False}) == "intake"
+        assert entry_route({}) == "intake"
 
     def test_default_checkpointer_is_memory(self):
         from langgraph.checkpoint.memory import MemorySaver
