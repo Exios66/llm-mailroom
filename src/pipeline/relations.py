@@ -114,15 +114,21 @@ def relations_config() -> dict:
 
 
 def relations_enabled() -> bool:
-    """Kill-switch for the whole layer (default ON — deterministic + free)."""
+    """Kill-switch for the whole layer: taxonomy ``relations.enabled`` AND
+    the ``MAILROOM_RELATIONS`` env override (default ON — deterministic + free)."""
     load_env()
-    return str(os.environ.get("MAILROOM_RELATIONS", "1")).strip().lower() not in (
+    if str(os.environ.get("MAILROOM_RELATIONS", "1")).strip().lower() in (
         "0",
         "false",
         "no",
         "off",
         "",
-    )
+    ):
+        return False
+    try:
+        return bool(relations_config().get("enabled", True))
+    except Exception:
+        return True
 
 
 def context_injection_enabled() -> bool:
