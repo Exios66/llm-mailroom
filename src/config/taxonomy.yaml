@@ -352,6 +352,19 @@ agents:
     # (LengthFinishReasonError) on the production HF pilot.
     reasoning_effort: none
 
+  # HUB-038: LLM-assisted intake agent — triage + clean + prepare for the
+  # full pipeline. Fires ONLY when gated (messy text, or a document longer
+  # than the sorter's input budget); over-budget documents are processed in
+  # sliding windows — NEVER truncated. One fused call per window; cheapest
+  # paid model (the free tier stays the Gmail triage lane's privilege).
+  intake:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 2048
+    max_input_chars: 25000
+    reasoning_effort: none
+
   # KANBAN-062 (Lane A): independent second-opinion classification reviewer.
   # Fires only on medium-band classifications that survive retry_classify.
   sorter_reviewer:

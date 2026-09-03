@@ -28,6 +28,9 @@ def _set_test_env():
     # Gmail intake (HUB-037) is opt-in in production (.env); tests must never
     # pick the real credentials up and start network polls.
     os.environ["MAILROOM_GMAIL_ENABLED"] = "0"
+    # LLM-assisted intake (HUB-038) is also opt-in-able; tests stay on the
+    # deterministic clerk unless a case opts in (patched gate + mock client).
+    os.environ["MAILROOM_LLM_INTAKE"] = "0"
     for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"):
         os.environ.pop(k, None)
     os.environ.pop("MAILROOM_VISION_ENABLED", None)

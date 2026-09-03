@@ -137,7 +137,7 @@ class TestPromptRegistryImageExtractor:
         templates = prompt_templates()
         assert "image_extractor" in templates
         assert templates["image_extractor"].strip()
-        assert len(templates) == 16
+        assert len(templates) == 17
 
     def test_image_extractor_uses_managed_prompt(self, mock_openai_client):
         from agents.image_extractor import ImageExtractor, SYSTEM_PROMPT

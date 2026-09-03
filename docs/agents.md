@@ -49,7 +49,7 @@ Key design points:
 
 The Sorter is the first LLM call in the pipeline. It reads the document text and determines which of the configured document classes it belongs to. The list of available classes is dynamically read from `config/taxonomy.yaml`, so adding a new document type automatically expands the Sorter's options.
 
-The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `langchain_agents.sorter_agent.SorterAgent`): it classifies via `with_structured_output` against the `SORTER_SCHEMA`, uses the production `sorter_v14` prompt (V12 CUAD-subtype lineage + mailroom pipeline doctrine), and adds a **contract-subtype dimension** — for contracts it assigns one of 25 CUAD agreement families (affiliate, license, distributor, franchise, …) plus `other` (`CONTRACT_SUBTYPE_KEYS`, normalized via `normalize_subtype`; non-contracts carry `contract_subtype=None`). `classify()` returns a 4-tuple `(doc_type, contract_subtype, confidence, reasoning)`; the subtype flows into state, the classification guard, the extraction handoff context, the report, and the catalog. Truncation past the input budget uses the upstream **HEAD+TAIL window** (opening + closing portions where term/termination/governing-law/signatures live).
+The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `langchain_agents.sorter_agent.SorterAgent`): it classifies via `with_structured_output` against the `SORTER_SCHEMA`, uses the production `sorter_v14` prompt (V12 CUAD-subtype lineage + mailroom pipeline doctrine), and adds a **contract-subtype dimension** — for contracts it assigns one of 25 CUAD agreement families (affiliate, license, distributor, franchise, …) plus `other` (`CONTRACT_SUBTYPE_KEYS`, normalized via `normalize_subtype`; non-contracts carry `contract_subtype=None`). `classify()` returns a 4-tuple `(doc_type, contract_subtype, confidence, reasoning)`; the subtype flows into state, the classification guard, the extraction handoff context, the report, and the catalog. **No-truncation doctrine (HUB-038):** the mailroom subclass bypasses the upstream HEAD+TAIL truncation — documents past the input budget are classified in overlapping sliding windows (every character read) and merged deterministically (plurality vote among non-unknown classes, mean confidence of agreeing windows, first non-null subtype/subclass, joined reasoning; `WINDOW i OF n` markers per call). The advisory intake read rides every window as a labeled prior; page images attach to the first window only.
 
 ---
 
@@ -257,13 +257,57 @@ The Archivist is NOT an LLM agent — it's a procedural function that:
 
 | Attribute | Value |
 |---|---|
-| **Node** | nested under `ingest` (span `normalize-intake`) |
-| **Trigger** | every document after text extraction |
+| **Node** | nested under `ingest` (span `normalize-intake` + `intake-llm-prep`) |
+| **Trigger** | every document after text extraction (deterministic core); LLM pass gated to messy / over-sorter-budget documents |
 | **Input** | transcribed `doc_text` |
-| **Output** | cleaned text + stats (`messy`, `changed`, hyphen unwraps, collapsed blanks) |
-| **Personality** | none — deterministic whitespace / NBSP / hyphen-unwrap |
+| **Output** | cleaned text + stats (`messy`, `changed`, hyphen unwraps, collapsed blanks); LLM pass: advisory triage read + section map + optional structural cleaning |
+| **Personality** | the intake clerk — first agent in the pipeline, one fused TRIAGE + CLEAN + PREPARE pass |
 
-Procedural, not an LLM agent. Clerk gold lives in `llm_dojo_scoring.intake` (dojo PR #5); `agents/intake.py` re-exports the primitives and emits the live `normalize-intake` span (dojo's own `apply_intake` is span-less). The-Mailroom still mirrors `deterministic_normalize` / `looks_messy` in `mailroom_ui/intake_normalize.py` and reads the span on every `document-pipeline` trace. Hugging Face pilots (`scripts/run_hf_pilot.py`) depend on this span so FLOOR / TUI / Observatory can show intake-changed / messy counts. Live runs also attach `get_suite("intake")` scores (`intake_prep_completeness`, changed/messy rates, hyphen/blank counts).
+The deterministic clerk (dojo `llm_dojo_scoring.intake` gold, re-exported
+byte-compatible) is the MANDATORY baseline and never skipped: Unicode NFC,
+newline/NBSP/zero-width/C0 cleanup, hyphen unwrap, blank collapse, trim,
+`looks_messy`. The-Mailroom mirrors `deterministic_normalize` /
+`looks_messy` in `mailroom_ui/intake_normalize.py` and reads the span on every
+`document-pipeline` trace; Hugging Face pilots depend on it.
+
+**LLM-assisted pass (HUB-038).** On top of the clerk, an LLM pass (ONE fused
+call per window) TRIAGES, CLEANS, and PREPARES the document for the
+classification and extraction agents:
+
+- **Triage** — an advisory first read (primary doc class + subclass +
+  confidence + gist + keywords), the same vocabulary-clamped shape as the
+  free triage team's `validate_triage`. It rides the terminal manifest's
+  `intake.triage`, the completion echo's INTAKE TRIAGE section, and is fed to
+  the sorter as a labeled prior — the sorter re-classifies independently;
+  intake NEVER overrules it.
+- **Clean** — structural repair of messy OCR-ish text (join run-together
+  lines, drop repeated header/footer artifacts; never alters facts). The
+  model's output is re-run through the deterministic clerk so
+  `prep_invariants` hold; the dojo scores it as `method: llm` against the
+  clerk gold (`score_intake`).
+- **Prepare** — a section map (heading + role + document-absolute char
+  offsets, deterministically validated: in-bounds, monotonic, catalog roles)
+  so downstream routing can see document structure.
+
+**No-truncation doctrine (human directive 2026-09-03).** Documents are NEVER
+truncated. Anything past an input budget is processed in overlapping sliding
+windows (`agents.intake.sliding_windows` — paragraph-boundary, 15% overlap,
+mirroring the extraction chunker) and merged deterministically: per-window
+triage reads vote (plurality among non-unknown classes, ties on confidence),
+section offsets are translated to document-absolute positions and
+overlap-deduped, and partial-window cleaning is never spliced back. The same
+doctrine governs the sorter: `agents/sorter.py` bypasses the vendored
+HEAD+TAIL truncation — over-budget documents are classified window-by-window
+and the reads merge (plurality vote, mean confidence of the agreeing windows,
+first non-null subtype, joined reasoning; `WINDOW i OF n` markers on every
+call).
+
+**Gate + cost.** The LLM pass fires ONLY for documents that need it
+(`looks_messy`, or longer than the sorter's input budget — clean short
+documents pay zero). One fused call per window on the cheapest paid model
+(`qwen3.7-flash`; the free tier stays the Gmail triage lane's privilege).
+`MAILROOM_LLM_INTAKE=0` disables the LLM pass entirely; every failure fails
+soft to the deterministic clerk output — intake never blocks a run.
 
 ---
 

@@ -115,7 +115,7 @@ def test_production_surface_has_no_docclass_arm():
     from llm.prompts import prompt_templates
 
     templates = prompt_templates()
-    assert len(templates) == 16
+    assert len(templates) == 17
     assert not any(key.endswith("_docclass_v0") for key in templates)
     assert all("DOCCLASS ARM CONTEXT" not in t for t in templates.values())
     # Supporting agents that are production-only (not a docclass role).

@@ -549,10 +549,47 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         file_path = claim_file(file_path, worker_id)
 
     doc_text, text_ok = _read_file_text(file_path)
-    from agents.intake import apply_intake
+    from agents.intake import apply_intake, llm_intake_enabled, should_llm_intake
 
     raw_text = doc_text
     doc_text, intake_stats = apply_intake(doc_text, filename=file_path.name)
+    # HUB-038: LLM-assisted intake (triage + clean + prepare) — gated to
+    # messy / over-sorter-budget documents; sliding windows, NEVER truncates.
+    intake_prep = None
+    try:
+        if should_llm_intake(doc_text, intake_stats) and llm_intake_enabled():
+            from agents.intake import IntakeAgent
+            from observability.tracing import observation
+
+            intake_agent = IntakeAgent()
+            with observation(
+                "intake-llm-prep",
+                as_type="span",
+                input={"file": file_path.name, "chars": len(doc_text)},
+            ) as span:
+                intake_prep = intake_agent.intake_run(doc_text, filename=file_path.name)
+                if span is not None:
+                    triage = intake_prep.get("triage") or {}
+                    span.update(
+                        output={
+                            "triage_class": triage.get("primary_doc_class"),
+                            "triage_confidence": triage.get("confidence"),
+                            "sections": len(intake_prep.get("sections") or []),
+                            "windows": intake_prep.get("windows", 1),
+                            "cleaned": bool(intake_prep.get("cleaned")),
+                            "changed": bool(intake_prep.get("changed")),
+                        }
+                    )
+            if intake_prep.get("cleaned"):
+                from llm_dojo_scoring.intake import looks_messy as _looks_messy
+
+                doc_text = intake_prep["cleaned"]
+                intake_stats = dict(intake_prep["clean_stats"])
+                intake_stats["messy"] = _looks_messy(doc_text, intake_stats)
+                intake_stats["method"] = "llm"
+    except Exception:
+        logger.exception("intake_llm_failed", file=file_path.name)
+        intake_prep = None
     try:
         from observability.suite_scoring import score_and_log_intake
 
@@ -562,12 +599,23 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
     doc_pages = _render_doc_pages(file_path)
 
     matter_id = state.get("matter_id", "DEFAULT")
+    intake_meta = state.get("intake_meta") or None
+    if intake_meta is not None and intake_prep:
+        intake_meta = dict(intake_meta)
+        if intake_prep.get("triage"):
+            intake_meta["triage"] = intake_prep["triage"]
+        if intake_prep.get("sections") is not None:
+            intake_meta["prep"] = {
+                "section_count": len(intake_prep.get("sections") or []),
+                "roles": sorted({s["role"] for s in intake_prep.get("sections") or []}),
+                "windows": intake_prep.get("windows", 1),
+            }
     manifest = DocumentManifest(
         matter_id=matter_id,
         original_filename=file_path.name,
         stage=PipelineStage.PROCESSING,
         trace_id=state.get("trace_id"),
-        intake=state.get("intake_meta") or None,
+        intake=intake_meta or None,
     )
     manifest.touch()
     save_manifest(manifest)
@@ -618,6 +666,7 @@ def ingest_node(state: DocumentState) -> dict[str, Any]:
         "doc_pages": doc_pages,
         "intake_messy": bool(intake_stats.get("messy")),
         "intake_changed": bool(intake_stats.get("changed")),
+        "intake_prep": intake_prep,
         "classification_attempts": 0,
         "extraction_attempts": 0,
         "retry_count": 0,
@@ -666,9 +715,18 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     sorter = SorterAgent()
     attempts = state.get("classification_attempts", 0)
     try:
+        # HUB-038: the advisory intake read rides as a labeled prior — the
+        # sorter verifies independently (the vendored sorter_v14 prompt is
+        # never mutated). Over-budget documents slide through windows inside
+        # the sorter subclass — never truncated.
+        from agents.intake import format_intake_prior
+
+        intake_prior = format_intake_prior(state.get("intake_prep") or None)
         # Structured classify includes per-class doc_subclass (dojo catalogs).
         classified = sorter.classify_json(
-            doc_text, pages=state.get("doc_pages")
+            doc_text,
+            pages=state.get("doc_pages"),
+            intake_prior=intake_prior,
         )
         doc_type = classified.get("doc_type") or ""
         contract_subtype = classified.get("contract_subtype")
@@ -799,15 +857,22 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
         memory = recent_context("sorter", doc_type=prev_type or "", k=3)
     except Exception:
         memory = ""
-    augmented_text = (
+    preamble = (
         f"RE-EVALUATION REQUESTED - previous classification was '{prev_type}' with "
-        f"confidence {prev_confidence:.2f}. Please re-examine this document independently:\n\n"
-        f"{doc_text[:12000]}"
-        + (f"\n\n{memory}" if memory else "")
+        f"confidence {prev_confidence:.2f}. Please re-examine this document independently:"
     )
+    if memory:
+        preamble = f"{preamble}\n\n{memory}"
+    from agents.intake import format_intake_prior
+
     try:
+        # HUB-038: no truncation — the retry reads the FULL document through
+        # sliding windows (preamble + advisory intake prior on every window).
         classified = sorter.classify_json(
-            augmented_text, pages=state.get("doc_pages")
+            doc_text,
+            pages=state.get("doc_pages"),
+            prefix=preamble,
+            intake_prior=format_intake_prior(state.get("intake_prep") or None),
         )
         doc_type = classified.get("doc_type") or ""
         contract_subtype = classified.get("contract_subtype")
