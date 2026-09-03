@@ -646,3 +646,48 @@ def test_build_echo_body_renders_archive_entry_and_audit():
     assert "STATUS: FAILED" in body2
     assert "llm_auth" in body2
     assert "audit chain unavailable" in body2
+
+
+# ── reaction guarantee at terminal stage (HUB-037) ───────────────────────
+
+
+def test_echo_retries_failed_reaction_at_terminal(temp_base_dir, monkeypatch, mocker):
+    """A single-document triage-lane claim has ONE reaction shot — if the
+    claim-time attempt failed, the terminal echo retries it (deduped per
+    Message-ID, so a successful reaction is never re-sent)."""
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    fake = FakeSMTP()
+    gmail_intake.set_smtp_factory(lambda: fake)
+    react_spy = mocker.patch("pipeline.gmail_intake.react_to_message", return_value=True)
+    gmail_intake._ECHO_DONE.clear()
+    try:
+        ok = gmail_intake.send_intake_echo(_echo_manifest())
+        assert ok is True
+        react_spy.assert_called_once_with("<echo-1@example.com>")
+    finally:
+        gmail_intake.set_smtp_factory(None)
+
+
+def test_echo_skips_reaction_retry_when_reactions_disabled(temp_base_dir, monkeypatch, mocker):
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    monkeypatch.setenv("MAILROOM_GMAIL_REACTIONS", "0")
+    fake = FakeSMTP()
+    gmail_intake.set_smtp_factory(lambda: fake)
+    react_spy = mocker.patch("pipeline.gmail_intake.react_to_message", return_value=True)
+    gmail_intake._ECHO_DONE.clear()
+    try:
+        ok = gmail_intake.send_intake_echo(_echo_manifest())
+        assert ok is True
+        react_spy.assert_not_called()
+    finally:
+        gmail_intake.set_smtp_factory(None)
+
+
+def test_reaction_failure_tracks_reactions_failed_counter(temp_base_dir):
+    client = FakeIMAP({})
+    gmail_intake.react_to_message("<react-fail@example.com>", config=_cfg(), imap_factory=lambda: client)
+    assert gmail_intake.status()["reactions_failed"] >= 1

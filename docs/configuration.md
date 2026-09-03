@@ -321,7 +321,7 @@ See `.env.example` for the complete list:
 | `MAILROOM_GMAIL_REACTIONS` | No | `1` | When the watcher claims a Gmail-channel attachment, react to the source email with the check emoji (a Gmail label via IMAP `X-GM-LABELS`) — the "picked up for processing" ack. Best-effort: a reaction failure never disturbs the claim. Set `0` to disable |
 | `MAILROOM_GMAIL_REACTION_LABEL` | No | `✅` | The emoji-named Gmail label applied as the reaction (auto-created best-effort) |
 | `MAILROOM_GMAIL_ECHOES` | No | `1` (with channel on) | When a Gmail-intake document reaches a terminal stage (archived/review/failed), reply on the source email thread with the completion report: status, classification, extraction, archive entry (path + sha256) and the verified audit chain |
-| `MAILROOM_GMAIL_TRIAGE` | No | `1` (with channel on) | Single-document triage lane (HUB-037): an email carrying exactly ONE accepted attachment is handled by the FREE OpenRouter triage team (`z-ai/glm-5.2:free`) — core pipeline steps (deterministic prep, triage classification, auditable-hash archive with its own `triage_*` audit section, completion echo) without the paid agents. Emails with 2+ accepted attachments drop the triage approach and run the FULL paid pipeline. Advisory; fails soft; set `0` to disable the lane (single-doc emails then take the full pipeline) |
+| `MAILROOM_GMAIL_TRIAGE` | No | `1` (with channel on) | Single-document triage lane (HUB-037): an email carrying exactly ONE accepted attachment is handled by the FREE OpenRouter triage team (`z-ai/glm-5.2:free`) — core pipeline steps (deterministic prep, triage classification, auditable-hash archive with its own `triage_*` audit section, completion echo) without the paid agents, after a deterministic capability pre-check. Documents beyond the free team's reach (image-only, scanned PDFs, or longer than the free `max_input_chars` budget — merger agreements typically exceed it) are HONESTLY handed off to the full paid pipeline (`intake.triage_handoff` records the reason). Emails with 2+ accepted attachments drop the triage approach and run the FULL paid pipeline. Advisory; fails soft; set `0` to disable the lane (single-doc emails then take the full pipeline) |
 | `MAILROOM_GMAIL_SMTP_HOST` | No | `smtp.gmail.com` | SMTP host for the echo replies (same app password) |
 | `MAILROOM_GMAIL_SMTP_PORT` | No | `465` | SMTP SSL port for the echo replies |
 
@@ -337,6 +337,7 @@ the mailbox is swept automatically (every `MAILROOM_GMAIL_POLL_SECONDS`, default
 | **Accepted extensions** | `file_extensions` in `config/taxonomy.yaml`: `.pdf`, `.txt`, `.docx`, `.md`, `.jpg`, `.jpeg`, `.png`, `.gif` (anything else is skipped, message still acknowledged) |
 | **Size** | ≤ `MAILROOM_GMAIL_MAX_ATTACHMENT_MB` (default 50 MB) per attachment |
 | **Matter routing (optional)** | Put `[M:<matter_id>]` in the subject — e.g. `Hail damage FNOL [M:MORNINGSTAR-001]`. Allowed chars: `A-Z a-z 0-9 _ . -` (≤64). Without the tag the document files under `MAILROOM_GMAIL_DEFAULT_MATTER_ID` (default `DEFAULT`) |
+| **Single vs bundle routing** | ONE accepted attachment = a **single-document upload**: handled by the FREE OpenRouter triage team (core pipeline steps — deterministic prep, triage classification, auditable-hash archive with its own `triage_*` audit section, completion echo — no paid agents), after a capability pre-check; documents beyond the free models' reach (image-only, scanned PDFs, or longer than the free input budget, e.g. most merger agreements) are **honestly handed off to the full paid pipeline** (`intake.triage_handoff` records the reason). TWO OR MORE accepted attachments = a **multi-document upload**: the triage approach is dropped and every attachment runs the **full paid pipeline** |
 | **Multiple attachments** | Each accepted attachment becomes its own document under the same matter; one email per document is cleanest for traceability |
 
 Worked example:
@@ -348,19 +349,27 @@ Attach:  claim_2026-03-14.pdf
 ```
 
 What you get back: the ✅ label appears on the email the moment the watcher
-claims the attachment for processing (the intake acknowledgement); the
-document then flows inbox → classify → extract → archive/review like any
-upload, with `intake.source: gmail` + the sender/subject recorded on the
-manifest for audit. When it reaches a terminal stage the mailroom **replies
-on the same thread** with a completion report — STATUS, doc_id/matter,
-classification + confidence, the extraction report, the archive entry (path
-+ sha256 for archived documents, or the failure/review reason), and the full
-audit trail with the hash-chain verification verdict — so the email thread
-itself is the notification surface. If `MAILROOM_GMAIL_TRIAGE` is on (the
-default with the channel), the report also carries an **INTAKE TRIAGE
-(pre-pipeline)** section: the free-model read of the document (primary doc
-class, subclass, confidence, one-sentence gist, keywords) made before the
-full pipeline ran — an accurate first glance, never the final word.
+claims the attachment for processing (the intake acknowledgement). A
+**single-document email** is then handled entirely by the free-triage lane:
+the triage read (primary class, subclass, confidence, gist, keywords) becomes
+the terminal manifest's `intake.triage`, the document is archived in the
+auditable hash archive with its own `triage_*` audit entries, and the mailroom
+replies on the thread with a completion report carrying the **INTAKE TRIAGE
+(pre-pipeline)** section — no paid pipeline agents are invoked — UNLESS the
+deterministic capability pre-check rejects the document (longer than the free
+model's input budget, image-only, or a scanned PDF): it is then honestly
+handed off to the full paid pipeline, with `intake.triage_handoff` recording
+the reason and the completion report noting "triage handoff: … — handled by
+the full pipeline". A
+**multi-document email** drops the triage approach: every attachment flows
+inbox → classify → extract → archive/review like any upload, with
+`intake.source: gmail` + `intake.route: pipeline` + the sender/subject
+recorded on the manifest for audit. Terminal-stage pipeline documents get the
+completion report on the same thread — STATUS, doc_id/matter, classification +
+confidence, the extraction report, the archive entry (path + sha256 for
+archived documents, or the failure/review reason), and the full audit trail
+with the hash-chain verification verdict — so the email thread itself is the
+notification surface.
 | `MAILROOM_API_TOKEN` | Off-loopback yes | — | Bearer token for every route except `/health`. The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match. |
 | `MAILROOM_API_TOKENS` | No | — | Additional live bearer tokens as CSV (e.g. `current-key,next-key`) — unioned with `MAILROOM_API_TOKEN` for rotation windows |
 | `MAILROOM_API_TOKEN_REVOKED` | No | — | Revoked tokens as CSV; subtracted from the live set so a rotated key stops working immediately |

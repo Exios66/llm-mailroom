@@ -326,23 +326,111 @@ def _notify_intake_reaction(intake_meta: dict, *, async_mode: bool = True) -> No
         logger.exception("gmail_reaction_dispatch_failed", message_id=str(message_id))
 
 
-def _is_triage_route(intake_meta: dict) -> bool:
+def _is_triage_route(file_path: Path, intake_meta: dict) -> bool:
     """Whether this claimed file takes the single-document free-triage lane.
 
     Only ``route: triage`` (one accepted attachment per Gmail email, stamped
     by the poller) qualifies — multi-document emails and every other intake
     route run the full paid pipeline. Disabled triage (``MAILROOM_GMAIL_TRIAGE=0``)
     or a gate error falls back to the full pipeline: never a crash.
+
+    The capability pre-check runs BEFORE the lane: a single-document upload
+    that exceeds the free triage team's capabilities (image-only input,
+    scanned PDF, or a document longer than the free agent's input budget —
+    e.g. merger agreements are typically far beyond it) is HONESTLY handed
+    off to the full paid pipeline instead of starting a doomed run. The
+    handoff reason rides ``intake_meta["triage_handoff"]`` into the terminal
+    manifest.
     """
     if not intake_meta or intake_meta.get("route") != "triage":
         return False
     try:
         from .gmail_intake import triage_enabled
 
-        return triage_enabled()
+        if not triage_enabled():
+            return False
     except Exception:
         logger.exception("triage_gate_failed")
         return False
+    try:
+        ok, reason = _triage_capability_check(file_path)
+    except Exception:
+        logger.exception("triage_capability_check_failed")
+        return False  # conservative: a failed check hands off to the pipeline
+    if not ok:
+        logger.info("triage_handoff", file=str(file_path), reason=reason)
+        intake_meta["triage_handoff"] = reason
+        return False
+    return True
+
+
+def _direct_pdf_text(file_path: Path) -> tuple[str, bool]:
+    """Deterministic PDF text extraction (pdfplumber → pypdf fallback).
+
+    NEVER invokes the LLM transcriber — the capability pre-check must stay
+    free. Scanned PDFs yield no direct text and are handed off to the full
+    pipeline (whose paid transcriber handles them).
+    """
+    try:
+        import pdfplumber
+
+        with pdfplumber.open(str(file_path)) as pdf:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+            return text, bool(text.strip())
+    except Exception:
+        pass
+    try:
+        import pypdf
+
+        reader = pypdf.PdfReader(str(file_path))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        return text, bool(text.strip())
+    except Exception:
+        return "", False
+
+
+def _triage_capability_check(file_path: Path) -> tuple[bool, str | None]:
+    """Deterministic, LLM-free pre-check: can the free triage team handle this document?
+
+    Returns ``(ok, reason)``. A document is handed off to the full paid
+    pipeline (``reason`` non-None) when it is beyond the free agent's
+    capabilities: image-only inputs (vision required), scanned PDFs (paid
+    transcription required), unreadable inputs, or a deterministic text
+    length above the ``gmail_triage`` ``max_input_chars`` budget — merger
+    agreements are typically excessively long and go far beyond what the
+    free models can appropriately classify. The check runs BEFORE the lane,
+    so a document beyond the free team's reach never starts a failed run.
+    """
+    from graph.build_graph import IMAGE_EXTENSIONS
+
+    ext = file_path.suffix.lower()
+    if ext in IMAGE_EXTENSIONS:
+        return False, "image_requires_vision"
+    try:
+        if ext == ".pdf":
+            text, ok = _direct_pdf_text(file_path)
+            if not ok:
+                return False, "scanned_pdf_requires_transcription"
+        elif ext == ".docx":
+            from graph.build_graph import _extract_text_from_docx
+
+            text, ok = _extract_text_from_docx(file_path)
+        else:
+            text = file_path.read_text(errors="replace")
+            ok = bool(text.strip())
+    except Exception:
+        return False, "unreadable"
+    if not ok:
+        return False, "no_extractable_text"
+    try:
+        from pipeline.config import get_agent_config
+
+        budget = int(get_agent_config("gmail_triage").get("max_input_chars", 12000))
+    except Exception:
+        budget = 12000
+    if len(text) > budget:
+        return False, f"exceeds_free_budget:{len(text)}>{budget}"
+    return True, None
 
 
 def _file_sha256(path: Path) -> str:
@@ -574,7 +662,7 @@ class InboxHandler(FileSystemEventHandler):
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
-            if _is_triage_route(intake_meta):
+            if _is_triage_route(claimed, intake_meta):
                 logger.info(
                     "file_claimed_triage",
                     file=str(claimed),
@@ -743,7 +831,7 @@ class Watcher:
             claimed = claim_file(path, self.worker_id)
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
-            if _is_triage_route(intake_meta):
+            if _is_triage_route(claimed, intake_meta):
                 logger.info(
                     "existing_file_claimed_triage",
                     file=str(claimed),

@@ -8,6 +8,8 @@ ever touched.
 
 import json
 
+import pytest
+
 from agents.gmail_triage import (
     GmailTriageAgent,
     TRIAGE_SCHEMA,
@@ -219,6 +221,7 @@ def test_watcher_single_doc_gmail_runs_triage_lane(temp_base_dir, mocker):
     }
     mocker.patch("pipeline.watcher._notify_intake_reaction")
     mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
     spy = mocker.patch("pipeline.watcher.run_pipeline")
 
     Watcher()._process_existing(inbox_file)
@@ -254,6 +257,7 @@ def test_triage_lane_writes_own_audit_section(temp_base_dir, mocker):
     }
     mocker.patch("pipeline.watcher._notify_intake_reaction")
     mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
 
     Watcher()._process_existing(inbox_file)
 
@@ -316,6 +320,39 @@ def test_watcher_triage_disabled_falls_back_to_pipeline(temp_base_dir, mocker):
     assert spy.call_count == 1  # single-doc emails fall back to the full pipeline
 
 
+def test_watcher_claim_dispatches_reaction_on_both_routes(temp_base_dir, mocker):
+    """The ✅ reaction fires at claim time REGARDLESS of route — the triage
+    lane (single-doc) and the full pipeline (multi-doc) both get it."""
+    from pipeline.watcher import Watcher
+
+    # Triage-lane claim (single-document Gmail).
+    inbox_triage = _gmail_inbox_file(temp_base_dir, name="fnol_react_triage.txt", route="triage")
+    mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.watcher._run_triage_lane", return_value={"doc_id": "t1"})
+    react_spy = mocker.patch("pipeline.watcher._notify_intake_reaction")
+
+    Watcher()._process_existing(inbox_triage)
+
+    react_spy.assert_called_once()
+    intake = react_spy.call_args.args[0]
+    assert intake["source"] == "gmail"
+    assert intake["route"] == "triage"
+
+    # Full-pipeline claim (multi-document Gmail).
+    react_spy.reset_mock()
+    inbox_pipeline = _gmail_inbox_file(temp_base_dir, name="fnol_react_pipeline.txt", route="pipeline")
+    mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "p1"})
+
+    Watcher()._process_existing(inbox_pipeline)
+
+    react_spy.assert_called_once()
+    intake = react_spy.call_args.args[0]
+    assert intake["source"] == "gmail"
+    assert intake["route"] == "pipeline"
+
+
 def test_triage_lane_failure_fails_soft(temp_base_dir, mocker):
     from pipeline.watcher import Watcher
 
@@ -324,6 +361,7 @@ def test_triage_lane_failure_fails_soft(temp_base_dir, mocker):
     fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
     fake_agent.side_effect = RuntimeError("free model down")
     mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
     spy = mocker.patch("pipeline.watcher.run_pipeline")
 
     Watcher()._process_existing(inbox_file)
@@ -343,6 +381,7 @@ def test_triage_lane_agent_failure_fails_soft(temp_base_dir, mocker):
     fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
     fake_agent.return_value.triage.side_effect = RuntimeError("rate limited")
     mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
     spy = mocker.patch("pipeline.watcher.run_pipeline")
 
     Watcher()._process_existing(inbox_file)
@@ -350,6 +389,162 @@ def test_triage_lane_agent_failure_fails_soft(temp_base_dir, mocker):
     assert spy.call_count == 0
     manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
     assert manifest is not None and manifest["stage"] == "failed"
+
+
+# ── all document types through the triage lane (HUB-037) ─────────────────
+
+
+@pytest.mark.parametrize(
+    "fixture_name,doc_class",
+    [
+        ("sample_contract_text", "contract"),
+        ("sample_contract_text", "merger_agreement"),
+        ("sample_insurance_claim_text", "insurance_claim"),
+        ("sample_corporate_text", "corporate_record"),
+        ("sample_correspondence_text", "correspondence"),
+    ],
+)
+def test_triage_lane_accepts_all_doc_types(temp_base_dir, mocker, request, fixture_name, doc_class):
+    """The free triage team can process + accept EVERY canonical doc type —
+    contracts, merger agreements, insurance claims, corporate records, and
+    correspondences — as single-document Gmail inputs."""
+    from pipeline.bins import inbox_dir, write_inbox_meta
+    from pipeline.watcher import Watcher
+
+    text = request.getfixturevalue(fixture_name)
+    name = f"doc_{doc_class}.txt"
+    inbox_file = inbox_dir() / name
+    inbox_file.write_text(text)
+    write_inbox_meta(
+        inbox_file,
+        source="gmail",
+        matter_id="M-ALL",
+        message_id=f"<msg-{doc_class}@example.com>",
+        sender="client@firm.example",
+        route="triage",
+    )
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    fake_agent.return_value.triage.return_value = {
+        "primary_doc_class": doc_class,
+        "doc_subclass": None,
+        "confidence": 0.9,
+        "gist": f"A {doc_class} document",
+        "keywords": ["test"],
+    }
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    spy = mocker.patch("pipeline.watcher.run_pipeline")
+
+    Watcher()._process_existing(inbox_file)
+
+    fake_agent.return_value.triage.assert_called_once()
+    spy.assert_not_called()  # the free lane handles it; the paid pipeline is untouched
+    manifest = _terminal_manifest(temp_base_dir, name)
+    assert manifest is not None and manifest["stage"] == "archived"
+    assert manifest["doc_type"] == doc_class
+    assert manifest["intake"]["triage"]["primary_doc_class"] == doc_class
+    assert manifest["intake"]["route"] == "triage"
+
+
+# ── capability pre-check + honest handoff (HUB-037) ──────────────────────
+
+
+def test_triage_handoff_when_document_exceeds_free_budget(temp_base_dir, mocker):
+    """Documents longer than the free agent's input budget (e.g. merger
+    agreements) are handed off to the full pipeline BEFORE a failed run."""
+    from pipeline.bins import inbox_dir, write_inbox_meta
+    from pipeline.watcher import Watcher
+
+    inbox_file = inbox_dir() / "fnol_long.txt"
+    inbox_file.write_text("A" * 20000)  # far beyond the 12000-char free budget
+    write_inbox_meta(
+        inbox_file,
+        source="gmail",
+        matter_id="M-9",
+        message_id="<msg-long@example.com>",
+        sender="c@firm.example",
+        route="triage",
+    )
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    spy = mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "d1"})
+
+    Watcher()._process_existing(inbox_file)
+
+    fake_agent.assert_not_called()  # never starts a doomed free-model run
+    assert spy.call_count == 1  # honestly handed off to the full pipeline
+    intake = spy.call_args.kwargs.get("intake_meta") or {}
+    assert intake["triage_handoff"].startswith("exceeds_free_budget:")
+
+
+def test_triage_handoff_for_image_document(temp_base_dir, mocker):
+    from pipeline.bins import inbox_dir, write_inbox_meta
+    from pipeline.watcher import Watcher
+
+    inbox_file = inbox_dir() / "scan.png"
+    inbox_file.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    write_inbox_meta(
+        inbox_file,
+        source="gmail",
+        matter_id="M-9",
+        message_id="<msg-img@example.com>",
+        sender="c@firm.example",
+        route="triage",
+    )
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    spy = mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "d1"})
+
+    Watcher()._process_existing(inbox_file)
+
+    fake_agent.assert_not_called()
+    assert spy.call_count == 1  # vision-only input → the full pipeline
+    intake = spy.call_args.kwargs.get("intake_meta") or {}
+    assert intake["triage_handoff"] == "image_requires_vision"
+
+
+def test_triage_handoff_for_scanned_pdf(temp_base_dir, mocker):
+    from pipeline.bins import inbox_dir, write_inbox_meta
+    from pipeline.watcher import Watcher
+
+    inbox_file = inbox_dir() / "scan.pdf"
+    inbox_file.write_bytes(b"%PDF-1.4\n% fake scanned pdf - no direct text\n")
+    write_inbox_meta(
+        inbox_file,
+        source="gmail",
+        matter_id="M-9",
+        message_id="<msg-scan@example.com>",
+        sender="c@firm.example",
+        route="triage",
+    )
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    spy = mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "d1"})
+
+    Watcher()._process_existing(inbox_file)
+
+    fake_agent.assert_not_called()
+    assert spy.call_count == 1
+    intake = spy.call_args.kwargs.get("intake_meta") or {}
+    assert intake["triage_handoff"] == "scanned_pdf_requires_transcription"
+
+
+def test_triage_capability_check_within_budget(temp_base_dir):
+    from pipeline.bins import inbox_dir
+    from pipeline.watcher import _triage_capability_check
+
+    short = inbox_dir() / "short.txt"
+    short.write_text("FNOL hail damage — fits the free budget")
+    ok, reason = _triage_capability_check(short)
+    assert ok is True and reason is None
 
 
 # ── completion echo ──────────────────────────────────────────────────────
@@ -396,3 +591,22 @@ def test_build_echo_body_omits_triage_section_when_absent():
     }
     body = gmail_intake.build_echo_body(manifest, [], None)
     assert "INTAKE TRIAGE" not in body
+
+
+def test_build_echo_body_renders_triage_handoff():
+    manifest = {
+        "doc_id": "d-echo-handoff",
+        "matter_id": "M-1",
+        "original_filename": "merger_agreement.pdf",
+        "stage": "archived",
+        "intake": {
+            "source": "gmail",
+            "message_id": "<echo-handoff@example.com>",
+            "sender": "client@firm.example",
+            "subject": "Merger [M:M-1]",
+            "triage_handoff": "exceeds_free_budget:25000>12000",
+        },
+    }
+    body = gmail_intake.build_echo_body(manifest, [], None)
+    assert "triage handoff: exceeds_free_budget:25000>12000" in body
+    assert "handled by the full pipeline" in body
