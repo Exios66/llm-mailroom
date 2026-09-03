@@ -354,10 +354,13 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     """Network-free smoke: fake IMAP serves both smoke emails; scratch bins."""
     checks: list[tuple[str, bool, str]] = []
 
-    # Hermetic: fake mailbox credentials when the real .env is absent.
-    os.environ.setdefault("GMAIL_ADDRESS", "smoke@example.com")
+    # Hermetic: fake mailbox credentials when the real .env is absent. The
+    # mock sender + allowlist are FORCED so the smoke never depends on the
+    # real .env roster (HUB-039 pilot allowlist would reject the mock sender).
+    os.environ["GMAIL_ADDRESS"] = "smoke@example.com"
     os.environ.setdefault("GMAIL_APP_PASSWORD", "smoke-smoke-smoke-sm")
     os.environ.setdefault("MAILROOM_GMAIL_ENABLED", "1")
+    os.environ["MAILROOM_GMAIL_ALLOWED_SENDERS"] = "smoke@example.com"
 
     scratch = _prepare_base_dir()
     from pipeline import gmail_intake
