@@ -282,6 +282,70 @@ def test_same_name_attachments_uniquified(temp_base_dir):
     assert names == ["scan-1.pdf", "scan.pdf"]
 
 
+# ── single vs bundle routing (HUB-037) ───────────────────────────────────
+
+
+def test_single_attachment_message_routed_to_triage(temp_base_dir):
+    client = FakeIMAP(
+        {
+            "1": _message(
+                "single doc",
+                attachments=({"single.pdf": _pdf_bytes()}),
+                message_id="<route-1@example.com>",
+            )
+        }
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1
+
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    meta = read_inbox_meta(next(inbox_dir().glob("*.pdf")))
+    assert meta["route"] == "triage"  # one accepted attachment → free-triage lane
+
+
+def test_multi_attachment_message_routed_to_pipeline(temp_base_dir):
+    client = FakeIMAP(
+        {
+            "1": _message(
+                "bundle",
+                attachments=(
+                    {"bundle_a.pdf": _pdf_bytes(), "bundle_b.pdf": _pdf_bytes()}
+                ),
+                message_id="<route-2@example.com>",
+            )
+        }
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 2
+
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    metas = [read_inbox_meta(p) for p in inbox_dir().glob("*.pdf")]
+    assert len(metas) == 2
+    assert all(m["route"] == "pipeline" for m in metas)  # 2+ → full paid pipeline
+
+
+def test_rejected_attachment_does_not_count_for_routing(temp_base_dir):
+    client = FakeIMAP(
+        {
+            "1": _message(
+                "one accepted, one rejected",
+                attachments=({"good.pdf": _pdf_bytes(), "bad.exe": b"MZ..."}),
+                message_id="<route-3@example.com>",
+            )
+        }
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1
+    assert report["skipped_extension"] == 1
+
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    meta = read_inbox_meta(next(inbox_dir().glob("*.pdf")))
+    assert meta["route"] == "triage"  # only accepted attachments count
+
+
 # ── status surface (what /health reports) ─────────────────────────────────
 
 

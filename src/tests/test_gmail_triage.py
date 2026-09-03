@@ -171,7 +171,7 @@ def test_triage_enabled_gate(monkeypatch):
 # ── watcher wiring ───────────────────────────────────────────────────────
 
 
-def _gmail_inbox_file(temp_base_dir, name="fnol_triage.txt"):
+def _gmail_inbox_file(temp_base_dir, name="fnol_triage.txt", route="triage"):
     from pipeline.bins import inbox_dir, write_inbox_meta
 
     inbox_file = inbox_dir() / name
@@ -180,14 +180,30 @@ def _gmail_inbox_file(temp_base_dir, name="fnol_triage.txt"):
         inbox_file,
         source="gmail",
         matter_id="MATTER-TR",
-        message_id="<msg-triage@example.com>",
+        message_id=f"<msg-{name}@example.com>",
         sender="client@firm.example",
         subject="FNOL [M:MATTER-TR]",
+        route=route,
     )
     return inbox_file
 
 
-def test_watcher_gmail_claim_runs_triage_before_pipeline(temp_base_dir, mocker):
+def _terminal_manifest(temp_base_dir, filename):
+    from pipeline.bins import manifests_dir
+    from pathlib import Path
+
+    for mf in manifests_dir().glob("*.json"):
+        data = json.loads(mf.read_text())
+        if data.get("original_filename") == filename and data.get("stage") in (
+            "archived",
+            "failed",
+            "review",
+        ):
+            return data
+    return None
+
+
+def test_watcher_single_doc_gmail_runs_triage_lane(temp_base_dir, mocker):
     from pipeline.watcher import Watcher
 
     inbox_file = _gmail_inbox_file(temp_base_dir)
@@ -198,19 +214,73 @@ def test_watcher_gmail_claim_runs_triage_before_pipeline(temp_base_dir, mocker):
         "primary_doc_class": "insurance_claim",
         "doc_subclass": "other",
         "confidence": 0.9,
+        "gist": "FNOL for hail damage",
+        "keywords": ["hail"],
+    }
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    spy = mocker.patch("pipeline.watcher.run_pipeline")
+
+    Watcher()._process_existing(inbox_file)
+
+    # The triage lane runs; the paid pipeline is NEVER called.
+    instance.triage.assert_called_once()
+    spy.assert_not_called()
+
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    assert manifest is not None
+    assert manifest["stage"] == "archived"
+    assert manifest["doc_type"] == "insurance_claim"
+    assert manifest["intake"]["route"] == "triage"
+    assert manifest["intake"]["triage"]["primary_doc_class"] == "insurance_claim"
+    assert manifest["intake"]["triage"]["gist"] == "FNOL for hail damage"
+
+
+def test_triage_lane_writes_own_audit_section(temp_base_dir, mocker):
+    import asyncio
+
+    from pipeline.watcher import Watcher
+    from storage.audit_log import get_audit_chain
+
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="fnol_audit.txt")
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    fake_agent.return_value.triage.return_value = {
+        "primary_doc_class": "insurance_claim",
+        "doc_subclass": None,
+        "confidence": 0.85,
         "gist": "FNOL",
         "keywords": ["hail"],
     }
     mocker.patch("pipeline.watcher._notify_intake_reaction")
-    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+
+    Watcher()._process_existing(inbox_file)
+
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    rows = asyncio.run(get_audit_chain(manifest["doc_id"]))
+    events = [r["event"] for r in rows]
+    assert events == ["triage_ingested", "triage_classified", "triage_archived"]
+    assert all(e.startswith("triage_") for e in events)  # own section — never pipeline events
+    assert rows[-1]["detail"]["archive_path"].endswith("fnol_audit.txt")
+    assert rows[-1]["detail"]["file_sha256"]
+
+
+def test_watcher_multi_doc_gmail_runs_full_pipeline_without_triage(temp_base_dir, mocker):
+    from pipeline.watcher import Watcher
+
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="bundle_a.txt", route="pipeline")
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
     spy = mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "d1"})
 
     Watcher()._process_existing(inbox_file)
 
-    instance.triage.assert_called_once()
+    # Multi-document uploads: full paid pipeline, triage approach dropped.
+    fake_agent.assert_not_called()
     assert spy.call_count == 1
-    kwargs = spy.call_args.kwargs
-    assert kwargs["intake_meta"]["triage"]["primary_doc_class"] == "insurance_claim"
+    assert (spy.call_args.kwargs.get("intake_meta") or {}).get("route") == "pipeline"
 
 
 def test_watcher_skips_triage_for_upload_source(temp_base_dir, mocker):
@@ -230,7 +300,7 @@ def test_watcher_skips_triage_for_upload_source(temp_base_dir, mocker):
     assert (spy.call_args.kwargs.get("intake_meta") or {}).get("triage") is None
 
 
-def test_watcher_triage_disabled_by_env_gate(temp_base_dir, mocker):
+def test_watcher_triage_disabled_falls_back_to_pipeline(temp_base_dir, mocker):
     from pipeline.watcher import Watcher
 
     inbox_file = _gmail_inbox_file(temp_base_dir)
@@ -243,45 +313,43 @@ def test_watcher_triage_disabled_by_env_gate(temp_base_dir, mocker):
     Watcher()._process_existing(inbox_file)
 
     fake_agent.assert_not_called()
-    assert (spy.call_args.kwargs.get("intake_meta") or {}).get("triage") is None
+    assert spy.call_count == 1  # single-doc emails fall back to the full pipeline
 
 
-def test_watcher_triage_failure_fails_soft(temp_base_dir, mocker):
+def test_triage_lane_failure_fails_soft(temp_base_dir, mocker):
     from pipeline.watcher import Watcher
 
-    inbox_file = _gmail_inbox_file(temp_base_dir)
-
-    mocker.patch(
-        "agents.gmail_triage.GmailTriageAgent",
-        side_effect=RuntimeError("free model down"),
-    )
-    mocker.patch("pipeline.watcher._notify_intake_reaction")
-    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
-    spy = mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "d1"})
-
-    Watcher()._process_existing(inbox_file)
-
-    # A triage failure must never block the claim.
-    assert spy.call_count == 1
-    assert "triage" not in spy.call_args.kwargs["intake_meta"]
-
-
-def test_watcher_triage_agent_failure_fails_soft(temp_base_dir, mocker):
-    from pipeline.watcher import Watcher
-
-    inbox_file = _gmail_inbox_file(temp_base_dir)
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="fnol_fail.txt")
 
     fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
-    instance = fake_agent.return_value
-    instance.triage.side_effect = RuntimeError("rate limited")
+    fake_agent.side_effect = RuntimeError("free model down")
     mocker.patch("pipeline.watcher._notify_intake_reaction")
-    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
-    spy = mocker.patch("pipeline.watcher.run_pipeline", return_value={"doc_id": "d1"})
+    spy = mocker.patch("pipeline.watcher.run_pipeline")
 
     Watcher()._process_existing(inbox_file)
 
-    assert spy.call_count == 1
-    assert "triage" not in spy.call_args.kwargs["intake_meta"]
+    # A triage failure must never crash the intake: the document parks to
+    # failed/ with a terminal manifest and the paid pipeline stays untouched.
+    assert spy.call_count == 0
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    assert manifest is not None and manifest["stage"] == "failed"
+
+
+def test_triage_lane_agent_failure_fails_soft(temp_base_dir, mocker):
+    from pipeline.watcher import Watcher
+
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="fnol_agentfail.txt")
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    fake_agent.return_value.triage.side_effect = RuntimeError("rate limited")
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    spy = mocker.patch("pipeline.watcher.run_pipeline")
+
+    Watcher()._process_existing(inbox_file)
+
+    assert spy.call_count == 0
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    assert manifest is not None and manifest["stage"] == "failed"
 
 
 # ── completion echo ──────────────────────────────────────────────────────

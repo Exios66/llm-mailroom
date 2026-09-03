@@ -358,26 +358,33 @@ approval-inclusive; the state counter `arbiter_retry_count` is compared against 
 
 | Attribute | Value |
 |---|---|
-| **Node** | none — runs BEFORE `run_pipeline` at watcher claim time (Gmail channel only) |
-| **Trigger** | `intake.source == "gmail"` and `MAILROOM_GMAIL_TRIAGE` on (default with the channel) |
-| **Input** | The same `doc_text` the pipeline will read (via `graph.build_graph._read_file_text`) |
-| **Output** | `intake.triage`: `primary_doc_class` + `doc_subclass` + `confidence` + `gist` + `keywords` |
+| **Node** | none — the single-document Gmail triage lane (watcher claim time, Gmail channel only) |
+| **Trigger** | one accepted attachment per email (`route: triage`) and `MAILROOM_GMAIL_TRIAGE` on (default with the channel) |
+| **Input** | The same `doc_text` the pipeline would read (via `graph.build_graph._read_file_text`, after deterministic `apply_intake` prep) |
+| **Output** | `intake.triage`: `primary_doc_class` + `doc_subclass` + `confidence` + `gist` + `keywords`; own `triage_*` audit section |
 | **Personality** | Fast, grounded intake clerk — the accurate log, not the final word |
 
-The preliminary sorter read for Gmail-intake documents. Per human directive
-(2026-09-02) it rides the **most capable OpenRouter model in the registry**
-(`deepseek/deepseek-v4-pro`, `cost_models` $0.435/$0.87 per 1M) — the
-deterministic intake preparation (`apply_intake`) stays procedural and never
-calls an LLM. It is **advisory by design**: the read rides
-`intake_meta["triage"]` into the terminal manifest (and the completion echo's
-"INTAKE TRIAGE (pre-pipeline)" section) but never influences the sorter or
-specialists — the full pipeline classifies and extracts untouched. Fails
-soft: no `OPENROUTER_API_KEY`, rate limit, or provider error ever blocks a
-claim (logged; the pipeline proceeds without a triage record). Output is
-clamped to the live taxonomy vocabulary by `validate_triage` (unknown class →
-`unknown`, confidence 0.0–1.0, ≤6 keywords, 300-char gist). Registration:
-`llm/prompts.py:prompt_templates()` (synced with `scripts/sync_prompts.py`),
-agent config in `config/taxonomy.yaml`.
+The **free OpenRouter triage team** (`z-ai/glm-5.2:free`, $0 in `cost_models`,
+rate-limited) — the free model is deliberate: single-document Gmail uploads
+must not rack up paid-agent spend. The lane performs the **core steps and
+functionalities of the full pipeline** — deterministic preparation, triage
+classification, auditable-hash archive with a terminal manifest, and the
+completion echo — without calling any paid agent. Emails with **two or more
+accepted attachments drop the triage approach** and run the FULL paid
+pipeline per document (`route: pipeline`; triage is never dispatched).
+
+The triage read is **advisory by design** and never overrules the pipeline
+agents (it is only dispatched on single-document Gmail instances, where no
+pipeline run happens — the overrule guard is the standing invariant).
+Audit entries use their own namespaced section (`triage_ingested` /
+`triage_classified` / `triage_archived`) so the stored audits are never
+conflated with the pipeline's `ingested`/`classified`/`extracted`/`archived`
+vocabulary. Fails soft: no `OPENROUTER_API_KEY`, rate limit, or provider
+error ever blocks intake (logged; the document parks to `failed/`). Output
+is clamped to the live taxonomy vocabulary by `validate_triage` (unknown
+class → `unknown`, confidence 0.0–1.0, ≤6 keywords, 300-char gist).
+Registration: `llm/prompts.py:prompt_templates()` (synced with
+`scripts/sync_prompts.py`), agent config in `config/taxonomy.yaml`.
 
 ---
 

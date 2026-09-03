@@ -141,7 +141,7 @@ def _mock_get_llm(agent_name: str):
         last_msg = (kwargs.get("messages") or [{}])[-1]
         user_content = last_msg.get("content", "") if isinstance(last_msg, dict) else ""
         if user_content.startswith("File: ") and "Document text:" in user_content:
-            content = json.dumps(MOCK_TRIAGE)  # gmail intake triage (most capable model)
+            content = json.dumps(MOCK_TRIAGE)  # gmail intake triage (free model)
         elif "Classify this legal document" in user_content or "RE-EVALUATION REQUESTED" in user_content:
             content = json.dumps(MOCK_CLASSIFICATION)
         elif "ADJUDICATION REQUEST" in user_content:
