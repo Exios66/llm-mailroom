@@ -54,11 +54,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   override the SMTP endpoint). **Smoke test:**
   `src/scripts/gmail_smoke_test.py` exercises Gmail + watcher connectivity
   end-to-end with an example insurance claim (committed FNOL fixture):
-  default network-free mock (PASS verified — connectivity, route, watcher,
-  awareness, classify, reaction), `--real` sends via SMTP and
-  sweeps the real mailbox, `--llm real` adds real LLM cost. **Secrets:**
-  `GMAIL_APP_PASSWORD` + `GMAIL_ADDRESS` registered in GitHub Actions secret
-  managers on `Exios66/mailroom-dev` and `Exios66/llm-mailroom`.
+   default network-free mock (PASS verified — connectivity, route, watcher,
+   awareness, classify, reaction), `--real` sends via SMTP and
+   sweeps the real mailbox, `--llm real` adds real LLM cost. **Secrets:**
+   `GMAIL_APP_PASSWORD` + `GMAIL_ADDRESS` registered in GitHub Actions secret
+   managers on `Exios66/mailroom-dev` and `Exios66/llm-mailroom`.
+   **Single-document triage lane (the free triage team):** an email carrying
+   exactly ONE accepted attachment is stamped `route: triage` and handled by
+   `agents/gmail_triage.py` (`GmailTriageAgent`, `z-ai/glm-5.2:free` — $0)
+   performing the core pipeline steps (deterministic prep → triage
+   classification → auditable-hash archive with its own `triage_*` audit
+   section → completion echo) without the paid agents; a deterministic
+   capability pre-check (`watcher.py:_triage_capability_check`) honestly
+   hands off documents beyond the free team's reach (image-only, scanned
+   PDFs, text over the `gmail_triage` `max_input_chars` budget) to the full
+   paid pipeline (`intake.triage_handoff` records the reason, echoed to the
+   sender). Multi-attachment emails (`route: pipeline`) and
+   `MAILROOM_GMAIL_TRIAGE=0` always take the full paid pipeline; the lane
+   fails soft. A failed claim-time ✅ reaction is retried at echo time for
+   single-claim (triage-lane) documents; `reactions_failed` surfaced in
+   status. **Documentation:** the full operator guide
+   (`docs/gmail-intake.md`) covers enabling the channel, the upload +
+   subject-line format contract, every Gmail→pipeline pathway, echoes, and
+   troubleshooting; surfaced from the README runbook, `docs/README.md`,
+   `docs/agents.md` § 12, `docs/configuration.md`, and
+   `src/pipeline/README.md` (the configuration reference's Gmail section was
+   also re-homed out of the middle of the runtime env table it had split).
 
 - **Railway deploy contract:** root `railway.json` (Dockerfile builder +
   `/health` probe), `nixpacks.toml` fallback, and

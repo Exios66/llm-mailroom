@@ -373,6 +373,11 @@ completion echo — without calling any paid agent. Emails with **two or more
 accepted attachments drop the triage approach** and run the FULL paid
 pipeline per document (`route: pipeline`; triage is never dispatched).
 
+> The end-to-end operator manual for the Gmail intake route — enabling the
+> channel, the upload/subject-line format contract, all pathways from Gmail
+> into the pipeline, and troubleshooting — is
+> [`docs/gmail-intake.md`](gmail-intake.md).
+
 **Capability pre-check + honest handoff.** Before the lane runs, a
 deterministic, LLM-free check (`pipeline/watcher.py:_triage_capability_check`)
 verifies the free team can actually handle the single document — no doomed

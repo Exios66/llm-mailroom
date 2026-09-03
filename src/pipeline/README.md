@@ -5,7 +5,7 @@
 This is the **operational layer**: the long-running processes you start, and the filesystem "bins" that make the pipeline human-legible. If you `ls` into `data/pipeline/` you can literally see every document's current stage.
 
 - `watcher.py` — the **main entrypoint**. Watches `data/pipeline/inbox/`; every new file gets its own LangGraph run in a background thread.
-- `gmail_intake.py` — optional **Gmail intake channel**: polls the agent mailbox (IMAP SSL) and drops accepted attachments into the SAME inbox; runs inside `watcher.py` when `MAILROOM_GMAIL_ENABLED=1`.
+- `gmail_intake.py` — optional **Gmail intake channel**: polls the agent mailbox (IMAP SSL) and drops accepted attachments into the SAME inbox; runs inside `watcher.py` when `MAILROOM_GMAIL_ENABLED=1`. Full operator guide: [`docs/gmail-intake.md`](../../docs/gmail-intake.md).
 - `bins.py` — all file-moving helpers. **This is the ONLY place files are moved.** Node code never calls `os.rename`/`shutil.move` directly.
 - `config.py` — loads `config/taxonomy.yaml` (cached).
 - `ops_monitor.py` — optional scheduled process that periodically checks for stuck documents / error spikes and asks the Boss agent for a health verdict.

@@ -21,6 +21,7 @@
 | `architecture.md` | System design and state machine |
 | `agents.md` | LLM agent specifications |
 | `configuration.md` | Configuration guide |
+| `gmail-intake.md` | Gmail intake route — upload guide, subject-line contract, pathways (HUB-037) |
 | `api.md` | HTTP endpoint reference |
 | `deployment.md` | Production deployment |
 | `testing.md` | Test organization |
