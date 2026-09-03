@@ -257,7 +257,7 @@ The Archivist is NOT an LLM agent — it's a procedural function that:
 
 | Attribute | Value |
 |---|---|
-| **Node** | nested under `ingest` (span `normalize-intake` + `intake-llm-prep`) |
+| **Node** | the first-class `intake` node — the intake agent IS the ingest specialist (the ingest + intake steps are ONE; span `normalize-intake` + `intake-llm-prep`) |
 | **Trigger** | every document after text extraction (deterministic core); LLM pass gated to messy / over-sorter-budget documents |
 | **Input** | transcribed `doc_text` |
 | **Output** | cleaned text + stats (`messy`, `changed`, hyphen unwraps, collapsed blanks); LLM pass: advisory triage read + section map + optional structural cleaning |
@@ -334,7 +334,7 @@ Both share the same system prompt voice — consistent persona across both invoc
 
 | Attribute | Value |
 |---|---|
-| **Node** | `ingest` (via `_read_file_text`) |
+| **Node** | `intake` (via `_read_file_text`) |
 | **Trigger** | PDF with < `pdf_direct_chars_per_page` chars/page (scanned/garbled) |
 | **Input** | PDF file |
 | **Output** | Markdown text + confidence + method (`direct` / `llm`) |
@@ -348,13 +348,13 @@ A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`
 
 | Attribute | Value |
 |---|---|
-| **Node** | `ingest` (via `_read_file_text` / `_extract_text_from_image`) |
+| **Node** | `intake` (via `_read_file_text` / `_extract_text_from_image`) |
 | **Trigger** | Image file (jpg/png/gif/webp/tiff/bmp) |
 | **Input** | Image bytes as a data-URI |
 | **Output** | Visible text + confidence + method (`vision`) |
 | **Personality** | Faithful transcription of visible text — no interpretation |
 
-A vision LLM agent with its own `taxonomy.yaml` entry and Langfuse-managed prompt (`mailroom-image_extractor`). Transient provider failures retry through `retry_chat_completion`; persistent failure raises so ingest can route the document to review rather than silently substituting a fallback marker.
+A vision LLM agent with its own `taxonomy.yaml` entry and Langfuse-managed prompt (`mailroom-image_extractor`). Transient provider failures retry through `retry_chat_completion`; persistent failure raises so the intake node can route the document to review rather than silently substituting a fallback marker.
 
 ---
 

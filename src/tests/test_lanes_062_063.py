@@ -186,7 +186,7 @@ class TestTopology:
         g = build_graph()
         nodes = {n for n in g.get_graph().nodes if not n.startswith("__")}
         expected = {
-            "ingest", "classify", "retry_classify", "review_classify",
+            "intake", "classify", "retry_classify", "review_classify",
             "extract", "retry_extract", "judge_verify", "arbiter",
             "human_review", "boss_escalation", "compile_report",
             "catalog_write", "archive",
@@ -199,7 +199,7 @@ class TestTopology:
         g = build_graph()
         edges = {(e.source, e.target) for e in g.get_graph().edges}
         required = {
-            ("__start__", "ingest"),
+            ("__start__", "intake"),
             ("retry_classify", "review_classify"),
             ("classify", "review_classify"),
             ("retry_classify", "retry_classify"),

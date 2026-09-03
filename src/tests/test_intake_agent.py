@@ -406,11 +406,11 @@ def test_sorter_prior_and_prefix_reach_every_window(mocker):
 # ---------------------------------------------------------------------------
 
 
-def test_ingest_node_llm_intake_merges_triage_into_manifest(temp_base_dir, mocker):
+def test_intake_node_llm_intake_merges_triage_into_manifest(temp_base_dir, mocker):
     mocker.patch("agents.intake.should_llm_intake", return_value=True)
     mocker.patch("agents.intake.llm_intake_enabled", return_value=True)
 
-    from graph.build_graph import _ensure_dirs, ingest_node
+    from graph.build_graph import _ensure_dirs, intake_node
     from graph.state import DocumentState
 
     _ensure_dirs()
@@ -438,19 +438,19 @@ def test_ingest_node_llm_intake_merges_triage_into_manifest(temp_base_dir, mocke
         "intake_meta": {"source": "upload", "upload_id": "u-1"},
     }
     expected = test_file.read_text()  # claimed (moved) by ingest — read first
-    result = ingest_node(state)
+    result = intake_node(state)
     assert result["intake_prep"]["triage"]["primary_doc_class"] == "contract"
     assert "triage" in result["intake_prep"]
     assert result["doc_text"] == expected  # no cleaning when prep has none
     assert INTAKE_SCHEMA["required"] == ["triage", "sections"]
 
 
-def test_ingest_node_llm_intake_disabled_stays_deterministic(temp_base_dir, mocker):
+def test_intake_node_llm_intake_disabled_stays_deterministic(temp_base_dir, mocker):
     # conftest forces MAILROOM_LLM_INTAKE=0 → no IntakeAgent construction
     import agents.intake as intake_mod
 
     mocker.patch("agents.intake.should_llm_intake", return_value=True)
-    from graph.build_graph import _ensure_dirs, ingest_node
+    from graph.build_graph import _ensure_dirs, intake_node
     from graph.state import DocumentState
 
     _ensure_dirs()
@@ -466,7 +466,7 @@ def test_ingest_node_llm_intake_disabled_stays_deterministic(temp_base_dir, mock
         "doc_text": "",
         "messages": [],
     }
-    result = ingest_node(state)
+    result = intake_node(state)
     assert result["intake_prep"] is None
     assert "agreement" in result["doc_text"]
     assert intake_mod.llm_intake_enabled() is False

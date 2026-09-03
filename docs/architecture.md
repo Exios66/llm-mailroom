@@ -13,7 +13,7 @@ flowchart TD
     START([START]) --> INGEST
     START -. "resume: manifest shows extraction done" .-> EXTRACT
 
-    INGEST["ingest-document<br/>claim file, read text, normalize-intake, create manifest"]
+    INTAKE["intake-document<br/>claim file, read text, normalize-intake, create manifest"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
     REVIEW_CLASS["classify-document (reviewer)<br/>SorterReviewAgent second opinion<br/>(KANBAN-062 Lane A)"]
@@ -76,7 +76,7 @@ flowchart LR
 
     subgraph ORCH["Orchestration — LangGraph state machine (graph/)"]
         direction TB
-        NODES["ingest → classify → extract →<br/>report → catalog → archive<br/>retries, boss, human review"]
+        NODES["intake → classify → extract →<br/>report → catalog → archive<br/>retries, boss, human review"]
         ROUTING["conditional routing<br/>graph/routing.py"]
     end
 
@@ -127,7 +127,7 @@ flowchart LR
 
 ### LangGraph Engine (`graph/build_graph.py`)
 - One graph execution per document
-- **13 nodes** forming a directed state machine: `ingest`, `classify`,
+- **13 nodes** forming a directed state machine: `intake`, `classify`,
   `retry_classify`, `review_classify` (agent second opinion on exhausted
   medium-band classifications — KANBAN-062 Lane A), `extract`,
   `retry_extract`, `judge_verify` + `arbiter` (gated completeness
@@ -230,7 +230,7 @@ Writes document and matter records to the database (best-effort — pipeline con
 
 | Node | Agent | Purpose |
 |---|---|---|
-| `ingest` | Intake clerk (procedural) | Read file, deterministic `normalize-intake`, create manifest, move to processing |
+| `intake` | Intake agent — the ingest specialist (clerk + LLM-assisted) | Read file, deterministic `normalize-intake`, gated LLM triage/clean/prepare, create manifest, move to processing |
 | `classify` | Sorter | Determine doc_type + confidence |
 | `retry_classify` | Sorter | Re-classify with alternate prompt |
 | `review_classify` | Sorter Reviewer | Agent second opinion when the medium band is exhausted (KANBAN-062) |
