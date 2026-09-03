@@ -320,6 +320,18 @@ def _build_handoff_context(state: DocumentState) -> str | None:
     confidence = state.get("classification_confidence")
     if confidence is not None:
         context += f" confidence={float(confidence):.2f}"
+    # Relations clerk (HUB-040): the archive's advisory RELATED block — what
+    # this document/matter is already known to relate to (zero-shot lift).
+    try:
+        from pipeline.relations import context_block
+
+        related = context_block(
+            matter_id=state.get("matter_id"), doc_id=state.get("doc_id")
+        )
+        if related:
+            context += "\n" + related
+    except Exception:
+        logger.debug("relations_handoff_context_failed")
     if state.get("arbiter_retry_count"):
         findings = list(state.get("judge_findings") or [])
         to_fix = [str(f) for f in (state.get("arbiter_fields_to_fix") or []) if f]
@@ -1811,6 +1823,12 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
 
     dispatch_intake_echo(manifest.model_dump(mode="json"))
 
+    # Relations clerk (HUB-040): the post-archive association pass — off the
+    # document path (daemon thread), advisory, fail-soft.
+    from pipeline.relations import dispatch_relations_scan
+
+    dispatch_relations_scan(manifest.model_dump(mode="json"))
+
     payload = {
         "action": "human_review",
         "doc_id": doc_id or "",
@@ -2178,6 +2196,12 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     from pipeline.gmail_intake import dispatch_intake_echo
 
     dispatch_intake_echo(manifest.model_dump(mode="json"))
+
+    # Relations clerk (HUB-040): the post-archive association pass — off the
+    # document path (daemon thread), advisory, fail-soft.
+    from pipeline.relations import dispatch_relations_scan
+
+    dispatch_relations_scan(manifest.model_dump(mode="json"))
     _maybe_export_warehouse(manifest.doc_id)
     return {"stage": PipelineStage.ARCHIVED.value}
 
@@ -2667,6 +2691,12 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
     from pipeline.gmail_intake import dispatch_intake_echo
 
     dispatch_intake_echo(manifest.model_dump(mode="json"))
+
+    # Relations clerk (HUB-040): the post-archive association pass — off the
+    # document path (daemon thread), advisory, fail-soft.
+    from pipeline.relations import dispatch_relations_scan
+
+    dispatch_relations_scan(manifest.model_dump(mode="json"))
     _maybe_export_warehouse(manifest.doc_id)
     return state
 

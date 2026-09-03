@@ -290,6 +290,7 @@ async def record_edges(edges: list[dict]) -> dict:
 
     ensure_schema()
     inserted = updated = refused = 0
+    inserted_keys: list[tuple[str, str, str]] = []
     async with async_session() as session:
         for edge in edges:
             rtype = str(edge.get("relation_type") or "")
@@ -326,6 +327,7 @@ async def record_edges(edges: list[dict]) -> dict:
                     )
                 )
                 inserted += 1
+                inserted_keys.append((src, dst, rtype))
             else:
                 record.score = float(edge.get("score") or record.score)
                 record.method = str(edge.get("method") or record.method)
@@ -334,7 +336,7 @@ async def record_edges(edges: list[dict]) -> dict:
                 record.updated_at = now
                 updated += 1
         await session.commit()
-    return {"inserted": inserted, "updated": updated, "refused": refused}
+    return {"inserted": inserted, "updated": updated, "refused": refused, "inserted_keys": inserted_keys}
 
 
 async def list_edges(
