@@ -364,8 +364,11 @@ approval-inclusive; the state counter `arbiter_retry_count` is compared against 
 | **Output** | `intake.triage`: `primary_doc_class` + `doc_subclass` + `confidence` + `gist` + `keywords` |
 | **Personality** | Fast, grounded intake clerk — the accurate log, not the final word |
 
-The ONLY agent on a free OpenRouter model (`z-ai/glm-5.2:free`, $0 in
-`cost_models`, rate-limited). It is **advisory by design**: the read rides
+The preliminary sorter read for Gmail-intake documents. Per human directive
+(2026-09-02) it rides the **most capable OpenRouter model in the registry**
+(`deepseek/deepseek-v4-pro`, `cost_models` $0.435/$0.87 per 1M) — the
+deterministic intake preparation (`apply_intake`) stays procedural and never
+calls an LLM. It is **advisory by design**: the read rides
 `intake_meta["triage"]` into the terminal manifest (and the completion echo's
 "INTAKE TRIAGE (pre-pipeline)" section) but never influences the sorter or
 specialists — the full pipeline classifies and extracts untouched. Fails
