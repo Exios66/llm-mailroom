@@ -224,6 +224,84 @@ def test_validate_triage_extraction_empty_on_unknown_class():
     assert out["extraction"] == {}
 
 
+# ── unknown-class best-effort extraction (HUB-049) ────────────────────────
+
+
+def test_unknown_class_with_doc_text_extracts_header_entities():
+    """A short header-bearing document that the free model cannot pin still
+    yields grounded key entities via the deterministic header pass."""
+    out = validate_triage(
+        {
+            "primary_doc_class": "unknown",
+            "confidence": 0.3,
+            "gist": "unclear",
+            "keywords": [],
+        },
+        doc_text=(
+            "From: phillip.allen@enron.com\n"
+            "To: colleen.sullivan@enron.com\n"
+            "Date: 2000-08-09\n"
+            "Subject: Transportation model\n\n"
+            "I am out on Friday, Keith will attend."
+        ),
+    )
+    ext = out["extraction"]
+    assert ext["sender"] == "phillip.allen@enron.com"
+    assert ext["recipient"] == "colleen.sullivan@enron.com"
+    assert ext["communication_date"] == "2000-08-09"
+    assert ext["subject_matter"] == "Transportation model"
+
+
+def test_unknown_class_deterministic_header_extraction_markdown_table():
+    """The Enron Markdown sample header table (| From | … |) form is parsed."""
+    from agents.gmail_triage import _deterministic_header_extraction
+
+    out = _deterministic_header_extraction(
+        "# Re: TRANSPORTATION MODEL\n"
+        "\n"
+        "| Field | Value |\n"
+        "| --- | --- |\n"
+        "| From | phillip.allen@enron.com |\n"
+        "| To | colleen.sullivan@enron.com |\n"
+        "| Date | 2000-08-09T14:11:00+00:00 |\n"
+    )
+    assert out["sender"] == "phillip.allen@enron.com"
+    assert out["recipient"] == "colleen.sullivan@enron.com"
+    assert out["communication_date"] == "2000-08-09T14:11:00+00:00"
+
+
+def test_unknown_class_extraction_merges_model_keys_and_header():
+    """Model-provided correspondence-shaped keys win; the header pass fills
+    the missing grounded fields; cross-class model keys are dropped."""
+    out = validate_triage(
+        {
+            "primary_doc_class": "unknown",
+            "confidence": 0.3,
+            "gist": "unclear",
+            "extraction": {
+                "sender": "model-guessed@x.com",
+                "parties": ["Enron", "El Paso"],  # cross-class — dropped
+                "action_items": ["call back"],
+            },
+        },
+        doc_text="From: phillip.allen@enron.com\nTo: colleen.sullivan@enron.com\nDate: 2000-08-09\n",
+    )
+    ext = out["extraction"]
+    assert ext["sender"] == "model-guessed@x.com"  # model key wins
+    assert "parties" not in ext
+    assert ext["action_items"] == ["call back"]
+    assert ext["recipient"] == "colleen.sullivan@enron.com"  # header fills
+    assert ext["communication_date"] == "2000-08-09"
+
+
+def test_unknown_class_fallback_never_invents_when_no_header():
+    out = validate_triage(
+        {"primary_doc_class": "unknown", "confidence": 0.1, "gist": "gibberish"},
+        doc_text="qvx zzrq 12345 blah blah",
+    )
+    assert out["extraction"] == {}
+
+
 def test_validate_triage_drops_non_schema_extraction_unknown_fields():
     out = validate_triage(
         {
@@ -511,7 +589,7 @@ def test_triage_lane_writes_own_audit_section(temp_base_dir, mocker):
     fake_agent.return_value.triage.return_value = {
         "primary_doc_class": "insurance_claim",
         "doc_subclass": None,
-        "confidence": 0.85,
+        "confidence": 0.9,  # > taxonomy low (0.88) → archive terminal
         "gist": "FNOL",
         "keywords": ["hail"],
     }
@@ -528,6 +606,107 @@ def test_triage_lane_writes_own_audit_section(temp_base_dir, mocker):
     assert all(e.startswith("triage_") for e in events)  # own section — never pipeline events
     assert rows[-1]["detail"]["archive_path"].endswith("fnol_audit.txt")
     assert rows[-1]["detail"]["file_sha256"]
+
+
+# ── lane review routing (confidence/unknown gate) ─────────────────────────
+
+
+def test_watcher_triage_low_confidence_routes_to_review(temp_base_dir, mocker):
+    """Confidence below the taxonomy `low` (0.88) parks the doc for HUMAN
+    REVIEW instead of archiving a possibly-wrong classification."""
+    from pipeline.bins import review_dir
+    from pipeline.watcher import Watcher
+
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="fnol_lowconf.txt")
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    fake_agent.return_value.triage.return_value = {
+        "primary_doc_class": "insurance_claim",
+        "doc_subclass": None,
+        "confidence": 0.5,
+        "gist": "FNOL?",
+        "keywords": ["hail"],
+    }
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    spy = mocker.patch("pipeline.watcher.run_pipeline")
+
+    Watcher()._process_existing(inbox_file)
+
+    spy.assert_not_called()
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    assert manifest is not None
+    assert manifest["stage"] == "review"
+    assert manifest["doc_type"] == "insurance_claim"
+    assert "triage_low_confidence" in (manifest["escalation_reason"] or "")
+    # The file is parked in the review bin.
+    parked = [p for p in review_dir().iterdir() if p.name == inbox_file.name]
+    assert len(parked) == 1
+
+
+def test_watcher_triage_low_confidence_review_audit_and_echo(temp_base_dir, mocker):
+    """The review terminal writes a triage_reviewed audit entry and the echo
+    dispatches with the REVIEW stage (so the sender gets why/next-steps)."""
+    import asyncio
+
+    from pipeline.watcher import Watcher
+    from storage.audit_log import get_audit_chain
+
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="fnol_review_audit.txt")
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    fake_agent.return_value.triage.return_value = {
+        "primary_doc_class": "insurance_claim",
+        "doc_subclass": None,
+        "confidence": 0.4,
+        "gist": "FNOL?",
+        "keywords": [],
+    }
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    echo_spy = mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+
+    Watcher()._process_existing(inbox_file)
+
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    rows = asyncio.run(get_audit_chain(manifest["doc_id"]))
+    events = [r["event"] for r in rows]
+    assert events == ["triage_ingested", "triage_classified", "triage_reviewed"]
+    assert rows[-1]["detail"]["review_path"].endswith("fnol_review_audit.txt")
+    echo_spy.assert_called_once()
+    echoed = echo_spy.call_args.args[0]
+    assert echoed["stage"] == "review"
+
+
+def test_watcher_triage_unknown_class_routes_to_review(temp_base_dir, mocker):
+    """An `unknown` class parks for human review (never archived as unknown)
+    while keeping the best-effort extraction for the reviewer."""
+    from pipeline.watcher import Watcher
+
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="weird_doc.txt")
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    fake_agent.return_value.triage.return_value = {
+        "primary_doc_class": "unknown",
+        "doc_subclass": None,
+        "confidence": 0.3,
+        "gist": "unclear",
+        "keywords": [],
+        "extraction": {"sender": "a@b.c", "recipient": "d@e.f"},
+    }
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+
+    Watcher()._process_existing(inbox_file)
+
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    assert manifest is not None
+    assert manifest["stage"] == "review"
+    assert manifest["doc_type"] == "unknown"
+    assert "triage_unknown_class" in (manifest["escalation_reason"] or "")
+    assert manifest["intake"]["triage"]["extraction"]["sender"] == "a@b.c"
 
 
 def test_watcher_multi_doc_gmail_runs_full_pipeline_without_triage(temp_base_dir, mocker):
@@ -633,22 +812,44 @@ def test_triage_lane_failure_fails_soft(temp_base_dir, mocker):
     assert manifest is not None and manifest["stage"] == "failed"
 
 
-def test_triage_lane_agent_failure_fails_soft(temp_base_dir, mocker):
+def test_triage_lane_llm_failure_parks_in_review(temp_base_dir, mocker):
+    """A transient free-team failure (e.g. upstream 429 rate limits) is NOT a
+    document defect: the unclassified doc parks in REVIEW with
+    `triage_llm_unavailable` — never the failed bin (HUB-049)."""
+    import asyncio
+
+    from pipeline.bins import review_dir
     from pipeline.watcher import Watcher
+    from storage.audit_log import get_audit_chain
 
     inbox_file = _gmail_inbox_file(temp_base_dir, name="fnol_agentfail.txt")
 
     fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
     fake_agent.return_value.triage.side_effect = RuntimeError("rate limited")
     mocker.patch("pipeline.watcher._notify_intake_reaction")
+    echo_spy = mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
     mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
     spy = mocker.patch("pipeline.watcher.run_pipeline")
 
     Watcher()._process_existing(inbox_file)
 
-    assert spy.call_count == 0
+    # The paid pipeline stays untouched; the document parks in review.
+    spy.assert_not_called()
     manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
-    assert manifest is not None and manifest["stage"] == "failed"
+    assert manifest is not None
+    assert manifest["stage"] == "review"
+    assert manifest["doc_type"] == "unknown"
+    assert (manifest["escalation_reason"] or "").startswith("triage_llm_unavailable")
+    parked = [p for p in review_dir().iterdir() if p.name == inbox_file.name]
+    assert len(parked) == 1
+    # Audit: ingested + reviewed, and NEVER classified (the read never ran).
+    rows = asyncio.run(get_audit_chain(manifest["doc_id"]))
+    assert [r["event"] for r in rows] == ["triage_ingested", "triage_reviewed"]
+    assert rows[-1]["detail"]["escalation_reason"].startswith("triage_llm_unavailable")
+    # The sender gets the soft ⏸ echo, not ❌.
+    echo_spy.assert_called_once()
+    echoed = echo_spy.call_args.args[0]
+    assert echoed["stage"] == "review"
 
 
 # ── all document types through the triage lane (HUB-037) ─────────────────
@@ -662,12 +863,14 @@ def test_triage_lane_agent_failure_fails_soft(temp_base_dir, mocker):
         ("sample_insurance_claim_text", "insurance_claim"),
         ("sample_corporate_text", "corporate_record"),
         ("sample_correspondence_text", "correspondence"),
+        ("sample_compliance_text", "compliance_filing"),
     ],
 )
 def test_triage_lane_accepts_all_doc_types(temp_base_dir, mocker, request, fixture_name, doc_class):
     """The free triage team can process + accept EVERY canonical doc type —
-    contracts, merger agreements, insurance claims, corporate records, and
-    correspondences — as single-document Gmail inputs."""
+    contracts, merger agreements, insurance claims, corporate records,
+    correspondences, and compliance filings — as single-document Gmail
+    inputs."""
     from pipeline.bins import inbox_dir, write_inbox_meta
     from pipeline.watcher import Watcher
 

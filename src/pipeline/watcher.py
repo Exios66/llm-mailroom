@@ -487,33 +487,128 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     Audit entries live in their OWN section (`triage_ingested` /
     `triage_classified` / `triage_archived` — never the pipeline's
     `ingested/classified/extracted/archived` vocabulary) so the stored
-    audits are never conflated. Fail-soft: any error parks the document to
-    `failed/` via the watcher's abort path — the intake must never crash.
+    audits are never conflated. Fail-soft, two tiers (HUB-049): a transient
+    triage-read failure (free-team 429s, timeouts) parks the document in
+    `review/` with `triage_llm_unavailable` — never the failed bin — while
+    any later unexpected error still parks to `failed/` via the watcher's
+    abort path; the intake must never crash either way.
     """
     from schemas.audit import build_audit_entry
     from schemas.manifest import DocumentManifest, PipelineStage
     from agents.gmail_triage import GmailTriageAgent
     from agents.intake import apply_intake
     from graph.build_graph import _read_file_text, _latest_audit_hash, _write_audit_log
-    from pipeline.bins import archive_dir, move_to_archive, save_manifest
+    from pipeline.bins import archive_dir, move_to_archive, move_to_review, save_manifest
 
     doc_text, _ = _read_file_text(claimed)
     raw_text = doc_text
     doc_text, intake_stats = apply_intake(doc_text, filename=claimed.name)
 
     agent = GmailTriageAgent()
-    triage = agent.triage(doc_text, filename=claimed.name)
+    try:
+        triage = agent.triage(doc_text, filename=claimed.name)
+    except Exception as exc:
+        # HUB-049 lane hardening: a transient free-team failure (upstream 429
+        # rate limits, timeouts, parse failures beyond the retry contract) is
+        # NOT a document defect — the failed bin is for real handling errors.
+        # The unclassified document parks in REVIEW with the escalation
+        # reason, so the completion echo shows an actionable ⏸ instead of a
+        # misleading ❌ and the document can be reprocessed when the free
+        # team is reachable again.
+        reason = f"triage_llm_unavailable: {type(exc).__name__}: {str(exc)[:200]}"
+        manifest = DocumentManifest(
+            matter_id=matter_id,
+            original_filename=claimed.name,
+            stage=PipelineStage.REVIEW,
+            doc_type="unknown",
+            classification_confidence=None,
+            classification_attempts=1,
+            escalation_reason=reason,
+            intake=dict(intake_meta),
+        )
+        manifest.touch()
+        manifest_path = save_manifest(manifest)
+        prev = _latest_audit_hash(manifest.doc_id)
+        entry = build_audit_entry(
+            manifest.doc_id,
+            matter_id,
+            "triage_ingested",
+            "triage",
+            {
+                "file_sha256": _file_sha256(claimed),
+                "chars": len(doc_text),
+                "original_filename": claimed.name,
+            },
+            prev_hash=prev,
+        )
+        _write_audit_log(entry)
+        prev = entry.entry_hash
+        review_path = move_to_review(claimed, manifest)
+        entry = build_audit_entry(
+            manifest.doc_id,
+            matter_id,
+            "triage_reviewed",
+            "archivist",
+            {
+                "manifest_path": str(manifest_path),
+                "review_path": str(review_path),
+                "escalation_reason": reason,
+                "route": "triage",
+            },
+            prev_hash=prev,
+        )
+        _write_audit_log(entry)
+        logger.warning(
+            "triage_lane_llm_unavailable",
+            doc_id=manifest.doc_id,
+            file=str(review_path),
+            matter_id=matter_id,
+            error=reason,
+        )
+        from .gmail_intake import dispatch_intake_echo
+
+        dispatch_intake_echo(manifest.model_dump(mode="json"))
+        return {"doc_id": manifest.doc_id, "stage": "review"}
     intake_meta = dict(intake_meta)
     intake_meta["triage"] = triage
+
+    # HUB-confidence gate: the free lane has NO retry loop and no reviewer, so
+    # a triage the taxonomy would not trust must go to HUMAN REVIEW instead of
+    # being archived under a possibly-wrong class. Two routes to review:
+    #   * primary class clamps to `unknown` (the free model could not pin it),
+    #   * confidence < the taxonomy's `low` threshold for the doc class.
+    # Review-parked manifests keep the best-effort extracted entities (HUB-049
+    # fallback) so the reviewer sees what the team found.
+    from pipeline.config import get_confidence_thresholds
+
+    doc_class = triage.get("primary_doc_class") or "unknown"
+    conf = triage.get("confidence")
+    review_low = float(get_confidence_thresholds(doc_class).get("low", 0.88))
+    if doc_class == "unknown":
+        terminal_stage = PipelineStage.REVIEW
+        escalation_reason = (
+            "triage_unknown_class — the free triage team could not pin a "
+            "document class; parked for human review"
+        )
+    elif conf is None or conf < review_low:
+        terminal_stage = PipelineStage.REVIEW
+        escalation_reason = (
+            f"triage_low_confidence {conf} < {review_low} — the free triage "
+            "team was not certain enough; parked for human review"
+        )
+    else:
+        terminal_stage = PipelineStage.ARCHIVED
+        escalation_reason = None
 
     manifest = DocumentManifest(
         matter_id=matter_id,
         original_filename=claimed.name,
-        stage=PipelineStage.ARCHIVED,
-        doc_type=triage.get("primary_doc_class") or "unknown",
+        stage=terminal_stage,
+        doc_type=doc_class,
         doc_subclass=triage.get("doc_subclass"),
-        classification_confidence=triage.get("confidence"),
+        classification_confidence=conf,
         classification_attempts=1,
+        escalation_reason=escalation_reason,
         intake=intake_meta,
     )
     manifest.touch()
@@ -553,43 +648,58 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         _write_audit_log(entry)
         prev = entry.entry_hash
 
-    archive_path = move_to_archive(
-        claimed, matter_id, manifest.doc_type or "unknown", doc_id=manifest.doc_id
-    )
     manifest_path = save_manifest(manifest)
-    sidecar = None
-    try:
-        sidecar = archive_dir(matter_id, manifest.doc_type or "unknown") / f"{archive_path.stem}.json"
-        sidecar.write_text(manifest.model_dump_json(indent=2))
-    except Exception:
-        logger.warning("triage_archive_sidecar_failed", doc_id=manifest.doc_id)
-
-    archived_sha256 = _file_sha256(archive_path)
-    archived_entry = build_audit_entry(
-        manifest.doc_id,
-        matter_id,
-        "triage_archived",
-        "archivist",
-        {
-            "archive_path": str(archive_path),
+    if terminal_stage == PipelineStage.REVIEW:
+        terminal_path = move_to_review(claimed, manifest)
+        terminal_event = "triage_reviewed"
+        terminal_detail = {
+            "manifest_path": str(manifest_path),
+            "review_path": str(terminal_path),
+            "doc_type": manifest.doc_type,
+            "escalation_reason": escalation_reason,
+            "confidence": conf,
+            "route": "triage",
+        }
+    else:
+        terminal_path = move_to_archive(
+            claimed, matter_id, manifest.doc_type or "unknown", doc_id=manifest.doc_id
+        )
+        terminal_event = "triage_archived"
+        sidecar = None
+        try:
+            sidecar = archive_dir(matter_id, manifest.doc_type or "unknown") / f"{terminal_path.stem}.json"
+            sidecar.write_text(manifest.model_dump_json(indent=2))
+        except Exception:
+            logger.warning("triage_archive_sidecar_failed", doc_id=manifest.doc_id)
+        terminal_detail = {
+            "archive_path": str(terminal_path),
             "manifest_path": str(manifest_path),
             "archive_sidecar": str(sidecar) if sidecar else None,
             "doc_type": manifest.doc_type,
-            "file_sha256": archived_sha256,
-            "confidence": triage.get("confidence"),
+            "file_sha256": _file_sha256(terminal_path),
+            "confidence": conf,
             "route": "triage",
-        },
+        }
+
+    terminal_entry = build_audit_entry(
+        manifest.doc_id,
+        matter_id,
+        terminal_event,
+        "archivist",
+        terminal_detail,
         prev_hash=prev,
     )
-    _write_audit_log(archived_entry)
+    _write_audit_log(terminal_entry)
 
     logger.info(
         "triage_lane_complete",
         doc_id=manifest.doc_id,
-        file=str(archive_path),
+        stage=terminal_stage.value,
+        file=str(terminal_path),
         matter_id=matter_id,
         doc_class=triage.get("primary_doc_class"),
         confidence=triage.get("confidence"),
+        escalation_reason=escalation_reason,
     )
 
     # Completion echo on the source thread (same contract as the pipeline).
