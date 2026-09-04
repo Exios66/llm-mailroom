@@ -23,18 +23,12 @@ def free_only_enabled() -> bool:
     )
 
 
-def assert_free_model(model: str) -> None:
-    """Raise when ``MAILROOM_LLM_FREE_ONLY`` is on and ``model`` is not free.
-
-    No-op when the flag is off. A model is free when its taxonomy
-    ``cost_models`` prices are both 0.0 (the registry is the pricing source
-    of truth) or, unregistered, when it carries OpenRouter's ``:free``
-    suffix convention. Anything else is refused BEFORE any client (and
-    therefore any request) can exist — callers fail soft per their own
-    error paths, documents park, nothing spends.
+def is_free_model(model: str) -> bool:
+    """The free-model predicate (shared by the guardrail and the failover
+    swarm): a model is free when its taxonomy ``cost_models`` prices are both
+    0.0 (the registry is the pricing source of truth) or, unregistered, when
+    it carries OpenRouter's ``:free`` suffix convention.
     """
-    if not free_only_enabled():
-        return
     cost = (load_config().get("cost_models", {}) or {}).get(model) or {}
     try:
         free = float(cost.get("input_per_million", -1)) == 0.0 and float(
@@ -42,7 +36,20 @@ def assert_free_model(model: str) -> None:
         ) == 0.0
     except (TypeError, ValueError):
         free = False
-    if not free and not str(model).endswith(":free"):
+    return free or str(model).endswith(":free")
+
+
+def assert_free_model(model: str) -> None:
+    """Raise when ``MAILROOM_LLM_FREE_ONLY`` is on and ``model`` is not free.
+
+    No-op when the flag is off. Uses the shared :func:`is_free_model`
+    predicate; anything else is refused BEFORE any client (and therefore any
+    request) can exist — callers fail soft per their own error paths,
+    documents park, nothing spends.
+    """
+    if not free_only_enabled():
+        return
+    if not is_free_model(model):
         raise RuntimeError(
             f"MAILROOM_LLM_FREE_ONLY is on: model '{model}' is not free "
             "(cost_models prices non-zero, or unregistered without a ':free' "
