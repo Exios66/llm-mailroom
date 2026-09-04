@@ -133,6 +133,98 @@ def test_no_rotation_on_connection_errors(no_sleep, swarm, monkeypatch):
     assert client.calls == [SWARM[0], SWARM[0], SWARM[0]]
 
 
+def test_capability_400_rotates_to_next_model(no_sleep, swarm):
+    """Live-verified: ling via Novita rejects structured-outputs with a 400 —
+    a MODEL-capability mismatch, so the swarm rotates (BadRequestError is
+    otherwise never retried)."""
+    from unittest.mock import MagicMock
+
+    from llm.retry import retry_chat_completion
+    from openai import BadRequestError
+
+    def _cap400() -> BadRequestError:
+        resp = MagicMock()
+        resp.status_code = 400
+        resp.headers = {}
+        return BadRequestError(
+            "model: inclusionai/ling-3.0-flash-fin does not support feature: "
+            "structured-outputs",
+            response=resp,
+            body={"message": "does not support feature: structured-outputs"},
+        )
+
+    class _CapClient:
+        def __init__(self):
+            self.calls = []
+            self.ok = object()
+
+        @property
+        def chat(self):
+            outer = self
+
+            class _Chat:
+                @property
+                def completions(self):
+                    class _Completions:
+                        def create(self, **kwargs):
+                            outer.calls.append(kwargs["model"])
+                            if kwargs["model"] == SWARM[0]:
+                                raise _rl()
+                            if kwargs["model"] == SWARM[1]:
+                                raise _cap400()
+                            return outer.ok
+
+                    return _Completions()
+
+            return _Chat()
+
+    client = _CapClient()
+    result = retry_chat_completion(
+        client, model=SWARM[0], messages=[], max_attempts=4, name="t"
+    )
+    assert result is client.ok
+    assert client.calls == [SWARM[0], SWARM[1], SWARM[2]]
+
+
+def test_generic_400_never_rotates(no_sleep, swarm):
+    """A genuine bad request stays on the model (no failover)."""
+    from unittest.mock import MagicMock
+
+    from llm.retry import retry_chat_completion
+    from openai import BadRequestError
+
+    resp = MagicMock()
+    resp.status_code = 400
+    resp.headers = {}
+    err = BadRequestError("invalid messages", response=resp, body={"message": "invalid"})
+
+    class _BadClient:
+        def __init__(self):
+            self.calls = []
+
+        @property
+        def chat(self):
+            outer = self
+
+            class _Chat:
+                @property
+                def completions(self):
+                    class _Completions:
+                        def create(self, **kwargs):
+                            outer.calls.append(kwargs["model"])
+                            raise err
+
+                    return _Completions()
+
+            return _Chat()
+
+    client = _BadClient()
+    with pytest.raises(BadRequestError):
+        retry_chat_completion(client, model=SWARM[0], messages=[], max_attempts=3)
+    # a genuine 400 is not retryable and not a failover trigger: one attempt
+    assert client.calls == [SWARM[0]]
+
+
 def test_is_free_model_predicate():
     from llm.client import is_free_model
 

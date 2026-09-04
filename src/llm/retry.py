@@ -82,6 +82,13 @@ def retry_sleep_seconds(exc: Exception, attempt: int, cfg: dict | None = None) -
 # exact quirk — never a blanket 4xx retry.
 _JSON_MODE_400_MARKERS = ("must contain the word 'json'",)
 
+# Model-capability 400s (free-swarm failover): the provider rejects the
+# request because THIS MODEL lacks the requested feature (live: ling via
+# Novita — "does not support feature: structured-outputs"). A capability
+# mismatch is a property of the MODEL, not of the request — the next swarm
+# entry is the correct response. Never a blanket 4xx retry.
+_CAPABILITY_400_MARKERS = ("does not support feature",)
+
 
 def _is_json_mode_400(exc: Exception) -> bool:
     if not isinstance(exc, BadRequestError):
@@ -91,6 +98,18 @@ def _is_json_mode_400(exc: Exception) -> bool:
     except Exception:
         return False
     return any(marker in text for marker in _JSON_MODE_400_MARKERS)
+
+
+def _is_model_capability_error(exc: Exception) -> bool:
+    """A 400 that is really a MODEL-capability mismatch (free-swarm failover
+    trigger) — e.g. a provider rejecting the model for structured-outputs."""
+    if not isinstance(exc, BadRequestError):
+        return False
+    try:
+        text = str(exc)
+    except Exception:
+        return False
+    return any(marker in text for marker in _CAPABILITY_400_MARKERS)
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -192,9 +211,16 @@ def retry_chat_completion(
         try:
             return client.chat.completions.create(**kwargs, timeout=timeout)
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
-            if not _is_retryable(exc) or attempt >= max_attempts:
+            # A model-capability 400 is not "retryable" in place, but it IS a
+            # failover trigger — the next swarm entry may support the feature.
+            if (
+                not _is_retryable(exc)
+                and not _is_model_capability_error(exc)
+            ) or attempt >= max_attempts:
                 raise
-            if failover and isinstance(exc, RateLimitError):
+            if failover and (
+                isinstance(exc, RateLimitError) or _is_model_capability_error(exc)
+            ):
                 nxt = failover.pop(0)
                 logger.warning(
                     "llm_free_failover",
