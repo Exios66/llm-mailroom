@@ -596,6 +596,13 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     from .gmail_intake import dispatch_intake_echo
 
     dispatch_intake_echo(manifest.model_dump(mode="json"))
+
+    # Relations clerk (HUB-040/043): the triage lane reaches a terminal
+    # manifest OUTSIDE the graph, so the post-archive association pass fires
+    # here too — daemon thread, fail-soft.
+    from .relations import dispatch_relations_scan
+
+    dispatch_relations_scan(manifest.model_dump(mode="json"))
     return {"doc_id": manifest.doc_id, "stage": "archived"}
 
 
