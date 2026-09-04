@@ -797,6 +797,19 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
         keywords = triage.get("keywords") or []
         if keywords:
             lines.append(f"keywords:  {', '.join(str(k) for k in keywords)}")
+        # Key/concise entity extraction (HUB-048): the free-model triage read
+        # carries the per-class key entities (sender/recipient/date/amounts/
+        # action items for correspondence; parties/effective_date/… for
+        # contracts; claim_number/insurer/… for insurance claims) so short
+        # documents like Enron emails give a concise entity answer.
+        extraction = triage.get("extraction")
+        if isinstance(extraction, dict) and extraction:
+            lines.append("EXTRACTED KEY ENTITIES (triage):")
+            for k, v in extraction.items():
+                if isinstance(v, list):
+                    lines.append(f"  {k}: {', '.join(str(x) for x in v)}")
+                else:
+                    lines.append(f"  {k}: {v}")
         lines.append("")
 
     # Honest handoff (HUB-037): the free triage capability pre-check rejected

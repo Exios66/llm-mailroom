@@ -153,6 +153,266 @@ def test_triage_schema_contract():
     assert set(TRIAGE_SCHEMA["required"]) == {"primary_doc_class", "confidence", "gist"}
 
 
+# ── key/concise entity extraction (HUB-048) ───────────────────────────────
+
+
+def test_extraction_schema_for_correspondence_has_key_fields():
+    from agents.gmail_triage import extraction_schema_for
+
+    s = extraction_schema_for("correspondence")
+    props = set(s["properties"].keys())
+    assert {"sender", "recipient", "communication_date", "action_items",
+            "subject_matter", "demand_amount", "intent", "urgency"} <= props
+
+
+def test_validate_triage_extracts_key_entities_for_correspondence():
+    out = validate_triage(
+        {
+            "primary_doc_class": "correspondence",
+            "confidence": 0.95,
+            "gist": "a short email",
+            "extraction": {
+                "sender": "phillip.allen@enron.com",
+                "recipient": "colleen.sullivan@enron.com",
+                "communication_date": "2000-08-09",
+                "demand_amount": 1250.00,
+                "action_items": ["attend Friday", "reach out to Keith"],
+                "subject_matter": "transportation model",
+                "intent": "request",
+                "urgency": "low",
+            },
+        }
+    )
+    ext = out["extraction"]
+    assert ext["sender"] == "phillip.allen@enron.com"
+    assert ext["recipient"] == "colleen.sullivan@enron.com"
+    assert ext["communication_date"] == "2000-08-09"
+    assert ext["demand_amount"] == 1250.0
+    assert ext["action_items"] == ["attend Friday", "reach out to Keith"]
+    assert ext["subject_matter"] == "transportation model"
+
+
+def test_validate_triage_clamps_extraction_to_class_schema():
+    # Free model spuriously emits fields from a DIFFERENT class (contract
+    # parties on a correspondence) — they must be dropped by the canonical
+    # schema clamp.
+    from agents.gmail_triage import validate_triage
+
+    out = validate_triage(
+        {
+            "primary_doc_class": "correspondence",
+            "confidence": 0.9,
+            "gist": "x",
+            "extraction": {
+                "sender": "a@b.c",
+                "parties": ["Enron", "El Paso"],       # not in CorrespondenceExtraction
+                "governing_law": "NY",                  # not in CorrespondenceExtraction
+                "recipient": "c@d.e",
+            },
+        }
+    )
+    assert "parties" not in out["extraction"]
+    assert "governing_law" not in out["extraction"]
+    assert out["extraction"]["sender"] == "a@b.c"
+    assert out["extraction"]["recipient"] == "c@d.e"
+
+
+def test_validate_triage_extraction_empty_on_unknown_class():
+    out = validate_triage(
+        {"primary_doc_class": "unknown", "confidence": 0.0, "gist": ""}
+    )
+    assert out["extraction"] == {}
+
+
+def test_validate_triage_drops_non_schema_extraction_unknown_fields():
+    out = validate_triage(
+        {
+            "primary_doc_class": "insurance_claim",
+            "confidence": 0.9,
+            "gist": "fnol",
+            "extraction": {
+                "claim_number": "2026-CLM-041701",
+                "insurer": "Acme Insurance",
+                "claimed_amount": 18530.0,
+                "not_a_real_field": "junk",
+                "denial_reasons": ["late notice", "docs"],
+            },
+        }
+    )
+    ext = out["extraction"]
+    assert ext["claim_number"] == "2026-CLM-041701"
+    assert ext["insurer"] == "Acme Insurance"
+    assert ext["claimed_amount"] == 18530.0
+    assert ext["denial_reasons"] == ["late notice", "docs"]
+    assert "not_a_real_field" not in ext
+
+
+def test_validate_triage_caps_list_and_string_fields():
+    out = validate_triage(
+        {
+            "primary_doc_class": "correspondence",
+            "confidence": 0.9,
+            "gist": "x",
+            "extraction": {
+                "action_items": [f"item {i}" for i in range(50)],
+                "sender": "x" * 500,
+            },
+        }
+    )
+    assert len(out["extraction"]["action_items"]) <= 10
+    assert len(out["extraction"]["sender"]) <= 200
+
+
+def test_triage_agent_returns_extraction(mock_openai_client, sample_insurance_claim_text):
+    from unittest.mock import MagicMock
+
+    agent = GmailTriageAgent()
+    choice = MagicMock()
+    choice.message.content = json.dumps(
+        {
+            "primary_doc_class": "insurance_claim",
+            "doc_subclass": "other",
+            "confidence": 0.91,
+            "gist": "FNOL for hail damage",
+            "keywords": ["hail"],
+            "extraction": {
+                "claim_number": "2026-CLM-041701",
+                "insurer": "Acme Insurance",
+                "claimed_amount": 18530.0,
+            },
+        }
+    )
+    mock_openai_client.chat.completions.create.return_value.choices = [choice]
+
+    out = agent.triage(sample_insurance_claim_text, filename="claim.txt")
+    assert out["extraction"]["claim_number"] == "2026-CLM-041701"
+    assert out["extraction"]["insurer"] == "Acme Insurance"
+    assert out["extraction"]["claimed_amount"] == 18530.0
+
+
+def test_triage_agent_short_correspondence_gets_key_entities(
+    mock_openai_client, sample_correspondence_text
+):
+    """A SHORT Enron-like email must yield concise key entities (HUB-048)."""
+    from unittest.mock import MagicMock
+
+    agent = GmailTriageAgent()
+    choice = MagicMock()
+    choice.message.content = json.dumps(
+        {
+            "primary_doc_class": "correspondence",
+            "doc_subclass": "email",
+            "confidence": 0.98,
+            "gist": "A short internal email about a meeting.",
+            "keywords": ["transportation"],
+            "extraction": {
+                "sender": "phillip.allen@enron.com",
+                "recipient": "colleen.sullivan@enron.com",
+                "communication_date": "2000-08-09",
+                "subject_matter": "transportation model",
+                "action_items": ["Keith Holst will attend"],
+            },
+        }
+    )
+    mock_openai_client.chat.completions.create.return_value.choices = [choice]
+
+    out = agent.triage(sample_correspondence_text, filename="email.md")
+    assert out["primary_doc_class"] == "correspondence"
+    assert out["extraction"]["sender"] == "phillip.allen@enron.com"
+    assert out["extraction"]["recipient"] == "colleen.sullivan@enron.com"
+    assert out["extraction"]["communication_date"] == "2000-08-09"
+    assert out["extraction"]["action_items"] == ["Keith Holst will attend"]
+
+
+def test_echo_renders_intake_triage_extraction(temp_base_dir):
+    """The completion echo's INTAKE TRIAGE section renders key entities."""
+    from pipeline import gmail_intake
+    from pipeline.gmail_intake import build_echo_body
+
+    body = build_echo_body(
+        {
+            "stage": "archived",
+            "doc_type": "correspondence",
+            "doc_subclass": "email",
+            "classification_confidence": 0.98,
+            "intake": {
+                "sender": "phillip.allen@enron.com",
+                "received_at": "2026-09-04T00:00:00Z",
+                "triage": {
+                    "primary_doc_class": "correspondence",
+                    "doc_subclass": "email",
+                    "confidence": 0.98,
+                    "gist": "short email",
+                    "keywords": ["transportation"],
+                    "extraction": {
+                        "sender": "phillip.allen@enron.com",
+                        "recipient": "colleen.sullivan@enron.com",
+                        "communication_date": "2000-08-09",
+                        "action_items": ["attend Friday"],
+                    },
+                },
+            },
+        },
+        [],
+    )
+    assert "EXTRACTED KEY ENTITIES (triage):" in body
+    assert "sender: phillip.allen@enron.com" in body
+    assert "recipient: colleen.sullivan@enron.com" in body
+    assert "communication_date: 2000-08-09" in body
+    assert "action_items: attend Friday" in body
+
+
+def test_triage_handles_real_enron_short_email_key_entities(mock_openai_client):
+    """The free triage lane extracts key entities from the REAL short Enron
+    email (allen-p/_sent_mail, 542 bytes — the human-cited 'short
+    correspondence' shape) verbatim from its body, via the existing
+    CorrespondenceExtraction schema (HUB-048)."""
+    from unittest.mock import MagicMock
+
+    enron_email = """# Re: TRANSPORTATION MODEL
+
+From: phillip.allen@enron.com
+To: colleen.sullivan@enron.com
+Date: 2000-08-09T14:11:00+00:00
+
+Colleen,
+
+I am out of the office on Friday, but Keith Holst will attend. He has been
+managing the Transport on the west desk.
+
+Phillip
+"""
+    agent = GmailTriageAgent()
+    choice = MagicMock()
+    choice.message.content = json.dumps(
+        {
+            "primary_doc_class": "correspondence",
+            "doc_subclass": "email",
+            "confidence": 0.97,
+            "gist": "A short email about Friday coverage.",
+            "keywords": ["transportation", "Friday"],
+            "extraction": {
+                "sender": "phillip.allen@enron.com",
+                "recipient": "colleen.sullivan@enron.com",
+                "communication_date": "2000-08-09",
+                "subject_matter": "transportation model",
+                "action_items": ["Keith Holst will attend for Phillip"],
+                "intent": "coordination",
+            },
+        }
+    )
+    mock_openai_client.chat.completions.create.return_value.choices = [choice]
+
+    out = agent.triage(enron_email, filename="email-allen-p-193.md")
+    assert out["primary_doc_class"] == "correspondence"
+    assert out["doc_subclass"] == "email"
+    ext = out["extraction"]
+    assert ext["sender"] == "phillip.allen@enron.com"
+    assert ext["recipient"] == "colleen.sullivan@enron.com"
+    assert ext["communication_date"] == "2000-08-09"
+    assert ext["action_items"] == ["Keith Holst will attend for Phillip"]
+
+
 # ── env gate ─────────────────────────────────────────────────────────────
 
 
