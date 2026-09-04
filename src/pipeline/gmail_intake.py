@@ -807,6 +807,31 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
         lines.append(f"triage handoff: {handoff} — handled by the full pipeline")
         lines.append("")
 
+    # Processing timeline + plain-language narrative (human directive
+    # 2026-09-04: expand the depth of information the closing message conveys).
+    timeline = _processing_timeline(audit_rows)
+    if timeline:
+        lines.append("-- PROCESSING TIMELINE " + "-" * 39)
+        for event, ts, delta in timeline:
+            lines.append(f"  {ts}  {event}{delta}")
+        lines.append("")
+    narrative = _what_happened(manifest, audit_rows)
+    stage_upper = stage.upper()
+    if narrative:
+        lines.append("-- WHAT HAPPENED " + "-" * 42)
+        lines.append(narrative)
+        reason = str(
+            manifest.get("escalation_reason") or manifest.get("error_message") or ""
+        )
+        if stage_upper in ("REVIEW", "FAILED"):
+            friendly = friendly_reason(reason)
+            if friendly:
+                lines.append("")
+                lines.append(f"why: {friendly[0]}")
+                lines.append("")
+                lines.append(f"next steps: {friendly[1]}")
+        lines.append("")
+
     extracted = manifest.get("extracted_data")
     lines.append("-- EXTRACTION " + "-" * 46)
     if isinstance(extracted, dict) and extracted:
@@ -883,6 +908,103 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
 
 
 _EMOJI_LABEL_MUTF7 = "&JwU-"  # ✅ in RFC 3501 modified-UTF-7
+
+
+def friendly_reason(reason: str) -> tuple[str, str] | None:
+    """Translate a raw escalation reason into (plain-language, next-steps).
+
+    Returns None when the reason needs no translation (rendered as-is). The
+    human directive 2026-09-04: the closing message must CONVEY what happened
+    and what to do — an opaque "(RuntimeError)" tells the sender nothing."""
+    if not reason:
+        return None
+    text = str(reason)
+    if "MAILROOM_LLM_FREE_ONLY" in text or "not free" in text:
+        return (
+            "The pipeline's paid agent was blocked by the free-only pilot "
+            "guardrail (MAILROOM_LLM_FREE_ONLY=1): the OpenRouter key is "
+            "scoped to the free triage team, so paid models refuse to load. "
+            "This document exceeds the free triage budget, so completing it "
+            "requires paid models — the pipeline parked it safely (nothing "
+            "was spent).",
+            "Options: (1) approve/resolve this document from the review "
+            "queue (The-Mailroom REVIEW); (2) to let paid models run in "
+            "full production, unset MAILROOM_LLM_FREE_ONLY in .env and "
+            "restart the watcher — the document then re-processes normally; "
+            "(3) re-send a shorter document (free triage handles text up to "
+            "~12,000 characters).",
+        )
+    if "sorter reviewer failed" in text or "reviewer" in text.lower():
+        return (
+            "The independent sorter-reviewer lane (the pipeline's "
+            "second-opinion check on classification) failed and the "
+            "pipeline failed safe: the document is parked for human review "
+            "with the sorter's original answer intact. Nothing was "
+            "archived yet; the underlying error is shown below.",
+            "Next steps: resolve from the review queue (The-Mailroom "
+            "REVIEW, or POST /v1/review/<doc_id>/resolve) — approval "
+            "resumes the pipeline from extraction; the underlying error "
+            "text below names the exact cause.",
+        )
+    if "exceeds_free_budget" in text:
+        return (
+            "This document is longer than the free triage team's input "
+            "budget, so it was honestly handed off to the full paid "
+            "pipeline (the free lane never starts a doomed run).",
+            "Next steps: no action needed — the full pipeline is "
+            "processing this document; this report is its outcome.",
+        )
+    return None
+
+
+def _processing_timeline(audit_rows: list[dict] | None) -> list[tuple[str, str, str]]:
+    """(event, timestamp, delta-seconds) rows for the echo's timeline — how
+    long each pipeline step took, from the audit chain itself."""
+    import datetime as _dt
+
+    rows = []
+    prev = None
+    for row in audit_rows or []:
+        ts_raw = str(row.get("timestamp") or "")
+        try:
+            ts = _dt.datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        delta = ""
+        if prev is not None:
+            delta = f" (+{(ts - prev).total_seconds():.0f}s)"
+        prev = ts
+        rows.append((str(row.get("event") or ""), ts_raw, delta))
+    return rows
+
+
+def _what_happened(manifest: dict, audit_rows: list[dict] | None) -> str:
+    """Plain-language narrative of the route this document took — the human
+    directive: expand the depth of information the closing message conveys."""
+    intake = manifest.get("intake") or {}
+    stage = str(manifest.get("stage") or "").upper()
+    parts = []
+    if intake.get("source") == "gmail":
+        parts.append("Received by email from the sender")
+    route = intake.get("route") or ""
+    if intake.get("triage_handoff"):
+        parts.append(
+            f"handed off from the free triage lane to the full pipeline ({intake.get('triage_handoff')})"
+        )
+    elif route == "pipeline":
+        parts.append("processed by the full pipeline (multi-document email)")
+    elif route == "triage":
+        parts.append("handled entirely by the free triage lane")
+    events = [str(r.get("event") or "") for r in audit_rows or []]
+    if stage == "ARCHIVED":
+        parts.append("archived in the auditable hash archive")
+    elif stage == "REVIEW":
+        parts.append("parked in the human-review queue")
+    elif stage == "FAILED":
+        parts.append("parked in the failed bin")
+    if "classified" in events and stage == "REVIEW":
+        parts.append("classification completed before the escalation")
+    return " → ".join(parts) if parts else ""
 
 
 def build_echo_html(
@@ -1027,6 +1149,39 @@ def build_echo_html(
         else ""
     )
 
+    timeline_rows = _processing_timeline(audit_rows)
+    timeline_html = ""
+    if timeline_rows:
+        trows = "".join(
+            f'<tr><td style="padding:1px 10px 1px 0;color:#57606a;">{_esc(ts)}</td>'
+            f'<td style="padding:1px 0;">{_esc(event)}'
+            + (f' <span style="color:#57606a;">{_esc(delta)}</span>' if delta else "")
+            + "</td></tr>"
+            for event, ts, delta in timeline_rows
+        )
+        timeline_html = (
+            '<div style="margin:10px 0;">'
+            '<div style="font-weight:600;">Processing timeline</div>'
+            f'<table style="font-size:12px;">{trows}</table></div>'
+        )
+    narrative = _what_happened(manifest, audit_rows)
+    what_html = ""
+    if narrative:
+        reason = str(manifest.get("escalation_reason") or manifest.get("error_message") or "")
+        friendly = friendly_reason(reason) if stage in ("REVIEW", "FAILED") else None
+        inner = f'<div>{_esc(narrative)}</div>'
+        if friendly:
+            inner += (
+                f'<div style="margin-top:4px;"><strong>Why:</strong> {_esc(friendly[0])}</div>'
+                f'<div style="margin-top:4px;"><strong>Next steps:</strong> {_esc(friendly[1])}</div>'
+            )
+        box_border = "#9a6700" if stage == "REVIEW" else ("#cf222e" if stage == "FAILED" else "#0969da")
+        what_html = (
+            '<div style="margin:10px 0;padding:8px 12px;background:#f6f8fa;'
+            f'border-left:3px solid {box_border};border-radius:4px;">'
+            '<div style="font-weight:600;">What happened</div>' + inner + "</div>"
+        )
+
     n_events = len(audit_rows or [])
     chain_text = (
         "unavailable" if chain_valid is None else ("verified intact" if chain_valid else "BROKEN — investigate immediately")
@@ -1051,7 +1206,7 @@ def build_echo_html(
   <table style="margin:12px 0;font-size:13px;">{meta_html}</table>
   <div style="font-weight:600;">Classification</div>
   <table style="font-size:13px;">{classification}</table>
-  {triage_html}{handoff_html}{extraction_html}{archive_html}{related_html}{audit_html}{trace_html}
+  {what_html}{timeline_html}{triage_html}{handoff_html}{extraction_html}{archive_html}{related_html}{audit_html}{trace_html}
   <div style="margin-top:14px;padding-top:10px;border-top:1px solid #d0d7de;color:#57606a;font-size:12px;">
     Processed by the LLM Mailroom agent &middot;
     <a href="https://github.com/Exios66/mailroom-dev" style="color:#0969da;">github.com/Exios66/mailroom-dev</a>
