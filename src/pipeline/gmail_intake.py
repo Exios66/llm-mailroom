@@ -810,6 +810,15 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
                     lines.append(f"  {k}: {', '.join(str(x) for x in v)}")
                 else:
                     lines.append(f"  {k}: {v}")
+        # Debug evidence (human directive 2026-09-04: full input/output logs
+        # for debugging): when the free model's answer could not be parsed,
+        # the echo says WHY and where the complete payloads live.
+        dbg = triage.get("debug")
+        if isinstance(dbg, dict) and dbg.get("parse_ok") is False:
+            lines.append(
+                f"triage debug: response not parseable — {dbg.get('parse_error')} "
+                f"(model served: {dbg.get('model')}; full I/O: {dbg.get('debug_dir')})"
+            )
         lines.append("")
 
     # Honest handoff (HUB-037): the free triage capability pre-check rejected

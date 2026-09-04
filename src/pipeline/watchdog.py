@@ -181,6 +181,14 @@ def main() -> None:
                     else "watcher is STILL DOWN — no heartbeat"
                 )
                 sent = send_status_email(kind, title, _down_rows(hb, pid_alive, age), note=_DOWN_NOTE)
+                if not sent:
+                    # The human must not silently lose the alert because SMTP
+                    # hiccuped: revert the latch so the NEXT poll re-fires the
+                    # 🔴 `down` alert instead of waiting out the reminder
+                    # cadence. Worst case (outage AND broken SMTP) is a
+                    # log-only retry every poll — never inbox spam.
+                    state["down_alerted"] = False
+                    state["last_alert"] = None
                 logger.warning(
                     "watchdog_alerted" if action == "down" else "watchdog_reminded",
                     sent=sent,

@@ -360,7 +360,7 @@ def _write_triage_debug(
         (d / "user.txt").write_text(user, encoding="utf-8")
         (d / "response.txt").write_text(response, encoding="utf-8")
         (d / "result.json").write_text(
-            json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+            json.dumps(result, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
         )
         (d / "meta.json").write_text(
             json.dumps(
@@ -427,6 +427,10 @@ class GmailTriageAgent(BaseAgent):
         # Capture the EXACT final prompt/response by wrapping the transport
         # call: _call_structured appends the json_object boilerplate + schema
         # to the user message, so only the transport sees the full payload.
+        # The CLIENT create is wrapped too — the free-swarm failover rotates
+        # models INSIDE the retry ladder, so only the request layer knows
+        # which model actually served (the agent-level self.model stays the
+        # primary even when nemotron answered, live-verified 2026-09-04).
         captured: dict = {}
         original_call_llm = self._call_llm
 
@@ -438,6 +442,28 @@ class GmailTriageAgent(BaseAgent):
             return raw
 
         self._call_llm = _capture_call_llm  # type: ignore[method-assign]
+        try:
+            original_create = self.client.chat.completions.create
+
+            def _capture_create(**kwargs):
+                captured.setdefault("attempted_models", []).append(
+                    kwargs.get("model") if isinstance(kwargs.get("model"), str) else None
+                )
+                resp = original_create(**kwargs)
+                serving = getattr(resp, "model", None)
+                # String-guard: a non-string model name must never reach the
+                # debug block — json.dumps (debug writer AND manifest save)
+                # would raise and lose the whole evidence set.
+                if isinstance(serving, str) and serving:
+                    captured["serving_model"] = serving
+                return resp
+
+            try:
+                self.client.chat.completions.create = _capture_create
+            except Exception:  # noqa: BLE001 — capture is best-effort
+                logger.debug("triage_capture_unavailable")
+        except AttributeError:
+            pass
         debug_dir: str | None = None
         parse_error: str | None = None
         try:
@@ -457,12 +483,20 @@ class GmailTriageAgent(BaseAgent):
                 user=str(captured.get("user") or ""),
                 response=str(captured.get("raw") or ""),
                 result={"error": f"{type(exc).__name__}: {exc}"},
-                extra={"exception": type(exc).__name__},
+                extra={
+                    "exception": type(exc).__name__,
+                    **(
+                        {"attempted_models": captured.get("attempted_models")}
+                        if captured.get("attempted_models")
+                        else {}
+                    ),
+                },
             )
             logger.warning(
                 "triage_llm_call_failed",
                 agent=self.agent_name,
-                model=getattr(self, "model", None),
+                model=captured.get("serving_model") or getattr(self, "model", None),
+                attempted_models=captured.get("attempted_models"),
                 error_type=type(exc).__name__,
                 detail=str(exc)[:300],
                 debug_dir=debug_dir,
@@ -501,7 +535,11 @@ class GmailTriageAgent(BaseAgent):
         # manifest and echo must carry WHY, plus where the full payloads are.
         response_text = str(captured.get("raw") or "")
         debug_block = {
-            "model": getattr(self, "model", None),
+            # The model that ACTUALLY served the read (failover-aware) —
+            # falls back to the agent's primary when the response object
+            # carries no model name.
+            "model": captured.get("serving_model") or getattr(self, "model", None),
+            "attempted_models": captured.get("attempted_models") or [],
             "parse_ok": parsed is not None,
             "parse_error": parse_error,
             "input_chars": len(str(captured.get("user") or "")),
