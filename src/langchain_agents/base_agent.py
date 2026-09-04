@@ -178,6 +178,14 @@ class BaseAgent(ABC):
             from langchain_agents.env_utils import load_env
 
             load_env()
+            # MAILROOM PATCH (HUB-039/043): the free-only pilot guardrail must
+            # hold for the VENDORED agents too — they build their own
+            # ChatOpenAI here and would otherwise bypass get_llm's chokepoint
+            # entirely (a paid sorter call slipped through exactly this way in
+            # the live pilot, 2026-09-04). Same law, same error shape.
+            from llm.client import assert_free_model
+
+            assert_free_model(self.model)
             # MAILROOM PATCH (L-16/L-17): max_retries=0 — the SDK's internal
             # retry layer is disabled so the mailroom's shared retry contract
             # (llm/retry.py) is the SINGLE retry layer. Upstream used

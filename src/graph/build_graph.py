@@ -1032,11 +1032,14 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
             }
         # Reviewer hard-failed: escalate with the sorter's original answer
         # intact (fail-safe — same destination the doc had before this lane).
+        # HUB-043: the exception TEXT rides the reason so the completion echo
+        # can translate the actual cause for the recipient (an opaque
+        # "(RuntimeError)" alone told the sender nothing).
         logger.exception("review_classify_failed", doc_id=state.get("doc_id"))
         return {
             "review_verdict": "reviewer_error",
             "stage": PipelineStage.CLASSIFIED.value,
-            "escalation_reason": f"sorter reviewer failed ({type(exc).__name__}) — routing to human review",
+            "escalation_reason": f"sorter reviewer failed ({type(exc).__name__}: {str(exc)[:160]}) — routing to human review",
             "transient_error": False,
         }
 

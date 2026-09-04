@@ -575,10 +575,19 @@ def test_send_intake_echo_replies_on_source_thread(temp_base_dir, monkeypatch):
         msg = _email.message_from_bytes(raw)
         assert msg["In-Reply-To"] == "<echo-1@example.com>"
         assert msg["Subject"] == "Re: FNOL [M:M-1]"
-        body = msg.get_payload()
+        # Multipart alternative: clean HTML + plain-text fallback.
+        assert msg.is_multipart()
+        parts = {p.get_content_type(): p for p in msg.walk()}
+        assert "text/plain" in parts and "text/html" in parts
+        body = parts["text/plain"].get_payload(decode=True).decode("utf-8")
+        html = parts["text/html"].get_payload(decode=True).decode("utf-8")
         assert "STATUS: ARCHIVED" in body
         assert "d-echo-1" in body
         assert "insurance_claim" in body
+        # Human directive: the closing message links back to mailroom-dev.
+        assert "https://github.com/Exios66/mailroom-dev" in body
+        assert "https://github.com/Exios66/mailroom-dev" in html
+        assert "ARCHIVED" in html
         # Dedup: the same (doc, stage) echo is sent exactly once.
         assert gmail_intake.send_intake_echo(_echo_manifest()) is True
         assert len(fake.sent) == 1
@@ -646,6 +655,61 @@ def test_build_echo_body_renders_archive_entry_and_audit():
     assert "STATUS: FAILED" in body2
     assert "llm_auth" in body2
     assert "audit chain unavailable" in body2
+
+
+def test_friendly_reason_translates_guardrail_block():
+    reason = (
+        "sorter reviewer failed (RuntimeError: MAILROOM_LLM_FREE_ONLY is on: "
+        "model 'qwen/qwen3.7-flash' is not free (cost_models prices non-zero, "
+        "or unregistered without a ':free' suffix) — refusing to resolve an "
+        "LLM client for it) — routing to human review"
+    )
+    plain, steps = gmail_intake.friendly_reason(reason)
+    assert "free-only pilot guardrail" in plain
+    assert "MAILROOM_LLM_FREE_ONLY" in steps
+    assert gmail_intake.friendly_reason("some unknown reason") is None
+    assert gmail_intake.friendly_reason("") is None
+
+
+def test_build_echo_body_conveys_what_happened_on_review():
+    """Human directive 2026-09-04: the closing message must explain the route,
+    the WHY, and the next steps — never an opaque '(RuntimeError)'."""
+    import json as _json
+
+    m = _echo_manifest()
+    m["stage"] = "review"
+    m["escalation_reason"] = (
+        "sorter reviewer failed (RuntimeError: MAILROOM_LLM_FREE_ONLY is on: "
+        "model 'qwen/qwen3.7-flash' is not free) — routing to human review"
+    )
+    m["intake"]["triage_handoff"] = "exceeds_free_budget:69376>12000"
+    rows = [
+        {"event": "ingested", "actor": "pipeline", "timestamp": "2026-09-04T03:31:03+00:00", "detail": "{}"},
+        {"event": "classified", "actor": "sorter", "timestamp": "2026-09-04T03:31:34+00:00", "detail": "{}"},
+        {"event": "routed_to_review", "actor": "pipeline", "timestamp": "2026-09-04T03:32:01+00:00", "detail": "{}"},
+    ]
+    body = gmail_intake.build_echo_body(m, rows, True)
+    assert "-- PROCESSING TIMELINE" in body
+    assert "(+31s)" in body and "(+27s)" in body  # per-step durations
+    assert "-- WHAT HAPPENED" in body
+    assert "exceeds_free_budget:69376>12000" in body  # the route narrative
+    assert "free-only pilot guardrail" in body  # the WHY
+    assert "next steps:" in body and "REVIEW" in body  # the what-to-do
+    # Raw cause stays visible for operators.
+    assert "MAILROOM_LLM_FREE_ONLY is on" in body
+
+
+def test_build_echo_html_renders_banner_and_link():
+    m = _echo_manifest()
+    html = gmail_intake.build_echo_html(m, [], True)
+    assert "ARCHIVED" in html
+    assert "https://github.com/Exios66/mailroom-dev" in html
+    m2 = _echo_manifest()
+    m2["stage"] = "review"
+    m2["escalation_reason"] = "sorter reviewer failed (RuntimeError: MAILROOM_LLM_FREE_ONLY is on)"
+    html2 = gmail_intake.build_echo_html(m2, [], True)
+    assert "What happened" in html2
+    assert "free-only pilot guardrail" in html2
 
 
 # ── reaction guarantee at terminal stage (HUB-037) ───────────────────────
