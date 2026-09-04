@@ -575,10 +575,19 @@ def test_send_intake_echo_replies_on_source_thread(temp_base_dir, monkeypatch):
         msg = _email.message_from_bytes(raw)
         assert msg["In-Reply-To"] == "<echo-1@example.com>"
         assert msg["Subject"] == "Re: FNOL [M:M-1]"
-        body = msg.get_payload()
+        # Multipart alternative: clean HTML + plain-text fallback.
+        assert msg.is_multipart()
+        parts = {p.get_content_type(): p for p in msg.walk()}
+        assert "text/plain" in parts and "text/html" in parts
+        body = parts["text/plain"].get_payload(decode=True).decode("utf-8")
+        html = parts["text/html"].get_payload(decode=True).decode("utf-8")
         assert "STATUS: ARCHIVED" in body
         assert "d-echo-1" in body
         assert "insurance_claim" in body
+        # Human directive: the closing message links back to mailroom-dev.
+        assert "https://github.com/Exios66/mailroom-dev" in body
+        assert "https://github.com/Exios66/mailroom-dev" in html
+        assert "ARCHIVED" in html
         # Dedup: the same (doc, stage) echo is sent exactly once.
         assert gmail_intake.send_intake_echo(_echo_manifest()) is True
         assert len(fake.sent) == 1
