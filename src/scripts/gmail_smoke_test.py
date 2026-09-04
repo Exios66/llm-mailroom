@@ -505,7 +505,19 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
 
         for _, to, raw in smtp.sent:
             msg = _email.message_from_bytes(raw)
-            payload = msg.get_payload(decode=True)
+            # Multipart alternative: read the text/plain part (fallback is
+            # single-part for robustness).
+            if msg.is_multipart():
+                payload = next(
+                    (
+                        p.get_payload(decode=True)
+                        for p in msg.walk()
+                        if p.get_content_type() == "text/plain"
+                    ),
+                    None,
+                )
+            else:
+                payload = msg.get_payload(decode=True)
             body = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else (payload or "")
             if "INTAKE TRIAGE" in body:
                 echo_triage = True
