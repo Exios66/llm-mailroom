@@ -6,6 +6,7 @@ import structlog
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, Request, Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from pipeline.env import load_env
@@ -229,6 +230,40 @@ async def health():
             "gmail_intake": gmail,
         },
     }
+
+
+@app.get("/api/relations/mode", dependencies=[Depends(_require_token)])
+async def get_relations_mode():
+    """Relations clerk mode readout (HUB-052) — the effective live/pilot
+    posture plus every knob that can block or shape it."""
+    from pipeline.relations_mode import mode_status
+
+    return mode_status()
+
+
+class RelationsModeRequest(BaseModel):
+    mode: str
+    model: str | None = None
+
+
+@app.post("/api/relations/mode", dependencies=[Depends(_require_token)])
+async def post_relations_mode(req: RelationsModeRequest):
+    """Flip the relations clerk mode (HUB-052) — pilot (deterministic-only)
+    or live (LLM judgment on). Edits taxonomy + clears the in-process config
+    caches, so the embedded watcher honors the flip with NO restart."""
+    from pipeline.relations_mode import set_mode
+
+    try:
+        result = set_mode(req.mode, req.model)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    result["restart_required"] = False
+    result["note"] = (
+        "applied in-process — the embedded watcher shares this process and "
+        "picks the flip up immediately; standalone watchers read it on their "
+        "next restart (python -m pipeline.relations_mode live --restart-watcher)"
+    )
+    return result
 
 
 @app.post("/upload", dependencies=[Depends(_require_token)])

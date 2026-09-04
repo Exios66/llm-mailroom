@@ -485,7 +485,10 @@ re-validates the agent's output against its OWN proposed pairs (closed
 vocabulary, pair normalization, unproposed-pair refusal — applied twice, so
 nothing unvalidated ever reaches the ledger). `relations.llm: false` keeps
 the pilot deterministic-only (free-tier guardrail compatible); flipping it
-on in production with a paid model is a taxonomy edit. Registered as
+on in production is a taxonomy edit — or one command:
+`python -m pipeline.relations_mode live [--model <name>] [--restart-watcher]`,
+or the API's `POST /api/relations/mode` (HUB-052; the embedded watcher
+picks the flip up with no restart). Registered as
 `mailroom-relations` in `llm/prompts.py`.
 
 **Consumption** (the longitudinal loop): a bounded, labeled advisory
