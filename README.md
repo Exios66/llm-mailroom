@@ -125,11 +125,13 @@ One **LangGraph state machine run per document** — 13 nodes, MemorySaver-check
 
 ### LangGraph state machine
 
+The core pipeline is a **13-node LangGraph state machine** executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning).
+
 ```mermaid
 flowchart TD
     START([START]) --> INGEST
 
-    INTAKE["intake-document<br/>claim file, read text, create manifest"]
+    INTAKE["intake-document<br/>ingest specialist: claim, transcribe, clean, prepare"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
     REVIEW_CLASS["classify-document (reviewer)<br/>agent second opinion (Lane A)"]
@@ -142,6 +144,7 @@ flowchart TD
     REPORT["compile-report<br/>(procedural)"]
     CATALOG["write-catalog<br/>SQLite documents + matters"]
     ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
+    RELATIONS["relations scan<br/>post-archive association clerk"]
     FAILED["FAILED"]
     ENDX([END])
 
@@ -176,19 +179,31 @@ flowchart TD
     REVIEW -- "approved" --> REPORT
     REVIEW -- "rejected" --> FAILED --> ENDX
 
-    REPORT --> CATALOG --> ARCHIVE --> ENDX
+    REPORT --> CATALOG --> ARCHIVE --> RELATIONS --> ENDX
+
+    GMAIL([Gmail triage<br/>free model swarm]) -.->|single-doc emails| CLASSIFY
+    GMAIL -.->|multi-doc or over-budget| INGEST
 ```
 
 Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
 
+**Auxiliary flows (outside the 13-node graph):**
+- **Gmail triage lane** (`agents/gmail_triage.py`): the free OpenRouter model (`z-ai/glm-5.2:free`) handles single-document Gmail uploads through classification + key extraction + auditable-hash archive without calling paid agents. Multi-document emails and documents exceeding the free budget route to the full pipeline.
+- **Relations clerk** (`pipeline/relations.py`): post-archive deterministic association scanning (same-matter, keyword Jaccard, party overlap, embedding cosine) with an optional LLM judgment pass for ambiguous near-misses. Dispatched off the document path at every terminal manifest.
+
 ### Agent Organization
 
-The agent roster (13 agents) as declared in `config/taxonomy.yaml` — every LLM agent resolves its provider/model/prompt through `get_llm(agent_name)`; nothing is hardcoded:
+The agent roster as declared in `config/taxonomy.yaml` — every LLM agent resolves its provider/model/prompt through `get_llm(agent_name)`; nothing is hardcoded:
 
 ```mermaid
 flowchart TB
+    subgraph ENTRY["Entry & intake"]
+        INTAKE["IntakeAgent<br/>ingest specialist (HUB-038):<br/>transcribe → deterministic clerk →<br/>LLM triage+clean+prepare"]
+        GMAIL["GmailTriageAgent<br/>free model swarm (z-ai/glm-5.2:free):<br/>single-doc classification + extraction"]
+    end
+
     subgraph CLASSIFY["Classification"]
-        SORTER["SorterAgent<br/>6 doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v14)"]
+        SORTER["SorterAgent<br/>5 live doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v14)"]
         REVIEWER["SorterReviewerAgent<br/>second opinion on medium-confidence<br/>classifications (Lane A)"]
     end
 
@@ -210,11 +225,17 @@ flowchart TB
         ARCHIVIST["Archivist<br/>(procedural) hash-chained audit log"]
     end
 
+    subgraph POST["Post-archive"]
+        RELATIONS["Relations Clerk<br/>deterministic association scan<br/>+ optional LLM judgment pass"]
+    end
+
     subgraph INGEST2["Ingestion (procedural)"]
         PDF["PDFTranscriber<br/>pypdf / pdfplumber / poppler"]
         IMG["ImageExtractor<br/>vision page rendering (pymupdf)"]
     end
 
+    INTAKE --> SORTER
+    GMAIL -.->|free lane| SORTER
     SORTER -- "class + subtype + confidence" --> SPECIALISTS
     REVIEWER -. "Lane A: medium band" .-> SORTER
     SPECIALISTS -- "extraction + confidence" --> JUDGE
@@ -222,11 +243,8 @@ flowchart TB
     SPECIALISTS -- "conflict" --> BOSS
     SPECIALISTS --> REPORTER
     JUDGE -- "complete/skipped" --> REPORTER
-    ARBITER -- "verdict" --> REPORTER
-    BOSS -- "approved" --> REPORTER
     REPORTER --> ARCHIVIST
-    PDF -. "text extraction" .-> SORTER
-    IMG -. "page images (vision, additive)" .-> SPECIALISTS
+    ARCHIVIST --> RELATIONS
 ```
 
 Document classes (5): `contract`, `corporate_record`, `correspondence`, `merger_agreement`, `insurance_claim` — each with its own extraction schema and specialist. Court opinions, due-diligence memos, and compliance filings classify as `unknown` (human review), not as a nearby class. `compliance_filing` was retired from the pipeline (zero Hub rows; `status: retired` in `taxonomy.yaml`). The two vendored agents (Sorter, Contracts Specialist) come from the sister repo [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) with their full append-only prompt lineage; all other agents are mailroom-native `BaseAgent` subclasses with Langfuse-managed prompts.
