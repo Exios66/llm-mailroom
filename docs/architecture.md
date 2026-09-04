@@ -13,7 +13,7 @@ flowchart TD
     START([START]) --> INGEST
     START -. "resume: manifest shows extraction done" .-> EXTRACT
 
-    INTAKE["intake-document<br/>claim file, read text, normalize-intake, create manifest"]
+    INTAKE["intake-document<br/>ingest specialist: claim, transcribe, clean, prepare"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
     REVIEW_CLASS["classify-document (reviewer)<br/>SorterReviewAgent second opinion<br/>(KANBAN-062 Lane A)"]
@@ -26,6 +26,7 @@ flowchart TD
     REPORT["compile-report<br/>(procedural)"]
     CATALOG["write-catalog<br/>SQLite documents + matters"]
     ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
+    RELATIONS["relations scan<br/>post-archive association clerk"]
     FAILED["FAILED"]
     ENDX([END])
 
@@ -62,8 +63,11 @@ flowchart TD
     REVIEW -- "approved" --> REPORT
     REVIEW -- "rejected" --> FAILED --> ENDX
 
-    REPORT -- "ok" --> CATALOG --> ARCHIVE --> ENDX
+    REPORT -- "ok" --> CATALOG --> ARCHIVE --> RELATIONS --> ENDX
     REPORT -- "compile failed" --> REVIEW
+
+    GMAIL([Gmail triage<br/>free model swarm]) -.->|single-doc emails| CLASSIFY
+    GMAIL -.->|multi-doc or over-budget| INGEST
 ```
 
 ### Hierarchical organization
@@ -72,6 +76,7 @@ flowchart TD
 flowchart LR
     subgraph IN["Input layer"]
         INBOX["inbox bin<br/>(watcher / API upload)"]
+        GMAIL_INBOX["Gmail intake<br/>(free triage lane)"]
     end
 
     subgraph ORCH["Orchestration — LangGraph state machine (graph/)"]
@@ -81,12 +86,18 @@ flowchart LR
     end
 
     subgraph AGENTS["Agent layer (agents/) — LLM specialists"]
+        INTAKE["IntakeAgent<br/>(ingest specialist)"]
+        GMAIL_AGENT["GmailTriageAgent<br/>(free model swarm)"]
         SORTER["SorterAgent"]
-        SPEC["5 specialists + merger via contracts<br/>corporate, correspondence,<br/>compliance, insurance"]
+        SPEC["4 specialists + merger via contracts<br/>corporate, correspondence,<br/>insurance"]
         BOSS["BossAgent"]
         REPORTER["compile_report<br/>(procedural)"]
         PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
         JUDGE["JudgeAgent<br/>(offline evaluators)"]
+    end
+
+    subgraph POST["Post-archive"]
+        RELATIONS["Relations Clerk<br/>(association scanning)"]
     end
 
     subgraph LLM["LLM layer (llm/)"]
@@ -108,10 +119,12 @@ flowchart LR
     end
 
     INBOX --> NODES
+    GMAIL_INBOX -.->|free lane| NODES
     NODES --> SORTER & SPEC & BOSS & REPORTER & PDF
     SORTER & SPEC & BOSS & REPORTER --> CLI
     CLI --> RETRY --> PROMPTS --> P
     NODES --> BINS --> SQLITE --> ARCHIVE2
+    ARCHIVE2 --> RELATIONS
     NODES -.-> TRACES
     TRACES --> SCORES
     JUDGE -.-> SCORES
@@ -127,12 +140,15 @@ flowchart LR
 
 ### LangGraph Engine (`graph/build_graph.py`)
 - One graph execution per document
-- **13 nodes** forming a directed state machine: `intake`, `classify`,
-  `retry_classify`, `review_classify` (agent second opinion on exhausted
-  medium-band classifications — KANBAN-062 Lane A), `extract`,
+- **13 nodes** forming a directed state machine: `intake` (ingest specialist),
+  `classify`, `retry_classify`, `review_classify` (agent second opinion on
+  exhausted medium-band classifications — KANBAN-062 Lane A), `extract`,
   `retry_extract`, `judge_verify` + `arbiter` (gated completeness
   verification + arbitration — KANBAN-063 Lane B), `human_review`,
   `boss_escalation`, `compile_report`, `catalog_write`, `archive`
+- Two auxiliary flows operate **outside** the graph: the Gmail triage lane
+  (free model swarm for single-document emails) and the relations clerk
+  (post-archive association scanning)
 - MemorySaver by default, held on a **process-level compiled graph** so
   `interrupt()` HITL can `Command(resume=...)` in the same process (the API
   embeds the watcher). The filesystem review bin remains the durable park
