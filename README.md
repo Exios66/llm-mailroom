@@ -374,56 +374,56 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --trace-id <id>
 
 ### Evaluators & Quality
 
-#### Deterministic field scoring (issues #4/#5)
+Scoring is layered — cheap deterministic checks fire first, LLM judges only when needed. Every score lands on the Langfuse trace.
 
-Before any LLM judge runs, every grounded extraction gets a **field-type-aware deterministic score** (`observability/field_scoring.py`) — cheap, reproducible, zero API cost:
+#### Band 1: Headline Metrics (per-document)
 
-- `date` / `id` / `money` — parse + normalize, then exact match (a one-day-off date scores 0, not 0.95)
-- `name` — normalized fuzzy match (Jaro-Winkler + token-set ratio, suffix-stripping)
-- `free_text` — SQuAD-style token F1 (optional sentence-transformers embedding rescue for paraphrases)
-- `entity_list` — optimal bipartite matching (Hungarian) → precision/recall/F1 (order-agnostic)
-
-Per-field-type judge-escalation bands (`field_scoring.type_bands` in `taxonomy.yaml`) are **calibrated** by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are decisive (`never` escalate), money/free_text have calibrated cutoffs, name and entity-list trust only perfect scores and escalate everything else to the LLM judge. On grounded runs the pipeline suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both evaluator calls. The same scores are attached to traces via `observability/langfuse_field_scoring.py` (`extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, `entity_list_recall`).
-
-#### LLM-as-a-judge
-
-Mailroom evaluates its own work against the **task specification** (the taxonomy doc classes + extraction schemas) using a dedicated `judge` agent. Judge dimensions:
-
-| Judge | What it measures | Scores |
+| Metric | What it measures | Source |
 |---|---|---|
-| `classification` | Is the sorter's assigned class correct for the document (audited against the taxonomy spec)? | `classification_correct`, `classification_quality` |
-| `completeness` | Did the specialist capture every field the document actually states? | `completeness`, `completeness_label` |
-| `correctness` | Are extracted field values factually accurate (no fabrication)? | `extraction_correctness`, `extraction_correctness_label` |
+| `pipeline-result` verdict | **CORRECT** / **PARTIAL** / **MISS** — overall run quality | `mailroom-pipeline-judge` (LLM-as-a-judge) |
+| `pipeline-quality` score | Proportional **0.0–1.0** quality score | `mailroom-pipeline-quality` (LLM-as-a-judge) |
+| `classification_correct` | Sorter class matches ground truth (pilot runs) | Deterministic (binary) |
+| `stage_correct` | Pipeline reached the expected stage (pilot runs) | Deterministic (binary) |
 
-The same rubrics are **configured as two independent live LLM-as-a-Judge evaluators in the Langfuse project**. The pipeline emits one `pipeline-result` generation per document trace, and two observation rules independently evaluate it: `mailroom-pipeline-judge` returns a **CORRECT/PARTIAL/MISS verdict**, while `mailroom-pipeline-quality` returns a proportional **0.0-1.0 quality score**. A substantially correct extraction with limited material gaps earns `PARTIAL` instead of a hard `MISS`, and still receives a useful quality score; the numeric score never replaces or alters the run verdict. Grounded runs skip document text in the judge input — the input is a labeled, pretty-printed expected-fields block and the output is a cleaned schema-only extraction, cutting ~90% of judge tokens. Live runs without ground truth fall back to rubric judgment:
+These are the scores you check first. The verdict is a three-way rubric; the quality score is independent and never overrides the verdict.
+
+#### Band 2: Extraction Quality
+
+| Metric | What it measures | Source |
+|---|---|---|
+| `completeness` / `completeness_label` | Specialist captured every stated field | Judge (in-pipeline Lane B) |
+| `extraction_correctness` / `extraction_correctness_label` | Extracted values are factually accurate | Judge (offline) |
+| `extraction_field_score` | Per-field deterministic score (field-type-aware) | `field_scoring.py` (zero API cost) |
+| `extraction_overall_score` | Aggregate field score across all fields | `field_scoring.py` |
+| `entity_list_precision` / `recall` | Bipartite-matched entity list accuracy | `field_scoring.py` (Hungarian) |
+
+Field scoring fires before any LLM judge — cheap, reproducible, zero API cost. Each field type uses its own matcher (exact for dates/IDs/money, Jaro-Winkler for names, token F1 for free text, Hungarian for entity lists). Calibrated escalation bands determine whether a field needs LLM review or is definitively scored.
+
+#### Band 3: Operational Metrics
+
+| Metric | What it measures | Source |
+|---|---|---|
+| `stage_completed` | Pipeline reached archive (binary) | `scores.py` |
+| `success_rate` | First-pass archive without retry/review | `scores.py` |
+| `guardrail_triggered` | Extraction guard caught schema violations | `guards.py` |
+| `classification_confidence` / `extraction_confidence` | Agent self-reported confidence | Sorter / specialist |
+| `estimated_cost_usd` / `total_tokens` | Pipeline cost per document | Langfuse usage |
+
+#### How scoring flows
+
+1. **Deterministic field scoring** fires on every grounded extraction — no LLM call, instant.
+2. **Classification + extraction guards** clamp bad output below routing thresholds.
+3. **Lane B judge** (`judge_verify`) fires only on the ambiguous band (`low ≤ confidence < judge_band_high`) — most documents skip it.
+4. **Pipeline-result generation** emits the `pipeline-result` output consumed by two independent Langfuse evaluators.
+5. **Two live evaluators** score the trace independently: `mailroom-pipeline-judge` (verdict) and `mailroom-pipeline-quality` (numeric).
 
 ```bash
-PYTHONPATH=src python src/scripts/sync_evaluators.py        # create/update evaluator + rule (idempotent)
+PYTHONPATH=src python src/scripts/sync_evaluators.py        # create/update evaluators + rules (idempotent)
 PYTHONPATH=src python src/scripts/sync_evaluators.py --dry-run
-PYTHONPATH=src python src/scripts/sync_evaluators.py --disable   # pause the rule
+PYTHONPATH=src python src/scripts/sync_evaluators.py --disable   # pause the rules
 ```
 
-`sync_evaluators` also ensures the project has an LLM connection for the judge provider (OpenRouter, key from `.env`) so both evaluators can run. Deployed: `mailroom-pipeline-judge` + `mailroom-pipeline-rule` (CORRECT/PARTIAL/MISS verdict), and `mailroom-pipeline-quality` + `mailroom-pipeline-quality-rule` (proportional quality), all targeting `pipeline-result`. Old per-agent evaluators/rules are pruned automatically. Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct` — binary 0/1 against the manifest; `expected_field_presence` — fraction of required expected fields extracted non-empty) attached by `run_pilot.py --scores`.
-
-#### Evaluation dataset
-
-The pilot samples are mirrored into the **`mailroom-pilot` Langfuse dataset** (PDF text + ground truth incl. per-field `expected_fields` + manifest metadata) for experiments and judge calibration:
-
-```bash
-PYTHONPATH=src python src/scripts/sync_dataset.py            # 25 items, deterministic ids (upsert-safe)
-PYTHONPATH=src python src/scripts/sync_dataset.py --include contract
-```
-
-#### Offline judges over a pilot run
-
-```bash
-PYTHONPATH=src python src/scripts/run_pilot.py --real --scores        # needs OPENROUTER_API_KEY
-PYTHONPATH=src python src/scripts/run_quality_judges.py --real        # LLM-as-a-judge on every sample
-PYTHONPATH=src python src/scripts/run_quality_judges.py --mock        # deterministic fake judge
-PYTHONPATH=src python src/scripts/run_quality_judges.py --judges classification,completeness
-```
-
-Judges attach scores to each sample's trace (configs auto-created), print a per-class calibration summary, and append an `evaluation` section to the pilot report. For production traces with no ground truth, the live Langfuse evaluators above cover the same dimensions automatically.
+Pilot runs additionally receive deterministic ground-truth scores (`class_correct`, `stage_correct`, `expected_field_presence`) attached by `run_pilot.py --scores`.
 
 ### Guardrails
 
