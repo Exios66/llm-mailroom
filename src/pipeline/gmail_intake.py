@@ -45,6 +45,7 @@ Routing and guards:
 
 from __future__ import annotations
 
+import collections
 import datetime
 import email
 import email.utils
@@ -81,6 +82,39 @@ DEFAULT_SMTP_PORT = 465
 _MATTER_TAG_RE = re.compile(r"\[M:([A-Za-z0-9_.-]{1,64})\]")
 
 _FILENAME_UNSAFE_RE = re.compile(r"[\x00-\x1f/]")
+
+# Maximum size for the reaction/echo dedup sets to prevent unbounded memory
+# growth in long-running watcher processes.
+_BOUNDED_SET_MAX = 5000
+
+
+class _BoundedSet:
+    """A set that evicts the oldest entry when it exceeds ``max_size``.
+
+    Uses an ``OrderedDict`` internally for O(1) membership testing with
+    insertion-order eviction.  Thread-safe via the caller's existing lock.
+    """
+
+    def __init__(self, max_size: int = _BOUNDED_SET_MAX):
+        self._data: collections.OrderedDict = collections.OrderedDict()
+        self._max_size = max_size
+
+    def __contains__(self, key) -> bool:
+        return key in self._data
+
+    def add(self, key) -> None:
+        if key in self._data:
+            self._data.move_to_end(key)
+        else:
+            self._data[key] = None
+            while len(self._data) > self._max_size:
+                self._data.popitem(last=False)
+
+    def discard(self, key) -> None:
+        self._data.pop(key, None)
+
+    def __len__(self) -> int:
+        return len(self._data)
 
 
 class GmailIntakeError(RuntimeError):
@@ -169,8 +203,9 @@ def reaction_label() -> str:
 
 # One reaction per message even when an email carried several attachments —
 # the label is idempotent, but each claim would otherwise open its own IMAP
-# connection for the same Message-ID.
-_REACTION_ATTEMPTED: set[str] = set()
+# connection for the same Message-ID.  Bounded to prevent memory growth in
+# long-running watcher processes (oldest entry evicted at capacity).
+_REACTION_ATTEMPTED: _BoundedSet = _BoundedSet()
 _REACTION_LOCK = threading.Lock()
 
 
@@ -360,10 +395,13 @@ def _load_state() -> dict:
 def _save_state(state: dict) -> None:
     try:
         ids = state.get("processed_message_ids", [])[-_STATE_KEEP_MESSAGE_IDS:]
-        _state_path().parent.mkdir(parents=True, exist_ok=True)
-        _state_path().write_text(
+        path = _state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
             json.dumps({"processed_message_ids": ids, "updated_at": _now_iso()})
         )
+        tmp.replace(path)
     except Exception:
         logger.exception("gmail_intake_state_write_failed")
 
