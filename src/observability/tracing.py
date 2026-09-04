@@ -94,28 +94,43 @@ def pipeline_trace(*args, **kwargs):
     """Root chain observation for one document run (one trace per document).
 
     See `observability/langfuse_setup.pipeline_trace` for parameters. No-ops
-    (yields None) unless Langfuse is the active backend. Default ``as_type``
-    is ``chain``.
+    (yields None) unless Langfuse or Braintrust is the active backend.
+    Default ``as_type`` is ``chain``.
     """
-    if resolve_provider_name() != "langfuse":
+    provider = resolve_provider_name()
+    if provider == "langfuse":
+        from .langfuse_setup import pipeline_trace as _langfuse_pipeline_trace
+
+        with _langfuse_pipeline_trace(*args, **kwargs) as root:
+            yield root
+    elif provider == "braintrust":
+        from .braintrust_setup import braintrust_pipeline_trace as _braintrust_pipeline_trace
+
+        with _braintrust_pipeline_trace(*args, **kwargs) as root:
+            yield root
+    else:
         yield None
         return
-    from .langfuse_setup import pipeline_trace as _langfuse_pipeline_trace
-
-    with _langfuse_pipeline_trace(*args, **kwargs) as root:
-        yield root
 
 
 @contextmanager
 def observation(name, **kwargs):
-    """Child observation under the active span. No-ops when Langfuse is inactive."""
-    if resolve_provider_name() != "langfuse":
+    """Child observation under the active span. No-ops when Langfuse or
+    Braintrust is inactive."""
+    provider = resolve_provider_name()
+    if provider == "langfuse":
+        from .langfuse_setup import observation as _langfuse_observation
+
+        with _langfuse_observation(name, **kwargs) as span:
+            yield span
+    elif provider == "braintrust":
+        from .braintrust_setup import braintrust_observation as _braintrust_observation
+
+        with _braintrust_observation(name, **kwargs) as span:
+            yield span
+    else:
         yield None
         return
-    from .langfuse_setup import observation as _langfuse_observation
-
-    with _langfuse_observation(name, **kwargs) as span:
-        yield span
 
 
 def _state_summary(state: dict) -> dict:
