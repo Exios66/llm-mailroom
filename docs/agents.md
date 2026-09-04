@@ -155,25 +155,13 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 | Attribute | Value |
 |---|---|
-| **Node** | `extract`, `retry_extract` |
-| **Trigger** | `doc_type == compliance_filing` |
+| **Node** | `extract`, `retry_extract` (RETIRED — dispatch disabled) |
+| **Trigger** | `doc_type == compliance_filing` (retired class; documents now route as `unknown`) |
 | **Input** | Document text + `ComplianceFilingExtraction` schema |
 | **Output** | Structured extraction + confidence |
 | **Personality** | Rule-bound, cites authority, cautious |
 
-**Output schema fields:**
-| Field | Type | Description |
-|---|---|---|
-| `filing_type` | `str` | SEC filing type, state filing, etc. |
-| `regulatory_body` | `str` | SEC, state secretary, IRS, etc. |
-| `filing_date` | `str \| None` | When filed |
-| `due_date` | `str \| None` | Statutory deadline |
-| `entity_name` | `str` | Filing entity |
-| `key_requirements` | `list[str]` | Regulatory obligations satisfied |
-| `status` | `str \| None` | draft, filed, pending, overdue |
-| `reference_number` | `str \| None` | Accession/tracking number |
-
-**Honest gap (dojo 0.11.0):** `compliance_filing` has **zero rows** in `Lucius-Morningstar/mailroom-corpus`. The Hub SEC form-body inventory (`10-K`, `10-Q`, `8-K`, …) is the live subclass catalog; the suite scores typed extraction plus that inventory. The HF pilot (`scripts/run_hf_pilot.py`) therefore omits this class from Hub `--real` — it must not report a corpus accuracy at n=0. A **local pack** of committed fixtures (10-K + state filing) is scored on `--check` / `--mock` only.
+**Retirement note:** `compliance_filing` has **zero rows** in `Lucius-Morningstar/mailroom-corpus` and was retired from the live pipeline (2026-09-01, `status: retired` in `taxonomy.yaml`). Documents that would have been classified as `compliance_filing` now route as `unknown` (human review). The specialist agent and schema are retained as inert machinery for local eval packs only — the HF pilot omits this class from `--real`.
 
 ---
 

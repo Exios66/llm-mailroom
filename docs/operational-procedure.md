@@ -45,7 +45,7 @@ The current design has two happy-path LLM generations: classification and extrac
 
 1. Watcher/API places the document in the inbox and the pipeline atomically claims it into processing.
 2. `intake` creates the manifest and performs deterministic intake normalization.
-3. The sorter assigns a live class: `contract`, `merger_agreement`, `corporate_record`, `correspondence`, `compliance_filing`, or `insurance_claim`.
+3. The sorter assigns a live class: `contract`, `merger_agreement`, `corporate_record`, `correspondence`, or `insurance_claim`.
 4. `unknown`, retired, empty, or unsupported labels go to human review; they are **not** coerced into a nearby class.
 5. Current global defaults are `high = 0.97`, `low = 0.88`, `retry_max = 2`; class-specific overrides take precedence. fileciteturn9file0L2-L6
 6. High-confidence live classes proceed to extraction.
@@ -59,7 +59,6 @@ The current design has two happy-path LLM generations: classification and extrac
 | `contract` | 0.98 | 0.90 | 0.97 |
 | `merger_agreement` | 0.98 | 0.90 | 0.97 |
 | `insurance_claim` | 0.98 | 0.90 | 0.97 |
-| `compliance_filing` | 0.97 | 0.88 | 0.95 |
 | `corporate_record` | 0.96 | 0.86 | 0.94 |
 | `correspondence` | 0.95 | 0.85 | 0.92 |
 
