@@ -79,6 +79,85 @@ def _triage_system_prompt() -> str:
 # (so an "insurance_claim" that spuriously emits contract parties is corrected).
 _EXTRACTION_FIELD_CAP = {"list[str]": 10, "str": 200, "float": None}
 
+# Best-effort correspondence-shaped fields the unknown-class fallback (HUB-049)
+# and the header pass may fill — the closest shaped schema for short header-
+# bearing documents when the free model cannot pin the class.
+_UNKNOWN_FALLBACK_FIELDS = (
+    "sender",
+    "recipient",
+    "additional_recipients",
+    "communication_type",
+    "communication_date",
+    "demand_amount",
+    "action_items",
+    "urgency",
+    "intent",
+    "subject_matter",
+    "keywords",
+    "confidence",
+)
+
+
+def _deterministic_header_extraction(doc_text: str) -> dict:
+    """Grounded, LLM-free best-effort header pass over short documents (HUB-049).
+
+    Extracts sender/recipient/date/subject from a plain ``From:/To:/Date:``
+    header block OR the Enron-style ``| From | value |`` markdown table.
+    Only fills what is literally present — never invents values.
+    """
+    out: dict = {}
+    line_patterns = (
+        (r"^\s*From\s*:\s*(.+)$", "sender"),
+        (r"^\s*To\s*:\s*(.+)$", "recipient"),
+        (r"^\s*Date\s*:\s*(.+)$", "communication_date"),
+        (r"^\s*Subject\s*:\s*(.+)$", "subject_matter"),
+    )
+    table_patterns = (
+        (r"\| From \|\s*([^|\n]+)\s*\|", "sender"),
+        (r"\| To \|\s*([^|\n]+)\s*\|", "recipient"),
+        (r"\| Date \|\s*([^|\n]+)\s*\|", "communication_date"),
+        (r"\| Subject \|\s*([^|\n]+)\s*\|", "subject_matter"),
+    )
+    import re
+
+    flags = re.IGNORECASE | re.MULTILINE
+    for pattern, key in line_patterns + table_patterns:
+        m = re.search(pattern, doc_text, flags)
+        value = m.group(1).strip() if m else ""
+        value = re.sub(r"\s+", " ", value).strip().strip("|").strip()
+        if value and key not in out:
+            out[key] = value[:_EXTRACTION_FIELD_CAP["str"] or 200]
+    return out
+
+
+def _unknown_class_extraction(raw_extraction: dict, doc_text: str) -> dict:
+    """HUB-049 fallback: when the class is unknown, still return grounded key
+    entities for short header-bearing documents.
+
+    Combines (a) any correspondence-shaped keys the model provided and (b) a
+    deterministic header pass over the literal text (never-invent law).
+    """
+    import re
+
+    from schemas.documents import CorrespondenceExtraction
+
+    corr_props = set((CorrespondenceExtraction.model_json_schema().get("properties") or {}).keys())
+    merged: dict = {}
+    if isinstance(raw_extraction, dict):
+        for key in list(raw_extraction.keys()):
+            if key in corr_props and key in _UNKNOWN_FALLBACK_FIELDS:
+                value = raw_extraction[key]
+                if key in ("additional_recipients", "action_items", "keywords"):
+                    if isinstance(value, list):
+                        merged[key] = [str(v).strip()[:80] for v in value[:10] if str(v).strip()]
+                elif isinstance(value, (str, int, float, bool)) and not (
+                    isinstance(value, str) and not value.strip()
+                ):
+                    merged[key] = value
+    for key, value in _deterministic_header_extraction(doc_text).items():
+        merged.setdefault(key, value)
+    return merged
+
 
 def extraction_schema_for(doc_class: str) -> dict | None:
     """Pydantic .model_json_schema() for the class's existing extraction model.
@@ -160,8 +239,16 @@ def _clamp_extraction(doc_class: str, raw: dict) -> dict:
     return out
 
 
-def validate_triage(result: dict) -> dict:
-    """Clamp the free model's answer to the live taxonomy vocabulary."""
+def validate_triage(result: dict, doc_text: str | None = None) -> dict:
+    """Clamp the free model's answer to the live taxonomy vocabulary.
+
+    When ``doc_text`` is provided and the class clamps to ``unknown``, the
+    HUB-049 best-effort fallback fills grounded key entities (sender/
+    recipient/date/subject from a literal header pass + any model-provided
+    correspondence-shaped keys) so a short document that the free model
+    could not pin still yields a concise entity answer. A non-unknown class
+    with a raw extraction is clamped to that class's canonical schema.
+    """
     live = set(get_all_doc_types())
     doc_class = str(result.get("primary_doc_class") or "unknown").strip().lower()
     if doc_class not in live:
@@ -180,7 +267,11 @@ def validate_triage(result: dict) -> dict:
     keywords = [str(k).strip()[:80] for k in raw_kw[:6] if str(k).strip()]
     raw_extraction = result.get("extraction")
     extraction = {}
-    if doc_class != "unknown" and isinstance(raw_extraction, dict):
+    if doc_class == "unknown":
+        extraction = _unknown_class_extraction(
+            raw_extraction if isinstance(raw_extraction, dict) else {}, doc_text or ""
+        )
+    elif isinstance(raw_extraction, dict):
         extraction = _clamp_extraction(doc_class, raw_extraction)
     return {
         "primary_doc_class": doc_class,
@@ -236,4 +327,4 @@ class GmailTriageAgent(BaseAgent):
                 raw = json.loads(raw)
             except Exception:
                 raw = {}
-        return validate_triage(raw if isinstance(raw, dict) else {})
+        return validate_triage(raw if isinstance(raw, dict) else {}, doc_text=doc_text)
