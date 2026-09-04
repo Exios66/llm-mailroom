@@ -104,6 +104,7 @@ def _ensure_models_imported():
     # storage.catalog / storage.audit_log both import from storage.db.
     import storage.catalog  # noqa: F401
     import storage.audit_log  # noqa: F401
+    import storage.relations  # noqa: F401 (HUB-040 — relations ledger)
 
 
 _schema_checked_url: str | None = None

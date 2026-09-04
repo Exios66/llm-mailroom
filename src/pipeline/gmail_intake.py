@@ -845,6 +845,21 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
         lines.append(f"not archived — stage {stage}" + (f": {why}" if why else ""))
     lines.append("")
 
+    # Related work (HUB-040): the relations clerk's advisory block — what the
+    # archive already knows this document/matter relates to. Bounded + best-
+    # effort: an empty ledger or a storage hiccup simply renders nothing.
+    try:
+        from pipeline.relations import context_block
+
+        related = context_block(
+            matter_id=manifest.get("matter_id"), doc_id=manifest.get("doc_id")
+        )
+        if related:
+            lines.extend(related.splitlines())
+            lines.append("")
+    except Exception:
+        logger.debug("gmail_echo_related_section_failed")
+
     lines.append("-- AUDIT TRAIL " + "-" * 46)
     if audit_rows:
         for row in audit_rows:

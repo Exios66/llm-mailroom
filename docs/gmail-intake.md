@@ -309,7 +309,9 @@ The echo (`send_intake_echo`) replies **on the source thread**
 5. **EXTRACTION** — the specialist report + extracted fields
 6. **ARCHIVE ENTRY** — path + sha256 (+ chain hashes), or why it was not
    archived
-7. **AUDIT TRAIL** — every event with actor + timestamp, and the hash-chain
+7. **RELATED (advisory)** — the relations ledger's associations for this
+   document/matter, when any exist (HUB-040)
+8. **AUDIT TRAIL** — every event with actor + timestamp, and the hash-chain
    verification verdict (`OK — hash chain intact` / `BROKEN — investigate
    immediately`)
 

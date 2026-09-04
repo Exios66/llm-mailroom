@@ -204,10 +204,25 @@ def _is_already_processed(path: Path) -> bool:
     file was handled and must not be claimed again (pilot: watcher re-claimed
     files after crashes, producing 2-3 full pipeline runs per document and
     10-20x inflated trace latencies).
-    """
+
+    INTAKE-PROVENANCE-AWARE (HUB-043): the match is on the delivery identity,
+    not just the filename. A file's `/upload` sidecar carries its provenance
+    (Gmail `message_id` / upload `upload_id`); a terminal manifest counts as
+    "already processed" only when its intake provenance matches. A RE-SENT
+    email or a fresh upload with an already-seen filename is a NEW document
+    and must process — the filename-only rule silently dropped it forever
+    (the watcher skipped it every rescan; the sender never got a reaction or
+    an echo). No sidecar ⇒ legacy filename behavior (plain inbox drops)."""
     try:
         import json as _json
         from pipeline.bins import manifests_dir
+
+        delivery_key = None
+        try:
+            _matter, intake_meta = _intake_context(path)
+            delivery_key = intake_meta.get("message_id") or intake_meta.get("upload_id")
+        except Exception:
+            delivery_key = None
 
         mdir = manifests_dir()
         if not mdir.exists():
@@ -219,8 +234,17 @@ def _is_already_processed(path: Path) -> bool:
                 continue
             if data.get("original_filename") != path.name:
                 continue
-            if data.get("stage") in TERMINAL_STAGES:
+            if data.get("stage") not in TERMINAL_STAGES:
+                continue
+            if delivery_key is None:
                 return True
+            data_intake = data.get("intake") or {}
+            seen_key = data_intake.get("message_id") or data_intake.get("upload_id")
+            if seen_key == delivery_key:
+                return True
+            # Same filename, different delivery identity ⇒ an OLDER document's
+            # manifest — this file is new and must be claimed.
+        return False
     except Exception:
         logger.exception("manifest_scan_failed", file=str(path))
     return False
@@ -572,6 +596,13 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     from .gmail_intake import dispatch_intake_echo
 
     dispatch_intake_echo(manifest.model_dump(mode="json"))
+
+    # Relations clerk (HUB-040/043): the triage lane reaches a terminal
+    # manifest OUTSIDE the graph, so the post-archive association pass fires
+    # here too — daemon thread, fail-soft.
+    from .relations import dispatch_relations_scan
+
+    dispatch_relations_scan(manifest.model_dump(mode="json"))
     return {"doc_id": manifest.doc_id, "stage": "archived"}
 
 
@@ -704,6 +735,7 @@ class Watcher:
         self._running = False
         self._lock: _WatcherLock | None = None
         self._gmail_poller = None
+        self._relations_sweeper = None
 
     def start(self):
         global _watcher_owned
@@ -753,6 +785,12 @@ class Watcher:
             from .gmail_intake import start_embedded_poller
 
             self._gmail_poller = start_embedded_poller()
+
+            # Relations sweeper (HUB-040): the regular archive association
+            # sweep — same embedded pattern, watermark-incremental, fail-soft.
+            from .relations import start_embedded_relations_scanner
+
+            self._relations_sweeper = start_embedded_relations_scanner()
         except Exception:
             self.stop()
             raise
@@ -797,9 +835,12 @@ class Watcher:
     def stop(self):
         global _watcher_owned
         from .gmail_intake import stop_embedded_poller
+        from .relations import stop_embedded_relations_scanner
 
         stop_embedded_poller(self._gmail_poller)
         self._gmail_poller = None
+        stop_embedded_relations_scanner(getattr(self, "_relations_sweeper", None))
+        self._relations_sweeper = None
         if self._running:
             self.observer.stop()
             self.observer.join(timeout=5)
