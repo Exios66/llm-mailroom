@@ -23,6 +23,26 @@ llm_retry:
   max_delay: 60.0
   jitter: 0.3
 
+# Free-model swarm (Gmail triage pilot, live-verified 2026-09-04): ordered
+# fallback chain for FREE models. When a free model's upstream pool
+# rate-limits (OpenRouter's shared :free tier saturates for minutes at a
+# time), the retry ladder rotates to the next entry instead of burning every
+# attempt on one saturated pool — a request only parks when the WHOLE swarm
+# is rate-limited. Every entry must satisfy the free predicate (0/0
+# cost_models pricing or the :free suffix); paid models never rotate.
+# Order is priority: glm-5.2 is the strongest triage read (ling parsed 14/24
+# Enron samples in verification, the small models are last-resort).
+free_model_swarm:
+  - z-ai/glm-5.2:free
+  - inclusionai/ling-3.0-flash-fin:free
+  - nvidia/nemotron-3.5-lightning:free
+  - thinkingmachines/inkling:free
+  - thinkingmachines/inkling-small:free
+  - dots-studio/dots-3-note-preview:free
+  - poolside/laguna-s-2.1:free
+  - poolside/laguna-xs-2.1:free
+  - liquid/lfm-2.5-2.6b:free
+
 run_limits:
   # Hard wall-clock cutoff per document run (abort past this).
   deadline_seconds: 3600

@@ -123,6 +123,19 @@ def _retry_config() -> dict:
         return {}
 
 
+def _free_swarm() -> list[str]:
+    """The ordered free-model fallback chain (taxonomy ``free_model_swarm:``).
+
+    Empty when unconfigured — failover then never engages.
+    """
+    try:
+        from pipeline.config import load_config
+
+        return [str(m) for m in (load_config().get("free_model_swarm") or [])]
+    except Exception:
+        return []
+
+
 def retry_chat_completion(
     client,
     *,
@@ -142,6 +155,15 @@ def retry_chat_completion(
     so a hanging provider request is bounded. When `run_deadline` is set, the
     wall-clock deadline is re-checked before every attempt, so a run whose time
     is up stops burning credits instead of starting another retry.
+
+    FREE-SWARM FAILOVER (live-verified 2026-09-04): when the request's model
+    is free and a rate-limit error arrives, the next taxonomy
+    `free_model_swarm:` entry takes over for the following attempt — the
+    OpenRouter shared free pool saturates for minutes at a time, and burning
+    every attempt on one saturated model parked documents that another free
+    model could have served instantly. Paid models NEVER rotate (a failover
+    would silently change cost); the swarm order is priority (primary first).
+
     Returns the SDK response on success, re-raises the last exception when all
     attempts are exhausted.
     """
@@ -151,6 +173,17 @@ def retry_chat_completion(
     max_attempts = max_attempts if max_attempts is not None else int(cfg.get("max_attempts", 5))
     if timeout is None:
         timeout = float(get_call_timeout_seconds())
+    model = str(kwargs.get("model") or "")
+    if model:
+        from .client import is_free_model
+
+        failover = (
+            [m for m in _free_swarm() if m != model]
+            if is_free_model(model)
+            else []
+        )
+    else:
+        failover = []
     attempt = 0
     while True:
         attempt += 1
@@ -161,6 +194,17 @@ def retry_chat_completion(
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
             if not _is_retryable(exc) or attempt >= max_attempts:
                 raise
+            if failover and isinstance(exc, RateLimitError):
+                nxt = failover.pop(0)
+                logger.warning(
+                    "llm_free_failover",
+                    from_model=kwargs.get("model"),
+                    to_model=nxt,
+                    attempt=attempt,
+                    error_type=type(exc).__name__,
+                    detail=str(exc)[:200],
+                )
+                kwargs = {**kwargs, "model": nxt}
             delay = retry_sleep_seconds(exc, attempt, cfg)
             logger.warning(
                 "llm_retry",
@@ -170,5 +214,6 @@ def retry_chat_completion(
                 detail=str(exc)[:300],
                 retry_in_s=round(delay, 2),
                 name=kwargs.get("name"),
+                model=kwargs.get("model"),
             )
             time.sleep(max(0.0, delay))
