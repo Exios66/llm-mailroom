@@ -23,7 +23,7 @@ logger = structlog.get_logger(__name__)
 
 # O-1: kick the score-config warm-up off the document path at startup.
 from observability.scores import warmup_score_configs
-from observability.tracing import install_on_dropped
+from observability.tracing import install_on_dropped, pipeline_trace
 
 install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
 
@@ -1031,7 +1031,15 @@ class InboxHandler(FileSystemEventHandler):
                     matter_id=matter_id,
                     intake_source=intake_meta.get("source"),
                 )
-                _run_triage_lane(claimed, matter_id, intake_meta)
+                with pipeline_trace(
+                    seed=claimed.name,
+                    session_id=matter_id,
+                    name="gmail-triage",
+                    tags=["source-gmail", "route-triage"],
+                    metadata=intake_meta or {},
+                    environment="live",
+                ) as _triage_trace:
+                    _run_triage_lane(claimed, matter_id, intake_meta)
             else:
                 logger.info(
                     "file_claimed",
@@ -1243,7 +1251,15 @@ class Watcher:
                     matter_id=matter_id,
                     intake_source=intake_meta.get("source"),
                 )
-                _run_triage_lane(claimed, matter_id, intake_meta)
+                with pipeline_trace(
+                    seed=claimed.name,
+                    session_id=matter_id,
+                    name="gmail-triage",
+                    tags=["source-gmail", "route-triage"],
+                    metadata=intake_meta or {},
+                    environment="live",
+                ) as _triage_trace:
+                    _run_triage_lane(claimed, matter_id, intake_meta)
             else:
                 logger.info(
                     "existing_file_claimed",
