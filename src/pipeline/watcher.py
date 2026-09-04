@@ -98,10 +98,64 @@ WATCHER_LOCK_NAME = "watcher.lock"
 # tick. Override with WATCHER_POLL_INTERVAL_SECONDS.
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
 
+# SIGTERM drain: wait up to this many seconds for in-flight documents to
+# finish before aborting.  Override with WATCHER_DRAIN_TIMEOUT_SECONDS.
+DRAIN_TIMEOUT_SECONDS = int(os.environ.get("WATCHER_DRAIN_TIMEOUT_SECONDS", "30"))
+
 # In-process guard: flock is per-fd, so the same process can take the lock
 # twice. The API lifespan and a nested start() must not double-run.
 _watcher_owned = False
 _watcher_owned_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Manifest index cache (HUB-043 / performance fix): O(1) lookup per inbox
+# file instead of iterating every ``*.json`` in the manifests directory.
+# Rebuilt at startup and periodically in the rescan loop.  The index maps
+# ``{filename: {delivery_key: stage}}`` so ``_is_already_processed`` can do
+# a dict lookup + membership test instead of N JSON parses.
+# ---------------------------------------------------------------------------
+_MANIFEST_INDEX: dict[str, dict[str, str]] = {}
+_MANIFEST_INDEX_BUILT_AT: float = 0.0
+_MANIFEST_INDEX_REBUILD_SECONDS = 300.0  # rebuild every 5 minutes
+
+
+def _build_manifest_index() -> dict[str, dict[str, str]]:
+    """Build ``{filename: {delivery_key: stage}}`` from all terminal manifests.
+
+    A single pass over the manifests directory replaces the per-file O(n)
+    scan that ran for every inbox file on every rescan cycle.
+    """
+    import json as _json
+    from pipeline.bins import manifests_dir
+
+    index: dict[str, dict[str, str]] = {}
+    mdir = manifests_dir()
+    if not mdir.exists():
+        return index
+    for mf in mdir.glob("*.json"):
+        try:
+            data = _json.loads(mf.read_text())
+        except Exception:
+            continue
+        if data.get("stage") not in TERMINAL_STAGES:
+            continue
+        fname = data.get("original_filename") or ""
+        if not fname:
+            continue
+        intake = data.get("intake") or {}
+        delivery_key = intake.get("message_id") or intake.get("upload_id") or ""
+        index.setdefault(fname, {})[delivery_key] = data.get("stage", "")
+    return index
+
+
+def _get_manifest_index() -> dict[str, dict[str, str]]:
+    """Return the cached manifest index, rebuilding if stale."""
+    global _MANIFEST_INDEX, _MANIFEST_INDEX_BUILT_AT
+    now = time.time()
+    if not _MANIFEST_INDEX or (now - _MANIFEST_INDEX_BUILT_AT) > _MANIFEST_INDEX_REBUILD_SECONDS:
+        _MANIFEST_INDEX = _build_manifest_index()
+        _MANIFEST_INDEX_BUILT_AT = now
+    return _MANIFEST_INDEX
 
 # Watcher status channel (HUB-050): the 🟢 startup/relaunch confirmation and
 # the enriched heartbeat (pid/host/started_at/sha) that the external watchdog
@@ -314,11 +368,12 @@ def _is_already_processed(path: Path) -> bool:
     email or a fresh upload with an already-seen filename is a NEW document
     and must process — the filename-only rule silently dropped it forever
     (the watcher skipped it every rescan; the sender never got a reaction or
-    an echo). No sidecar ⇒ legacy filename behavior (plain inbox drops)."""
-    try:
-        import json as _json
-        from pipeline.bins import manifests_dir
+    an echo). No sidecar ⇒ legacy filename behavior (plain inbox drops).
 
+    Uses the pre-built manifest index for O(1) lookup instead of iterating
+    all manifest files per inbox file (HUB-043 / performance fix).
+    """
+    try:
         delivery_key = None
         try:
             _matter, intake_meta = _intake_context(path)
@@ -326,27 +381,17 @@ def _is_already_processed(path: Path) -> bool:
         except Exception:
             delivery_key = None
 
-        mdir = manifests_dir()
-        if not mdir.exists():
+        index = _get_manifest_index()
+        stages_by_key = index.get(path.name)
+        if stages_by_key is None:
             return False
-        for mf in mdir.glob("*.json"):
-            try:
-                data = _json.loads(mf.read_text())
-            except Exception:
-                continue
-            if data.get("original_filename") != path.name:
-                continue
-            if data.get("stage") not in TERMINAL_STAGES:
-                continue
-            if delivery_key is None:
-                return True
-            data_intake = data.get("intake") or {}
-            seen_key = data_intake.get("message_id") or data_intake.get("upload_id")
-            if seen_key == delivery_key:
-                return True
-            # Same filename, different delivery identity ⇒ an OLDER document's
-            # manifest — this file is new and must be claimed.
-        return False
+        if delivery_key is None:
+            # No sidecar ⇒ legacy behavior: any terminal manifest for this
+            # filename counts as already processed.
+            return bool(stages_by_key)
+        # Provenance-aware: only count a match when the delivery key exists
+        # in the index for this filename.
+        return delivery_key in stages_by_key
     except Exception:
         logger.exception("manifest_scan_failed", file=str(path))
     return False
@@ -1047,6 +1092,10 @@ class Watcher:
         try:
             self._reconcile_stale_claims()
 
+            # Pre-build the manifest index so the startup inbox scan uses
+            # O(1) lookups instead of O(n) per file.
+            _build_manifest_index()
+
             for f in list_inbox_files():
                 logger.info("existing_inbox_file", file=str(f))
                 threading.Thread(
@@ -1120,6 +1169,9 @@ class Watcher:
             # this process runs). Enriched with pid/host/started_at so the
             # external watchdog can fast-path on pid death.
             touch_watcher_heartbeat(extra=_status_detail())
+            # Refresh the manifest index periodically so newly-created
+            # manifests from other processes (e.g. the API) are picked up.
+            _get_manifest_index()
             if is_ingestion_paused():
                 continue
             for f in list_inbox_files():
@@ -1129,7 +1181,7 @@ class Watcher:
                     target=self._process_existing, args=(f,), daemon=True
                 ).start()
 
-    def stop(self):
+    def stop(self, drain_timeout: float | None = None):
         global _watcher_owned
         from .gmail_intake import stop_embedded_poller
         from .relations import stop_embedded_relations_scanner
@@ -1143,6 +1195,21 @@ class Watcher:
             self.observer.join(timeout=5)
             self._running = False
             logger.info("watcher_stopped")
+        # Drain: wait for in-flight documents to finish (SIGTERM hardening).
+        timeout = drain_timeout if drain_timeout is not None else DRAIN_TIMEOUT_SECONDS
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with _active_lock:
+                remaining = len(_active_files)
+            if remaining == 0:
+                break
+            logger.info("watcher_draining", active_files=remaining, seconds_left=round(deadline - time.time(), 1))
+            time.sleep(0.5)
+        else:
+            with _active_lock:
+                remaining = len(_active_files)
+            if remaining > 0:
+                logger.warning("watcher_drain_timeout", active_files=remaining, timeout=timeout)
         if self._lock is not None:
             self._lock.release()
             self._lock = None
@@ -1208,6 +1275,11 @@ if __name__ == "__main__":
     def _signal_handler(signum, frame):
         logger.info("watcher_signal_received", signal=signum)
         _shutdown.set()
+        # Force-kill after drain timeout if the main loop hasn't exited yet.
+        threading.Thread(
+            target=lambda: (time.sleep(DRAIN_TIMEOUT_SECONDS + 5), os._exit(1)),
+            daemon=True,
+        ).start()
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
@@ -1223,7 +1295,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        watcher.stop()
+        watcher.stop(drain_timeout=DRAIN_TIMEOUT_SECONDS)
         from observability.tracing import flush
 
         flush()

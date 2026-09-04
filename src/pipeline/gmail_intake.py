@@ -54,6 +54,7 @@ import json
 import os
 import re
 import smtplib
+import tempfile
 import threading
 import time
 import uuid
@@ -112,6 +113,9 @@ class _BoundedSet:
 
     def discard(self, key) -> None:
         self._data.pop(key, None)
+
+    def clear(self) -> None:
+        self._data.clear()
 
     def __len__(self) -> int:
         return len(self._data)
@@ -459,13 +463,20 @@ def _extension_of(filename: str) -> str:
     return Path(filename).suffix.lower()
 
 
-def deliver_attachment(filename: str, content: bytes, meta: dict) -> tuple[str | None, str | None]:
+def deliver_attachment(filename: str, content: Path | bytes, meta: dict) -> tuple[str | None, str | None]:
     """Write one attachment into the inbox + meta sidecar (the /upload route).
+
+    ``content`` may be raw ``bytes`` (API /upload) or a ``Path`` to a
+    temporary file already written to disk (Gmail poller streaming).  When a
+    ``Path`` is provided the file is moved into the inbox directly, keeping
+    peak heap low for large multi-attachment emails.
 
     Returns ``(delivered_filename, reject_reason)`` — reason is None on
     success, else ``"filename"`` | ``"extension"`` | ``"size"``. Collisions
     are uniquified exactly like ``/upload``.
     """
+    from pathlib import Path as _Path
+
     from .bins import inbox_dir, write_inbox_meta, accepted_extensions
 
     safe = _safe_filename(filename)
@@ -473,7 +484,13 @@ def deliver_attachment(filename: str, content: bytes, meta: dict) -> tuple[str |
         return None, "filename"
     if _extension_of(safe) not in accepted_extensions():
         return None, "extension"
-    if len(content) > meta["_max_attachment_bytes"]:
+
+    # Support streaming from a temp file path (Gmail poller) or raw bytes.
+    if isinstance(content, _Path):
+        size = content.stat().st_size
+    else:
+        size = len(content)
+    if size > meta["_max_attachment_bytes"]:
         return None, "size"
 
     inbox = inbox_dir()
@@ -485,7 +502,10 @@ def deliver_attachment(filename: str, content: bytes, meta: dict) -> tuple[str |
         while dest.exists():
             dest = inbox / f"{stem}-{counter}{suffix}"
             counter += 1
-    dest.write_bytes(content)
+    if isinstance(content, _Path):
+        content.rename(dest)
+    else:
+        dest.write_bytes(content)
     write_inbox_meta(dest, **{k: v for k, v in meta.items() if not k.startswith("_")})
     return dest.name, None
 
@@ -518,6 +538,8 @@ def poll_once(
 
     Returns a report dict; never raises (errors land in the report + status).
     """
+    from pathlib import Path
+
     cfg = config or load_config()
     report: dict = {
         "connected": False,
@@ -589,7 +611,7 @@ def poll_once(
                 # upload (full paid pipeline, triage dropped).
                 from .bins import accepted_extensions
 
-                accepted = []
+                accepted: list[tuple[str, Path]] = []
                 for filename, content in extract_attachments(msg):
                     if _extension_of(filename) not in accepted_extensions():
                         report["skipped_extension"] += 1
@@ -597,10 +619,15 @@ def poll_once(
                     if len(content) > cfg["max_attachment_bytes"]:
                         report["skipped_size"] += 1
                         continue
-                    accepted.append((filename, content))
+                    # Stream to temp file: avoids holding all attachment bytes
+                    # in memory simultaneously for multi-attachment emails.
+                    tmp = Path(tempfile.mktemp(suffix=_extension_of(filename)))
+                    tmp.write_bytes(content)
+                    accepted.append((filename, tmp))
+                    del content  # free decoded bytes immediately
                 route = "triage" if len(accepted) == 1 else "pipeline"
                 queued = 0
-                for filename, content in accepted:
+                for filename, content_path in accepted:
                     meta = {
                         "matter_id": matter_id,
                         "source": "gmail",
@@ -610,11 +637,17 @@ def poll_once(
                         "received_at": _received_at(msg),
                         "route": route,
                         "upload_id": uuid.uuid4().hex[:12],
-                        "size": len(content),
+                        "size": content_path.stat().st_size if isinstance(content_path, Path) else len(content_path),
                         "original_filename": filename,
                         "_max_attachment_bytes": cfg["max_attachment_bytes"],
                     }
-                    delivered, reject_reason = deliver_attachment(filename, content, meta)
+                    delivered, reject_reason = deliver_attachment(filename, content_path, meta)
+                    # Clean up the temp file (already moved into inbox on
+                    # success; orphaned on rejection or failure).
+                    try:
+                        content_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                     if delivered is None:
                         if reject_reason == "extension":
                             report["skipped_extension"] += 1
@@ -762,7 +795,7 @@ if __name__ == "__main__":
 # chain. The ✅ reaction proves pickup; the echo proves the pipeline happened.
 # ---------------------------------------------------------------------------
 
-_ECHO_DONE: set[tuple[str, str]] = set()
+_ECHO_DONE: _BoundedSet = _BoundedSet()
 _ECHO_LOCK = threading.Lock()
 
 
