@@ -1,5 +1,6 @@
 import os
 import signal
+import socket
 import time
 import threading
 import structlog
@@ -101,6 +102,107 @@ DEFAULT_POLL_INTERVAL_SECONDS = 1.0
 # twice. The API lifespan and a nested start() must not double-run.
 _watcher_owned = False
 _watcher_owned_lock = threading.Lock()
+
+# Watcher status channel (HUB-050): the 🟢 startup/relaunch confirmation and
+# the enriched heartbeat (pid/host/started_at/sha) that the external watchdog
+# (`python -m pipeline.watchdog`) turns into 🔴 down alerts. A dead process
+# cannot email anyone — the watchdog is the outside pair of eyes.
+_STATUS_STARTED_AT: str | None = None
+_STATUS_SHA: str | None = None
+
+
+def _code_sha() -> str | None:
+    """Short HEAD sha (once, fail-soft) so status emails name the running code."""
+    global _STATUS_SHA
+    if _STATUS_SHA is not None:
+        return _STATUS_SHA
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=Path(__file__).resolve().parent,
+        )
+        _STATUS_SHA = out.stdout.strip() or None
+    except Exception:
+        _STATUS_SHA = None
+    return _STATUS_SHA
+
+
+def _status_detail() -> dict:
+    """Operator-readable heartbeat payload (readers depend only on `ts`)."""
+    from datetime import datetime, timezone
+
+    detail: dict = {
+        "pid": os.getpid(),
+        "host": socket.gethostname(),
+        "interval": float(
+            os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", DEFAULT_POLL_INTERVAL_SECONDS)
+        ),
+    }
+    if _STATUS_STARTED_AT:
+        detail["started_at"] = _STATUS_STARTED_AT
+    sha = _code_sha()
+    if sha:
+        detail["sha"] = sha
+    return detail
+
+
+def _gmail_intake_line() -> str:
+    from .gmail_intake import load_config
+
+    try:
+        cfg = load_config()
+        enabled = os.environ.get("MAILROOM_GMAIL_ENABLED", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        return (
+            f"enabled · poll {cfg['poll_seconds']:.0f}s"
+            if enabled
+            else "disabled"
+        )
+    except Exception:
+        return "unknown"
+
+
+def _send_startup_notice() -> None:
+    """🟢 relaunch confirmation (daemon thread): concise stylized email to the
+    human's status inbox. Never blocks startup; every failure is logged only."""
+    import time as _time
+
+    from .bins import HEARTBEAT_FILE_NAME, get_base_dir
+    from .status_notify import send_status_email, status_enabled
+
+    _time.sleep(2.0)  # let the poller/relations embeds settle for accurate rows
+    if not status_enabled():
+        return
+    detail = _status_detail()
+    rows = [
+        ("Host", str(detail.get("host", "?"))),
+        ("PID", str(detail.get("pid", "?"))),
+        ("Started at", _STATUS_STARTED_AT or "?"),
+        ("Code", f"git {detail.get('sha')}" if detail.get("sha") else "unknown"),
+        ("Inbox", str(inbox_dir())),
+        ("Gmail intake", _gmail_intake_line()),
+        ("Heartbeat", str(get_base_dir() / HEARTBEAT_FILE_NAME)),
+    ]
+    sent = send_status_email(
+        "running",
+        "watcher is running — inbox drain is live",
+        rows,
+        note=(
+            "You will get a 🔴 alert here if this process stops beating, and "
+            "this 🟢 confirmation again at every relaunch."
+        ),
+    )
+    if sent:
+        logger.info("watcher_startup_notice_sent", pid=detail.get("pid"))
 
 
 class WatcherLockHeld(RuntimeError):
@@ -848,9 +950,12 @@ class Watcher:
         self._relations_sweeper = None
 
     def start(self):
-        global _watcher_owned
+        global _watcher_owned, _STATUS_STARTED_AT
+        from datetime import datetime, timezone
+
         inbox = inbox_dir()
         ensure_dirs(inbox)
+        _STATUS_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         logger.info("watcher_starting", inbox=str(inbox), worker_id=self.worker_id)
 
         with _watcher_owned_lock:
@@ -878,7 +983,7 @@ class Watcher:
             self.observer.schedule(handler, str(inbox), recursive=False)
             self.observer.start()
             self._running = True
-            touch_watcher_heartbeat()  # immediate liveness beacon before the first rescan
+            touch_watcher_heartbeat(extra=_status_detail())  # immediate enriched liveness beacon
             logger.info("watcher_running", inbox=str(inbox))
 
             # Periodic inbox rescan: catches files skipped while ingestion was
@@ -901,6 +1006,12 @@ class Watcher:
             from .relations import start_embedded_relations_scanner
 
             self._relations_sweeper = start_embedded_relations_scanner()
+
+            # Watcher status channel (HUB-050): 🟢 startup/relaunch
+            # confirmation to the human's status inbox. Fire-and-forget
+            # daemon — never blocks or crashes startup; MAILROOM_WATCHER_STATUS=0
+            # (and hermetic tests) keep it silent.
+            threading.Thread(target=_send_startup_notice, daemon=True).start()
         except Exception:
             self.stop()
             raise
@@ -930,9 +1041,11 @@ class Watcher:
         poll = float(os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", str(DEFAULT_POLL_INTERVAL_SECONDS)))
         while self._running:
             _time.sleep(poll)
-            # Liveness beacon for /health: proves the watcher is alive and
-            # draining the inbox (uploads only move once this process runs).
-            touch_watcher_heartbeat()
+            # Liveness beacon for /health + the HUB-050 watchdog: proves the
+            # watcher is alive and draining the inbox (uploads only move once
+            # this process runs). Enriched with pid/host/started_at so the
+            # external watchdog can fast-path on pid death.
+            touch_watcher_heartbeat(extra=_status_detail())
             if is_ingestion_paused():
                 continue
             for f in list_inbox_files():
