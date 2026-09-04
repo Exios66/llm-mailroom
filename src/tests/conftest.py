@@ -42,6 +42,12 @@ def _set_test_env():
     # the REAL dojo embedder triggers a network model download — hermetic runs
     # use the injection seam (set_embedder) instead.
     os.environ["MAILROOM_RELATIONS_EMBEDDINGS"] = "0"
+    # HUB-040 relations BACKGROUND DISPATCH is kill-switched OFF for hermetic
+    # runs: the daemon `relations-scan` thread spawned from the Gmail triage
+    # lane / watcher claims writes into the base dir and raced pytest's tmpdir
+    # teardown (flaky `OSError: [Errno 66] Directory not empty` on the full
+    # suite). test_relations.py opts back IN via its own autouse fixture.
+    os.environ["MAILROOM_RELATIONS"] = "0"
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
               "LANGFUSE_BASE_URL", "BRAINTRUST_API_KEY"):
         os.environ.pop(k, None)
