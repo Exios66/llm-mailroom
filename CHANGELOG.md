@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Relations clerk production readiness (HUB-051):** the layer was a no-op
+  on the live system — (a) the Gmail triage lane never wrote the `documents`
+  catalog row (audits/archives/echoes but no `_catalog_upsert`), so
+  `scan_document` skipped every triage document as `not_in_catalog` and the
+  sweeper scanned nothing (65 live sweeps, zero edges); the lane now upserts
+  the terminal conveyor row (stage/doc_type/subclass/confidence/sha256/
+  triage extraction) on both terminal paths, and `write_document_record`
+  persists `file_sha256`. (b) The embedding cosine signal never worked in
+  production: the dojo's public `get_embedding_model()` returns the model
+  NAME (a string), so the old `model.encode(...)` call died with a TypeError
+  (`relations_embed_failed`) — `_embed` now drives the dojo's shared
+  `_EmbeddingMatcher` singleton (local SentenceTransformer + remote
+  fallback, one instance per process, 90s-bounded, fail-soft). (c) The
+  documented `python -m pipeline.relations_scan` CLI crashed
+  (`ModuleNotFoundError`) — the module is created. (d) The LLM judgment pass
+  was dead code: `RelationsAgent.judge` was never called. Now WIRED into
+  `scan_document` — the ambiguous-band near-misses (sub-threshold signals)
+  are judged (top-`top_k_llm_candidates`), confidence-gated
+  (`llm_confidence_gate`, default 0.55) `llm_asserted` edges join the same
+  upsert + ledger path, and the scanner re-validates the agent's output
+  against its own proposed pairs (defense-in-depth; nothing unvalidated
+  reaches the ledger). `relations.llm: false` still keeps the pilot
+  deterministic-only.
+
 - **Railway crash loop:** listen on platform `PORT` when set (wins over image
   `MAILROOM_API_PORT=7860`), clearer off-loopback token exit on Railway, and
   skip local Phoenix under `auto` on Railway unless `PHOENIX_ENDPOINT` is remote.

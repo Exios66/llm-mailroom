@@ -288,6 +288,183 @@ def P_module_validate(raw, allowed_pairs):
 
 
 # ---------------------------------------------------------------------------
+# HUB-051: the LLM judgment pass WIRING (scan_document -> judge -> ledger)
+
+
+LLM_ROWS = [
+    ("docA", "M1", "fnol_a.txt", ["hail damage", "roof"], "Hail damage FNOL roof"),
+    # docD: shares a keyword at jaccard 1/6 < 0.25 and embeds far from docA —
+    # the ambiguous band (sub-threshold on every signal), never a
+    # deterministic edge, exactly what the judge exists for.
+    ("docD", "M3", "wind_d.txt", ["hail damage", "wind", "window", "deck", "porch"], "Wind and window damage"),
+]
+
+
+class _FakeRelationsAgent:
+    """Stand-in for agents.relations.RelationsAgent (already-validated
+    judgments — the validator itself is covered above)."""
+
+    def __init__(self, judgments):
+        self.judgments = judgments
+        self.seen_candidates = []
+
+    def judge(self, candidates):
+        self.seen_candidates.append(candidates)
+        return self.judgments
+
+
+def _enable_llm_pass(monkeypatch):
+    monkeypatch.setattr(P, "llm_pass_enabled", lambda: True)
+
+
+def test_llm_judgment_pass_records_gated_llm_asserted_edges(temp_base_dir, monkeypatch, fake_embedder):
+    _seed(LLM_ROWS)
+    _enable_llm_pass(monkeypatch)
+    fake = _FakeRelationsAgent(
+        [
+            {
+                "source_doc_id": "docA",
+                "target_doc_id": "docD",
+                "relation_type": "llm_asserted",
+                "confidence": 0.8,
+                "rationale": "shared hail-damage context across matters",
+            }
+        ]
+    )
+    monkeypatch.setattr("agents.relations.RelationsAgent", lambda: fake)
+
+    report = P.scan_document("docA")
+    assert report.get("ok") is True
+    assert report["edges_llm"] == 1
+
+    edges = asyncio_run(R.all_edges())
+    llm_edges = [e for e in edges if e["relation_type"] == "llm_asserted"]
+    assert len(llm_edges) == 1
+    assert llm_edges[0]["method"] == "llm"
+    assert llm_edges[0]["score"] == 0.8
+    assert llm_edges[0]["source_matter_id"] == "M1"
+    assert llm_edges[0]["target_matter_id"] == "M3"
+    assert llm_edges[0]["evidence"]["rationale"] == "shared hail-damage context across matters"
+
+    # The judge only saw the ambiguous-band pair, bounded by top_k.
+    assert len(fake.seen_candidates) == 1
+    seen_pairs = {(c["source_doc_id"], c["target_doc_id"]) for c in fake.seen_candidates[0]}
+    assert ("docA", "docD") in seen_pairs
+
+    # Ledger stays intact with the new edge recorded.
+    ok, _ = P.verify_ledger()
+    assert ok is True
+
+
+def test_llm_judgment_pass_gates_low_confidence_and_refuses_novel_pairs(temp_base_dir, monkeypatch, fake_embedder):
+    _seed(LLM_ROWS)
+    _enable_llm_pass(monkeypatch)
+    # 0.4 < the 0.55 gate → refused; the docZ pair was never proposed by the
+    # scanner → refused regardless of confidence.
+    fake = _FakeRelationsAgent(
+        [
+            {
+                "source_doc_id": "docA",
+                "target_doc_id": "docD",
+                "relation_type": "llm_asserted",
+                "confidence": 0.4,
+                "rationale": "weak signal",
+            },
+            {
+                "source_doc_id": "docA",
+                "target_doc_id": "docZ",
+                "relation_type": "llm_asserted",
+                "confidence": 0.9,
+                "rationale": "invented",
+            },
+        ]
+    )
+    monkeypatch.setattr("agents.relations.RelationsAgent", lambda: fake)
+
+    report = P.scan_document("docA")
+    assert report["edges_llm"] == 0
+    edges = asyncio_run(R.all_edges())
+    assert all(e["relation_type"] != "llm_asserted" for e in edges)
+
+
+def test_llm_judgment_pass_off_by_default_skips_agent(temp_base_dir, monkeypatch, fake_embedder):
+    _seed(LLM_ROWS)
+    fake = _FakeRelationsAgent([])
+    monkeypatch.setattr("agents.relations.RelationsAgent", lambda: fake)
+    report = P.scan_document("docA")
+    assert report.get("edges_llm") == 0
+    assert fake.seen_candidates == []  # the agent is never constructed
+
+
+def test_llm_judgment_failure_fails_soft(temp_base_dir, monkeypatch, fake_embedder):
+    _seed(LLM_ROWS)
+    _enable_llm_pass(monkeypatch)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("model unreachable")
+
+    monkeypatch.setattr("agents.relations.RelationsAgent", _boom)
+    report = P.scan_document("docA")
+    assert report.get("ok") is True  # the deterministic layer still lands
+    assert report.get("edges_llm") == 0
+
+
+def test_relations_scan_cli_module_exists_and_verifies_ledger(temp_base_dir, capsys):
+    """HUB-051: the documented ``python -m pipeline.relations_scan``
+    entrypoint exists (it crashed with ModuleNotFoundError before the fix)
+    and the verify-ledger verb works on an empty chain."""
+    import pipeline.relations_scan as cli
+
+    rc = cli.main(["--verify-ledger"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "relations ledger: OK" in out
+
+
+def test_embed_uses_dojo_matcher_singleton(temp_base_dir, monkeypatch):
+    """HUB-051: the REAL embedding path drives the dojo's shared matcher.
+
+    The dojo's public ``get_embedding_model()`` returns the model NAME string
+    — the old ``model.encode(vals, show_progress_bar=False)`` call was a
+    TypeError on every real run (``relations_embed_failed``; the cosine
+    signal only ever worked through the injected test seam). The fix routes
+    through the ``_EmbeddingMatcher`` singleton with its local-model load.
+    """
+    import numpy as np
+
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
+    P.set_embedder(None)
+
+    class FakeMatcher:
+        def __init__(self):
+            self.local_loaded = False
+            self.calls = []
+
+        def _load_local(self):
+            self.local_loaded = True
+
+        def _embed(self, text):
+            self.calls.append(text)
+            return np.array([0.1, 0.2, 0.3])
+
+    fake = FakeMatcher()
+    monkeypatch.setattr("llm_dojo_scoring.field_scoring._get_embedding", lambda: fake)
+    vectors = P._embed(["some document text"])
+    assert vectors == [[0.1, 0.2, 0.3]]
+    assert fake.local_loaded is True
+    assert fake.calls == ["some document text"]
+
+
+def test_embed_degrades_when_dojo_matcher_missing(temp_base_dir, monkeypatch):
+    """HUB-051: no matcher ⇒ None (the cosine signal skips; other signals
+    flow) — never a crash."""
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
+    P.set_embedder(None)
+    monkeypatch.setattr("llm_dojo_scoring.field_scoring._get_embedding", lambda: None)
+    assert P._embed(["text"]) is None
+
+
+# ---------------------------------------------------------------------------
 # Knowledge graphs
 
 
@@ -342,3 +519,60 @@ def test_graph_renderers_and_ledger_events(temp_base_dir, fake_embedder):
     chain = _chain()
     renders = [c for c in chain if c["event"] == "relations_graph_rendered"]
     assert len(renders) >= 1
+
+
+# ---------------------------------------------------------------------------
+# HUB-051: full judgment I/O debug capture (the triage-lane pattern)
+
+
+def test_judge_writes_full_io_debug_capture(temp_base_dir, mocker):
+    """Every judgment call leaves the complete system/user/response/judgments
+    under debug/relations/ — a refused or empty verdict is explainable."""
+    from pathlib import Path
+
+    from agents import relations as A
+
+    agent = A.RelationsAgent()
+    mocker.patch.object(
+        agent,
+        "_call_structured",
+        return_value={
+            "judgments": [
+                {
+                    "source_doc_id": "A",
+                    "target_doc_id": "B",
+                    "relation_type": "party_overlap",
+                    "confidence": 0.9,
+                    "rationale": "shared insured party",
+                }
+            ]
+        },
+    )
+    out = agent.judge([{"source_doc_id": "A", "target_doc_id": "B", "signals": [], "evidence": {}}])
+    assert len(out) == 1
+
+    roots = list((Path(temp_base_dir) / "debug" / "relations").iterdir())
+    assert len(roots) == 1
+    assert (roots[0] / "system.txt").exists()
+    assert (roots[0] / "user.txt").exists()
+    assert "CANDIDATE RELATIONS" in (roots[0] / "user.txt").read_text()
+    assert (roots[0] / "judgments.json").exists()
+    assert "party_overlap" in (roots[0] / "judgments.json").read_text()
+
+
+def test_judge_debug_capture_survives_unparseable_response(temp_base_dir, mocker):
+    from pathlib import Path
+
+    from agents import relations as A
+
+    agent = A.RelationsAgent()
+    mocker.patch.object(
+        agent, "_call_structured", return_value={"_raw": "this is not json", "_parse_error": True}
+    )
+    out = agent.judge([{"source_doc_id": "A", "target_doc_id": "B", "signals": [], "evidence": {}}])
+    assert out == []  # refused — nothing unvalidated reaches the ledger
+
+    roots = list((Path(temp_base_dir) / "debug" / "relations").iterdir())
+    assert len(roots) == 1
+    assert "this is not json" in (roots[0] / "response.txt").read_text()
+    assert (roots[0] / "judgments.json").read_text() == "[]"

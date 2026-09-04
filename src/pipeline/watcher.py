@@ -574,6 +574,62 @@ def _file_sha256(path: Path) -> str:
         return ""
 
 
+def _triage_catalog_upsert(
+    manifest,
+    terminal_path: Path | None = None,
+    extraction: dict | None = None,
+    file_sha256: str | None = None,
+) -> None:
+    """Triage-lane catalog write (HUB-051) — the durable conveyor row the
+    relations clerk, /ops/status, and the echo's audit read depend on.
+
+    The free lane reaches its terminal manifest OUTSIDE the graph, so the
+    catalog row the paid pipeline writes via ``_catalog_upsert`` is written
+    here. Without it ``scan_document`` skips every triage document as
+    ``not_in_catalog`` and the relations layer stays a production no-op
+    (65 live sweeps, zero edges — HUB-051 audit). Best-effort, never raises.
+    """
+    try:
+        import asyncio
+
+        from schemas.matter import Matter
+        from storage.catalog import (
+            write_document_record as _write_doc,
+            write_matter_record as _write_matter,
+        )
+
+        matter_id = manifest.matter_id or "DEFAULT"
+        intake = manifest.intake or {}
+        triage = intake.get("triage") or {}
+        doc_record = {
+            "doc_id": manifest.doc_id,
+            "matter_id": matter_id,
+            "original_filename": manifest.original_filename,
+            "doc_type": manifest.doc_type or "unknown",
+            "doc_subclass": manifest.doc_subclass,
+            "stage": manifest.stage.value if hasattr(manifest.stage, "value") else str(manifest.stage),
+            "classification_confidence": manifest.classification_confidence,
+            "extracted_data": extraction or triage.get("extraction"),
+            "escalation_reason": manifest.escalation_reason,
+            "file_sha256": file_sha256 or (triage.get("file_sha256") or ""),
+        }
+
+        async def _runner():
+            matter = Matter(
+                matter_id=matter_id,
+                name=matter_id,
+                client_name="auto-created",
+                practice_area="transactional",
+            )
+            await _write_matter(matter)
+            await _write_doc(doc_record)
+
+        asyncio.run(_runner())
+        logger.debug("triage_catalog_upserted", doc_id=manifest.doc_id, stage=doc_record["stage"])
+    except Exception:
+        logger.exception("triage_catalog_upsert_failed")
+
+
 def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     """Single-document Gmail intake → the free-triage lane (HUB-037).
 
@@ -667,6 +723,13 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
             matter_id=matter_id,
             error=reason,
         )
+        # Catalog row + relations dispatch (HUB-051): the review park is a
+        # terminal manifest — the relations clerk must see it and the
+        # conveyor position must be real.
+        _triage_catalog_upsert(manifest, terminal_path=review_path, file_sha256=_file_sha256(claimed))
+        from .relations import dispatch_relations_scan
+
+        dispatch_relations_scan(manifest.model_dump(mode="json"))
         from .gmail_intake import dispatch_intake_echo
 
         dispatch_intake_echo(manifest.model_dump(mode="json"))
@@ -792,6 +855,17 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         prev_hash=prev,
     )
     _write_audit_log(terminal_entry)
+
+    # Catalog row (HUB-051): the triage lane reaches its terminal manifest
+    # OUTSIDE the graph, so the durable conveyor row is written here —
+    # without it the relations clerk skips the document (not_in_catalog)
+    # and /ops/status never sees the archive.
+    _triage_catalog_upsert(
+        manifest,
+        terminal_path=terminal_path,
+        extraction=triage.get("extraction"),
+        file_sha256=terminal_detail.get("file_sha256"),
+    )
 
     logger.info(
         "triage_lane_complete",

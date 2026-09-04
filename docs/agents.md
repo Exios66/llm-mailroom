@@ -457,7 +457,7 @@ Registration: `llm/prompts.py:prompt_templates()` (synced with
 | Attribute | Value |
 |---|---|
 | **Node** | none — the post-archive association pass + the background archive sweep (HUB-040) |
-| **Trigger** | deterministic layer: every terminal manifest (dispatched off the document path) + a watermark-incremental sweep every `MAILROOM_RELATIONS_SCAN_SECONDS` (embedded in the watcher). LLM judgment pass: config-gated (`relations.llm`, **OFF in the pilot**) |
+| **Trigger** | deterministic layer: every terminal manifest (dispatched off the document path — incl. the Gmail triage lane, which also writes the doc's catalog row so the scan can find it, HUB-051) + a watermark-incremental sweep every `MAILROOM_RELATIONS_SCAN_SECONDS` (embedded in the watcher). LLM judgment pass: config-gated (`relations.llm`, **OFF in the pilot**) |
 | **Input** | deterministic: catalog + manifests + archived text (embeddings cached per document). LLM pass: top-k candidate pairs with signal evidence (gists/keywords — never raw text) |
 | **Output** | typed, scored edges (`relation_edges`) + hash-chained ledger entries (`relation_log`) + advisory RELATED context for agents/echo + knowledge-graph exports |
 | **Personality** | the mailroom's research clerk — files everything near everything it relates to, records the relationship itself |
@@ -475,13 +475,18 @@ every new edge is an entry in the **own hash-chained ledger** (`relation_log`,
 `python -m pipeline.relations_scan --verify-ledger`), and each document's
 own audit chain gains a `relations_linked` event.
 
-The **LLM judgment pass** (`RelationsAgent.judge`) reviews the scanner's
-top ambiguous candidates and returns typed judgments + rationale —
-validated and clamped to the closed vocabulary; unproposed pairs and
-invented types are refused, so nothing unvalidated ever reaches the ledger.
-`relations.llm: false` keeps the pilot deterministic-only (free-tier
-guardrail compatible); flipping it on in production with a paid model is a
-taxonomy edit. Registered as `mailroom-relations` in `llm/prompts.py`.
+The **LLM judgment pass** (`RelationsAgent.judge`, WIRED in HUB-051) reviews
+the scanner's top-`top_k_llm_candidates` **ambiguous-band** pairs — signals
+that suggest but do not clear a deterministic threshold (the near-miss set
+collected during the same scan) — and returns typed judgments + rationale.
+Confidence-gated (`llm_confidence_gate`, default 0.55) `llm_asserted` edges
+join the same upsert + ledger path as the deterministic ones; the scanner
+re-validates the agent's output against its OWN proposed pairs (closed
+vocabulary, pair normalization, unproposed-pair refusal — applied twice, so
+nothing unvalidated ever reaches the ledger). `relations.llm: false` keeps
+the pilot deterministic-only (free-tier guardrail compatible); flipping it
+on in production with a paid model is a taxonomy edit. Registered as
+`mailroom-relations` in `llm/prompts.py`.
 
 **Consumption** (the longitudinal loop): a bounded, labeled advisory
 `RELATED` block rides the sorter/specialist handoff context and the Gmail

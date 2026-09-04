@@ -486,6 +486,90 @@ def test_triage_agent_short_correspondence_gets_key_entities(
     assert out["extraction"]["action_items"] == ["Keith Holst will attend"]
 
 
+def test_triage_catalog_upsert_writes_conveyor_row(temp_base_dir):
+    """HUB-051: the triage lane writes the durable catalog row its terminal
+    manifest implies — the relations clerk and /ops/status read it. Without
+    it scan_document skips every triage document as not_in_catalog."""
+    import asyncio
+
+    from pipeline.watcher import _triage_catalog_upsert
+    from schemas.manifest import DocumentManifest, PipelineStage
+    from storage.catalog import get_document
+
+    manifest = DocumentManifest(
+        matter_id="M-CAT",
+        original_filename="fnol_cat.txt",
+        stage=PipelineStage.ARCHIVED,
+        doc_type="insurance_claim",
+        doc_subclass="first_notice_of_loss",
+        classification_confidence=0.95,
+        classification_attempts=1,
+        intake={
+            "triage": {
+                "primary_doc_class": "insurance_claim",
+                "extraction": {"claim_number": "C-1"},
+            }
+        },
+    )
+    manifest.touch()
+    _triage_catalog_upsert(manifest, file_sha256="abc123")
+
+    row = asyncio.run(get_document(manifest.doc_id))
+    assert row is not None
+    assert row.stage == "archived"
+    assert row.doc_type == "insurance_claim"
+    assert row.doc_subclass == "first_notice_of_loss"
+    assert row.classification_confidence == 0.95
+    assert row.file_sha256 == "abc123"
+    assert (row.extracted_data or {}).get("claim_number") == "C-1"
+
+
+def test_triage_catalog_upsert_never_raises(temp_base_dir, mocker):
+    """HUB-051: the triage-lane catalog write is fail-soft — a storage error
+    must never break the lane."""
+    import asyncio
+
+    from pipeline.watcher import _triage_catalog_upsert
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    mocker.patch(
+        "storage.catalog.write_document_record",
+        side_effect=RuntimeError("db down"),
+    )
+    manifest = DocumentManifest(
+        matter_id="M-CAT",
+        original_filename="fnol_cat.txt",
+        stage=PipelineStage.REVIEW,
+        doc_type="unknown",
+        classification_confidence=None,
+        classification_attempts=1,
+        escalation_reason="triage_llm_unavailable: RuntimeError: db down",
+    )
+    manifest.touch()
+    _triage_catalog_upsert(manifest)  # must not raise
+    assert asyncio.run(_count_documents("M-CAT")) == 0
+
+
+async def _count_documents(matter_id: str) -> int:
+    from sqlalchemy import func, select
+
+    from storage.catalog import DocumentRecord
+    from storage.db import async_session, ensure_schema
+
+    ensure_schema()
+    async with async_session() as session:
+        return int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(DocumentRecord)
+                    .where(DocumentRecord.matter_id == matter_id)
+                )
+            ).scalar()
+            or 0
+        )
+
+
 def test_echo_renders_intake_triage_extraction(temp_base_dir):
     """The completion echo's INTAKE TRIAGE section renders key entities."""
     from pipeline import gmail_intake
