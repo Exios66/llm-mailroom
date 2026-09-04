@@ -361,6 +361,7 @@ multi-document full pipeline), completion echoes, and troubleshooting — is
 | `MAILROOM_RELATIONS_SCAN_SECONDS` | No | `300` | Seconds between background archive sweeps (watermark-incremental — never rescans known documents) |
 | `MAILROOM_RELATIONS_CONTEXT` | No | `1` | Advisory RELATED context block for the sorter/specialist handoff + the Gmail completion echo (from the relations ledger) |
 | `MAILROOM_RELATIONS_LLM` | No | `1` (and `relations.llm` off in pilot) | LLM judgment pass over ambiguous relation candidates — taxonomy `relations.llm: false` keeps the pilot deterministic-only |
+| `MAILROOM_RELATIONS_EMBEDDINGS` | No | `1` | Embedding cosine signal (dojo sentence-transformers / remote fallback; HUB-040 hang-proofing: 90s bounded load). `0` skips the cosine signal only — the other signals flow |
 | `MAILROOM_LLM_FREE_ONLY` | No | off | Free-only pilot guardrail (HUB-039): when on (`1`/`true`/`yes`/`on`), `get_llm` refuses to resolve ANY model that is not free — `cost_models` prices both 0.0, or unregistered with an OpenRouter `:free` suffix. A paid-model resolution raises BEFORE any client exists, so documents fail-soft park instead of spending; the free triage lane is unaffected. Unset/`0` in full production, where paid agents handle multi-document emails and inbox/CLI uploads |
 
 #### Emailing the mailroom (Gmail intake format contract)

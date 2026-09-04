@@ -455,6 +455,24 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
         )
     )
 
+    # [catalog] HUB-051: the triage lane writes the durable conveyor row the
+    # relations clerk + /ops/status read — without it scan_document skips the
+    # doc as not_in_catalog and the relations layer stays a no-op.
+    from storage.catalog import get_document
+
+    catalog_row = None
+    if single_manifest:
+        catalog_row = asyncio.run(get_document(single_manifest["doc_id"]))
+    checks.append(
+        (
+            "catalog: triage-lane doc has a terminal conveyor row (relations clerk input)",
+            catalog_row is not None
+            and catalog_row.stage == "archived"
+            and catalog_row.doc_type == "insurance_claim",
+            f"stage={catalog_row.stage if catalog_row else 'NO ROW'} doc_type={catalog_row.doc_type if catalog_row else 'n/a'}",
+        )
+    )
+
     checks.append(
         (
             "pipeline-route: bundle documents ran the full paid pipeline",
