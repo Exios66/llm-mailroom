@@ -58,6 +58,7 @@ without reading the whole graph wiring first.
 | 11 | `huggingface_corpora.ipynb` | Navigate Lucius-Morningstar Hub datasets (offline snapshot + live opt-in) |
 | 12 | `legalbench.ipynb` | LegalBench eval suite beside the pipeline (mock on a mini CUAD fixture) |
 | 13 | `vision_ingestion.ipynb` | Additive page-image render path (no LLM call) |
+| 14 | `gmail_pilot.ipynb` | ONE mailroom-corpus doc fired through the agent mailbox (FIRE interlock; live/network behind the marker) |
 
 All fourteen walkthroughs share `notebooks/pipeline_lab.py` ("the lab
 bench"); 11 also uses `huggingface_lab.py` and 12 uses `legalbench_lab.py`.
