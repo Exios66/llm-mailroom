@@ -452,6 +452,50 @@ Registration: `llm/prompts.py:prompt_templates()` (synced with
 
 ---
 
+### 13. Relations agent (`agents/relations.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | none — the post-archive association pass + the background archive sweep (HUB-040) |
+| **Trigger** | deterministic layer: every terminal manifest (dispatched off the document path) + a watermark-incremental sweep every `MAILROOM_RELATIONS_SCAN_SECONDS` (embedded in the watcher). LLM judgment pass: config-gated (`relations.llm`, **OFF in the pilot**) |
+| **Input** | deterministic: catalog + manifests + archived text (embeddings cached per document). LLM pass: top-k candidate pairs with signal evidence (gists/keywords — never raw text) |
+| **Output** | typed, scored edges (`relation_edges`) + hash-chained ledger entries (`relation_log`) + advisory RELATED context for agents/echo + knowledge-graph exports |
+| **Personality** | the mailroom's research clerk — files everything near everything it relates to, records the relationship itself |
+
+The **relations layer** links associated topics, documents, and matters
+across the archive — the lawyer's research methodology as infrastructure.
+Deterministic signals (all free): `same_matter`, keyword Jaccard
+(`topic_overlap`), shared parties (`party_overlap`), embedding cosine via
+the dojo's sentence-transformers model (`semantic_similarity` — embeddings
+computed ONCE per document and cached in `relation_embeddings`), and a
+temporal evidence boost. Edges live in `relation_edges` (canonical
+endpoints, closed six-type vocabulary, per-document cap); every scan and
+every new edge is an entry in the **own hash-chained ledger** (`relation_log`,
+`__relations__` scope — same tamper-evident law as the document audit;
+`python -m pipeline.relations_scan --verify-ledger`), and each document's
+own audit chain gains a `relations_linked` event.
+
+The **LLM judgment pass** (`RelationsAgent.judge`) reviews the scanner's
+top ambiguous candidates and returns typed judgments + rationale —
+validated and clamped to the closed vocabulary; unproposed pairs and
+invented types are refused, so nothing unvalidated ever reaches the ledger.
+`relations.llm: false` keeps the pilot deterministic-only (free-tier
+guardrail compatible); flipping it on in production with a paid model is a
+taxonomy edit. Registered as `mailroom-relations` in `llm/prompts.py`.
+
+**Consumption** (the longitudinal loop): a bounded, labeled advisory
+`RELATED` block rides the sorter/specialist handoff context and the Gmail
+completion echo — later documents inherit everything the archive already
+knows. **Knowledge graphs** (`python -m pipeline.relations_graph`): matter
+graphs (typed doc nodes + related-matter bridges), the global inter-matter
+graph (edges aggregated to pair weights), and document ego-graphs, exported
+as GraphJSON + GraphML (stdlib, always) and Plotly HTML + PNG (optional
+deps, graceful skip) under `<base>/relations/graphs/`, with
+`relations_graph_rendered` ledger events. Fails soft everywhere; the
+document path never waits on it.
+
+---
+
 ## Evaluating individual agents
 
 Live Langfuse evaluators stay **pipeline-level** (`pipeline-result` generation, two independent judges) by design. To score one agent without running the 13-node graph, use the local isolation harness:

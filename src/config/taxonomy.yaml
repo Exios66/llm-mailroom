@@ -281,7 +281,7 @@ doc_classes:
     label: "Insurance Claim"
     schema: InsuranceClaimExtraction
     specialist: insurance_claims_specialist
-    description: "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters, and CMS/DE-SynPUF claim tables (inpatient, outpatient, PDE, carrier)"
+    description: "Insurance claim documentation: FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters, CMS/DE-SynPUF claim tables (inpatient, outpatient, PDE, carrier), and the v8 synthetic LOB lines — property FNOL bundles, auto decision letters"
     field_types:
       claim_number: id
       policy_number: id
@@ -323,6 +323,26 @@ file_extensions:
 # obligations) get truncated away — see docs/reports/audits/PILOT_AUDIT_REPORT.md fix #5.
 # To cut over locally: change provider to "ollama", model to e.g. "qwen3:7b"
 # Setting DEFAULT_PROVIDER env var overrides the provider globally.
+# HUB-040 relations layer — the mailroom's research clerk: deterministic
+# association scanning over the archive (same-matter / keyword Jaccard /
+# party overlap / embedding cosine via field_scoring's model), an own
+# hash-chained relations ledger, knowledge-graph exports, and an advisory
+# RELATED context block injected into the sorter/specialists + the echo.
+# `llm: false` keeps the pilot deterministic-only; flip true in production.
+relations:
+  enabled: true
+  llm: false
+  context_injection: true
+  graphs: true
+  similarity_threshold: 0.62
+  keyword_jaccard_threshold: 0.25
+  max_edges_per_doc: 50
+  same_matter_cap: 25
+  top_k_llm_candidates: 5
+  scan_batch_size: 25
+  context_limit: 6
+  embedding_text_chars: 8000
+
 agents:
   # HUB-037: specialized Gmail triage agent — the free OpenRouter triage team.
   # Dispatched ONLY on single-document Gmail inbox instances (one accepted
@@ -338,6 +358,18 @@ agents:
     model: z-ai/glm-5.2:free
     temperature: 0.1
     max_tokens: 700
+    max_input_chars: 12000
+    reasoning_effort: none
+
+  # HUB-040 relations judgment pass — the OPTIONAL LLM layer over the
+  # deterministic scanner's candidate pairs. OFF in the pilot
+  # (relations.llm: false below); flips on in production with a paid model.
+  # The free model keeps the pilot inside the MAILROOM_LLM_FREE_ONLY guardrail.
+  relations:
+    provider: openrouter
+    model: z-ai/glm-5.2:free
+    temperature: 0.1
+    max_tokens: 900
     max_input_chars: 12000
     reasoning_effort: none
 

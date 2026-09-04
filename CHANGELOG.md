@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Relations layer — the mailroom's research clerk (HUB-040):** a
+  deterministic-first, optionally-LLM association layer over the archive.
+  `pipeline/relations.py` scans every archived document (post-archive
+  dispatch off the document path at each terminal manifest + a
+  watermark-incremental background sweep embedded in the watcher, every
+  `MAILROOM_RELATIONS_SCAN_SECONDS`) for associated topics, documents, and
+  matters: same-matter, keyword Jaccard, party overlap, and embedding
+  cosine (dojo sentence-transformers model — local, free; embeddings
+  computed ONCE per document and cached in `relation_embeddings`). Edges
+  live in `relation_edges` (canonical endpoints, closed six-type
+  vocabulary, per-document cap); every scan and every new edge is an entry
+  in the OWN hash-chained ledger (`relation_log`, `__relations__` scope —
+  `python -m pipeline.relations_scan --verify-ledger`), and each
+  document's audit chain gains a `relations_linked` event. The LLM
+  judgment pass (`agents/relations.py`, `mailroom-relations` prompt,
+  closed-vocabulary validator that refuses unproposed pairs and invented
+  types) is CODE-COMPLETE but OFF in the pilot (`relations.llm: false`).
+  **Knowledge graphs** (`pipeline/relations_graph.py` +
+  `python -m pipeline.relations_graph`): matter graphs (typed doc nodes +
+  related-matter bridges), the global inter-matter graph (edges aggregated
+  to pair weights), and document ego-graphs — GraphJSON + GraphML (stdlib)
+  always, Plotly HTML + PNG when the optional libs are installed — under
+  `<base>/relations/graphs/`, every render a `relations_graph_rendered`
+  ledger event. **Context injection:** a bounded advisory RELATED block
+  rides the sorter/specialist handoff context and the completion echo.
+  Kill-switches: `MAILROOM_RELATIONS`, `MAILROOM_RELATIONS_CONTEXT`,
+  `MAILROOM_RELATIONS_LLM`, taxonomy `relations.enabled`. 13 hermetic
+  tests (`src/tests/test_relations.py`).
+
 - **`MAILROOM_LLM_FREE_ONLY` pilot guardrail (HUB-039):** when enabled,
   `llm/client.py:get_llm` refuses to resolve ANY model that is not free —
   taxonomy `cost_models` prices both 0.0, or unregistered with an OpenRouter
