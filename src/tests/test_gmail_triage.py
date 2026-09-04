@@ -524,6 +524,68 @@ def test_echo_renders_intake_triage_extraction(temp_base_dir):
     assert "action_items: attend Friday" in body
 
 
+def test_echo_renders_triage_debug_on_parse_failure(temp_base_dir):
+    """When the free model's answer is unparseable the echo surfaces WHY and
+    where the full I/O payloads live (human debugging directive)."""
+    from pipeline.gmail_intake import build_echo_body
+
+    body = build_echo_body(
+        {
+            "stage": "review",
+            "doc_type": "unknown",
+            "classification_confidence": None,
+            "intake": {
+                "sender": "axios337@gmail.com",
+                "triage": {
+                    "primary_doc_class": "unknown",
+                    "confidence": 0.0,
+                    "gist": "",
+                    "keywords": [],
+                    "debug": {
+                        "model": "nvidia/nemotron-3.5-lightning:free",
+                        "attempted_models": ["z-ai/glm-5.2:free"],
+                        "parse_ok": False,
+                        "parse_error": "no parseable json object in response",
+                        "input_chars": 2803,
+                        "response_chars": 512,
+                        "debug_dir": "/tmp/base/debug/triage/20260904T000000Z_x",
+                    },
+                },
+            },
+        },
+        [],
+    )
+    assert "triage debug:" in body
+    assert "no parseable json object in response" in body
+    assert "nvidia/nemotron-3.5-lightning:free" in body
+    assert "/tmp/base/debug/triage/20260904T000000Z_x" in body
+
+
+def test_triage_debug_reports_actual_serving_model(mock_openai_client, sample_insurance_claim_text):
+    """Failover-aware debug capture: the request-layer wrapper records the
+    model that ACTUALLY served the read — the agent-level self.model stays
+    the primary even when the retry ladder rotated to another swarm member
+    (live-verified 2026-09-04: logs said glm, nemotron served)."""
+    from unittest.mock import MagicMock
+
+    agent = GmailTriageAgent()
+    choice = MagicMock()
+    choice.message.content = json.dumps(
+        {"primary_doc_class": "insurance_claim", "confidence": 0.9, "gist": "FNOL"}
+    )
+    resp = mock_openai_client.chat.completions.create.return_value
+    resp.choices = [choice]
+    resp.model = "nvidia/nemotron-3.5-lightning:free"
+
+    out = agent.triage(sample_insurance_claim_text, filename="claim.txt")
+    assert out["primary_doc_class"] == "insurance_claim"
+    # the response object's model (what actually served) wins over the
+    # agent-level primary; the request was still ASKED for the conftest model
+    assert out["debug"]["model"] == "nvidia/nemotron-3.5-lightning:free"
+    assert out["debug"]["attempted_models"] == ["test-model"]
+    assert out["debug"]["parse_ok"] is True
+
+
 def test_triage_handles_real_enron_short_email_key_entities(mock_openai_client):
     """The free triage lane extracts key entities from the REAL short Enron
     email (allen-p/_sent_mail, 542 bytes — the human-cited 'short

@@ -217,6 +217,42 @@ def test_watchdog_recovery_resets_quietly(watchdog_core):
     assert action == "down"
 
 
+def test_watchdog_retries_down_alert_after_send_failure(
+    watchdog_core, status_env, mocker, monkeypatch
+):
+    """A failed 🔴 send must NOT latch the reminder cadence: the next poll
+    re-fires the DOWN alert (audit fix 2026-09-04 — an SMTP blip used to
+    silence the human for a full remind cycle)."""
+    wd, holder = watchdog_core
+    holder["age"] = 120.0  # stale from the first poll onward
+    monkeypatch.setenv("MAILROOM_WATCHDOG", "1")
+
+    clock = {"now": 1000.0}
+    mocker.patch.object(wd.time, "time", lambda: clock["now"])
+    kinds: list[str] = []
+
+    def _send(kind, *a, **k):
+        kinds.append(kind)
+        if len(kinds) == 1:
+            return False  # first 🔴 send fails (SMTP blip)
+        if len(kinds) == 2:
+            clock["now"] += 60 * 60.0  # jump past the reminder cadence
+        return True
+
+    sends = mocker.patch("pipeline.status_notify.send_status_email", side_effect=_send)
+    mocker.patch.object(wd, "read_heartbeat", lambda: {"pid": 999999})
+    sleeps = mocker.patch.object(wd.time, "sleep", side_effect=[None, None, KeyboardInterrupt])
+
+    with pytest.raises(KeyboardInterrupt):
+        wd.main()
+
+    # first send fails → latch reverts → the retry is a 🔴 DOWN again;
+    # only after a SUCCESSFUL send does the ladder advance to 🟠.
+    assert kinds == ["down", "down", "still_down"]
+    assert sends.call_count == 3
+    assert sleeps.call_count == 3
+
+
 # ── 🟢 startup/relaunch confirmation ────────────────────────────────
 
 
