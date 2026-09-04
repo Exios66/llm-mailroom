@@ -23,11 +23,16 @@ failure must never block the intake.
 from __future__ import annotations
 
 import json
+import re
+import structlog
+from datetime import datetime, timezone
 
 from agents.base import BaseAgent
 from llm.prompts import get_managed_prompt
 from pipeline.config import get_all_doc_types
 from schemas.documents import EXTRACTION_SCHEMAS, get_extraction_schema
+
+logger = structlog.get_logger(__name__)
 
 TRIAGE_SCHEMA = {
     "type": "object",
@@ -283,6 +288,100 @@ def validate_triage(result: dict, doc_text: str | None = None) -> dict:
     }
 
 
+def _parse_model_json(raw: str) -> tuple[dict | None, str | None]:
+    """Parse a free model's JSON answer, tolerating the mess they emit.
+
+    The OpenRouter free tier answers through different upstreams with
+    different output habits: bare JSON, markdown-fenced JSON (```json ...```),
+    prose with a JSON object embedded, or occasionally a non-JSON apology.
+    Returns ``(parsed, None)`` on success, ``(None, reason)`` when nothing
+    parseable exists — the caller parks the document with the evidence.
+    """
+    if raw is None:
+        return None, "empty response (None)"
+    text = str(raw).strip()
+    if not text:
+        return None, "empty response"
+    # 1) direct parse
+    try:
+        obj = json.loads(text)
+        return (obj if isinstance(obj, dict) else None), (
+            None if isinstance(obj, dict) else "response was not a json object"
+        )
+    except json.JSONDecodeError:
+        pass
+    # 2) markdown code fences (```json ... ``` or ``` ... ```)
+    fence = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.DOTALL)
+    if fence:
+        try:
+            obj = json.loads(fence.group(1))
+            return (obj if isinstance(obj, dict) else None), (
+                None if isinstance(obj, dict) else "fenced response was not a json object"
+            )
+        except json.JSONDecodeError:
+            pass
+    # 3) first '{' to last '}' — prose-wrapped objects
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            obj = json.loads(text[start : end + 1])
+            return (obj if isinstance(obj, dict) else None), (
+                None if isinstance(obj, dict) else "embedded response was not a json object"
+            )
+        except json.JSONDecodeError:
+            pass
+    return None, "no parseable json object in response"
+
+
+def _write_triage_debug(
+    *,
+    filename: str | None,
+    system: str,
+    user: str,
+    response: str,
+    result: dict,
+    extra: dict | None = None,
+) -> str | None:
+    """Write the FULL triage I/O payloads for debugging (human directive).
+
+    Everything lands under ``<base>/debug/triage/<UTC stamp>_<file slug>/``:
+    ``system.txt``, ``user.txt``, ``response.txt``, ``result.json`` and a
+    ``meta.json`` summary. Best-effort — a debug-write failure must never
+    affect the triage lane.
+    """
+    try:
+        from pipeline.bins import get_base_dir
+
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "_", str(filename or "unnamed"))[:60]
+        d = get_base_dir() / "debug" / "triage" / f"{stamp}_{slug}"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "system.txt").write_text(system, encoding="utf-8")
+        (d / "user.txt").write_text(user, encoding="utf-8")
+        (d / "response.txt").write_text(response, encoding="utf-8")
+        (d / "result.json").write_text(
+            json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        (d / "meta.json").write_text(
+            json.dumps(
+                {
+                    "written_at": datetime.now(timezone.utc).isoformat(),
+                    "filename": filename,
+                    "input_chars": len(user),
+                    "response_chars": len(response),
+                    **(extra or {}),
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return str(d)
+    except Exception:  # noqa: BLE001 — debugging aids never break the lane
+        logger.exception("triage_debug_write_failed")
+        return None
+
+
 class GmailTriageAgent(BaseAgent):
     agent_name = "gmail_triage"
 
@@ -299,6 +398,13 @@ class GmailTriageAgent(BaseAgent):
         the user message so short documents (correspondence/emails) yield
         key entities (sender, recipient, date, action items, subject matter)
         without the paid specialists.
+
+        FULL I/O DEBUG CAPTURE (human directive 2026-09-04): every call
+        writes the complete system prompt, user message, raw model response,
+        and validated result under ``<base>/debug/triage/<stamp>_<file>/`` —
+        free-tier models fail in messy ways (fenced JSON, prose-wrapped
+        objects, truncated output), and debugging them REQUIRES the full
+        payloads, not excerpts.
         """
         # Field map for every live class, so the free model answers the right
         # schema for whatever it classifies.
@@ -317,14 +423,113 @@ class GmailTriageAgent(BaseAgent):
             f"{fields_hint}\n\n"
             f"Document text:\n{doc_text}"
         )
-        raw = self._call_structured(
-            user,
-            TRIAGE_SCHEMA,
-            system_prompt=self.system_prompt(),
+
+        # Capture the EXACT final prompt/response by wrapping the transport
+        # call: _call_structured appends the json_object boilerplate + schema
+        # to the user message, so only the transport sees the full payload.
+        captured: dict = {}
+        original_call_llm = self._call_llm
+
+        def _capture_call_llm(user_message: str, **kwargs):
+            captured["user"] = user_message
+            captured["system"] = kwargs.get("system_prompt")
+            raw = original_call_llm(user_message, **kwargs)
+            captured["raw"] = raw
+            return raw
+
+        self._call_llm = _capture_call_llm  # type: ignore[method-assign]
+        debug_dir: str | None = None
+        parse_error: str | None = None
+        try:
+            raw = self._call_structured(
+                user,
+                TRIAGE_SCHEMA,
+                system_prompt=self.system_prompt(),
+            )
+        except Exception as exc:
+            # The call itself failed (rate-limit exhaustion, timeout, …).
+            # Park evidence first: the full INPUT is written even though no
+            # response exists, then re-raise so the lane parks the document
+            # with the real reason.
+            debug_dir = _write_triage_debug(
+                filename=filename,
+                system=str(captured.get("system") or ""),
+                user=str(captured.get("user") or ""),
+                response=str(captured.get("raw") or ""),
+                result={"error": f"{type(exc).__name__}: {exc}"},
+                extra={"exception": type(exc).__name__},
+            )
+            logger.warning(
+                "triage_llm_call_failed",
+                agent=self.agent_name,
+                model=getattr(self, "model", None),
+                error_type=type(exc).__name__,
+                detail=str(exc)[:300],
+                debug_dir=debug_dir,
+            )
+            raise
+        finally:
+            del self._call_llm  # type: ignore[attr-defined]
+
+        try:
+            if isinstance(raw, str):
+                parsed, parse_error = _parse_model_json(raw)
+            elif isinstance(raw, dict) and raw.get("_parse_error"):
+                # _call_structured's own parse failed — recover its raw text.
+                parsed, parse_error = _parse_model_json(str(raw.get("_raw") or ""))
+            else:
+                parsed, parse_error = (raw if isinstance(raw, dict) else None), (
+                    None if isinstance(raw, dict) else f"non-dict response: {type(raw).__name__}"
+                )
+        except Exception as exc:  # noqa: BLE001 — parse must never raise out
+            parsed, parse_error = None, f"{type(exc).__name__}: {exc}"
+
+        if parsed is None:
+            logger.warning(
+                "triage_parse_failed",
+                agent=self.agent_name,
+                model=getattr(self, "model", None),
+                parse_error=parse_error,
+                raw_head=str(captured.get("raw"))[:300],
+                raw_tail=str(captured.get("raw"))[-300:],
+            )
+
+        result = validate_triage(parsed if isinstance(parsed, dict) else {}, doc_text=doc_text)
+
+        # Fail-soft with evidence: an unparseable free-model response parks
+        # the document (unknown/low-confidence gate downstream) but the
+        # manifest and echo must carry WHY, plus where the full payloads are.
+        response_text = str(captured.get("raw") or "")
+        debug_block = {
+            "model": getattr(self, "model", None),
+            "parse_ok": parsed is not None,
+            "parse_error": parse_error,
+            "input_chars": len(str(captured.get("user") or "")),
+            "response_chars": len(response_text),
+        }
+        result["debug"] = debug_block
+
+        debug_dir = _write_triage_debug(
+            filename=filename,
+            system=str(captured.get("system") or ""),
+            user=str(captured.get("user") or ""),
+            response=response_text,
+            result=result,
+            extra={"parse_error": parse_error} if parse_error else None,
         )
-        if isinstance(raw, str):
-            try:
-                raw = json.loads(raw)
-            except Exception:
-                raw = {}
-        return validate_triage(raw if isinstance(raw, dict) else {}, doc_text=doc_text)
+        if debug_dir:
+            debug_block["debug_dir"] = debug_dir
+            if parsed is None:
+                result["debug"]["debug_dir"] = debug_dir
+        logger.info(
+            "triage_llm_io",
+            agent=self.agent_name,
+            model=debug_block["model"],
+            input_chars=debug_block["input_chars"],
+            response_chars=debug_block["response_chars"],
+            parse_ok=debug_block["parse_ok"],
+            doc_class=result.get("primary_doc_class"),
+            confidence=result.get("confidence"),
+            debug_dir=debug_dir,
+        )
+        return result

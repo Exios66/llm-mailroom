@@ -142,6 +142,90 @@ def test_triage_agent_fails_soft_on_garbage_model_output(mock_openai_client, sam
     assert out["confidence"] == 0.0
 
 
+def test_triage_agent_parses_fenced_json(mock_openai_client, sample_insurance_claim_text):
+    """Free-tier upstreams (ling) wrap JSON in markdown fences — recover it."""
+    from unittest.mock import MagicMock
+
+    agent = GmailTriageAgent()
+    choice = MagicMock()
+    choice.message.content = (
+        "```json\n"
+        + json.dumps(
+            {
+                "primary_doc_class": "insurance_claim",
+                "confidence": 0.9,
+                "gist": "FNOL",
+                "keywords": ["hail"],
+            }
+        )
+        + "\n```"
+    )
+    mock_openai_client.chat.completions.create.return_value.choices = [choice]
+
+    out = agent.triage(sample_insurance_claim_text, filename="claim.txt")
+    assert out["primary_doc_class"] == "insurance_claim"
+    assert out["debug"]["parse_ok"] is True
+
+
+def test_triage_agent_parses_prose_wrapped_json(mock_openai_client, sample_insurance_claim_text):
+    from unittest.mock import MagicMock
+
+    agent = GmailTriageAgent()
+    choice = MagicMock()
+    choice.message.content = (
+        "Here is the triage result:\n"
+        + json.dumps({"primary_doc_class": "correspondence", "confidence": 0.85, "gist": "email"})
+        + "\nHope this helps!"
+    )
+    mock_openai_client.chat.completions.create.return_value.choices = [choice]
+
+    out = agent.triage(sample_insurance_claim_text, filename="claim.txt")
+    assert out["primary_doc_class"] == "correspondence"
+    assert out["debug"]["parse_ok"] is True
+
+
+def test_triage_agent_writes_full_debug_io(mock_openai_client, sample_insurance_claim_text, temp_base_dir):
+    """FULL input/output capture (human directive): every triage call leaves
+    the complete system/user/response payloads + validated result on disk."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    agent = GmailTriageAgent()
+    choice = MagicMock()
+    choice.message.content = "this is not json at all"
+    mock_openai_client.chat.completions.create.return_value.choices = [choice]
+
+    out = agent.triage(sample_insurance_claim_text, filename="claim.txt")
+    assert out["primary_doc_class"] == "unknown"
+    assert out["debug"]["parse_ok"] is False
+    debug_dir = Path(out["debug"]["debug_dir"])
+    assert debug_dir.is_dir()
+    assert "insurance" in (debug_dir / "system.txt").read_text().lower() or (
+        debug_dir / "system.txt"
+    ).read_text().strip()
+    assert "Document text:" in (debug_dir / "user.txt").read_text()
+    assert "this is not json at all" in (debug_dir / "response.txt").read_text()
+    assert (debug_dir / "result.json").is_file()
+    assert (debug_dir / "meta.json").is_file()
+
+
+def test_triage_agent_debug_io_on_call_failure(mock_openai_client, sample_insurance_claim_text, temp_base_dir):
+    """Even a hard call failure (rate limits) leaves the full INPUT on disk."""
+    from pathlib import Path
+
+    agent = GmailTriageAgent()
+    mock_openai_client.chat.completions.create.side_effect = RuntimeError("upstream 429 exhausted")
+
+    with pytest.raises(RuntimeError):
+        agent.triage(sample_insurance_claim_text, filename="claim.txt")
+
+    debug_root = Path(temp_base_dir) / "debug" / "triage"
+    runs = sorted(debug_root.iterdir())
+    assert runs, "debug artifacts must exist even when the call fails"
+    assert "Document text:" in (runs[-1] / "user.txt").read_text()
+    assert "exception" in (runs[-1] / "meta.json").read_text()
+
+
 def test_triage_schema_contract():
     assert set(TRIAGE_SCHEMA["properties"]) == {
         "primary_doc_class",
