@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Relations clerk mode toggle (HUB-052):** the live/pilot knob is now a
+  first-class operation instead of a manual taxonomy edit + restart.
+  `python -m pipeline.relations_mode status|pilot|live [--model <name>]
+  [--restart-watcher]` — `status` prints the effective posture + every knob
+  (mode, judge model, free-only guardrail, kill-switches, thresholds, ledger
+  health); `pilot`/`live` edit taxonomy.yaml surgically (comments and all
+  other lines preserved byte-for-byte), clear the in-process config caches
+  so the current process honors the flip immediately, and remove a stale
+  `MAILROOM_RELATIONS_LLM` kill-switch from `.env` that would contradict the
+  requested mode; `--restart-watcher` runs the graceful standalone-watcher
+  relaunch (watchdog first — no false 🔴 — then watcher, then both back up).
+  The "even smoother" path: authenticated `GET/POST /api/relations/mode` on
+  the API — the POST needs NO restart for the embedded watcher (the apply
+  clears the API process's caches). A paid judge model under the
+  `MAILROOM_LLM_FREE_ONLY` guardrail is refused with an actionable message
+  (the guardrail is a pipeline-wide .env decision, never flipped by the
+  toggle); `pipeline.config.clear_config_cache()` powers the in-process
+  pickup. 20 tests (mode readout, surgical editor incl. missing-key
+  insertion + comment preservation, guardrail/unknown-model/invalid-mode
+  refusals, stale kill-switch removal, CLI, API GET/POST + auth + 400s).
+  Docs: AGENTS.md commands, docs/api.md endpoints, CHANGELOG.
+
 ### Fixed
 
 - **Relations clerk production readiness (HUB-051):** the layer was a no-op

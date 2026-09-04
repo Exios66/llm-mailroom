@@ -64,6 +64,9 @@ docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --bui
 PYTHONPATH=src python src/scripts/publish_space.py --check  # validate HF Docker Space payload (MAILROOM_PIPELINE_URL + Observatory pair)
 PYTHONPATH=src python src/scripts/probe_hosted_spaces.py  # live Lucius-Morningstar Observatory + producer pair
 PYTHONPATH=src python -m pipeline.ops_monitor  # scheduled Boss sweep (optional)
+PYTHONPATH=src python -m pipeline.relations_mode status      # relations clerk live/pilot posture + knobs
+PYTHONPATH=src python -m pipeline.relations_mode live        # flip the LLM judgment pass ON (--model to pick the judge; --restart-watcher for the standalone watcher)
+PYTHONPATH=src python -m pipeline.relations_mode pilot       # deterministic-only (the pilot posture; zero LLM spend)
 PYTHONPATH=src python src/scripts/cutover.py --list       # show agent→provider/model; also --recommend, --validate --agent <name>
 PYTHONPATH=src python src/scripts/prepare_samples.py          # build the pilot PDF set into data/samples/
 PYTHONPATH=src python src/scripts/run_pilot.py --mock         # pilot-test pipeline machinery (fake LLM, full 25-sample live-manifest set)
