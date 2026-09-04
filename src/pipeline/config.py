@@ -67,8 +67,17 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
 
 
 def get_all_doc_types() -> list[str]:
+    """Live (non-retired) document class keys from taxonomy.yaml.
+
+    Retired entries (``status: retired``) are excluded — they are retained
+    machinery for backward-compatible dispatch but not live sorter outputs.
+    """
     cfg = load_config()
-    return [cls["key"] for cls in cfg.get("doc_classes", [])]
+    return [
+        cls["key"]
+        for cls in cfg.get("doc_classes", [])
+        if cls.get("status") != "retired"
+    ]
 
 
 # Routing token the sorter / Lane A reviewer may emit when no live class fits

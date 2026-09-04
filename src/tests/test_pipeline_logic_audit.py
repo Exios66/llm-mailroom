@@ -357,11 +357,25 @@ class TestUnsupportedExtractParksWithoutRetry:
 
 
 class TestDispatchCoversEveryTaxonomyClass:
-    def test_dispatch_keys_match_taxonomy(self):
+    def test_dispatch_covers_all_live_doc_types(self):
         from pipeline.config import get_all_doc_types
 
         dispatch = bg._build_specialist_dispatch()
-        assert set(dispatch) == set(get_all_doc_types())
+        live = set(get_all_doc_types())
+        # Dispatch must cover every live doc type.
+        assert live <= set(dispatch)
+        # Dispatch may also include retired classes (backward-compat
+        # machinery like compliance_filing) — that's fine.
+
+    def test_dispatch_keys_match_taxonomy(self):
+        """Dispatch covers live taxonomy classes exactly (retired entries
+        excluded from get_all_doc_types but present in dispatch are OK)."""
+        from pipeline.config import load_config
+
+        dispatch = bg._build_specialist_dispatch()
+        cfg = load_config()
+        all_keys = {cls["key"] for cls in cfg.get("doc_classes", [])}
+        assert set(dispatch) == all_keys
 
     def test_unmapped_specialist_name_raises(self, monkeypatch):
         monkeypatch.setattr(
