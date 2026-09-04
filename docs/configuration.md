@@ -64,7 +64,7 @@ confidence:
   conflict_threshold: 0.3  # unused; conflicts are field-value comparison
   by_class:
     contract: { severity: critical, high: 0.98, low: 0.90, judge_band_high: 0.97 }
-    # … merger_agreement, insurance_claim, compliance_filing, corporate_record, correspondence
+    # … merger_agreement, insurance_claim, corporate_record, correspondence
 ```
 
 ### `doc_classes`
@@ -121,12 +121,6 @@ doc_classes:
       intent: name
       subject_matter: free_text
       keywords: entity_list:name
-
-  - key: compliance_filing
-    label: "Compliance Filing"
-    schema: ComplianceFilingExtraction
-    specialist: compliance_specialist
-    description: "SEC filings, state registrations, regulatory submissions, annual reports"
 
   - key: insurance_claim
     label: "Insurance Claim"
