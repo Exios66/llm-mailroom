@@ -204,10 +204,25 @@ def _is_already_processed(path: Path) -> bool:
     file was handled and must not be claimed again (pilot: watcher re-claimed
     files after crashes, producing 2-3 full pipeline runs per document and
     10-20x inflated trace latencies).
-    """
+
+    INTAKE-PROVENANCE-AWARE (HUB-043): the match is on the delivery identity,
+    not just the filename. A file's `/upload` sidecar carries its provenance
+    (Gmail `message_id` / upload `upload_id`); a terminal manifest counts as
+    "already processed" only when its intake provenance matches. A RE-SENT
+    email or a fresh upload with an already-seen filename is a NEW document
+    and must process — the filename-only rule silently dropped it forever
+    (the watcher skipped it every rescan; the sender never got a reaction or
+    an echo). No sidecar ⇒ legacy filename behavior (plain inbox drops)."""
     try:
         import json as _json
         from pipeline.bins import manifests_dir
+
+        delivery_key = None
+        try:
+            _matter, intake_meta = _intake_context(path)
+            delivery_key = intake_meta.get("message_id") or intake_meta.get("upload_id")
+        except Exception:
+            delivery_key = None
 
         mdir = manifests_dir()
         if not mdir.exists():
@@ -219,8 +234,17 @@ def _is_already_processed(path: Path) -> bool:
                 continue
             if data.get("original_filename") != path.name:
                 continue
-            if data.get("stage") in TERMINAL_STAGES:
+            if data.get("stage") not in TERMINAL_STAGES:
+                continue
+            if delivery_key is None:
                 return True
+            data_intake = data.get("intake") or {}
+            seen_key = data_intake.get("message_id") or data_intake.get("upload_id")
+            if seen_key == delivery_key:
+                return True
+            # Same filename, different delivery identity ⇒ an OLDER document's
+            # manifest — this file is new and must be claimed.
+        return False
     except Exception:
         logger.exception("manifest_scan_failed", file=str(path))
     return False
