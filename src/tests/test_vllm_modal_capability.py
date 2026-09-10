@@ -27,8 +27,8 @@ def _install_modal_stub() -> None:
 
     class _Secret:
         @staticmethod
-        def from_local(*names):
-            return ("secret", names)
+        def from_dict(mapping):
+            return ("secret", mapping)
 
     class _Volume:
         @staticmethod

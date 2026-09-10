@@ -14,13 +14,14 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
-[![Release](https://img.shields.io/badge/release-v0.6.0-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.6.0)
+[![Release](https://img.shields.io/badge/release-v0.6.0-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.6.0)
+[![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 
 </div>
 
 | At a glance | |
 |---|---|
-| **Release** | [`v0.6.0`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.6.0) — see [CHANGELOG.md](CHANGELOG.md) |
+| **Release** | [`v0.6.0`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.6.0) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
 | **Agents** | LLM + procedural agents across 6 document classes (happy path: classify + extract only) |
 | **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
