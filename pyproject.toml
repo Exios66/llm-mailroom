@@ -61,7 +61,7 @@ postgres = [
 # only — the runtime pipeline never imports modal. Install with:
 #   pip install -e ".[deploy]"
 deploy = [
-    "modal>=0.73",
+    "modal==1.5.5",
 ]
 # Interactive notebooks (notebooks/dataset_browser.ipynb). The browser module
 # degrades to plain-text output without these — nothing in the pipeline or
