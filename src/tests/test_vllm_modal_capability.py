@@ -40,7 +40,14 @@ def _install_modal_stub() -> None:
         def from_registry(ref, add_python=None):
             return _Image()
 
+        @staticmethod
+        def debian_slim(python_version=None):
+            return _Image()
+
         def run_commands(self, *cmds):
+            return self
+
+        def uv_pip_install(self, *pkgs):
             return self
 
         def env(self, mapping):
