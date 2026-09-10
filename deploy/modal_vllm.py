@@ -192,6 +192,29 @@ def build_vllm_command(model: str) -> list[str]:
     return cmd
 
 
+def _masked_config() -> dict[str, str]:
+    """The effective serve config for boot diagnostics — secrets masked."""
+
+    def presence(name: str) -> str:
+        return "set" if os.environ.get(name, "").strip() else "unset"
+
+    return {
+        "model": os.environ.get("MODAL_VLLM_MODEL", MODEL),
+        "gpu": GPU,
+        "image": VLLM_IMAGE_TAG,
+        "max_model_len": MAX_MODEL_LEN,
+        "gpu_memory_utilization": GPU_MEMORY_UTILIZATION,
+        "max_num_seqs": MAX_NUM_SEQS,
+        "tensor_parallel_size": TP_SIZE,
+        "quantization": QUANTIZATION or "unset(bf16)",
+        "revision": REVISION or "unset(tip)",
+        "VLLM_API_KEY": presence("MODAL_VLLM_API_TOKEN"),
+        "HF_TOKEN": presence("HF_TOKEN"),
+        "scaledown_seconds": str(SCALEDOWN_SECONDS),
+        "startup_timeout_seconds": str(STARTUP_TIMEOUT_SECONDS),
+    }
+
+
 @app.function(
     gpu=GPU,
     volumes={HF_CACHE_MOUNT: hf_cache, VLLM_CACHE_MOUNT: vllm_cache},
@@ -205,7 +228,12 @@ def build_vllm_command(model: str) -> list[str]:
 def serve() -> None:
     model = os.environ.get("MODAL_VLLM_MODEL", MODEL)
     cmd = build_vllm_command(model)
-    print("starting:", " ".join(cmd))
+    # Boot diagnostics (masked): the container log shows the EFFECTIVE config
+    # so a failed cold start is diagnosable without re-deriving env (DMR-053).
+    print("=== mailroom-vllm serve config (masked) ===")
+    for key, value in _masked_config().items():
+        print(f"  {key}: {value}")
+    print("starting:", " ".join(cmd))  # never contains secret values
     subprocess.Popen(cmd, env={**os.environ, **_server_env()})
 
 
@@ -219,22 +247,36 @@ def download_model(model: str = "", revision: str = "") -> None:
     """Pre-warm the HF cache Volume so the first `serve` boot skips downloads.
 
     ``modal run deploy/modal_vllm.py::download_model [--model ...]``
+
+    Fails loudly when nothing was cached (DMR-053): a silent empty snapshot
+    would leave the first serve boot downloading weights anyway.
     """
     from huggingface_hub import snapshot_download
 
     model = model or os.environ.get("MODAL_VLLM_MODEL", MODEL)
     revision = revision or os.environ.get("MODAL_VLLM_REVISION", REVISION) or None
-    snapshot_download(repo_id=model, revision=revision)
+    print(f"pre-warming {model}" + (f"@{revision}" if revision else ""))
+    paths = snapshot_download(repo_id=model, revision=revision)
+    n_files = len(paths) if isinstance(paths, list) else 1
+    if isinstance(paths, list) and not paths:
+        raise SystemExit(
+            f"snapshot_download returned no files for {model} — check the repo id, "
+            "the revision, and HF_TOKEN for gated repos"
+        )
     hf_cache.commit()
-    print(f"cached {model}" + (f"@{revision}" if revision else ""))
+    print(f"cached {model}" + (f"@{revision}" if revision else "") + f" ({n_files} file(s))")
 
 
 @app.local_entrypoint()
-def main() -> None:
-    """`modal run modal_vllm.py` prints deployment guidance without serving."""
+def main(debug: bool = False) -> None:
+    """`modal run modal_vllm.py [--debug]` prints deployment guidance."""
     print(f"Deploy with:  modal deploy {Path(__file__).name}")
     print(f"Serving model: {os.environ.get('MODAL_VLLM_MODEL', MODEL)} on GPU {GPU}")
     print(f"Image: vllm/vllm-openai:{VLLM_IMAGE_TAG}")
+    if debug:
+        print("=== resolved config (masked) ===")
+        for key, value in _masked_config().items():
+            print(f"  {key}: {value}")
     print(
         "Then point mailroom at it:\n"
         "  DEFAULT_PROVIDER=vllm\n"
