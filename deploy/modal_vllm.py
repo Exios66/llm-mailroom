@@ -24,6 +24,9 @@ model, GPU size, or quantization:
     MODAL_VLLM_GPU             Modal GPU string      (default L4)
     MODAL_VLLM_QUANTIZATION    awq | gptq | ...      (default: unset = fp16/bf16)
     MODAL_VLLM_MAX_MODEL_LEN   int tokens            (default 32768)
+    MODAL_VLLM_GPU_MEMORY_UTILIZATION  0.0–1.0      (default 0.90)
+    MODAL_VLLM_MAX_NUM_SEQS    int                   (default 256)
+    MODAL_VLLM_REVISION        Hub revision SHA      (optional; pins weights)
     MODAL_VLLM_API_TOKEN      bearer token the server REQUIRES (recommended;
                                leave unset only for throwaway experiments)
     HF_TOKEN                   for gated/private repos (optional)
@@ -132,7 +135,14 @@ def build_vllm_command(model: str) -> list[str]:
         str(SERVER_PORT),
         "--max-model-len",
         MAX_MODEL_LEN,
+        "--gpu-memory-utilization",
+        GPU_MEMORY_UTILIZATION,
+        "--max-num-seqs",
+        MAX_NUM_SEQS,
     ]
+    if REVISION:
+        # Pin the Hub revision to avoid silent weight changes.
+        cmd += ["--revision", REVISION]
     if QUANTIZATION:
         cmd += ["--quantization", QUANTIZATION]
     # Legal-document workloads are bursty and latency-tolerant: batch freely.
@@ -142,7 +152,7 @@ def build_vllm_command(model: str) -> list[str]:
 
 @app.function(
     gpu=GPU,
-    volumes={"/root/.cache/huggingface": hf_cache},
+    volumes={HF_CACHE_MOUNT: hf_cache, VLLM_CACHE_MOUNT: vllm_cache},
     secrets=_config_secrets(),
     timeout=60 * 30,
     scaledown_window=15 * 60,
@@ -161,6 +171,7 @@ def main() -> None:
     """`modal run modal_vllm.py` prints deployment guidance without serving."""
     print(f"Deploy with:  modal deploy {Path(__file__).name}")
     print(f"Serving model: {os.environ.get('MODAL_VLLM_MODEL', MODEL)} on GPU {GPU}")
+    print(f"Image: vllm/vllm-openai:{VLLM_IMAGE_TAG}")
     print(
         "Then point mailroom at it:\n"
         "  DEFAULT_PROVIDER=vllm\n"
