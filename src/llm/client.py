@@ -61,8 +61,20 @@ def assert_free_model(model: str) -> None:
 def get_llm(agent_name: str) -> tuple[OpenAI, str]:
     agent_cfg = get_agent_config(agent_name)
     provider, model = resolve_provider(agent_cfg)
-    assert_free_model(model)
-    if free_only_enabled() and provider.api_key_env and provider.api_key_env != "OPENROUTER_API_KEY":
+    if provider.name == "vllm":
+        # DMR-052: the served model id is the HF id (e.g. Qwen/Qwen3-8B), not
+        # the taxonomy's OpenRouter champion slug — remap before the client
+        # exists so a vLLM serve never 404s on the champion id.
+        model = _self_hosted_model(model)
+    # The free-only guardrail bounds OpenRouter spend; self-hosted providers
+    # (vLLM/ollama/generic) have no per-token price and are exempt (DMR-052).
+    if provider.name not in {"vllm", "ollama", "generic"}:
+        assert_free_model(model)
+        if (
+            free_only_enabled()
+            and provider.api_key_env
+            and provider.api_key_env != "OPENROUTER_API_KEY"
+        ):
             raise RuntimeError(
                 f"MAILROOM_LLM_FREE_ONLY is on: agent '{agent_name}' resolves "
                 f"provider credential '{provider.api_key_env}' outside the "
@@ -76,6 +88,16 @@ def get_llm(agent_name: str) -> tuple[OpenAI, str]:
     client = OpenAI(**kwargs)
     client = instrument_client(client)
     return client, model
+
+
+def _self_hosted_model(model: str) -> str:
+    """Remap an OpenRouter champion id to the served id for self-hosted vLLM.
+
+    The map lives in ``taxonomy.yaml: vllm_model_map`` (single source of
+    truth); a champion without an entry passes through untouched (DMR-052).
+    """
+    mapping = load_config().get("vllm_model_map") or {}
+    return str(mapping.get(model) or model)
 
 
 def instrument_client(client) -> OpenAI:

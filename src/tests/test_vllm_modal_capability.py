@@ -212,3 +212,47 @@ class TestVllmProviderSeam:
         monkeypatch.setattr(client_mod, "instrument_client", lambda c: c)
         got, _ = client_mod.get_llm("sorter")
         assert got.api_key == "not-needed"
+
+    def test_vllm_champion_ids_remap_to_served_ids(self, monkeypatch):
+        """DMR-052: the taxonomy's OpenRouter slug must become the served HF id."""
+        import llm.client as client_mod
+
+        self._fresh_providers()
+        monkeypatch.setenv("DEFAULT_PROVIDER", "vllm")
+        monkeypatch.setattr(
+            client_mod, "get_agent_config", lambda name: {"model": "qwen/qwen3.7-flash"}
+        )
+        monkeypatch.setattr(client_mod, "instrument_client", lambda c: c)
+        _, model = client_mod.get_llm("sorter")
+        assert model == "Qwen/Qwen3-8B"
+
+    def test_free_only_guardrail_exempts_self_hosted(self, monkeypatch):
+        """DMR-052: MAILROOM_LLM_FREE_ONLY bounds OpenRouter spend — a vLLM
+        run must resolve even though the served id is not a ':free' model."""
+        import llm.client as client_mod
+
+        self._fresh_providers()
+        monkeypatch.setenv("DEFAULT_PROVIDER", "vllm")
+        monkeypatch.setenv("MAILROOM_LLM_FREE_ONLY", "1")
+        monkeypatch.setattr(
+            client_mod, "get_agent_config", lambda name: {"model": "Qwen/Qwen3-8B"}
+        )
+        monkeypatch.setattr(client_mod, "instrument_client", lambda c: c)
+        got, _ = client_mod.get_llm("sorter")  # must not raise
+        assert str(got.base_url).startswith("http://localhost:8000")
+
+    def test_free_only_still_refuses_non_openrouter_hosted(self, monkeypatch):
+        import llm.client as client_mod
+
+        self._fresh_providers()
+        monkeypatch.setenv("DEFAULT_PROVIDER", "openrouter")
+        monkeypatch.setenv("MAILROOM_LLM_FREE_ONLY", "1")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-real")
+        monkeypatch.setattr(
+            client_mod,
+            "get_agent_config",
+            lambda name: {"model": "deepseek/deepseek-v4-pro"},
+        )
+        monkeypatch.setattr(client_mod, "instrument_client", lambda c: c)
+        with pytest.raises(RuntimeError, match="not free"):
+            client_mod.get_llm("sorter")

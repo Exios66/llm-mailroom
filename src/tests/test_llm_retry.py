@@ -2,7 +2,7 @@ import time
 from unittest.mock import MagicMock
 
 import pytest
-from openai import APIConnectionError, APITimeoutError, BadRequestError, RateLimitError
+from openai import APIConnectionError, APITimeoutError, APIStatusError, BadRequestError, RateLimitError
 
 
 def _http_response(status: int):
@@ -103,3 +103,21 @@ class TestRetryChatCompletion:
         assert retry_sleep_seconds(conn, 1, cfg) == 1.0
         assert retry_sleep_seconds(rate, 1, cfg) == 8.0
         assert retry_sleep_seconds(rate, 2, cfg) == 16.0
+
+    def test_modal_503_uses_cold_start_backoff(self, monkeypatch):
+        """DMR-052: a 503 from a *.modal.run endpoint is a scale-to-zero cold
+        start — the ladder must back off in minutes, not seconds."""
+        monkeypatch.setattr("llm.retry.random.uniform", lambda a, b: 0.0)
+        from llm.retry import retry_sleep_seconds
+
+        server_error = APIStatusError(
+            "service unavailable",
+            response=_http_response(503),
+            body={"message": "cold start"},
+        )
+        cfg = {"base_delay": 1.0, "max_delay": 60.0, "jitter": 0.0}
+        modal = "https://ws--sandbox-vllm-serve.modal.run/v1"
+        assert retry_sleep_seconds(server_error, 1, cfg, base_url=modal) == 90.0
+        assert retry_sleep_seconds(server_error, 2, cfg, base_url=modal) == 180.0
+        # Non-modal 503 keeps the normal ladder.
+        assert retry_sleep_seconds(server_error, 1, cfg) == 1.0

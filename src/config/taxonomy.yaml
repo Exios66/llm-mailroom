@@ -22,6 +22,21 @@ llm_retry:
   rate_limit_base_delay: 8.0
   max_delay: 60.0
   jitter: 0.3
+  # Modal scale-to-zero cold start (DMR-052): a 503 from a *.modal.run
+  # endpoint means the container is warming, not overloaded — back off in
+  # minutes, not seconds, so the ladder survives a cold boot.
+  modal_cold_start_delay: 90.0
+  modal_cold_start_max_delay: 240.0
+
+# Self-hosted model-id remap (DMR-052): when DEFAULT_PROVIDER=vllm the agents'
+# taxonomy models are OpenRouter champion slugs; a vLLM serve exposes the HF id
+# (e.g. Qwen/Qwen3-8B). This map rewrites the champion to the served id before
+# any client exists. Keep it in sync with config/models.yaml (sandbox).
+vllm_model_map:
+  qwen/qwen3.7-flash: Qwen/Qwen3-8B
+  deepseek/deepseek-v4-flash: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+  deepseek/deepseek-v4-pro: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+  z-ai/glm-5.2:free: Qwen/Qwen3-8B
 
 # Free-model swarm (Gmail triage pilot, live-verified 2026-09-04): ordered
 # fallback chain for FREE models. When a free model's upstream pool

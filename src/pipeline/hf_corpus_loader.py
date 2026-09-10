@@ -46,6 +46,7 @@ from typing import Any
 import pandas as pd
 
 from .env import load_env
+from .hf_corpora import FULL_CORPUS_REVISION
 
 HUB_BASE = "https://huggingface.co"
 VIEWER_BASE = "https://datasets-server.huggingface.co"
@@ -258,7 +259,10 @@ def load_corpus(
     *,
     repo_id: str = FULL_CORPUS_ID,
     split: str = "train",
-    revision: str | None = None,
+    # DMR-052 (G25): the loader used to float on the Hub tip while the rest
+    # of the family pins the publisher's canonical sha — default to the same
+    # pin the ground-truth publisher re-pins on every publish.
+    revision: str | None = FULL_CORPUS_REVISION,
     join: bool = True,
     verify: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
