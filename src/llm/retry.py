@@ -62,12 +62,28 @@ def _retry_after_seconds(exc: Exception) -> float | None:
         return None
 
 
-def retry_sleep_seconds(exc: Exception, attempt: int, cfg: dict | None = None) -> float:
-    """Backoff for one retry. 429s wait longer than connection blips."""
+def _is_modal_url(base_url: str | None) -> bool:
+    return bool(base_url) and "modal.run" in str(base_url)
+
+
+def retry_sleep_seconds(
+    exc: Exception, attempt: int, cfg: dict | None = None, base_url: str | None = None
+) -> float:
+    """Backoff for one retry. 429s wait longer than connection blips.
+
+    A 503 from a Modal endpoint is a scale-to-zero cold start: the container
+    takes minutes to warm, so the 30s-cap backoff would exhaust every attempt
+    mid-start — Modal 503s use a long, bounded cold-start backoff (DMR-052).
+    """
     cfg = cfg or _retry_config()
     base = float(cfg.get("base_delay", 1.0))
     max_delay = float(cfg.get("max_delay", 30.0))
     jitter = float(cfg.get("jitter", 0.3))
+    if _is_modal_url(base_url) and _status_code(exc) == 503:
+        cold = float(cfg.get("modal_cold_start_delay", 90.0))
+        max_cold = float(cfg.get("modal_cold_start_max_delay", 240.0))
+        delay = min(max_cold, cold * (2 ** max(0, attempt - 1)))
+        return max(0.0, delay * (1 + random.uniform(-jitter, jitter)))
     rate_limited = isinstance(exc, RateLimitError) or _status_code(exc) == 429
     if rate_limited:
         base = float(cfg.get("rate_limit_base_delay", 8.0))
@@ -231,7 +247,12 @@ def retry_chat_completion(
                     detail=str(exc)[:200],
                 )
                 kwargs = {**kwargs, "model": nxt}
-            delay = retry_sleep_seconds(exc, attempt, cfg)
+            delay = retry_sleep_seconds(
+                exc,
+                attempt,
+                cfg,
+                base_url=str(getattr(client, "base_url", "") or ""),
+            )
             logger.warning(
                 "llm_retry",
                 attempt=attempt,
