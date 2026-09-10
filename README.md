@@ -355,12 +355,17 @@ agents:
 |---|---|---|---|
 | **OpenRouter** | Primary | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
 | **Ollama** | Local | None | `http://localhost:11434/v1` |
-| **vLLM** | Local | None | `http://localhost:8000/v1` |
+| **vLLM** | Local/Modal | `VLLM_API_KEY` (optional bearer) | `http://localhost:8000/v1` (or `VLLM_BASE_URL`) |
 | **Generic** | Fallback | `GENERIC_API_KEY` | Configurable |
 
 Global override: set `DEFAULT_PROVIDER=ollama` in `.env`.
 
-All LLM calls go through `retry_chat_completion` (`llm/retry.py`): transient failures (`APIConnectionError`, timeouts, rate limits, 5xx) are retried with exponential backoff + jitter; 4xx client errors (e.g. malformed requests) are never retried.
+With `DEFAULT_PROVIDER=vllm`, agent model slugs are remapped to the served HF
+ids via `taxonomy.yaml: vllm_model_map`; a missing `VLLM_BASE_URL` warns
+(localhost default). Self-hosted providers (`vllm`/`ollama`/`generic`) are
+exempt from `MAILROOM_LLM_FREE_ONLY` — it bounds OpenRouter spend (DMR-052).
+
+All LLM calls go through `retry_chat_completion` (`llm/retry.py`): transient failures (`APIConnectionError`, timeouts, rate limits, 5xx) are retried with exponential backoff + jitter; 4xx client errors (e.g. malformed requests) are never retried. A `503` from a `*.modal.run` endpoint is treated as a scale-to-zero cold start and uses a long bounded backoff (90s base / 240s cap) so the ladder survives container warm-up (DMR-052).
 
 ### Prompt Management
 
@@ -374,6 +379,8 @@ PYTHONPATH=src python src/scripts/sync_prompts.py --agent sorter
 ```
 
 The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
+
+Vendored LangChain prompts are pinned by version key — `sorter_v14`, `contracts_specialist_v33` (`_bound_prompt_versions` now matches the shipped sync source; DMR-052).
 
 ### Observability
 

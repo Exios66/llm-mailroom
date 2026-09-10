@@ -356,7 +356,7 @@ multi-document full pipeline), completion echoes, and troubleshooting — is
 | `MAILROOM_RELATIONS_CONTEXT` | No | `1` | Advisory RELATED context block for the sorter/specialist handoff + the Gmail completion echo (from the relations ledger) |
 | `MAILROOM_RELATIONS_LLM` | No | `1` (and `relations.llm` off in pilot) | LLM judgment pass over ambiguous relation candidates — taxonomy `relations.llm: false` keeps the pilot deterministic-only |
 | `MAILROOM_RELATIONS_EMBEDDINGS` | No | `1` | Embedding cosine signal (dojo sentence-transformers / remote fallback; HUB-040 hang-proofing: 90s bounded load). `0` skips the cosine signal only — the other signals flow |
-| `MAILROOM_LLM_FREE_ONLY` | No | off | Free-only pilot guardrail (HUB-039): when on (`1`/`true`/`yes`/`on`), `get_llm` refuses to resolve ANY model that is not free — `cost_models` prices both 0.0, or unregistered with an OpenRouter `:free` suffix. A paid-model resolution raises BEFORE any client exists, so documents fail-soft park instead of spending; the free triage lane is unaffected. Unset/`0` in full production, where paid agents handle multi-document emails and inbox/CLI uploads |
+| `MAILROOM_LLM_FREE_ONLY` | No | off | Free-only pilot guardrail (HUB-039): when on (`1`/`true`/`yes`/`on`), `get_llm` refuses to resolve any **OpenRouter** model that is not free — `cost_models` prices both 0.0, or unregistered with an OpenRouter `:free` suffix; self-hosted providers (`vllm`/`ollama`/`generic`) are exempt — there is no per-token price to bound (DMR-052). A paid-model resolution raises BEFORE any client exists, so documents fail-soft park instead of spending; the free triage lane is unaffected. Unset/`0` in full production, where paid agents handle multi-document emails and inbox/CLI uploads |
 
 #### Emailing the mailroom (Gmail intake format contract)
 
@@ -431,6 +431,13 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 DEFAULT_PROVIDER=vllm
 VLLM_BASE_URL=http://localhost:8000/v1
 ```
+
+With `DEFAULT_PROVIDER=vllm`, `taxonomy.yaml: vllm_model_map` rewrites
+champion slugs to the served HF ids; a missing `VLLM_BASE_URL` warns and falls
+back to localhost. `VLLM_API_KEY` is sent as an optional bearer (the Modal
+deploy app enforces one). A `503` from a `*.modal.run` endpoint is a
+scale-to-zero cold start — `retry_chat_completion` uses a long bounded backoff
+(90s base / 240s cap, DMR-052).
 
 ### Generic OpenAI-Compatible
 
