@@ -54,8 +54,9 @@ def _install_modal_stub() -> None:
             return self
 
     class _App:
-        def __init__(self, name, image=None):
+        def __init__(self, name, image=None, tags=None):
             self.name = name
+            self.tags = tags or {}
 
         def function(self, **kwargs):
             def deco(fn):

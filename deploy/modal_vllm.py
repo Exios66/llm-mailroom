@@ -23,7 +23,7 @@ model, GPU size, or quantization:
     MODAL_VLLM_MODEL           HF repo id            (default Qwen/Qwen3-8B)
     MODAL_VLLM_GPU             Modal GPU string      (default L4)
     MODAL_VLLM_QUANTIZATION    awq | gptq | ...      (default: unset = fp16/bf16)
-    MODAL_VLLM_MAX_MODEL_LEN   int tokens            (default 32768)
+    MODAL_VLLM_MAX_MODEL_LEN   int tokens            (default 16384; 32768 only for AWQ/FP8 rows)
     MODAL_VLLM_GPU_MEMORY_UTILIZATION  0.0–1.0      (default 0.90)
     MODAL_VLLM_MAX_NUM_SEQS    int                   (default 256)
     MODAL_VLLM_TP_SIZE         int                   (default: from the GPU `:N` suffix)
@@ -57,7 +57,7 @@ VLLM_CACHE_MOUNT = "/root/.cache/vllm"
 MODEL = os.environ.get("MODAL_VLLM_MODEL", "Qwen/Qwen3-8B")
 GPU = os.environ.get("MODAL_VLLM_GPU", "L4")
 QUANTIZATION = os.environ.get("MODAL_VLLM_QUANTIZATION", "")
-MAX_MODEL_LEN = os.environ.get("MODAL_VLLM_MAX_MODEL_LEN", "32768")
+MAX_MODEL_LEN = os.environ.get("MODAL_VLLM_MAX_MODEL_LEN", "16384")
 REVISION = os.environ.get("MODAL_VLLM_REVISION", "")
 
 # Memory budget for a test deploy: vLLM's default is 0.92 of the GPU; 0.90
@@ -124,10 +124,12 @@ vllm_cache = modal.Volume.from_name(VLLM_CACHE_VOLUME_NAME, create_if_missing=Tr
 
 image = (
     modal.Image.from_registry(f"vllm/vllm-openai:{VLLM_IMAGE_TAG}", add_python="3.12")
-    .run_commands("pip install --no-cache-dir huggingface_hub[hf_transfer]")
+    # DMR-056: huggingface_hub 1.x has no [hf_transfer] extra (pip warns and
+    # succeeds); Xet is the default transfer backend in 1.x, so the plain
+    # package + HF_XET_HIGH_PERFORMANCE is the correct, warning-free setup.
+    .run_commands("pip install --no-cache-dir huggingface_hub")
     .env(
         {
-            "HF_HUB_ENABLE_HF_TRANSFER": "1",
             "HF_XET_HIGH_PERFORMANCE": "1",
         }
     )
@@ -136,16 +138,24 @@ image = (
 # Slim image for the pre-warm function (no GPU, no vLLM).
 download_image = (
     modal.Image.debian_slim(python_version="3.12")
-    .uv_pip_install("huggingface_hub[hf_transfer]")
+    .uv_pip_install("huggingface_hub")
     .env(
         {
-            "HF_HUB_ENABLE_HF_TRANSFER": "1",
             "HF_XET_HIGH_PERFORMANCE": "1",
         }
     )
 )
 
-app = modal.App(APP_NAME, image=image)
+# DMR-056: cost-allocation tags — parity with the sandbox sibling app.
+app = modal.App(
+    APP_NAME,
+    image=image,
+    tags={
+        "project": "digital-mailroom",
+        "package": "llm-mailroom",
+        "purpose": "remote-gpu-testing",
+    },
+)
 
 
 def _server_env() -> dict[str, str]:
@@ -256,30 +266,89 @@ def download_model(model: str = "", revision: str = "") -> None:
     model = model or os.environ.get("MODAL_VLLM_MODEL", MODEL)
     revision = revision or os.environ.get("MODAL_VLLM_REVISION", REVISION) or None
     print(f"pre-warming {model}" + (f"@{revision}" if revision else ""))
-    paths = snapshot_download(repo_id=model, revision=revision)
-    n_files = len(paths) if isinstance(paths, list) else 1
-    if isinstance(paths, list) and not paths:
+    # DMR-056: huggingface_hub 1.x returns the snapshot DIRECTORY (str), not a
+    # file list — the old isinstance(paths, list) guard could never fire, so
+    # an empty snapshot would have been silently "cached". Count the files in
+    # the returned dir and raise loudly on an empty result.
+    snapshot_dir = snapshot_download(repo_id=model, revision=revision)
+    n_files = sum(1 for _ in Path(snapshot_dir).rglob("*")) if snapshot_dir else 0
+    if not n_files:
         raise SystemExit(
-            f"snapshot_download returned no files for {model} — check the repo id, "
-            "the revision, and HF_TOKEN for gated repos"
+            f"snapshot_download returned an empty snapshot for {model} — check the "
+            "repo id, the revision, and HF_TOKEN for gated repos"
         )
     hf_cache.commit()
     print(f"cached {model}" + (f"@{revision}" if revision else "") + f" ({n_files} file(s))")
 
 
 @app.local_entrypoint()
-def main(debug: bool = False) -> None:
-    """`modal run modal_vllm.py [--debug]` prints deployment guidance."""
-    print(f"Deploy with:  modal deploy {Path(__file__).name}")
+def main(check: bool = False, debug: bool = False) -> None:
+    """`modal run modal_vllm.py [--check] [--debug]` — guidance + probe (DMR-056)."""
+    name = Path(__file__).name
+    base = os.environ.get("VLLM_BASE_URL", "").rstrip("/")
+    print(f"Deploy with:  modal deploy {name}")
     print(f"Serving model: {os.environ.get('MODAL_VLLM_MODEL', MODEL)} on GPU {GPU}")
     print(f"Image: vllm/vllm-openai:{VLLM_IMAGE_TAG}")
+    print(f"Endpoint: {base or 'set VLLM_BASE_URL after deploy'}")
     if debug:
         print("=== resolved config (masked) ===")
         for key, value in _masked_config().items():
             print(f"  {key}: {value}")
+    if check:
+        _smoke_check(base)
     print(
         "Then point mailroom at it:\n"
         "  DEFAULT_PROVIDER=vllm\n"
         "  VLLM_BASE_URL=https://<workspace>--mailroom-vllm-serve.modal.run/v1\n"
         "  VLLM_API_KEY=<same value as MODAL_VLLM_API_TOKEN>"
     )
+
+
+def _smoke_check(base: str) -> None:
+    """Bearer-aware `/models` probe for `modal run ... --check` (DMR-053)."""
+    import httpx
+
+    if not base:
+        raise SystemExit(
+            "VLLM_BASE_URL is not set — export the URL printed by `modal deploy` "
+            "(https://<workspace>--mailroom-vllm-serve.modal.run/v1)"
+        )
+    token = os.environ.get("VLLM_API_KEY", "").strip()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    try:
+        resp = httpx.get(f"{base}/models", headers=headers, timeout=30.0)
+    except httpx.HTTPError as exc:
+        raise SystemExit(
+            f"probe failed: {type(exc).__name__}: {exc}\n"
+            "hints: is the app deployed (`modal app list`)? is VLLM_BASE_URL the "
+            "modal.run URL, not localhost?"
+        ) from exc
+    if resp.status_code == 401:
+        raise SystemExit(
+            f"401 from {base}/models — the server enforces a bearer token; set "
+            "VLLM_API_KEY to the deployed MODAL_VLLM_API_TOKEN value"
+        )
+    if resp.status_code >= 400:
+        body = resp.text[:400]
+        raise SystemExit(
+            f"HTTP {resp.status_code} from {base}/models\nresponse body: {body!r}"
+        )
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise SystemExit(
+            f"{base}/models returned non-JSON (HTTP {resp.status_code}): "
+            f"{resp.text[:400]!r}"
+        ) from exc
+    ids = [
+        item.get("id")
+        for item in payload.get("data", [])
+        if isinstance(item, dict) and item.get("id")
+    ]
+    print(f"ok: {base}/models -> {ids}")
+    if ids and os.environ.get("MODAL_VLLM_MODEL", MODEL) not in ids:
+        print(
+            f"note: served model(s) {ids} differ from MODAL_VLLM_MODEL="
+            f"{os.environ.get('MODAL_VLLM_MODEL', MODEL)} — the provider may 404 "
+            "on the configured model id"
+        )
