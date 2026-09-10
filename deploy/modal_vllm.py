@@ -26,6 +26,9 @@ model, GPU size, or quantization:
     MODAL_VLLM_MAX_MODEL_LEN   int tokens            (default 32768)
     MODAL_VLLM_GPU_MEMORY_UTILIZATION  0.0–1.0      (default 0.90)
     MODAL_VLLM_MAX_NUM_SEQS    int                   (default 256)
+    MODAL_VLLM_TP_SIZE         int                   (default: from the GPU `:N` suffix)
+    MODAL_VLLM_SCALEDOWN_SECONDS       int          (default 900; idle before scale-to-zero)
+    MODAL_VLLM_STARTUP_TIMEOUT_SECONDS int          (default 1200; first-boot ceiling)
     MODAL_VLLM_REVISION        Hub revision SHA      (optional; pins weights)
     MODAL_VLLM_API_TOKEN      bearer token the server REQUIRES (recommended;
                                leave unset only for throwaway experiments)
@@ -65,6 +68,24 @@ GPU_MEMORY_UTILIZATION = os.environ.get("MODAL_VLLM_GPU_MEMORY_UTILIZATION", "0.
 # local compose and Modal schedule the same concurrency on any GPU class.
 MAX_NUM_SEQS = os.environ.get("MODAL_VLLM_MAX_NUM_SEQS", "256")
 
+# Tensor-parallel size: 1 (single GPU) by default. For a multi-GPU container
+# (e.g. MODAL_VLLM_GPU="A100-80GB:2" for 70B-class) this MUST match the `:N`
+# suffix or vLLM silently serves on 1 GPU and OOMs. Derive the default from
+# the GPU knob suffix; override explicitly when needed (DMR-051, sandbox
+# sibling contract).
+TP_SIZE = os.environ.get("MODAL_VLLM_TP_SIZE", "") or str(
+    int(os.environ.get("MODAL_VLLM_GPU", "L4").split(":")[1])
+    if ":" in os.environ.get("MODAL_VLLM_GPU", "L4")
+    else 1
+)
+
+# Cost/scale knobs (sandbox sibling contract): scale-to-zero idle window and
+# the long first-boot ceiling (weight download + CUDA-graph build).
+SCALEDOWN_SECONDS = int(os.environ.get("MODAL_VLLM_SCALEDOWN_SECONDS", 15 * 60))
+STARTUP_TIMEOUT_SECONDS = int(
+    os.environ.get("MODAL_VLLM_STARTUP_TIMEOUT_SECONDS", 20 * 60)
+)
+
 # Pinned for reproducible deploys; bump deliberately (driver/CUDA compat).
 VLLM_IMAGE_TAG = os.environ.get("MODAL_VLLM_IMAGE_TAG", "v0.28.0")
 
@@ -74,6 +95,7 @@ CONFIG_ENV_KEYS = (
     "MODAL_VLLM_MAX_MODEL_LEN",
     "MODAL_VLLM_GPU_MEMORY_UTILIZATION",
     "MODAL_VLLM_MAX_NUM_SEQS",
+    "MODAL_VLLM_TP_SIZE",
     "MODAL_VLLM_REVISION",
     "MODAL_VLLM_API_TOKEN",
     "HF_TOKEN",
@@ -103,7 +125,24 @@ vllm_cache = modal.Volume.from_name(VLLM_CACHE_VOLUME_NAME, create_if_missing=Tr
 image = (
     modal.Image.from_registry(f"vllm/vllm-openai:{VLLM_IMAGE_TAG}", add_python="3.12")
     .run_commands("pip install --no-cache-dir huggingface_hub[hf_transfer]")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .env(
+        {
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            "HF_XET_HIGH_PERFORMANCE": "1",
+        }
+    )
+)
+
+# Slim image for the pre-warm function (no GPU, no vLLM).
+download_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .uv_pip_install("huggingface_hub[hf_transfer]")
+    .env(
+        {
+            "HF_HUB_ENABLE_HF_TRANSFER": "1",
+            "HF_XET_HIGH_PERFORMANCE": "1",
+        }
+    )
 )
 
 app = modal.App(APP_NAME, image=image)
@@ -145,6 +184,9 @@ def build_vllm_command(model: str) -> list[str]:
         cmd += ["--revision", REVISION]
     if QUANTIZATION:
         cmd += ["--quantization", QUANTIZATION]
+    if TP_SIZE and TP_SIZE != "1":
+        # Multi-GPU containers must pass this or vLLM uses only 1 GPU and OOMs.
+        cmd += ["--tensor-parallel-size", TP_SIZE]
     # Legal-document workloads are bursty and latency-tolerant: batch freely.
     cmd += ["--no-enable-log-requests"]
     return cmd
@@ -155,15 +197,36 @@ def build_vllm_command(model: str) -> list[str]:
     volumes={HF_CACHE_MOUNT: hf_cache, VLLM_CACHE_MOUNT: vllm_cache},
     secrets=_config_secrets(),
     timeout=60 * 30,
-    scaledown_window=15 * 60,
+    scaledown_window=SCALEDOWN_SECONDS,
+    startup_timeout=STARTUP_TIMEOUT_SECONDS,
     # Long warm-up (weight download on first cold boot) before health checks.
 )
-@modal.web_server(port=SERVER_PORT, startup_timeout=60 * 20)
+@modal.web_server(port=SERVER_PORT, startup_timeout=STARTUP_TIMEOUT_SECONDS)
 def serve() -> None:
     model = os.environ.get("MODAL_VLLM_MODEL", MODEL)
     cmd = build_vllm_command(model)
     print("starting:", " ".join(cmd))
     subprocess.Popen(cmd, env={**os.environ, **_server_env()})
+
+
+@app.function(
+    image=download_image,
+    volumes={HF_CACHE_MOUNT: hf_cache},
+    secrets=_config_secrets(),
+    timeout=60 * 45,
+)
+def download_model(model: str = "", revision: str = "") -> None:
+    """Pre-warm the HF cache Volume so the first `serve` boot skips downloads.
+
+    ``modal run deploy/modal_vllm.py::download_model [--model ...]``
+    """
+    from huggingface_hub import snapshot_download
+
+    model = model or os.environ.get("MODAL_VLLM_MODEL", MODEL)
+    revision = revision or os.environ.get("MODAL_VLLM_REVISION", REVISION) or None
+    snapshot_download(repo_id=model, revision=revision)
+    hf_cache.commit()
+    print(f"cached {model}" + (f"@{revision}" if revision else ""))
 
 
 @app.local_entrypoint()
@@ -175,6 +238,6 @@ def main() -> None:
     print(
         "Then point mailroom at it:\n"
         "  DEFAULT_PROVIDER=vllm\n"
-        f"  VLLM_BASE_URL=https://modal.com>--{APP_NAME}-serve.modal.run/v1\n"
+        "  VLLM_BASE_URL=https://<workspace>--mailroom-vllm-serve.modal.run/v1\n"
         "  VLLM_API_KEY=<same value as MODAL_VLLM_API_TOKEN>"
     )
