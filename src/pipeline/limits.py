@@ -58,13 +58,15 @@ def get_run_deadline() -> float | None:
     return _run_deadline.get()
 
 
-def record_usage(usage, model: str | None = None) -> None:
+def record_usage(usage, model: str | None = None, agent: str | None = None) -> None:
     """Append an OpenAI-compatible usage object to the current run's
     accumulator. Tolerates mocks and odd shapes: only real int counts count.
 
     Accepts SDK ``CompletionUsage`` objects (``usage.prompt_tokens``) and
     LangChain ``usage_metadata`` dicts (``usage["input_tokens"]`` /
     ``usage["prompt_tokens"]``) so the vendored LangChain agents record too.
+    ``agent`` attributes the call to the calling agent (per-agent token/cost
+    accounting in evals and run reports); callers pass ``self.agent_name``.
     """
     if usage is None:
         return
@@ -77,23 +79,45 @@ def record_usage(usage, model: str | None = None) -> None:
     if not isinstance(prompt, int) or not isinstance(completion, int):
         return
     _run_usage.get().append(
-        {"prompt_tokens": prompt, "completion_tokens": completion, "model": model}
+        {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "model": model,
+            "agent": agent,
+        }
     )
 
 
 def usage_summary() -> dict:
     """Aggregate the current run's recorded usage.
 
-    Returns {"prompt_tokens", "completion_tokens", "total", "calls"}.
+    Returns {"prompt_tokens", "completion_tokens", "total", "calls",
+    "by_agent"} where ``by_agent`` maps agent name → per-agent {calls,
+    prompt_tokens, completion_tokens, total, models} (unattributed calls
+    land under ``None`` → key ``"unattributed"``).
     """
     items = _run_usage.get()
     prompt = sum(i["prompt_tokens"] for i in items)
     completion = sum(i["completion_tokens"] for i in items)
+    by_agent: dict[str, dict] = {}
+    for i in items:
+        key = i.get("agent") or "unattributed"
+        slot = by_agent.setdefault(
+            key, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total": 0, "models": []}
+        )
+        slot["calls"] += 1
+        slot["prompt_tokens"] += i["prompt_tokens"]
+        slot["completion_tokens"] += i["completion_tokens"]
+        slot["total"] += i["prompt_tokens"] + i["completion_tokens"]
+        model = i.get("model")
+        if model and model not in slot["models"]:
+            slot["models"].append(model)
     return {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total": prompt + completion,
         "calls": len(items),
+        "by_agent": by_agent,
     }
 
 
