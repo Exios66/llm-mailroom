@@ -186,7 +186,7 @@ class PDFTranscriber(BaseAgent):
 
         kwargs["run_deadline"] = get_run_deadline()
         response = retry_chat_completion(self.client, **kwargs)
-        record_usage(getattr(response, "usage", None), self.model)
+        record_usage(getattr(response, "usage", None), self.model, agent=self.agent_name)
         return response.choices[0].message.content or ""
 
 
