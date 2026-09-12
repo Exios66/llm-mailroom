@@ -48,7 +48,6 @@ vllm_model_map:
 # Order is priority: glm-5.2 is the strongest triage read (ling parsed 14/24
 # Enron samples in verification, the small models are last-resort).
 free_model_swarm:
-  - z-ai/glm-5.2:free
   - inclusionai/ling-3.0-flash-fin:free
   - nvidia/nemotron-3.5-lightning:free
   - thinkingmachines/inkling:free
@@ -390,7 +389,7 @@ agents:
   # `triage_*` section so the stored audits are never conflated.
   gmail_triage:
     provider: openrouter
-    model: z-ai/glm-5.2:free
+    model: inclusionai/ling-3.0-flash-fin:free
     temperature: 0.1
     max_tokens: 700
     max_input_chars: 12000
@@ -402,7 +401,7 @@ agents:
   # The free model keeps the pilot inside the MAILROOM_LLM_FREE_ONLY guardrail.
   relations:
     provider: openrouter
-    model: z-ai/glm-5.2:free
+    model: inclusionai/ling-3.0-flash-fin:free
     temperature: 0.1
     max_tokens: 900
     max_input_chars: 12000
@@ -534,7 +533,7 @@ agents:
   # Offline LLM-as-a-judge used by scripts/run_quality_judges.py.
   judge:
     provider: openrouter
-    model: deepseek/deepseek-v4-flash
+    model: qwen/qwen3.7-flash
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 60000
