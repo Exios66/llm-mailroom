@@ -40,7 +40,7 @@ FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
 # ground_truth on top of the frozen v8 base eafe1ab4; configs default /
 # ground_truth / bundles / streams / fixtures).
 # Pinned per the corpus plan §44 — never evaluate against unpinned main.
-FULL_CORPUS_REVISION = "fe3a6f96130d2f9612e9bd1aa5a730de965f332f"
+FULL_CORPUS_REVISION = "a706784419c37e57930fe17fc7ca0d7ee6672f0f"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in mailroom-dataset (v9) — identical to the canonical
