@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Hugging Face corpus pilot — the runner The-Mailroom orchestrates.
 
-Default corpus is ``Lucius-Morningstar/mailroom-corpus`` schema **v8** (the
-targeted full 2,000-doc surface; v8 = HUB-028 insurance LOB expansion +
-full GT conformance, hardened at `eafe1ab4` — HUB-032). Class × subtype
+Default corpus is ``Lucius-Morningstar/mailroom-dataset`` schema **v9** (the
+targeted full 3,302-doc surface; v9 = §84 hardened ground_truth on top of
+the frozen v8 base — HUB-028 insurance LOB expansion + full GT conformance,
+hardened at `eafe1ab4`, successor published 2026-09-12 at `fe3a6f96`).
+Class × subtype
 examples come from
 ``docclass-pilot``. Any other pipeline-ready Lucius-Morningstar dataset
 (``--dataset enron`` / ``claims`` / ``cuad``) can be ingested the same way,
@@ -944,7 +946,7 @@ def render_metrics_markdown(report: dict) -> str:
             "## Per subclass (Hub class × subtype strata)",
             "",
             "Strata come from the Hub inventories (`docclass-pilot` / "
-            "`mailroom-corpus`). Predicting `contract` for a `merger_agreement` "
+            "`mailroom-dataset`). Predicting `contract` for a `merger_agreement` "
             "row is a class miss, not an aligned hit.",
             "",
             "| stratum | n | exact | subclass |",
@@ -1463,8 +1465,8 @@ def check_contract() -> int:
     compliance_gt = expected_fields_for_sample(compliance_sample)
     assert compliance_gt.get("filing_type")
     assert compliance_gt.get("entity_name")
-    assert DATASET_SCHEMA == "v8"
-    assert DATASET_ID == "Lucius-Morningstar/mailroom-corpus"
+    assert DATASET_SCHEMA == "v9"
+    assert DATASET_ID == "Lucius-Morningstar/mailroom-dataset"
     assert DATASET_REVISION
     pack_classes = set(examples_by_class())
     assert pack_classes == set(HF_CLASSES)
@@ -1664,9 +1666,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--dataset",
-        default="docclass-merged",  # internal slug (Hub id: mailroom-corpus)
+        default="docclass-merged",  # internal slug (Hub id: mailroom-dataset)
         help="Lucius-Morningstar corpus slug or repo id (default: "
-             "mailroom-corpus v7). Aliases: v5/v7/full/corpus, examples/pilot, "
+             "mailroom-dataset v9). Aliases: v5/v7/v8/v9/full/corpus, examples/pilot, "
              "enron, claims, cuad.",
     )
     parser.add_argument(
