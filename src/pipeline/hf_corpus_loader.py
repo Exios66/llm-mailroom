@@ -1,7 +1,8 @@
-"""Canonical mailroom-corpus HuggingFace dataset loader (HUB-053).
+"""Canonical mailroom-dataset HuggingFace dataset loader (HUB-053).
 
 The ONE loading path for the mailroom-corpus family (``Lucius-Morningstar/
-mailroom-corpus``, internal slug ``docclass-merged``) — scripts, notebooks,
+mailroom-dataset``, v9 successor of the frozen v8 `mailroom-corpus`, internal
+slug ``docclass-merged``) — scripts, notebooks,
 and eval runners all import from here; no ad-hoc fetch code anywhere else.
 
 Verified against the live services 2026-09-04 (HF-SME subagent evidence on
@@ -51,7 +52,7 @@ from .hf_corpora import FULL_CORPUS_REVISION
 HUB_BASE = "https://huggingface.co"
 VIEWER_BASE = "https://datasets-server.huggingface.co"
 ORG = "Lucius-Morningstar"
-FULL_CORPUS_ID = f"{ORG}/mailroom-corpus"
+FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
 GT_CONFIG = "ground_truth"
 BLIND_CONFIG = "default"
 JOIN_KEY = "filename"
@@ -95,7 +96,7 @@ def dataset_sha(repo_id: str = FULL_CORPUS_ID) -> str | None:
 
 
 def _token_headers() -> dict[str, str]:
-    headers = {"User-Agent": "llm-mailroom-corpus-loader/1.0"}
+    headers = {"User-Agent": "llm-mailroom-loader/1.0"}
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"

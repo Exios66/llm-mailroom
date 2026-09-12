@@ -1,8 +1,8 @@
-"""Gmail pilot lab bench — one mailroom-corpus document, fired through the
+"""Gmail pilot lab bench — one mailroom-dataset document, fired through the
 agent mailbox, processed by the live watcher, verified end-to-end (HUB-053).
 
-The document ALWAYS derives from the mailroom-corpus HuggingFace dataset
-(``Lucius-Morningstar/mailroom-corpus``, schema v8): offline mode (default)
+The document ALWAYS derives from the mailroom-dataset HuggingFace dataset
+(``Lucius-Morningstar/mailroom-dataset``, schema v9): offline mode (default)
 serves the committed, integrity-verified snapshot
 (``notebooks/fixtures/gmail_pilot_corpus_snapshot.json`` — labels from the
 ``ground_truth`` config joined with ``doc_text`` from the blind ``default``
@@ -53,7 +53,7 @@ TERMINAL_STAGES = ("archived", "failed", "review")
 
 
 # ---------------------------------------------------------------------------
-# Corpus selection (the data ALWAYS derives from mailroom-corpus)
+# Corpus selection (the data ALWAYS derives from mailroom-dataset)
 
 
 def live_requested() -> bool:
@@ -75,7 +75,7 @@ def select_document(
     seed: int | None = None,
     index: int | None = None,
 ) -> dict[str, Any]:
-    """Pick ONE pilot document from mailroom-corpus.
+    """Pick ONE pilot document from mailroom-dataset.
 
     Offline (default): the committed snapshot, filtered by ``role`` or
     ``doc_class``. Live: the canonical ``pipeline.hf_corpus_loader.load_corpus``
@@ -198,7 +198,7 @@ def build_pilot_email(
     msg["Message-ID"] = message_id
     msg["Date"] = email.utils.formatdate(localtime=False)
     msg.set_content(
-        "Mailroom corpus pilot — one document from the mailroom-corpus "
+        "Mailroom corpus pilot — one document from the mailroom-dataset "
         "HuggingFace dataset for the watcher to process."
     )
     payload = Path(attachment_path).read_bytes()

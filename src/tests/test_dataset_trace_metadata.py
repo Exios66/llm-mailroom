@@ -8,15 +8,15 @@ from graph.build_graph import dataset_trace_metadata
 def test_dataset_trace_metadata_full_identity():
     meta = dataset_trace_metadata(
         {
-            "name": "Lucius-Morningstar/mailroom-corpus",
-            "revision": "bb57c5ad00333d239ea456fe3f2298c3ba5b5108",
-            "taxonomy_version": "v7",
+            "name": "Lucius-Morningstar/mailroom-dataset",
+            "revision": "fe3a6f96130d2f9612e9bd1aa5a730de965f332f",
+            "taxonomy_version": "v9",
         }
     )
     assert meta == {
-        "dataset_name": "Lucius-Morningstar/mailroom-corpus",
-        "dataset_revision": "bb57c5ad00333d239ea456fe3f2298c3ba5b5108",
-        "taxonomy_version": "v7",
+        "dataset_name": "Lucius-Morningstar/mailroom-dataset",
+        "dataset_revision": "fe3a6f96130d2f9612e9bd1aa5a730de965f332f",
+        "taxonomy_version": "v9",
     }
 
 

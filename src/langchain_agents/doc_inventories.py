@@ -2,7 +2,7 @@
 
 Mirrors ``cuad_maud.py`` for the non-contract classes so corporate records,
 correspondence, compliance filings, and insurance claims sort / parse /
-extract the same Hub tokens that ``Lucius-Morningstar/mailroom-corpus``
+extract the same Hub tokens that ``Lucius-Morningstar/mailroom-dataset``
 stores in ``ground_truth.expected_subclass``.
 
 Canonical tokens (Hub ``expected_subclass``):
