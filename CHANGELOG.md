@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.7.0] - 2026-09-13
+
+### Changed
+
+- **Corpus identity migrated to `Lucius-Morningstar/mailroom-dataset`**
+  (v1, canonically **v9**, 3,302 rows; issue hub #18): `FULL_CORPUS_ID`
+  in `src/pipeline/hf_corpora.py` now points at `mailroom-dataset` (schema
+  v9, pinned tip a7067844); the huggingface skill, notebook corpus layer,
+  fixture catalog, and UI copy are aligned; the `docclass-merged` Hub id
+  (deleted) survives only as the immutable `source-docclass-merged` trace
+  tag and historical references.
+- **llm-dojo-scoring pin bumped `v0.12.2` → `v0.14.0`** (release-time), so
+  released builds resolve the scoring engine's mailroom-dataset migration
+  and v9 GT surface.
 
 ### Added
 
