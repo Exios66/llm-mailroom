@@ -5,8 +5,8 @@
   "honesty": "Offline snapshot of Hub metadata + Dataset Viewer first-rows. Live cells behind NB-OPT-IN-NETWORK refresh from the API.",
   "datasets": [
     {
-      "id": "Lucius-Morningstar/mailroom-corpus",
-      "url": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus",
+      "id": "Lucius-Morningstar/mailroom-dataset",
+      "url": "https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset",
       "downloads": 62,
       "likes": 1,
       "last_modified": "2026-08-24T15:55:44.000Z",
@@ -59,7 +59,7 @@
         "correspondence",
         "insurance_claim"
       ],
-      "role": "Docclass merged corpus v5 — targeted full 1,210-doc pipeline surface (CUAD + MAUD + S-1 records + Enron sample + CMS claims).",
+      "role": "Mailroom Dataset v9 — targeted full 3,302-doc pipeline surface (CUAD + MAUD + S-1 records + Enron sample + CMS claims).",
       "text_fields": [
         "doc_text",
         "filename"
@@ -123,7 +123,7 @@
         "correspondence",
         "insurance_claim"
       ],
-      "role": "Stratified class × subclass slice of docclass-merged v5 (48 strata, every type and subtype).",
+      "role": "Stratified class × subclass slice of mailroom-dataset (48 strata, every type and subtype).",
       "text_fields": [
         "doc_text",
         "filename"

@@ -62,12 +62,28 @@ def _retry_after_seconds(exc: Exception) -> float | None:
         return None
 
 
-def retry_sleep_seconds(exc: Exception, attempt: int, cfg: dict | None = None) -> float:
-    """Backoff for one retry. 429s wait longer than connection blips."""
+def _is_modal_url(base_url: str | None) -> bool:
+    return bool(base_url) and "modal.run" in str(base_url)
+
+
+def retry_sleep_seconds(
+    exc: Exception, attempt: int, cfg: dict | None = None, base_url: str | None = None
+) -> float:
+    """Backoff for one retry. 429s wait longer than connection blips.
+
+    A 503 from a Modal endpoint is a scale-to-zero cold start: the container
+    takes minutes to warm, so the 30s-cap backoff would exhaust every attempt
+    mid-start — Modal 503s use a long, bounded cold-start backoff (DMR-052).
+    """
     cfg = cfg or _retry_config()
     base = float(cfg.get("base_delay", 1.0))
     max_delay = float(cfg.get("max_delay", 30.0))
     jitter = float(cfg.get("jitter", 0.3))
+    if _is_modal_url(base_url) and _status_code(exc) == 503:
+        cold = float(cfg.get("modal_cold_start_delay", 90.0))
+        max_cold = float(cfg.get("modal_cold_start_max_delay", 240.0))
+        delay = min(max_cold, cold * (2 ** max(0, attempt - 1)))
+        return max(0.0, delay * (1 + random.uniform(-jitter, jitter)))
     rate_limited = isinstance(exc, RateLimitError) or _status_code(exc) == 429
     if rate_limited:
         base = float(cfg.get("rate_limit_base_delay", 8.0))
@@ -82,6 +98,13 @@ def retry_sleep_seconds(exc: Exception, attempt: int, cfg: dict | None = None) -
 # exact quirk — never a blanket 4xx retry.
 _JSON_MODE_400_MARKERS = ("must contain the word 'json'",)
 
+# Model-capability 400s (free-swarm failover): the provider rejects the
+# request because THIS MODEL lacks the requested feature (live: ling via
+# Novita — "does not support feature: structured-outputs"). A capability
+# mismatch is a property of the MODEL, not of the request — the next swarm
+# entry is the correct response. Never a blanket 4xx retry.
+_CAPABILITY_400_MARKERS = ("does not support feature",)
+
 
 def _is_json_mode_400(exc: Exception) -> bool:
     if not isinstance(exc, BadRequestError):
@@ -91,6 +114,18 @@ def _is_json_mode_400(exc: Exception) -> bool:
     except Exception:
         return False
     return any(marker in text for marker in _JSON_MODE_400_MARKERS)
+
+
+def _is_model_capability_error(exc: Exception) -> bool:
+    """A 400 that is really a MODEL-capability mismatch (free-swarm failover
+    trigger) — e.g. a provider rejecting the model for structured-outputs."""
+    if not isinstance(exc, BadRequestError):
+        return False
+    try:
+        text = str(exc)
+    except Exception:
+        return False
+    return any(marker in text for marker in _CAPABILITY_400_MARKERS)
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -123,6 +158,19 @@ def _retry_config() -> dict:
         return {}
 
 
+def _free_swarm() -> list[str]:
+    """The ordered free-model fallback chain (taxonomy ``free_model_swarm:``).
+
+    Empty when unconfigured — failover then never engages.
+    """
+    try:
+        from pipeline.config import load_config
+
+        return [str(m) for m in (load_config().get("free_model_swarm") or [])]
+    except Exception:
+        return []
+
+
 def retry_chat_completion(
     client,
     *,
@@ -142,6 +190,15 @@ def retry_chat_completion(
     so a hanging provider request is bounded. When `run_deadline` is set, the
     wall-clock deadline is re-checked before every attempt, so a run whose time
     is up stops burning credits instead of starting another retry.
+
+    FREE-SWARM FAILOVER (live-verified 2026-09-04): when the request's model
+    is free and a rate-limit error arrives, the next taxonomy
+    `free_model_swarm:` entry takes over for the following attempt — the
+    OpenRouter shared free pool saturates for minutes at a time, and burning
+    every attempt on one saturated model parked documents that another free
+    model could have served instantly. Paid models NEVER rotate (a failover
+    would silently change cost); the swarm order is priority (primary first).
+
     Returns the SDK response on success, re-raises the last exception when all
     attempts are exhausted.
     """
@@ -151,6 +208,17 @@ def retry_chat_completion(
     max_attempts = max_attempts if max_attempts is not None else int(cfg.get("max_attempts", 5))
     if timeout is None:
         timeout = float(get_call_timeout_seconds())
+    model = str(kwargs.get("model") or "")
+    if model:
+        from .client import is_free_model
+
+        failover = (
+            [m for m in _free_swarm() if m != model]
+            if is_free_model(model)
+            else []
+        )
+    else:
+        failover = []
     attempt = 0
     while True:
         attempt += 1
@@ -159,9 +227,32 @@ def retry_chat_completion(
         try:
             return client.chat.completions.create(**kwargs, timeout=timeout)
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
-            if not _is_retryable(exc) or attempt >= max_attempts:
+            # A model-capability 400 is not "retryable" in place, but it IS a
+            # failover trigger — the next swarm entry may support the feature.
+            if (
+                not _is_retryable(exc)
+                and not _is_model_capability_error(exc)
+            ) or attempt >= max_attempts:
                 raise
-            delay = retry_sleep_seconds(exc, attempt, cfg)
+            if failover and (
+                isinstance(exc, RateLimitError) or _is_model_capability_error(exc)
+            ):
+                nxt = failover.pop(0)
+                logger.warning(
+                    "llm_free_failover",
+                    from_model=kwargs.get("model"),
+                    to_model=nxt,
+                    attempt=attempt,
+                    error_type=type(exc).__name__,
+                    detail=str(exc)[:200],
+                )
+                kwargs = {**kwargs, "model": nxt}
+            delay = retry_sleep_seconds(
+                exc,
+                attempt,
+                cfg,
+                base_url=str(getattr(client, "base_url", "") or ""),
+            )
             logger.warning(
                 "llm_retry",
                 attempt=attempt,
@@ -170,5 +261,6 @@ def retry_chat_completion(
                 detail=str(exc)[:300],
                 retry_in_s=round(delay, 2),
                 name=kwargs.get("name"),
+                model=kwargs.get("model"),
             )
             time.sleep(max(0.0, delay))

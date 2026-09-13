@@ -164,7 +164,7 @@ class BaseAgent(ABC):
 
         logger.info("llm_call", agent=self.agent_name, model=self.model, max_tokens=max_tokens)
         response = retry_chat_completion(self.client, **kwargs)
-        record_usage(getattr(response, "usage", None), self.model)
+        record_usage(getattr(response, "usage", None), self.model, agent=self.agent_name)
         content = response.choices[0].message.content or ""
         logger.info("llm_response", agent=self.agent_name, length=len(content))
         return content

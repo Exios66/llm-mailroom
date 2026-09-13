@@ -11,6 +11,24 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
+def clear_config_cache() -> None:
+    """Drop the cached taxonomy + the bins module-level copy (HUB-052).
+
+    The mode toggle (``python -m pipeline.relations_mode`` / the API's
+    ``/api/relations/mode``) edits taxonomy.yaml and clears the caches so the
+    running process honors the flip immediately — no restart. Calls outside
+    the process that made the edit (e.g. a standalone watcher) still need a
+    restart; that's the CLI's ``--restart-watcher``.
+    """
+    load_config.cache_clear()
+    try:
+        import pipeline.bins as bins
+
+        bins._config = None
+    except Exception:
+        pass
+
+
 def get_agent_config(agent_name: str) -> dict:
     cfg = load_config()
     agents = cfg.get("agents", {})
@@ -49,8 +67,17 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
 
 
 def get_all_doc_types() -> list[str]:
+    """Live (non-retired) document class keys from taxonomy.yaml.
+
+    Retired entries (``status: retired``) are excluded — they are retained
+    machinery for backward-compatible dispatch but not live sorter outputs.
+    """
     cfg = load_config()
-    return [cls["key"] for cls in cfg.get("doc_classes", [])]
+    return [
+        cls["key"]
+        for cls in cfg.get("doc_classes", [])
+        if cls.get("status") != "retired"
+    ]
 
 
 # Routing token the sorter / Lane A reviewer may emit when no live class fits

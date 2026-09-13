@@ -29,10 +29,13 @@ Deterministic signal mix (all free — no LLM):
   and the other signals still flow (fail-soft).
 - Temporal proximity boosts evidence (never a standalone edge).
 
-The LLM judgment pass (``agents/relations.py``) is CODE-COMPLETE but OFF
-until production: ``relations.llm: false`` (taxonomy) keeps the pilot
-deterministic-only; flips on with the production model + the free-only
-guardrail unset.
+The LLM judgment pass (``agents/relations.py``) is WIRED into the scan
+(HUB-051): when ``relations.llm: true`` (taxonomy; OFF in the pilot), the
+top-``top_k_llm_candidates`` sub-threshold pairs (the ambiguous band —
+signals that suggest but do not clear a deterministic threshold) are judged
+by the relations agent, and confidence-gated ``llm_asserted`` edges are
+recorded with the deterministic ones. Nothing unvalidated ever reaches the
+ledger (the validator refuses unproposed pairs and invented types).
 
 Sync surface for daemon threads wraps the async storage with ``asyncio.run``
 (house pattern — the Gmail echo's audit read).
@@ -57,6 +60,7 @@ DEFAULTS = {
     "keyword_jaccard_threshold": 0.25,
     "max_edges_per_doc": 50,
     "top_k_llm_candidates": 5,
+    "llm_confidence_gate": 0.55,
     "llm": False,
     "context_injection": True,
     "scan_batch_size": 25,
@@ -194,19 +198,42 @@ def embeddings_enabled() -> bool:
 
 def _embed(texts: list[str]) -> list[list[float]] | None:
     """Embed texts via the injected seam or the dojo model. Returns None when
-    embeddings are unavailable (fail-soft — the cosine signal just skips)."""
+    embeddings are unavailable (fail-soft — the cosine signal just skips).
+
+    HUB-051 fix: the dojo's public ``get_embedding_model()`` returns the model
+    NAME (a string), so the previous ``model.encode(...)`` call died with a
+    TypeError on every real run (``relations_embed_failed``; the cosine signal
+    never worked outside the injected test seam). The shared
+    ``_EmbeddingMatcher`` singleton (``_get_embedding``) is the real model
+    handle — local SentenceTransformer with remote-embedding fallback, one
+    instance per process, exactly the dojo's own compute-once philosophy."""
     with _EMBEDDER_LOCK:
         embedder = _EMBEDDER
     if embedder is None:
         if not embeddings_enabled():
             return None
         try:
-            from observability.field_scoring import get_embedding_model
+            import observability.field_scoring  # noqa: F401 — import-time taxonomy→dojo wiring (embedding_enabled/model); without it the dojo defaults (embedding_enabled=False) starve the cosine signal
+            from llm_dojo_scoring.field_scoring import _get_embedding
 
-            model = get_embedding_model()
-            if model is None:
+            matcher = _get_embedding()
+            if matcher is None:
                 return None
-            embedder = lambda vals: model.encode(vals, show_progress_bar=False).tolist()  # noqa: E731
+            embed = getattr(matcher, "_embed", None)
+            load_local = getattr(matcher, "_load_local", None)
+            if embed is None:
+                return None
+            if callable(load_local):
+                load_local()  # the matcher only loads its local model lazily
+                # inside similarity(); _embed alone would fall through to the
+                # remote backend
+            out: list[list[float]] = []
+            for text in texts:
+                vector = embed(text)
+                if vector is None:
+                    return None
+                out.append([float(x) for x in vector])
+            return out
         except Exception:
             logger.debug("relations_embedder_unavailable")
             return None
@@ -458,12 +485,24 @@ def scan_document(doc_id: str, *, run_id: str | None = None) -> dict:
 
         same_matter = [o for o in others if o.get("matter_id") == row.get("matter_id")]
         candidates: dict[str, dict] = {}
+        # HUB-051: the LLM judgment pass's raw material — pairs whose signals
+        # are suggestive but sub-threshold (the ambiguous band). Collected
+        # during the same loop, never stored unless the judge confirms them.
+        near_misses: dict[str, dict] = {}
 
         def add_candidate(other: dict, rtype: str, score: float, evidence: dict, method: str = "deterministic"):
             entry = candidates.setdefault(
                 other["doc_id"], {"other": other, "signals": []}
             )
             entry["signals"].append({"relation_type": rtype, "score": score, "evidence": evidence, "method": method})
+
+        def add_near_miss(other: dict, rtype: str, score: float, evidence: dict):
+            if score <= 0:
+                return
+            entry = near_misses.setdefault(
+                other["doc_id"], {"other": other, "signals": []}
+            )
+            entry["signals"].append({"relation_type": rtype, "score": score, "evidence": evidence, "method": "deterministic"})
 
         for o in same_matter[: int(cfg.get("same_matter_cap", 25))]:
             add_candidate(o, "same_matter", 1.0, {"matter_id": row.get("matter_id")})
@@ -490,23 +529,40 @@ def scan_document(doc_id: str, *, run_id: str | None = None) -> dict:
                         round(jaccard, 4),
                         {"jaccard": round(jaccard, 4), "shared": sorted(kws & o_kws)[:8]},
                     )
+                else:
+                    add_near_miss(
+                        o,
+                        "topic_overlap",
+                        round(jaccard, 4),
+                        {"jaccard": round(jaccard, 4), "shared": sorted(kws & o_kws)[:8]},
+                    )
             # party overlap
             o_parties = _parties(o_extracted)
             if parties and o_parties:
                 shared = parties & o_parties
+                overlap = round(len(shared) / len(parties | o_parties), 4)
                 if shared:
                     add_candidate(
                         o,
                         "party_overlap",
-                        round(len(shared) / len(parties | o_parties), 4),
+                        overlap,
                         {"shared": sorted(shared)[:8]},
                     )
+                else:
+                    add_near_miss(o, "party_overlap", overlap, {"shared": sorted(shared)[:8]})
             # embedding cosine
             o_vec = embeddings.get(oid)
             if vector and o_vec:
                 cos = _cosine(vector, o_vec)
                 if cos >= float(cfg.get("similarity_threshold", 0.62)):
                     add_candidate(
+                        o,
+                        "semantic_similarity",
+                        round(cos, 4),
+                        {"cosine": round(cos, 4), "model": model},
+                    )
+                else:
+                    add_near_miss(
                         o,
                         "semantic_similarity",
                         round(cos, 4),
@@ -547,6 +603,15 @@ def scan_document(doc_id: str, *, run_id: str | None = None) -> dict:
                 )
         edges.sort(key=lambda e: e["score"], reverse=True)
         edges = edges[: int(cfg.get("max_edges_per_doc", 50))]
+
+        # 3b. LLM judgment pass (HUB-051): the ambiguous band — sub-threshold
+        # pairs — judged by the relations agent when enabled. Confidence-gated
+        # ``llm_asserted`` edges join the same upsert + ledger path; the
+        # validator refuses unproposed pairs and invented types, so nothing
+        # unvalidated can reach the ledger.
+        llm_edges = _llm_judgment_edges(doc_id, row, near_misses, cfg, run_id)
+        edges.extend(llm_edges)
+        report["edges_llm"] = len(llm_edges)
 
         result = _run(R.record_edges(edges))
         report["edges_new"] = result.get("inserted", 0)
@@ -591,6 +656,108 @@ def scan_document(doc_id: str, *, run_id: str | None = None) -> dict:
         logger.warning("relations_scan_failed", doc_id=doc_id, error=f"{type(exc).__name__}: {exc}")
         report["error"] = f"{type(exc).__name__}: {exc}"
         return report
+
+
+def _llm_judgment_edges(
+    doc_id: str, row: dict, near_misses: dict, cfg: dict, run_id: str
+) -> list[dict]:
+    """HUB-051: the optional LLM judgment pass over sub-threshold candidates.
+
+    Ranks the near-miss pairs by best signal score, submits the top
+    ``top_k_llm_candidates`` to ``RelationsAgent.judge`` (closed-vocabulary
+    validator built in), and returns confidence-gated ``llm_asserted`` edges.
+    Empty when the pass is off, the band is empty, the call fails, or every
+    judgment is refused — the layer degrades to deterministic-only, never
+    raises, and never lets an unvalidated pair through.
+    """
+    if not llm_pass_enabled() or not near_misses:
+        return []
+    top_k = int(cfg.get("top_k_llm_candidates", 5))
+    gate = float(cfg.get("llm_confidence_gate", 0.55))
+    candidate_edges = [
+        {
+            "source_doc_id": doc_id,
+            "target_doc_id": oid,
+            "signals": entry["signals"],
+            "evidence": {
+                s["relation_type"]: s["score"] for s in entry["signals"]
+            },
+        }
+        for oid, entry in sorted(
+            near_misses.items(),
+            key=lambda kv: max(s["score"] for s in kv[1]["signals"]),
+            reverse=True,
+        )
+    ][:top_k]
+    if not candidate_edges:
+        return []
+    try:
+        from agents.relations import RelationsAgent, validate_judgments
+        from observability.tracing import pipeline_trace
+
+        # Langfuse best-practices law: the judgment pass runs OFF-graph (a
+        # daemon/sweeper thread — no active trace context), so without this
+        # wrapper its LLM call would land as an orphan auto-trace with no
+        # tags, session, or curated input. One tagged `relations-judgment`
+        # trace per scan; the auto-traced generation nests under it (same
+        # thread → contextvars propagate).
+        environment = str(os.environ.get("OBSERVABILITY_ENVIRONMENT", "live"))
+        with pipeline_trace(
+            seed=f"relations-judgment-{doc_id}-{run_id}",
+            name="relations-judgment",
+            session_id=row.get("matter_id") or None,
+            input={
+                "doc_id": doc_id,
+                "candidates": [
+                    f'{c["source_doc_id"]} <-> {c["target_doc_id"]}' for c in candidate_edges
+                ],
+            },
+            metadata={
+                "pipeline": "mailroom-relations",
+                "scanner_run_id": run_id,
+                "top_k": top_k,
+                "llm_confidence_gate": gate,
+                "candidate_count": len(candidate_edges),
+            },
+            tags=["mailroom", environment, "relations"],
+        ):
+            agent = RelationsAgent()
+            raw_judgments = agent.judge(candidate_edges)
+        # Defense-in-depth: the scanner re-validates the agent's output
+        # against ITS OWN proposed pairs — the closed vocabulary, pair
+        # normalization, and unproposed-pair refusal are applied twice so
+        # nothing unvalidated can ever reach the ledger.
+        allowed_pairs = {
+            (c["source_doc_id"], c["target_doc_id"]) for c in candidate_edges
+        }
+        judgments = validate_judgments({"judgments": raw_judgments}, allowed_pairs)
+    except Exception:
+        logger.debug("relations_llm_judgment_failed", doc_id=doc_id)
+        return []
+    edges = []
+    for j in judgments:
+        if j["confidence"] < gate:
+            continue
+        other = j["target_doc_id"] if j["target_doc_id"] in near_misses else j["source_doc_id"]
+        entry = near_misses.get(other)
+        signals = entry["signals"] if entry else []
+        edges.append(
+            {
+                "source_doc_id": j["source_doc_id"],
+                "target_doc_id": j["target_doc_id"],
+                "relation_type": "llm_asserted",
+                "score": j["confidence"],
+                "method": "llm",
+                "source_matter_id": row.get("matter_id"),
+                "target_matter_id": (entry or {}).get("other", {}).get("matter_id"),
+                "evidence": {
+                    "rationale": j.get("rationale", ""),
+                    "candidate_signals": {s["relation_type"]: s["score"] for s in signals},
+                },
+                "scanner_run_id": run_id,
+            }
+        )
+    return edges
 
 
 def _write_doc_audit_event(doc_id: str, matter_id: str, edges: list[dict], run_id: str) -> None:

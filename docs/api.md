@@ -488,6 +488,68 @@ Clear the `ops_monitor_paused` flag so the watcher resumes processing new files.
 
 ---
 
+### Relations Clerk Mode
+
+```
+GET /api/relations/mode
+POST /api/relations/mode
+```
+
+Read and flip the relations clerk's **live/pilot mode** (HUB-052) — the same
+knob as `python -m pipeline.relations_mode`, without touching the box: the
+POST edits taxonomy, clears the in-process config caches, and the embedded
+watcher honors the flip immediately (no restart).
+
+`GET` response — the effective posture and every knob that can block or
+shape it:
+
+```json
+{
+    "mode": "pilot",
+    "llm": false,
+    "llm_effective": false,
+    "llm_env_blocked": false,
+    "enabled": true,
+    "context_injection": true,
+    "context_injection_effective": true,
+    "graphs": true,
+    "model": "z-ai/glm-5.2:free",
+    "model_is_free": true,
+    "free_only_guardrail": true,
+    "kill_switches": {
+        "MAILROOM_RELATIONS": "1",
+        "MAILROOM_RELATIONS_LLM": "1",
+        "MAILROOM_RELATIONS_CONTEXT": "1",
+        "MAILROOM_RELATIONS_EMBEDDINGS": "1"
+    },
+    "embeddings_enabled": true,
+    "similarity_threshold": 0.62,
+    "keyword_jaccard_threshold": 0.25,
+    "llm_confidence_gate": 0.55,
+    "top_k_llm_candidates": 5,
+    "last_sweep_at": null,
+    "edges": 0,
+    "ledger": {"ok": true, "entries": 209}
+}
+```
+
+`POST` body: `{"mode": "live" | "pilot", "model": "<optional judge model>"}`.
+
+- `mode: "pilot"` — deterministic-only (the pilot posture; zero LLM spend).
+- `mode: "live"` — the LLM judgment pass is on.
+- `model` — optional judge model: a taxonomy `cost_models` entry or an
+  OpenRouter `:free` model. A **paid** model while `MAILROOM_LLM_FREE_ONLY`
+  is on is refused with `400` (the guardrail is a pipeline-wide .env
+  decision — it is never flipped here).
+
+The stale `MAILROOM_RELATIONS_LLM=0` kill-switch in `.env` is removed
+automatically when it contradicts a requested `live` mode. `restart_required`
+is always `false` for this endpoint (embedded watcher); standalone watchers
+read the new taxonomy on their next restart or
+`python -m pipeline.relations_mode live --restart-watcher`.
+
+---
+
 ## Error Responses
 
 All errors follow a consistent format:

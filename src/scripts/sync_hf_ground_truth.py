@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Derive + publish the intent/subject_matter/keywords ground truth for
-``Lucius-Morningstar/mailroom-corpus`` (ground_truth config).
+``Lucius-Morningstar/mailroom-dataset`` (ground_truth config).
 
 The plan (KANBAN-07x): for ``corporate_record``, ``correspondence``, and
 ``insurance_claim`` the pipeline ground truth now includes three purpose/gist
@@ -11,7 +11,7 @@ every successful run can be graded against them.
 
 Workflow:
 
-1. Fetch the pinned revision of ``mailroom-corpus`` — ``default`` config rows
+1. Fetch the pinned revision of ``mailroom-dataset`` — ``default`` config rows
    (``doc_text`` per filename) joined to the ``ground_truth`` config rows
    (``expected`` / ``expected_subclass`` + existing GT columns) on filename.
 2. Keep only the three purpose-labeled classes; the rest of the table passes
@@ -611,7 +611,7 @@ def check_contract() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Derive + publish purpose/gist GT to mailroom-corpus.")
+    parser = argparse.ArgumentParser(description="Derive + publish purpose/gist GT to mailroom-dataset.")
     parser.add_argument("--check", action="store_true", help="Network-free contract checks.")
     parser.add_argument("--real", action="store_true", help="LLM labeler from document text.")
     parser.add_argument("--mock", action="store_true", help="Deterministic labeler (machinery only).")

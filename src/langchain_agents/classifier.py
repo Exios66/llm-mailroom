@@ -35,7 +35,6 @@ def _valid_classes() -> list[str]:
         return sorted(get_sorter_label_set())
     except Exception:
         return [
-            "compliance_filing",
             "contract",
             "corporate_record",
             "correspondence",

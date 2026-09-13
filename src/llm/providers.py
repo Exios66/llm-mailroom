@@ -1,6 +1,9 @@
+import logging
 from typing import Dict, Optional
 import os
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODELS = {
     "openrouter": [
@@ -139,5 +142,17 @@ def resolve_provider(agent_config: dict) -> tuple[ProviderConfig, str]:
 
     if not provider.base_url:
         raise ValueError(f"No base URL configured for provider '{provider_name}'.")
+
+    if provider_name == "vllm" and not os.environ.get("VLLM_BASE_URL", "").strip():
+        # Live-or-loud (DMR-052): DEFAULT_PROVIDER=vllm without VLLM_BASE_URL
+        # means the pipeline talks to the localhost default — fine for a local
+        # GPU box, silent misconfig for a Modal deployment. Warn at resolution
+        # time so the run is never ambiguous.
+        logger.warning(
+            "DEFAULT_PROVIDER=vllm without VLLM_BASE_URL — using the localhost "
+            "default %s; point VLLM_BASE_URL at the deployed endpoint for "
+            "remote serving.",
+            provider.base_url,
+        )
 
     return provider, model

@@ -179,3 +179,64 @@ class TestArchiveCollisionSafe:
         src.write_bytes(b"x")
         dest = bins.move_to_archive(src, "M1", "contract", doc_id="doc-1")
         assert dest.name == "fresh.pdf"
+
+
+class TestCatalogReconciliation:
+    """HUB-051 G4: stale catalog PROCESSING rows reconcile from their
+    on-disk terminal manifests (the authority), never from guesses."""
+
+    def test_reconciles_row_from_terminal_manifest(self, temp_base_dir, capsys):
+        import asyncio
+
+        from pipeline import bins
+        from scripts.recover_processing import reconcile_catalog_rows
+        from storage.catalog import get_document, write_document_record
+
+        doc_id = "doc-cat-1"
+        asyncio.run(
+            write_document_record(
+                {
+                    "doc_id": doc_id,
+                    "matter_id": "M-CAT",
+                    "original_filename": "stale.pdf",
+                    "stage": "processing",
+                }
+            )
+        )
+        manifest = {
+            "doc_id": doc_id,
+            "original_filename": "stale.pdf",
+            "stage": "archived",
+        }
+        (bins.manifests_dir() / f"{doc_id}.json").write_text(json.dumps(manifest))
+
+        rc = reconcile_catalog_rows(apply=True)
+        assert rc == 0
+        row = asyncio.run(get_document(doc_id))
+        assert row.stage == "archived"
+        out = capsys.readouterr().out
+        assert "processing -> archived" in out
+
+    def test_reports_row_without_terminal_manifest(self, temp_base_dir, capsys):
+        import asyncio
+
+        from scripts.recover_processing import reconcile_catalog_rows
+        from storage.catalog import get_document, write_document_record
+
+        doc_id = "doc-cat-2"
+        asyncio.run(
+            write_document_record(
+                {
+                    "doc_id": doc_id,
+                    "matter_id": "M-CAT",
+                    "original_filename": "running.pdf",
+                    "stage": "processing",
+                }
+            )
+        )
+
+        rc = reconcile_catalog_rows(apply=True)
+        assert rc == 0
+        row = asyncio.run(get_document(doc_id))
+        assert row.stage == "processing"  # untouched — may be a live claim
+        assert "no terminal manifest" in capsys.readouterr().out

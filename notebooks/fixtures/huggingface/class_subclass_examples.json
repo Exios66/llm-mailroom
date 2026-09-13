@@ -1,6 +1,6 @@
 {
   "dataset": "Lucius-Morningstar/docclass-pilot",
-  "parent": "Lucius-Morningstar/mailroom-corpus",
+  "parent": "Lucius-Morningstar/mailroom-dataset",
   "schema": "v5",
   "source": "huggingface-datasets-viewer",
   "n_examples": 48,

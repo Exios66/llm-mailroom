@@ -357,7 +357,7 @@ class BaseAgent(ABC):
         try:
             from pipeline.limits import record_usage
 
-            record_usage(usage, self.model)
+            record_usage(usage, self.model, agent=self.agent_name)
         except ImportError:
             pass
 

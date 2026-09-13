@@ -119,7 +119,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `jurisdiction` | `str \| None` | State/country of incorporation |
 | `filing_number` | `str \| None` | Official filing reference |
 
-**Honest gap (dojo 0.11.0):** there is **no external extraction benchmark** for this class (nothing CUAD/MAUD-shaped). The published `mailroom-corpus` set has 39 `corporate_record` rows with record-type subclasses; Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold. Mailroom scores a **local extraction pack** (`observability.local_eval_packs`, mock/check only) with schema-complete `expected_fields` (entity_name, subject_matter, keywords, signatories, …) from committed fixtures. Extra Hub `ground_truth` columns are joined when present, never invented.
+**Honest gap (dojo 0.11.0):** there is **no external extraction benchmark** for this class (nothing CUAD/MAUD-shaped). The published `mailroom-dataset` set has 39 `corporate_record` rows with record-type subclasses; Hub extract inventory stays the five tokens above — do not treat those 39 rows as clause-level gold. Mailroom scores a **local extraction pack** (`observability.local_eval_packs`, mock/check only) with schema-complete `expected_fields` (entity_name, subject_matter, keywords, signatories, …) from committed fixtures. Extra Hub `ground_truth` columns are joined when present, never invented.
 
 ---
 
@@ -155,25 +155,13 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 | Attribute | Value |
 |---|---|
-| **Node** | `extract`, `retry_extract` |
-| **Trigger** | `doc_type == compliance_filing` |
+| **Node** | `extract`, `retry_extract` (RETIRED — dispatch disabled) |
+| **Trigger** | `doc_type == compliance_filing` (retired class; documents now route as `unknown`) |
 | **Input** | Document text + `ComplianceFilingExtraction` schema |
 | **Output** | Structured extraction + confidence |
 | **Personality** | Rule-bound, cites authority, cautious |
 
-**Output schema fields:**
-| Field | Type | Description |
-|---|---|---|
-| `filing_type` | `str` | SEC filing type, state filing, etc. |
-| `regulatory_body` | `str` | SEC, state secretary, IRS, etc. |
-| `filing_date` | `str \| None` | When filed |
-| `due_date` | `str \| None` | Statutory deadline |
-| `entity_name` | `str` | Filing entity |
-| `key_requirements` | `list[str]` | Regulatory obligations satisfied |
-| `status` | `str \| None` | draft, filed, pending, overdue |
-| `reference_number` | `str \| None` | Accession/tracking number |
-
-**Honest gap (dojo 0.11.0):** `compliance_filing` has **zero rows** in `Lucius-Morningstar/mailroom-corpus`. The Hub SEC form-body inventory (`10-K`, `10-Q`, `8-K`, …) is the live subclass catalog; the suite scores typed extraction plus that inventory. The HF pilot (`scripts/run_hf_pilot.py`) therefore omits this class from Hub `--real` — it must not report a corpus accuracy at n=0. A **local pack** of committed fixtures (10-K + state filing) is scored on `--check` / `--mock` only.
+**Retirement note:** `compliance_filing` has **zero rows** in `Lucius-Morningstar/mailroom-dataset` and was retired from the live pipeline (2026-09-01, `status: retired` in `taxonomy.yaml`). Documents that would have been classified as `compliance_filing` now route as `unknown` (human review). The specialist agent and schema are retained as inert machinery for local eval packs only — the HF pilot omits this class from `--real`.
 
 ---
 
@@ -217,7 +205,7 @@ A first-class document class (added in mailroom v0.4.0 / KANBAN-067): schema reg
 
 ### Retired classes (`court_opinion`, `due_diligence`)
 
-Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (human review); there is no specialist dispatch, extraction schema, or managed prompt. Dojo keeps historical suites with `retired=True` (`list_suites(live_only=True)` excludes them). **Court opinions:** LegalBench remains the real benchmark surface. **Due diligence:** zero rows in `mailroom-corpus`.
+Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (human review); there is no specialist dispatch, extraction schema, or managed prompt. Dojo keeps historical suites with `retired=True` (`list_suites(live_only=True)` excludes them). **Court opinions:** LegalBench remains the real benchmark surface. **Due diligence:** zero rows in `mailroom-dataset`.
 
 ---
 
@@ -457,7 +445,7 @@ Registration: `llm/prompts.py:prompt_templates()` (synced with
 | Attribute | Value |
 |---|---|
 | **Node** | none — the post-archive association pass + the background archive sweep (HUB-040) |
-| **Trigger** | deterministic layer: every terminal manifest (dispatched off the document path) + a watermark-incremental sweep every `MAILROOM_RELATIONS_SCAN_SECONDS` (embedded in the watcher). LLM judgment pass: config-gated (`relations.llm`, **OFF in the pilot**) |
+| **Trigger** | deterministic layer: every terminal manifest (dispatched off the document path — incl. the Gmail triage lane, which also writes the doc's catalog row so the scan can find it, HUB-051) + a watermark-incremental sweep every `MAILROOM_RELATIONS_SCAN_SECONDS` (embedded in the watcher). LLM judgment pass: config-gated (`relations.llm`, **OFF in the pilot**) |
 | **Input** | deterministic: catalog + manifests + archived text (embeddings cached per document). LLM pass: top-k candidate pairs with signal evidence (gists/keywords — never raw text) |
 | **Output** | typed, scored edges (`relation_edges`) + hash-chained ledger entries (`relation_log`) + advisory RELATED context for agents/echo + knowledge-graph exports |
 | **Personality** | the mailroom's research clerk — files everything near everything it relates to, records the relationship itself |
@@ -475,13 +463,21 @@ every new edge is an entry in the **own hash-chained ledger** (`relation_log`,
 `python -m pipeline.relations_scan --verify-ledger`), and each document's
 own audit chain gains a `relations_linked` event.
 
-The **LLM judgment pass** (`RelationsAgent.judge`) reviews the scanner's
-top ambiguous candidates and returns typed judgments + rationale —
-validated and clamped to the closed vocabulary; unproposed pairs and
-invented types are refused, so nothing unvalidated ever reaches the ledger.
-`relations.llm: false` keeps the pilot deterministic-only (free-tier
-guardrail compatible); flipping it on in production with a paid model is a
-taxonomy edit. Registered as `mailroom-relations` in `llm/prompts.py`.
+The **LLM judgment pass** (`RelationsAgent.judge`, WIRED in HUB-051) reviews
+the scanner's top-`top_k_llm_candidates` **ambiguous-band** pairs — signals
+that suggest but do not clear a deterministic threshold (the near-miss set
+collected during the same scan) — and returns typed judgments + rationale.
+Confidence-gated (`llm_confidence_gate`, default 0.55) `llm_asserted` edges
+join the same upsert + ledger path as the deterministic ones; the scanner
+re-validates the agent's output against its OWN proposed pairs (closed
+vocabulary, pair normalization, unproposed-pair refusal — applied twice, so
+nothing unvalidated ever reaches the ledger). `relations.llm: false` keeps
+the pilot deterministic-only (free-tier guardrail compatible); flipping it
+on in production is a taxonomy edit — or one command:
+`python -m pipeline.relations_mode live [--model <name>] [--restart-watcher]`,
+or the API's `POST /api/relations/mode` (HUB-052; the embedded watcher
+picks the flip up with no restart). Registered as
+`mailroom-relations` in `llm/prompts.py`.
 
 **Consumption** (the longitudinal loop): a bounded, labeled advisory
 `RELATED` block rides the sorter/specialist handoff context and the Gmail

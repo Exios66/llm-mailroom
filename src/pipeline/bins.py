@@ -484,19 +484,29 @@ def _heartbeat_file_path() -> Path:
     return get_base_dir() / HEARTBEAT_FILE_NAME
 
 
-def touch_watcher_heartbeat() -> None:
+def touch_watcher_heartbeat(extra: dict | None = None) -> None:
     """Liveness beacon: the watcher touches this file every rescan cycle.
 
     `/health` reports how stale the heartbeat is so an operator can tell
     whether uploads are actually being drained (a missing/stale heartbeat
-    means files will pile up in the inbox). Best-effort, never raises.
+    means files will pile up in the inbox). ``extra`` merges operator-
+    readable detail into the same JSON (pid/host/started_at — the HUB-050
+    status channel reads them; the watchdog uses pid liveness as a fast
+    down-signal); readers only depend on ``ts``. Written atomically
+    (temp + replace) so the watchdog never reads a torn file. Best-effort,
+    never raises.
     """
     import time as _time
 
     try:
         path = _heartbeat_file_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"ts": _time.time()}))
+        payload: dict = {"ts": _time.time()}
+        if extra:
+            payload.update(extra)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(path)
     except Exception:
         pass
 
