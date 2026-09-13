@@ -261,7 +261,7 @@ def nb11() -> None:
 
 Navigate and explore the datasets the mailroom family publishes on
 [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar). The
-targeted full corpus is **`docclass-merged` schema v5** (1,210 docs).
+targeted full corpus is **`mailroom-dataset` v9** (3,302 docs).
 Class × subtype **examples** come from **`docclass-pilot`** (48 strata).
 Other pipeline-ready Hub sets (Enron correspondence ~247k, CMS claims,
 CUAD contracts) ingest the same way; `legalbench-full` is a LegalBench
@@ -292,7 +292,7 @@ print("live requested:", hf.live_requested())
 
 Seven datasets. `mailroom_classes` is the wiring back to `taxonomy.yaml`,
 not a Hub tag — it is how this pipeline consumes the published surface.
-`docclass-merged` v5 is the full corpus; `docclass-pilot` is one example
+`mailroom-dataset` v9 is the full corpus; `docclass-pilot` is one example
 of every type and subtype. `compliance_filing` has zero Hub rows."""),
         code("""cat = hf.catalog()
 hf.show_catalog(cat["datasets"])
@@ -301,7 +301,7 @@ print("org:", cat["org_url"])
 """),
         md("""## Class × subclass examples (docclass-pilot, v5 parent)
 
-One Hub row per stratum — every type and subtype in `docclass-merged` v5.
+One Hub row per stratum — every type and subtype in `mailroom-dataset` v9.
 This pack is what `--mock` / `--examples` on `run_hf_pilot.py` and the
 notebook `CLASS_PACKS` use. Not invented stand-in text."""),
         code("""pack = hf.class_subclass_examples()
@@ -364,7 +364,7 @@ lab.close_sandbox(env)
 
 | dataset | mailroom use |
 |---|---|
-| `docclass-merged` (v5, 1,210 docs) | targeted full pipeline corpus |
+| `mailroom-dataset` (v9, 3,302 docs) | targeted full pipeline corpus |
 | `docclass-pilot` (48 strata) | class × subclass examples |
 | `mailroom-cuad-contracts` | vision surface (page images) |
 | `mailroom-cuad-contracts-full` | contract texts + CUAD clause labels |

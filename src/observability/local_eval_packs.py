@@ -1,6 +1,6 @@
 """Local eval packs that close honesty gaps Hub cannot.
 
-Hub `docclass-merged` still has:
+Hub `mailroom-dataset` still has:
 
 * CMS insurance rows that are all ``approved`` / empty ``denial_reasons``
 * zero ``compliance_filing`` rows

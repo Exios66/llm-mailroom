@@ -1378,7 +1378,7 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
         "specialist": "compliance_specialist",
         "path": "legacy",
         "marker": "compliance filing",
-        "source": "local-fixture",  # zero Hub rows in docclass-merged v5
+        "source": "local-fixture",  # zero Hub rows in mailroom-dataset
     },
     "insurance_claim": {
         "text": _HUB_CLAIM_TEXT,
