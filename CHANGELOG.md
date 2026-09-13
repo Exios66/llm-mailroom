@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.1] - 2026-09-13
+
+### Changed
+
+- **Corpus revision re-pinned to the GT-closure tip** `46a4d3c2`
+  (`FULL_CORPUS_REVISION`, issue #27/#29/#30): the mailroom-dataset v1 GT
+  revision that closes the v9 audit-sweep coverage gaps —
+  `supporting_documents` populated on the 144 INSURBIAS auto rows (+6
+  documented absence via the shared audit/build rule), `cuad_clause_labels`
+  EX-10 rows recorded as a dated documented exception. 3,302 rows, schema
+  unchanged (v9 / taxonomy v9). Trace-metadata test updated to the new pin.
+
 ## [v0.7.0] - 2026-09-13
 
 ### Changed
