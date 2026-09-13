@@ -513,7 +513,7 @@ shape it:
     "context_injection": true,
     "context_injection_effective": true,
     "graphs": true,
-    "model": "z-ai/glm-5.2:free",
+    "model": "openrouter/free",
     "model_is_free": true,
     "free_only_guardrail": true,
     "kill_switches": {

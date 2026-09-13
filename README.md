@@ -189,7 +189,7 @@ flowchart TD
 Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
 
 **Auxiliary flows (outside the 13-node graph):**
-- **Gmail triage lane** (`agents/gmail_triage.py`): the free OpenRouter model (`z-ai/glm-5.2:free`) handles single-document Gmail uploads through classification + key extraction + auditable-hash archive without calling paid agents. Multi-document emails and documents exceeding the free budget route to the full pipeline.
+- **Gmail triage lane** (`agents/gmail_triage.py`): the free OpenRouter lane runs on the Free Models Router (`openrouter/free` — auto-selects the best free model per request) handling single-document Gmail uploads through classification + key extraction + auditable-hash archive without calling paid agents. Multi-document emails and documents exceeding the free budget route to the full pipeline.
 - **Relations clerk** (`pipeline/relations.py`): post-archive deterministic association scanning (same-matter, keyword Jaccard, party overlap, embedding cosine) with an optional LLM judgment pass for ambiguous near-misses. Dispatched off the document path at every terminal manifest.
 
 ### Agent Organization
@@ -200,7 +200,7 @@ The agent roster as declared in `config/taxonomy.yaml` — every LLM agent resol
 flowchart TB
     subgraph ENTRY["Entry & intake"]
         INTAKE["IntakeAgent<br/>ingest specialist (HUB-038):<br/>transcribe → deterministic clerk →<br/>LLM triage+clean+prepare"]
-        GMAIL["GmailTriageAgent<br/>free model swarm (z-ai/glm-5.2:free):<br/>single-doc classification + extraction"]
+        GMAIL["GmailTriageAgent<br/>Free Models Router (openrouter/free):<br/>single-doc classification + extraction"]
     end
 
     subgraph CLASSIFY["Classification"]
