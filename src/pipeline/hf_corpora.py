@@ -36,11 +36,12 @@ FULL_CORPUS_SCHEMA = "v9"
 # (historical traces carry the immutable `source-docclass-merged` tag;
 # slug/aliases are plumbing, not identity).
 FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
-# v9 tip abdf27b0 (2026-09-12: mailroom-dataset v1 — 3,302-row hardened
-# ground_truth on top of the frozen v8 base eafe1ab4; configs default /
+# v9 tip 46a4d3c2 (2026-09-13: mailroom-dataset v1 GT revision closing the
+# v9 audit-sweep gaps — supporting_documents on the 150 INSURBIAS auto rows,
+# EX-10 cuad dated exception; 3,302 rows, schema unchanged; configs default /
 # ground_truth / bundles / streams / fixtures).
 # Pinned per the corpus plan §44 — never evaluate against unpinned main.
-FULL_CORPUS_REVISION = "a706784419c37e57930fe17fc7ca0d7ee6672f0f"
+FULL_CORPUS_REVISION = "46a4d3c240a36671cde0182fff4960f6b8b73aca"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in mailroom-dataset (v9) — identical to the canonical
