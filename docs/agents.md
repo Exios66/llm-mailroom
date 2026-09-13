@@ -396,7 +396,7 @@ approval-inclusive; the state counter `arbiter_retry_count` is compared against 
 | **Output** | `intake.triage`: `primary_doc_class` + `doc_subclass` + `confidence` + `gist` + `keywords`; own `triage_*` audit section |
 | **Personality** | Fast, grounded intake clerk — the accurate log, not the final word |
 
-The **free OpenRouter triage team** (`z-ai/glm-5.2:free`, $0 in `cost_models`,
+The **free OpenRouter triage team** (`openrouter/free` — the Free Models Router, $0 in `cost_models`,
 rate-limited) — the free model is deliberate: single-document Gmail uploads
 must not rack up paid-agent spend. The lane performs the **core steps and
 functionalities of the full pipeline** — deterministic preparation, triage
