@@ -5,9 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.7.0] - 2026-09-13
+
+### Changed
+
+- **Corpus identity migrated to `Lucius-Morningstar/mailroom-dataset`**
+  (v1, canonically **v9**, 3,302 rows; issue hub #18): `FULL_CORPUS_ID`
+  in `src/pipeline/hf_corpora.py` now points at `mailroom-dataset` (schema
+  v9, pinned tip a7067844); the huggingface skill, notebook corpus layer,
+  fixture catalog, and UI copy are aligned; the `docclass-merged` Hub id
+  (deleted) survives only as the immutable `source-docclass-merged` trace
+  tag and historical references.
+- **llm-dojo-scoring pin bumped `v0.12.2` → `v0.14.0`** (release-time), so
+  released builds resolve the scoring engine's mailroom-dataset migration
+  and v9 GT surface.
+
+### Added
+
+- **Relations clerk mode toggle (HUB-052):** the live/pilot knob is now a
+  first-class operation instead of a manual taxonomy edit + restart.
+  `python -m pipeline.relations_mode status|pilot|live [--model <name>]
+  [--restart-watcher]` — `status` prints the effective posture + every knob
+  (mode, judge model, free-only guardrail, kill-switches, thresholds, ledger
+  health); `pilot`/`live` edit taxonomy.yaml surgically (comments and all
+  other lines preserved byte-for-byte), clear the in-process config caches
+  so the current process honors the flip immediately, and remove a stale
+  `MAILROOM_RELATIONS_LLM` kill-switch from `.env` that would contradict the
+  requested mode; `--restart-watcher` runs the graceful standalone-watcher
+  relaunch (watchdog first — no false 🔴 — then watcher, then both back up).
+  The "even smoother" path: authenticated `GET/POST /api/relations/mode` on
+  the API — the POST needs NO restart for the embedded watcher (the apply
+  clears the API process's caches). A paid judge model under the
+  `MAILROOM_LLM_FREE_ONLY` guardrail is refused with an actionable message
+  (the guardrail is a pipeline-wide .env decision, never flipped by the
+  toggle); `pipeline.config.clear_config_cache()` powers the in-process
+  pickup. 20 tests (mode readout, surgical editor incl. missing-key
+  insertion + comment preservation, guardrail/unknown-model/invalid-mode
+  refusals, stale kill-switch removal, CLI, API GET/POST + auth + 400s).
+  Docs: AGENTS.md commands, docs/api.md endpoints, CHANGELOG.
 
 ### Fixed
+
+- **Relations clerk production readiness (HUB-051):** the layer was a no-op
+  on the live system — (a) the Gmail triage lane never wrote the `documents`
+  catalog row (audits/archives/echoes but no `_catalog_upsert`), so
+  `scan_document` skipped every triage document as `not_in_catalog` and the
+  sweeper scanned nothing (65 live sweeps, zero edges); the lane now upserts
+  the terminal conveyor row (stage/doc_type/subclass/confidence/sha256/
+  triage extraction) on both terminal paths, and `write_document_record`
+  persists `file_sha256`. (b) The embedding cosine signal never worked in
+  production: the dojo's public `get_embedding_model()` returns the model
+  NAME (a string), so the old `model.encode(...)` call died with a TypeError
+  (`relations_embed_failed`) — `_embed` now drives the dojo's shared
+  `_EmbeddingMatcher` singleton (local SentenceTransformer + remote
+  fallback, one instance per process, 90s-bounded, fail-soft). (c) The
+  documented `python -m pipeline.relations_scan` CLI crashed
+  (`ModuleNotFoundError`) — the module is created. (d) The LLM judgment pass
+  was dead code: `RelationsAgent.judge` was never called. Now WIRED into
+  `scan_document` — the ambiguous-band near-misses (sub-threshold signals)
+  are judged (top-`top_k_llm_candidates`), confidence-gated
+  (`llm_confidence_gate`, default 0.55) `llm_asserted` edges join the same
+  upsert + ledger path, and the scanner re-validates the agent's output
+  against its own proposed pairs (defense-in-depth; nothing unvalidated
+  reaches the ledger). `relations.llm: false` still keeps the pilot
+  deterministic-only.
 
 - **Railway crash loop:** listen on platform `PORT` when set (wins over image
   `MAILROOM_API_PORT=7860`), clearer off-loopback token exit on Railway, and

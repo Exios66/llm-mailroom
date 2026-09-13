@@ -1,5 +1,6 @@
 import os
 import signal
+import socket
 import time
 import threading
 import structlog
@@ -22,7 +23,7 @@ logger = structlog.get_logger(__name__)
 
 # O-1: kick the score-config warm-up off the document path at startup.
 from observability.scores import warmup_score_configs
-from observability.tracing import install_on_dropped
+from observability.tracing import install_on_dropped, pipeline_trace
 
 install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
 
@@ -97,10 +98,165 @@ WATCHER_LOCK_NAME = "watcher.lock"
 # tick. Override with WATCHER_POLL_INTERVAL_SECONDS.
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
 
+# SIGTERM drain: wait up to this many seconds for in-flight documents to
+# finish before aborting.  Override with WATCHER_DRAIN_TIMEOUT_SECONDS.
+DRAIN_TIMEOUT_SECONDS = int(os.environ.get("WATCHER_DRAIN_TIMEOUT_SECONDS", "30"))
+
 # In-process guard: flock is per-fd, so the same process can take the lock
 # twice. The API lifespan and a nested start() must not double-run.
 _watcher_owned = False
 _watcher_owned_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Manifest index cache (HUB-043 / performance fix): O(1) lookup per inbox
+# file instead of iterating every ``*.json`` in the manifests directory.
+# Rebuilt at startup and periodically in the rescan loop.  The index maps
+# ``{filename: {delivery_key: stage}}`` so ``_is_already_processed`` can do
+# a dict lookup + membership test instead of N JSON parses.
+# ---------------------------------------------------------------------------
+_MANIFEST_INDEX: dict[str, dict[str, str]] = {}
+_MANIFEST_INDEX_BUILT_AT: float = 0.0
+_MANIFEST_INDEX_REBUILD_SECONDS = 300.0  # rebuild every 5 minutes
+
+
+def _build_manifest_index() -> dict[str, dict[str, str]]:
+    """Build ``{filename: {delivery_key: stage}}`` from all terminal manifests.
+
+    A single pass over the manifests directory replaces the per-file O(n)
+    scan that ran for every inbox file on every rescan cycle.
+    """
+    import json as _json
+    from pipeline.bins import manifests_dir
+
+    index: dict[str, dict[str, str]] = {}
+    mdir = manifests_dir()
+    if not mdir.exists():
+        return index
+    for mf in mdir.glob("*.json"):
+        try:
+            data = _json.loads(mf.read_text())
+        except Exception:
+            continue
+        if data.get("stage") not in TERMINAL_STAGES:
+            continue
+        fname = data.get("original_filename") or ""
+        if not fname:
+            continue
+        intake = data.get("intake") or {}
+        delivery_key = intake.get("message_id") or intake.get("upload_id") or ""
+        index.setdefault(fname, {})[delivery_key] = data.get("stage", "")
+    return index
+
+
+def _get_manifest_index() -> dict[str, dict[str, str]]:
+    """Return the cached manifest index, rebuilding if stale."""
+    global _MANIFEST_INDEX, _MANIFEST_INDEX_BUILT_AT
+    now = time.time()
+    if not _MANIFEST_INDEX or (now - _MANIFEST_INDEX_BUILT_AT) > _MANIFEST_INDEX_REBUILD_SECONDS:
+        _MANIFEST_INDEX = _build_manifest_index()
+        _MANIFEST_INDEX_BUILT_AT = now
+    return _MANIFEST_INDEX
+
+# Watcher status channel (HUB-050): the 🟢 startup/relaunch confirmation and
+# the enriched heartbeat (pid/host/started_at/sha) that the external watchdog
+# (`python -m pipeline.watchdog`) turns into 🔴 down alerts. A dead process
+# cannot email anyone — the watchdog is the outside pair of eyes.
+_STATUS_STARTED_AT: str | None = None
+_STATUS_SHA: str | None = None
+
+
+def _code_sha() -> str | None:
+    """Short HEAD sha (once, fail-soft) so status emails name the running code."""
+    global _STATUS_SHA
+    if _STATUS_SHA is not None:
+        return _STATUS_SHA
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=Path(__file__).resolve().parent,
+        )
+        _STATUS_SHA = out.stdout.strip() or None
+    except Exception:
+        _STATUS_SHA = None
+    return _STATUS_SHA
+
+
+def _status_detail() -> dict:
+    """Operator-readable heartbeat payload (readers depend only on `ts`)."""
+    from datetime import datetime, timezone
+
+    detail: dict = {
+        "pid": os.getpid(),
+        "host": socket.gethostname(),
+        "interval": float(
+            os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", DEFAULT_POLL_INTERVAL_SECONDS)
+        ),
+    }
+    if _STATUS_STARTED_AT:
+        detail["started_at"] = _STATUS_STARTED_AT
+    sha = _code_sha()
+    if sha:
+        detail["sha"] = sha
+    return detail
+
+
+def _gmail_intake_line() -> str:
+    from .gmail_intake import load_config
+
+    try:
+        cfg = load_config()
+        enabled = os.environ.get("MAILROOM_GMAIL_ENABLED", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        return (
+            f"enabled · poll {cfg['poll_seconds']:.0f}s"
+            if enabled
+            else "disabled"
+        )
+    except Exception:
+        return "unknown"
+
+
+def _send_startup_notice() -> None:
+    """🟢 relaunch confirmation (daemon thread): concise stylized email to the
+    human's status inbox. Never blocks startup; every failure is logged only."""
+    import time as _time
+
+    from .bins import HEARTBEAT_FILE_NAME, get_base_dir
+    from .status_notify import send_status_email, status_enabled
+
+    _time.sleep(2.0)  # let the poller/relations embeds settle for accurate rows
+    if not status_enabled():
+        return
+    detail = _status_detail()
+    rows = [
+        ("Host", str(detail.get("host", "?"))),
+        ("PID", str(detail.get("pid", "?"))),
+        ("Started at", _STATUS_STARTED_AT or "?"),
+        ("Code", f"git {detail.get('sha')}" if detail.get("sha") else "unknown"),
+        ("Inbox", str(inbox_dir())),
+        ("Gmail intake", _gmail_intake_line()),
+        ("Heartbeat", str(get_base_dir() / HEARTBEAT_FILE_NAME)),
+    ]
+    sent = send_status_email(
+        "running",
+        "watcher is running — inbox drain is live",
+        rows,
+        note=(
+            "You will get a 🔴 alert here if this process stops beating, and "
+            "this 🟢 confirmation again at every relaunch."
+        ),
+    )
+    if sent:
+        logger.info("watcher_startup_notice_sent", pid=detail.get("pid"))
 
 
 class WatcherLockHeld(RuntimeError):
@@ -212,11 +368,12 @@ def _is_already_processed(path: Path) -> bool:
     email or a fresh upload with an already-seen filename is a NEW document
     and must process — the filename-only rule silently dropped it forever
     (the watcher skipped it every rescan; the sender never got a reaction or
-    an echo). No sidecar ⇒ legacy filename behavior (plain inbox drops)."""
-    try:
-        import json as _json
-        from pipeline.bins import manifests_dir
+    an echo). No sidecar ⇒ legacy filename behavior (plain inbox drops).
 
+    Uses the pre-built manifest index for O(1) lookup instead of iterating
+    all manifest files per inbox file (HUB-043 / performance fix).
+    """
+    try:
         delivery_key = None
         try:
             _matter, intake_meta = _intake_context(path)
@@ -224,27 +381,17 @@ def _is_already_processed(path: Path) -> bool:
         except Exception:
             delivery_key = None
 
-        mdir = manifests_dir()
-        if not mdir.exists():
+        index = _get_manifest_index()
+        stages_by_key = index.get(path.name)
+        if stages_by_key is None:
             return False
-        for mf in mdir.glob("*.json"):
-            try:
-                data = _json.loads(mf.read_text())
-            except Exception:
-                continue
-            if data.get("original_filename") != path.name:
-                continue
-            if data.get("stage") not in TERMINAL_STAGES:
-                continue
-            if delivery_key is None:
-                return True
-            data_intake = data.get("intake") or {}
-            seen_key = data_intake.get("message_id") or data_intake.get("upload_id")
-            if seen_key == delivery_key:
-                return True
-            # Same filename, different delivery identity ⇒ an OLDER document's
-            # manifest — this file is new and must be claimed.
-        return False
+        if delivery_key is None:
+            # No sidecar ⇒ legacy behavior: any terminal manifest for this
+            # filename counts as already processed.
+            return bool(stages_by_key)
+        # Provenance-aware: only count a match when the delivery key exists
+        # in the index for this filename.
+        return delivery_key in stages_by_key
     except Exception:
         logger.exception("manifest_scan_failed", file=str(path))
     return False
@@ -472,6 +619,62 @@ def _file_sha256(path: Path) -> str:
         return ""
 
 
+def _triage_catalog_upsert(
+    manifest,
+    terminal_path: Path | None = None,
+    extraction: dict | None = None,
+    file_sha256: str | None = None,
+) -> None:
+    """Triage-lane catalog write (HUB-051) — the durable conveyor row the
+    relations clerk, /ops/status, and the echo's audit read depend on.
+
+    The free lane reaches its terminal manifest OUTSIDE the graph, so the
+    catalog row the paid pipeline writes via ``_catalog_upsert`` is written
+    here. Without it ``scan_document`` skips every triage document as
+    ``not_in_catalog`` and the relations layer stays a production no-op
+    (65 live sweeps, zero edges — HUB-051 audit). Best-effort, never raises.
+    """
+    try:
+        import asyncio
+
+        from schemas.matter import Matter
+        from storage.catalog import (
+            write_document_record as _write_doc,
+            write_matter_record as _write_matter,
+        )
+
+        matter_id = manifest.matter_id or "DEFAULT"
+        intake = manifest.intake or {}
+        triage = intake.get("triage") or {}
+        doc_record = {
+            "doc_id": manifest.doc_id,
+            "matter_id": matter_id,
+            "original_filename": manifest.original_filename,
+            "doc_type": manifest.doc_type or "unknown",
+            "doc_subclass": manifest.doc_subclass,
+            "stage": manifest.stage.value if hasattr(manifest.stage, "value") else str(manifest.stage),
+            "classification_confidence": manifest.classification_confidence,
+            "extracted_data": extraction or triage.get("extraction"),
+            "escalation_reason": manifest.escalation_reason,
+            "file_sha256": file_sha256 or (triage.get("file_sha256") or ""),
+        }
+
+        async def _runner():
+            matter = Matter(
+                matter_id=matter_id,
+                name=matter_id,
+                client_name="auto-created",
+                practice_area="transactional",
+            )
+            await _write_matter(matter)
+            await _write_doc(doc_record)
+
+        asyncio.run(_runner())
+        logger.debug("triage_catalog_upserted", doc_id=manifest.doc_id, stage=doc_record["stage"])
+    except Exception:
+        logger.exception("triage_catalog_upsert_failed")
+
+
 def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     """Single-document Gmail intake → the free-triage lane (HUB-037).
 
@@ -487,33 +690,135 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     Audit entries live in their OWN section (`triage_ingested` /
     `triage_classified` / `triage_archived` — never the pipeline's
     `ingested/classified/extracted/archived` vocabulary) so the stored
-    audits are never conflated. Fail-soft: any error parks the document to
-    `failed/` via the watcher's abort path — the intake must never crash.
+    audits are never conflated. Fail-soft, two tiers (HUB-049): a transient
+    triage-read failure (free-team 429s, timeouts) parks the document in
+    `review/` with `triage_llm_unavailable` — never the failed bin — while
+    any later unexpected error still parks to `failed/` via the watcher's
+    abort path; the intake must never crash either way.
     """
     from schemas.audit import build_audit_entry
     from schemas.manifest import DocumentManifest, PipelineStage
     from agents.gmail_triage import GmailTriageAgent
     from agents.intake import apply_intake
     from graph.build_graph import _read_file_text, _latest_audit_hash, _write_audit_log
-    from pipeline.bins import archive_dir, move_to_archive, save_manifest
+    from pipeline.bins import archive_dir, move_to_archive, move_to_review, save_manifest
 
     doc_text, _ = _read_file_text(claimed)
     raw_text = doc_text
     doc_text, intake_stats = apply_intake(doc_text, filename=claimed.name)
 
     agent = GmailTriageAgent()
-    triage = agent.triage(doc_text, filename=claimed.name)
+    try:
+        triage = agent.triage(doc_text, filename=claimed.name)
+    except Exception as exc:
+        # HUB-049 lane hardening: a transient free-team failure (upstream 429
+        # rate limits, timeouts, parse failures beyond the retry contract) is
+        # NOT a document defect — the failed bin is for real handling errors.
+        # The unclassified document parks in REVIEW with the escalation
+        # reason, so the completion echo shows an actionable ⏸ instead of a
+        # misleading ❌ and the document can be reprocessed when the free
+        # team is reachable again.
+        reason = f"triage_llm_unavailable: {type(exc).__name__}: {str(exc)[:200]}"
+        manifest = DocumentManifest(
+            matter_id=matter_id,
+            original_filename=claimed.name,
+            stage=PipelineStage.REVIEW,
+            doc_type="unknown",
+            classification_confidence=None,
+            classification_attempts=1,
+            escalation_reason=reason,
+            intake=dict(intake_meta),
+        )
+        manifest.touch()
+        manifest_path = save_manifest(manifest)
+        prev = _latest_audit_hash(manifest.doc_id)
+        entry = build_audit_entry(
+            manifest.doc_id,
+            matter_id,
+            "triage_ingested",
+            "triage",
+            {
+                "file_sha256": _file_sha256(claimed),
+                "chars": len(doc_text),
+                "original_filename": claimed.name,
+            },
+            prev_hash=prev,
+        )
+        _write_audit_log(entry)
+        prev = entry.entry_hash
+        review_path = move_to_review(claimed, manifest)
+        entry = build_audit_entry(
+            manifest.doc_id,
+            matter_id,
+            "triage_reviewed",
+            "archivist",
+            {
+                "manifest_path": str(manifest_path),
+                "review_path": str(review_path),
+                "escalation_reason": reason,
+                "route": "triage",
+            },
+            prev_hash=prev,
+        )
+        _write_audit_log(entry)
+        logger.warning(
+            "triage_lane_llm_unavailable",
+            doc_id=manifest.doc_id,
+            file=str(review_path),
+            matter_id=matter_id,
+            error=reason,
+        )
+        # Catalog row + relations dispatch (HUB-051): the review park is a
+        # terminal manifest — the relations clerk must see it and the
+        # conveyor position must be real.
+        _triage_catalog_upsert(manifest, terminal_path=review_path, file_sha256=_file_sha256(claimed))
+        from .relations import dispatch_relations_scan
+
+        dispatch_relations_scan(manifest.model_dump(mode="json"))
+        from .gmail_intake import dispatch_intake_echo
+
+        dispatch_intake_echo(manifest.model_dump(mode="json"))
+        return {"doc_id": manifest.doc_id, "stage": "review"}
     intake_meta = dict(intake_meta)
     intake_meta["triage"] = triage
+
+    # HUB-confidence gate: the free lane has NO retry loop and no reviewer, so
+    # a triage the taxonomy would not trust must go to HUMAN REVIEW instead of
+    # being archived under a possibly-wrong class. Two routes to review:
+    #   * primary class clamps to `unknown` (the free model could not pin it),
+    #   * confidence < the taxonomy's `low` threshold for the doc class.
+    # Review-parked manifests keep the best-effort extracted entities (HUB-049
+    # fallback) so the reviewer sees what the team found.
+    from pipeline.config import get_confidence_thresholds
+
+    doc_class = triage.get("primary_doc_class") or "unknown"
+    conf = triage.get("confidence")
+    review_low = float(get_confidence_thresholds(doc_class).get("low", 0.88))
+    if doc_class == "unknown":
+        terminal_stage = PipelineStage.REVIEW
+        escalation_reason = (
+            "triage_unknown_class — the free triage team could not pin a "
+            "document class; parked for human review"
+        )
+    elif conf is None or conf < review_low:
+        terminal_stage = PipelineStage.REVIEW
+        escalation_reason = (
+            f"triage_low_confidence {conf} < {review_low} — the free triage "
+            "team was not certain enough; parked for human review"
+        )
+    else:
+        terminal_stage = PipelineStage.ARCHIVED
+        escalation_reason = None
 
     manifest = DocumentManifest(
         matter_id=matter_id,
         original_filename=claimed.name,
-        stage=PipelineStage.ARCHIVED,
-        doc_type=triage.get("primary_doc_class") or "unknown",
+        stage=terminal_stage,
+        doc_type=doc_class,
         doc_subclass=triage.get("doc_subclass"),
-        classification_confidence=triage.get("confidence"),
+        classification_confidence=conf,
         classification_attempts=1,
+        escalation_reason=escalation_reason,
         intake=intake_meta,
     )
     manifest.touch()
@@ -553,43 +858,69 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         _write_audit_log(entry)
         prev = entry.entry_hash
 
-    archive_path = move_to_archive(
-        claimed, matter_id, manifest.doc_type or "unknown", doc_id=manifest.doc_id
-    )
     manifest_path = save_manifest(manifest)
-    sidecar = None
-    try:
-        sidecar = archive_dir(matter_id, manifest.doc_type or "unknown") / f"{archive_path.stem}.json"
-        sidecar.write_text(manifest.model_dump_json(indent=2))
-    except Exception:
-        logger.warning("triage_archive_sidecar_failed", doc_id=manifest.doc_id)
-
-    archived_sha256 = _file_sha256(archive_path)
-    archived_entry = build_audit_entry(
-        manifest.doc_id,
-        matter_id,
-        "triage_archived",
-        "archivist",
-        {
-            "archive_path": str(archive_path),
+    if terminal_stage == PipelineStage.REVIEW:
+        terminal_path = move_to_review(claimed, manifest)
+        terminal_event = "triage_reviewed"
+        terminal_detail = {
+            "manifest_path": str(manifest_path),
+            "review_path": str(terminal_path),
+            "doc_type": manifest.doc_type,
+            "escalation_reason": escalation_reason,
+            "confidence": conf,
+            "route": "triage",
+        }
+    else:
+        terminal_path = move_to_archive(
+            claimed, matter_id, manifest.doc_type or "unknown", doc_id=manifest.doc_id
+        )
+        terminal_event = "triage_archived"
+        sidecar = None
+        try:
+            sidecar = archive_dir(matter_id, manifest.doc_type or "unknown") / f"{terminal_path.stem}.json"
+            sidecar.write_text(manifest.model_dump_json(indent=2))
+        except Exception:
+            logger.warning("triage_archive_sidecar_failed", doc_id=manifest.doc_id)
+        terminal_detail = {
+            "archive_path": str(terminal_path),
             "manifest_path": str(manifest_path),
             "archive_sidecar": str(sidecar) if sidecar else None,
             "doc_type": manifest.doc_type,
-            "file_sha256": archived_sha256,
-            "confidence": triage.get("confidence"),
+            "file_sha256": _file_sha256(terminal_path),
+            "confidence": conf,
             "route": "triage",
-        },
+        }
+
+    terminal_entry = build_audit_entry(
+        manifest.doc_id,
+        matter_id,
+        terminal_event,
+        "archivist",
+        terminal_detail,
         prev_hash=prev,
     )
-    _write_audit_log(archived_entry)
+    _write_audit_log(terminal_entry)
+
+    # Catalog row (HUB-051): the triage lane reaches its terminal manifest
+    # OUTSIDE the graph, so the durable conveyor row is written here —
+    # without it the relations clerk skips the document (not_in_catalog)
+    # and /ops/status never sees the archive.
+    _triage_catalog_upsert(
+        manifest,
+        terminal_path=terminal_path,
+        extraction=triage.get("extraction"),
+        file_sha256=terminal_detail.get("file_sha256"),
+    )
 
     logger.info(
         "triage_lane_complete",
         doc_id=manifest.doc_id,
-        file=str(archive_path),
+        stage=terminal_stage.value,
+        file=str(terminal_path),
         matter_id=matter_id,
         doc_class=triage.get("primary_doc_class"),
         confidence=triage.get("confidence"),
+        escalation_reason=escalation_reason,
     )
 
     # Completion echo on the source thread (same contract as the pipeline).
@@ -700,7 +1031,15 @@ class InboxHandler(FileSystemEventHandler):
                     matter_id=matter_id,
                     intake_source=intake_meta.get("source"),
                 )
-                _run_triage_lane(claimed, matter_id, intake_meta)
+                with pipeline_trace(
+                    seed=claimed.name,
+                    session_id=matter_id,
+                    name="gmail-triage",
+                    tags=["source-gmail", "route-triage"],
+                    metadata=intake_meta or {},
+                    environment="live",
+                ) as _triage_trace:
+                    _run_triage_lane(claimed, matter_id, intake_meta)
             else:
                 logger.info(
                     "file_claimed",
@@ -738,9 +1077,12 @@ class Watcher:
         self._relations_sweeper = None
 
     def start(self):
-        global _watcher_owned
+        global _watcher_owned, _STATUS_STARTED_AT
+        from datetime import datetime, timezone
+
         inbox = inbox_dir()
         ensure_dirs(inbox)
+        _STATUS_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         logger.info("watcher_starting", inbox=str(inbox), worker_id=self.worker_id)
 
         with _watcher_owned_lock:
@@ -758,6 +1100,10 @@ class Watcher:
         try:
             self._reconcile_stale_claims()
 
+            # Pre-build the manifest index so the startup inbox scan uses
+            # O(1) lookups instead of O(n) per file.
+            _build_manifest_index()
+
             for f in list_inbox_files():
                 logger.info("existing_inbox_file", file=str(f))
                 threading.Thread(
@@ -768,7 +1114,7 @@ class Watcher:
             self.observer.schedule(handler, str(inbox), recursive=False)
             self.observer.start()
             self._running = True
-            touch_watcher_heartbeat()  # immediate liveness beacon before the first rescan
+            touch_watcher_heartbeat(extra=_status_detail())  # immediate enriched liveness beacon
             logger.info("watcher_running", inbox=str(inbox))
 
             # Periodic inbox rescan: catches files skipped while ingestion was
@@ -791,6 +1137,12 @@ class Watcher:
             from .relations import start_embedded_relations_scanner
 
             self._relations_sweeper = start_embedded_relations_scanner()
+
+            # Watcher status channel (HUB-050): 🟢 startup/relaunch
+            # confirmation to the human's status inbox. Fire-and-forget
+            # daemon — never blocks or crashes startup; MAILROOM_WATCHER_STATUS=0
+            # (and hermetic tests) keep it silent.
+            threading.Thread(target=_send_startup_notice, daemon=True).start()
         except Exception:
             self.stop()
             raise
@@ -820,9 +1172,14 @@ class Watcher:
         poll = float(os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", str(DEFAULT_POLL_INTERVAL_SECONDS)))
         while self._running:
             _time.sleep(poll)
-            # Liveness beacon for /health: proves the watcher is alive and
-            # draining the inbox (uploads only move once this process runs).
-            touch_watcher_heartbeat()
+            # Liveness beacon for /health + the HUB-050 watchdog: proves the
+            # watcher is alive and draining the inbox (uploads only move once
+            # this process runs). Enriched with pid/host/started_at so the
+            # external watchdog can fast-path on pid death.
+            touch_watcher_heartbeat(extra=_status_detail())
+            # Refresh the manifest index periodically so newly-created
+            # manifests from other processes (e.g. the API) are picked up.
+            _get_manifest_index()
             if is_ingestion_paused():
                 continue
             for f in list_inbox_files():
@@ -832,7 +1189,7 @@ class Watcher:
                     target=self._process_existing, args=(f,), daemon=True
                 ).start()
 
-    def stop(self):
+    def stop(self, drain_timeout: float | None = None):
         global _watcher_owned
         from .gmail_intake import stop_embedded_poller
         from .relations import stop_embedded_relations_scanner
@@ -846,6 +1203,21 @@ class Watcher:
             self.observer.join(timeout=5)
             self._running = False
             logger.info("watcher_stopped")
+        # Drain: wait for in-flight documents to finish (SIGTERM hardening).
+        timeout = drain_timeout if drain_timeout is not None else DRAIN_TIMEOUT_SECONDS
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with _active_lock:
+                remaining = len(_active_files)
+            if remaining == 0:
+                break
+            logger.info("watcher_draining", active_files=remaining, seconds_left=round(deadline - time.time(), 1))
+            time.sleep(0.5)
+        else:
+            with _active_lock:
+                remaining = len(_active_files)
+            if remaining > 0:
+                logger.warning("watcher_drain_timeout", active_files=remaining, timeout=timeout)
         if self._lock is not None:
             self._lock.release()
             self._lock = None
@@ -879,7 +1251,15 @@ class Watcher:
                     matter_id=matter_id,
                     intake_source=intake_meta.get("source"),
                 )
-                _run_triage_lane(claimed, matter_id, intake_meta)
+                with pipeline_trace(
+                    seed=claimed.name,
+                    session_id=matter_id,
+                    name="gmail-triage",
+                    tags=["source-gmail", "route-triage"],
+                    metadata=intake_meta or {},
+                    environment="live",
+                ) as _triage_trace:
+                    _run_triage_lane(claimed, matter_id, intake_meta)
             else:
                 logger.info(
                     "existing_file_claimed",
@@ -911,6 +1291,11 @@ if __name__ == "__main__":
     def _signal_handler(signum, frame):
         logger.info("watcher_signal_received", signal=signum)
         _shutdown.set()
+        # Force-kill after drain timeout if the main loop hasn't exited yet.
+        threading.Thread(
+            target=lambda: (time.sleep(DRAIN_TIMEOUT_SECONDS + 5), os._exit(1)),
+            daemon=True,
+        ).start()
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
@@ -926,7 +1311,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        watcher.stop()
+        watcher.stop(drain_timeout=DRAIN_TIMEOUT_SECONDS)
         from observability.tracing import flush
 
         flush()

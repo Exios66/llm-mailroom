@@ -2,7 +2,7 @@
 
 ## What is Mailroom?
 
-Mailroom is a multi-agent pipeline that ingests legal documents, classifies them, routes them to specialist agents for structured extraction, compiles the results into a matter record, and archives everything with a full, tamper-evident audit trail. One **LangGraph state machine run per document** (13 nodes), with retries, second-opinion review lanes, judge/arbiter quality gates, and human review routing.
+Mailroom is a multi-agent pipeline that ingests legal documents, classifies them, routes them to specialist agents for structured extraction, compiles the results into a matter record, and archives everything with a full, tamper-evident audit trail. One **LangGraph state machine run per document** (13 nodes), with retries, second-opinion review lanes, judge/arbiter quality gates, and human review routing. Auxiliary flows — the Gmail triage lane (single-document email uploads via the free triage team) and the relations clerk (post-archive association scanning) — run outside the main 13-node graph.
 
 ## What document types does it handle?
 

@@ -4,11 +4,11 @@
 
 ## 1. Pipeline at a glance
 
-The Mailroom is a **13-node LangGraph state machine executed once per document**. Operationally, those nodes collapse into six phases:
+The Mailroom is a **13-node LangGraph state machine executed once per document**. Two auxiliary flows operate outside the graph: the Gmail triage lane (free model swarm for single-document emails) and the relations clerk (post-archive association scanning). Operationally, the graph nodes collapse into six phases:
 
 ```mermaid
 flowchart TD
-    A["1 · INGEST\nclaim + normalize + manifest"] --> B["2 · CLASSIFY\nSorterAgent + confidence routing"]
+    A["1 · INGEST\ningest specialist: transcribe + clean + prepare"] --> B["2 · CLASSIFY\nSorterAgent + confidence routing"]
     B -->|high confidence| C["3 · EXTRACT\nspecialist dispatch"]
     B -->|retry / reviewer / unknown| H["HUMAN REVIEW\napprove · correct · reject"]
     H -->|approved / corrected| C
@@ -25,19 +25,27 @@ flowchart TD
     D -->|success| E["5 · CATALOG\nSQLite documents + matters"]
     D -->|compile failure| H
     E --> F["6 · ARCHIVE\nfile + manifest + hash-chain audit"]
+    F --> R["RELATIONS\npost-archive association scan"]
     H -->|rejected| Z["FAILED"]
+
+    GMAIL(["Gmail triage\nfree model swarm"]) -.->|single-doc| B
+    GMAIL -.->|multi-doc / over-budget| A
 ```
 
 ### Six operator-visible phases
 
 | Phase | Graph nodes | Operator meaning | Primary artifact |
 |---|---|---|---|
-| **1. Intake** | `intake` | Claim file, normalize intake, gated LLM triage/clean/prepare, create manifest, prepare text/vision inputs. | Manifest |
+| **1. Intake** | `intake` | Claim file, ingest specialist transcribes PDFs/images, deterministic intake clerk normalizes text, gated LLM triage/clean/prepare, create manifest. | Manifest |
 | **2. Classify** | `classify`, `retry_classify`, `review_classify` | Determine a live class and confidence; ambiguous/unknown results are not silently remapped. | Classification state + trace |
 | **3. Extract** | `extract`, `retry_extract`, `judge_verify`, `arbiter`, `boss_escalation` | Dispatch specialist, validate output, resolve ambiguity, adjudicate conflicts. | Structured extraction |
 | **4. Compile** | `compile_report` | Deterministically assemble the matter record. **No reporter LLM call.** | Matter record |
 | **5. Catalog** | `catalog_write` | Persist document/matter metadata and extracted data. | SQLite/Postgres rows |
 | **6. Archive** | `archive` | Move source, write manifest sidecar, append hash-chained audit entry. | Archived document + audit |
+
+**Auxiliary flows (outside the graph):**
+- **Gmail triage lane**: free OpenRouter model handles single-document Gmail uploads (classification + key extraction + archive) without paid agents. Multi-document emails and over-budget documents route to the full pipeline.
+- **Relations clerk**: post-archive deterministic association scan (same-matter, keyword Jaccard, party overlap, embedding cosine) with optional LLM judgment for ambiguous near-misses.
 
 The current design has two happy-path LLM generations: classification and extraction; report compilation is procedural. fileciteturn8file0L8-L24
 
@@ -45,7 +53,7 @@ The current design has two happy-path LLM generations: classification and extrac
 
 1. Watcher/API places the document in the inbox and the pipeline atomically claims it into processing.
 2. `intake` creates the manifest and performs deterministic intake normalization.
-3. The sorter assigns a live class: `contract`, `merger_agreement`, `corporate_record`, `correspondence`, `compliance_filing`, or `insurance_claim`.
+3. The sorter assigns a live class: `contract`, `merger_agreement`, `corporate_record`, `correspondence`, or `insurance_claim`.
 4. `unknown`, retired, empty, or unsupported labels go to human review; they are **not** coerced into a nearby class.
 5. Current global defaults are `high = 0.97`, `low = 0.88`, `retry_max = 2`; class-specific overrides take precedence. fileciteturn9file0L2-L6
 6. High-confidence live classes proceed to extraction.
@@ -59,7 +67,6 @@ The current design has two happy-path LLM generations: classification and extrac
 | `contract` | 0.98 | 0.90 | 0.97 |
 | `merger_agreement` | 0.98 | 0.90 | 0.97 |
 | `insurance_claim` | 0.98 | 0.90 | 0.97 |
-| `compliance_filing` | 0.97 | 0.88 | 0.95 |
 | `corporate_record` | 0.96 | 0.86 | 0.94 |
 | `correspondence` | 0.95 | 0.85 | 0.92 |
 

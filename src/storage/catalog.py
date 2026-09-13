@@ -92,6 +92,7 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
             existing.extracted_data = doc_data.get("extracted_data", existing.extracted_data)
             existing.escalation_reason = doc_data.get("escalation_reason", existing.escalation_reason)
             existing.trace_id = doc_data.get("trace_id", existing.trace_id)
+            existing.file_sha256 = doc_data.get("file_sha256", existing.file_sha256)
             existing.updated_at = datetime.now(timezone.utc)
         else:
             record = DocumentRecord(
@@ -107,6 +108,7 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
                 extracted_data=doc_data.get("extracted_data"),
                 escalation_reason=doc_data.get("escalation_reason"),
                 trace_id=doc_data.get("trace_id"),
+                file_sha256=doc_data.get("file_sha256"),
             )
             session.add(record)
         await session.commit()

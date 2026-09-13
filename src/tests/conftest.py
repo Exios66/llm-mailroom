@@ -48,6 +48,11 @@ def _set_test_env():
     # teardown (flaky `OSError: [Errno 66] Directory not empty` on the full
     # suite). test_relations.py opts back IN via its own autouse fixture.
     os.environ["MAILROOM_RELATIONS"] = "0"
+    # HUB-050 status channel OFF: no 🟢/🔴/🟠 status emails and no heartbeat
+    # enrichment threads unless a case opts in explicitly (test_status_notify).
+    os.environ["MAILROOM_WATCHER_STATUS"] = "0"
+    os.environ["MAILROOM_WATCHDOG"] = "0"
+    os.environ.pop("MAILROOM_STATUS_EMAIL", None)
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
               "LANGFUSE_BASE_URL", "BRAINTRUST_API_KEY"):
         os.environ.pop(k, None)

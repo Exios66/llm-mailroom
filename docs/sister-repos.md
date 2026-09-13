@@ -49,7 +49,7 @@ HF datasets:    Lucius-Morningstar/* (published eval/corpus surfaces)
 |---|---|---|
 | [mailroom-dev](https://github.com/Exios66/mailroom-dev) | **Monorepo / hub** — every constellation repo as a git-subtree `packages/` member in ONE uv workspace; hub task board `governance/TASKS.md`; sub-package sync driver `scripts/sync_packages.py` | **Development source of truth for cross-repo work** — this repo is `packages/llm-mailroom` there; sync via subtree `pull`/`push` (issue #2, HUB-001/002) |
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop: prompt versions × models over CUAD/LegalBench/MAUD corpora | **Sister repo.** Source of the vendored LangChain sorter/contracts prompts; shares ONE kanban board with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog, `local_vs_api` serving comparison) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.12.2` / [PR #11](https://github.com/Exios66/llm-dojo-scoring/pull/11)); auto-bump via `.github/workflows/bump-dojo-scoring.yml` |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog, `local_vs_api` serving comparison) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@v0.14.0` / [PR #11](https://github.com/Exios66/llm-dojo-scoring/pull/11)); auto-bump via `.github/workflows/bump-dojo-scoring.yml` |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class; publishes HF datasets consumed by eval loops. Virtual monorepo member (no build) |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **Corpus feed (candidate)** for the `insurance_claim` doc class — its honest-gap benchmark source. Virtual monorepo member (no build) |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling**: same prompt-version × model methodology, LegalBench focus |
@@ -125,7 +125,7 @@ The scoring layer both mailroom and entity-extraction consume:
   **agent profiles** covering every mailroom agent, and
   `DOC_TYPE_BUNDLES` keyed on the processed document classes with the
   explicit-fallback honesty resolver (`resolve_doc_bundle()`).
-- Pinned as a git dependency (`@v0.12.2` at time of writing); mailroom wires
+- Pinned as a git dependency (`@v0.14.0` at time of writing); mailroom wires
   its `taxonomy.yaml` scoring block onto package Settings via
   `observability/field_scoring.py` (a deprecation shim — imports should move
   to `llm_dojo_scoring.field_scoring`).
@@ -200,7 +200,7 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
   the scorer on a local approved/denied/partial contrast pack (documented in
   [Agents](agents.md)).
 - **Honesty (dojo 0.11.0 suites):** `compliance_filing` has zero
-  `mailroom-corpus` rows (HF `--real` omits it; local fixture pack is
+  `mailroom-dataset` rows (HF `--real` omits it; local fixture pack is
   mock/check only). `corporate_record` has 39 Hub subclass rows and **no
   external extraction benchmark**; schema-complete extraction GT is the
   local pack. `court_opinion` / `due_diligence` are retired from live
@@ -311,11 +311,12 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
 - **[llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/)**
   — companion graphify map of the sister experiment loop's codebase.
 - **Hugging Face — [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)** —
-   the family's published dataset surface. **`mailroom-corpus` schema v8**
-  (2,000 docs, hardened tip `eafe1ab4…`, v8 = HUB-028 insurance LOB
-  expansion — GNOTHEIA property + BDR auto — with full GT conformance, and
-  HUB-032's §84 hardened ground_truth columns: identity, evaluation
-  contract, matter/group) is the targeted full pipeline corpus (CUAD
+   the family's published dataset surface. **`mailroom-dataset` schema v9**
+  (3,302 docs, pinned `fe3a6f96…`; the v9 successor of the frozen v8
+  baseline `mailroom-corpus` — v8 = HUB-028 insurance LOB expansion
+  (GNOTHEIA property + BDR auto) with full GT conformance and HUB-032's §84
+  hardened ground_truth columns: identity, evaluation contract, matter/group;
+  hardened tip `eafe1ab4…`) is the targeted full pipeline corpus (CUAD
   contracts, MAUD merger agreements, S-1 corporate records, Enron
   correspondence sample, CMS insurance claims).
   **`docclass-pilot`** is the

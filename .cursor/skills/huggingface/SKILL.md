@@ -1,6 +1,6 @@
 ---
 name: huggingface
-description: Hugging Face Hub corpora for llm-mailroom (docclass-merged v5, run_hf_pilot, HF_TOKEN) and the producer Docker Space publisher (publish_space.py, MAILROOM_PIPELINE_URL). Use for Hub datasets, class/subtype examples, Enron/CMS/CUAD pulls, or publishing the REVIEW-resolve producer; prefer committed fixtures and --mock when network-free work is enough. Never invent stand-in class texts.
+description: Hugging Face Hub corpora for llm-mailroom (mailroom-dataset v9, run_hf_pilot, HF_TOKEN) and the producer Docker Space publisher (publish_space.py, MAILROOM_PIPELINE_URL). Use for Hub datasets, class/subtype examples, Enron/CMS/CUAD pulls, or publishing the REVIEW-resolve producer; prefer committed fixtures and --mock when network-free work is enough. Never invent stand-in class texts.
 ---
 
 # Hugging Face (pipeline corpora)
@@ -14,7 +14,7 @@ in pytest. Never invent stand-in texts for a class or subtype.
 
 | Asset | Id / path | Network? |
 | --- | --- | --- |
-| Targeted full corpus | `Lucius-Morningstar/docclass-merged` schema **v5** (1,210 docs) | Yes (`--real`) |
+| Targeted full corpus | `Lucius-Morningstar/mailroom-dataset` v9 (3,302 docs) | Yes (`--real`) |
 | Class × subclass pack | `docclass-pilot` (48 strata) + `notebooks/fixtures/huggingface/class_subclass_examples.json` | JSON pack is offline |
 | Enron correspondence | `enron-correspondence-dedup` (~247k) — **do not** load all rows by default | Yes |
 | Local PDFs | `docs/examples/samples/` | No — fixtures, not the class catalog |
