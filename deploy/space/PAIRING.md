@@ -106,7 +106,7 @@ MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
 MAILROOM_PIPELINE_API_PREFIX=/v1
 ```
 
-Pilot write-up: [`docs/reports/pilots/2026-08-30-hosted-hugging-face-spaces-pair.md`](../../docs/reports/pilots/2026-08-30-hosted-hugging-face-spaces-pair.md).
+Pilot write-up: `docs/reports/pilots/2026-08-30-hosted-hugging-face-spaces-pair.md` — pruned from this checkout; see [`docs/reports/README.md`](../../docs/reports/README.md) (reports live upstream / are regenerated on demand).
 
 ## Laptop pair
 
