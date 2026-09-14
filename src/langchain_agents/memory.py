@@ -77,7 +77,7 @@ def record_outcome(
             fh.write(json.dumps(row) + "\n")
         return True
     except Exception:
-        logger.debug("memory_write_failed", agent=agent_name)
+        logger.warning("memory_write_failed", agent=agent_name)
         return False
 
 

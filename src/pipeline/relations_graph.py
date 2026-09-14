@@ -389,7 +389,7 @@ def _log_render(event_detail: dict) -> None:
 
         asyncio.run(R.write_relation_log_entry("relations_graph_rendered", event_detail))
     except Exception:
-        logger.debug("relations_graph_render_log_failed")
+        logger.warning("relations_graph_render_log_failed")
 
 
 def refresh_graphs(matter_ids: list[str] | None = None) -> dict:

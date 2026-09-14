@@ -37,7 +37,7 @@ def _engine_kwargs(url: str) -> dict:
         try:
             Path(url.split("///", 1)[1]).parent.mkdir(parents=True, exist_ok=True)
         except Exception:
-            logger.debug("sqlite_dir_ensure_failed", url=url)
+            logger.warning("sqlite_dir_ensure_failed", url=url)
     return kwargs
 
 
@@ -55,7 +55,7 @@ def _apply_sqlite_pragmas(dbapi_conn, _connection_record=None) -> None:
         cur.execute("PRAGMA foreign_keys=ON")
         cur.close()
     except Exception:
-        logger.debug("sqlite_pragma_apply_failed")
+        logger.warning("sqlite_pragma_apply_failed")
 
 
 _engine = None

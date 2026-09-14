@@ -35,7 +35,7 @@ class AgentTool:
         try:
             return self._run(**kw)
         except Exception:
-            logger.debug("tool_failed", tool=self.name, exc_info=True)
+            logger.warning("tool_failed", tool=self.name, exc_info=True)
             return None
 
 

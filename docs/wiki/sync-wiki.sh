@@ -61,8 +61,20 @@ cp "$WIKI_DIR"/*.md "$TEMP_DIR/"
 
 cd "$TEMP_DIR"
 git add -A
-git commit -m "Sync wiki pages from main repo" || echo "No changes to commit"
-git push origin master
+# Live-or-loud (DMR-061): a commit failure is NOT "no changes" — distinguish
+# the two and never push a possibly-broken tree silently.
+if git diff --cached --quiet; then
+    echo "No wiki changes to commit — nothing to push"
+else
+    git commit -m "Sync wiki pages from main repo" || {
+        echo "ERROR: wiki commit failed with staged changes — push aborted" >&2
+        exit 1
+    }
+    git push origin master || {
+        echo "ERROR: wiki push failed" >&2
+        exit 1
+    }
+fi
 
 cd /
 rm -rf "$TEMP_DIR"
