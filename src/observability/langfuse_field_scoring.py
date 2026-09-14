@@ -1,7 +1,7 @@
 """Wire deterministic field scoring into Langfuse (GitHub issue #5).
 
 The scoring LOGIC is backend-agnostic and lives in
-``observability/field_scoring.py`` (issue #4); this module is the wiring
+``llm_dojo_scoring.field_scoring`` (issue #4); this module is the wiring
 layer: it registers the score configs (delegating to the canonical registry
 in ``observability/scores.py``) and attaches the deterministic scores to a
 trace via the existing backend-gated ``create_trace_score`` helper, so every
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import structlog
 
-from observability.field_scoring import ExtractionScoreResult
+from llm_dojo_scoring import ExtractionScoreResult
 
 logger = structlog.get_logger(__name__)
 
@@ -248,7 +248,7 @@ def score_and_log_extraction(
         )
 
     if presence_expectations:
-        from observability.field_scoring import score_category_presence
+        from llm_dojo_scoring import score_category_presence
 
         cat_score, _ = score_category_presence(predicted, presence_expectations, field_types)
         create_trace_score(

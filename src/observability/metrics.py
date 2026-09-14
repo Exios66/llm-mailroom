@@ -4,7 +4,7 @@ Ported from ``llm-entity-extraction/src/metrics.py`` (the sibling repo's
 prompt-iteration environment) and adapted to the mailroom's pilot ground
 truth: ``expected_fields`` carry literal expected values (no CUAD master-labels
 CSV is needed here), and ``entity_list_scores``/``entity_list_audit`` come from
-``observability.field_scoring``.
+``llm_dojo_scoring.field_scoring``.
 
 The per-document composite (``score_extraction``) already produces per-field
 content scores, entity-list precision/recall/F1, and the factuality audit.
@@ -34,7 +34,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-from observability.field_scoring import is_entity_list, parse_date, parse_money
+from llm_dojo_scoring import is_entity_list, parse_date, parse_money
 
 # Schema fields whose expected text is a DURATION ("2 years", "30 days").
 DURATION_FIELDS = {"term_length", "renewal_terms"}

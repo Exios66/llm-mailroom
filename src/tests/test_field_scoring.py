@@ -1,6 +1,6 @@
 """Deterministic field-type-aware extraction scoring (issues #4/#5).
 
-Covers the per-type scorers in observability/field_scoring.py, the composite
+Covers the per-type scorers in llm_dojo_scoring.field_scoring, the composite
 score_extraction(), the config-driven field_types mapping, and the judge-gating
 behavior of graph/build_graph.py:_emit_pipeline_result.
 
@@ -14,12 +14,12 @@ from unittest.mock import patch
 
 import pytest
 
-from observability import field_scoring
+from llm_dojo_scoring import field_scoring
 
 # KANBAN-061: patch target for internals (_get_embedding) that moved into the
 # llm-dojo-scoring package with the de-duplication.
 from llm_dojo_scoring import field_scoring as _dojo_field_scoring  # noqa: E402
-from observability.field_scoring import (
+from llm_dojo_scoring.field_scoring import (
     FIELD_SCORERS,
     EntityListScore,
     ExtractionScoreResult,
@@ -36,6 +36,12 @@ from observability.field_scoring import (
     score_money_field,
     score_name_field,
 )
+
+# hub#62: wire mailroom's taxonomy.yaml into llm-dojo-scoring once at import
+# (replaces the deleted observability.field_scoring shim's import-time
+# _apply_taxonomy_settings) so get_type_bands()/get_field_types()/field_is_
+# ambiguous() observe the calibrated thresholds and doc-class field maps.
+import observability.scoring_wiring  # noqa: E402,F401
 
 
 @pytest.fixture(autouse=True)

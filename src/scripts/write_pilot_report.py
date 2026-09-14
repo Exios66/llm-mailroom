@@ -163,7 +163,7 @@ def build_report() -> str:
     a("")
     a("Model: `qwen/qwen3.7-flash` (sorter + specialist) via OpenRouter. "
       "Ground truth (`expected_doc_class`, `expected_stage`, `expected_fields`) is taken from `examples/samples/manifest.csv` "
-      "and scored by the deterministic field scorer (`observability/field_scoring.py`), `expected_field_presence`, and the "
+      "and scored by the deterministic field scorer (`llm_dojo_scoring.field_scoring`), `expected_field_presence`, and the "
       "grid elements below reproduce the exact extraction so any LLM judge can audit accuracy against the ground truth.")
     a("")
 

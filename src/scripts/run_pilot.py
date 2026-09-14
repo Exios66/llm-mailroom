@@ -569,7 +569,7 @@ def _attach_field_scoring(sample: dict, row: dict) -> None:
     sample (issues #4/#5) and stash a serializable copy on the row for the
     report. Attachment to Langfuse already happened inside the pipeline run.
     """
-    from observability.field_scoring import get_field_types, score_extraction
+    from llm_dojo_scoring import get_field_types, score_extraction
 
     expected = _parse_expected_fields(sample)
     extracted = row.get("extracted_data") or {}

@@ -48,7 +48,7 @@ from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
 
-from observability.field_scoring import (  # noqa: E402
+from llm_dojo_scoring import (  # noqa: E402
     EntityListScore,
     get_ambiguous_band,
     score_extraction,
@@ -149,7 +149,7 @@ def _perturb_entity_list(value: list) -> list[list]:
 def _predictions_for(field_type: str, expected, rng: random.Random):
     """Yield (predicted, label) pairs: one exact + format variants (True),
     plus perturbed incorrect variants (False)."""
-    from observability.field_scoring import is_entity_list
+    from llm_dojo_scoring import is_entity_list
 
     is_list = is_entity_list(field_type)
     elem_type = field_type.split(":", 1)[1] if ":" in field_type else "name"
@@ -223,7 +223,7 @@ def main() -> int:
                 continue
             doc_class = row.get("expected_doc_class", "contract")
 
-            from observability.field_scoring import get_field_types
+            from llm_dojo_scoring import get_field_types
             field_types = get_field_types(doc_class)
             if not field_types:
                 continue

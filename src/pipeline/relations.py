@@ -213,7 +213,7 @@ def _embed(texts: list[str]) -> list[list[float]] | None:
         if not embeddings_enabled():
             return None
         try:
-            import observability.field_scoring  # noqa: F401 — import-time taxonomy→dojo wiring (embedding_enabled/model); without it the dojo defaults (embedding_enabled=False) starve the cosine signal
+            import observability.scoring_wiring  # noqa: F401 — import-time taxonomy→dojo wiring (embedding_enabled/model); without it the dojo defaults (embedding_enabled=False) starve the cosine signal
             from llm_dojo_scoring.field_scoring import _get_embedding
 
             matcher = _get_embedding()

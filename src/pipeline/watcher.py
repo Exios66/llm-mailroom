@@ -28,7 +28,7 @@ from observability.tracing import install_on_dropped, pipeline_trace
 install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
 
 warmup_score_configs(blocking=False)
-from observability.field_scoring import warm_embedding_model
+from llm_dojo_scoring import warm_embedding_model
 
 warm_embedding_model(blocking=False)  # O-10: load embeddings off the document path
 

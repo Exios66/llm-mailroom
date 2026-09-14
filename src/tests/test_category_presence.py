@@ -4,7 +4,7 @@ import os
 
 from llm_dojo_scoring.field_scoring import score_category_presence
 from observability.extraction_gt import presence_expectations_from_ground_truth
-from observability.field_scoring import get_field_types
+from llm_dojo_scoring import get_field_types
 
 
 def test_presence_from_cuad_clause_lines_scores_match():

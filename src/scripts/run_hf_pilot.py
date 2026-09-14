@@ -681,7 +681,7 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
     if not expected_fields or not extracted:
         return None
     try:
-        from observability.field_scoring import get_field_types
+        from llm_dojo_scoring import get_field_types
         from observability.suite_scoring import score_with_suite
 
         scored_class = doc_class
