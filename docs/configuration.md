@@ -406,6 +406,15 @@ thread itself is the notification surface.
 
 ## Provider Configuration
 
+> **Scope (mailroom-issues directive 2026-09-14):** the default and primary
+> provider is **OpenRouter**. **vLLM and Modal are used only for local
+> deployments** — the `local-mailroom-sandbox` and self-hosted/local-model
+> serving — and are never the default for production runs. In particular,
+> **Gmail triage has no vLLM implementation**: the triage lane resolves
+> through `openrouter/free`. vLLM/Modal engage only when an operator
+> explicitly selects a local sandbox profile (`DEFAULT_PROVIDER=vllm` +
+> `VLLM_BASE_URL` in the sandbox config).
+
 ### OpenRouter (Primary)
 
 ```
