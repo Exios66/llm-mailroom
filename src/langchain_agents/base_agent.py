@@ -35,8 +35,6 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from langchain_agents.openrouter_utils import OPENROUTER_BASE_URL
-
 logger = structlog.get_logger(__name__)
 
 
@@ -191,10 +189,27 @@ class BaseAgent(ABC):
             # (llm/retry.py) is the SINGLE retry layer. Upstream used
             # max_retries=3, which combined with the wrapper's 3 attempts and
             # the graph's retry loop produced a ~27-call cascade per node.
+            # MAILROOM PATCH (hub#42): the client resolves through the SHARED
+            # provider seam (llm/providers.py resolve_provider + taxonomy
+            # vllm_model_map remap) — DEFAULT_PROVIDER=vllm / VLLM_BASE_URL
+            # must take effect on the vendored agents too, and the champion
+            # id must be remapped to the served id before the client exists
+            # (a vLLM endpoint serving Qwen/Qwen3-8B 404s on qwen/qwen3.7-flash).
+            from llm.providers import resolve_provider
+            from llm.client import _self_hosted_model
+            from pipeline.config import get_agent_config
+
+            provider, model = resolve_provider(get_agent_config(self.agent_name))
+            if provider.name == "vllm":
+                model = _self_hosted_model(model)
             self._llm = ChatOpenAI(
-                model=self.model,
-                api_key=self.api_key or os.environ.get("OPENROUTER_API_KEY") or None,
-                base_url=OPENROUTER_BASE_URL,
+                model=model,
+                api_key=(
+                    self.api_key
+                    or (os.environ.get(provider.api_key_env) if provider.api_key_env else None)
+                    or None
+                ),
+                base_url=provider.base_url,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
                 timeout=120,
