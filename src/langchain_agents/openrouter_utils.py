@@ -14,6 +14,24 @@ code changes: OpenRouter (default), a local Ollama server, or a self-hosted vLLM
 
 import os
 
+# MAILROOM PATCH (hub#42): the module-level constants below are kept for
+# import compatibility, but the base URL is resolved LAZILY (call-time) via
+# openrouter_base_url() — reading env at import time made the vendored seam
+# load-order-sensitive (scripts that call load_env() after importing
+# base_agent would pin the default URL). The mailroom's vendored agents
+# resolve their provider through the shared seam (llm/providers.py
+# resolve_provider) instead; this accessor serves the remaining direct
+# users.
+_OPENROUTER_DEFAULT_URL = "https://openrouter.ai/api/v1"
+
+
+def openrouter_base_url() -> str:
+    from langchain_agents.env_utils import load_env
+
+    load_env()
+    return os.environ.get("OPENROUTER_BASE_URL", _OPENROUTER_DEFAULT_URL).rstrip("/")
+
+
 OPENROUTER_BASE_URL = os.environ.get(
     "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
 ).rstrip("/")
