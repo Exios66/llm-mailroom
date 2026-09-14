@@ -180,7 +180,7 @@ Local check / apply:
 
 ```bash
 PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check
-PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.12.2
+PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.14.0
 ```
 
 ## Corpus feeds

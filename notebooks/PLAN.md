@@ -4,6 +4,15 @@ Status: **SHIPPED 00–13** (this document is the plan of record; 00–08 shippe
 under KANBAN-095, 09–13 extend the suite to every specialist, edge cases,
 Lucius-Morningstar Hub corpora, LegalBench, and vision ingestion).
 
+> **Counts below are the PLAN-ERA surface (historical):** the shipped live
+> taxonomy is the **five-class / five-specialist** surface (`contract`,
+> `corporate_record`, `correspondence`, `insurance_claim`, `merger_agreement`;
+> specialists for contract/corporate/correspondence/insurance/merger — the
+> `due_diligence` / `compliance_filing` / `court_opinion` classes were retired
+> from the canonical five-class surface; see `docs/configuration.md`). The
+> 15-agent roster and 7-doc-class references below describe the original plan
+> and are retained as the plan of record, not the live surface (hub#53).
+
 Audience: anyone who wants to *see* the mailroom think — how the 13-node
 LangGraph pipeline routes a legal document through its specialist agents,
 where the retry/review/judge/arbiter dynamics kick in, and what every agent

@@ -108,7 +108,7 @@ HF_LOCAL_PACK_CLASSES = (
 )
 # Live taxonomy files MAUD merger rows as merger_agreement (not contract).
 # Exact class match is the only class KPI. Do not import
-# llm_dojo_scoring.mailroom.align_doc_type (v0.11.0 still maps MAUD ≡ CUAD).
+# llm_dojo_scoring.mailroom.align_doc_type (v0.14.0 still maps MAUD ≡ CUAD).
 ALIGN: dict[str, str] = {}
 
 
@@ -845,7 +845,7 @@ def render_metrics_markdown(report: dict) -> str:
     honesty = report.get("honesty") or hf_corpus_honesty()
     lines += [
         "",
-        "## Corpus honesty (dojo 0.11.0)",
+        "## Corpus honesty (dojo 0.14.0)",
         "",
         "Gaps are suite metadata, not invented accuracy. `compliance_filing` stays "
         "out of Hub `--real` (zero Hub rows) and is scored by a **local pack** "

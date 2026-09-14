@@ -284,7 +284,7 @@ doc_classes:
       subject_matter: free_text
       keywords: entity_list:name
 
-  # RETIRED 2026-09-01 (docs/v7-taxonomy.md): removed from the canonical
+  # RETIRED 2026-09-01 (docs/configuration.md): removed from the canonical
   # five-class surface (Hub corpus, sorter fallback table, pipeline diagram).
   # This entry is RETAINED MACHINERY — the config path still resolves and
   # dispatches it (zero Hub rows; local eval packs only). `status: retired`
