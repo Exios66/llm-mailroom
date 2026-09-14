@@ -70,7 +70,8 @@ def get_managed_prompt(
         from pipeline.docclass_mode import managed_prompt_lookup
 
         agent_name, default_text = managed_prompt_lookup(agent_name, default_text)
-    except Exception:
+    except ImportError:
+        # docclass-mode is optional; the langfuse/default path below stands
         pass
     cache_key = (agent_name, label)
     if cache_key not in _prompt_cache:
