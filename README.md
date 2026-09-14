@@ -14,16 +14,16 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
-[![Release](https://img.shields.io/badge/release-v0.6.0-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.6.0)
+[![Release](https://img.shields.io/badge/release-v0.7.1-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.7.1)
 [![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 
 </div>
 
 | At a glance | |
 |---|---|
-| **Release** | [`v0.6.0`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.6.0) — see [CHANGELOG.md](CHANGELOG.md) |
+| **Release** | [`v0.7.1`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.7.1) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
-| **Agents** | LLM + procedural agents across 6 document classes (happy path: classify + extract only) |
+| **Agents** | LLM + procedural agents across 5 document classes (happy path: classify + extract only) |
 | **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
 | **Observability** | Langfuse · Braintrust · Arize Phoenix — optional; the pipeline runs fine without any of them |
 | **Docs** | Canonical under [`docs/`](docs/) · browsable locally via [docmd](https://github.com/docmd-io/docmd) |
@@ -34,7 +34,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 This repository consists of:
 
 - A **python library + pipeline** (`src/`) — a LangGraph state machine that moves each document through classification, specialist extraction, quality gates, reporting, and archival.
-- **LLM + procedural agents across 6 document classes** — a sorter, five extraction specialists (contracts also covers MAUD `merger_agreement`), a judge/arbiter quality lane, a boss escalation agent, a **procedural** report assembler (no reporter LLM), and procedural PDF/image/archivist workers (see [Agent Organization](#agent-organization)). Happy-path archive uses **two** LLM generations (classify + extract).
+- **LLM + procedural agents across 5 document classes** — a sorter, five extraction specialists (contracts also covers MAUD `merger_agreement`), a judge/arbiter quality lane, a boss escalation agent, a **procedural** report assembler (no reporter LLM), and procedural PDF/image/archivist workers (see [Agent Organization](#agent-organization)). Happy-path archive uses **two** LLM generations (classify + extract).
 - An **evaluation suite** — a 25-sample pilot with ground truth (including three synthetic `insurance_claim` letters), deterministic field scoring, LLM-as-a-judge evaluators, per-agent isolation eval, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
 - **Canonical documentation** (`docs/`) — browsable locally with [docmd](https://github.com/docmd-io/docmd) (see [Browsing the Docs Locally](#browsing-the-docs-locally)).
 - A **dataset browser notebook** (`notebooks/`) — docile-style thin notebook over a reusable tool module.
@@ -110,7 +110,7 @@ Optional install profiles — take only what you need:
 pip install -e ".[embeddings]"   # etc.
 ```
 
-> **In the monorepo** ([`mailroom-dev`](https://github.com/Exios66/mailroom-dev)):
+> **In the monorepo** ([`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)):
 > this repo is `packages/llm-mailroom` via git subtree. Skip `pip install` —
 > `uv sync` at the monorepo root installs every workspace member (this package
 > editable) from one `uv.lock`. Release/deploy images still `pip install .`
@@ -621,7 +621,7 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 
 | Repository | Role | Relationship |
 |---|---|---|
-| [mailroom-dev](https://github.com/Exios66/mailroom-dev) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (HUB-001/002); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
+| [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (DMR-era cards); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop (prompt versions × models over CUAD/LegalBench/MAUD) | **Sister repo** — source of the vendored sorter/contracts prompts; shares ONE kanban board with this repo |
 | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.14.0` in `pyproject.toml` |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
@@ -633,11 +633,11 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 | [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
 
 **Developing in the monorepo:** cross-repository work happens in
-[`mailroom-dev`](https://github.com/Exios66/mailroom-dev) — one `uv sync`
+[`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) — one `uv sync`
 in its root installs every family member (`packages/llm-mailroom` included,
 editable) against a single shared `uv.lock`. Branch/subtree discipline,
 sync commands, and the monorepo task board (`governance/TASKS.md`) are
-documented in `docs/sister-repos.md` § mailroom-dev. This repo remains the
+documented in `docs/sister-repos.md` § Digital-Mailroom. This repo remains the
 standalone mirror + deploy source (Docker/Railway/HF Space build from here
 or from the subtree copy — both are the same tree).
 

@@ -16,7 +16,7 @@ HUB-053; re-verify before trusting on schema changes):
   ``filename`` (zero duplicates per config; positional alignment is an
   export artifact, never a contract — always join, never zip).
 - ``content_sha256`` is sha256 of the canonical ``doc_text`` UTF-8 bytes —
-  the load-time integrity proof (verified 1792/1792 exact match).
+  the load-time integrity proof (verified 2979/2979 exact match (v9 train)).
 - The Dataset Viewer ``/filter`` endpoint has been intermittently broken
   server-side (422/500/502); the robust fetch is ``/parquet`` (2 requests
   for a whole split) with ``/rows`` pagination (``length<=100``) as the
@@ -271,7 +271,7 @@ def load_corpus(
 
     ``join=True`` merges ``ground_truth`` (labels) with ``default``
     (``doc_text``); ``verify=True`` checks ``content_sha256`` against the
-    sha256 of every joined ``doc_text`` (the 1792/1792 exact proof — a
+    sha256 of every joined ``doc_text`` (the 2979/2979 exact proof (v9 train) — a
     mismatch counts are RECORDED, not silent). Returns (frame, provenance).
     """
     gt, gt_prov = load_config_frame(repo_id, GT_CONFIG, split=split, revision=revision)

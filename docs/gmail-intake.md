@@ -86,7 +86,7 @@ The channel is **explicit opt-in** — it never starts polling on its own.
    ```
 
 **CI secrets.** `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD` are registered via
-`gh secret set` on `Exios66/mailroom-dev` **and** `Exios66/llm-mailroom` for
+`gh secret set` on `LLM-Mailroom-Services/Digital-Mailroom` **and** `Exios66/llm-mailroom` for
 workflow use — never committed.
 
 **Security best practices**
