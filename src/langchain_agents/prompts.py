@@ -3059,7 +3059,8 @@ def get_prompt(version: str) -> str:
                 from langchain_agents.prompts_docclass import DOCCLASS_PROMPT_VERSIONS
 
                 return DOCCLASS_PROMPT_VERSIONS[key]
-    except Exception:
+    except ImportError:
+        # optional docclass-mode arm; the base registry below is the contract
         pass
     if version in PROMPT_VERSIONS:
         return PROMPT_VERSIONS[version]
@@ -3068,7 +3069,7 @@ def get_prompt(version: str) -> str:
 
         if version in DOCCLASS_PROMPT_VERSIONS:
             return DOCCLASS_PROMPT_VERSIONS[version]
-    except Exception:
+    except ImportError:
         pass
     raise KeyError(
         f"Prompt version '{version}' not found. Available versions: {list(PROMPT_VERSIONS.keys())}"

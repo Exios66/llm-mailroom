@@ -238,5 +238,8 @@ def test_swarm_config_guarded_in_taxonomy():
     from pipeline.config import load_config
 
     swarm = load_config().get("free_model_swarm")
-    assert isinstance(swarm, list) and len(swarm) >= 3
-    assert swarm[0] == "z-ai/glm-5.2:free"
+    assert isinstance(swarm, list) and len(swarm) >= 1
+    # human directive 2026-09-13: the swarm is OpenRouter's Free Models
+    # Router selector slug — free models vary/alternate, so nothing is
+    # hardcoded; the router picks per request.
+    assert swarm[0] == "openrouter/free"

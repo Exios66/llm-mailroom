@@ -262,7 +262,7 @@ def get_extraction_schema(doc_type: str) -> dict | None:
         resolved = resolve_extract_class(doc_type)
         if resolved:
             return SPECIALIST_SCHEMAS.get(resolved)
-    except Exception:
+    except ImportError:
         pass
     return None
 

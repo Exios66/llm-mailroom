@@ -120,7 +120,7 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "intake_hyphen_unwraps", "data_type": "NUMERIC", "min_value": 0.0},
     {"name": "intake_collapsed_blanks", "data_type": "NUMERIC", "min_value": 0.0},
     # Dojo 0.10.0+: field-micro P/R/F1/F2 + insurance claims extras.
-    # v0.11.0 adds citation/inclusion/ground_truth on these names; it does
+    # v0.14.0 adds citation/inclusion/ground_truth on these names; it does
     # not add `field_presence` (honesty gap — score_extraction does not emit it).
     {"name": "extraction_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
@@ -167,11 +167,11 @@ try:
             f"registry: {_unregistered}. Register them upstream or remove "
             "them here."
         )
-    # dojo 0.11.0: field_presence is catalogued but score_extraction does not
+    # dojo 0.14.0: field_presence is catalogued but score_extraction does not
     # emit it. A missing key is not 0.0.
     if any(c["name"] == "field_presence" for c in SCORE_CONFIGS):
         raise RuntimeError(
-            "field_presence is an unemitted dojo 0.11.0 honesty gap; do not "
+            "field_presence is an unemitted dojo 0.14.0 honesty gap; do not "
             "add it to SCORE_CONFIGS."
         )
     logger.debug(

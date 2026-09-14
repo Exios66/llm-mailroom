@@ -1,4 +1,6 @@
-"""Hugging Face corpus registry — docclass-merged v8 is the full surface."""
+"""Hugging Face corpus registry — docclass-merged lineage now resolves to the
+v9 mailroom-dataset full corpus (the frozen v8 mailroom-corpus stays
+resolvable via its Hub commit for historical traces)."""
 
 from pipeline.hf_corpora import (
     FULL_CORPUS_ID,
@@ -17,11 +19,14 @@ from pipeline.hf_corpora import (
 
 
 def test_v8_full_corpus_is_docclass_merged():
+    # hub#65: the docclass-merged slug resolves to the v9 mailroom-dataset
+    # full corpus (3,302 rows) — the registry entry tracks the live lineage,
+    # not the frozen v8 count.
     corp = resolve_corpus("v8")
     assert corp["id"] == FULL_CORPUS_ID
-    assert corp["schema"] == FULL_CORPUS_SCHEMA == "v8"
+    assert corp["schema"] == FULL_CORPUS_SCHEMA == "v9"
     assert corp["revision"] == FULL_CORPUS_REVISION
-    assert corp["n_docs"] == 2000
+    assert corp["n_docs"] == 3302
     assert corp["pipeline"] is True
     assert tuple(corp["classes"]) == HUB_CLASSES
     assert "merger_agreement" in corp["classes"]

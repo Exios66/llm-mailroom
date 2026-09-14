@@ -8,7 +8,7 @@ expansion — GNOTHEIA property, BDR auto — + INSURBIAS auto narratives).
 v9 builds on the v8 base (2,000 rows, frozen as ``mailroom-corpus``) with
 the §84 hardened evaluation-contract columns (identity, provenance, matter)
 on the `ground_truth` config.
-The five-class live taxonomy is unchanged (docs/v7-taxonomy.md).
+The five-class live taxonomy is unchanged (docs/README.md).
 
 Class × subclass examples come from ``docclass-pilot`` (a deterministic
 stratified slice of that parent — every type and every subtype stratum).
@@ -45,7 +45,7 @@ FULL_CORPUS_REVISION = "46a4d3c240a36671cde0182fff4960f6b8b73aca"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in mailroom-dataset (v9) — identical to the canonical
-# five-class live taxonomy (docs/v7-taxonomy.md). taxonomy.yaml carries a
+# five-class live taxonomy (docs/README.md). taxonomy.yaml carries a
 # sixth configured entry (compliance_filing, marked status: retired):
 # retained machinery with zero Hub rows, not a corpus class.
 HUB_CLASSES: tuple[str, ...] = (

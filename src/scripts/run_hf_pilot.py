@@ -4,7 +4,7 @@
 Default corpus is ``Lucius-Morningstar/mailroom-dataset`` schema **v9** (the
 targeted full 3,302-doc surface; v9 = §84 hardened ground_truth on top of
 the frozen v8 base — HUB-028 insurance LOB expansion + full GT conformance,
-hardened at `eafe1ab4`, successor published 2026-09-12 at `fe3a6f96`).
+hardened at `eafe1ab4`, successor published 2026-09-12 at `46a4d3c240a36671cde0182fff4960f6b8b73aca`).
 Class × subtype
 examples come from
 ``docclass-pilot``. Any other pipeline-ready Lucius-Morningstar dataset
@@ -108,7 +108,7 @@ HF_LOCAL_PACK_CLASSES = (
 )
 # Live taxonomy files MAUD merger rows as merger_agreement (not contract).
 # Exact class match is the only class KPI. Do not import
-# llm_dojo_scoring.mailroom.align_doc_type (v0.11.0 still maps MAUD ≡ CUAD).
+# llm_dojo_scoring.mailroom.align_doc_type (v0.14.0 still maps MAUD ≡ CUAD).
 ALIGN: dict[str, str] = {}
 
 
@@ -681,7 +681,7 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
     if not expected_fields or not extracted:
         return None
     try:
-        from observability.field_scoring import get_field_types
+        from llm_dojo_scoring import get_field_types
         from observability.suite_scoring import score_with_suite
 
         scored_class = doc_class
@@ -845,7 +845,7 @@ def render_metrics_markdown(report: dict) -> str:
     honesty = report.get("honesty") or hf_corpus_honesty()
     lines += [
         "",
-        "## Corpus honesty (dojo 0.11.0)",
+        "## Corpus honesty (dojo 0.14.0)",
         "",
         "Gaps are suite metadata, not invented accuracy. `compliance_filing` stays "
         "out of Hub `--real` (zero Hub rows) and is scored by a **local pack** "

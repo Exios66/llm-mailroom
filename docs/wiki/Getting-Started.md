@@ -17,7 +17,7 @@ cd llm-mailroom
 cp .env.example .env
 ```
 
-Inside the **monorepo** ([mailroom-dev](https://github.com/Exios66/mailroom-dev)),
+Inside the **monorepo** ([Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)),
 this repo is already present as `packages/llm-mailroom` (git subtree) and the
 whole constellation installs with one `uv sync` at the monorepo root — skip
 Step 2's `pip install` and run `PYTHONPATH=src python -m api.main` from

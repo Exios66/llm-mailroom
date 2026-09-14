@@ -1,6 +1,6 @@
 """Classification KPIs after ``merger_agreement`` became a live MAUD class.
 
-Dojo 0.11.0 ``llm_dojo_scoring.mailroom.align_doc_type`` still maps
+Dojo 0.14.0 ``llm_dojo_scoring.mailroom.align_doc_type`` still maps
 ``merger_agreement`` → ``contract``. Mailroom must not use that helper:
 predicting ``contract`` when GT is ``merger_agreement`` is a class miss
 (Lane A), not an "aligned" hit.

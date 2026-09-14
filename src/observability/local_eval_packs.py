@@ -248,7 +248,7 @@ def all_local_pack_samples() -> list[dict[str, Any]]:
 
 
 def _score_one(doc_class: str, predicted: dict, expected: dict) -> dict[str, Any]:
-    from observability.field_scoring import get_field_types
+    from llm_dojo_scoring import get_field_types
     from observability.suite_scoring import score_with_suite
 
     result, extras = score_with_suite(
