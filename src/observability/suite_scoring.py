@@ -1,4 +1,4 @@
-"""Dedicated specialist scoring suites from llm-dojo-scoring 0.11.0.
+"""Dedicated specialist scoring suites from llm-dojo-scoring 0.14.0.
 
 ``get_suite(doc_class)`` returns the specialist suite (merger_agreement
 rebinds the MAUD catalog rather than inheriting CUAD families). Extraction
@@ -26,7 +26,7 @@ from typing import Any
 from llm_dojo_scoring.field_scoring import ExtractionScoreResult, score_extraction
 
 # Score names we emit when a suite returns extras. Must exist in SCORE_CONFIGS
-# and the dojo registry. ``field_presence`` is deliberately absent — dojo 0.11.0
+# and the dojo registry. ``field_presence`` is deliberately absent — dojo 0.14.0
 # documents it as unemitted (honesty gap, not a scorer).
 SUITE_EXTRA_SCORE_NAMES = frozenset({
     "content_topic_accuracy",

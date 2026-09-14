@@ -21,9 +21,13 @@ from notebooks import gmail_pilot_lab as lab
 
 
 def test_snapshot_rows_are_integrity_verified():
+    from pipeline.hf_corpora import FULL_CORPUS_REVISION
+
     data = json.loads(lab.SNAPSHOT_PATH.read_text())
-    assert data["dataset"] == "Lucius-Morningstar/mailroom-corpus"
-    assert data.get("hub_sha")
+    # hub#47: the snapshot derives from the v9 dataset at the same pin the
+    # loader defaults to — never the frozen v8 corpus.
+    assert data["dataset"] == "Lucius-Morningstar/mailroom-dataset"
+    assert data["hub_sha"] == FULL_CORPUS_REVISION
     roles = [r["role"] for r in data["rows"]]
     assert "insurance_claim" in roles and "correspondence" in roles and "contract" in roles
     for row in data["rows"]:

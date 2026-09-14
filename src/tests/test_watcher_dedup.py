@@ -29,6 +29,13 @@ def _terminal_manifest(filename: str, *, intake: dict | None = None) -> None:
         intake=intake,
     )
     save_manifest(manifest)
+    # hub#65: the watcher caches _MANIFEST_INDEX for 5 minutes; writing a
+    # manifest must be visible immediately or tests (and a save-then-rescan)
+    # see stale index state. Reset the cache here so each test is isolated.
+    import pipeline.watcher as _watcher
+
+    _watcher._MANIFEST_INDEX = {}
+    _watcher._MANIFEST_INDEX_BUILT_AT = 0.0
 
 
 def test_no_sidecar_filename_match_is_skipped(inbox_file):

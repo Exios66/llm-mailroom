@@ -48,7 +48,11 @@ def test_flag_off_paid_model_resolves(free_only_off):
 def test_flag_on_free_agent_resolves(free_only_on):
     """The free triage team is exactly what the guardrail exists to allow."""
     client, model = get_llm("gmail_triage")
-    assert model == "z-ai/glm-5.2:free"
+    # taxonomy swap 40880166: the triage head is ling (glm-5.2:free delisted
+    # from the swarm head); assert against taxonomy so this can't rot again.
+    from pipeline.config import load_config
+
+    assert model == load_config()["agents"]["gmail_triage"]["model"]
 
 
 def test_flag_on_paid_model_refused(free_only_on):

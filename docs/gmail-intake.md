@@ -7,11 +7,22 @@ archives it in the auditable hash archive, and reports the outcome **on the
 same email thread**.
 
 Single-document uploads are handled by the **free OpenRouter triage team**
-(`z-ai/glm-5.2:free` — $0): the core pipeline steps run without any paid
+(`openrouter/free` — the Free Models Router, $0): the core pipeline steps run without any paid
 agent. This guide is the complete operator/sender manual: how to enable the
 channel, how to format an upload email (subject-line contract included),
 every pathway a document can take from Gmail into the pipeline, and how to
 operate and troubleshoot the channel.
+
+> **Provider scope (mailroom-issues directive 2026-09-14):** the default
+> provider is **OpenRouter** (`DEFAULT_PROVIDER=openrouter`). **vLLM and
+> Modal exist only for local deployments** — the `local-mailroom-sandbox`
+> (and self-hosted vLLM servers / local models) — and are never the default
+> here. **Gmail triage has NO vLLM implementation**: the triage lane resolves
+> through `openrouter/free` exactly as this guide describes. vLLM/Modal enter
+> a pipeline run only when an operator explicitly points a local sandbox
+> profile at them (`DEFAULT_PROVIDER=vllm` + `VLLM_BASE_URL` in the sandbox
+> config) — there is no vLLM path in Gmail triage unless that local serving
+> stack is configured and selected for the run.
 
 Code map:
 
@@ -75,7 +86,7 @@ The channel is **explicit opt-in** — it never starts polling on its own.
    ```
 
 **CI secrets.** `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD` are registered via
-`gh secret set` on `Exios66/mailroom-dev` **and** `Exios66/llm-mailroom` for
+`gh secret set` on `LLM-Mailroom-Services/Digital-Mailroom` **and** `Exios66/llm-mailroom` for
 workflow use — never committed.
 
 **Security best practices**
@@ -222,7 +233,7 @@ One accepted attachment per email (`route: triage`) and
  deterministic prep     doc text read (pdfplumber/pypdf/docx/plain) +
  (never an LLM)         apply_intake normalization
         ▼
- triage read            GmailTriageAgent (z-ai/glm-5.2:free, $0):
+ triage read            GmailTriageAgent (openrouter/free, $0):
  (advisory)             primary_doc_class + doc_subclass + confidence +
                         one-sentence gist + ≤6 keywords;
                         validate_triage clamps to the live taxonomy

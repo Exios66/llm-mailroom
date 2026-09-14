@@ -27,7 +27,7 @@ from observability.tracing import install_on_dropped
 install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
 
 warmup_score_configs(blocking=False)
-from observability.field_scoring import warm_embedding_model
+from llm_dojo_scoring import warm_embedding_model
 
 warm_embedding_model(blocking=False)  # O-10: load embeddings off the document path
 
@@ -476,7 +476,8 @@ async def lookup_document_endpoint(
             for path in mdir.glob("*.json"):
                 try:
                     data = _json.loads(path.read_text())
-                except Exception:
+                except (OSError, _json.JSONDecodeError):
+                    logger.warning("manifest_unreadable", path=str(path))
                     continue
                 if data.get("original_filename") == filename:
                     manifest = load_manifest(data["doc_id"])
@@ -512,7 +513,8 @@ async def review_queue():
         for path in mdir.glob("*.json"):
             try:
                 data = _json.loads(path.read_text())
-            except Exception:
+            except (OSError, _json.JSONDecodeError):
+                logger.warning("manifest_unreadable", path=str(path))
                 continue
             if data.get("stage") != PipelineStage.REVIEW.value:
                 continue

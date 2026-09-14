@@ -92,12 +92,12 @@ Scripts respect the following from `.env`:
 ## Testing
 
 All scripts are designed to be run manually. There are no automated tests for scripts themselves, but they are exercised during:
-- `pytesttest_pipeline_e2e.py` (via `run_pilot.py --mock`)
-- `pytesttest_quality_judges.py` (via `run_quality_judges.py --mock`)
-- `pytesttest_vision.py` (via `run_vision_sweep.py --mock`)
+- `pytest test_pipeline_e2e.py` (via `run_pilot.py --mock`)
+- `pytest test_quality_judges.py` (via `run_quality_judges.py --mock`)
+- `pytest test_vision.py` (via `run_vision_sweep.py --mock`)
 
 ## Notes
 
 - Scripts that write to Langfuse (`sync_*.py`) are **idempotent** — safe to re-run.
 - Pilot runs create deterministic trace IDs seeded from filenames; re-runs keep the first run's environment/tags.
-- Real runs (`--real`) process **only the 21 actual committed legal documents** (9 CUAD/Atticus contracts + 6 LegalBench + 6 Pile of Law). The 9 synthetic samples are **mock-only** and will be refused by `--real` to avoid spending tokens on fake documents.
+- Real runs (`--real`) process **only the 15 actual committed legal documents** (9 CUAD/Atticus contracts + 6 LegalBench MAUD). Pile of Law court opinions are retired with the `court_opinion` class (0 in the live manifest). The 9 synthetic samples are **mock-only** and will be refused by `--real` to avoid spending tokens on fake documents.

@@ -1,6 +1,85 @@
 import pytest
 
 
+class TestVendoredProviderSeam:
+    """hub#42: the vendored LangChain sorter/contracts agents build their own
+    ChatOpenAI — they must resolve through the SHARED provider seam so
+    DEFAULT_PROVIDER=vllm / VLLM_BASE_URL take effect and the champion id is
+    remapped via taxonomy vllm_model_map.
+
+    These tests opt out of the suite-wide FakeLangChainLLM autouse mock
+    (marker no_langchain_mock) and exercise the real llm() construction path.
+    """
+
+    def _capture_chat_openai(self, monkeypatch):
+        captured = {}
+
+        class _CaptureChatOpenAI:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self.extra_body = None
+
+        from langchain_agents import base_agent as lc_base
+
+        monkeypatch.setattr(lc_base, "ChatOpenAI", _CaptureChatOpenAI)
+        return captured
+
+    @pytest.mark.no_langchain_mock
+    def test_vllm_provider_routes_vendored_sorter(self, monkeypatch):
+        # vLLM cutover must reach the vendored sorter: VLLM_BASE_URL lands on
+        # the client and qwen/qwen3.7-flash is remapped to the served id.
+        from agents.sorter import SorterAgent
+
+        captured = self._capture_chat_openai(monkeypatch)
+        monkeypatch.setenv("DEFAULT_PROVIDER", "vllm")
+        monkeypatch.setenv("VLLM_BASE_URL", "http://vllm-test:8000/v1")
+        monkeypatch.delenv("VLLM_API_KEY", raising=False)
+        agent = SorterAgent()
+        agent.llm()
+        assert captured["base_url"] == "http://vllm-test:8000/v1"
+        assert captured["model"] == "Qwen/Qwen3-8B"  # vllm_model_map remap
+
+    @pytest.mark.no_langchain_mock
+    def test_vllm_provider_routes_vendored_contracts(self, monkeypatch):
+        from agents.contracts_specialist import ContractsSpecialist
+
+        captured = self._capture_chat_openai(monkeypatch)
+        monkeypatch.setenv("DEFAULT_PROVIDER", "vllm")
+        monkeypatch.setenv("VLLM_BASE_URL", "http://vllm-test:8000/v1")
+        monkeypatch.delenv("VLLM_API_KEY", raising=False)
+        agent = ContractsSpecialist()
+        agent.llm()
+        assert captured["base_url"] == "http://vllm-test:8000/v1"
+        assert captured["model"] == "Qwen/Qwen3-8B"
+
+    @pytest.mark.no_langchain_mock
+    def test_openrouter_default_unmapped(self, monkeypatch):
+        # DEFAULT_PROVIDER unset: openrouter base + the taxonomy champion id
+        # passes through untouched (no remap).
+        from agents.sorter import SorterAgent
+
+        captured = self._capture_chat_openai(monkeypatch)
+        monkeypatch.delenv("DEFAULT_PROVIDER", raising=False)
+        monkeypatch.delenv("VLLM_BASE_URL", raising=False)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-not-real")
+        agent = SorterAgent()
+        agent.llm()
+        assert captured["base_url"] == "https://openrouter.ai/api/v1"
+        assert captured["model"] == "qwen/qwen3.7-flash"
+
+    def test_openrouter_base_url_resolves_lazily(self, monkeypatch):
+        # The vendored seam must not read OPENROUTER_BASE_URL at import time:
+        # an env var set AFTER the module is imported must still take effect.
+        import importlib
+
+        from langchain_agents import openrouter_utils as ou
+
+        monkeypatch.delenv("OPENROUTER_BASE_URL", raising=False)
+        importlib.reload(ou)  # import-time value = default
+        monkeypatch.setenv("OPENROUTER_BASE_URL", "http://custom:9999/v1")
+        assert ou.openrouter_base_url() == "http://custom:9999/v1"
+
+
 class TestStructuredCallJsonInvariant:
     """The `json_object` response format requires the literal token `json` in
     the messages for some providers (Qwen via Alibaba rejects with HTTP 400

@@ -83,7 +83,7 @@ def _tool_schema(doc_type: str) -> dict | None:
 
 def _tool_field_types(doc_type: str) -> dict:
     try:
-        from observability.field_scoring import get_field_types
+        from llm_dojo_scoring import get_field_types
 
         return get_field_types(doc_type) or {}
     except Exception:

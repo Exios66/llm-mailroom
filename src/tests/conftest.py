@@ -86,7 +86,7 @@ def temp_base_dir():
 
 
 @pytest.fixture(autouse=True)
-def mock_langchain_llm(mocker):
+def mock_langchain_llm(mocker, request):
     """Patch the vendored LangChain agents' ChatOpenAI path with a
     deterministic fake (no network). The LangChain sorter/contracts
     specialist build their own ChatOpenAI and bypass llm.client.get_llm, so
@@ -94,9 +94,17 @@ def mock_langchain_llm(mocker):
 
     Tests configure per-test behavior by mutating the returned fake's
     ``classification`` / ``extraction`` canned dicts.
+
+    Tests marked @pytest.mark.no_langchain_mock (hub#42 provider-seam tests)
+    exercise the REAL BaseAgent.llm() construction path and opt out of the
+    patch (the fake value is still returned to keep the fixture contract).
     """
     from langchain_agents.base_agent import BaseAgent as _LangChainBaseAgent
     from langchain_agents.mock import FakeLangChainLLM
+
+    fake = FakeLangChainLLM()
+    if request.node.get_closest_marker("no_langchain_mock"):
+        return fake
 
     fake = FakeLangChainLLM()
     mocker.patch.object(_LangChainBaseAgent, "llm", new=lambda self: fake)

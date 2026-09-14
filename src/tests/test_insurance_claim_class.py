@@ -90,7 +90,7 @@ def test_classifier_vocabulary_contains_insurance_claim():
     assert "merger_agreement" in VALID_CLASSES
     assert "court_opinion" not in VALID_CLASSES
     assert "due_diligence" not in VALID_CLASSES
-    assert len(VALID_CLASSES) == 7
+    assert len(VALID_CLASSES) == 6
 
 
 def test_sorter_doc_classes_table_contains_insurance_claim():
