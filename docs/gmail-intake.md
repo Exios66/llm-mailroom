@@ -13,6 +13,17 @@ channel, how to format an upload email (subject-line contract included),
 every pathway a document can take from Gmail into the pipeline, and how to
 operate and troubleshoot the channel.
 
+> **Provider scope (mailroom-issues directive 2026-09-14):** the default
+> provider is **OpenRouter** (`DEFAULT_PROVIDER=openrouter`). **vLLM and
+> Modal exist only for local deployments** — the `local-mailroom-sandbox`
+> (and self-hosted vLLM servers / local models) — and are never the default
+> here. **Gmail triage has NO vLLM implementation**: the triage lane resolves
+> through `openrouter/free` exactly as this guide describes. vLLM/Modal enter
+> a pipeline run only when an operator explicitly points a local sandbox
+> profile at them (`DEFAULT_PROVIDER=vllm` + `VLLM_BASE_URL` in the sandbox
+> config) — there is no vLLM path in Gmail triage unless that local serving
+> stack is configured and selected for the run.
+
 Code map:
 
 | Piece | File |
