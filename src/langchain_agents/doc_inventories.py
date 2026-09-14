@@ -322,7 +322,7 @@ def sorter_subclass_catalog(doc_type: str | None) -> tuple[str, ...]:
         tokens = DOC_TYPE_SUBCLASSES.get(kind)
         if tokens is not None:
             return tuple(tokens)
-    except Exception:
+    except ImportError:
         pass
     return _DOJO_SORTER_SUBCLASSES.get(kind, ())
 
@@ -362,7 +362,7 @@ def normalize_sorter_subclass(doc_type: str | None, value: Any) -> str | None:
         from llm_dojo_scoring.corpus import normalize_corpus_subclass
 
         token = normalize_corpus_subclass(kind, text)
-    except Exception:
+    except ImportError:
         token = None
         compact = re.sub(r"[^a-z0-9]", "", text.lower())
         for key in catalog:

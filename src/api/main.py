@@ -476,7 +476,8 @@ async def lookup_document_endpoint(
             for path in mdir.glob("*.json"):
                 try:
                     data = _json.loads(path.read_text())
-                except Exception:
+                except (OSError, _json.JSONDecodeError):
+                    logger.warning("manifest_unreadable", path=str(path))
                     continue
                 if data.get("original_filename") == filename:
                     manifest = load_manifest(data["doc_id"])
@@ -512,7 +513,8 @@ async def review_queue():
         for path in mdir.glob("*.json"):
             try:
                 data = _json.loads(path.read_text())
-            except Exception:
+            except (OSError, _json.JSONDecodeError):
+                logger.warning("manifest_unreadable", path=str(path))
                 continue
             if data.get("stage") != PipelineStage.REVIEW.value:
                 continue

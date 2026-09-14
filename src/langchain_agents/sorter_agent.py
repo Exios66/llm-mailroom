@@ -54,7 +54,7 @@ def _doc_classes_for_prompt() -> list[dict]:
         catalog = get_doc_class_catalog()
         if catalog:
             return catalog
-    except Exception:
+    except ImportError:
         pass
     return DOC_CLASSES
 
@@ -70,7 +70,7 @@ def _sorter_schema() -> dict:
         from pipeline.config import get_sorter_label_set
 
         labels = sorted(get_sorter_label_set())
-    except Exception:
+    except ImportError:
         labels = list(DOC_CLASS_KEYS) + ["unknown"]
     return build_structured_schema(
         {
@@ -249,7 +249,7 @@ def finalize_sorter_result(result: dict) -> dict:
             sorter_subclass_catalog,
             valid_sorter_subclasses,
         )
-    except Exception:
+    except ImportError:
         out["doc_subclass"] = None
         return out
 
