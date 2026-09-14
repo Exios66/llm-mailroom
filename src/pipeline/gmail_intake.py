@@ -976,7 +976,7 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
             lines.extend(related.splitlines())
             lines.append("")
     except Exception:
-        logger.debug("gmail_echo_related_section_failed")
+        logger.warning("gmail_echo_related_section_failed")
 
     lines.append("-- AUDIT TRAIL " + "-" * 46)
     if audit_rows:

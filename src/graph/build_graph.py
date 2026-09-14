@@ -295,7 +295,7 @@ def _build_handoff_context(state: DocumentState) -> str | None:
         if extract_class and extract_class != doc_type:
             context += f" extract_class={extract_class}"
     except Exception:
-        logger.debug("extract_class_resolve_failed", doc_type=doc_type, exc_info=True)
+        logger.warning("extract_class_resolve_failed", doc_type=doc_type, exc_info=True)
     contract_subtype = state.get("contract_subtype")
     doc_subclass = state.get("doc_subclass")
     subtype = contract_subtype or doc_subclass
@@ -331,7 +331,7 @@ def _build_handoff_context(state: DocumentState) -> str | None:
         if related:
             context += "\n" + related
     except Exception:
-        logger.debug("relations_handoff_context_failed")
+        logger.warning("relations_handoff_context_failed")
     if state.get("arbiter_retry_count"):
         findings = list(state.get("judge_findings") or [])
         to_fix = [str(f) for f in (state.get("arbiter_fields_to_fix") or []) if f]
@@ -627,7 +627,7 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
 
         score_and_log_intake(raw_text, doc_text, intake_stats)
     except Exception:
-        logger.debug("intake_suite_score_failed", exc_info=True)
+        logger.warning("intake_suite_score_failed", exc_info=True)
     doc_pages = _render_doc_pages(file_path)
 
     matter_id = state.get("matter_id", "DEFAULT")
@@ -2852,7 +2852,7 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
         if honesty:
             metadata["suite_honesty"] = honesty
     except Exception:
-        logger.debug("pipeline_result_honesty_attach_failed", exc_info=True)
+        logger.warning("pipeline_result_honesty_attach_failed", exc_info=True)
     if ground_truth:
         # When the caller knows the expected outcome (pilot runs pass the
         # manifest ground truth), expose it here so the live evaluator can
@@ -2999,7 +2999,7 @@ def _execute_run(
             if honesty:
                 trace_metadata["suite_honesty"] = honesty
         except Exception:
-            logger.debug("suite_honesty_attach_failed", exc_info=True)
+            logger.warning("suite_honesty_attach_failed", exc_info=True)
 
     # Native LangGraph RunnableConfig: thread-scoped attempt (a re-run of the
     # same document must not resume the previous run's checkpointed state —

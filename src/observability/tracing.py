@@ -319,7 +319,7 @@ def install_on_dropped() -> None:
 
         _install()
     except Exception:
-        logger.debug("on_dropped_install_failed")
+        logger.warning("on_dropped_install_failed")
 
 
 def get_trace_id():
@@ -351,7 +351,7 @@ def _atexit_flush():
 
         shutdown_langfuse()
     except Exception:
-        logger.debug("tracing_shutdown_failed", exc_info=True)
+        logger.warning("tracing_shutdown_failed", exc_info=True)
 
 
 def ensure_process_tracing() -> None:

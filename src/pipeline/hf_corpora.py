@@ -23,9 +23,14 @@ Court/DD are retired.
 from __future__ import annotations
 
 import json
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger("llm_mailroom.hf_corpora")
+
+_UNPINNED_WARNED: set[str] = set()
 
 ORG = "Lucius-Morningstar"
 FULL_CORPUS_SCHEMA = "v9"
@@ -194,6 +199,22 @@ _ALIASES = {
 _ACTIVE_SLUG = "docclass-merged"
 
 
+def warn_unpinned(corpus: dict[str, Any]) -> None:
+    """Live-or-loud (DMR-061): a pipeline corpus with ``revision: None`` floats
+    on the Hub tip — the next upstream publish silently changes what the next
+    run ingests. Warn once per slug; the fix is a pin in ``CORPORA``."""
+    slug = str(corpus.get("slug") or "")
+    if corpus.get("revision") or slug in _UNPINNED_WARNED:
+        return
+    _UNPINNED_WARNED.add(slug)
+    _log.warning(
+        "pipeline corpus %r is UNPINNED (revision: None) — loads float on the "
+        "Hub tip and the next upstream publish silently changes the dataset "
+        "future runs ingest; pin a revision sha in hf_corpora.py CORPORA",
+        slug,
+    )
+
+
 def pipeline_corpora() -> list[dict[str, Any]]:
     return [c for c in CORPORA.values() if c.get("pipeline")]
 
@@ -207,7 +228,9 @@ def resolve_corpus(name: str | None) -> dict[str, Any]:
     if slug not in CORPORA:
         known = ", ".join(sorted(CORPORA))
         raise KeyError(f"unknown Hugging Face corpus {name!r}; known: {known}")
-    return CORPORA[slug]
+    corpus = CORPORA[slug]
+    warn_unpinned(corpus)
+    return corpus
 
 
 def set_active_corpus(name: str | None) -> dict[str, Any]:
@@ -218,7 +241,9 @@ def set_active_corpus(name: str | None) -> dict[str, Any]:
 
 
 def active_corpus() -> dict[str, Any]:
-    return CORPORA[_ACTIVE_SLUG]
+    corp = CORPORA[_ACTIVE_SLUG]
+    warn_unpinned(corp)
+    return corp
 
 
 def adapt_hub_row(row: dict[str, Any], corpus: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -318,7 +318,7 @@ def set_mode(mode: str, model: str | None = None) -> dict:
 
         clear_config_cache()
     except Exception:
-        logger.debug("relations_mode_cache_clear_failed")
+        logger.warning("relations_mode_cache_clear_failed")
 
     return {
         "mode": mode,

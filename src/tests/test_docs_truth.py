@@ -36,8 +36,11 @@ def test_referenced_docs_exist_or_annotated():
         target = REPO_ROOT / ref
         if target.exists():
             continue
-        # docs/reports/* is deliberately pruned (see docs/reports/README.md)
-        if ref.startswith("docs/reports/") and ref != "docs/reports/README.md":
+        # docs/reports/* is deliberately pruned (heavy report archives live in
+        # the upstream Exios66/llm-mailroom repo; the standalone repo tracks a
+        # docs/reports/README.md annotation, the monorepo gitignores the dir —
+        # monorepo-side adaptation mirroring the docs/examples/ skip below)
+        if ref.startswith("docs/reports/"):
             continue
         # docs/examples/* is a pruned heavy asset (sample PDFs + manifest;
         # see the test skips citing 'pruned heavy asset; see upstream repo')

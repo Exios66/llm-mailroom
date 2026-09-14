@@ -330,7 +330,7 @@ def install_on_dropped() -> None:
                 "langfuse_events_dropped", dropped=len(dropped or [])
             )
     except Exception:
-        logger.debug("on_dropped_wire_failed")
+        logger.warning("on_dropped_wire_failed")
 
 
 def shutdown_langfuse():

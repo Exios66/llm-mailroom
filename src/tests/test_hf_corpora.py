@@ -1,3 +1,5 @@
+import pytest
+
 """Hugging Face corpus registry — docclass-merged lineage now resolves to the
 v9 mailroom-dataset full corpus (the frozen v8 mailroom-corpus stays
 resolvable via its Hub commit for historical traces)."""
@@ -100,3 +102,55 @@ def test_set_active_corpus_roundtrip():
         assert set_active_corpus("Lucius-Morningstar/docclass-pilot")["slug"] == "docclass-pilot"
     finally:
         set_active_corpus("docclass-merged")
+
+
+# ---- DMR-061: unpinned corpora warn (live-or-loud) -----------------------
+
+def test_unpinned_corpus_warns_once(caplog):
+    """A pipeline corpus with revision: None floats on the Hub tip — the
+    guard must warn (once per slug) so the next unpinned ingest is visible."""
+    import pipeline.hf_corpora as corpora
+
+    corpora._UNPINNED_WARNED.clear()  # warn-once set may be seeded by earlier tests
+    probes = [
+        c for c in corpora.CORPORA.values() if not c.get("revision")
+    ]
+    assert probes, "expected at least one unpinned pipeline corpus"
+    with caplog.at_level("WARNING", logger="llm_mailroom.hf_corpora"):
+        for _ in range(2):
+            corpora.warn_unpinned(probes[0])
+    assert len([r for r in caplog.records if "UNPINNED" in r.getMessage()]) == 1
+    corpora._UNPINNED_WARNED.clear()  # keep other tests un-prefixed
+
+
+def test_loader_dataset_sha_none_warns(caplog, monkeypatch):
+    """dataset_sha() returning None (both API routes dead) must warn — a
+    load whose provenance can't name the tip is a degraded load."""
+    from pipeline import hf_corpus_loader as loader
+
+    def _dead(url, **_):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(loader, "_http_get_json", _dead)
+    with caplog.at_level("WARNING", logger="llm_mailroom.hf_corpus_loader"):
+        sha = loader.dataset_sha()
+    assert sha is None
+    assert any("hub tip sha" in r.getMessage() for r in caplog.records)
+
+
+def test_rows_ladder_partial_fetch_raises(monkeypatch):
+    """A mid-pagination fetch failure must RAISE — a truncated frame returned
+    silently would score a subset of the corpus as if it were the whole."""
+    from pipeline import hf_corpus_loader as loader
+
+    calls = {"n": 0}
+
+    def _flaky(url, **_):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"rows": [{"row": {"id": str(i)}} for i in range(100)], "num_rows_total": 1000}
+        raise RuntimeError("page fetch failed")
+
+    monkeypatch.setattr(loader, "_http_get_json", _flaky)
+    with pytest.raises(RuntimeError, match="TRUNCATED"):
+        loader._rows_ladder("repo/x", "config", split="train", revision=None)

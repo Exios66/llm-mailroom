@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,8 @@ import pandas as pd
 
 from .env import load_env
 from .hf_corpora import FULL_CORPUS_REVISION
+
+_log = logging.getLogger("llm_mailroom.hf_corpus_loader")
 
 HUB_BASE = "https://huggingface.co"
 VIEWER_BASE = "https://datasets-server.huggingface.co"
@@ -87,6 +90,12 @@ def dataset_sha(repo_id: str = FULL_CORPUS_ID) -> str | None:
                 return str(row["sha"])
     except Exception:
         pass
+    _log.warning(
+        "hub tip sha for %s could NOT be resolved (both API routes failed) — "
+        "provenance will record hub_sha_tip: None and pinned-vs-tip drift "
+        "cannot be checked for this load",
+        repo_id,
+    )
     return None
 
 
@@ -220,6 +229,7 @@ def _rows_ladder(
         params["revision"] = revision
     rows: list[dict] = []
     offset = 0
+    known_total: int | None = None
     while True:
         page_params = dict(params, offset=offset, length=page)
         payload = None
@@ -231,6 +241,17 @@ def _rows_ladder(
                 if attempt == 2:
                     payload = None
         if not payload:
+            # A short page / num_rows_total is a CLEAN stop; a fetch failure
+            # mid-pagination is data loss — silently returning the partial
+            # frame collects w/o error (DMR-061).
+            if rows and (known_total is None or offset < int(known_total)):
+                raise RuntimeError(
+                    f"rows ladder for {repo_id}/{config}[{split}] stopped at "
+                    f"offset={offset} ({len(rows)} rows collected, "
+                    f"total={known_total}) because a page fetch failed after 3 "
+                    f"attempts — refusing to return a TRUNCATED frame; re-run "
+                    f"or fall back to the /parquet ladder"
+                )
             break
         batch = payload.get("rows") or []
         if not batch:
@@ -241,8 +262,10 @@ def _rows_ladder(
                 rows.append(row)
         offset += len(batch)
         total = payload.get("num_rows_total")
-        if total is not None and offset >= int(total):
-            break
+        if total is not None:
+            known_total = int(total)
+            if offset >= known_total:
+                break
         if len(batch) < page:
             break
     return pd.DataFrame(rows)
@@ -283,6 +306,18 @@ def load_corpus(
         "ground_truth": gt_prov,
         "fetched_at": _now(),
     }
+    hub_tip = provenance["hub_sha_tip"]
+    if hub_tip is None:
+        provenance["hub_sha_tip_unavailable"] = True
+    elif revision and hub_tip != revision:
+        _log.warning(
+            "hub tip %s differs from the requested pinned revision %s — the "
+            "dataset moved upstream; this load stays on the pin, but the next "
+            "publish roll will re-pin (provenance records both)",
+            hub_tip,
+            revision,
+        )
+        provenance["hub_tip_drift"] = {"tip": hub_tip, "pinned": revision}
     if not join:
         return gt, provenance
     blind, blind_prov = load_config_frame(repo_id, BLIND_CONFIG, split=split, revision=revision)

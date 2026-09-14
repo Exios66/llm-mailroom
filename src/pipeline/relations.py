@@ -119,7 +119,7 @@ def relations_config() -> dict:
         block = (load_config().get("relations") or {}) or {}
         cfg.update({k: v for k, v in block.items() if v is not None})
     except Exception:
-        logger.debug("relations_config_load_failed")
+        logger.warning("relations_config_load_failed")
     return cfg
 
 
@@ -244,7 +244,7 @@ def _embed(texts: list[str]) -> list[list[float]] | None:
             future = pool.submit(embedder, texts)
             return future.result(timeout=_EMBED_TIMEOUT_SECONDS)
     except Exception:
-        logger.debug("relations_embed_failed")
+        logger.warning("relations_embed_failed")
         return None
 
 
@@ -732,7 +732,7 @@ def _llm_judgment_edges(
         }
         judgments = validate_judgments({"judgments": raw_judgments}, allowed_pairs)
     except Exception:
-        logger.debug("relations_llm_judgment_failed", doc_id=doc_id)
+        logger.warning("relations_llm_judgment_failed", doc_id=doc_id)
         return []
     edges = []
     for j in judgments:
@@ -791,7 +791,7 @@ def _write_doc_audit_event(doc_id: str, matter_id: str, edges: list[dict], run_i
 
         _run(_write())
     except Exception:
-        logger.debug("relations_doc_audit_write_failed", doc_id=doc_id)
+        logger.warning("relations_doc_audit_write_failed", doc_id=doc_id)
 
 
 def sweep(*, limit: int | None = None) -> dict:
@@ -904,7 +904,7 @@ def context_block(
             )
         return "\n".join(lines)
     except Exception:
-        logger.debug("relations_context_block_failed")
+        logger.warning("relations_context_block_failed")
         return ""
 
 
