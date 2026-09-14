@@ -1,4 +1,4 @@
-"""llm-dojo-scoring v0.14.0 pin — registry, prompt catalog, serving suite."""
+"""llm-dojo-scoring v0.15.0 pin — registry, prompt catalog, serving suite."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from observability.scores import SCORE_CONFIGS, registry_score_meta
 from observability.suite_scoring import SUITE_EXTRA_SCORE_NAMES
 
 
-def test_installed_dojo_is_v0140():
+def test_installed_dojo_is_v0150():
     # Release contract = the git pin in pyproject.toml. Monorepo dev resolves
     # the pin to the workspace member via [tool.uv.sources], so the installed
     # version may be newer than the pin (>= 0.12 required; the floor stays at
@@ -23,7 +23,7 @@ def test_installed_dojo_is_v0140():
     pin = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(
         encoding="utf-8"
     )
-    assert "llm-dojo-scoring.git@v0.14.0" in pin
+    assert "llm-dojo-scoring.git@v0.15.0" in pin
     version = re.match(r"(\d+)\.(\d+)", llm_dojo_scoring.__version__)
     assert version is not None
     assert tuple(map(int, version.groups())) >= (0, 12)

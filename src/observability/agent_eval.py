@@ -203,7 +203,7 @@ def score_extraction_case(
 ) -> dict[str, Any]:
     if not expected:
         return {"overall_score": None, "n_expected_fields": 0}
-    from observability.field_scoring import get_field_types
+    from llm_dojo_scoring import get_field_types
     from observability.suite_scoring import score_with_suite
 
     result, extras = score_with_suite(

@@ -1157,7 +1157,7 @@ def _normalized_compare(a, b) -> bool:
 
 def _norm_str(v) -> str:
     try:
-        from observability.field_scoring import normalize_text
+        from llm_dojo_scoring import normalize_text
 
         return normalize_text(v)
     except Exception:
@@ -2770,7 +2770,7 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
       text so it can verify grounding by rubric alone.
 
     Judge gating (issues #4/#5): for grounded runs the deterministic
-    field-type-aware scorer (`observability/field_scoring.py`) runs first.
+    field-type-aware scorer (`llm_dojo_scoring.field_scoring`) runs first.
     When its verdict is unambiguous — every scored field clearly correct
     (above the ambiguous band) OR clearly wrong (below it) — `judge_required`
     is False and the generation is NOT emitted, so neither evaluator rule
@@ -3097,7 +3097,7 @@ def _execute_run(
         judge_required = None
         expected_fields = (initial_state.get("ground_truth") or {}).get("expected_fields")
         if expected_fields:
-            from observability.field_scoring import get_field_types, score_extraction
+            from llm_dojo_scoring import get_field_types, score_extraction
             from observability.langfuse_field_scoring import score_and_log_extraction
 
             extracted = result.get("extracted_data") or {}
