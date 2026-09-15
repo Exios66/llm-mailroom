@@ -20,7 +20,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 </div>
 
 | At a glance | |
-|---|---|
+| --- | --- |
 | **Release** | [`v0.7.1`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.7.1) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
 | **Agents** | LLM + procedural agents across 5 document classes (happy path: classify + extract only) |
@@ -85,6 +85,7 @@ curl http://localhost:8000/audit/{doc_id}
 ```
 
 When a document is processed, you'll get two files under `data/`:
+
 - `data/mailroom.db` — the SQLite database (matters, documents, audit_log tables)
 - `data/checkpoints.db` — optional on-disk LangGraph state (only when `MAILROOM_CHECKPOINTER=sqlite`; MemorySaver is the default)
 
@@ -100,7 +101,7 @@ pip install -e ".[dev]"
 Optional install profiles — take only what you need:
 
 | Extra | Adds | Used by |
-|---|---|---|
+| --- | --- | --- |
 | `[embeddings]` | scipy, sentence-transformers | embedding-rescue second signal + Hungarian matcher in field scoring (degrades gracefully without) |
 | `[postgres]` | psycopg | Postgres storage engine (SQLite is the default) |
 | `[deploy]` | modal | the Modal+vLLM deploy app in `deploy/` (deploy-time only, never imported by the pipeline) |
@@ -189,6 +190,7 @@ flowchart TD
 Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
 
 **Auxiliary flows (outside the 13-node graph):**
+
 - **Gmail triage lane** (`agents/gmail_triage.py`): the free OpenRouter lane runs on the Free Models Router (`openrouter/free` — auto-selects the best free model per request) handling single-document Gmail uploads through classification + key extraction + auditable-hash archive without calling paid agents. Multi-document emails and documents exceeding the free budget route to the full pipeline.
 - **Relations clerk** (`pipeline/relations.py`): post-archive deterministic association scanning (same-matter, keyword Jaccard, party overlap, embedding cosine) with an optional LLM judgment pass for ambiguous near-misses. Dispatched off the document path at every terminal manifest.
 
@@ -352,7 +354,7 @@ agents:
 ### LLM Providers
 
 | Provider | Status | Auth | Base URL |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **OpenRouter** | Primary | `OPENROUTER_API_KEY` | `https://openrouter.ai/api/v1` |
 | **Ollama** | Local | None | `http://localhost:11434/v1` |
 | **vLLM** | Local/Modal | `VLLM_API_KEY` (optional bearer) | `http://localhost:8000/v1` (or `VLLM_BASE_URL`) |
@@ -405,7 +407,7 @@ Scoring is layered — cheap deterministic checks fire first, LLM judges only wh
 #### Band 1: Headline Metrics (per-document)
 
 | Metric | What it measures | Source |
-|---|---|---|
+| --- | --- | --- |
 | `pipeline-result` verdict | **CORRECT** / **PARTIAL** / **MISS** — overall run quality | `mailroom-pipeline-judge` (LLM-as-a-judge) |
 | `pipeline-quality` score | Proportional **0.0–1.0** quality score | `mailroom-pipeline-quality` (LLM-as-a-judge) |
 | `classification_correct` | Sorter class matches ground truth (pilot runs) | Deterministic (binary) |
@@ -416,7 +418,7 @@ These are the scores you check first. The verdict is a three-way rubric; the qua
 #### Band 2: Extraction Quality
 
 | Metric | What it measures | Source |
-|---|---|---|
+| --- | --- | --- |
 | `completeness` / `completeness_label` | Specialist captured every stated field | Judge (in-pipeline Lane B) |
 | `extraction_correctness` / `extraction_correctness_label` | Extracted values are factually accurate | Judge (offline) |
 | `extraction_field_score` | Per-field deterministic score (field-type-aware) | `field_scoring.py` (zero API cost) |
@@ -428,7 +430,7 @@ Field scoring fires before any LLM judge — cheap, reproducible, zero API cost.
 #### Band 3: Operational Metrics
 
 | Metric | What it measures | Source |
-|---|---|---|
+| --- | --- | --- |
 | `stage_completed` | Pipeline reached archive (binary) | `scores.py` |
 | `success_rate` | First-pass archive without retry/review | `scores.py` |
 | `guardrail_triggered` | Extraction guard caught schema violations | `guards.py` |
@@ -489,7 +491,7 @@ PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwe
 <summary>The curated Ollama shortlist — 11 models with sizes &amp; strengths</summary>
 
 | Model | Sizes | Best For |
-|---|---|---|
+| --- | --- | --- |
 | Qwen 3 | 7b, 14b | Structured output, legal text extraction |
 | Qwen 2.5 | 14b, 32b | Multilingual support |
 | Llama 3.1 | 8b, 70b | General-purpose, reliable structured output |
@@ -509,7 +511,7 @@ PYTHONPATH=src python src/scripts/cutover.py --all --provider ollama --model qwe
 Prefer the `/v1` prefix; unversioned routes remain during the deprecation window.
 
 | Method | Path | Description |
-|---|---|---|
+| --- | --- | --- |
 | `GET` | `/v1/health` | Health check (watcher lamp + `producer` / `review_resolve` / `inbox_upload`) |
 | `POST` | `/v1/upload` | Queue a document (The-Mailroom Inbox proxy; 202) |
 | `GET` | `/v1/queue` | Current processing queue (inbox + in-flight documents) |
@@ -620,7 +622,7 @@ The build auto-detects `docs/`, generates navigation from the file tree, and emi
 Mailroom is the pipeline at the center of a small constellation of governed repositories — full map in [`docs/sister-repos.md`](docs/sister-repos.md):
 
 | Repository | Role | Relationship |
-|---|---|---|
+| --- | --- | --- |
 | [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (DMR-era cards); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
 | [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop (prompt versions × models over CUAD/LegalBench/MAUD) | **Sister repo** — source of the vendored sorter/contracts prompts; shares ONE kanban board with this repo |
 | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.14.0` in `pyproject.toml` |
