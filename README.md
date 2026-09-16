@@ -35,7 +35,7 @@ This repository consists of:
 
 - A **python library + pipeline** (`src/`) — a LangGraph state machine that moves each document through classification, specialist extraction, quality gates, reporting, and archival.
 - **LLM + procedural agents across 5 document classes** — a sorter, five extraction specialists (contracts also covers MAUD `merger_agreement`), a judge/arbiter quality lane, a boss escalation agent, a **procedural** report assembler (no reporter LLM), and procedural PDF/image/archivist workers (see [Agent Organization](#agent-organization)). Happy-path archive uses **two** LLM generations (classify + extract).
-- An **evaluation suite** — a 25-sample pilot with ground truth (including three synthetic `insurance_claim` letters), deterministic field scoring, LLM-as-a-judge evaluators, per-agent isolation eval, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
+- An **evaluation suite** — a 23-sample pilot with ground truth (including three synthetic `insurance_claim` letters), deterministic field scoring, LLM-as-a-judge evaluators, per-agent isolation eval, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
 - **Canonical documentation** (`docs/`) — browsable locally with [docmd](https://github.com/docmd-io/docmd) (see [Browsing the Docs Locally](#browsing-the-docs-locally)).
 - A **dataset browser notebook** (`notebooks/`) — docile-style thin notebook over a reusable tool module.
 - A **Modal+vLLM deploy app** (`deploy/`) — optional local-model serving, flip-the-switch cutover.
