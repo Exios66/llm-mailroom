@@ -250,7 +250,7 @@ flowchart TB
     ARCHIVIST --> RELATIONS
 ```
 
-Document classes (5): `contract`, `corporate_record`, `correspondence`, `merger_agreement`, `insurance_claim` — each with its own extraction schema and specialist. Court opinions, due-diligence memos, and compliance filings classify as `unknown` (human review), not as a nearby class. `compliance_filing` was retired from the pipeline (zero Hub rows; `status: retired` in `taxonomy.yaml`). The two vendored agents (Sorter, Contracts Specialist) come from the sister repo [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) with their full append-only prompt lineage; all other agents are mailroom-native `BaseAgent` subclasses with Langfuse-managed prompts.
+Document classes (5): `contract`, `corporate_record`, `correspondence`, `merger_agreement`, `insurance_claim` — each with its own extraction schema and specialist. Court opinions and due-diligence memos classify as `unknown` (human review), not as a nearby class. The compliance class was removed from `taxonomy.yaml` on 2026-09-15 (commit `59c47401`) — the five-class roster plus `unknown` is final. The two vendored agents (Sorter, Contracts Specialist) come from the sister repo [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) with their full append-only prompt lineage; all other agents are mailroom-native `BaseAgent` subclasses with Langfuse-managed prompts.
 
 ## Design Principles
 

@@ -104,8 +104,8 @@ PYTHONPATH=src python src/scripts/cutover.py --agent sorter --provider ollama --
 PYTHONPATH=src python src/scripts/cutover.py --validate --agent sorter
 
 # 4. If validation passes, move to the next agent
-PYTHONPATH=src python src/scripts/cutover.py --agent compliance_specialist --provider ollama --model qwen3:7b
-PYTHONPATH=src python src/scripts/cutover.py --validate --agent compliance_specialist
+PYTHONPATH=src python src/scripts/cutover.py --agent contracts_specialist --provider ollama --model qwen3:7b
+PYTHONPATH=src python src/scripts/cutover.py --validate --agent contracts_specialist
 
 # 5. If validation fails, roll back
 PYTHONPATH=src python src/scripts/cutover.py --agent sorter --provider openrouter --model openai/gpt-4o
@@ -169,10 +169,6 @@ agents:
   contracts_specialist:
     provider: openrouter          # Cloud for complex contracts
     model: openai/gpt-4o
-
-  compliance_specialist:
-    provider: ollama              # Local for structured filings
-    model: qwen3:7b
 
   insurance_claims_specialist:
     provider: openrouter          # Cloud for claim documentation

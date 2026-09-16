@@ -151,17 +151,16 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 
 ---
 
-### 5. Compliance Specialist (`agents/compliance_specialist.py`)
+### 5. Compliance specialist (removed 2026-09-15)
 
-| Attribute | Value |
-|---|---|
-| **Node** | `extract`, `retry_extract` (RETIRED — dispatch disabled) |
-| **Trigger** | `doc_type == compliance_filing` (retired class; documents now route as `unknown`) |
-| **Input** | Document text + `ComplianceFilingExtraction` schema |
-| **Output** | Structured extraction + confidence |
-| **Personality** | Rule-bound, cites authority, cautious |
-
-**Retirement note:** `compliance_filing` has **zero rows** in `Lucius-Morningstar/mailroom-dataset` and was retired from the live pipeline (2026-09-01, `status: retired` in `taxonomy.yaml`). Documents that would have been classified as `compliance_filing` now route as `unknown` (human review). The specialist agent and schema are retained as inert machinery for local eval packs only — the HF pilot omits this class from `--real`.
+Removed in commit `59c47401` (2026-09-15), which deleted the docclass arm:
+the compliance specialist module, its extraction schema, its prompts, and
+its eval fixtures were all removed — nothing is retained as inert machinery
+for local eval packs. The five-class taxonomy is final (`contract`,
+`corporate_record`, `correspondence`, `merger_agreement`,
+`insurance_claim`), with `unknown` (human review) for everything else;
+documents that would have been classified as compliance filings route as
+`unknown`. Do not recreate this specialist or its schema.
 
 ---
 
