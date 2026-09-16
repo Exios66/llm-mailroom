@@ -274,10 +274,10 @@ _DOJO_SORTER_SUBCLASSES: dict[str, tuple[str, ...]] = {
         "mixed_cash_stock_election", "other",
     ),
     "corporate_record": (
-        "bylaws", "articles_of_incorporation", "certificate_of_formation",
-        "charter_amendment", "powers_of_attorney", "subsidiary_list",
-        "rights_instrument", "indenture", "board_resolution",
-        "officer_certificate", "other",
+        "articles_of_incorporation", "bylaws", "certificate_of_formation",
+        "charter_amendment", "board_resolution", "officer_certificate",
+        "powers_of_attorney", "rights_instrument", "indenture",
+        "subsidiary_list", "other",
     ),
     "correspondence": CORRESPONDENCE_TYPES,
     "insurance_claim": ("carrier", "inpatient", "outpatient", "pde", "property", "auto"),
@@ -294,10 +294,23 @@ def sorter_subclass_catalog(doc_type: str | None) -> tuple[str, ...]:
 
         tokens = DOC_TYPE_SUBCLASSES.get(kind)
         if tokens is not None:
-            return tuple(tokens)
+            return _reorder_corporate_subclasses(kind, tuple(tokens))
     except ImportError:
         pass
-    return _DOJO_SORTER_SUBCLASSES.get(kind, ())
+    tokens = _DOJO_SORTER_SUBCLASSES.get(kind, ())
+    return _reorder_corporate_subclasses(kind, tokens)
+
+
+def _reorder_corporate_subclasses(
+    doc_type: str, tokens: tuple[str, ...]
+) -> tuple[str, ...]:
+    if doc_type != "corporate_record" or "bylaws" not in tokens:
+        return tokens
+    lst = list(tokens)
+    lst.remove("bylaws")
+    idx = 1 if "articles_of_incorporation" in lst else 0
+    lst.insert(idx, "bylaws")
+    return tuple(lst)
 
 
 def valid_sorter_subclasses(doc_type: str | None) -> frozenset[str]:
@@ -373,6 +386,12 @@ def format_sorter_subclass_catalogs() -> str:
     notes = {
         "contract": " — also copy this key into contract_subtype; use other if none fit",
         "merger_agreement": " — MAUD consideration type; contract_subtype stays null",
+        "corporate_record": (
+            " — articles_of_incorporation (charters/formation docs), "
+            "bylaws (operating rules/procedures), "
+            "rights_instrument (stock/warrant/rights agreements), "
+            "powers_of_attorney (delegation/authorization); use other if none fit"
+        ),
         "insurance_claim": (
             " — CMS file types; FNOL/policy lines "
             "auto/property/liability/health/life/workers_comp are also valid"
