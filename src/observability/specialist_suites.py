@@ -8,7 +8,7 @@ suite (rebound subclasses / extras), not the CUAD family catalog.
 
 Schema field maps come from ``taxonomy.yaml`` ``field_types`` plus the
 Pydantic extraction model. Scoring never invents Hub n=0 accuracy for
-``compliance_filing`` — that class is local-pack only until Hub rows exist.
+retired classes — they are not live extract classes.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ LIVE_EXTRACT_CLASSES: tuple[str, ...] = (
     "merger_agreement",
     "corporate_record",
     "correspondence",
-    "compliance_filing",
     "insurance_claim",
 )
 
@@ -45,7 +44,6 @@ SUITE_HEADLINE_EXTRAS: dict[str, tuple[str, ...]] = {
         "sentiment_accuracy",
         "extraction_f1",
     ),
-    "compliance_filing": ("extraction_f1", "entity_list_f1"),
     "insurance_claim": (
         "determination_consistency",
         "amount_exactness",

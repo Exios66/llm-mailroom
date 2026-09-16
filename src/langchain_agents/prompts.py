@@ -40,7 +40,6 @@ Available document classes:
 - corporate_record: Bylaws, resolutions, board minutes, cap table entries, incorporation docs
 - due_diligence: Checklists, disclosure schedules, diligence memos, risk assessments
 - correspondence: Letters, emails, memos, notices between parties or with regulators
-- compliance_filing: SEC filings, state registrations, regulatory submissions, annual reports
 - court_opinion: Judicial opinions and orders: published decisions, memorandum opinions, rulings
 
 Rules:
@@ -522,9 +521,9 @@ SORTER_PROMPT_V13 = (
     )
     .replace(
         "contract, corporate_record, due_diligence, correspondence, "
-        "compliance_filing, court_opinion",
+        "court_opinion",
         "contract, corporate_record, due_diligence, correspondence, "
-        "compliance_filing, court_opinion, insurance_claim",
+        "court_opinion, insurance_claim",
     )
 )
 
@@ -554,23 +553,22 @@ SORTER_PROMPT_V14 = (
 # message + image-bearing user message (see src/openrouter_utils.split_prompt).
 # =============================================================================
 
-SORTER_VISION_PROMPT_V0 = """You are a fast, decisive legal document classifier in a transactional/corporate law firm's mailroom. You are shown the page images of ONE incoming legal document and must assign it exactly one of 6 classes.
+SORTER_VISION_PROMPT_V0 = """You are a fast, decisive legal document classifier in a transactional/corporate law firm's mailroom. You are shown the page images of ONE incoming legal document and must assign it exactly one of 5 classes.
 
 Judge the document by its FUNCTION and FORM, not its subject matter: a demand letter ABOUT a contract is correspondence, not contract; a judicial decision ABOUT a merger is court_opinion, not contract; a disclosure schedule attached to a merger agreement is due_diligence, not contract. Do not rush to the label matching the topic — work through the checks below IN ORDER and commit to the FIRST one with strong, concrete evidence you can actually READ in the image (a header, caption, signature block, docket line, form field, "THIS AGREEMENT" recital — not a guess from the topic). Once an earlier check matches, later checks do not override it.
 
 Labels (use these exact strings):
-contract, corporate_record, due_diligence, correspondence, compliance_filing, court_opinion
+contract, corporate_record, due_diligence, correspondence, court_opinion
 
 ## Scratchpad procedure
 
-Walk checks 1-6 below IN ORDER. For each check, before moving to the next, briefly state what specific evidence IS present in the image (quote or closely paraphrase the visible text/layout — heading words, captions, signature lines, citations) or "none" if nothing supports it. If evidence is present: STOP HERE — this is your check; do not keep evaluating later checks even if the page also resembles a later category. If no evidence: say "not this check" in one short clause and move on.
+Walk checks 1-5 below IN ORDER. For each check, before moving to the next, briefly state what specific evidence IS present in the image (quote or closely paraphrase the visible text/layout — heading words, captions, signature lines, citations) or "none" if nothing supports it. If evidence is present: STOP HERE — this is your check; do not keep evaluating later checks even if the page also resembles a later category. If no evidence: say "not this check" in one short clause and move on.
 
 1. contract: a formal agreement between parties — "AGREEMENT", "CONTRACT", "THIS ... AGREEMENT IS MADE/ENTERED INTO", party names with definitions ("Company", "Purchaser"), sections with "Section 1. ...", signature pages with "IN WITNESS WHEREOF", exhibits ("Exhibit A"). M&A, vendor, employment, NDA, license, lease, supply agreements all qualify.
 2. corporate_record: internal governance records — "BYLAWS", "RESOLUTION", "MINUTES", "WRITTEN CONSENT", "CERTIFICATE OF INCORPORATION/FORMATION", board meeting records, "Adopted by the Board of Directors on", cap-table entries, officer certificates.
-3. compliance_filing: regulatory submissions and state filings — "SEC", "UNITED STATES SECURITIES AND EXCHANGE COMMISSION", "FORM 10-K / 10-Q / 8-K / DEF 14A / SCHEDULE 13D", "FILED WITH", "SEC FILE NUMBER", "CIK", state registration certificates ("FILED WITH THE SECRETARY OF STATE"), annual reports to regulators. If a SEC-filed EXHIBIT is itself an agreement, the exhibit wrapper does not convert the underlying agreement: the substantive form is contract (check 1 fires first).
-4. court_opinion: judicial decisions and orders — a court name in the caption ("UNITED STATES COURT OF APPEALS", "SUPREME COURT", "STATE OF NEW YORK SUPREME COURT"), "No. 20-1234" docket/citation lines, "APPEAL FROM THE", "AFFIRMED / REVERSED / REMANDED / DISMISSED", "Per Curiam", "IT IS SO ORDERED", "Justice ... concurring / dissenting".
-5. due_diligence: diligence materials — "DUE DILIGENCE CHECKLIST", "DISCLOSURE SCHEDULE", "SCHEDULE 1.1", "DILIGENCE MEMO", "REQUEST FOR INFORMATION", "RISK ASSESSMENT", "RED FLAG", outstanding-items lists, "PRIVILEGED & CONFIDENTIAL — PREPARED IN ANTICIPATION OF LITIGATION" cover sheets. A "SCHEDULE ..." appended to an agreement that is itself diligence material stays due_diligence; an executed agreement's exhibit is contract.
-6. correspondence: communications between parties or with regulators — letterhead with "Dear ...", "Sincerely", "Very truly yours", email headers ("FROM:", "TO:", "RE:", "SUBJECT:", "ATTACHED:"), interoffice "MEMORANDUM — TO/FROM/DATE/RE", notices, demand letters, cover letters. A memo WITH an organizational header is still correspondence in this taxonomy; only an internal corporate governance record (check 2) or court-issued document (check 4) overrides.
+3. court_opinion: judicial decisions and orders — a court name in the caption ("UNITED STATES COURT OF APPEALS", "SUPREME COURT", "STATE OF NEW YORK SUPREME COURT"), "No. 20-1234" docket/citation lines, "APPEAL FROM THE", "AFFIRMED / REVERSED / REMANDED / DISMISSED", "Per Curiam", "IT IS SO ORDERED", "Justice ... concurring / dissenting".
+4. due_diligence: diligence materials — "DUE DILIGENCE CHECKLIST", "DISCLOSURE SCHEDULE", "SCHEDULE 1.1", "DILIGENCE MEMO", "REQUEST FOR INFORMATION", "RISK ASSESSMENT", "RED FLAG", outstanding-items lists, "PRIVILEGED & CONFIDENTIAL — PREPARED IN ANTICIPATION OF LITIGATION" cover sheets. A "SCHEDULE ..." appended to an agreement that is itself diligence material stays due_diligence; an executed agreement's exhibit is contract.
+5. correspondence: communications between parties or with regulators — letterhead with "Dear ...", "Sincerely", "Very truly yours", email headers ("FROM:", "TO:", "RE:", "SUBJECT:", "ATTACHED:"), interoffice "MEMORANDUM — TO/FROM/DATE/RE", notices, demand letters, cover letters. A memo WITH an organizational header is still correspondence in this taxonomy; only an internal corporate governance record (check 2) or court-issued document (check 3) overrides.
 
 If you wrote "none" for every check, you missed something — most commonly a "THIS AGREEMENT" recital or an exhibit label. Re-scan the image and state the evidence you originally missed. Never output a label you explicitly marked "none" in your scratchpad.
 
@@ -578,7 +576,7 @@ After the scratchpad, output the final label on its own line, wrapped like this 
 
 <label>contract</label>
 
-The label must be lowercase, exactly one of the 6 strings above, no punctuation inside the tags, no explanation after them.
+The label must be lowercase, exactly one of the 5 strings above, no punctuation inside the tags, no explanation after them.
 
 Then output a confidence line, a number from 0 to 100 calibrated to how strongly the visible evidence matches the label (100 = unambiguous, no competing-class signal visible):
 
@@ -594,8 +592,6 @@ Then output a one-sentence reasoning line that cites the concrete visible eviden
 
 <scratchpad>
 contract: yes — page one reads "AMENDED AND RESTATED CREDIT AGREEMENT ... entered into as of", defines "Borrower" and "Lenders", and later pages carry "IN WITNESS WHEREOF" signatures. An SEC header strip above does not change the substantive form.
-compliance_filing: not this check — the SEC wrapper is the filing context, not the document's function.
-Runner-up: compliance_filing, ruled out because the underlying form is an executed agreement.
 </scratchpad>
 <label>contract</label>
 <confidence>96</confidence>
@@ -627,31 +623,34 @@ Runner-up: correspondence, ruled out because the internal governance function fi
 # =============================================================================
 # SORTER VISION PROMPT V1 — adds the insurance_claim document class (KANBAN-067).
 #
-# Derived from SORTER_VISION_PROMPT_V0 (byte-preserved): class count 6->7,
-# labels enumeration gains insurance_claim, insurance check inserted as #5
-# (specific claim-form signals fire before generic correspondence),
-# subsequent checks renumbered 5->6, 6->7, scratchpad widened to 1-7.
+# Derived from SORTER_VISION_PROMPT_V0 (byte-preserved): class count 5->6,
+# labels enumeration gains insurance_claim, insurance check inserted as #3
+# (the slot vacated by the retired docclass check — specific
+# claim-form signals fire early), subsequent checks renumbered 3->4, 4->5,
+# 5->6, scratchpad widened to 1-6.
 SORTER_VISION_PROMPT_V1 = (
     SORTER_VISION_PROMPT_V0
     .replace(
+        "exactly one of 5 classes",
         "exactly one of 6 classes",
-        "exactly one of 7 classes",
     )
-    # renumber BEFORE inserting the new check 5
-    .replace("5. due_diligence:", "6. due_diligence:")
-    .replace("6. correspondence:", "7. correspondence:")
+    # renumber BEFORE inserting the new check 3
+    .replace("3. court_opinion:", "4. court_opinion:")
+    .replace("4. due_diligence:", "5. due_diligence:")
+    .replace("5. correspondence:", "6. correspondence:")
     .replace(
-        "6. due_diligence:",
-        "5. insurance_claim: insurance claim paperwork - claim forms with \"CLAIM NO.\", \"FNOL\", \"POLICY NO.\", adjuster report and estimate letterheads, \"COVERAGE DETERMINATION\", Explanation-of-Benefits (EOB) statement layouts, reservation-of-rights letters, denial letters citing policy provisions, demanded/settled amounts. A letter FROM an insurer about an existing claim number is insurance_claim even with letterhead; an insurance POLICY sold to the insured is contract (check 1 fires first); a lawyer's demand letter threatening an insurance dispute WITHOUT claim/policy numbers stays correspondence (check 7).\n"
-        "6. due_diligence:",
+        "4. court_opinion:",
+        "3. insurance_claim: insurance claim paperwork - claim forms with \"CLAIM NO.\", \"FNOL\", \"POLICY NO.\", adjuster report and estimate letterheads, \"COVERAGE DETERMINATION\", Explanation-of-Benefits (EOB) statement layouts, reservation-of-rights letters, denial letters citing policy provisions, demanded/settled amounts. A letter FROM an insurer about an existing claim number is insurance_claim even with letterhead; an insurance POLICY sold to the insured is contract (check 1 fires first); a lawyer's demand letter threatening an insurance dispute WITHOUT claim/policy numbers stays correspondence (check 6).\n"
+        "4. court_opinion:",
     )
     .replace(
         "contract, corporate_record, due_diligence, correspondence, "
-        "compliance_filing, court_opinion",
+        "court_opinion",
         "contract, corporate_record, due_diligence, correspondence, "
-        "compliance_filing, court_opinion, insurance_claim",
+        "court_opinion, insurance_claim",
     )
-    .replace("Walk checks 1-6", "Walk checks 1-7")
+    .replace("Walk checks 1-5", "Walk checks 1-6")
+    .replace("exactly one of the 5 strings above", "exactly one of the 6 strings above")
 )
 
 
@@ -2683,47 +2682,6 @@ Output strict JSON only."""
 
 
 # =============================================================================
-# COMPLIANCE FILING SPECIALIST
-# =============================================================================
-
-COMPLIANCE_SPECIALIST_PROMPT = """You are a legal extraction specialist focused on compliance filings and regulatory submissions. Your job is to extract key fields from SEC filings, state registrations, and regulatory documents.
-
-Extract the following fields from the document:
-- filing_type: Type of filing (10-K, 10-Q, 8-K, DEF 14A, Schedule 13D, etc.)
-- regulatory_body: The regulatory body (SEC, state secretary, etc.)
-- filing_date: Date the filing was made
-- due_date: Any deadline or due date mentioned
-- entity_name: Name of the filing entity
-- key_requirements: Key compliance requirements or obligations
-- status: Current status (filed, pending, late, etc.)
-- reference_number: Filing number, CIK, or other reference identifier
-
-Rules:
-1. Extract ONLY what is explicitly stated.
-2. For dates, use mm/dd/yyyy format. Return null if not found.
-3. For entity lists, extract each distinct item separately.
-4. If a field is not present, return null.
-
-Output a JSON object conforming to this schema:
-{
-  "type": "object",
-  "properties": {
-    "filing_type": {"type": ["string", "null"]},
-    "regulatory_body": {"type": ["string", "null"]},
-    "filing_date": {"type": ["string", "null"]},
-    "due_date": {"type": ["string", "null"]},
-    "entity_name": {"type": ["string", "null"]},
-    "key_requirements": {"type": "array", "items": {"type": "string"}},
-    "status": {"type": ["string", "null"]},
-    "reference_number": {"type": ["string", "null"]}
-  },
-  "required": ["filing_type", "regulatory_body", "filing_date", "due_date", "entity_name", "key_requirements", "status", "reference_number"]
-}
-
-Output strict JSON only."""
-
-
-# =============================================================================
 # =============================================================================
 # INSURANCE CLAIMS SPECIALIST
 # =============================================================================
@@ -3018,7 +2976,6 @@ PROMPT_VERSIONS = {
     "corporate_records_specialist": CORPORATE_RECORDS_SPECIALIST_PROMPT,
     "due_diligence_specialist": DUE_DILIGENCE_SPECIALIST_PROMPT,
     "correspondence_specialist": CORRESPONDENCE_SPECIALIST_PROMPT,
-    "compliance_specialist": COMPLIANCE_SPECIALIST_PROMPT,
     "court_opinions_specialist": COURT_OPINIONS_SPECIALIST_PROMPT,
     "insurance_claims_specialist": INSURANCE_CLAIMS_SPECIALIST_PROMPT,
 
@@ -3050,27 +3007,8 @@ def get_prompt(version: str) -> str:
     Raises:
         KeyError: If the version is not found.
     """
-    try:
-        from pipeline.docclass_mode import AGENT_DOCCLASS_KEY, docclass_prompts_enabled
-
-        if docclass_prompts_enabled():
-            key = AGENT_DOCCLASS_KEY.get(version)
-            if key:
-                from langchain_agents.prompts_docclass import DOCCLASS_PROMPT_VERSIONS
-
-                return DOCCLASS_PROMPT_VERSIONS[key]
-    except ImportError:
-        # optional docclass-mode arm; the base registry below is the contract
-        pass
     if version in PROMPT_VERSIONS:
         return PROMPT_VERSIONS[version]
-    try:
-        from langchain_agents.prompts_docclass import DOCCLASS_PROMPT_VERSIONS
-
-        if version in DOCCLASS_PROMPT_VERSIONS:
-            return DOCCLASS_PROMPT_VERSIONS[version]
-    except ImportError:
-        pass
     raise KeyError(
         f"Prompt version '{version}' not found. Available versions: {list(PROMPT_VERSIONS.keys())}"
     )

@@ -53,9 +53,9 @@ DOC_SUBCLASS = (
     "sentiment_label are not sorter outputs."
 )
 
-SEVEN_CLASSES = (
-    "The mailroom taxonomy has six primary classes: contract, "
-    "corporate_record, correspondence, compliance_filing, insurance_claim, "
+FIVE_CLASSES = (
+    "The mailroom taxonomy has five primary classes: contract, "
+    "corporate_record, correspondence, insurance_claim, "
     "merger_agreement. merger_agreement is the MAUD class (agreement and "
     "plan of merger); contract is the CUAD commercial-contract class — "
     "they are not interchangeable. A demand letter about a contract is "
@@ -93,7 +93,7 @@ def extraction_doctrine(schema_fields: str, role_rules: list[str]) -> str:
 
 def classification_doctrine(extra: list[str] | None = None) -> str:
     lines = [
-        SEVEN_CLASSES,
+        FIVE_CLASSES,
         UNKNOWN_TYPE,
         CUAD_SUBTYPE,
         DOC_SUBCLASS,
@@ -154,16 +154,6 @@ CORRESPONDENCE = extraction_doctrine(
     ],
 )
 
-COMPLIANCE = extraction_doctrine(
-    "filing_type, regulatory_body, filing_date, due_date, entity_name, "
-    "key_requirements, status, reference_number",
-    [
-        "Name the filing type specifically (for example 10-K annual report, not merely SEC filing).",
-        "reference_number is an identifier (accession, control, file number); transcribe it exactly.",
-        "An agreement filed as an SEC exhibit is still extracted as a filing only when THIS document's form is the filing wrapper; do not pull the exhibit's contract fields into this schema.",
-    ],
-)
-
 INSURANCE_CLAIMS = extraction_doctrine(
     "claim_number, policy_number, insurer, insured_party, claim_type, "
     "date_of_loss, date_filed, claimed_amount, adjuster, damages_description, "
@@ -184,7 +174,7 @@ BOSS = _block(
     [
         "Matter conflicts are same-class only. Shared field names across different document classes (for example effective_date on a contract and a corporate record) are not a conflict.",
         "A leftover review_decision of approved from an earlier resume is not your ruling. Decide from the current escalation evidence.",
-        SEVEN_CLASSES,
+        FIVE_CLASSES,
         "If both extractions are internally consistent but describe materially different document forms, prefer review and name the suspected misclassification.",
         "Be decisive: approved proceeds to compile_report; review parks for a human. Return one complete JSON object for the active role's schema.",
     ],
@@ -215,7 +205,7 @@ JUDGE_COMPLETENESS = _block(
     [
         NUMERIC_ZERO + " A populated 0 is not an empty field.",
         "Judge only the registered schema for the assigned class. Do not demand another class's fields.",
-        SEVEN_CLASSES,
+        FIVE_CLASSES,
         VISION_ADDITIVE,
     ],
 )
@@ -253,7 +243,7 @@ ARBITER = _block(
         "fields_to_fix must be registered schema field names for this document's class, never commentary.",
         "retry_extraction is for a small named set of recoverable fields; human_review when failures compound or the source is materially unreadable.",
         NUMERIC_ZERO + " Do not treat a stated 0 as a missed field.",
-        SEVEN_CLASSES,
+        FIVE_CLASSES,
         "Default to the least destructive sufficient action. Return one complete JSON object.",
     ],
 )

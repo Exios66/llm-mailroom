@@ -3,7 +3,6 @@
 Hub `mailroom-dataset` still has:
 
 * CMS insurance rows that are all ``approved`` / empty ``denial_reasons``
-* zero ``compliance_filing`` rows
 * ``corporate_record`` subclass labels only (no CUAD/MAUD-grade field gold)
 
 These packs score committed in-repo fixtures with schema-complete
@@ -109,47 +108,6 @@ _INSURANCE_CONTRAST: tuple[dict[str, Any], ...] = (
     },
 )
 
-_COMPLIANCE_LOCAL: tuple[dict[str, Any], ...] = (
-    {
-        "filename": "sample_10k.txt",
-        "expected_hf_class": "compliance_filing",
-        "expected_subclass": "10-K",
-        "expected_fields": {
-            "filing_type": "10-K",
-            "regulatory_body": "SEC",
-            "filing_date": None,
-            "due_date": None,
-            "entity_name": "NovaTech Solutions, Inc.",
-            "key_requirements": [
-                "Annual report pursuant to Section 13 or 15(d)",
-                "Documents Incorporated by Reference: Portions of the definitive Proxy Statement",
-            ],
-            "status": "filed",
-            "reference_number": "001-98765",
-        },
-    },
-    {
-        "filename": "sample_state_filing.txt",
-        "expected_hf_class": "compliance_filing",
-        # State annual report is not an SEC form body; Hub catalog residual.
-        "expected_subclass": "other",
-        "expected_fields": {
-            "filing_type": "other",
-            "regulatory_body": "Delaware Division of Corporations",
-            "filing_date": "2024-05-15",
-            "due_date": "2024-06-30",
-            "entity_name": "Meridian Holdings, Inc.",
-            "key_requirements": [
-                "Annual Franchise Tax Payment: $75,000",
-                "Updated Director and Officer List: Attached",
-                "Business Activity Certification: Completed",
-            ],
-            "status": "filed",
-            "reference_number": "DE-2023-884721",
-        },
-    },
-)
-
 _CORPORATE_EXTRACTION: tuple[dict[str, Any], ...] = (
     {
         "filename": "sample_bylaws.txt",
@@ -198,7 +156,6 @@ _CORPORATE_EXTRACTION: tuple[dict[str, Any], ...] = (
 
 _PACK_FIXTURE_DIR = {
     "insurance_claim": "insurance_claim",
-    "compliance_filing": "compliance_filing",
     "corporate_record": "corporate_record",
 }
 
@@ -230,10 +187,6 @@ def insurance_contrast_samples() -> list[dict[str, Any]]:
     return [_hydrate(spec) for spec in _INSURANCE_CONTRAST]
 
 
-def compliance_local_samples() -> list[dict[str, Any]]:
-    return [_hydrate(spec) for spec in _COMPLIANCE_LOCAL]
-
-
 def corporate_extraction_samples() -> list[dict[str, Any]]:
     return [_hydrate(spec) for spec in _CORPORATE_EXTRACTION]
 
@@ -242,7 +195,6 @@ def all_local_pack_samples() -> list[dict[str, Any]]:
     """Fixture samples for ``--mock`` (additive; never mixed into Hub ``--real``)."""
     return (
         insurance_contrast_samples()
-        + compliance_local_samples()
         + corporate_extraction_samples()
     )
 
@@ -347,18 +299,6 @@ def score_local_packs() -> dict[str, Any]:
                 "determination_consistency_is_quality": False,
             },
         },
-        "compliance_filing": {
-            "doc_class": "compliance_filing",
-            "source": "local",
-            "in_hub": False,
-            "in_hf_pilot": False,
-            "mock_only": True,
-            "n": len(_COMPLIANCE_LOCAL),
-            "subclasses": [s["expected_subclass"] for s in _COMPLIANCE_LOCAL],
-            "perfect_extract": _perfect_extract_summary(
-                compliance_local_samples(), "compliance_filing"
-            ),
-        },
         "corporate_extraction": {
             "doc_class": "corporate_record",
             "source": "local",
@@ -389,13 +329,6 @@ def local_pack_status(doc_class: str) -> dict[str, Any]:
             "local_pack": "insurance_contrast",
             "local_pack_mock_only": True,
             "hub_gt_homogeneous": True,
-            "posthoc_schema_gt": True,
-        }
-    if kind == "compliance_filing":
-        return {
-            "local_pack": "compliance_filing",
-            "local_pack_mock_only": True,
-            "in_hub": False,
             "posthoc_schema_gt": True,
         }
     if kind == "corporate_record":

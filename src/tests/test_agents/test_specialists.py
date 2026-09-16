@@ -215,24 +215,6 @@ class TestCorrespondenceSpecialist:
         assert len(result.get("action_items", [])) > 0
 
 
-class TestComplianceSpecialist:
-    def test_extract_10k(self, sample_compliance_text, mock_openai_client):
-        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
-            '{"filing_type": "10-K Annual Report", "regulatory_body": "SEC", '
-            '"filing_date": "2024-03-15", "due_date": null, '
-            '"entity_name": "NovaTech Solutions, Inc.", '
-            '"key_requirements": ["Annual report per Exchange Act Section 13 or 15(d)"], '
-            '"status": "filed", "reference_number": "001-98765", "confidence": 0.95}'
-        )
-        from agents.compliance_specialist import ComplianceSpecialist
-        agent = ComplianceSpecialist()
-        agent.client = mock_openai_client
-        agent.model = "test-model"
-        result = agent.extract(sample_compliance_text[:1000])
-        assert result.get("confidence", 0) >= 0.80
-        assert "10-K" in result.get("filing_type", "")
-
-
 class TestBossAgent:
     def test_adjudicate_conflict(self, mock_openai_client):
         mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (

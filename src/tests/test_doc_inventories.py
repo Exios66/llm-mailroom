@@ -3,28 +3,23 @@
 from langchain_agents.doc_inventories import (
     CLAIM_TYPE_DESCRIPTION,
     COMMUNICATION_TYPE_DESCRIPTION,
-    COMPLIANCE_FILING_TYPES,
     CORPORATE_RECORD_TYPES,
     CORRESPONDENCE_TYPES,
-    FILING_TYPE_DESCRIPTION,
     INSURANCE_CLAIM_TYPES,
     RECORD_TYPE_DESCRIPTION,
     enrich_extraction,
     normalize_claim_type,
     normalize_communication_type,
-    normalize_filing_type,
     normalize_record_type,
     skip_conflict_field,
     specialist_handoff,
 )
 from langchain_agents.specialist_agents import (
-    COMPLIANCE_FILING_SCHEMA,
     CORPORATE_RECORDS_SCHEMA,
     CORRESPONDENCE_SCHEMA,
     INSURANCE_CLAIMS_SCHEMA,
 )
 from schemas.documents import (
-    ComplianceFilingExtraction,
     CorporateRecordExtraction,
     CorrespondenceExtraction,
     InsuranceClaimExtraction,
@@ -43,8 +38,6 @@ def test_hub_token_lists_match_ground_truth():
     assert "attorney_demand" in CORRESPONDENCE_TYPES
     assert "meeting_request" in CORRESPONDENCE_TYPES
     assert INSURANCE_CLAIM_TYPES[:4] == ("pde", "inpatient", "outpatient", "carrier")
-    assert "10-K" in COMPLIANCE_FILING_TYPES
-    assert "S-1" in COMPLIANCE_FILING_TYPES
 
 
 def test_normalize_record_type_hub_and_aliases():
@@ -58,7 +51,7 @@ def test_normalize_record_type_hub_and_aliases():
     assert normalize_record_type("Stockholder Rights Agreement") == "rights_instrument"
 
 
-def test_normalize_communication_and_claim_and_filing():
+def test_normalize_communication_and_claim():
     assert normalize_communication_type("Enron inbox email") == "email"
     assert normalize_communication_type("memorandum") == "memo"
     assert normalize_communication_type("Attorney Demand Letter") == "attorney_demand"
@@ -69,9 +62,6 @@ def test_normalize_communication_and_claim_and_filing():
     assert normalize_claim_type("hospital inpatient") == "inpatient"
     assert normalize_claim_type("carrier") == "carrier"
     assert normalize_claim_type("workers' compensation") == "workers_comp"
-    assert normalize_filing_type("10-K annual report") == "10-K"
-    assert normalize_filing_type("Form S-1") == "S-1"
-    assert normalize_filing_type("DEF 14A") == "DEF 14A"
 
 
 def test_enrich_fills_canonical_tokens_without_clobbering_contracts():
@@ -107,8 +97,6 @@ def test_handoff_lists_each_specialist_inventory():
     claim = specialist_handoff("insurance_claim")
     assert "pde" in claim
     assert "inpatient" in claim
-    filing = specialist_handoff("compliance_filing")
-    assert "10-K" in filing
     contract = specialist_handoff("contract", "license")
     assert "Anti-Assignment" in contract
     assert "license" in contract
@@ -117,7 +105,6 @@ def test_handoff_lists_each_specialist_inventory():
 def test_schemas_and_pydantic_carry_hub_descriptions():
     assert RECORD_TYPE_DESCRIPTION in CORPORATE_RECORDS_SCHEMA["properties"]["record_type"]["description"]
     assert COMMUNICATION_TYPE_DESCRIPTION in CORRESPONDENCE_SCHEMA["properties"]["communication_type"]["description"]
-    assert FILING_TYPE_DESCRIPTION in COMPLIANCE_FILING_SCHEMA["properties"]["filing_type"]["description"]
     assert CLAIM_TYPE_DESCRIPTION in INSURANCE_CLAIMS_SCHEMA["properties"]["claim_type"]["description"]
     assert CorporateRecordExtraction.model_validate(
         {"record_type": "articles_of_incorporation"}
@@ -128,16 +115,12 @@ def test_schemas_and_pydantic_carry_hub_descriptions():
     assert InsuranceClaimExtraction.model_validate(
         {"claim_type": "outpatient", "adjuster": None}
     ).claim_type == "outpatient"
-    assert ComplianceFilingExtraction.model_validate(
-        {"filing_type": "10-K"}
-    ).filing_type == "10-K"
 
 
 def test_skip_conflict_covers_type_and_clause_inventories():
     assert skip_conflict_field("record_type") is True
     assert skip_conflict_field("communication_type") is True
     assert skip_conflict_field("claim_type") is True
-    assert skip_conflict_field("filing_type") is True
     assert skip_conflict_field("cuad_clauses") is True
     assert skip_conflict_field("parties") is False
 
@@ -301,4 +284,3 @@ def test_sorter_catalogs_come_from_dojo_without_replacing_hub_extract_tokens():
     text = format_sorter_subclass_catalogs()
     assert "content_topic" in text
     assert "merger_agreement" in text
-    assert "10-K" in text

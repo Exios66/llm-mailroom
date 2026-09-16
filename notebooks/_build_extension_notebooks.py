@@ -293,7 +293,8 @@ print("live requested:", hf.live_requested())
 Seven datasets. `mailroom_classes` is the wiring back to `taxonomy.yaml`,
 not a Hub tag — it is how this pipeline consumes the published surface.
 `mailroom-dataset` v9 is the full corpus; `docclass-pilot` is one example
-of every type and subtype. `compliance_filing` has zero Hub rows."""),
+of every type and subtype. The five-class surface is final: no retired
+docclass remnants remain in the taxonomy."""),
         code("""cat = hf.catalog()
 hf.show_catalog(cat["datasets"])
 print()

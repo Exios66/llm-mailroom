@@ -50,4 +50,4 @@ def test_extraction_schema_registers_merger_as_own_class():
     assert get_extraction_schema("merger_agreement") is ContractExtraction
     assert get_extraction_schema("contract") is ContractExtraction
     assert "merger_agreement" in EXTRACTION_SCHEMAS
-    assert len(EXTRACTION_SCHEMAS) == 6
+    assert len(EXTRACTION_SCHEMAS) == 5

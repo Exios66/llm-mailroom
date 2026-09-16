@@ -26,7 +26,6 @@ LLM_AGENTS: tuple[str, ...] = (
     "contracts_specialist",
     "corporate_records_specialist",
     "correspondence_specialist",
-    "compliance_specialist",
     "insurance_claims_specialist",
     "reporter",
     "boss",
@@ -41,7 +40,6 @@ SPECIALIST_FOR_CLASS: dict[str, str] = {
     "merger_agreement": "contracts_specialist",
     "corporate_record": "corporate_records_specialist",
     "correspondence": "correspondence_specialist",
-    "compliance_filing": "compliance_specialist",
     "insurance_claim": "insurance_claims_specialist",
 }
 
@@ -252,7 +250,6 @@ def _invoke_specialist(agent_name: str, text: str) -> dict[str, Any]:
             "agents.correspondence_specialist",
             "CorrespondenceSpecialist",
         ),
-        "compliance_specialist": ("agents.compliance_specialist", "ComplianceSpecialist"),
         "insurance_claims_specialist": (
             "agents.insurance_claims_specialist",
             "InsuranceClaimsSpecialist",

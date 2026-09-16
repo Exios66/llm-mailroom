@@ -304,7 +304,6 @@ class TestUnsupportedExtractParksWithoutRetry:
                 "contracts_specialist": fake_contracts,
                 "corporate_records_specialist": bg._extract_corporate_records,
                 "correspondence_specialist": bg._extract_correspondence,
-                "compliance_specialist": bg._extract_compliance,
                 "insurance_claims_specialist": bg._extract_insurance_claims,
             },
         )
@@ -364,8 +363,6 @@ class TestDispatchCoversEveryTaxonomyClass:
         live = set(get_all_doc_types())
         # Dispatch must cover every live doc type.
         assert live <= set(dispatch)
-        # Dispatch may also include retired classes (backward-compat
-        # machinery like compliance_filing) — that's fine.
 
     def test_dispatch_keys_match_taxonomy(self):
         """Dispatch covers live taxonomy classes exactly (retired entries

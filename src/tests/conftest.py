@@ -168,12 +168,6 @@ def sample_correspondence_text():
 
 
 @pytest.fixture
-def sample_compliance_text():
-    fixture = Path(__file__).parent / "fixtures" / "compliance_filing" / "sample_10k.txt"
-    return fixture.read_text()
-
-
-@pytest.fixture
 def sample_ambiguous_text():
     fixture = Path(__file__).parent / "fixtures" / "contract" / "ambiguous_doc.txt"
     return fixture.read_text()

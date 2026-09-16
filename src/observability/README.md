@@ -73,7 +73,6 @@ Every live specialist has a dedicated scoring suite (`observability.specialist_s
 | `contracts_specialist` | `merger_agreement` (MAUD) | MAUD question extras; same agent, rebound suite |
 | `corporate_records_specialist` | `corporate_record` | typed field-micro + entity-list F1 |
 | `correspondence_specialist` | `correspondence` | Enron topic/sentiment extras when Hub has them |
-| `compliance_specialist` | `compliance_filing` | typed field-micro (local pack; zero Hub rows) |
 | `insurance_claims_specialist` | `insurance_claim` | determination_consistency / amount_exactness |
 
 `merger_agreement` does **not** add a sixth specialist agent — extraction still
@@ -83,8 +82,8 @@ consideration subclasses, MAUD extras) so CUAD families never score MAUD.
 Hub official labels still win. Remaining schema fields are filled post-hoc from
 document text (`observability.posthoc_gt`) so every included document has
 scorable expected_fields. Provenance (`n_hub` / `n_posthoc`) is recorded; a
-post-hoc fill is never billed as an official Hub annotation.
-`compliance_filing` stays out of Hub `--real` (n=0).
+post-hoc fill is never billed as an official Hub annotation. Retired classes
+stay out of Hub `--real` entirely.
 
 ## Honesty gaps (dojo 0.14.0)
 
@@ -103,7 +102,6 @@ do not treat a missing key as 0.0.
 | Class | Gap | What mailroom does |
 | --- | --- | --- |
 | `insurance_claim` | CMS GT homogeneity (all-approved) | Gate Hub `determination_consistency` as a quality KPI; local contrast pack (approved/denied/partial) exercises the scorer |
-| `compliance_filing` | zero Hub rows; HF `--real` excludes the class | Local fixture pack (10-K + state filing) scored on `--check` / `--mock` |
 | `corporate_record` | 39 Hub subclass rows; no *external* extraction benchmark | Post-hoc schema GT from exhibit text is scored on Hub rows (not claimed as CUAD-grade gold); local schema-complete pack remains the mock/check self-check |
 | `court_opinion` / `due_diligence` | retired from live mailroom | sorter emits `unknown` |
 

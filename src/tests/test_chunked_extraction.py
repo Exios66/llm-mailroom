@@ -16,21 +16,19 @@ def test_all_live_specialists_route_through_chunked(monkeypatch):
     bg._extract_contracts("x", None, None)
     bg._extract_corporate_records("x", None, None)
     bg._extract_correspondence("x", None, None)
-    bg._extract_compliance("x", None, None)
     bg._extract_insurance_claims("x", None, None)
     assert seen == [
         "ContractsSpecialist",
         "CorporateRecordsSpecialist",
         "CorrespondenceSpecialist",
-        "ComplianceSpecialist",
         "InsuranceClaimsSpecialist",
     ]
 
 
 def test_extract_chunked_splits_long_non_contract(mock_openai_client):
-    from agents.compliance_specialist import ComplianceSpecialist
+    from agents.correspondence_specialist import CorrespondenceSpecialist
 
-    agent = ComplianceSpecialist()
+    agent = CorrespondenceSpecialist()
     agent.client = mock_openai_client
     agent.model = "test-model"
     calls: list[int] = []
@@ -38,17 +36,17 @@ def test_extract_chunked_splits_long_non_contract(mock_openai_client):
     def fake_extract(doc_text, pages=None, handoff_context=None):
         calls.append(len(doc_text))
         return {
-            "filing_type": "10-k",
+            "communication_type": "letter",
             "confidence": 0.9,
-            "key_requirements": [f"chunk-{len(calls)}"],
+            "action_items": [f"chunk-{len(calls)}"],
         }
 
     agent.extract = fake_extract
-    text = "Filing paragraph.\n\n" * 80
+    text = "Correspondence paragraph.\n\n" * 80
     result = agent.extract_chunked(text, chunk_chars=400, overlap_chars=40)
     assert len(calls) > 1
     assert result.get("confidence") == 0.9
-    assert "chunk-1" in (result.get("key_requirements") or [])
+    assert result.get("action_items")[:1] == ["chunk-1"]
 
 
 def test_extract_chunked_short_document_single_pass(mock_openai_client):

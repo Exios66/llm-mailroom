@@ -32,7 +32,6 @@ def test_v8_full_corpus_is_docclass_merged():
     assert corp["pipeline"] is True
     assert tuple(corp["classes"]) == HUB_CLASSES
     assert "merger_agreement" in corp["classes"]
-    assert "compliance_filing" not in corp["classes"]
     # v5/v7 aliases resolve to the same slug — the registry carries ONE full
     # corpus entry; the HUB-019 v7 freeze stays resolvable as a Hub commit
     # (bb57c5ad) for historical traces, not as a separate registry surface.

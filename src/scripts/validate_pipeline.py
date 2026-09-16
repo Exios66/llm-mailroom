@@ -75,11 +75,9 @@ FIXTURE_EXPECTATIONS = {
     "src/tests/fixtures/contract/ambiguous_doc.txt": ("contract", None),
     "src/tests/fixtures/corporate_record/*": ("corporate_record", None),
     "src/tests/fixtures/correspondence/*": ("correspondence", None),
-    "src/tests/fixtures/compliance_filing/*": ("compliance_filing", None),
     "src/tests/fixtures/insurance_claim/*": ("insurance_claim", None),
     "docs/examples/sources/corporate/*": ("corporate_record", None),
     "docs/examples/sources/correspondence/*": ("correspondence", None),
-    "docs/examples/sources/compliance/*": ("compliance_filing", None),
     "docs/examples/sources/insurance/*": ("insurance_claim", None),
     "docs/examples/sources/ambiguous/*": ("correspondence", None),
 }
@@ -161,17 +159,14 @@ class _EvalLangChainLLM(FakeLangChainLLM):
         # letter/memo vocabulary or a greeting — mirroring the judge's "a
         # demand letter about a contract is correspondence" rule.
         # Header-anchoring avoids false positives from "re:"/"to:" in body
-        # text or form fields, and running it before the compliance/corporate
-        # checks lets an ambiguous memo stay a memo even when its body cites
+        # text or form fields, and running it before the corporate checks
+        # lets an ambiguous memo stay a memo even when its body cites
         # filings or 10-Ks.
         elif (any(ln.startswith(("re:", "to:", "from:", "subject:", "cc:", "bcc:")) for ln in lines)
               and (any(k in t for k in ("memorandum", "memo", "letter", "email", "notice"))
                    or any(k in t for k in ("sincerely,", "dear mr.", "dear ms.", "dear dr.",
                                            "dear counsel", "yours truly", "best regards", "regards,")))):
             doc_type, confidence = "correspondence", 0.96
-        elif any(k in t for k in ("10-k", "10k", "form 10", "sec filing", "annual report",
-                                  "state filing", "registration statement", "exhibit 10.")):
-            doc_type, confidence = "compliance_filing", 0.96
         elif any(k in t for k in ("bylaws of", "board of directors", "board resolution",
                                   "corporate resolution", "minutes of the", "shareholder resolution",
                                   "certificate of incorporation", "organizational documents")):

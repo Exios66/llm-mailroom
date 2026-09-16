@@ -19,7 +19,6 @@ AGENT_PROMPTS_WITH_CONFIDENCE = [
     "contracts_specialist",
     "corporate_records_specialist",
     "correspondence_specialist",
-    "compliance_specialist",
     "insurance_claims_specialist",
 ]
 

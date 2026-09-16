@@ -1093,14 +1093,12 @@ def test_triage_lane_llm_failure_parks_in_review(temp_base_dir, mocker):
         ("sample_insurance_claim_text", "insurance_claim"),
         ("sample_corporate_text", "corporate_record"),
         ("sample_correspondence_text", "correspondence"),
-        ("sample_compliance_text", "compliance_filing"),
     ],
 )
 def test_triage_lane_accepts_all_doc_types(temp_base_dir, mocker, request, fixture_name, doc_class):
     """The free triage team can process + accept EVERY canonical doc type —
     contracts, merger agreements, insurance claims, corporate records,
-    correspondences, and compliance filings — as single-document Gmail
-    inputs."""
+    and correspondences — as single-document Gmail inputs."""
     from pipeline.bins import inbox_dir, write_inbox_meta
     from pipeline.watcher import Watcher
 

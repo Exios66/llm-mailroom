@@ -2,8 +2,8 @@
 
 Network-free integration pins: schema registry, taxonomy, graph dispatch,
 classifier vocabulary, sorter prompt surface, fixture wiring. A native
-sibling of the other live classes (six total after court_opinion
-and due_diligence were retired from the pipeline).
+sibling of the other live classes (five total after court_opinion,
+due_diligence, and the retired docclass arm were removed from the pipeline).
 """
 
 from pathlib import Path
@@ -21,7 +21,7 @@ def test_extraction_schemas_include_insurance_claim():
     from schemas.documents import get_extraction_schema
 
     assert get_extraction_schema("insurance_claim") is InsuranceClaimExtraction
-    assert len(EXTRACTION_SCHEMAS) == 6  # live pipeline classes
+    assert len(EXTRACTION_SCHEMAS) == 5  # live pipeline classes
 
 
 def test_insurance_schema_fields_are_scoring_ready():
@@ -67,7 +67,7 @@ def test_taxonomy_declares_class_and_specialist_block():
     assert ic["field_types"]["claim_number"] == "id"
     assert ic["field_types"]["claimed_amount"] == "money"
     assert ic["field_types"]["denial_reasons"] == "entity_list:free_text"
-    assert len(classes) == 6
+    assert len(classes) == 5
     agents = tax["agents"]
     assert "insurance_claims_specialist" in agents
     assert agents["insurance_claims_specialist"]["provider"] == "openrouter"
@@ -127,10 +127,10 @@ def test_sorter_prompt_predecessors_unmutated():
     assert "insurance_claim" not in lp.SORTER_VISION_PROMPT_V0
     v1 = lp.SORTER_VISION_PROMPT_V1
     assert v1 != lp.SORTER_VISION_PROMPT_V0
-    assert "exactly one of 7 classes" in v1
-    assert "5. insurance_claim:" in v1
-    assert "6. due_diligence:" in v1 and "7. correspondence:" in v1
-    assert "Walk checks 1-7" in v1
+    assert "exactly one of 6 classes" in v1
+    assert "3. insurance_claim:" in v1
+    assert "4. court_opinion:" in v1 and "5. due_diligence:" in v1 and "6. correspondence:" in v1
+    assert "Walk checks 1-6" in v1
 
 
 def test_insurance_fixture_wires_into_conftest():

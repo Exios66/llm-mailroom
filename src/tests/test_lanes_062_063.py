@@ -470,6 +470,4 @@ class TestNodeBehavior:
         claim = _build_handoff_context({"doc_type": "insurance_claim"})
         assert "pde" in claim
         assert "inpatient" in claim
-        filing = _build_handoff_context({"doc_type": "compliance_filing"})
-        assert "10-K" in filing
 

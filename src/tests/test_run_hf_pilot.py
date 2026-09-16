@@ -1,4 +1,4 @@
-"""HF docclass pilot runner — The-Mailroom production-pilot contract."""
+"""HF pilot runner — The-Mailroom production-pilot contract."""
 
 import json
 import os
@@ -178,14 +178,11 @@ def test_load_ground_truth_labels_reads_expected_fields(monkeypatch):
     assert labels["a.htm"]["expected_subclass"] == "bylaws"
     assert labels["b.pdf"]["expected"] == "contract"
     assert "skip.pdf" not in labels
-    monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)
     import sys
     from scripts import run_hf_pilot as mod
 
-    monkeypatch.setattr(sys, "argv", ["run_hf_pilot.py", "--check", "--docclass"])
+    monkeypatch.setattr(sys, "argv", ["run_hf_pilot.py", "--check"])
     assert mod.main() == 0
-    assert os.environ.get("MAILROOM_DOCCLASS_PROMPTS") == "1"
-    monkeypatch.delenv("MAILROOM_DOCCLASS_PROMPTS", raising=False)
 
 
 def test_check_contract_prints_ok(capsys):
@@ -248,10 +245,7 @@ def test_hf_pilot_mock_writes_report(temp_base_dir, mock_openai_client, mock_lan
     assert metrics["aligned_equals_exact"] is True
     assert "total_cost_usd" in metrics
     assert "per_class" in metrics
-    assert payload["honesty"]["compliance_filing"]["in_hf_pilot"] is False
-    assert payload["honesty"]["compliance_filing"]["in_corpus"] is False
     assert payload["honesty"]["corporate_record"]["in_corpus"] is True
-    assert payload["local_packs"]["compliance_filing"]["n"] == 2
     assert payload["local_packs"]["insurance_contrast"]["gt_homogeneity"] is False
     assert payload["local_packs"]["corporate_extraction"]["hub_extract_is_subclass_only"] is True
     md = reports[0].with_suffix(".md").read_text(encoding="utf-8")

@@ -1,14 +1,12 @@
-"""Guards for the mailroom production prompt mutation + docclass connection.
+"""Guards for the mailroom production prompt mutation lineage.
 
 Lineage: frozen predecessors stay byte-identical; new production versions are
-pure appends of ``llm.prompt_doctrine``. Docclass variants are derived from
-``prompt_templates()`` so the two arms cannot drift.
+pure appends of ``llm.prompt_doctrine``.
 """
 
 from agents import (
     arbiter,
     boss,
-    compliance_specialist,
     correspondence_specialist,
     corporate_records_specialist,
     insurance_claims_specialist,
@@ -21,7 +19,6 @@ from langchain_agents import prompts as LP
 from llm.prompt_doctrine import (
     ARBITER,
     BOSS,
-    COMPLIANCE,
     CONTRACTS,
     CORPORATE_RECORDS,
     CORRESPONDENCE,
@@ -74,7 +71,6 @@ def test_mailroom_specialist_prompts_are_pure_appends_of_v0():
     pairs = [
         (corporate_records_specialist, CORPORATE_RECORDS),
         (correspondence_specialist, CORRESPONDENCE),
-        (compliance_specialist, COMPLIANCE),
         (insurance_claims_specialist, INSURANCE_CLAIMS),
         (pdf_transcriber, PDF_TRANSCRIBER),
     ]

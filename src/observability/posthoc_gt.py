@@ -7,7 +7,7 @@ scorable labels — even when the Hub row is subclass-only.
 
 These extractors are evaluation gold, not the model under test. They must
 stay conservative: only emit a field when the pattern is unambiguous. Do
-not invent Hub n=0 accuracy for ``compliance_filing``.
+not invent Hub n=0 accuracy for retired classes.
 """
 
 from __future__ import annotations
@@ -392,86 +392,6 @@ def extract_correspondence_fields(text: str) -> dict[str, Any]:
     return out
 
 
-def extract_compliance_fields(text: str) -> dict[str, Any]:
-    head = text[:4000]
-    out: dict[str, Any] = {}
-    m = re.search(
-        r"\bFORM\s+(10-K|10-Q|8-K|S-1|DEF\s*14A|13D|13G|4|20-F|6-K)\b",
-        head,
-        re.I,
-    )
-    if m:
-        token = re.sub(r"\s+", " ", m.group(1).upper().replace("DEF 14A", "DEF 14A"))
-        if token == "4":
-            token = "Form 4"
-        out["filing_type"] = token
-    if "SECURITIES AND EXCHANGE COMMISSION" in head.upper() or re.search(
-        r"\bSEC\b", head
-    ):
-        out["regulatory_body"] = "SEC"
-    elif "DIVISION OF CORPORATIONS" in head.upper():
-        state = _jurisdiction(head) or "state"
-        out["regulatory_body"] = f"{state} Division of Corporations"
-    entity = _label_value(
-        head,
-        ("ENTITY NAME", "Exact name of registrant", "Entity Name"),
-    )
-    if not entity:
-        m = re.search(
-            r"\n([A-Z][A-Za-z0-9&.,' -]{3,80})\n\s*\(Exact name of registrant",
-            head,
-        )
-        if m:
-            entity = _norm_space(m.group(1))
-    if entity:
-        out["entity_name"] = entity[:160]
-    file_no = _label_value(
-        head,
-        (
-            "Commission File Number",
-            "FILE NUMBER",
-            "File Number",
-            "Confirmation Number",
-        ),
-    )
-    if file_no:
-        out["reference_number"] = file_no.split()[0]
-    filed = _label_value(head, ("Filing Date", "FILED", "Filed"))
-    parsed = parse_date(filed) if filed else first_date(head)
-    if parsed:
-        out["filing_date"] = parsed
-    due = _label_value(head, ("DUE DATE", "Due Date"))
-    if due:
-        parsed_due = parse_date(due)
-        if parsed_due:
-            out["due_date"] = parsed_due
-    status = _label_value(head, ("STATUS", "Status", "Filing Status"))
-    if status:
-        low = status.lower()
-        if "filed" in low:
-            out["status"] = "filed"
-        elif "pending" in low:
-            out["status"] = "pending"
-        else:
-            out["status"] = status.split()[0].lower()
-    reqs: list[str] = []
-    for m in re.finditer(r"^[\-\*]\s+(.+)$", head, re.M):
-        item = _norm_space(m.group(1))
-        if item:
-            reqs.append(item[:200])
-    if not reqs:
-        m = re.search(
-            r"(ANNUAL REPORT PURSUANT TO[^\n]+|Documents Incorporated by Reference:[^\n]+)",
-            head,
-            re.I,
-        )
-        if m:
-            reqs.append(_norm_space(m.group(1)))
-    if reqs:
-        out["key_requirements"] = reqs[:6]
-    return out
-
-
 def extract_insurance_fields(text: str) -> dict[str, Any]:
     """CMS Medicare Summary Notice template + FNOL letterhead."""
     head = text[:4000]
@@ -600,7 +520,6 @@ _EXTRACTORS = {
     "merger_agreement": extract_contract_fields,
     "corporate_record": extract_corporate_fields,
     "correspondence": extract_correspondence_fields,
-    "compliance_filing": extract_compliance_fields,
     "insurance_claim": extract_insurance_fields,
 }
 

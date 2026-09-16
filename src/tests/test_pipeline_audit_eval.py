@@ -137,7 +137,7 @@ class TestPromptRegistryImageExtractor:
         templates = prompt_templates()
         assert "image_extractor" in templates
         assert templates["image_extractor"].strip()
-        assert len(templates) == 18  # 16 agents + judge-classification/correctness + relations (HUB-040)
+        assert len(templates) == 17  # 15 agents + judge-classification/correctness + relations (HUB-040)
 
     def test_image_extractor_uses_managed_prompt(self, mock_openai_client):
         from agents.image_extractor import ImageExtractor, SYSTEM_PROMPT
@@ -193,7 +193,7 @@ class TestAgentEvalHarness:
         assert "sorter" in LLM_AGENTS
         assert "image_extractor" in LLM_AGENTS
         assert "insurance_claims_specialist" in LLM_AGENTS
-        assert len(LLM_AGENTS) == 13
+        assert len(LLM_AGENTS) == 12
 
     def test_insurance_manifest_cases_present(self):
         from pathlib import Path as _Path
