@@ -62,17 +62,7 @@ def get_managed_prompt(
 
     Prefers the Langfuse-managed prompt labeled `production`; falls back to
     `default_text` (rendered with `variables`) when unavailable.
-
-    When ``MAILROOM_DOCCLASS_PROMPTS`` is on, fetch the namespaced
-    ``mailroom-docclass-<key>`` variant and fall back to the in-repo append.
     """
-    try:
-        from pipeline.docclass_mode import managed_prompt_lookup
-
-        agent_name, default_text = managed_prompt_lookup(agent_name, default_text)
-    except ImportError:
-        # docclass-mode is optional; the langfuse/default path below stands
-        pass
     cache_key = (agent_name, label)
     if cache_key not in _prompt_cache:
         client = _client()
@@ -99,9 +89,8 @@ def _langchain_prompt(version: str) -> str:
     """Local template for the vendored LangChain agents' versioned prompts
     (langchain_agents/prompts.py, committed with the vendored stack).
 
-    Reads ``PROMPT_VERSIONS`` directly so the production catalog never
-    rewrites through the docclass arm (``prompt_templates()`` must stay
-    the agent-name-pinned production surface).
+    Reads ``PROMPT_VERSIONS`` directly so the production catalog stays the
+    agent-name-pinned production surface.
     """
     from langchain_agents.prompts import PROMPT_VERSIONS
 
@@ -123,7 +112,6 @@ def _bound_prompt_versions() -> dict[str, str]:
         "contracts_specialist": "contracts_specialist_v33",
         "corporate_records_specialist": "production",
         "correspondence_specialist": "production",
-        "compliance_specialist": "production",
         "insurance_claims_specialist": "production",
         "boss": "production",
         "reporter": "production",
@@ -148,7 +136,6 @@ def prompt_templates() -> dict[str, str]:
     from agents import (  # noqa: F401
         arbiter,
         boss,
-        compliance_specialist,
         contracts_specialist,
         corporate_records_specialist,
         correspondence_specialist,
@@ -175,7 +162,6 @@ def prompt_templates() -> dict[str, str]:
         "contracts_specialist": _langchain_prompt("contracts_specialist_v33"),
         "corporate_records_specialist": corporate_records_specialist.SYSTEM_PROMPT,
         "correspondence_specialist": correspondence_specialist.SYSTEM_PROMPT,
-        "compliance_specialist": compliance_specialist.SYSTEM_PROMPT,
         "insurance_claims_specialist": insurance_claims_specialist.SYSTEM_PROMPT,
         "boss": boss.BOSS_SYSTEM_PROMPT,
         "reporter": reporter.COMPILE_SYSTEM_PROMPT,

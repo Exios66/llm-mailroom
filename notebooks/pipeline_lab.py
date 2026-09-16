@@ -1181,15 +1181,6 @@ Risk flags: missing SOC 2 Type II; unsigned IP assignment for two
 engineers. Outstanding items: bring-down certificate; updated cap table.
 """
 
-DOC_COMPLIANCE = """UNITED STATES SECURITIES AND EXCHANGE COMMISSION
-FORM 8-K — CURRENT REPORT
-
-Filer: Acme Corp  CIK 0001234567  Filed: 2024-05-02  Due: 2024-05-02
-Item 1.01 Entry into a Material Definitive Agreement.
-The Company entered into a Master Services Agreement with Beta LLC.
-Status: filed. Reference: 8-K-2024-0502.
-"""
-
 DOC_INSURANCE_CLAIM = """FIRST NOTICE OF LOSS — COMMERCIAL PROPERTY
 
 Claim number: CLM-2024-00881
@@ -1213,13 +1204,6 @@ CLASSIFY_DUE_DILIGENCE_HIGH = {
     "contract_subtype": None,
     "confidence": 0.96,
     "reasoning": "Confidential diligence memo with findings and outstanding items",
-}
-CLASSIFY_COMPLIANCE_HIGH = {
-    "doc_type": "compliance_filing",
-    "contract_subtype": None,
-    "doc_subclass": "8-K",
-    "confidence": 0.97,
-    "reasoning": "SEC Form 8-K header, CIK, Item 1.01",
 }
 CLASSIFY_INSURANCE_HIGH = {
     "doc_type": "insurance_claim",
@@ -1261,17 +1245,6 @@ DUE_DILIGENCE_EXTRACTION = {
     "prepared_by": "Northstar Diligence LLP",
     "confidence": 0.93,
 }
-COMPLIANCE_EXTRACTION = {
-    "filing_type": "8-K",
-    "regulatory_body": "SEC",
-    "filing_date": "2024-05-02",
-    "due_date": "2024-05-02",
-    "entity_name": "Acme Corp",
-    "key_requirements": ["Item 1.01 material definitive agreement"],
-    "status": "filed",
-    "reference_number": "8-K-2024-0502",
-    "confidence": 0.95,
-}
 INSURANCE_CLAIM_EXTRACTION = {
     "claim_number": "CLM-2024-00881",
     "policy_number": "CPP-44190",
@@ -1303,7 +1276,6 @@ EXTRACT_ZERO_DEMAND = {
 # (user message: "Extract structured data from this <marker>:").
 LEGACY_SPECIALIST_CANNED = {
     "correspondence": CORRESPONDENCE_EXTRACTION,
-    "compliance filing": COMPLIANCE_EXTRACTION,
     "corporate record": CORPORATE_RECORD_EXTRACTION,
     "insurance claim documentation": INSURANCE_CLAIM_EXTRACTION,
 }
@@ -1312,8 +1284,7 @@ def _hub_class_doc(doc_class: str) -> tuple[str, str]:
     """Document text + filename from the committed Hub class×subtype pack.
 
     Live Hub classes must come from ``Lucius-Morningstar/docclass-pilot``.
-    ``compliance_filing`` has no Hub rows (v5 honest gap) and is not
-    looked up here.
+    Retired classes have no Hub rows and are not looked up here.
     """
     from pipeline.hf_corpora import example_for_class
 
@@ -1370,16 +1341,6 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
         "marker": "correspondence",
         "source": "huggingface:docclass-pilot",
     },
-    "compliance_filing": {
-        "text": DOC_COMPLIANCE,
-        "filename": "form_8k.txt",
-        "classification": CLASSIFY_COMPLIANCE_HIGH,
-        "extraction": COMPLIANCE_EXTRACTION,
-        "specialist": "compliance_specialist",
-        "path": "legacy",
-        "marker": "compliance filing",
-        "source": "local-fixture",  # zero Hub rows in mailroom-dataset
-    },
     "insurance_claim": {
         "text": _HUB_CLAIM_TEXT,
         "filename": _HUB_CLAIM_FILE,
@@ -1396,7 +1357,7 @@ CLASS_PACKS: dict[str, dict[str, Any]] = {
 def script_all_specialists(client: MagicMock, extra: dict[str, dict] | None = None) -> MagicMock:
     """Script every legacy specialist marker plus the default judge/arbiter/boss
     happy-path canned responses. CUAD contracts and MAUD merger agreements still
-    flow through FakeLangChainLLM (LangChain path); this covers the other four
+    flow through FakeLangChainLLM (LangChain path); this covers the other three
     live classes."""
     canned = dict(LEGACY_SPECIALIST_CANNED)
     if extra:

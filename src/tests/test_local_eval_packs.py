@@ -1,4 +1,4 @@
-"""Local eval packs: insurance contrast, compliance Hub-zero, corporate extraction."""
+"""Local eval packs: insurance contrast and corporate extraction."""
 
 from observability.honest_gaps import (
     determination_consistency_is_quality,
@@ -7,7 +7,6 @@ from observability.honest_gaps import (
 )
 from observability.local_eval_packs import (
     all_local_pack_samples,
-    compliance_local_samples,
     corporate_extraction_samples,
     insurance_contrast_samples,
     local_pack_status,
@@ -56,14 +55,6 @@ def test_score_local_packs_exercises_scorer_not_hub_accuracy():
     assert contrast["hub_cms_shaped"]["gt_homogeneity"] is True
     assert contrast["hub_cms_shaped"]["determination_consistency_is_quality"] is False
 
-    compliance = packs["compliance_filing"]
-    assert compliance["in_hub"] is False
-    assert compliance["in_hf_pilot"] is False
-    assert compliance["n"] == 2
-    assert "10-K" in compliance["subclasses"]
-    assert compliance["perfect_extract"]["n"] == 2
-    assert compliance["perfect_extract"]["extraction_overall_mean"] is not None
-
     corporate = packs["corporate_extraction"]
     assert corporate["hub_extract_is_subclass_only"] is True
     assert "entity_name" in corporate["schema_fields"]
@@ -79,18 +70,17 @@ def test_local_packs_are_fixture_backed():
         assert sample["expected_fields"]
         assert sample["mock_only"] is True
         assert sample["pack"] is True
-    assert {s["expected_hf_class"] for s in compliance_local_samples()} == {"compliance_filing"}
     assert {s["expected_hf_class"] for s in corporate_extraction_samples()} == {"corporate_record"}
 
 
 def test_local_pack_status_does_not_flip_hub_membership():
-    from scripts.run_hf_pilot import HF_CLASSES, HF_HONESTY_EXCLUDED, HF_LOCAL_PACK_CLASSES
+    from scripts.run_hf_pilot import HF_CLASSES, HF_HONESTY_EXCLUDED
 
-    assert "compliance_filing" not in HF_CLASSES
-    assert "compliance_filing" in HF_HONESTY_EXCLUDED
-    assert "compliance_filing" in HF_LOCAL_PACK_CLASSES
-    status = local_pack_status("compliance_filing")
-    assert status["in_hub"] is False
+    assert "corporate_record" in HF_CLASSES
+    assert "insurance_claim" in HF_CLASSES
+    assert len(HF_CLASSES) == 5
+    assert "court_opinion" in HF_HONESTY_EXCLUDED
+    assert "due_diligence" in HF_HONESTY_EXCLUDED
     assert local_pack_status("corporate_record")["hub_extract_is_subclass_only"] is True
     assert local_pack_status("corporate_record")["posthoc_schema_gt"] is True
     assert local_pack_status("insurance_claim")["hub_gt_homogeneous"] is True

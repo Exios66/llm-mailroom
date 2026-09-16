@@ -15,9 +15,9 @@ stratified slice of that parent — every type and every subtype stratum).
 Other published Lucius-Morningstar datasets are first-class pipeline inputs
 too, including the 247k-row Enron correspondence corpus.
 
-``compliance_filing`` is retired from the canonical five-class surface (zero
-Hub rows; retained in ``taxonomy.yaml`` as ``status: retired`` machinery).
-Court/DD are retired.
+The five-class live taxonomy is final: no retired doc-class remnants are
+configured in the taxonomy, dispatch, or prompt surface. Court/DD are
+retired.
 """
 
 from __future__ import annotations
@@ -50,9 +50,7 @@ FULL_CORPUS_REVISION = "46a4d3c240a36671cde0182fff4960f6b8b73aca"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in mailroom-dataset (v9) — identical to the canonical
-# five-class live taxonomy (docs/README.md). taxonomy.yaml carries a
-# sixth configured entry (compliance_filing, marked status: retired):
-# retained machinery with zero Hub rows, not a corpus class.
+# five-class live taxonomy (docs/README.md).
 HUB_CLASSES: tuple[str, ...] = (
     "contract",
     "merger_agreement",

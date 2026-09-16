@@ -16,14 +16,12 @@ from langchain_agents.cuad_maud import (
     normalize_consideration,
 )
 from langchain_agents.doc_inventories import (
-    COMPLIANCE_GT_KEYS,
     CORPORATE_GT_KEYS,
     CORRESPONDENCE_GT_KEYS,
     INSURANCE_GT_KEYS,
     coerce_gt_value,
     normalize_claim_type,
     normalize_communication_type,
-    normalize_filing_type,
     normalize_record_type,
 )
 from observability.posthoc_gt import extract_posthoc_fields
@@ -122,16 +120,6 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
                 _put(expected_fields, "intent", "correspondence")
         for key in CORRESPONDENCE_GT_KEYS:
             if key == "communication_type" and expected_fields.get("communication_type"):
-                continue
-            val = sample.get(key)
-            if val not in (None, ""):
-                _put(expected_fields, key, val)
-    if hf_class == "compliance_filing":
-        if subclass:
-            token = normalize_filing_type(subclass)
-            expected_fields["filing_type"] = token or subclass
-        for key in COMPLIANCE_GT_KEYS:
-            if key == "filing_type" and expected_fields.get("filing_type"):
                 continue
             val = sample.get(key)
             if val not in (None, ""):

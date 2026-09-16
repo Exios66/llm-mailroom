@@ -1,4 +1,4 @@
-"""Honesty gaps (dojo 0.10.0+ / 0.11.0): CMS GT homogeneity, retired court/DD, zero-row compliance, corporate_record."""
+"""Honesty gaps (dojo 0.10.0+ / 0.11.0): CMS GT homogeneity, retired court/DD, corporate_record."""
 
 from langchain_agents.doc_inventories import CORPORATE_RECORD_TYPES
 from observability.honest_gaps import (
@@ -43,19 +43,6 @@ def test_court_and_due_diligence_are_retired_from_live_suites():
     assert is_extractable_doc_type("due_diligence") is False
 
 
-def test_compliance_honest_gap_is_zero_hub_rows():
-    payload = suite_honesty("compliance_filing")
-    assert payload["retired"] is False
-    assert payload["in_corpus"] is False
-    gap = (payload["honest_gap"] or "").lower()
-    assert "zero" in gap
-    assert "10-k" in gap or "10-K" in (payload["honest_gap"] or "")
-    from scripts.run_hf_pilot import HF_CLASSES, HF_HONESTY_EXCLUDED
-
-    assert "compliance_filing" not in HF_CLASSES
-    assert "compliance_filing" in HF_HONESTY_EXCLUDED
-
-
 def test_corporate_record_honest_gap_is_no_external_extraction_benchmark():
     payload = suite_honesty("corporate_record")
     assert payload["in_corpus"] is True
@@ -77,7 +64,6 @@ def test_corporate_record_honest_gap_is_no_external_extraction_benchmark():
 def test_gap_doc_types_match_v090_registry():
     assert GAP_DOC_TYPES == (
         "insurance_claim",
-        "compliance_filing",
         "corporate_record",
         "court_opinion",
         "due_diligence",
@@ -149,20 +135,16 @@ def test_guard_does_not_clamp_on_determination_inconsistency():
     assert conf == 0.91
 
 
-def test_hf_report_honesty_excludes_zero_row_compliance():
+def test_hf_report_honesty_excludes_retired_classes():
     from scripts.run_hf_pilot import hf_corpus_honesty, render_metrics_markdown, summarize_rows
 
     honesty = hf_corpus_honesty()
-    assert honesty["compliance_filing"]["in_hf_pilot"] is False
-    assert honesty["compliance_filing"]["in_corpus"] is False
-    assert honesty["compliance_filing"]["local_pack"] == "compliance_filing"
     assert honesty["corporate_record"]["in_hf_pilot"] is True
     assert honesty["corporate_record"]["local_pack"] == "corporate_extraction"
     assert honesty["insurance_claim"]["hub_gt_homogeneous"] is True
     assert honesty["court_opinion"]["retired"] is True
     md = render_metrics_markdown({"session_id": "pilot-hf-test", "samples": [], "honesty": honesty})
     assert "Corpus honesty" in md
-    assert "compliance_filing" in md
     assert "local pack" in md.lower()
     assert "no external extraction benchmark" in md.lower() or "honest gap" in md.lower()
 

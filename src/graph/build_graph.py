@@ -389,7 +389,6 @@ def _specialist_extractor_map():
         "contracts_specialist": _extract_contracts,
         "corporate_records_specialist": _extract_corporate_records,
         "correspondence_specialist": _extract_correspondence,
-        "compliance_specialist": _extract_compliance,
         "insurance_claims_specialist": _extract_insurance_claims,
     }
 
@@ -1356,13 +1355,6 @@ def _extract_correspondence(
 ) -> dict:
     from agents.correspondence_specialist import CorrespondenceSpecialist
     return _run_chunked_extraction(CorrespondenceSpecialist, doc_text, pages, handoff_context)
-
-
-def _extract_compliance(
-    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
-) -> dict:
-    from agents.compliance_specialist import ComplianceSpecialist
-    return _run_chunked_extraction(ComplianceSpecialist, doc_text, pages, handoff_context)
 
 
 def _extract_insurance_claims(
@@ -2970,13 +2962,6 @@ def _execute_run(
         tags.append(f"run-{attempt}")
     if source:
         tags.append(f"source-{source}")
-    try:
-        from pipeline.docclass_mode import docclass_prompts_enabled
-
-        if docclass_prompts_enabled():
-            tags.append("docclass-prompts")
-    except Exception:
-        pass
 
     trace_metadata = {"pipeline": "mailroom", "run_deadline": deadline, "attempt": attempt}
     if source:

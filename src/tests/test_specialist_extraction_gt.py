@@ -11,7 +11,6 @@ from observability.specialist_suites import (
 )
 from pipeline.hf_corpora import example_rows, hub_sample
 from observability.local_eval_packs import (
-    compliance_local_samples,
     corporate_extraction_samples,
 )
 
@@ -25,7 +24,6 @@ def test_every_live_specialist_has_a_dedicated_suite():
         "contracts_specialist",
         "corporate_records_specialist",
         "correspondence_specialist",
-        "compliance_specialist",
         "insurance_claims_specialist",
     }
     merger = dedicated_suite("merger_agreement")
@@ -122,12 +120,6 @@ def test_posthoc_gt_on_local_packs_matches_schema_keys():
     assert fields["record_type"] == "bylaws"
     assert fields["jurisdiction"] == "Delaware"
     assert meta["n_hub"] >= 5
-    # Explicit pack labels win; post-hoc may add extras but not clobber.
-    filing = compliance_local_samples()[0]
-    fields, _ = build_expected_fields(filing)
-    assert fields["filing_type"] == "10-K"
-    assert fields["entity_name"] == "NovaTech Solutions, Inc."
-    assert fields["regulatory_body"] == "SEC"
 
 
 def test_posthoc_extractors_are_conservative_on_empty_text():

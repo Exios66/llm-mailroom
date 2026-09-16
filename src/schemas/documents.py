@@ -49,17 +49,6 @@ class CorrespondenceExtraction(BaseModel):
     confidence: float = 0.0
 
 
-class ComplianceFilingExtraction(BaseModel):
-    filing_type: str = ""  # 10-K, 10-Q, 8-K, S-1, DEF 14A, 13D, 13G, Form 4, 20-F, 6-K, other
-    regulatory_body: str = ""
-    filing_date: str | None = None
-    due_date: str | None = None
-    entity_name: str = ""
-    key_requirements: list[str] = Field(default_factory=list)  # capped
-    status: str | None = None
-    reference_number: str | None = None
-
-
 class InsuranceClaimExtraction(BaseModel):
     claim_number: str | None = None
     policy_number: str | None = None
@@ -91,7 +80,6 @@ EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
     "merger_agreement": ContractExtraction,
     "corporate_record": CorporateRecordExtraction,
     "correspondence": CorrespondenceExtraction,
-    "compliance_filing": ComplianceFilingExtraction,
     "insurance_claim": InsuranceClaimExtraction,
 }
 

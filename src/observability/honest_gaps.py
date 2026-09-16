@@ -17,10 +17,9 @@ from __future__ import annotations
 from typing import Any
 
 # Hub / taxonomy extract classes whose suites still declare an honest gap.
-# HF_CLASSES omits compliance (zero rows) and the retired court/DD types.
+# HF_CLASSES omits the retired court/DD types; no retired doc classes remain.
 GAP_DOC_TYPES: tuple[str, ...] = (
     "insurance_claim",
-    "compliance_filing",
     "corporate_record",
     "court_opinion",
     "due_diligence",

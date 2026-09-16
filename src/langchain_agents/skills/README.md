@@ -14,7 +14,6 @@
 |:---|:---|
 | [`arbiter/`](arbiter/) | Final judgment |
 | [`boss/`](boss/) | Escalation handling |
-| [`compliance_specialist/`](compliance_specialist/) | Compliance filing extraction |
 | [`contracts_specialist/`](contracts_specialist/) | Contract extraction |
 | [`corporate_records_specialist/`](corporate_records_specialist/) | Corporate record extraction |
 | [`correspondence_specialist/`](correspondence_specialist/) | Correspondence extraction |

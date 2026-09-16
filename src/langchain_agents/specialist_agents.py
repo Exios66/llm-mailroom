@@ -21,7 +21,6 @@ from langchain_agents.base_agent import BaseAgent, build_structured_schema
 from langchain_agents.doc_inventories import (
     CLAIM_TYPE_DESCRIPTION,
     COMMUNICATION_TYPE_DESCRIPTION,
-    FILING_TYPE_DESCRIPTION,
     RECORD_TYPE_DESCRIPTION,
 )
 from langchain_agents.prompts import get_prompt
@@ -201,17 +200,6 @@ CORRESPONDENCE_SCHEMA = build_structured_schema({
     ),
 })
 
-COMPLIANCE_FILING_SCHEMA = build_structured_schema({
-    "filing_type": _nullable_string(FILING_TYPE_DESCRIPTION),
-    "regulatory_body": _nullable_string("Agency or authority: SEC, state secretary, IRS, etc."),
-    "filing_date": _nullable_string("Date the filing was submitted"),
-    "due_date": _nullable_string("Statutory or regulatory deadline"),
-    "entity_name": _nullable_string("Entity making the filing"),
-    "key_requirements": _string_array("At most 5 regulatory requirements being satisfied"),
-    "status": _nullable_string("draft, filed, pending, overdue, etc."),
-    "reference_number": _nullable_string("Accession, control, or tracking number"),
-})
-
 INSURANCE_CLAIMS_SCHEMA = build_structured_schema({
     "claim_number": _nullable_string("Claim number exactly as printed (CLAIM NO., FNOL ref., CLM_ID)"),
     "policy_number": _nullable_string("Policy number exactly as printed"),
@@ -247,7 +235,6 @@ SPECIALIST_SCHEMAS = {
     "contract": CONTRACTS_SCHEMA,
     "corporate_record": CORPORATE_RECORDS_SCHEMA,
     "correspondence": CORRESPONDENCE_SCHEMA,
-    "compliance_filing": COMPLIANCE_FILING_SCHEMA,
     "insurance_claim": INSURANCE_CLAIMS_SCHEMA,
 }
 
@@ -543,20 +530,11 @@ class CorrespondenceSpecialist(_SpecialistBase):
         return get_prompt("correspondence_specialist")
 
 
-class ComplianceFilingSpecialist(_SpecialistBase):
-    agent_name = "compliance_specialist"
-    schema = COMPLIANCE_FILING_SCHEMA
-
-    def system_prompt(self) -> str:
-        return get_prompt("compliance_specialist")
-
-
 # Specialist registry — maps doc_type keys to specialist classes
 SPECIALIST_REGISTRY = {
     "contract": ContractsSpecialist,
     "corporate_record": CorporateRecordsSpecialist,
     "correspondence": CorrespondenceSpecialist,
-    "compliance_filing": ComplianceFilingSpecialist,
 }
 
 

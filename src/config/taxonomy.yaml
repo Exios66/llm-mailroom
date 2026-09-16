@@ -131,10 +131,6 @@ confidence:
       high: 0.98
       low: 0.90
       judge_band_high: 0.97
-    compliance_filing:
-      high: 0.97
-      low: 0.88
-      judge_band_high: 0.95
     corporate_record:
       high: 0.96
       low: 0.86
@@ -283,29 +279,6 @@ doc_classes:
       intent: name
       subject_matter: free_text
       keywords: entity_list:name
-
-  # RETIRED 2026-09-01 (docs/configuration.md): removed from the canonical
-  # five-class surface (Hub corpus, sorter fallback table, pipeline diagram).
-  # This entry is RETAINED MACHINERY — the config path still resolves and
-  # dispatches it (zero Hub rows; local eval packs only). `status: retired`
-  # is the machine-readable marker the taxonomy-parity gate honors: do not
-  # treat this as a live corpus class, and do not remove the entry without a
-  # release decision (local packs + specialist dispatch still reference it).
-  - key: compliance_filing
-    status: retired
-    label: "Compliance Filing"
-    schema: ComplianceFilingExtraction
-    specialist: compliance_specialist
-    description: "SEC form body (10-K, 10-Q, 8-K, S-1, DEF 14A, 13D/G, Form 4) — not an attached charter or rights exhibit"
-    field_types:
-      filing_type: name
-      regulatory_body: name
-      filing_date: date
-      due_date: date
-      entity_name: name
-      key_requirements: entity_list:free_text
-      status: name
-      reference_number: id
 
   - key: insurance_claim
     label: "Insurance Claim"
@@ -469,14 +442,6 @@ agents:
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 40000
-    reasoning_effort: none
-
-  compliance_specialist:
-    provider: openrouter
-    model: qwen/qwen3.7-flash
-    temperature: 0.1
-    max_tokens: 8192
-    max_input_chars: 60000
     reasoning_effort: none
 
   insurance_claims_specialist:
