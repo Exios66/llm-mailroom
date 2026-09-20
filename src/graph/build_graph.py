@@ -584,6 +584,46 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
 
     raw_text = doc_text
     doc_text, intake_stats = apply_intake(doc_text, filename=file_path.name)
+    # #85 M6a (#98): ModernBERT fast-path triage — deterministic local-model
+    # classification, fail-open by construction. The handoff is ALWAYS
+    # emitted (flag off -> {available: false, reason: flag_off}) so downstream
+    # lanes (#99 router, #108 Tier-1 prior) can rely on its presence; the
+    # span is a SPAN (no LLM call) with curated provenance metadata, never
+    # the document text.
+    bert_triage = None
+    intake_handoff = None
+    try:
+        from agents.bert_intake import run_bert_intake
+        from observability.tracing import observation
+
+        _t0 = time.monotonic()
+        with observation(
+            "intake-ml-triage",
+            as_type="span",
+            input={"file": file_path.name, "chars": len(doc_text)},
+        ) as span:
+            bert_triage = run_bert_intake(doc_text, filename=file_path.name)
+            if span is not None:
+                span.update(
+                    output={
+                        "available": bool(bert_triage.get("available")),
+                        "reason": bert_triage.get("reason"),
+                        "route": bert_triage.get("route"),
+                        "triage_class": bert_triage.get("doc_type"),
+                        "confidence": bert_triage.get("calibrated_confidence")
+                        or bert_triage.get("confidence"),
+                        "latency_ms": round((time.monotonic() - _t0) * 1000.0, 2),
+                    }
+                )
+        intake_handoff = dict(bert_triage)
+    except Exception:
+        logger.exception("bert_intake_failed", file=file_path.name)
+        intake_handoff = {
+            "available": False,
+            "reason": "error",
+            "method": "deterministic",
+            "routing_path": "clerk_only",
+        }
     # HUB-038: LLM-assisted intake (triage + clean + prepare) — gated to
     # messy / over-sorter-budget documents; sliding windows, NEVER truncates.
     intake_prep = None
@@ -631,16 +671,22 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
 
     matter_id = state.get("matter_id", "DEFAULT")
     intake_meta = state.get("intake_meta") or None
-    if intake_meta is not None and intake_prep:
+    if intake_meta is not None:
         intake_meta = dict(intake_meta)
-        if intake_prep.get("triage"):
-            intake_meta["triage"] = intake_prep["triage"]
-        if intake_prep.get("sections") is not None:
-            intake_meta["prep"] = {
-                "section_count": len(intake_prep.get("sections") or []),
-                "roles": sorted({s["role"] for s in intake_prep.get("sections") or []}),
-                "windows": intake_prep.get("windows", 1),
-            }
+        if intake_prep:
+            if intake_prep.get("triage"):
+                intake_meta["triage"] = intake_prep["triage"]
+            if intake_prep.get("sections") is not None:
+                intake_meta["prep"] = {
+                    "section_count": len(intake_prep.get("sections") or []),
+                    "roles": sorted({s["role"] for s in intake_prep.get("sections") or []}),
+                    "windows": intake_prep.get("windows", 1),
+                }
+        # #85 M6a (#98): the BERT handoff merges UNCONDITIONALLY (independent
+        # of intake_prep — a BERT-only run has no LLM prep, and the fixed
+        # `intake_prep` gate used to drop the block before the manifest write).
+        if intake_handoff:
+            intake_meta["bert"] = intake_handoff
     manifest = DocumentManifest(
         matter_id=matter_id,
         original_filename=file_path.name,
@@ -698,6 +744,10 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
         "intake_messy": bool(intake_stats.get("messy")),
         "intake_changed": bool(intake_stats.get("changed")),
         "intake_prep": intake_prep,
+        # #85 M6a (#98): ModernBERT fast-path triage + always-emitted handoff
+        # (fail-open; downstream lanes read these, never the raw module).
+        "bert_triage": bert_triage,
+        "intake_handoff": intake_handoff,
         "classification_attempts": 0,
         "extraction_attempts": 0,
         "retry_count": 0,
@@ -753,6 +803,16 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
         from agents.intake import format_intake_prior
 
         intake_prior = format_intake_prior(state.get("intake_prep") or None)
+        # #85 M6e (#108) Tier-1: when the ModernBERT fast-path verified the
+        # primary class (route=fast_path), its prior rides the SAME channel —
+        # the sorter's residual job becomes subclass verification. Advisory
+        # only: the sorter overrules with cited evidence, and nothing is
+        # added when the lane was flag-off/clerk-only ("").
+        from agents.bert_intake import format_bert_type_prior
+
+        bert_prior = format_bert_type_prior(state.get("bert_triage") or None)
+        if bert_prior:
+            intake_prior = "\n\n".join(p for p in (intake_prior, bert_prior) if p)
         # Structured classify includes per-class doc_subclass (dojo catalogs).
         classified = sorter.classify_json(
             doc_text,
