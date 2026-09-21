@@ -63,6 +63,18 @@ postgres = [
 deploy = [
     "modal==1.5.5",
 ]
+# BERT intake fast-path runtime (agents/bert_intake.py + the sibling
+# mailroom-ml package, #85 M6a): ONNX int8 inference ONLY — deliberately no
+# torch/transformers anywhere (verified onnxruntime 1.30.0 cp311 wheels for
+# linux amd64 + aarch64 manylinux_2_28). transformers/torch/optimum belong
+# exclusively to the future build-time ONNX export tooling (deploy/README.md
+# § Offline model packaging) and are never runtime/extra deps here.
+# Install with:  pip install -e ".[bert]"
+bert = [
+    "onnxruntime>=1.30",
+    "tokenizers>=0.20",
+    "huggingface-hub>=0.30",
+]
 # Interactive notebooks (notebooks/dataset_browser.ipynb). The browser module
 # degrades to plain-text output without these — nothing in the pipeline or
 # test suite needs them. Install with:  pip install -e ".[notebooks]"
@@ -88,5 +100,6 @@ pythonpath = ["src", "."]
 
 # Monorepo dev: resolve the shared scoring engine from the workspace instead
 # of the release git pin above. Plain `pip install .` keeps using the pin.
+# (uv hard-requires workspace members to use `{ workspace = true }` here.)
 [tool.uv.sources]
 llm-dojo-scoring = { workspace = true }

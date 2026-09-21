@@ -1,0 +1,61 @@
+# llm-mailroom — Mode A overlay: local llamafile sidecar (offline LLM,
+# Mozilla llamafile: single-file OpenAI-compatible server, GGUF weights).
+#
+#   docker compose --profile local-llm -f deploy/docker-compose.yml \
+#     -f deploy/docker-compose.llamafile.yml --env-file .env up -d --build
+#
+# Model prep (once, needs network): drop a GGUF into deploy/models/llamafile/
+# (e.g. qwen3-7b-instruct-q4_k_m.gguf ~4.7 GB from the GGUF org of your choice)
+# and set LLAMAFILE_MODEL=/models/llamafile/qwen3-7b-instruct-q4_k_m.gguf —
+# see deploy/models/README.md. The served model id is the --alias value
+# (LLAMAFILE_ALIAS, default qwen3:7b) and must match the taxonomy
+# `llamafile_model_map:` values.
+#
+# The port is NOT published — the app reaches it over the compose network
+# (LLAMAFILE_BASE_URL=http://llamafile:8080/v1). Add a publish mapping only
+# for host-side debugging.
+
+services:
+  llamafile:
+    build:
+      context: ../..
+      dockerfile: deploy/llamafile/Dockerfile
+      args:
+        LLAMAFILE_VERSION: "${LLAMAFILE_VERSION:-0.10.4}"   # pin a tested release
+    image: mailroom-llamafile:latest
+    container_name: mailroom-llamafile
+    profiles: ["local-llm"]           # shared profile name with src/config/docker
+    restart: unless-stopped
+    environment:
+      LLAMAFILE_MODEL: "${LLAMAFILE_MODEL:-/models/llamafile/qwen3-7b-instruct-q4_k_m.gguf}"
+      LLAMAFILE_ALIAS: "${LLAMAFILE_ALIAS:-qwen3:7b}"       # served id == taxonomy map value
+      LLAMAFILE_CTX: "${LLAMAFILE_CTX:-16384}"              # KV-cache budget vs RAM (see deploy/README.md)
+      LLAMAFILE_GPU: "${LLAMAFILE_GPU:-disable}"            # auto|nvidia|amd|apple|vulkan|disable
+    volumes:
+      # GGUF lives on the host — GGUFs are multi-GB and must NEVER be baked
+      # into images (also excluded by .dockerignore *.gguf). Stage weights
+      # under deploy/models/llamafile/ (see deploy/models/README.md) and
+      # point LLAMAFILE_MODEL at the in-container path /models/llamafile/<file>.
+      # Alternative: pre-seed a named volume once (docker compose cp) instead
+      # of referencing the host checkout.
+      - ./models:/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s               # model load happens at server start
+
+  app:
+    depends_on:
+      llamafile:
+        condition: service_healthy
+    environment:
+      DEFAULT_PROVIDER: llamafile
+      LLAMAFILE_BASE_URL: http://llamafile:8080/v1
+      MAILROOM_BERT_INTAKE: "1"
+      OBSERVABILITY_PROVIDER: "${MAILROOM_OBSERVABILITY_PROVIDER:-none}"
+    build:
+      args:
+        PIP_EXTRAS: bert
+        ML_EXPORT_ONNX: "${ML_EXPORT_ONNX:-1}"

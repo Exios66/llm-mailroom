@@ -1,0 +1,52 @@
+# llm-mailroom — Mode A overlay: local Ollama sidecar (offline LLM).
+#
+#   docker compose --profile local-llm -f deploy/docker-compose.yml \
+#     -f deploy/docker-compose.ollama.yml --env-file .env up -d --build
+#
+# First-time model pull (needs network once; models live in the ollama_data
+# volume across restarts):
+#   docker compose --profile local-llm -f deploy/docker-compose.yml \
+#     -f deploy/docker-compose.ollama.yml exec ollama ollama pull qwen3:7b
+#
+# The port is NOT published — the app reaches it over the compose network
+# (OLLAMA_BASE_URL=http://ollama:11434/v1). Add a publish mapping only for
+# host-side debugging.
+
+services:
+  ollama:
+    image: ollama/ollama:0.6.5        # bump deliberately; verify the current stable tag
+    container_name: mailroom-ollama   # same name as the src/config/docker stack service
+    profiles: ["local-llm"]           # shared profile name with src/config/docker
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama     # pre-pulled models survive restarts
+    environment:
+      OLLAMA_HOST: "0.0.0.0"
+      OLLAMA_KEEP_ALIVE: "30m"        # keep the loaded model resident (13-node graph is serial)
+      OLLAMA_NUM_PARALLEL: "1"        # one completion at a time
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/11434 && echo ok || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  app:
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      DEFAULT_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      MAILROOM_BERT_INTAKE: "1"
+      # Fully offline default: no trace sinks (embedded Phoenix would work
+      # too; the hermetic-test precedent is `none`).
+      OBSERVABILITY_PROVIDER: "${MAILROOM_OBSERVABILITY_PROVIDER:-none}"
+    build:
+      args:
+        PIP_EXTRAS: bert
+        ML_EXPORT_ONNX: "${ML_EXPORT_ONNX:-1}"
+
+volumes:
+  ollama_data:

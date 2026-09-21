@@ -61,14 +61,15 @@ def assert_free_model(model: str) -> None:
 def get_llm(agent_name: str) -> tuple[OpenAI, str]:
     agent_cfg = get_agent_config(agent_name)
     provider, model = resolve_provider(agent_cfg)
-    if provider.name == "vllm":
-        # DMR-052: the served model id is the HF id (e.g. Qwen/Qwen3-8B), not
-        # the taxonomy's OpenRouter champion slug — remap before the client
-        # exists so a vLLM serve never 404s on the champion id.
-        model = _self_hosted_model(model)
+    if provider.name in _SELF_HOSTED_PROVIDERS:
+        # DMR-052/076: the served model id differs from the taxonomy's
+        # OpenRouter champion slug — remap before the client exists so the
+        # endpoint never 404s on the champion id.
+        model = _self_hosted_model(model, provider.name)
     # The free-only guardrail bounds OpenRouter spend; self-hosted providers
-    # (vLLM/ollama/generic) have no per-token price and are exempt (DMR-052).
-    if provider.name not in {"vllm", "ollama", "generic"}:
+    # (vLLM/ollama/llamafile/generic) have no per-token price and are exempt
+    # (DMR-052).
+    if not is_free_only_exempt(provider.name):
         assert_free_model(model)
         if (
             free_only_enabled()
@@ -90,14 +91,29 @@ def get_llm(agent_name: str) -> tuple[OpenAI, str]:
     return client, model
 
 
-def _self_hosted_model(model: str) -> str:
-    """Remap an OpenRouter champion id to the served id for self-hosted vLLM.
+#: Provider names with a self-hosted served-model remap (taxonomy
+#: ``<provider>_model_map``). The served id differs from the OpenRouter
+#: champion slug for all of these (vLLM serves HF ids; ollama/llamafile
+#: serve their own tag/alias ids).
+_SELF_HOSTED_PROVIDERS = ("vllm", "ollama", "llamafile")
 
-    The map lives in ``taxonomy.yaml: vllm_model_map`` (single source of
-    truth); a champion without an entry passes through untouched (DMR-052).
+
+def _self_hosted_model(model: str, provider: str = "vllm") -> str:
+    """Remap an OpenRouter champion id to the served id for self-hosted
+    endpoints (vLLM / ollama / llamafile).
+
+    The map lives in ``taxonomy.yaml: <provider>_model_map`` (single source
+    of truth; DMR-052 for vllm, DMR-076 for ollama/llamafile); a champion
+    without an entry passes through untouched.
     """
-    mapping = load_config().get("vllm_model_map") or {}
+    mapping = load_config().get(f"{provider}_model_map") or {}
     return str(mapping.get(model) or model)
+
+
+def is_free_only_exempt(provider_name: str) -> bool:
+    """Self-hosted providers have no per-token price — exempt from the
+    free-only spend guardrail (DMR-052; DMR-076 adds llamafile)."""
+    return provider_name in {"vllm", "ollama", "generic", "llamafile"}
 
 
 def instrument_client(client) -> OpenAI:
