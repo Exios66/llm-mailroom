@@ -181,33 +181,39 @@ class BaseAgent(ABC):
             # ChatOpenAI here and would otherwise bypass get_llm's chokepoint
             # entirely (a paid sorter call slipped through exactly this way in
             # the live pilot, 2026-09-04). Same law, same error shape.
-            from llm.client import assert_free_model
+            # DMR-076: self-hosted providers (vllm/ollama/llamafile/generic)
+            # are exempt — same exemption set as the native path.
+            from llm.client import (
+                assert_free_model,
+                is_free_only_exempt,
+                _self_hosted_model,
+            )
+            from llm.providers import resolve_provider
+            from pipeline.config import get_agent_config
 
-            assert_free_model(self.model)
+            provider, model = resolve_provider(get_agent_config(self.agent_name))
+            # MAILROOM PATCH (hub#42 + DMR-076): the client resolves through
+            # the SHARED provider seam; the champion id is remapped to the
+            # served id for vllm/ollama/llamafile before the client exists.
+            if provider.name in ("vllm", "ollama", "llamafile"):
+                model = _self_hosted_model(model, provider.name)
+            if not is_free_only_exempt(provider.name):
+                assert_free_model(model)
             # MAILROOM PATCH (L-16/L-17): max_retries=0 — the SDK's internal
             # retry layer is disabled so the mailroom's shared retry contract
             # (llm/retry.py) is the SINGLE retry layer. Upstream used
             # max_retries=3, which combined with the wrapper's 3 attempts and
             # the graph's retry loop produced a ~27-call cascade per node.
-            # MAILROOM PATCH (hub#42): the client resolves through the SHARED
-            # provider seam (llm/providers.py resolve_provider + taxonomy
-            # vllm_model_map remap) — DEFAULT_PROVIDER=vllm / VLLM_BASE_URL
-            # must take effect on the vendored agents too, and the champion
-            # id must be remapped to the served id before the client exists
-            # (a vLLM endpoint serving Qwen/Qwen3-8B 404s on qwen/qwen3.7-flash).
-            from llm.providers import resolve_provider
-            from llm.client import _self_hosted_model
-            from pipeline.config import get_agent_config
-
-            provider, model = resolve_provider(get_agent_config(self.agent_name))
-            if provider.name == "vllm":
-                model = _self_hosted_model(model)
             self._llm = ChatOpenAI(
                 model=model,
                 api_key=(
                     self.api_key
                     or (os.environ.get(provider.api_key_env) if provider.api_key_env else None)
-                    or None
+                    # DMR-076 keyless parity: ollama/llamafile have
+                    # api_key_env=None — send the same "not-needed"
+                    # placeholder the native path (llm/client.get_llm) uses,
+                    # because langchain-openai raises without any api_key.
+                    or ("not-needed" if provider.api_key_env is None else None)
                 ),
                 base_url=provider.base_url,
                 temperature=self._temperature,

@@ -25,3 +25,8 @@ htmlcov
 .vscode
 *.mp4
 deploy
+# GGUF / llamafile artifacts — multi-GB weights must never enter the build
+# context (also covers Modal Image.from_dockerfile AUTO_DOCKERIGNORE).
+*.gguf
+deploy/models/
+deploy/llamafile/*.gguf

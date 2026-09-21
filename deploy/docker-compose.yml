@@ -1,0 +1,118 @@
+# llm-mailroom — deployment matrix base (Modes A / B / mixed / M share this file).
+#
+#   Mode B (OpenRouter API, as today):
+#     docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+#   Mixed (BERT intake local + OpenRouter API) — the dev default:
+#     ... same command, with MAILROOM_BERT_INTAKE=1 in .env
+#   Mode A (fully offline): add the LLM overlay — either
+#     -f deploy/docker-compose.ollama.yml      (DEFAULT_PROVIDER=ollama)
+#     -f deploy/docker-compose.llamafile.yml   (DEFAULT_PROVIDER=llamafile)
+#   Mode M (Modal-hosted vLLM): env only (DEFAULT_PROVIDER=vllm + VLLM_BASE_URL),
+#     deploy the app first:  modal deploy deploy/modal_vllm.py  (see deploy/README.md)
+#
+# Secrets come from the host .env via the CLI --env-file (.env is resolved
+# from the CWD, matching the producer-compose convention) — never baked into
+# images. MAILROOM_API_TOKEN is REQUIRED: the app binds 0.0.0.0 and audit
+# L-2 refuses an off-loopback bind without a live bearer token.
+#
+# Overlay invocations must pass --profile local-llm so the LLM sidecar's
+# profile matches its depends_on (compose validates against ACTIVE profiles):
+#   docker compose --profile local-llm -f deploy/docker-compose.yml \
+#     -f deploy/docker-compose.ollama.yml --env-file .env up -d --build
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PIP_EXTRAS: "${MAILROOM_PIP_EXTRAS:-bert}"          # mixed dev default
+        ML_EXPORT_ONNX: "${ML_EXPORT_ONNX:-1}"
+        ML_MODEL_REPO: "${ML_MODEL_REPO:-Lucius-Morningstar/mailroom-modernbert-classifier}"
+        ML_MODEL_REVISION: "${ML_MODEL_REVISION:-main}"
+        ML_BUILD_NONE: "${ML_BUILD_NONE:-0}"
+    image: mailroom:latest
+    container_name: mailroom-app
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    ports:
+      - "${MAILROOM_API_PORT:-8000}:${MAILROOM_API_PORT:-8000}"
+    environment:
+      MAILROOM_API_HOST: "0.0.0.0"                          # require MAILROOM_API_TOKEN (audit L-2)
+      MAILROOM_API_PORT: "${MAILROOM_API_PORT:-8000}"
+      MAILROOM_API_TOKEN: "${MAILROOM_API_TOKEN:?set MAILROOM_API_TOKEN for off-loopback bind}"
+      MAILROOM_API_TOKENS: "${MAILROOM_API_TOKENS:-}"
+      MAILROOM_API_TOKEN_REVOKED: "${MAILROOM_API_TOKEN_REVOKED:-}"
+      MAILROOM_BASE_DIR: /data
+      MAILROOM_EMBED_WATCHER: "1"
+      # ── LLM provider (Mode B / M default; overlays override for Mode A) ──
+      DEFAULT_PROVIDER: "${DEFAULT_PROVIDER:-openrouter}"
+      OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://ollama:11434/v1}"      # in-container default when the overlay is merged
+      LLAMAFILE_BASE_URL: "${LLAMAFILE_BASE_URL:-http://llamafile:8080/v1}"
+      VLLM_BASE_URL: "${VLLM_BASE_URL:-}"
+      VLLM_API_KEY: "${VLLM_API_KEY:-}"
+      # ── BERT intake fast-path (agents/bert_intake.py, M6a) ──
+      ML_MODEL_DIR: "${ML_MODEL_DIR:-/models/mailroom-modernbert-classifier}"
+      MAILROOM_BERT_INTAKE: "${MAILROOM_BERT_INTAKE:-0}"
+      MAILROOM_BERT_DEBUG: "${MAILROOM_BERT_DEBUG:-1}"
+      # ── Observability / logging ──
+      OBSERVABILITY_PROVIDER: "${OBSERVABILITY_PROVIDER:-auto}"
+      OBSERVABILITY_ENVIRONMENT: "${OBSERVABILITY_ENVIRONMENT:-live}"
+      LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
+      LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+      LANGFUSE_HOST: "${LANGFUSE_HOST:-}"
+      LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
+      # Status mail + watchdog are opt-in per deploy (off by default inside
+      # containers; HUB-050 kill-switch semantics are preserved).
+      MAILROOM_WATCHER_STATUS: "${MAILROOM_WATCHER_STATUS:-0}"
+      MAILROOM_WATCHDOG: "${MAILROOM_WATCHDOG:-0}"
+    volumes:
+      - mailroom_data:/data        # SQLite, bins, manifests, archive, hf_cache, checkpoints.db, watcher.lock
+      # Dev override — a locally prepared ONNX/safetensors bundle shadows the
+      # baked copy (see deploy/models/README.md):
+      # - ./models:/models:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request; p=os.environ.get('PORT') or os.environ.get('MAILROOM_API_PORT','8000'); urllib.request.urlopen('http://127.0.0.1:%s/health' % p, timeout=5)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s            # model load + score-config warm-up at boot
+
+  # Watcher-only companion — run INSTEAD of the embedded watcher, never
+  # alongside on the same /data (watcher.lock flock: exactly one intake
+  # authority; the loser logs WatcherLockHeld and skips).
+  watcher:
+    image: mailroom:latest
+    container_name: mailroom-watcher
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    environment:
+      MAILROOM_BASE_DIR: /data
+      MAILROOM_EMBED_WATCHER: "0"  # this process holds watcher.lock
+      MAILROOM_API_TOKEN: "${MAILROOM_API_TOKEN:-}"
+      ML_MODEL_DIR: "${ML_MODEL_DIR:-/models/mailroom-modernbert-classifier}"
+      MAILROOM_BERT_INTAKE: "${MAILROOM_BERT_INTAKE:-0}"
+      OBSERVABILITY_PROVIDER: "${OBSERVABILITY_PROVIDER:-auto}"
+      OBSERVABILITY_ENVIRONMENT: "${OBSERVABILITY_ENVIRONMENT:-live}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
+    volumes:
+      - mailroom_data:/data
+    command: ["python", "-m", "pipeline.watcher"]
+
+volumes:
+  mailroom_data:

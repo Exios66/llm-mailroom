@@ -45,6 +45,20 @@ DEFAULT_MODELS = {
         "dolphin-mixtral:8x7b",
         "wizardlm2:8x7b",
     ],
+    # Mozilla llamafile (single-file OpenAI-compatible GGUF server,
+    # deploy/docker-compose.llamafile.yml). Informational catalog of
+    # plausible --alias ids; the alias decides the served id, so the list
+    # mirrors the ollama tags most often served this way.
+    "llamafile": [
+        "qwen3:7b",
+        "qwen3:14b",
+        "qwen3.5-2b",
+        "qwen3.5-4b",
+        "qwen3.5-9b",
+        "llama3.1:8b",
+        "mistral:7b",
+        "phi4:14b",
+    ],
     "vllm": [
         "*",
     ],
@@ -78,6 +92,15 @@ def _build_providers() -> Dict[str, ProviderConfig]:
             api_key_env=None,
             default_model="qwen3:7b",
             available_models=DEFAULT_MODELS["ollama"],
+        ),
+        "llamafile": ProviderConfig(
+            name="llamafile",
+            # Mozilla llamafile: single-file OpenAI-compatible GGUF server
+            # (deploy/docker-compose.llamafile.yml). Keyless, like ollama.
+            base_url=os.environ.get("LLAMAFILE_BASE_URL", "http://localhost:8080/v1"),
+            api_key_env=None,
+            default_model="qwen3:7b",
+            available_models=DEFAULT_MODELS["llamafile"],
         ),
         "vllm": ProviderConfig(
             name="vllm",
