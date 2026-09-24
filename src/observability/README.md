@@ -70,14 +70,14 @@ Every live specialist has a dedicated scoring suite (`observability.specialist_s
 | Specialist | Classes scored | Suite extras |
 | --- | --- | --- |
 | `contracts_specialist` | `contract` (CUAD) | field-micro F1; CUAD family / clauses |
-| `contracts_specialist` | `merger_agreement` (MAUD) | MAUD question extras; same agent, rebound suite |
+| `merger_agreement_specialist` | `merger_agreement` (MAUD) | MAUD question extras; dedicated agent + rebound suite |
 | `corporate_records_specialist` | `corporate_record` | typed field-micro + entity-list F1 |
 | `correspondence_specialist` | `correspondence` | Enron topic/sentiment extras when Hub has them |
 | `insurance_claims_specialist` | `insurance_claim` | determination_consistency / amount_exactness |
 
-`merger_agreement` does **not** add a sixth specialist agent — extraction still
-runs through `contracts_specialist`. The scoring suite is rebound (MAUD
-consideration subclasses, MAUD extras) so CUAD families never score MAUD.
+Every live class has its own specialist (1:1). `merger_agreement` no longer
+shares `contracts_specialist`. The scoring suite key stays `merger_agreement`
+(MAUD consideration subclasses, MAUD extras) so CUAD families never score MAUD.
 
 Hub official labels still win. Remaining schema fields are filled post-hoc from
 document text (`observability.posthoc_gt`) so every included document has

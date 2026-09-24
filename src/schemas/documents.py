@@ -2,8 +2,10 @@ from pydantic import BaseModel, Field
 
 
 class ContractExtraction(BaseModel):
-    # Pared CUAD/MAUD product: key entities + fixed clause checklists.
+    # Pared CUAD product: key entities + the fixed 41-category checklist.
     # Open-ended key_obligations / termination_clauses are no longer extracted.
+    # MAUD merger agreements use MergerAgreementExtraction — these leftover
+    # merger_* / maud_* keys stay nullable so older CUAD payloads still parse.
     document_name: str | None = None
     parties: list[str] = Field(default_factory=list)
     effective_date: str | None = None
@@ -19,6 +21,22 @@ class ContractExtraction(BaseModel):
     # Per-field reasoning trace (v24+ vendored schema): how each value was
     # found. A TRACE artifact, not clause content — excluded from scoring,
     # judge input, and the client-facing report.
+    reasoning: dict | None = None
+
+
+class MergerAgreementExtraction(BaseModel):
+    # Dedicated MAUD schema (v0). CUAD family/clauses are not primary here.
+    document_name: str | None = None
+    parties: list[str] = Field(default_factory=list)
+    effective_date: str | None = None
+    effective_time: str | None = None
+    governing_law: str | None = None
+    merger_consideration: str | None = None
+    maud_clauses: list[str] = Field(default_factory=list)
+    intent: str | None = None
+    subject_matter: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
     reasoning: dict | None = None
 
 
@@ -75,9 +93,9 @@ class InsuranceClaimExtraction(BaseModel):
 
 EXTRACTION_SCHEMAS: dict[str, type[BaseModel]] = {
     "contract": ContractExtraction,
-    # MAUD merger agreements share the CUAD field map (parties, dates,
-    # maud_clauses, …) but are a distinct live class — not an extract alias.
-    "merger_agreement": ContractExtraction,
+    # MAUD merger agreements are a distinct live class with their own
+    # specialist and schema — not an extract alias of CUAD contract.
+    "merger_agreement": MergerAgreementExtraction,
     "corporate_record": CorporateRecordExtraction,
     "correspondence": CorrespondenceExtraction,
     "insurance_claim": InsuranceClaimExtraction,

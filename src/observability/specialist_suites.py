@@ -2,9 +2,10 @@
 
 Dojo ``get_suite(doc_class)`` is the computable scorer. This module is the
 mailroom registry: one suite per live extract class, mapped to the taxonomy
-specialist that owns extraction. ``merger_agreement`` keeps sharing
-``contracts_specialist`` as the *agent* (issue #38) but has its own MAUD
-suite (rebound subclasses / extras), not the CUAD family catalog.
+specialist that owns extraction. Every live class has its own specialist
+(1:1): ``merger_agreement`` is extracted by ``merger_agreement_specialist``
+and scored by its own MAUD suite (rebound subclasses / extras), not the
+CUAD family catalog.
 
 Schema field maps come from ``taxonomy.yaml`` ``field_types`` plus the
 Pydantic extraction model. Scoring never invents Hub n=0 accuracy for
@@ -103,8 +104,8 @@ def dedicated_suite(doc_class: str | None) -> dict[str, Any]:
     """Mailroom registry row for one live extract class.
 
     ``suite_key`` is what ``get_suite`` expects (the doc class). ``specialist``
-    is the agent that produced the extract. Merger shares the contracts
-    specialist and still gets its own suite key.
+    is the agent that produced the extract. Merger keeps suite key
+    ``merger_agreement`` and is extracted by ``merger_agreement_specialist``.
     """
     kind = str(doc_class or "").strip()
     if kind not in LIVE_EXTRACT_CLASSES:

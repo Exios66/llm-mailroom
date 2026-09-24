@@ -19,6 +19,10 @@ The contracts specialist ships with:
   - ``contract-clauses.md`` — the 41 CUAD clause categories and the extraction
     schema's field expectations per agreement family.
 
+The merger-agreement specialist ships with:
+  - ``maud-clauses.md`` — the 22 LegalBench MAUD question names and
+    consideration-token mapping. CUAD family/clauses are out of scope.
+
 Mailroom BaseAgent roles (reviewer, arbiter, boss, judge, remaining
 specialists, reporter, transcribers) also drop skill files here; ``BaseAgent``
 appends them below the managed prompt so Langfuse prompt linking stays on

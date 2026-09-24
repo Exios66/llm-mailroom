@@ -515,9 +515,36 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
     return out
 
 
+def extract_merger_fields(text: str) -> dict[str, Any]:
+    """MAUD preamble fields — reuse the contract preamble parser, drop CUAD-only keys."""
+    from langchain_agents.cuad_maud import infer_merger_consideration
+
+    out = extract_contract_fields(text)
+    out.pop("term_length", None)
+    out.pop("contract_value", None)
+    out.pop("cuad_family", None)
+    out.pop("cuad_clauses", None)
+    token = infer_merger_consideration(out) or infer_merger_consideration(
+        {"document_name": out.get("document_name"), "contract_value": None}
+    )
+    if not token:
+        token = infer_merger_consideration({"document_name": text[:800]})
+    if token:
+        out["merger_consideration"] = token
+    time_m = re.search(
+        r"(?:Effective Time|the Effective Time)\s*(?:shall be|is|means)?\s*"
+        r"[:\-]?\s*([^\n.]{3,80})",
+        text[:4500],
+        re.I,
+    )
+    if time_m:
+        out["effective_time"] = _norm_space(time_m.group(1))[:80]
+    return out
+
+
 _EXTRACTORS = {
     "contract": extract_contract_fields,
-    "merger_agreement": extract_contract_fields,
+    "merger_agreement": extract_merger_fields,
     "corporate_record": extract_corporate_fields,
     "correspondence": extract_correspondence_fields,
     "insurance_claim": extract_insurance_fields,

@@ -312,10 +312,11 @@ def _build_handoff_context(state: DocumentState) -> str | None:
         context += f" doc_subclass={doc_subclass}"
     if doc_type == "merger_agreement":
         context += (
-            " MAUD extraction: set merger_consideration / contract_value to the "
+            " MAUD extraction: set merger_consideration to the "
             "merger-consideration token all_cash|all_stock|mixed_cash_stock|"
             "mixed_cash_stock_election|other; put answered MAUD questions into "
-            "maud_clauses as '<Question>: <short evidence>'."
+            "maud_clauses as '<Question>: <Answer>' using the exact LegalBench "
+            "names. Do not emit cuad_family or cuad_clauses."
         )
     confidence = state.get("classification_confidence")
     if confidence is not None:
@@ -387,6 +388,7 @@ def _specialist_extractor_map():
     """Name → extract function. Keys MUST match taxonomy ``specialist:`` values."""
     return {
         "contracts_specialist": _extract_contracts,
+        "merger_agreement_specialist": _extract_merger_agreement,
         "corporate_records_specialist": _extract_corporate_records,
         "correspondence_specialist": _extract_correspondence,
         "insurance_claims_specialist": _extract_insurance_claims,
@@ -424,8 +426,7 @@ def _specialist_memory_name(doc_type: str) -> str | None:
     Unmapped / retired / unknown types return None — never fall back to
     contracts_specialist (that attributed the wrong agent's outcomes).
     Extract aliases keep ``state['doc_type']``. ``merger_agreement`` is a
-    live taxonomy key and dispatches through its own specialist mapping
-    (shared ``contracts_specialist``).
+    live taxonomy key and dispatches through ``merger_agreement_specialist``.
     """
     try:
         from pipeline.config import load_config, resolve_extract_class
@@ -1401,6 +1402,13 @@ def _extract_contracts(
 ) -> dict:
     from agents.contracts_specialist import ContractsSpecialist
     return _run_chunked_extraction(ContractsSpecialist, doc_text, pages, handoff_context)
+
+
+def _extract_merger_agreement(
+    doc_text: str, pages: list[str] | None = None, handoff_context: str | None = None
+) -> dict:
+    from agents.merger_agreement_specialist import MergerAgreementSpecialist
+    return _run_chunked_extraction(MergerAgreementSpecialist, doc_text, pages, handoff_context)
 
 
 def _extract_corporate_records(

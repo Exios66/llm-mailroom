@@ -10,7 +10,8 @@
 
 ## Purpose
 
-Extracts structured data from contracts (CUAD) and merger agreements (MAUD).
+Extracts structured data from CUAD commercial contracts. MAUD merger
+agreements are handled by [`../merger_agreement_specialist/`](../merger_agreement_specialist/).
 
 ## Schema
 

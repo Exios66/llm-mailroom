@@ -27,6 +27,13 @@ class TestSkills:
         ctx = load_skills("contracts_specialist")
         assert "clause" in ctx.lower() or "termination" in ctx.lower()
 
+    def test_merger_agreement_specialist_has_skill_files(self):
+        from langchain_agents.skills import load_skills
+
+        ctx = load_skills("merger_agreement_specialist")
+        assert "maud" in ctx.lower()
+        assert "type of consideration" in ctx.lower()
+
     def test_unknown_agent_no_skills(self):
         from langchain_agents.skills import load_skills
 

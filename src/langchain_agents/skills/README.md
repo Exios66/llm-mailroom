@@ -14,7 +14,8 @@
 |:---|:---|
 | [`arbiter/`](arbiter/) | Final judgment |
 | [`boss/`](boss/) | Escalation handling |
-| [`contracts_specialist/`](contracts_specialist/) | Contract extraction |
+| [`contracts_specialist/`](contracts_specialist/) | Contract extraction (CUAD) |
+| [`merger_agreement_specialist/`](merger_agreement_specialist/) | Merger agreement extraction (MAUD) |
 | [`corporate_records_specialist/`](corporate_records_specialist/) | Corporate record extraction |
 | [`correspondence_specialist/`](correspondence_specialist/) | Correspondence extraction |
 | [`image_extractor/`](image_extractor/) | Image text extraction |

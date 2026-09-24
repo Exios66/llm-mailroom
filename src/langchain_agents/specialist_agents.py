@@ -231,8 +231,88 @@ INSURANCE_CLAIMS_SCHEMA = build_structured_schema({
     ),
 })
 
+
+def _merger_agreement_schema() -> dict:
+    """Dedicated MAUD schema — reuses LegalBench question / consideration tokens."""
+    from langchain_agents.cuad_maud import MAUD_CLAUSE_QUESTIONS, MAUD_CONSIDERATION
+
+    questions = ", ".join(MAUD_CLAUSE_QUESTIONS)
+    tokens = ", ".join(MAUD_CONSIDERATION)
+    return build_structured_schema({
+        "reasoning": {
+            "type": "object",
+            "description": "Per-field reasoning trace, produced BEFORE finalizing the "
+                           "extraction: a summary of the scan plus one entry per populated "
+                           "field naming the field, its evidence (short verbatim quote or "
+                           "definition/alias note), and the section reference where it was "
+                           "found. Describes HOW each value was found — never part of the "
+                           "clause text and never replaces an extracted value.",
+            "properties": {
+                "summary": {"type": "string"},
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "evidence": {"type": "string"},
+                            "section_ref": {"type": ["string", "null"]},
+                        },
+                        "required": ["field", "evidence"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["summary", "entries"],
+            "additionalProperties": False,
+        },
+        "document_name": _nullable_string(
+            "The name of the merger agreement (e.g. 'Agreement and Plan of Merger')"
+        ),
+        "parties": _string_array(
+            "Named parties as stated — Parent, Merger Sub, and Target (and any "
+            "other contracting entity the agreement names)"
+        ),
+        "effective_date": _nullable_string("Effective Date as YYYY-MM-DD (ISO) when stated"),
+        "effective_time": _nullable_string(
+            "Effective Time as stated (clock time, time zone, or defined-term "
+            "reference such as 'the Effective Time')"
+        ),
+        "governing_law": _nullable_string(
+            "The jurisdiction whose laws govern the agreement (governing-law sentence only)"
+        ),
+        "merger_consideration": _nullable_string(
+            "MAUD merger consideration token — exactly one of: " + tokens
+        ),
+        "maud_clauses": _string_array(
+            "Answered MAUD questions as '<Question>: <Answer>' using the exact "
+            "LegalBench MAUD names (" + questions + "). Answer is the Hub "
+            "valid_class, not a paraphrase. Omit unanswered questions. "
+            "Do NOT emit cuad_family or cuad_clauses — those are CUAD-only."
+        ),
+        "intent": _nullable_string(
+            "Primary purpose as a short controlled label, e.g. effect_merger, "
+            "amend_merger, plan_of_merger — one label, not a paragraph"
+        ),
+        "subject_matter": _nullable_string(
+            "One tight grounded sentence: what this merger agreement is about"
+        ),
+        "keywords": _string_array(
+            "Up to 8 salient terms/phrases grounded in the text (no invented topics)"
+        ),
+        "confidence": {
+            "type": "number", "minimum": 0.0, "maximum": 1.0,
+            "description": "Evidence-grounded extraction confidence (share of fields found, "
+                            "lowered by uncertain values or truncation; never a fixed default)",
+        },
+    })
+
+
+MERGER_AGREEMENT_SCHEMA = _merger_agreement_schema()
+
 SPECIALIST_SCHEMAS = {
     "contract": CONTRACTS_SCHEMA,
+    "merger_agreement": MERGER_AGREEMENT_SCHEMA,
     "corporate_record": CORPORATE_RECORDS_SCHEMA,
     "correspondence": CORRESPONDENCE_SCHEMA,
     "insurance_claim": INSURANCE_CLAIMS_SCHEMA,
@@ -530,9 +610,26 @@ class CorrespondenceSpecialist(_SpecialistBase):
         return get_prompt("correspondence_specialist")
 
 
+class MergerAgreementSpecialist(_SpecialistBase):
+    agent_name = "merger_agreement_specialist"
+    schema = MERGER_AGREEMENT_SCHEMA
+
+    def __init__(self, model: str | None = None, api_key: str | None = None,
+                 prompt_version: str = "merger_agreement_specialist",
+                 callbacks: list | None = None):
+        super().__init__(model=model, api_key=api_key, callbacks=callbacks)
+        self.prompt_version = prompt_version
+        self._last_chunked = False
+        self._last_n_chunks = 0
+
+    def system_prompt(self) -> str:
+        return get_prompt(self.prompt_version)
+
+
 # Specialist registry — maps doc_type keys to specialist classes
 SPECIALIST_REGISTRY = {
     "contract": ContractsSpecialist,
+    "merger_agreement": MergerAgreementSpecialist,
     "corporate_record": CorporateRecordsSpecialist,
     "correspondence": CorrespondenceSpecialist,
 }

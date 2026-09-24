@@ -129,10 +129,10 @@ doc_classes:
     description: "FNOL forms, adjuster reports, demand packages, coverage determinations, denial letters"
 ```
 
-> `merger_agreement` (MAUD) is a sixth live class: it reuses `ContractExtraction`
-> and the `contracts_specialist`, and its `field_types` mirror `contract`'s
-> (see `src/config/taxonomy.yaml`). The two labels are distinct classes, not
-> interchangeable.
+> `merger_agreement` (MAUD) is a live class with its own
+> `MergerAgreementExtraction` schema and `merger_agreement_specialist`.
+> Predicting `contract` when ground truth is `merger_agreement` is a class
+> miss — the two labels are not interchangeable. See `src/config/taxonomy.yaml`.
 
 ### `field_scoring`
 
