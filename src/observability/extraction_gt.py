@@ -44,6 +44,19 @@ CONTRACT_GT_KEYS: tuple[str, ...] = (
     "maud_clauses",
 )
 
+MERGER_GT_KEYS: tuple[str, ...] = (
+    "document_name",
+    "parties",
+    "effective_date",
+    "effective_time",
+    "governing_law",
+    "merger_consideration",
+    "maud_clauses",
+    "intent",
+    "subject_matter",
+    "keywords",
+)
+
 
 def _put(dst: dict[str, Any], key: str, value: Any) -> None:
     coerced = coerce_gt_value(value)
@@ -55,12 +68,14 @@ def _put(dst: dict[str, Any], key: str, value: Any) -> None:
 def catalog_expected_fields(sample: dict) -> dict[str, Any]:
     """Labels that already exist on the sample / Hub row (no text parsing)."""
     expected_fields: dict[str, Any] = {}
-    if sample.get("cuad_clauses"):
-        expected_fields["cuad_clauses"] = list(sample["cuad_clauses"])
-    elif sample.get("cuad_clause_labels"):
-        expected_fields["cuad_clauses"] = flatten_cuad_clause_labels(
-            sample["cuad_clause_labels"]
-        )
+    hf_class_early = sample.get("expected_hf_class") or sample.get("expected") or ""
+    if hf_class_early != "merger_agreement":
+        if sample.get("cuad_clauses"):
+            expected_fields["cuad_clauses"] = list(sample["cuad_clauses"])
+        elif sample.get("cuad_clause_labels"):
+            expected_fields["cuad_clauses"] = flatten_cuad_clause_labels(
+                sample["cuad_clause_labels"]
+            )
     if sample.get("maud_clauses"):
         expected_fields["maud_clauses"] = list(sample["maud_clauses"])
     elif sample.get("maud_clause_labels"):
@@ -135,8 +150,15 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
             val = sample.get(key)
             if val not in (None, ""):
                 _put(expected_fields, key, val)
-    if hf_class in ("contract", "merger_agreement"):
+    if hf_class == "contract":
         for key in CONTRACT_GT_KEYS:
+            if expected_fields.get(key) not in (None, "", [], {}):
+                continue
+            val = sample.get(key)
+            if val not in (None, ""):
+                _put(expected_fields, key, val)
+    if hf_class == "merger_agreement":
+        for key in MERGER_GT_KEYS:
             if expected_fields.get(key) not in (None, "", [], {}):
                 continue
             val = sample.get(key)
@@ -186,8 +208,9 @@ def presence_expectations_from_ground_truth(
     """Build CUAD ``presence_expectations`` for ``extraction_category_presence``.
 
     Returns ``None`` when there is nothing to score — callers must omit the
-    score rather than emit 0.0. Only ``contract`` / ``merger_agreement`` have
-    CUAD presence categories. Prefers an already-shaped
+    score rather than emit 0.0. Only ``contract`` has CUAD presence
+    categories; ``merger_agreement`` is MAUD and does not score CUAD
+    presence. Prefers an already-shaped
     ``gt["presence_expectations"]``, then Hub ``cuad_clause_labels`` (empty
     list = expected False; non-empty = True + first span), then flattened
     ``expected_fields.cuad_clauses`` / ``gt["cuad_clauses"]`` lines.
@@ -201,7 +224,7 @@ def presence_expectations_from_ground_truth(
         or gt.get("expected")
         or ""
     )
-    if cls not in ("contract", "merger_agreement"):
+    if cls != "contract":
         return None
     explicit = gt.get("presence_expectations")
     if isinstance(explicit, dict) and explicit:

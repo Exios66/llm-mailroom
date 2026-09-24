@@ -26,6 +26,52 @@ def test_specialist_dispatch_includes_insurance_claim():
 
     dispatch = _build_specialist_dispatch()
     assert "insurance_claim" in dispatch
+    assert "merger_agreement" in dispatch
+
+
+def test_merger_agreement_specialist_constructs_and_builds_schema():
+    from agents.merger_agreement_specialist import MergerAgreementSpecialist
+
+    agent = MergerAgreementSpecialist()
+    assert agent.agent_name == "merger_agreement_specialist"
+    prompt = agent.system_prompt()
+    assert "merger" in prompt.lower()
+    assert "maud" in prompt.lower()
+    assert "cuad_family" in prompt.lower() or "cuad_clauses" in prompt.lower()
+
+
+def test_merger_agreement_specialist_parse_error_path(mock_langchain_llm):
+    from agents.merger_agreement_specialist import MergerAgreementSpecialist
+
+    mock_langchain_llm.extraction = {"_parse_error": True}
+    agent = MergerAgreementSpecialist()
+    result = agent.extract("AGREEMENT AND PLAN OF MERGER ...")
+    assert result.get("_parse_error") is True
+
+
+def test_merger_agreement_specialist_happy_path(mock_langchain_llm):
+    from agents.merger_agreement_specialist import MergerAgreementSpecialist
+
+    payload = {
+        "document_name": "Agreement and Plan of Merger",
+        "parties": ["Parent Inc.", "Merger Sub LLC", "Target Corp."],
+        "effective_date": "2024-06-01",
+        "effective_time": "11:59 p.m. New York time",
+        "governing_law": "Delaware",
+        "merger_consideration": "all_cash",
+        "maud_clauses": ["Type of Consideration: All Cash"],
+        "intent": "effect_merger",
+        "subject_matter": "All-cash merger of Target into Merger Sub",
+        "keywords": ["merger", "all_cash", "Delaware"],
+        "confidence": 0.88,
+    }
+    mock_langchain_llm.extraction = payload
+    agent = MergerAgreementSpecialist()
+    result = agent.extract("AGREEMENT AND PLAN OF MERGER ...")
+    assert result.get("merger_consideration") == "all_cash"
+    assert result.get("document_name") == "Agreement and Plan of Merger"
+    assert "Parent Inc." in str(result.get("parties", []))
+    assert result.get("confidence") == 0.88
 
 
 def test_insurance_claims_specialist_constructs_and_builds_schema():

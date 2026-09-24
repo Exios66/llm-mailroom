@@ -902,8 +902,9 @@ def render_metrics_markdown(report: dict) -> str:
             "## Specialist extraction suites",
             "",
             "One dedicated suite per live specialist. `contracts_specialist` "
-            "extracts both CUAD `contract` and MAUD `merger_agreement`; each "
-            "class still has its own suite (CUAD families vs MAUD extras).",
+            "extracts CUAD `contract`; `merger_agreement_specialist` extracts "
+            "MAUD `merger_agreement`. Each class has its own suite "
+            "(CUAD families vs MAUD extras).",
             "",
             "| specialist | classes | n | extract n | overall | F1 | GT fields mean |",
             "|---|---|---:|---:|---:|---:|---:|",
@@ -1391,7 +1392,8 @@ def check_contract() -> int:
         assert row["schema_fields"], kind
         assert get_suite(kind).doc_type == kind
     mapping = specialists_with_suites()
-    assert mapping["contracts_specialist"] == ["contract", "merger_agreement"]
+    assert mapping["contracts_specialist"] == ["contract"]
+    assert mapping["merger_agreement_specialist"] == ["merger_agreement"]
     assert mapping["corporate_records_specialist"] == ["corporate_record"]
     assert mapping["correspondence_specialist"] == ["correspondence"]
     assert mapping["insurance_claims_specialist"] == ["insurance_claim"]

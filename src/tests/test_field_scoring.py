@@ -251,13 +251,19 @@ class TestFieldTypesFromConfig:
     def test_unknown_class_returns_empty(self):
         assert get_field_types("not_a_class") == {}
 
-    def test_merger_agreement_field_types_match_shared_schema(self):
-        # Same field map as contract (shared ContractExtraction) but a
-        # distinct live class — not an extract alias.
-        assert get_field_types("merger_agreement") == get_field_types("contract")
-        assert get_field_types("merger_agreement")["parties"] == "entity_list:name"
+    def test_merger_agreement_field_types_match_dedicated_schema(self):
+        from observability.specialist_suites import field_types_for_class
         from pipeline.config import resolve_extract_class
 
+        merger = field_types_for_class("merger_agreement")
+        contract = field_types_for_class("contract")
+        assert merger["parties"] == "entity_list:name"
+        assert merger["merger_consideration"] == "name"
+        assert merger["maud_clauses"] == "entity_list:free_text"
+        assert merger["effective_time"] == "free_text"
+        assert "cuad_family" not in merger
+        assert "cuad_clauses" not in merger
+        assert contract["cuad_family"] == "name"
         assert resolve_extract_class("merger_agreement") == "merger_agreement"
 
 

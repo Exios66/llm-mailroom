@@ -258,7 +258,7 @@ class TestSpecialistMemoryName:
     def test_maps_doc_type_to_configured_specialist(self):
         assert bg._specialist_memory_name("insurance_claim") == "insurance_claims_specialist"
         assert bg._specialist_memory_name("contract") == "contracts_specialist"
-        assert bg._specialist_memory_name("merger_agreement") == "contracts_specialist"
+        assert bg._specialist_memory_name("merger_agreement") == "merger_agreement_specialist"
 
     def test_unmapped_type_does_not_fall_back_to_contracts(self):
         assert bg._specialist_memory_name("court_opinion") is None
@@ -282,26 +282,28 @@ class TestUnsupportedExtractParksWithoutRetry:
         merged = {**prior, **updates}
         assert after_extraction(merged) == "human_review"
 
-    def test_merger_agreement_dispatches_contracts_specialist(self, monkeypatch):
+    def test_merger_agreement_dispatches_merger_specialist(self, monkeypatch):
         from graph.routing import after_extraction
 
         called = {}
 
-        def fake_contracts(doc_text, pages=None, handoff_context=None):
+        def fake_merger(doc_text, pages=None, handoff_context=None):
             called["text"] = doc_text
             called["handoff"] = handoff_context
             return {
                 "parties": ["Parent Inc.", "Target Corp."],
                 "document_name": "Agreement and Plan of Merger",
+                "merger_consideration": "all_cash",
                 "confidence": 0.92,
             }
 
-        monkeypatch.setattr(bg, "_extract_contracts", fake_contracts)
+        monkeypatch.setattr(bg, "_extract_merger_agreement", fake_merger)
         monkeypatch.setattr(
             bg,
             "_specialist_extractor_map",
             lambda: {
-                "contracts_specialist": fake_contracts,
+                "contracts_specialist": bg._extract_contracts,
+                "merger_agreement_specialist": fake_merger,
                 "corporate_records_specialist": bg._extract_corporate_records,
                 "correspondence_specialist": bg._extract_correspondence,
                 "insurance_claims_specialist": bg._extract_insurance_claims,
@@ -318,7 +320,7 @@ class TestUnsupportedExtractParksWithoutRetry:
         handoff = called.get("handoff") or ""
         assert "doc_type=merger_agreement" in handoff
         assert "MAUD extraction" in handoff
-        # Shared specialist, distinct class — no extract alias onto contract.
+        # Dedicated specialist, distinct class — no extract alias onto contract.
         assert "extract_class=contract" not in handoff
         assert updates["extracted_data"]["parties"] == ["Parent Inc.", "Target Corp."]
         assert updates.get("extracted_data", {}).get("_unsupported") is not True

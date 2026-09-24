@@ -7,7 +7,12 @@ from pipeline.config import (
     is_extractable_doc_type,
     resolve_extract_class,
 )
-from schemas.documents import EXTRACTION_SCHEMAS, ContractExtraction, get_extraction_schema
+from schemas.documents import (
+    EXTRACTION_SCHEMAS,
+    ContractExtraction,
+    MergerAgreementExtraction,
+    get_extraction_schema,
+)
 
 
 def test_no_extract_alias_collapses_maud_into_cuad():
@@ -47,7 +52,8 @@ def test_sorter_label_set_includes_merger_and_unknown():
 
 
 def test_extraction_schema_registers_merger_as_own_class():
-    assert get_extraction_schema("merger_agreement") is ContractExtraction
+    assert get_extraction_schema("merger_agreement") is MergerAgreementExtraction
     assert get_extraction_schema("contract") is ContractExtraction
+    assert get_extraction_schema("merger_agreement") is not ContractExtraction
     assert "merger_agreement" in EXTRACTION_SCHEMAS
     assert len(EXTRACTION_SCHEMAS) == 5
