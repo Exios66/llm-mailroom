@@ -19,16 +19,19 @@ def test_every_live_specialist_has_a_dedicated_suite():
     suites = {row["doc_class"]: row for row in list_dedicated_suites()}
     assert set(suites) == set(LIVE_EXTRACT_CLASSES)
     mapping = specialists_with_suites()
-    assert mapping["contracts_specialist"] == ["contract", "merger_agreement"]
+    assert mapping["contracts_specialist"] == ["contract"]
+    assert mapping["merger_agreement_specialist"] == ["merger_agreement"]
     assert set(mapping) == {
         "contracts_specialist",
+        "merger_agreement_specialist",
         "corporate_records_specialist",
         "correspondence_specialist",
         "insurance_claims_specialist",
     }
     merger = dedicated_suite("merger_agreement")
     contract = dedicated_suite("contract")
-    assert merger["specialist"] == contract["specialist"] == "contracts_specialist"
+    assert contract["specialist"] == "contracts_specialist"
+    assert merger["specialist"] == "merger_agreement_specialist"
     assert merger["suite_key"] == "merger_agreement"
     assert "all_cash" in merger["subclasses"]
     assert "license" not in merger["subclasses"]

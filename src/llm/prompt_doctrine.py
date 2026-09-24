@@ -154,6 +154,20 @@ CORRESPONDENCE = extraction_doctrine(
     ],
 )
 
+MERGER_AGREEMENT = extraction_doctrine(
+    "document_name, parties, effective_date, effective_time, governing_law, "
+    "merger_consideration, maud_clauses, intent, subject_matter, keywords",
+    [
+        "parties names Parent, Merger Sub, and Target as the agreement states — do not invent roles.",
+        "merger_consideration is exactly one of all_cash, all_stock, mixed_cash_stock, "
+        "mixed_cash_stock_election, other.",
+        "maud_clauses uses the exact LegalBench MAUD question names; Answer is the Hub "
+        "valid_class, not a paraphrase. Omit unanswered questions.",
+        "cuad_family and cuad_clauses are CUAD-only — null/omit them on merger_agreement.",
+        "effective_time is the Effective Time as written; effective_date is the calendar date when stated.",
+    ],
+)
+
 INSURANCE_CLAIMS = extraction_doctrine(
     "claim_number, policy_number, insurer, insured_party, claim_type, "
     "date_of_loss, date_filed, claimed_amount, adjuster, damages_description, "

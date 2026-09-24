@@ -110,6 +110,7 @@ def _bound_prompt_versions() -> dict[str, str]:
         # Must match prompt_templates() below — the sync source uses v33
         # (DMR-052: the catalog previously claimed v32 while v33 shipped).
         "contracts_specialist": "contracts_specialist_v33",
+        "merger_agreement_specialist": "production",
         "corporate_records_specialist": "production",
         "correspondence_specialist": "production",
         "insurance_claims_specialist": "production",
@@ -141,6 +142,7 @@ def prompt_templates() -> dict[str, str]:
         correspondence_specialist,
         gmail_triage,
         insurance_claims_specialist,
+        merger_agreement_specialist,
         image_extractor,
         intake,
         judge,
@@ -160,6 +162,7 @@ def prompt_templates() -> dict[str, str]:
         "sorter": _langchain_prompt("sorter_v14"),
         "sorter_reviewer": sorter_reviewer.REVIEWER_SYSTEM_PROMPT,
         "contracts_specialist": _langchain_prompt("contracts_specialist_v33"),
+        "merger_agreement_specialist": merger_agreement_specialist.SYSTEM_PROMPT,
         "corporate_records_specialist": corporate_records_specialist.SYSTEM_PROMPT,
         "correspondence_specialist": correspondence_specialist.SYSTEM_PROMPT,
         "insurance_claims_specialist": insurance_claims_specialist.SYSTEM_PROMPT,

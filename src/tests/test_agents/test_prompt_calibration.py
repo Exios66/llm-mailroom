@@ -20,6 +20,7 @@ AGENT_PROMPTS_WITH_CONFIDENCE = [
     "corporate_records_specialist",
     "correspondence_specialist",
     "insurance_claims_specialist",
+    "merger_agreement_specialist",
 ]
 
 ANTI_ANCHOR = "never default to a fixed high value (e.g. 0.90 or 0.95)"

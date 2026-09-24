@@ -121,19 +121,22 @@ def _build_toolkit(agent_name: str) -> list[AgentTool]:
             _tool_memory(agent_name),
         ),
     ]
-    if agent_name in ("contracts_specialist",):
+    if agent_name in ("contracts_specialist", "merger_agreement_specialist"):
+        default_type = (
+            "merger_agreement" if agent_name == "merger_agreement_specialist" else "contract"
+        )
         tools.append(
             AgentTool(
                 "extraction_schema",
-                "The ContractExtraction schema fields expected in the output.",
-                lambda doc_type="contract", **kw: _tool_schema(doc_type or "contract"),
+                "The extraction schema fields expected in the output.",
+                lambda doc_type=default_type, **kw: _tool_schema(doc_type or default_type),
             )
         )
         tools.append(
             AgentTool(
                 "field_types",
                 "Per-field deterministic scoring types for a doc class (config-driven).",
-                lambda doc_type="contract", **kw: _tool_field_types(doc_type or "contract"),
+                lambda doc_type=default_type, **kw: _tool_field_types(doc_type or default_type),
             )
         )
     return tools

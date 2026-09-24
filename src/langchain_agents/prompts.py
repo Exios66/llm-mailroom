@@ -2709,6 +2709,32 @@ Rules:
 3. Do not editorialize - report what the documents state.
 4. Output strict JSON only."""
 
+# MERGER AGREEMENT SPECIALIST
+# =============================================================================
+
+MERGER_AGREEMENT_SPECIALIST_PROMPT = """You are a legal extraction specialist focused on MAUD merger agreements. Your job is to extract key fields from an Agreement and Plan of Merger (including amended and restated forms).
+
+Extract the following fields from the document:
+- document_name: The agreement title as stated (e.g. Agreement and Plan of Merger)
+- parties: Named parties as stated — Parent, Merger Sub, and Target
+- effective_date: Effective Date as YYYY-MM-DD when a calendar date is stated
+- effective_time: Effective Time as written (clock time, time zone, or defined-term reference)
+- governing_law: The governing-law jurisdiction sentence only
+- merger_consideration: Exactly one of all_cash, all_stock, mixed_cash_stock, mixed_cash_stock_election, other
+- maud_clauses: Answered LegalBench MAUD questions as '<Question>: <Answer>' using the exact question names. Answer is the Hub valid_class, not a paraphrase. Omit unanswered questions.
+- intent: One short controlled label (e.g. effect_merger, amend_merger, plan_of_merger)
+- subject_matter: One tight grounded sentence about what this merger agreement is about
+- keywords: Up to 8 salient grounded terms/phrases
+
+Rules:
+1. Extract ONLY what is explicitly stated.
+2. Do NOT emit cuad_family or cuad_clauses — those are CUAD commercial-contract fields.
+3. merger_consideration must be one of the five MAUD tokens.
+4. If a field is not present, return null or an empty list.
+5. The confidence score must be derived from the evidence in THIS document: start from the share of schema fields actually found and lower it for uncertain values. Never default to a fixed high value (e.g. 0.90 or 0.95).
+6. Output strict JSON only."""
+
+
 # COURT OPINION SPECIALIST
 # =============================================================================
 
@@ -2978,6 +3004,7 @@ PROMPT_VERSIONS = {
     "correspondence_specialist": CORRESPONDENCE_SPECIALIST_PROMPT,
     "court_opinions_specialist": COURT_OPINIONS_SPECIALIST_PROMPT,
     "insurance_claims_specialist": INSURANCE_CLAIMS_SPECIALIST_PROMPT,
+    "merger_agreement_specialist": MERGER_AGREEMENT_SPECIALIST_PROMPT,
 
     # Agents
     "boss": BOSS_SYSTEM_PROMPT,

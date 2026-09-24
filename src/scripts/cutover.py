@@ -123,9 +123,10 @@ Recommended agent-by-agent cutover order (least risky first):
   2. correspondence_specialist    (narrative text, moderate complexity)
   3. corporate_records_specialist (hierarchical data, moderate complexity)
   4. contracts_specialist          (complex extraction, high accuracy needed)
-  5. insurance_claims_specialist  (claim documentation)
-  6. reporter                     (summarization)
-  7. boss                         (adjudication/analysis)
+  5. merger_agreement_specialist   (MAUD merger agreements)
+  6. insurance_claims_specialist  (claim documentation)
+  7. reporter                     (summarization)
+  8. boss                         (adjudication/analysis)
 
 For each agent:
   - Run: python scripts/cutover.py --agent <name> --provider ollama --model qwen3:7b

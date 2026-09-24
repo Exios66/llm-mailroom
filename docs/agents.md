@@ -72,7 +72,7 @@ Fires only where the pipeline would previously have pinged a human. Independence
 | Attribute | Value |
 |---|---|
 | **Node** | `extract`, `retry_extract` |
-| **Trigger** | `doc_type` is `contract` (CUAD) or `merger_agreement` (MAUD) |
+| **Trigger** | `doc_type` is `contract` (CUAD) |
 | **Input** | Contract text + `ContractExtraction` schema (+ page images) |
 | **Output** | Structured extraction + confidence |
 | **Personality** | Meticulous, formal, precise to a fault |
@@ -85,14 +85,40 @@ Fires only where the pipeline would previously have pinged a human. Independence
 | `effective_date` | `str \| None` | Contract effective date |
 | `term_length` | `str \| None` | Duration |
 | `governing_law` | `str \| None` | Governing jurisdiction |
-| `contract_value` | `str \| None` | Total value / MAUD consideration token |
+| `contract_value` | `str \| None` | Total contract value |
 | `renewal_terms` | `str \| None` | Renewal conditions |
 | `cuad_family` | `str \| None` | CUAD agreement family |
-| `merger_consideration` | `str \| None` | MAUD consideration token |
 | `cuad_clauses` | `list[str]` | Present CUAD categories as `"<label>: <evidence>"` |
-| `maud_clauses` | `list[str]` | Answered MAUD questions as `"<question>: <evidence>"` |
 
-The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): production prompt `contracts_specialist_v33` (pared CUAD/MAUD checklists — no open-ended `key_obligations` / `termination_clauses`), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts **two live classes** that share `ContractExtraction`: CUAD `contract` and MAUD `merger_agreement` (taxonomy `specialist: contracts_specialist`; they are not interchangeable labels). It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` / MAUD consideration + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. The other four specialists accept the same optional `handoff_context` parameter.
+The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): production prompt `contracts_specialist_v33` (pared CUAD checklist — no open-ended `key_obligations` / `termination_clauses`), `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts CUAD `contract` only. MAUD `merger_agreement` has its own specialist and `MergerAgreementExtraction` schema — the two labels are not interchangeable. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. Every live specialist accepts the same optional `handoff_context` parameter.
+
+---
+
+### 2b. Merger Agreement Specialist (`agents/merger_agreement_specialist.py`)
+
+| Attribute | Value |
+|---|---|
+| **Node** | `extract`, `retry_extract` |
+| **Trigger** | `doc_type == merger_agreement` (MAUD) |
+| **Input** | Merger-agreement text + `MergerAgreementExtraction` schema (+ page images) |
+| **Output** | Structured extraction + confidence |
+| **Personality** | Meticulous MAUD reader; consideration and closing-condition facts only |
+
+**Output schema fields:**
+| Field | Type | Description |
+|---|---|---|
+| `document_name` | `str \| None` | Agreement title as stated |
+| `parties` | `list[str]` | Parent, Merger Sub, Target as named |
+| `effective_date` | `str \| None` | Effective Date (ISO when a calendar date is stated) |
+| `effective_time` | `str \| None` | Effective Time as written |
+| `governing_law` | `str \| None` | Governing-law jurisdiction |
+| `merger_consideration` | `str \| None` | `all_cash` / `all_stock` / `mixed_cash_stock` / `mixed_cash_stock_election` / `other` |
+| `maud_clauses` | `list[str]` | Answered LegalBench MAUD questions as `"<Question>: <Answer>"` |
+| `intent` | `str \| None` | Short controlled label |
+| `subject_matter` | `str \| None` | One grounded sentence |
+| `keywords` | `list[str]` | Up to 8 grounded terms |
+
+`cuad_family` and `cuad_clauses` are not primary on this class. The specialist wraps the LangChain `MergerAgreementSpecialist` (chunked extraction for long MAUD agreements) and serves the mailroom `SYSTEM_PROMPT` (V0 + doctrine) via `get_managed_prompt`. Dojo suite key stays `merger_agreement`.
 
 ---
 

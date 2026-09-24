@@ -250,21 +250,20 @@ doc_classes:
 
   - key: merger_agreement
     label: "Merger Agreement"
-    schema: ContractExtraction
-    specialist: contracts_specialist
+    schema: MergerAgreementExtraction
+    specialist: merger_agreement_specialist
     description: "MAUD merger agreements (agreement and plan of merger) — a distinct class from CUAD commercial contracts. Subclass is consideration type (all_cash, all_stock, mixed, …)."
     field_types:
       document_name: name
       parties: entity_list:name
       effective_date: date
-      term_length: free_text
+      effective_time: free_text
       governing_law: name
-      contract_value: money
-      renewal_terms: free_text
-      cuad_family: name
       merger_consideration: name
-      cuad_clauses: entity_list:free_text
       maud_clauses: entity_list:free_text
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
 
   - key: corporate_record
     label: "Corporate Record"
@@ -441,6 +440,14 @@ agents:
     reasoning_effort: none
 
   contracts_specialist:
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+    max_input_chars: 100000
+    reasoning_effort: none
+
+  merger_agreement_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
     temperature: 0.1

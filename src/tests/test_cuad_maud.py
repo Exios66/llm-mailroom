@@ -13,8 +13,12 @@ from langchain_agents.cuad_maud import (
     skip_conflict_field,
 )
 from langchain_agents.sorter_agent import CONTRACT_SUBTYPE_KEYS, normalize_subtype
-from langchain_agents.specialist_agents import CONTRACTS_SCHEMA
-from schemas.documents import ContractExtraction
+from langchain_agents.specialist_agents import (
+    CONTRACTS_SCHEMA,
+    MERGER_AGREEMENT_SCHEMA,
+    get_specialist,
+)
+from schemas.documents import ContractExtraction, MergerAgreementExtraction
 
 
 def test_cuad_has_all_41_categories():
@@ -110,6 +114,45 @@ def test_maud_has_all_22_questions():
         doc_type="merger_agreement",
     )
     assert merger["merger_consideration"] == "mixed_cash_stock"
+
+
+def test_merger_schema_is_dedicated_and_reuses_maud_questions():
+    props = MERGER_AGREEMENT_SCHEMA["properties"]
+    for key in (
+        "document_name",
+        "parties",
+        "effective_date",
+        "effective_time",
+        "governing_law",
+        "merger_consideration",
+        "maud_clauses",
+        "intent",
+        "subject_matter",
+        "keywords",
+        "confidence",
+    ):
+        assert key in props, key
+    assert "cuad_family" not in props
+    assert "cuad_clauses" not in props
+    maud_desc = props["maud_clauses"]["description"]
+    for question in MAUD_CLAUSE_QUESTIONS:
+        assert question in maud_desc, question
+    parsed = MergerAgreementExtraction.model_validate({
+        "parties": ["Parent Inc.", "Merger Sub LLC", "Target Corp."],
+        "merger_consideration": "all_cash",
+        "maud_clauses": ["Type of Consideration: All Cash"],
+    })
+    assert parsed.merger_consideration == "all_cash"
+    assert parsed.maud_clauses[0].startswith("Type of Consideration")
+
+
+def test_get_specialist_maps_merger_and_contract_1_to_1():
+    merger = get_specialist("merger_agreement")
+    contract = get_specialist("contract")
+    assert merger.agent_name == "merger_agreement_specialist"
+    assert contract.agent_name == "contracts_specialist"
+    assert type(merger).__name__ == "MergerAgreementSpecialist"
+    assert type(contract).__name__ == "ContractsSpecialist"
 
 
 def test_contracts_schema_and_pydantic_include_inventory():

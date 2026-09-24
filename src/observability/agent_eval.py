@@ -24,6 +24,7 @@ LLM_AGENTS: tuple[str, ...] = (
     "sorter",
     "sorter_reviewer",
     "contracts_specialist",
+    "merger_agreement_specialist",
     "corporate_records_specialist",
     "correspondence_specialist",
     "insurance_claims_specialist",
@@ -37,7 +38,7 @@ LLM_AGENTS: tuple[str, ...] = (
 
 SPECIALIST_FOR_CLASS: dict[str, str] = {
     "contract": "contracts_specialist",
-    "merger_agreement": "contracts_specialist",
+    "merger_agreement": "merger_agreement_specialist",
     "corporate_record": "corporate_records_specialist",
     "correspondence": "correspondence_specialist",
     "insurance_claim": "insurance_claims_specialist",
@@ -242,6 +243,10 @@ def _invoke_reviewer(text: str) -> dict[str, Any]:
 def _invoke_specialist(agent_name: str, text: str) -> dict[str, Any]:
     mapping = {
         "contracts_specialist": ("agents.contracts_specialist", "ContractsSpecialist"),
+        "merger_agreement_specialist": (
+            "agents.merger_agreement_specialist",
+            "MergerAgreementSpecialist",
+        ),
         "corporate_records_specialist": (
             "agents.corporate_records_specialist",
             "CorporateRecordsSpecialist",

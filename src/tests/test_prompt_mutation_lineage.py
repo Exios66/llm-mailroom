@@ -10,6 +10,7 @@ from agents import (
     correspondence_specialist,
     corporate_records_specialist,
     insurance_claims_specialist,
+    merger_agreement_specialist,
     judge,
     pdf_transcriber,
     reporter,
@@ -23,6 +24,7 @@ from llm.prompt_doctrine import (
     CORPORATE_RECORDS,
     CORRESPONDENCE,
     INSURANCE_CLAIMS,
+    MERGER_AGREEMENT,
     JUDGE_CLASSIFICATION,
     JUDGE_COMPLETENESS,
     JUDGE_CORRECTNESS,
@@ -72,6 +74,7 @@ def test_mailroom_specialist_prompts_are_pure_appends_of_v0():
         (corporate_records_specialist, CORPORATE_RECORDS),
         (correspondence_specialist, CORRESPONDENCE),
         (insurance_claims_specialist, INSURANCE_CLAIMS),
+        (merger_agreement_specialist, MERGER_AGREEMENT),
         (pdf_transcriber, PDF_TRANSCRIBER),
     ]
     for module, doctrine in pairs:
@@ -106,6 +109,7 @@ def test_production_templates_are_the_mutated_versions():
     assert templates["contracts_specialist"] == LP.CONTRACTS_SPECIALIST_PROMPT_V33
     assert templates["corporate_records_specialist"] == corporate_records_specialist.SYSTEM_PROMPT
     assert templates["insurance_claims_specialist"] == insurance_claims_specialist.SYSTEM_PROMPT
+    assert templates["merger_agreement_specialist"] == merger_agreement_specialist.SYSTEM_PROMPT
     assert templates["sorter_reviewer"] == sorter_reviewer.REVIEWER_SYSTEM_PROMPT
     assert templates["arbiter"] == arbiter.ARBITER_SYSTEM_PROMPT
     assert "{{" not in templates["contracts_specialist"]

@@ -323,6 +323,22 @@ def as_clause_lines(value: Any) -> list[str]:
 
 def clause_handoff(doc_type: str | None, contract_subtype: str | None) -> str:
     """Additive specialist instructions listing every CUAD / MAUD inventory."""
+    if (doc_type or "") == "merger_agreement":
+        return (
+            "MAUD CLAUSE INVENTORY — emit every ANSWERED question; omit unanswered "
+            "ones (empty arrays are correct when the visible text has no such "
+            "clause). maud_clauses: one string per answered MAUD question using "
+            "the exact LegalBench names, formatted '<Question>: <Answer>' where "
+            "Answer is the Hub valid_class (Yes/No, All Cash, Continuous matching "
+            "right, General R&Ws, …) — never a paraphrase. Questions: "
+            + "; ".join(MAUD_CLAUSE_QUESTIONS)
+            + ". Omit unanswered questions. merger_consideration must be exactly "
+            "one of: " + ", ".join(MAUD_CONSIDERATION) + " (All Cash→all_cash, "
+            "All Stock→all_stock, Mixed Cash/Stock→mixed_cash_stock, Mixed "
+            "Cash/Stock: Election→mixed_cash_stock_election). "
+            "cuad_family and cuad_clauses are not primary on merger_agreement "
+            "— omit them."
+        )
     lines = [
         "CUAD/MAUD CLAUSE INVENTORY — emit every PRESENT item; omit absent ones "
         "(empty arrays are correct when the visible text has no such clause).",
@@ -336,25 +352,11 @@ def clause_handoff(doc_type: str | None, contract_subtype: str | None) -> str:
             "ALL 41 categories (family-characteristic clauses are required, "
             "not exclusive)."
         )
-    if (doc_type or "") == "merger_agreement":
-        lines.append(
-            "maud_clauses: one string per answered MAUD question using the "
-            "exact question names below, formatted '<Question>: <Answer>' "
-            "where Answer is the Hub valid_class (Yes/No, All Cash, "
-            "Continuous matching right, General R&Ws, …) — never a paraphrase. "
-            "Questions: " + "; ".join(MAUD_CLAUSE_QUESTIONS) + ". "
-            "Omit unanswered questions. merger_consideration must be exactly "
-            "one of: " + ", ".join(MAUD_CONSIDERATION) + " (All Cash→all_cash, "
-            "All Stock→all_stock, Mixed Cash/Stock→mixed_cash_stock, Mixed "
-            "Cash/Stock: Election→mixed_cash_stock_election)."
-        )
-        lines.append("cuad_family is null for merger_agreement.")
-    else:
-        lines.append(
-            "maud_clauses is [] unless the document is actually a merger "
-            "agreement. cuad_family is the CUAD family key (affiliate, "
-            "license, distributor, …) matching the sorter subtype."
-        )
+    lines.append(
+        "maud_clauses is [] unless the document is actually a merger "
+        "agreement. cuad_family is the CUAD family key (affiliate, "
+        "license, distributor, …) matching the sorter subtype."
+    )
     return " ".join(lines)
 
 
@@ -385,9 +387,11 @@ def enrich_contract_extraction(
             token = infer_merger_consideration(result)
             if token:
                 result["merger_consideration"] = token
-        result.setdefault("cuad_family", None)
-    else:
-        result.setdefault("merger_consideration", None)
+        result.pop("cuad_family", None)
+        result.pop("cuad_clauses", None)
+        result.setdefault("maud_clauses", [])
+        return result
+    result.setdefault("merger_consideration", None)
     result.setdefault("cuad_family", None)
     result.setdefault("cuad_clauses", [])
     result.setdefault("maud_clauses", [])
