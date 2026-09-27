@@ -21,7 +21,7 @@ dependencies = [
     "openai>=1.30",
     "pypdf>=4.0",
     "pdfplumber>=0.11",
-    "pymupdf>=1.24",
+    "pymupdf>=1.24",  # vision ingestion: render PDF pages to images for vision-capable models
     "python-docx>=1.0",
     "reportlab>=4.0",
     "pyyaml>=6.0",
@@ -32,8 +32,74 @@ dependencies = [
     "python-dotenv>=1.0",
     "jellyfish>=1.0",
     "python-dateutil>=2.8",
+    # Arize Phoenix — local, cost-free OpenTelemetry tracing (default fallback
+    # in `observability/tracing.py`; aligned with llm-entity-extraction).
     "arize-phoenix>=4.0",
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp-proto-http>=1.20",
+    # Unified scoring engine (KANBAN-061): observability.field_scoring is a
+    # deprecated shim over this package since v0.5.0.
     "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.16.0",
 ]
+
+[project.optional-dependencies]
+# Heavy embedding & numerical deps pulled OUT of the core install. They are
+# only used by the optional embedding cosine second signal and the scipy
+# Hungarian matcher in observability/field_scoring.py — both degrade
+# gracefully (pure string scoring / greedy match) when not installed. Install
+# with:  pip install -e ".[embeddings]"
+embeddings = [
+    "scipy>=1.10",
+    "sentence-transformers>=3.0",
+]
+# Postgres storage engine (SQLite is the default; the checkpointer always
+# falls back to MemorySaver). Install with:  pip install -e ".[postgres]"
+postgres = [
+    "psycopg[binary]>=3.1",
+]
+# Modal-deployed vLLM serving (KANBAN-064, deploy/modal_vllm.py). Deploy-time
+# only — the runtime pipeline never imports modal. Install with:
+#   pip install -e ".[deploy]"
+deploy = [
+    "modal==1.5.5",
+]
+# BERT intake fast-path runtime (agents/bert_intake.py + the sibling
+# mailroom-ml package, #85 M6a): ONNX int8 inference ONLY — deliberately no
+# torch/transformers anywhere (verified onnxruntime 1.30.0 cp311 wheels for
+# linux amd64 + aarch64 manylinux_2_28). transformers/torch/optimum belong
+# exclusively to the future build-time ONNX export tooling (deploy/README.md
+# § Offline model packaging) and are never runtime/extra deps here.
+# Install with:  pip install -e ".[bert]"
+bert = [
+    "onnxruntime>=1.30",
+    "tokenizers>=0.20",
+    "huggingface-hub>=0.30",
+]
+# Interactive notebooks (notebooks/dataset_browser.ipynb). The browser module
+# degrades to plain-text output without these — nothing in the pipeline or
+# test suite needs them. Install with:  pip install -e ".[notebooks]"
+notebooks = [
+    "ipywidgets>=8.1",
+    "jupyterlab>=4.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agents*", "langchain_agents*", "graph*", "llm*", "schemas*", "pipeline*", "storage*", "api*", "observability*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["src/tests"]
+pythonpath = ["src", "."]
+
+# Monorepo dev: resolve the shared scoring engine from the workspace instead
+# of the release git pin above. Plain `pip install .` keeps using the pin.
+# (uv hard-requires workspace members to use `{ workspace = true }` here.)
+[tool.uv.sources]
+llm-dojo-scoring = { workspace = true }
