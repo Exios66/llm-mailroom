@@ -1,1 +1,1 @@
-See /workspace/.constellation-artifacts/sister_push_final.json
+@file:/workspace/.constellation-artifacts/mailroom-bump/docs/sister-repos.md
