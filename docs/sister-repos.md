@@ -312,7 +312,7 @@ PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.14.0
   — companion graphify map of the sister experiment loop's codebase.
 - **Hugging Face — [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar)** —
    the family's published dataset surface. **`mailroom-dataset` schema v9**
-  (3,302 docs, pinned `46a4d3c2…`; the v9 successor of the frozen v8
+  (3,302 docs, pinned Hub tag `v9.1` / `ed7576b6…`; the v9 successor of the frozen v8
   baseline `mailroom-corpus` — v8 = HUB-028 insurance LOB expansion
   (GNOTHEIA property + BDR auto) with full GT conformance and HUB-032's §84
   hardened ground_truth columns: identity, evaluation contract, matter/group;
