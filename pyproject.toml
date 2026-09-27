@@ -43,41 +43,21 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Heavy embedding & numerical deps pulled OUT of the core install. They are
-# only used by the optional embedding cosine second signal and the scipy
-# Hungarian matcher in observability/field_scoring.py — both degrade
-# gracefully (pure string scoring / greedy match) when not installed. Install
-# with:  pip install -e ".[embeddings]"
 embeddings = [
     "scipy>=1.10",
     "sentence-transformers>=3.0",
 ]
-# Postgres storage engine (SQLite is the default; the checkpointer always
-# falls back to MemorySaver). Install with:  pip install -e ".[postgres]"
 postgres = [
     "psycopg[binary]>=3.1",
 ]
-# Modal-deployed vLLM serving (KANBAN-064, deploy/modal_vllm.py). Deploy-time
-# only — the runtime pipeline never imports modal. Install with:
-#   pip install -e ".[deploy]"
 deploy = [
     "modal==1.5.5",
 ]
-# BERT intake fast-path runtime (agents/bert_intake.py + the sibling
-# mailroom-ml package, #85 M6a): ONNX int8 inference ONLY — deliberately no
-# torch/transformers anywhere (verified onnxruntime 1.30.0 cp311 wheels for
-# linux amd64 + aarch64 manylinux_2_28). transformers/torch/optimum belong
-# exclusively to the future build-time ONNX export tooling (deploy/README.md
-# § Offline model packaging) and are never runtime/extra deps here.
-# Install with:  pip install -e ".[bert]"
 bert = [
     "onnxruntime>=1.30",
     "tokenizers>=0.20",
     "huggingface-hub>=0.30",
 ]
-# Interactive notebooks (notebooks/dataset_browser.ipynb). The browser module
-# degrades to plain-text output without these — nothing in the pipeline or
-# test suite needs them. Install with:  pip install -e ".[notebooks]"
 notebooks = [
     "ipywidgets>=8.1",
     "jupyterlab>=4.0",
@@ -98,8 +78,5 @@ asyncio_mode = "auto"
 testpaths = ["src/tests"]
 pythonpath = ["src", "."]
 
-# Monorepo dev: resolve the shared scoring engine from the workspace instead
-# of the release git pin above. Plain `pip install .` keeps using the pin.
-# (uv hard-requires workspace members to use `{ workspace = true }` here.)
 [tool.uv.sources]
 llm-dojo-scoring = { workspace = true }
