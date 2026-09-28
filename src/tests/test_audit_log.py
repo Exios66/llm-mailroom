@@ -179,3 +179,46 @@ def test_concurrent_appends_keep_chain_valid(temp_base_dir):
 
     seqs = [r["seq"] for r in _a.run(get_audit_chain("race-doc"))]
     assert seqs == list(range(1, 13))
+
+
+async def test_ensure_schema_creates_postgres_schema_inside_running_loop(monkeypatch):
+    """ensure_schema() is called from async code (API handlers, audit writes).
+    With a non-SQLite URL it used asyncio.run(), which raises inside a running
+    loop — the error was swallowed and the Postgres schema never created."""
+    import threading
+
+    from storage import db
+
+    url = "postgresql+asyncpg://user:pw@db.invalid:5432/mailroom"
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setattr(db, "_schema_checked_url", None)
+    calls = []
+
+    async def _fake_create_schema(target_url):
+        calls.append((target_url, threading.get_ident()))
+
+    monkeypatch.setattr(db, "_create_schema_async", _fake_create_schema)
+
+    assert db.ensure_schema() is True
+    assert [c[0] for c in calls] == [url]
+    assert db._schema_checked_url == url
+    assert db.ensure_schema() is True  # cached — no second create
+    assert len(calls) == 1
+
+
+def test_ensure_schema_creates_postgres_schema_without_loop(monkeypatch):
+    import asyncio
+
+    from storage import db
+
+    url = "postgresql+asyncpg://user:pw@db.invalid:5432/mailroom"
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setattr(db, "_schema_checked_url", None)
+    calls = []
+
+    async def _fake_create_schema(target_url):
+        calls.append(target_url)
+
+    monkeypatch.setattr(db, "_create_schema_async", _fake_create_schema)
+    assert db.ensure_schema() is True
+    assert calls == [url]
