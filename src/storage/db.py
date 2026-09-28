@@ -94,6 +94,24 @@ def _get_sessionmaker():
     return _sessionmaker
 
 
+async def acquire_write_lock(session: AsyncSession, key: str) -> None:
+    """Serialize read-then-append writers (hash chains) on ``key``.
+
+    Must be the FIRST statement of the session's transaction; the lock is held
+    until commit/rollback. SQLite: ``BEGIN IMMEDIATE`` takes the database
+    write lock up front (other writers wait on busy_timeout — across tasks,
+    threads and processes). Postgres: a transaction-scoped advisory lock keyed
+    on ``key``, so only appenders of the same chain queue behind each other.
+    """
+    dialect = session.get_bind().dialect.name
+    if dialect == "sqlite":
+        await session.execute(text("BEGIN IMMEDIATE"))
+    elif dialect == "postgresql":
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key}
+        )
+
+
 class Base(DeclarativeBase):
     pass
 
