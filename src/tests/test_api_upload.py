@@ -273,3 +273,43 @@ class TestWatcherInboxEvents:
 
         handler.on_modified(_Evt())
         assert scheduled == []
+
+
+class TestUploadFilenameSafety:
+    @pytest.mark.parametrize("name", ["../../escaped.txt", "/tmp/abs-escaped.txt", "..\\..\\win.txt"])
+    def test_path_components_are_stripped(self, client, temp_base_dir, name):
+        r = client.post(
+            "/upload",
+            files={"file": (name, b"x", "text/plain")},
+            headers=_auth(),
+        )
+        assert r.status_code == 202
+        from pipeline.bins import inbox_dir
+
+        inbox = inbox_dir().resolve()
+        written = inbox / r.json()["file"]
+        assert written.resolve().parent == inbox
+        assert written.read_bytes() == b"x"
+        assert not Path("/tmp/abs-escaped.txt").exists()
+        assert not (temp_base_dir / "escaped.txt").exists()
+
+    def test_hidden_name_rejected(self, client):
+        r = client.post("/upload", files={"file": (".txt", b"x", "text/plain")}, headers=_auth())
+        assert r.status_code == 400
+
+    def test_same_name_uploads_never_overwrite(self, client):
+        from pipeline.bins import inbox_dir
+
+        names = []
+        for i in range(3):
+            r = client.post(
+                "/upload",
+                files={"file": ("same.txt", f"body-{i}".encode(), "text/plain")},
+                headers=_auth(),
+            )
+            assert r.status_code == 202
+            names.append(r.json()["file"])
+        assert names == ["same.txt", "same-1.txt", "same-2.txt"]
+        bodies = {(inbox_dir() / n).read_text() for n in names}
+        assert bodies == {"body-0", "body-1", "body-2"}
+        assert not list(inbox_dir().glob(".upload-*.tmp"))
