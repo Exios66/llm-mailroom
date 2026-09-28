@@ -53,6 +53,17 @@ class DocumentState(TypedDict, total=False):
     # unused; each node writes its own counter (L-13).
     transient_error: bool
     transient_retries: int
+    # LangGraph only carries keys declared here, so each per-node counter
+    # must be listed or the self-loop never sees its own count and retries
+    # until GraphRecursionError.
+    transient_retries_classify: int
+    transient_retries_retry_classify: int
+    transient_retries_review_classify: int
+    transient_retries_extract: int
+    transient_retries_retry_extract: int
+    transient_retries_judge_verify: int
+    transient_retries_arbiter: int
+    transient_retries_boss_escalation: int
     # Attempt number of this pipeline run for a document (observability: trace
     # tags/metadata + seed suffix beyond the first run).
     run_attempt: int
@@ -61,6 +72,11 @@ class DocumentState(TypedDict, total=False):
     # message_id, sender, subject, ...). Manifests carry it through every
     # terminal stage so the audit record shows HOW each document arrived.
     intake_meta: dict[str, Any]
+    # Written by intake_node: the intake clerk's prep (triage prior fed to
+    # classify / retry_classify) and file provenance for _persist_provenance.
+    intake_prep: dict[str, Any] | None
+    file_sha256: str | None
+    size_bytes: int | None
     # #85 M6a (#98): ModernBERT fast-path triage run inside intake_node.
     # `intake_handoff` is ALWAYS emitted (fail-open — absent package/bundle
     # yields {available: false, reason: ...}, routing_path=clerk_only) so
