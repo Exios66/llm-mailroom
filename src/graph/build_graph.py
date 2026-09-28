@@ -1483,7 +1483,8 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
                 "transient_retries_retry_extract": transient,
                 "extraction_attempts": attempts,
                 "extraction_confidence": 0.0,
-                "extracted_data": None,
+                # Keep the previous extraction: the self-looped retry prompts
+                # with it, and an exhausted budget hands it to the reviewer.
                 "stage": PipelineStage.CLASSIFIED.value,
                 "error_message": f"transient provider error: {str(exc)[:200]}",
                 "escalation_reason": "transient provider error during re-extraction",
