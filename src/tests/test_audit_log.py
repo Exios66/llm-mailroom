@@ -127,3 +127,55 @@ class TestAuditLog:
         h1 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {"key": "val"})
         h2 = compute_audit_hash("prev", "doc-1", "entry-1", "event", {"key": "different"})
         assert h1 != h2
+
+
+def _stored_chain_entries(doc_id: str):
+    import asyncio
+
+    from storage.audit_log import get_audit_chain
+
+    return [
+        AuditLogEntry(
+            entry_id=r["entry_id"], doc_id=doc_id, matter_id=r["matter_id"],
+            event=r["event"], actor=r["actor"], detail=r["detail"],
+            prev_hash=r["prev_hash"], entry_hash=r["entry_hash"], timestamp=r["timestamp"],
+        )
+        for r in asyncio.run(get_audit_chain(doc_id))
+    ]
+
+
+def test_concurrent_appends_keep_chain_valid(temp_base_dir):
+    """Concurrent appenders (API tasks on one loop + graph/watcher threads on
+    their own loops) each read the latest hash, then write. The append must
+    re-link under a write lock so the stored chain never forks."""
+    import asyncio
+    import threading
+
+    from storage.audit_log import get_latest_audit_hash, write_audit_entry
+
+    async def _append(i: int):
+        prev = await get_latest_audit_hash("race-doc")
+        await asyncio.sleep(0)  # let the other appenders read the same tail
+        entry = build_audit_entry("race-doc", "M", "review_recorded", "human_reviewer", {"i": i}, prev_hash=prev)
+        await write_audit_entry(entry)
+
+    async def _burst(offset: int):
+        await asyncio.gather(*[_append(offset + i) for i in range(4)])
+
+    threads = [threading.Thread(target=lambda o=o: asyncio.run(_burst(o))) for o in (0, 10)]
+    for t in threads:
+        t.start()
+    asyncio.run(_burst(20))
+    for t in threads:
+        t.join()
+
+    entries = _stored_chain_entries("race-doc")
+    assert len(entries) == 12
+    assert len({e.prev_hash for e in entries}) == 12
+    assert verify_chain(entries) is True
+
+    import asyncio as _a
+    from storage.audit_log import get_audit_chain
+
+    seqs = [r["seq"] for r in _a.run(get_audit_chain("race-doc"))]
+    assert seqs == list(range(1, 13))
