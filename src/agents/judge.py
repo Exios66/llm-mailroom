@@ -182,8 +182,12 @@ Expected extraction fields:
         label = result.get("completeness_label", "incomplete")
         if label not in LABELS:
             label = "incomplete"
+        try:
+            completeness = float(result.get("completeness", 0.0))
+        except (TypeError, ValueError):
+            completeness = 0.0
         return {
-            "completeness": float(result.get("completeness", 0.0)),
+            "completeness": max(0.0, min(1.0, completeness)),
             "completeness_label": label,
             "reasoning": str(result.get("reasoning", "")),
         }
