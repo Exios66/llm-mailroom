@@ -114,6 +114,32 @@ def test_ledger_chain_verifies_and_detects_tampering(temp_base_dir):
     assert verify_chain(entries) is False
 
 
+def test_concurrent_ledger_writers_do_not_fork_chain(temp_base_dir):
+    """Concurrent appenders (tasks on one loop + daemon threads on their own
+    loops) must serialize read-tail-then-insert, or they share a prev_hash
+    and fork the global chain."""
+    import asyncio
+    import threading
+
+    async def _burst(offset: int):
+        return await asyncio.gather(
+            *[R.write_relation_log_entry("relation_recorded", {"i": offset + i}) for i in range(4)]
+        )
+
+    threads = [threading.Thread(target=lambda o=o: asyncio.run(_burst(o))) for o in (0, 10)]
+    for t in threads:
+        t.start()
+    asyncio.run(_burst(20))
+    for t in threads:
+        t.join()
+
+    chain = _chain()
+    assert len(chain) == 12
+    assert len({c["prev_hash"] for c in chain}) == 12
+    ok, count = P.verify_ledger()
+    assert ok is True and count == 12
+
+
 def _write(i: int) -> dict:
     import asyncio
 
