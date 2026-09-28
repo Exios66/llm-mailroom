@@ -303,3 +303,47 @@ class TestTransientPerNodeBudget:
         # But extract's budget is untouched — first extract failure still retries.
         assert _transient_decision({"transient_retries_classify": 3}, retry_target="extract") == "retry"
         assert _transient_decision({"transient_retries_extract": 3}, retry_target="extract") == "human_review"
+
+
+class TestDocumentStateSchema:
+    """LangGraph drops any key a node returns that DocumentState does not
+    declare, so every key a node reads back must be in the schema."""
+
+    def test_keys_read_by_nodes_are_declared(self):
+        import re
+        from pathlib import Path
+
+        from graph.state import DocumentState
+
+        src = (Path(__file__).resolve().parents[1] / "graph" / "build_graph.py").read_text()
+        read = set(re.findall(r'state\.get\(\s*"(\w+)"', src))
+        # run_id is passed as an argument; state.get("run_id") is only a fallback.
+        undeclared = read - set(DocumentState.__annotations__) - {"run_id"}
+        assert not undeclared, f"undeclared state keys: {sorted(undeclared)}"
+
+    def test_transient_retry_counter_survives_real_state_schema(self):
+        from langgraph.graph import END, START, StateGraph
+
+        from graph.state import DocumentState
+
+        calls = []
+
+        def classify(state):
+            n = state.get("transient_retries_classify", 0) + 1
+            calls.append(n)
+            return {"transient_error": True, "transient_retries_classify": n}
+
+        g = StateGraph(DocumentState)
+        g.add_node("classify", classify)
+        g.add_node("human_review", lambda s: {"stage": "review"})
+        g.add_edge(START, "classify")
+        g.add_conditional_edges(
+            "classify",
+            after_classify,
+            {"classify": "classify", "human_review": "human_review", "extract": END,
+             "retry_classify": END, "review_classify": END, "boss_escalation": END},
+        )
+        g.add_edge("human_review", END)
+        out = g.compile().invoke({"doc_id": "x"}, {"recursion_limit": 20})
+        assert calls == [1, 2, 3]
+        assert out["stage"] == "review"
