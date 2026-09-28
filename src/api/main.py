@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 import uuid
@@ -159,13 +160,20 @@ async def _check_llm_provider() -> dict:
         try:
             from openai import OpenAI
 
-            kwargs = {"base_url": provider.base_url, "api_key": "not-needed", "timeout": 5.0}
+            kwargs = {
+                "base_url": provider.base_url,
+                "api_key": "not-needed",
+                "timeout": 5.0,
+                "max_retries": 0,
+            }
             if provider.api_key_env:
                 key = os.environ.get(provider.api_key_env)
                 if key:
                     kwargs["api_key"] = key
             client = OpenAI(**kwargs)
-            client.models.list()
+            # The sync client would block the event loop (and every other
+            # request) for the whole probe, so run it in a worker thread.
+            await asyncio.to_thread(client.models.list)
         except Exception as exc:
             status = "degraded"
             detail = f"{provider.name}:{model} — models endpoint unreachable: {type(exc).__name__}"
