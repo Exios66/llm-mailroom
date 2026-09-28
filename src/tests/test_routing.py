@@ -347,3 +347,30 @@ class TestDocumentStateSchema:
         out = g.compile().invoke({"doc_id": "x"}, {"recursion_limit": 20})
         assert calls == [1, 2, 3]
         assert out["stage"] == "review"
+
+
+class TestLaneBZeroBudgets:
+    """A configured budget of 0 must be honoured, not replaced by the default
+    through ``or``-coalescing (0 is falsy)."""
+
+    @staticmethod
+    def _budgets(monkeypatch, **overrides):
+        import graph.routing as routing
+
+        monkeypatch.setattr(routing, "_thresholds_for", lambda state: dict(overrides))
+
+    def test_zero_arbiter_retry_max_disables_arbiter_retries(self, monkeypatch):
+        self._budgets(monkeypatch, arbiter_retry_max=0)
+        state = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 1}
+        assert after_arbiter(state) == "human_review"
+
+    def test_zero_judge_max_passes_escalates_first_failed_verdict(self, monkeypatch):
+        self._budgets(monkeypatch, judge_max_passes=0)
+        state = {"judge_verdict": "partial", "judge_pass_count": 1}
+        assert after_judge(state) == "human_review"
+
+    def test_missing_budgets_keep_defaults(self, monkeypatch):
+        self._budgets(monkeypatch)
+        assert after_arbiter({"arbiter_decision": "retry_extraction", "arbiter_retry_count": 2}) == "retry_extract"
+        assert after_judge({"judge_verdict": "partial", "judge_pass_count": 2}) == "arbiter"
+        assert after_judge({"judge_verdict": "partial", "judge_pass_count": 3}) == "human_review"
