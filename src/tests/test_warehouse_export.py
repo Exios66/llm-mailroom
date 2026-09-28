@@ -145,3 +145,22 @@ def test_export_cli_json(warehouse_env, temp_base_dir, capsys):
     assert start >= 0, out
     payload = json.loads(out[start:])
     assert payload["exported_documents"] >= 1
+
+
+
+def test_routine_export_from_running_loop_does_not_deadlock(warehouse_env, temp_base_dir):
+    """The API calls the sync export from async handlers; scheduling onto the
+    handler's own loop and blocking on it used to stall the server for 30s
+    and never export."""
+    import asyncio
+    import time
+
+    _seed_terminal_doc(temp_base_dir, doc_id="wh-loop-1")
+    from storage.warehouse import export_document_to_warehouse
+
+    async def handler():
+        return export_document_to_warehouse("wh-loop-1")
+
+    t0 = time.monotonic()
+    assert asyncio.run(handler()) is True
+    assert time.monotonic() - t0 < 10

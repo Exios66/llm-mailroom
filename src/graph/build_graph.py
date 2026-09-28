@@ -2282,8 +2282,9 @@ def _maybe_export_warehouse(doc_id: str) -> None:
 
 
 def _run_coro(coro):
-    """Run a coroutine from a sync context: schedule it on the running loop
-    when one exists (thread-safe), otherwise run a fresh loop.
+    """Run a coroutine from a sync context: a fresh loop in this thread, or,
+    when a loop is already running in this thread, a fresh loop in a helper
+    thread.
 
     `asyncio.get_event_loop()` is deprecated when no loop is running, and
     graph nodes execute both from the watcher's daemon threads (no loop) and
@@ -2293,13 +2294,15 @@ def _run_coro(coro):
     import asyncio
 
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro())
     import concurrent.futures
 
-    future = asyncio.run_coroutine_threadsafe(coro(), loop)
-    return future.result(timeout=10)
+    # get_running_loop() only sees a loop running in THIS thread; blocking on
+    # a future scheduled onto it would deadlock, so use a helper thread.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro()).result(timeout=10)
 
 
 def _file_sha256(path) -> str:
