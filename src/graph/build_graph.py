@@ -1673,7 +1673,10 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
     }
     if decision == "retry_extraction":
         updates["arbiter_retry_count"] = state.get("arbiter_retry_count", 0) + 1
-        updates["arbiter_fields_to_fix"] = list(result.get("fields_to_fix") or [])
+        fields_to_fix = result.get("fields_to_fix") or []
+        if isinstance(fields_to_fix, str):
+            fields_to_fix = [fields_to_fix]
+        updates["arbiter_fields_to_fix"] = list(fields_to_fix)
         updates["escalation_reason"] = (
             f"arbiter ordered re-extraction: {handoff_summary[:400]}"
         )

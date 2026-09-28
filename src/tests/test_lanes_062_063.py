@@ -440,6 +440,21 @@ class TestNodeBehavior:
         assert updates["arbiter_handoff"] == ""
         assert "None" not in updates["escalation_reason"]
 
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("effective_date", ["effective_date"]), (None, []), (["a", "b"], ["a", "b"])],
+    )
+    def test_arbiter_node_normalizes_fields_to_fix(self, monkeypatch, raw, expected):
+        """A bare-string fields_to_fix must become a one-item list, not be
+        split into single characters by ``list()``."""
+        updates = self._run_arbiter_with(monkeypatch, {
+            "decision": "retry_extraction",
+            "fields_to_fix": raw,
+            "reasoning": "r",
+            "handoff_summary": "h",
+        })
+        assert updates["arbiter_fields_to_fix"] == expected
+
     def test_clean_fields_helper(self):
         from graph.build_graph import _clean_fields_for_judge
 
