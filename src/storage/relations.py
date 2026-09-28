@@ -332,7 +332,8 @@ async def record_edges(edges: list[dict]) -> dict:
                 inserted += 1
                 inserted_keys.append((src, dst, rtype))
             else:
-                record.score = float(edge.get("score") or record.score)
+                score = edge.get("score")
+                record.score = float(score) if score is not None else record.score
                 record.method = str(edge.get("method") or record.method)
                 record.evidence = edge.get("evidence") or record.evidence
                 record.scanner_run_id = edge.get("scanner_run_id") or record.scanner_run_id
