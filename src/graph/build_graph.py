@@ -1662,25 +1662,28 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         }
 
     decision = result.get("decision")
+    # The LLM may emit JSON null for the free-text fields; coerce before slicing.
+    reasoning = str(result.get("reasoning") or "")
+    handoff_summary = str(result.get("handoff_summary") or "")
     updates: dict[str, Any] = {
         "arbiter_decision": decision,
-        "arbiter_reasoning": str(result.get("reasoning", "")),
-        "arbiter_handoff": str(result.get("handoff_summary", "")),
+        "arbiter_reasoning": reasoning,
+        "arbiter_handoff": handoff_summary,
         "transient_error": False,
     }
     if decision == "retry_extraction":
         updates["arbiter_retry_count"] = state.get("arbiter_retry_count", 0) + 1
         updates["arbiter_fields_to_fix"] = list(result.get("fields_to_fix") or [])
         updates["escalation_reason"] = (
-            f"arbiter ordered re-extraction: {result.get('handoff_summary', '')[:400]}"
+            f"arbiter ordered re-extraction: {handoff_summary[:400]}"
         )
     elif decision == "accept_with_caveats":
         updates["escalation_reason"] = (
-            f"arbiter accepted with caveats: {result.get('reasoning', '')[:400]}"
+            f"arbiter accepted with caveats: {reasoning[:400]}"
         )
     else:  # human_review
         updates["escalation_reason"] = (
-            f"arbiter escalated to human review: {result.get('handoff_summary', '')[:400]}"
+            f"arbiter escalated to human review: {handoff_summary[:400]}"
         )
     logger.info(
         "arbiter_decided",
