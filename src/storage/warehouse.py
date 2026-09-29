@@ -362,11 +362,16 @@ def _run_async(coro):
     import asyncio
 
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result(timeout=30)
+    # A loop is running in THIS thread (async API handler). Scheduling onto it
+    # and blocking on the future would deadlock it, so run the coroutine on a
+    # fresh loop in a helper thread instead.
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result(timeout=30)
 
 
 def export_document_to_warehouse(doc_id: str, *, stamp: date | None = None) -> bool:

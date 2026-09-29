@@ -229,9 +229,10 @@ def retry_chat_completion(
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
             # A model-capability 400 is not "retryable" in place, but it IS a
             # failover trigger — the next swarm entry may support the feature.
+            # With no failover model left, retrying the same model is futile.
             if (
                 not _is_retryable(exc)
-                and not _is_model_capability_error(exc)
+                and not (failover and _is_model_capability_error(exc))
             ) or attempt >= max_attempts:
                 raise
             if failover and (

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, JSON, Text, Integer, ForeignKey, select, desc
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .db import Base, async_session, ensure_schema
+from .db import Base, acquire_write_lock, async_session, ensure_schema
 
 logger = structlog.get_logger(__name__)
 
@@ -34,10 +34,47 @@ class AuditLogRecord(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+def _link_to_tail(entry, tail) -> None:
+    """Re-link ``entry`` onto the chain tail read under the write lock.
+
+    Callers compute prev_hash (and the hash) from an earlier, unlocked read;
+    if another writer appended in between, that prev_hash is stale. Re-point
+    it at the real tail and keep the timestamp strictly after the tail's
+    (verify_chain orders by timestamp), re-hashing only when something moved
+    so an up-to-date entry is stored byte-identical.
+    """
+    from datetime import timedelta
+
+    from schemas.audit import compute_audit_hash
+
+    tail_hash = tail.entry_hash if tail else ""
+    ts = entry.timestamp
+    if tail is not None and tail.timestamp is not None:
+        tail_ts = tail.timestamp
+        if tail_ts.tzinfo is None:  # SQLite stores naive UTC
+            tail_ts = tail_ts.replace(tzinfo=timezone.utc)
+        if ts <= tail_ts:
+            ts = tail_ts + timedelta(microseconds=1)
+    if entry.prev_hash == tail_hash and ts == entry.timestamp:
+        return
+    logger.info("audit_entry_relinked", entry_id=entry.entry_id, doc_id=entry.doc_id)
+    entry.prev_hash = tail_hash
+    entry.timestamp = ts
+    entry.entry_hash = compute_audit_hash(
+        entry.prev_hash, entry.doc_id, entry.entry_id, entry.event, entry.detail,
+        matter_id=entry.matter_id, actor=entry.actor, timestamp=ts,
+    )
+
+
 async def write_audit_entry(entry) -> AuditLogRecord:
     ensure_schema()
     from schemas.audit import AuditLogEntry
     async with async_session() as session:
+        # Serialize the whole read-tail-then-append for this doc: without a
+        # write lock, concurrent appenders read the same tail/max(seq) and
+        # fork the chain (duplicate prev_hash and seq).
+        await acquire_write_lock(session, f"audit_log:{entry.doc_id}")
+
         # A-5: the FK audit_log.doc_id -> documents.doc_id is enforced per
         # connection. Audit-first flows (ingest writes its audit entry before
         # the catalog row exists) must ensure the parent row, or the append
@@ -61,15 +98,18 @@ async def write_audit_entry(entry) -> AuditLogRecord:
             await session.flush()
 
         # A-3: deterministic chain order — the next seq is max(seq)+1 for this
-        # doc, read inside the same transaction as the append (single writer
-        # under WAL, busy_timeout 5 s), so concurrent appends cannot interleave.
-        from sqlalchemy import func
-
-        max_seq = await session.execute(
-            select(func.coalesce(func.max(AuditLogRecord.seq), 0))
-            .where(AuditLogRecord.doc_id == entry.doc_id)
-        )
-        next_seq = (max_seq.scalar() or 0) + 1
+        # doc, read under the write lock taken above, so concurrent appends
+        # cannot interleave.
+        tail = (
+            await session.execute(
+                select(AuditLogRecord.seq, AuditLogRecord.entry_hash, AuditLogRecord.timestamp)
+                .where(AuditLogRecord.doc_id == entry.doc_id)
+                .order_by(desc(AuditLogRecord.seq), desc(AuditLogRecord.timestamp))
+                .limit(1)
+            )
+        ).first()
+        next_seq = ((tail.seq or 0) if tail else 0) + 1
+        _link_to_tail(entry, tail)
         record = AuditLogRecord(
             entry_id=entry.entry_id,
             doc_id=entry.doc_id,

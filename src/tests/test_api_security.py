@@ -160,3 +160,46 @@ class TestDocIdValidation:
         headers = {"Authorization": "Bearer test-token-123"}
         # Validation passes; 404 (manifest missing) proves the id was accepted.
         assert client.get("/status/ok_doc-1", headers=headers).status_code == 404
+
+
+class TestHealthProbeNonBlocking:
+    def test_llm_probe_does_not_block_event_loop(self, client, monkeypatch):
+        """/health is unauthenticated; a slow provider must not freeze the
+        loop (and every other request) while the sync models probe runs."""
+        import asyncio
+        import time
+
+        import openai
+
+        seen = {}
+
+        class SlowModels:
+            def list(self):
+                time.sleep(0.6)
+
+        class SlowOpenAI:
+            def __init__(self, **kwargs):
+                seen.update(kwargs)
+                self.models = SlowModels()
+
+        monkeypatch.setattr(openai, "OpenAI", SlowOpenAI)
+        from api.main import _check_llm_provider
+
+        async def run():
+            ticks = []
+
+            async def ticker():
+                while True:
+                    ticks.append(1)
+                    await asyncio.sleep(0.05)
+
+            t = asyncio.create_task(ticker())
+            await asyncio.sleep(0)
+            result = await _check_llm_provider()
+            t.cancel()
+            return result, len(ticks)
+
+        result, ticks = asyncio.run(run())
+        assert result["status"] == "ok"
+        assert ticks >= 5
+        assert seen.get("max_retries") == 0

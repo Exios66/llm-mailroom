@@ -412,6 +412,49 @@ class TestNodeBehavior:
         assert updates["arbiter_decision"] == "human_review"
         assert "arbitration failed" in updates["escalation_reason"]
 
+    @staticmethod
+    def _run_arbiter_with(monkeypatch, result):
+        class FakeArbiter:
+            def arbitrate(self, **kw):
+                return dict(result)
+
+        import agents.arbiter as amod
+
+        monkeypatch.setattr(amod, "ArbiterAgent", FakeArbiter)
+        from graph.build_graph import arbiter_node
+
+        return arbiter_node({"doc_id": "d1", "doc_type": "contract", "arbiter_retry_count": 0})
+
+    @pytest.mark.parametrize("decision", ["retry_extraction", "accept_with_caveats", "human_review"])
+    def test_arbiter_node_tolerates_null_text_fields(self, monkeypatch, decision):
+        """An LLM returning JSON null for handoff_summary/reasoning must not
+        crash the node with ``TypeError: 'NoneType' is not subscriptable``."""
+        updates = self._run_arbiter_with(monkeypatch, {
+            "decision": decision,
+            "fields_to_fix": ["effective_date"],
+            "reasoning": None,
+            "handoff_summary": None,
+        })
+        assert updates["arbiter_decision"] == decision
+        assert updates["arbiter_reasoning"] == ""
+        assert updates["arbiter_handoff"] == ""
+        assert "None" not in updates["escalation_reason"]
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("effective_date", ["effective_date"]), (None, []), (["a", "b"], ["a", "b"])],
+    )
+    def test_arbiter_node_normalizes_fields_to_fix(self, monkeypatch, raw, expected):
+        """A bare-string fields_to_fix must become a one-item list, not be
+        split into single characters by ``list()``."""
+        updates = self._run_arbiter_with(monkeypatch, {
+            "decision": "retry_extraction",
+            "fields_to_fix": raw,
+            "reasoning": "r",
+            "handoff_summary": "h",
+        })
+        assert updates["arbiter_fields_to_fix"] == expected
+
     def test_clean_fields_helper(self):
         from graph.build_graph import _clean_fields_for_judge
 

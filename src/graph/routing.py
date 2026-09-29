@@ -474,7 +474,8 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     if verdict in (None, "", "skipped", "complete"):
         return "compile_report"
     thresholds = _thresholds_for(state)
-    max_passes = int(thresholds.get("judge_max_passes", 3) or 3)
+    raw_max_passes = thresholds.get("judge_max_passes")
+    max_passes = int(raw_max_passes) if raw_max_passes is not None else 3
     passes = int(state.get("judge_pass_count") or 0)
     if passes >= max_passes and verdict in ("partial", "incomplete"):
         logger.info(
@@ -513,7 +514,8 @@ def after_arbiter(state: dict) -> Literal[
     if decision == "accept_with_caveats":
         return "compile_report"
     thresholds = _thresholds_for(state)
-    arbiter_retry_max = int(thresholds.get("arbiter_retry_max", 2) or 2)
+    raw_retry_max = thresholds.get("arbiter_retry_max")
+    arbiter_retry_max = int(raw_retry_max) if raw_retry_max is not None else 2
     if decision == "retry_extraction" and state.get("arbiter_retry_count", 0) <= arbiter_retry_max:
         logger.info(
             "arbiter_retry_approved",

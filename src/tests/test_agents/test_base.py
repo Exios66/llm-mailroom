@@ -230,3 +230,18 @@ class TestVendoredRetryContract:
         with pytest.raises(openai.APIConnectionError):
             agent._invoke_with_retry(always_fail)
         assert calls["n"] == 5  # max_attempts from taxonomy llm_retry
+
+
+class TestStructuredCallNonObjectJson:
+    """`_call_structured` callers do `result.get(...)`; valid JSON that is not
+    an object (list, string, number, null) must come back as the same
+    parse-error dict a JSONDecodeError produces, not leak a non-dict."""
+
+    @pytest.mark.parametrize("raw", ['[{"a": 1}]', '"text"', "42", "null"])
+    def test_non_object_json_reported_as_parse_error(self, monkeypatch, raw):
+        from agents.corporate_records_specialist import CorporateRecordsSpecialist
+
+        agent = CorporateRecordsSpecialist()
+        monkeypatch.setattr(agent, "_call_llm", lambda *a, **kw: raw)
+        result = agent._call_structured("extract json", json_schema={"type": "object"})
+        assert result == {"_raw": raw, "_parse_error": True}
