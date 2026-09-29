@@ -303,3 +303,74 @@ class TestTransientPerNodeBudget:
         # But extract's budget is untouched — first extract failure still retries.
         assert _transient_decision({"transient_retries_classify": 3}, retry_target="extract") == "retry"
         assert _transient_decision({"transient_retries_extract": 3}, retry_target="extract") == "human_review"
+
+
+class TestDocumentStateSchema:
+    """LangGraph drops any key a node returns that DocumentState does not
+    declare, so every key a node reads back must be in the schema."""
+
+    def test_keys_read_by_nodes_are_declared(self):
+        import re
+        from pathlib import Path
+
+        from graph.state import DocumentState
+
+        src = (Path(__file__).resolve().parents[1] / "graph" / "build_graph.py").read_text()
+        read = set(re.findall(r'state\.get\(\s*"(\w+)"', src))
+        # run_id is passed as an argument; state.get("run_id") is only a fallback.
+        undeclared = read - set(DocumentState.__annotations__) - {"run_id"}
+        assert not undeclared, f"undeclared state keys: {sorted(undeclared)}"
+
+    def test_transient_retry_counter_survives_real_state_schema(self):
+        from langgraph.graph import END, START, StateGraph
+
+        from graph.state import DocumentState
+
+        calls = []
+
+        def classify(state):
+            n = state.get("transient_retries_classify", 0) + 1
+            calls.append(n)
+            return {"transient_error": True, "transient_retries_classify": n}
+
+        g = StateGraph(DocumentState)
+        g.add_node("classify", classify)
+        g.add_node("human_review", lambda s: {"stage": "review"})
+        g.add_edge(START, "classify")
+        g.add_conditional_edges(
+            "classify",
+            after_classify,
+            {"classify": "classify", "human_review": "human_review", "extract": END,
+             "retry_classify": END, "review_classify": END, "boss_escalation": END},
+        )
+        g.add_edge("human_review", END)
+        out = g.compile().invoke({"doc_id": "x"}, {"recursion_limit": 20})
+        assert calls == [1, 2, 3]
+        assert out["stage"] == "review"
+
+
+class TestLaneBZeroBudgets:
+    """A configured budget of 0 must be honoured, not replaced by the default
+    through ``or``-coalescing (0 is falsy)."""
+
+    @staticmethod
+    def _budgets(monkeypatch, **overrides):
+        import graph.routing as routing
+
+        monkeypatch.setattr(routing, "_thresholds_for", lambda state: dict(overrides))
+
+    def test_zero_arbiter_retry_max_disables_arbiter_retries(self, monkeypatch):
+        self._budgets(monkeypatch, arbiter_retry_max=0)
+        state = {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 1}
+        assert after_arbiter(state) == "human_review"
+
+    def test_zero_judge_max_passes_escalates_first_failed_verdict(self, monkeypatch):
+        self._budgets(monkeypatch, judge_max_passes=0)
+        state = {"judge_verdict": "partial", "judge_pass_count": 1}
+        assert after_judge(state) == "human_review"
+
+    def test_missing_budgets_keep_defaults(self, monkeypatch):
+        self._budgets(monkeypatch)
+        assert after_arbiter({"arbiter_decision": "retry_extraction", "arbiter_retry_count": 2}) == "retry_extract"
+        assert after_judge({"judge_verdict": "partial", "judge_pass_count": 2}) == "arbiter"
+        assert after_judge({"judge_verdict": "partial", "judge_pass_count": 3}) == "human_review"

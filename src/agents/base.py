@@ -207,10 +207,21 @@ class BaseAgent(ABC):
             pages=pages,
         )
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
         except json.JSONDecodeError:
             logger.error("json_parse_failed", agent=self.agent_name, raw=raw[:200])
             return {"_raw": raw, "_parse_error": True}
+        if not isinstance(parsed, dict):
+            # Valid JSON but not an object (list/str/number/null): callers
+            # `.get()` on the result, so report it like any other parse failure.
+            logger.error(
+                "json_not_object",
+                agent=self.agent_name,
+                json_type=type(parsed).__name__,
+                raw=raw[:200],
+            )
+            return {"_raw": raw, "_parse_error": True}
+        return parsed
 
     def extract_chunked(
         self,

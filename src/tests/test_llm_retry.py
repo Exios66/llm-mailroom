@@ -59,6 +59,24 @@ class TestRetryChatCompletion:
             retry_chat_completion(client, model="m", messages=[], max_attempts=3)
         assert client.chat.completions.create.call_count == 1
 
+    def test_capability_400_without_failover_fails_fast(self, monkeypatch):
+        # A model-capability 400 is only a failover trigger: with no other
+        # swarm model to rotate to (paid model), retrying the SAME model
+        # cannot succeed, so it must raise on the first attempt.
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        from llm.retry import retry_chat_completion
+
+        client = MagicMock()
+        err = BadRequestError(
+            "model: openai/gpt-4o does not support feature: structured-outputs",
+            response=_http_response(400),
+            body={"message": "does not support feature: structured-outputs"},
+        )
+        client.chat.completions.create.side_effect = err
+        with pytest.raises(BadRequestError):
+            retry_chat_completion(client, model="openai/gpt-4o", messages=[], max_attempts=5)
+        assert client.chat.completions.create.call_count == 1
+
     def test_retries_qwen_json_mode_400(self, monkeypatch):
         # Alibaba/Qwen intermittently rejects the json_object request with a
         # 400 "must contain the word 'json'" even though the exact same

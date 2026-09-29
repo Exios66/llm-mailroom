@@ -33,7 +33,7 @@ from sqlalchemy import LargeBinary
 from sqlalchemy.dialects.sqlite import JSON as SQLITE_JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from storage.db import Base, async_session, ensure_schema
+from storage.db import Base, acquire_write_lock, async_session, ensure_schema
 
 try:  # pragma: no cover - JSON variant is engine-dependent
     JSONType = SAJSON().with_variant(SQLITE_JSON(), "sqlite")
@@ -191,6 +191,9 @@ async def write_relation_log_entry(
 
     ensure_schema()
     async with async_session() as session:
+        # One global chain: hold the write lock across read-tail + insert so
+        # concurrent writers cannot both link to the same tail (a fork).
+        await acquire_write_lock(session, f"relation_log:{RELATIONS_CHAIN_SCOPE}")
         prev = await _latest_ledger_row(session)
         prev_hash = str(prev.entry_hash) if prev else ""
         ts = _monotonic_timestamp(prev.timestamp if prev else None)
@@ -329,7 +332,8 @@ async def record_edges(edges: list[dict]) -> dict:
                 inserted += 1
                 inserted_keys.append((src, dst, rtype))
             else:
-                record.score = float(edge.get("score") or record.score)
+                score = edge.get("score")
+                record.score = float(score) if score is not None else record.score
                 record.method = str(edge.get("method") or record.method)
                 record.evidence = edge.get("evidence") or record.evidence
                 record.scanner_run_id = edge.get("scanner_run_id") or record.scanner_run_id

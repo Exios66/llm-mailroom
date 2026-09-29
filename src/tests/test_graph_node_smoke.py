@@ -240,6 +240,29 @@ class TestRetryExtractNode:
         assert updates["transient_error"] is True
         assert updates["transient_retries_retry_extract"] == 1
 
+    def test_transient_error_preserves_previous_extraction(self, monkeypatch):
+        """A transient failure on RE-extraction must not erase the prior
+        extraction: the self-looped retry prompts with it ("Previous attempt
+        found: ..."), and an exhausted budget hands it to the human reviewer.
+        Mirrors the classify-side transient paths, which never clear doc_type."""
+        seen = []
+
+        def _flaky(doc_text, pages=None, handoff_context=None):
+            seen.append(handoff_context)
+            if len(seen) == 1:
+                raise openai.APIConnectionError(request=None)
+            return {"parties": ["Acme"], "governing_law": "NY", "confidence": 0.93}
+
+        monkeypatch.setattr(bg, "_extract_contracts", _flaky)
+        state = _base_state()
+        updates = bg.retry_extract_node(state)
+        assert updates["transient_error"] is True
+        merged = {**state, **updates}
+        assert merged["extracted_data"] == {"parties": ["Acme"], "governing_law": "NY"}
+
+        bg.retry_extract_node(merged)
+        assert "governing_law" in seen[1]
+
 
 # --- judge_verify (node 7) ---------------------------------------------------
 

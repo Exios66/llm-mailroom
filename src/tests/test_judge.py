@@ -78,3 +78,22 @@ class TestCompletenessJudge:
         result = judge.judge_completeness("contract", {"parties": ["ACME"]}, sample_contract_text[:1000])
         assert result["completeness_label"] == "partial"
         assert result["completeness"] == 0.6
+
+    @pytest.mark.parametrize(
+        ("raw_score", "expected"),
+        [('7.0', 1.0), ('-0.5', 0.0), ('null', 0.0), ('"n/a"', 0.0), ('[0.5]', 0.0)],
+    )
+    def test_judge_completeness_guards_and_clamps_score(
+        self, mock_openai_client, sample_contract_text, raw_score, expected
+    ):
+        """Match the sibling judges: a non-numeric score falls back to 0.0
+        instead of raising, and out-of-range scores clamp to [0, 1]."""
+        mock_openai_client.chat.completions.create.return_value.choices[0].message.content = (
+            f'{{"completeness": {raw_score}, "completeness_label": "partial", "reasoning": "r"}}'
+        )
+        from agents.judge import CompletenessJudge
+        judge = CompletenessJudge()
+        judge.client = mock_openai_client
+        judge.model = "test-model"
+        result = judge.judge_completeness("contract", {"parties": ["ACME"]}, sample_contract_text[:1000])
+        assert result["completeness"] == expected

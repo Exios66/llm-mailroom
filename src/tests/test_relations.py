@@ -114,6 +114,32 @@ def test_ledger_chain_verifies_and_detects_tampering(temp_base_dir):
     assert verify_chain(entries) is False
 
 
+def test_concurrent_ledger_writers_do_not_fork_chain(temp_base_dir):
+    """Concurrent appenders (tasks on one loop + daemon threads on their own
+    loops) must serialize read-tail-then-insert, or they share a prev_hash
+    and fork the global chain."""
+    import asyncio
+    import threading
+
+    async def _burst(offset: int):
+        return await asyncio.gather(
+            *[R.write_relation_log_entry("relation_recorded", {"i": offset + i}) for i in range(4)]
+        )
+
+    threads = [threading.Thread(target=lambda o=o: asyncio.run(_burst(o))) for o in (0, 10)]
+    for t in threads:
+        t.start()
+    asyncio.run(_burst(20))
+    for t in threads:
+        t.join()
+
+    chain = _chain()
+    assert len(chain) == 12
+    assert len({c["prev_hash"] for c in chain}) == 12
+    ok, count = P.verify_ledger()
+    assert ok is True and count == 12
+
+
 def _write(i: int) -> dict:
     import asyncio
 
@@ -165,6 +191,17 @@ def test_edge_upsert_normalization_and_vocabulary_refusal(temp_base_dir):
     assert again["inserted"] == 0 and again["updated"] == 1
     edges = asyncio_run(R.list_edges(doc_id="A"))
     assert len(edges) == 1 and edges[0]["score"] == 0.5
+
+
+def test_edge_upsert_honours_explicit_zero_score(temp_base_dir):
+    asyncio_run(R.record_edges([{"source_doc_id": "A", "target_doc_id": "B", "relation_type": "same_matter", "score": 0.9}]))
+    asyncio_run(R.record_edges([{"source_doc_id": "A", "target_doc_id": "B", "relation_type": "same_matter", "score": 0.0}]))
+    edges = asyncio_run(R.list_edges(doc_id="A"))
+    assert len(edges) == 1 and edges[0]["score"] == 0.0
+    # A missing score still keeps the stored one.
+    asyncio_run(R.record_edges([{"source_doc_id": "A", "target_doc_id": "B", "relation_type": "same_matter", "score": 0.4}]))
+    asyncio_run(R.record_edges([{"source_doc_id": "A", "target_doc_id": "B", "relation_type": "same_matter"}]))
+    assert asyncio_run(R.list_edges(doc_id="A"))[0]["score"] == 0.4
 
 
 def asyncio_run(coro):

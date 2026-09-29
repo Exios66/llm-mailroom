@@ -94,6 +94,24 @@ def _get_sessionmaker():
     return _sessionmaker
 
 
+async def acquire_write_lock(session: AsyncSession, key: str) -> None:
+    """Serialize read-then-append writers (hash chains) on ``key``.
+
+    Must be the FIRST statement of the session's transaction; the lock is held
+    until commit/rollback. SQLite: ``BEGIN IMMEDIATE`` takes the database
+    write lock up front (other writers wait on busy_timeout — across tasks,
+    threads and processes). Postgres: a transaction-scoped advisory lock keyed
+    on ``key``, so only appenders of the same chain queue behind each other.
+    """
+    dialect = session.get_bind().dialect.name
+    if dialect == "sqlite":
+        await session.execute(text("BEGIN IMMEDIATE"))
+    elif dialect == "postgresql":
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key}
+        )
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -139,14 +157,53 @@ def ensure_schema() -> bool:
             _migrate_sqlite_columns(sync_engine)
             sync_engine.dispose()
         else:
-            # Postgres: needs an async loop. Only safe outside a running loop.
-            asyncio.run(init_db())
+            # Postgres: async driver. ensure_schema() is mostly called from
+            # inside a running loop (API handlers, audit writes), where
+            # asyncio.run() raises — so run the create on a private loop.
+            _run_on_private_loop(lambda: _create_schema_async(url))
         _schema_checked_url = url
         logger.info("schema_ready", url=url)
         return True
     except Exception:
         logger.exception("schema_creation_failed")
         return False
+
+
+async def _create_schema_async(url: str) -> None:
+    """create_all on a throwaway engine (NullPool) so no pooled connection
+    stays bound to the private loop that ran it."""
+    engine = create_async_engine(url, echo=False, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    finally:
+        await engine.dispose()
+
+
+def _run_on_private_loop(coro_fn) -> None:
+    """Run ``coro_fn()`` to completion from sync code, whether or not the
+    calling thread already has a running event loop (then a helper thread
+    with its own loop does the work; the caller blocks until it finishes)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(coro_fn())
+        return
+    import threading
+
+    errors: list[BaseException] = []
+
+    def _worker():
+        try:
+            asyncio.run(coro_fn())
+        except BaseException as exc:  # re-raised in the caller's thread
+            errors.append(exc)
+
+    worker = threading.Thread(target=_worker, name="ensure-schema", daemon=True)
+    worker.start()
+    worker.join()
+    if errors:
+        raise errors[0]
 
 
 def _migrate_sqlite_columns(sync_engine) -> None:
