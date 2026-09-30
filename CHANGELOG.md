@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **llm-dojo-scoring pin bumped `v0.16.0` → `v0.18.0`** (release-time): hub [mailroom-issues#233](https://github.com/LLM-Mailroom-Services/mailroom-issues/issues/233) / scorecard honesty release ([llm-dojo-scoring@v0.18.0](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.18.0), tip `8a38f38a`); fail-closed unscorable GT, distinct `metric_id`s, format layer, MAUD ambiguity, run completion/ITT, provenance.
 - **Corpus revision pinned to Hub tag `v9.1`** (`FULL_CORPUS_REVISION`, resolves to
   `ed7576b6…`): replaces GT-closure tip `46a4d3c2…`.
 
