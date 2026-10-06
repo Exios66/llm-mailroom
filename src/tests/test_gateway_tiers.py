@@ -221,6 +221,18 @@ class TestDeployContracts:
         assert env["LITELLM_BASE_URL"] == "http://llm-gateway:4000/v1"
         assert env["MAILROOM_EMBED_WATCHER"] == "1"
         assert "postgresql+psycopg://" in env["DATABASE_URL"]
+        image = svc["llm-gateway"]["image"]
+        assert image == "${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0}"
+        assert "main-stable" not in image
+        assert "v1.104.0-stable" not in image
+
+    def test_compose_documents_the_litellm_image_pin(self):
+        readme = (REPO / "deploy" / "README.md").read_text(encoding="utf-8")
+        example = (REPO / ".env.example").read_text(encoding="utf-8")
+        assert "ghcr.io/berriai/litellm:v1.104.0" in readme
+        assert "Do not use `main-stable`" in readme
+        assert "LITELLM_IMAGE=ghcr.io/berriai/litellm:v1.104.0" in example
+        assert "do not use main-stable" in example
 
 
 # ── smoke script attribution ───────────────────────────────────────────────

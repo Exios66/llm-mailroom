@@ -125,6 +125,9 @@ gateway healthy → app healthy → ops-monitor + watchdog.
    selects which tiers deploy.
 2. Put the three tier URLs + secrets in `.env` (see `.env.example`).
 3. `docker compose -f deploy/docker-compose.full.yml --env-file .env up -d --build`
+   The gateway image defaults to `ghcr.io/berriai/litellm:v1.104.0` (the
+   Mode G stub-backend test). Do not use `main-stable`. Override with
+   `LITELLM_IMAGE` if you promote a newer release.
 4. `PYTHONPATH=src python src/scripts/smoke_modal_tiers.py --check`, then
    `--warm` and `--run` (one document per class end to end; verifies each
    node's Langfuse generation model against its tier).
