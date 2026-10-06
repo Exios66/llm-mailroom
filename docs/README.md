@@ -77,6 +77,7 @@ The pipeline reference:
 | [Gmail intake](pipeline-reference-llm-mailroom/gmail-intake.md)           | Mailbox polling, the free triage lane, and reply echoes.                     |
 | [Testing](pipeline-reference-llm-mailroom/testing.md)                     | Hermetic pytest suite, pilots, and evaluators.                               |
 | [Sister repos](pipeline-reference-llm-mailroom/sister-repos.md)           | How the mailroom fits into its constellation.                                |
+| [Mailroom dataset](mailroom-dataset/)                                     | Canonical corpus: 55 strata, configs, EDA reports, and figures.              |
 
 ## Where to start
 
@@ -91,6 +92,7 @@ That system is spread across more than a dozen repositories: the pipeline itself
 | Understand what the Mailroom is and which repo does what    | [Overview](start-here/overview.md)                                          |
 | Get something running in the next ten minutes               | [Getting started](start-here/getting-started.md)                            |
 | See how data, prompts, scores and traces move between repos | [How the constellation fits together](how-it-fits-together/architecture.md) |
+| Read the canonical dataset, EDA reports, and figures        | [Mailroom dataset](mailroom-dataset/)                                       |
 | Look up a term like "Lane A", "STP" or "virtual member"     | [Glossary](start-here/glossary.md)                                          |
 | Work on a specific repository                               | [Repository guides](repository-guides/repos/)                               |
 | Know which board, issue tracker or branch to use            | [Governance and workflow](how-it-fits-together/governance.md)               |

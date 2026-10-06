@@ -62,7 +62,7 @@ All of these packages also live together in the [Digital-Mailroom](../repository
 2. **Everything is published to one dataset.** The canonical corpus is [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset): 3,302 documents, five classes, 55 class-by-subclass strata. Mailroom-Corpus-EDA profiles it (phases P0 to P6) and owns the upload helpers.
 3. **Consumers pin a revision, never a live tip.** The pipeline, eval-environment and mailroom-ml all pin the same Hub revision (`ed7576b6`, tag v9.1 at time of writing). The labels sit in a separate `ground_truth` config joined to the blind `default` config on `filename`, so a model under test never sees its answers.
 
-Details: [Data and corpora](data-and-corpora.md).
+Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroom dataset](../mailroom-dataset/).
 
 ### Prompts: from experiment to production
 
