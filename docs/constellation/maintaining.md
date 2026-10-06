@@ -50,7 +50,7 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 ## Rules for editing
 
 - **Link, don't copy.** Each repository's own README and `docs/` stay canonical. A guide here summarizes what a newcomer needs to orient, then links to the source. This follows the llm-mailroom rule that `docs/` content is never duplicated.
-- **Every new page goes in `SUMMARY.md`.** A page that is not listed is not published. Operator recipes that belong on this site (Docker compose matrix, Modal + vLLM) live under `docs/` and are listed here — `deploy/README.md` is a file index, not a GitBook page. Sandbox run reports and visuals are nested under the [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) guide.
+- **Every new page goes in `SUMMARY.md`.** A page that is not listed is not published. Operator recipes that belong on this site (Docker compose matrix, Modal + vLLM) live under `docs/` and are listed here — `deploy/README.md` is a file index, not a GitBook page. Sandbox run reports and visuals are nested under the [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) guide. The canonical corpus has its own top-level section ([Mailroom dataset](../mailroom-dataset/)); EDA figures stay on `Exios66/Mailroom-Corpus-EDA` `main` and are embedded from `raw.githubusercontent.com`.
 - **Use relative links between pages on this site** (`repos/llm-mailroom.md`, `../architecture.md`) and full GitHub URLs for anything in another repository.
 - **Date facts that drift.** Versions, pins and counts carry an "as of" date; when a release moves them, update [Overview](overview.md) and the affected guide.
 - **Keep the GitHub wiki separate.** `docs/wiki/` remains wiki-only and is not a mirror of these pages.
@@ -63,9 +63,10 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 | New repository joins the constellation | Add a guide under `repos/`, list it in `SUMMARY.md`, [Overview](overview.md), [Repository index](repo-index.md) and `repos/README.md` |
 | Repository archived or superseded | Move it to the copies or earlier-monorepos table in the [Repository index](repo-index.md) |
 | A release changes versions or pins | [Overview](overview.md) version table, the repo's guide, the [dependency table](architecture.md#dependency-summary) |
-| Dataset revision changes | [Data and corpora](data-and-corpora.md) |
+| Dataset revision changes | [Mailroom dataset](../mailroom-dataset/) first (counts, strata, EDA figures), then [Data and corpora](data-and-corpora.md) |
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
 | Compose matrix, Mode G, or Modal vLLM knobs change | [Docker](../docker-deployment.md) and [Modal + vLLM](../modal-vllm.md) first; keep `deploy/README.md` as an index that links those pages |
 | Sandbox run reports or figures change | [Run reports](repos/local-mailroom-sandbox-reports.md) and [Visuals](repos/local-mailroom-sandbox-visuals.md); keep image URLs on `Exios66/local-mailroom-sandbox` `main` |
+| Mailroom-Corpus-EDA figures or SUMMARY_REPORT change | [EDA reports](../mailroom-dataset/eda-reports.md) and [Visualizations](../mailroom-dataset/visualizations.md); keep image URLs on `Exios66/Mailroom-Corpus-EDA` `main` |
 | Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG/Hoot favicon into `docs/assets/mascot/` and `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. Keep Fumi in the header corner of `docs/README.md`; do not make her the page header. The owl banner, title, and badges stay the masthead. Re-upload `hoot-icon.png` in GitBook Customize if Hoot's sprite changes. |
 | llm-mailroom `CHANGELOG.md` changes | Run `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py` so the GitBook Changelog section matches. `--check` is the guard. |
