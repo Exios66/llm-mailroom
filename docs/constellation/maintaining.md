@@ -42,7 +42,7 @@ Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration 
 
 `path` is a URL slug, not a folder name. `directory: ./docs` inside a Project directory of `docs/` would look for `docs/docs/` (that folder does not exist). Leave the GitBook UI Project directory at `docs/`. GitBook never publishes `landing/index.html`; that page is static HTML.
 
-GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. The first TOC entry is `* [The LLM-Mailroom](README.md)` so the published home heading matches `docs/README.md`.
+GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. Keep that link as `* [The LLM-Mailroom](README.md)` so it matches the `# The LLM-Mailroom` heading in `docs/README.md` (the previous `* [Welcome](README.md)` title is why the live home used to read **Welcome**).
 
 ## Rules for editing
 
