@@ -271,3 +271,67 @@ class TestSmokeScript:
         picked = smoke.pick_documents(rows, ["contract", "correspondence", "insurance_claim"], 1000)
         assert picked["contract"]["filename"] == "b"
         assert "insurance_claim" not in picked
+
+
+class TestSmokePolling:
+    @pytest.mark.parametrize("failure", ["status", "request", "json"])
+    @pytest.mark.parametrize("recover", [True, False])
+    def test_transient_failure_preserves_results_and_deadline(self, monkeypatch, tmp_path, failure, recover):
+        import httpx
+
+        smoke = _load_smoke()
+        files = {cls: tmp_path / f"{cls}.txt" for cls in ("contract", "correspondence")}
+        for path in files.values():
+            path.write_text("test document")
+        completed = {
+            "original_filename": "contract.txt", "stage": "archived",
+            "doc_type": "contract", "doc_id": "doc-1",
+        }
+        pending = {
+            "original_filename": "correspondence.txt", "stage": "review",
+            "doc_type": "correspondence", "doc_id": "doc-2",
+        }
+        now = [0]
+        sleeps = []
+        uploads = iter(files.values())
+        polls = []
+
+        def sleep(seconds):
+            sleeps.append(seconds)
+            now[0] += seconds
+
+        def handle(request):
+            if request.method == "POST":
+                assert request.url.path == "/upload"
+                return httpx.Response(200, json={"file": next(uploads).name})
+            assert request.url.path == "/matters/test-matter"
+            polls.append(now[0])
+            if len(polls) == 1:
+                return httpx.Response(200, json={"documents": [completed]})
+            if recover and len(polls) == 3:
+                return httpx.Response(200, json={"documents": [pending]})
+            if failure == "status":
+                # Even a JSON error response must not count as completion.
+                return httpx.Response(503, json={"documents": [pending]})
+            if failure == "request":
+                raise httpx.ReadTimeout("temporary failure", request=request)
+            return httpx.Response(200, text="not JSON")
+
+        client = httpx.Client(transport=httpx.MockTransport(handle), base_url="http://test")
+        monkeypatch.setattr(httpx, "Client", lambda **kwargs: client)
+        monkeypatch.setattr(smoke.time, "time", lambda: now[0])
+        monkeypatch.setattr(smoke.time, "sleep", sleep)
+
+        results = smoke.run_via_api("http://test", "", files, "test-matter", timeout_s=30)
+
+        assert results["contract"] == {
+            "stage": "archived", "doc_type": "contract", "doc_id": "doc-1", "filename": "contract.txt",
+        }
+        assert results["correspondence"] == {
+            "stage": "review" if recover else "timeout",
+            "doc_type": "correspondence" if recover else None,
+            "doc_id": "doc-2" if recover else None,
+            "filename": "correspondence.txt",
+        }
+        assert polls == [0, 10, 20]
+        assert sleeps == [10] * (2 if recover else 3)
