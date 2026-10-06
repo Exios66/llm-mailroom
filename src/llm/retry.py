@@ -67,9 +67,11 @@ def _is_modal_url(base_url: str | None) -> bool:
 
 
 def _is_gateway_url(base_url: str | None) -> bool:
-    """The LiteLLM gateway (``LITELLM_BASE_URL``) fronts the Modal GPU tiers:
-    a 503 through it is the same scale-to-zero cold start, re-emitted by the
-    proxy, so it earns the same long backoff as a direct *.modal.run 503."""
+    """Whether the URL starts with the configured ``LITELLM_BASE_URL``.
+
+    Ignore trailing slashes; an unset gateway or empty URL returns False.
+    Matching URLs qualify for the gateway cold-start backoff on HTTP 503.
+    """
     import os
 
     gateway = os.environ.get("LITELLM_BASE_URL", "").strip().rstrip("/")
@@ -79,11 +81,13 @@ def _is_gateway_url(base_url: str | None) -> bool:
 def retry_sleep_seconds(
     exc: Exception, attempt: int, cfg: dict | None = None, base_url: str | None = None
 ) -> float:
-    """Backoff for one retry. 429s wait longer than connection blips.
+    """Return nonnegative retry backoff in seconds; ``attempt`` is one-based.
 
-    A 503 from a Modal endpoint is a scale-to-zero cold start: the container
-    takes minutes to warm, so the 30s-cap backoff would exhaust every attempt
-    mid-start — Modal 503s use a long, bounded cold-start backoff (DMR-052).
+    429s use the rate-limit delay and any numeric Retry-After value. A 503
+    from a Modal URL or a URL matching ``LITELLM_BASE_URL`` uses the longer
+    cold-start backoff (DMR-052). Both paths grow exponentially, cap the delay,
+    then apply jitter, which can exceed the cap. An absent or empty ``cfg``
+    uses the taxonomy retry settings.
     """
     cfg = cfg or _retry_config()
     base = float(cfg.get("base_delay", 1.0))

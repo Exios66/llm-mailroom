@@ -144,9 +144,10 @@ app = FastAPI(
 async def _check_llm_provider() -> dict:
     """Best-effort LLM provider connectivity check.
 
-    Resolves the provider for the sorter agent (fails fast if the API key is
-    missing or is the mock placeholder) and pings the models endpoint with a
-    short timeout. Never spends completion tokens.
+    Resolve the sorter's wire model and gateway tier, then probe the models
+    endpoint with a five-second request timeout. Never spends completion tokens.
+    Return status, detail, and provider; resolution or probe errors become a
+    ``degraded`` result, with provider set to None if resolution fails.
     """
     import os
     try:

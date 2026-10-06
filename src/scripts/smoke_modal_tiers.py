@@ -98,8 +98,11 @@ def llm_agents(cfg: dict) -> list[str]:
 
 
 def expected_routing(cfg: dict) -> dict[str, dict[str, Any]]:
-    """{agent: {tier, wire_model, gpu}} for the gateway path, honoring
-    ``MAILROOM_GATEWAY_TIERS``. Pure over the taxonomy (no provider/keys)."""
+    """Return {agent: {tier, wire_model, gpu}} for non-procedural agents in cfg.
+
+    Use the loaded taxonomy's gateway settings and ``MAILROOM_GATEWAY_TIERS``
+    overrides; no provider credentials are needed. Unknown tiers raise ValueError.
+    """
     from llm.client import gateway_alias, gateway_tier
 
     routing: dict[str, dict[str, Any]] = {}
@@ -116,6 +119,10 @@ def expected_routing(cfg: dict) -> dict[str, dict[str, Any]]:
 
 
 def litellm_aliases(config_path: Path = LITELLM_CONFIG) -> set[str]:
+    """Read truthy model_list model names from a LiteLLM YAML file as strings.
+
+    File access and YAML parsing errors propagate.
+    """
     import yaml
 
     data = yaml.safe_load(config_path.read_text()) or {}
@@ -132,7 +139,11 @@ def modal_tiers(app_path: Path = MODAL_APP) -> set[str]:
 
 
 def check_contract(cfg: dict) -> tuple[list[str], dict[str, dict[str, Any]]]:
-    """Return (problems, routing). Network-free."""
+    """Return (problems, routing) for taxonomy, LiteLLM, and Modal agreement.
+
+    No network calls. Routing ValueError becomes a problem with empty routing;
+    file access and YAML parsing errors propagate.
+    """
     problems: list[str] = []
     try:
         routing = expected_routing(cfg)
@@ -157,6 +168,7 @@ def check_contract(cfg: dict) -> tuple[list[str], dict[str, dict[str, Any]]]:
 
 
 def print_routing(routing: dict[str, dict[str, Any]]) -> None:
+    """Print the routing table ordered by tier and then agent name."""
     print(f"{'agent':30s} {'tier':8s} wire model")
     for agent, r in sorted(routing.items(), key=lambda kv: (kv[1]["tier"], kv[0])):
         print(f"{agent:30s} {r['tier']:8s} {r['wire_model']}")
@@ -166,6 +178,10 @@ def print_routing(routing: dict[str, dict[str, Any]]) -> None:
 
 
 def _gateway_client(timeout: float):
+    """Create a gateway client with a request timeout in seconds and no SDK retries.
+
+    Use LITELLM_API_KEY, then LITELLM_MASTER_KEY, then the keyless placeholder.
+    """
     from openai import OpenAI
 
     base = os.environ.get("LITELLM_BASE_URL", "http://127.0.0.1:4000/v1")
@@ -174,13 +190,20 @@ def _gateway_client(timeout: float):
 
 
 def warm_tiers(cfg: dict, timeout: float = 900.0) -> dict[str, str]:
-    """Wake every GPU tier concurrently; returns {alias: 'ok (Ns)' | error}."""
+    """Wake every configured GPU alias concurrently; return {alias: status}.
+
+    ``timeout`` is both the per-request timeout and each alias's retry window,
+    in seconds. Completion errors are retried every 15 seconds and converted
+    to FAILED status strings when the window expires. An in-flight call or
+    retry sleep can extend past that window; client creation errors propagate.
+    """
     aliases = sorted(
         {spec.get("alias") for spec in ((cfg.get("gateway") or {}).get("tiers") or {}).values() if spec and spec.get("alias")}
     )
     client = _gateway_client(timeout)
 
     def _wake(alias: str) -> str:
+        """Request a one-token completion until success or return the last error at expiry."""
         started = time.perf_counter()
         deadline = started + timeout
         last = ""
@@ -207,10 +230,12 @@ def warm_tiers(cfg: dict, timeout: float = 900.0) -> dict[str, str]:
 
 
 def doc_classes(cfg: dict) -> list[str]:
+    """Return nonempty configured document-class keys in taxonomy order."""
     return [c["key"] for c in cfg.get("doc_classes") or [] if c.get("key")]
 
 
 def specialist_for(cfg: dict, doc_class: str) -> str | None:
+    """Return the first matching class's specialist, or None if absent."""
     for c in cfg.get("doc_classes") or []:
         if c.get("key") == doc_class:
             return c.get("specialist")
@@ -219,7 +244,9 @@ def specialist_for(cfg: dict, doc_class: str) -> str | None:
 
 def pick_documents(rows: list[dict], classes: list[str], target_chars: int) -> dict[str, dict]:
     """One row per class: the doc whose length is closest to ``target_chars``
-    (deterministic; ties break on filename). Rows: {class, filename, doc_text}."""
+    (deterministic; ties break on filename). Rows: {class, filename, doc_text}.
+    Skip blank text and omit classes with no usable rows.
+    """
     picked: dict[str, dict] = {}
     for cls in classes:
         candidates = [r for r in rows if r.get("class") == cls and (r.get("doc_text") or "").strip()]
@@ -231,6 +258,11 @@ def pick_documents(rows: list[dict], classes: list[str], target_chars: int) -> d
 
 
 def load_rows(source: str) -> list[dict]:
+    """Load {class, filename, doc_text} rows from the snapshot or Hub corpus.
+
+    Only ``source="snapshot"`` selects the offline fixture; other values use
+    the canonical Hub loader. File, parsing, and corpus-loading errors propagate.
+    """
     from pipeline import hf_corpus_loader as loader
 
     if source == "snapshot":
@@ -247,6 +279,12 @@ def load_rows(source: str) -> list[dict]:
 
 
 def write_document(out_dir: Path, doc_class: str, row: dict, stamp: str) -> Path:
+    """Write a smoke document as UTF-8 text and return its path.
+
+    Use a sanitized, truncated source filename stem with the stamp and class.
+    ``out_dir`` must exist; an existing file at the resulting path is overwritten.
+    File access errors propagate.
+    """
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(str(row.get("filename") or "doc")).stem)[:60]
     path = out_dir / f"smoke_{stamp}_{doc_class}_{safe}.txt"
     path.write_text(row["doc_text"], encoding="utf-8")
@@ -257,8 +295,14 @@ def write_document(out_dir: Path, doc_class: str, row: dict, stamp: str) -> Path
 
 
 def run_via_api(api_url: str, token: str, files: dict[str, Path], matter_id: str, timeout_s: float) -> dict[str, dict]:
-    """Upload every file under one matter, then poll until each reaches a
-    terminal stage. Returns {doc_class: {stage, doc_type, doc_id, filename}}."""
+    """Upload files under one matter, then return terminal results by doc class.
+
+    Results contain stage, doc_type, doc_id, and filename. ``timeout_s`` is a
+    shared polling window in seconds, starting after all uploads; requests and
+    poll sleeps can extend past it. Unfinished classes receive stage ``timeout``.
+    HTTP and JSON errors during polling are retried without discarding completed
+    results. Upload file, HTTP, and response-decoding errors propagate.
+    """
     import httpx
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -302,6 +346,13 @@ def run_via_api(api_url: str, token: str, files: dict[str, Path], matter_id: str
 
 
 def run_in_process(files: dict[str, Path], matter_id: str, run_id: str) -> dict[str, dict]:
+    """Copy files into the inbox and run the pipeline sequentially under one matter.
+
+    Use each class as expected ground truth, ``matter_id`` as the trace session,
+    and ``run_id`` to identify the run. Flush tracing and return stage, doc_type,
+    doc_id, and filename per class. File operations and uncaught pipeline or
+    flush errors propagate.
+    """
     import shutil
 
     from graph.build_graph import run_pipeline
@@ -338,6 +389,7 @@ def run_in_process(files: dict[str, Path], matter_id: str, run_id: str) -> dict[
 
 
 def _obs_field(obs: dict, *names: str):
+    """Return the first named field whose value is not None, or None if absent."""
     for name in names:
         if obs.get(name) is not None:
             return obs[name]
@@ -345,7 +397,10 @@ def _obs_field(obs: dict, *names: str):
 
 
 def node_of(obs: dict, by_id: dict[str, dict]) -> str | None:
-    """Walk parent observations up to the nearest graph-node span name."""
+    """Return the nearest graph-node span name within 50 parent observations.
+
+    Return None if no match is found, a parent is absent, or the limit is reached.
+    """
     seen = 0
     parent = _obs_field(obs, "parent_observation_id", "parentObservationId")
     while parent and seen < 50:
@@ -361,11 +416,13 @@ def node_of(obs: dict, by_id: dict[str, dict]) -> str | None:
 
 
 def allowed_models(agent: str, routing: dict[str, dict[str, Any]]) -> set[str]:
+    """Return the agent's configured wire model as a set, or an empty set if unknown."""
     r = routing.get(agent)
     return {r["wire_model"]} if r else set()
 
 
 def _model_ok(model: str | None, allowed: set[str]) -> bool:
+    """Accept an exact allowed model or its hyphen-suffixed variant; reject empty IDs."""
     if not model:
         return False
     # OpenRouter may answer with a dated variant of the champion slug.
@@ -378,8 +435,10 @@ def verify_generations(
     """Attribute each LLM generation to its node and check its model.
 
     A generation named after an agent (native path: ``name=<agent>``) is
-    checked against that agent's tier exactly; otherwise (LangChain path) the
-    node's possible agents bound the allowed tiers. Returns (rows, failures).
+    checked against that agent's wire model; otherwise (LangChain path) the
+    node's possible agents bound the allowed models. Unattributed generations
+    are checked against all routing entries. Hyphen-suffixed model variants
+    are accepted, and non-LLM generations are skipped. Returns (rows, failures).
     """
     by_id = {o.get("id"): o for o in observations if o.get("id")}
     rows: list[dict] = []
@@ -408,8 +467,14 @@ def verify_generations(
 
 
 def fetch_session_observations(session_id: str, expect_traces: int, wait_s: float = 180.0) -> dict[str, list[dict]]:
-    """{trace_id: [observation dicts]} for a session, polling until the
-    expected trace count has landed (ingestion is asynchronous)."""
+    """Return {trace_id: observations} for up to 50 traces in a Langfuse session.
+
+    Poll for ``expect_traces`` within a ``wait_s``-second window, returning the
+    last partial page on expiry. Requests and sleeps can extend past the window.
+    Fetch up to 100 observations per trace and append a TRACE_META entry with
+    its name and metadata. A nonpositive wait returns an empty mapping. SDK
+    errors propagate.
+    """
     from langfuse import Langfuse
 
     client = Langfuse()
@@ -430,7 +495,10 @@ def fetch_session_observations(session_id: str, expect_traces: int, wait_s: floa
 
 
 def doc_class_of_trace(observations: list[dict], results: dict[str, dict]) -> str | None:
-    """Match a trace to a run document via its curated input filename."""
+    """Return the first result class whose filename occurs in observation data.
+
+    Search serialized inputs and metadata by substring; return None if unmatched.
+    """
     names = {r.get("filename"): cls for cls, r in results.items() if r.get("filename")}
     blob = json.dumps([o.get("input") for o in observations if o.get("input")] + [o.get("metadata") for o in observations])
     for filename, cls in names.items():
@@ -443,6 +511,11 @@ def doc_class_of_trace(observations: list[dict], results: dict[str, dict]) -> st
 
 
 def write_report(out_dir: Path, report: dict) -> Path:
+    """Create out_dir and write report.json and report.md, overwriting existing files.
+
+    Return the Markdown path. File access and missing required report-key errors
+    propagate.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, default=str))
     lines = [
@@ -474,6 +547,13 @@ def write_report(out_dir: Path, report: dict) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run requested smoke modes, defaulting to the routing contract check.
+
+    ``argv=None`` reads process arguments. Return 0 with no recorded failures,
+    otherwise 1. Run/session modes write reports under MAILROOM_BASE_DIR.
+    Langfuse fetch errors become failures; other uncaught operation errors and
+    argument-parser SystemExit propagate.
+    """
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--check", action="store_true", help="network-free routing contract")
     ap.add_argument("--warm", action="store_true", help="wake every GPU tier through the gateway")
