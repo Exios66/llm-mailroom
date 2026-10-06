@@ -57,13 +57,16 @@ OWL = {"K": "#3a2a24", "b": "#8a6a4a", "d": "#6b4f36", "f": "#f1e3c6", "c": "#c9
 
 class Layer:
     def __init__(self) -> None:
+        """Create an empty mapping of pixel coordinates to hex colours."""
         self.px: dict[tuple[int, int], str] = {}
 
     def set(self, x: int, y: int, c: str) -> None:
+        """Set a pixel if it lies within the canvas plus a two-pixel margin."""
         if -2 <= x < W + 2 and -2 <= y < H + 2:
             self.px[(x, y)] = c
 
     def pts(self, pts, c: str) -> None:
+        """Paint each supplied coordinate with colour c."""
         for x, y in pts:
             self.set(x, y, c)
 
@@ -74,11 +77,13 @@ class Layer:
             self.set(int(2 * CX - x), y, c)
 
     def rect(self, x0: int, y0: int, x1: int, y1: int, c: str) -> None:
+        """Fill a rectangle with colour c, including both corner coordinates."""
         for y in range(y0, y1 + 1):
             for x in range(x0, x1 + 1):
                 self.set(x, y, c)
 
     def ellipse(self, cx: float, cy: float, rx: float, ry: float, c: str, where=None) -> None:
+        """Fill an ellipse, optionally restricting pixels with where(x, y)."""
         for y in range(H + 2):
             for x in range(W):
                 if ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1:
@@ -86,6 +91,7 @@ class Layer:
                         self.set(x, y, c)
 
     def sprite(self, x0: int, y0: int, rows, cmap, mirror: bool = False) -> None:
+        """Paint character rows through cmap, skipping dots and optionally mirroring horizontally."""
         for dy, row in enumerate(rows):
             for dx, ch in enumerate(row):
                 if ch != ".":
@@ -103,11 +109,13 @@ class Layer:
             self.set(x, y, c)
 
     def merge(self, other: "Layer") -> None:
+        """Overlay another layer's pixels, replacing colours at shared coordinates."""
         self.px.update(other.px)
 
 
 # ---------------------------------------------------------------- Fumi
 def _hex(rgb) -> str:
+    """Format the first three colour channels as a lowercase RGB hex string."""
     return "#%02x%02x%02x" % tuple(rgb[:3])
 
 
@@ -250,6 +258,7 @@ SPARKS = [(8, 52), (86, 66), (10, 88), (84, 10)]
 
 
 def draw_spark(i: int, big: bool) -> Layer:
+    """Return the indexed sparkle as a single pixel or a white-centred cross."""
     L = Layer()
     x, y = SPARKS[i]
     L.set(x, y, SPARK)
@@ -265,6 +274,7 @@ TICKS, TICK_MS = 32, 100
 
 
 def state(t: int) -> dict:
+    """Return bob, blink, bubble and sparkle settings for a tick within one loop."""
     return {
         "bob": 1 if (t // 4) % 2 else 0,           # 0.8 s bob cycle
         "blink": t in (20, 21),                    # one blink per loop
@@ -274,6 +284,7 @@ def state(t: int) -> dict:
 
 
 def compose(t: int) -> Layer:
+    """Compose the mascot and effects into a layer for animation tick t."""
     s = state(t)
     out = Layer()
     for i, on in enumerate(s["sparks"]):
@@ -290,6 +301,7 @@ def compose(t: int) -> Layer:
 
 # ---------------------------------------------------------------- export
 def to_image(layer: Layer, scale: int) -> Image.Image:
+    """Clip a layer to the canvas and return an RGBA image scaled by nearest neighbour."""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     for (x, y), c in layer.px.items():
         if 0 <= x < W and 0 <= y < H:
@@ -316,6 +328,7 @@ def rects(layer: Layer) -> str:
 
 
 def build_svg() -> str:
+    """Return the animated mascot SVG with CSS keyframes and reduced-motion support."""
     loop = TICKS * TICK_MS / 1000
     sparks = "".join(
         f'<g class="sp sp{i}"><g class="dim">{rects(draw_spark(i, False))}</g>'
@@ -349,6 +362,7 @@ def build_svg() -> str:
 
 
 def main() -> None:
+    """Write the mascot assets and copy the landing page's assets into its folder."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "fumi.svg").write_text(build_svg())
 
