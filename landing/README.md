@@ -16,7 +16,7 @@ Connect Cloud publishes static HTML straight from a public GitHub repo and redep
 
 ## Other hosts
 
-- **GitBook (the published home):** [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). Merge to `main`. Site Git Sync reads `gitbook-docs.yaml` (`directory: ./docs`, `path: /`) and space Git Sync reads `.gitbook.yaml`; both publish `docs/README.md` as that URL. See `docs/constellation/maintaining.md`.
+- **GitBook (the published home):** [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). Merge to `main`. Site Git Sync reads `docs/gitbook-docs.yaml` (`directory: ./`, `path: /`; the Git Sync Project directory is `docs/`) and space Git Sync reads `docs/.gitbook.yaml`; both publish `docs/README.md` as that URL. See `docs/constellation/maintaining.md`.
 - **GitHub Pages:** GitHub Pages cannot select `landing/` as a branch source folder. It accepts only the branch root or `/docs`. Publish by copying the contents of `landing/` to the root of a dedicated `gh-pages` branch, or use a workflow that deploys this folder when Actions is available.
 - **Netlify, Cloudflare Pages, or Vercel:** publish directory `landing`, with no build command.
 
