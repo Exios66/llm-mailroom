@@ -468,6 +468,7 @@ PYTHONPATH=src python -m api.main</pre>
 
   // menu
   const menuBtn = document.getElementById("menu-btn"), panel = document.getElementById("menu-panel");
+  /** Show or hide the menu and update the toggle's expanded state. */
   const setMenu = (open) => { panel.hidden = !open; menuBtn.setAttribute("aria-expanded", String(open)); };
   menuBtn.addEventListener("click", (e) => { e.stopPropagation(); setMenu(panel.hidden); });
   panel.addEventListener("click", (e) => { if (e.target.closest("a")) setMenu(false); });
@@ -478,7 +479,9 @@ PYTHONPATH=src python -m api.main</pre>
   const copyBtn = document.getElementById("copy");
   copyBtn.addEventListener("click", () => {
     const text = 'pip install -e ".[dev]"\nPYTHONPATH=src python -m api.main';
+    /** Show successful-copy feedback for 1500 ms, then restore the button. */
     const done = () => { copyBtn.setAttribute("aria-label", "Copied"); copyBtn.style.borderColor = "var(--ok)"; setTimeout(() => { copyBtn.style.borderColor = ""; copyBtn.setAttribute("aria-label", "Copy install commands"); }, 1500); };
+    /** Select the install text for manual copying when clipboard access fails. */
     const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById("install-cmd")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); };
     try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
   });
@@ -498,6 +501,7 @@ PYTHONPATH=src python -m api.main</pre>
     { f: "nda_mutual_v2.pdf", c: "contract", m: "MATTER-001" },
     { f: "bylaws_amendment.pdf", c: "corporate_record", m: "MATTER-007" },
   ];
+  /** Return the element with the given ID, or null if none exists. */
   const $ = (id) => document.getElementById(id);
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const counts = { inbox: 0, processing: 0, review: 0, failed: 0, archived: 0 };
@@ -505,9 +509,12 @@ PYTHONPATH=src python -m api.main</pre>
   let chain = 412, sampleIdx = 0, prevHash = "9c1e40aa";
   counts.archived = 37; byClass.contract = 14; byClass.correspondence = 9; byClass.insurance_claim = 6; byClass.corporate_record = 5; byClass.merger_agreement = 3; counts.review = 2;
 
+  /** Return n random lowercase hex digits for simulated IDs and audit hashes. */
   const hex = (n) => Array.from({ length: n }, () => "0123456789abcdef"[Math.random() * 16 | 0]).join("");
+  /** Return the local time as HH:MM:SS for terminal timestamps. */
   const clock = () => new Date().toTimeString().slice(0, 8);
 
+  /** Redraw simulated bin counts, highlighting the optional flash bin or class key. */
   function renderBins(flash) {
     const rows = [
       ["inbox/", counts.inbox, "inbox"], ["processing/", counts.processing, "processing"],
@@ -518,6 +525,10 @@ PYTHONPATH=src python -m api.main</pre>
     $("bins").innerHTML = rows.map(([name, n, key, indent]) =>
       `<li class="${indent ? "indent" : ""} ${key === "inbox" && n ? "hot" : ""} ${flash === key ? "flash" : ""}"><span>${name}</span><span class="n">${n}</span></li>`).join("");
   }
+  /**
+   * Redraw stages from their names: review styling takes precedence over active,
+   * then completed stages in done. Null active/review values leave those styles off.
+   */
   function renderFlow(active, done, review) {
     $("flow").innerHTML = STAGES.map((s, i) => {
       let cls = "node";
@@ -527,6 +538,11 @@ PYTHONPATH=src python -m api.main</pre>
       return (i ? '<span class="arrow">›</span>' : "") + `<span class="${cls}">${s}</span>`;
     }).join("");
   }
+  /**
+   * Show a simulated document's f (filename), m (matter), cls, and conf (0–1).
+   * A missing class or confidence stays pending; a falsy doc clears the display.
+   * Values are inserted as HTML and must come from trusted sample data.
+   */
   function renderCurrent(doc) {
     if (!doc) {
       $("current").innerHTML = `<dt>doc</dt><dd>—</dd><dt>class</dt><dd>—</dd><dt>confidence</dt><dd><span class="conf"><span class="meter"><i style="width:0"></i></span> —</span></dd><dt>matter</dt><dd>—</dd>`;
@@ -536,6 +552,7 @@ PYTHONPATH=src python -m api.main</pre>
     $("current").innerHTML = `<dt>doc</dt><dd>${doc.f}</dd><dt>class</dt><dd>${doc.cls || "…"}</dd>` +
       `<dt>confidence</dt><dd><span class="conf"><span class="meter"><i style="width:${c * 100}%;background:${c >= .97 ? "var(--ok)" : "var(--warn)"}"></i></span> ${doc.conf == null ? "…" : c.toFixed(2)}</span></dd><dt>matter</dt><dd>${doc.m}</dd>`;
   }
+  /** Append trusted HTML with a timestamp, keeping only the latest 14 entries. */
   function log(html) {
     const el = $("log");
     const line = document.createElement("div");
@@ -543,12 +560,23 @@ PYTHONPATH=src python -m api.main</pre>
     el.appendChild(line);
     while (el.children.length > 14) el.removeChild(el.firstChild);
   }
+  /** Append an info event using trusted event and key/value HTML. */
   const info = (ev, kv) => log(`<span class="lv">[info]</span> <span class="ev">${ev}</span> ${kv}`);
+  /** Append a warning event using trusted event and key/value HTML. */
   const warn = (ev, kv) => log(`<span class="lv warn">[warn]</span> <span class="ev">${ev}</span> ${kv}`);
+  /** Format object entries as key/value HTML without escaping keys or values. */
   const kv = (o) => Object.entries(o).map(([k, v]) => `<span class="k">${k}=</span>${v}`).join(" ");
+  /** Replace the simulation status with trusted HTML and return that HTML. */
   const mood = (html) => ($("mood").innerHTML = html);
+  /** Resolve after a delay in milliseconds, capped at 400 when reduced motion is set. */
   const wait = (ms) => new Promise((r) => setTimeout(r, reduce ? Math.min(ms, 400) : ms));
 
+  /**
+   * Animate the next cyclic sample, updating simulated bins, counters, and displays.
+   * Randomly choose review (20%) or archive and generate matching confidence;
+   * archived samples also advance the mock audit chain. Resolve after clearing
+   * the stage and document displays; no files or backend records are changed.
+   */
   async function deliver() {
     const s = SAMPLES[sampleIdx++ % SAMPLES.length];
     const doc = { ...s, id: "doc_" + hex(6), conf: null, cls: null };
@@ -610,6 +638,11 @@ PYTHONPATH=src python -m api.main</pre>
     renderFlow(null, []); renderCurrent(null);
   }
 
+  /**
+   * Initialize the simulated terminal and deliver samples serially after idle delays.
+   * The returned promise stays pending during normal operation; an uncaught
+   * delivery error rejects it and stops the loop.
+   */
   async function loop() {
     renderBins(); renderFlow(null, []); renderCurrent(null);
     $("s-arch").textContent = counts.archived; $("s-rev").textContent = counts.review; $("s-chain").textContent = chain;
