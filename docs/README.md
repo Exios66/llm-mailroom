@@ -82,6 +82,7 @@ That system is spread across more than a dozen repositories: the pipeline itself
 | Understand what the Mailroom is and which repo does what    | [Overview](start-here/overview.md)                                          |
 | Get something running in the next ten minutes               | [Getting started](start-here/getting-started.md)                            |
 | See how data, prompts, scores and traces move between repos | [How the constellation fits together](how-it-fits-together/architecture.md) |
+| Browse the canonical dataset and its EDA charts             | [Data and corpora](how-it-fits-together/data-and-corpora.md)                |
 | Look up a term like "Lane A", "STP" or "virtual member"     | [Glossary](start-here/glossary.md)                                          |
 | Work on a specific repository                               | [Repository guides](repository-guides/repos/)                               |
 | Know which board, issue tracker or branch to use            | [Governance and workflow](how-it-fits-together/governance.md)               |

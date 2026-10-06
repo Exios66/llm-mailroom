@@ -145,6 +145,8 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "modal-vllm.md" in summary
     assert "local-mailroom-sandbox-reports.md" in summary
     assert "local-mailroom-sandbox-visuals.md" in summary
+    assert "eda-visuals.md" in summary
+    assert "eda-interactive.md" in summary
     assert "docker-deployment.md" in home
     assert "modal-vllm.md" in home
     assert "[Docker](" in home

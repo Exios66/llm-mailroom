@@ -38,7 +38,7 @@ In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which
 | [The-Mailroom](repos/the-mailroom.md) | Surface | Pixel-art visualizer and hosted Observatory, driven entirely by the pipeline's Langfuse traces. |
 | [agent-mailroom](repos/agent-mailroom.md) | Surface | A self-contained mailroom on a walking office floor, same doctrine, independent release train. |
 | [llm-mailroom-graph](repos/llm-mailroom-graph.md) | Surface | Interactive knowledge-graph site of the pipeline's code. |
-| [Mailroom-Corpus-EDA](repos/mailroom-corpus-eda.md) | Data | EDA of the canonical `mailroom-dataset` and the central Hugging Face upload helpers. |
+| [Mailroom-Corpus-EDA](repos/mailroom-corpus-eda.md) | Data | EDA of the canonical `mailroom-dataset` and the central Hugging Face upload helpers. GitBook: [EDA visuals](../how-it-fits-together/eda-visuals.md), [interactive charts](../how-it-fits-together/eda-interactive.md). |
 | [Enron-Evaluation-Environment](repos/enron-evaluation-environment.md) | Data | Builds the `correspondence` corpus from the CMU Enron emails. |
 | [claims-data-eda](repos/claims-data-eda.md) | Data | Builds the `insurance_claim` corpus from CMS DE-SynPUF Medicare claims. |
 

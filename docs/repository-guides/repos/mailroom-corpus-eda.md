@@ -13,6 +13,13 @@
 
 This repository profiles the 3,302-document corpus (five classes, 55 strata, 7.2x class imbalance) and is the one place the family publishes to the Hub from. The upload helpers that used to live in llm-entity-extraction were centralized here.
 
+On this site (nested under [Data and corpora](../../how-it-fits-together/data-and-corpora.md) and this guide):
+
+* [EDA visuals](../../how-it-fits-together/eda-visuals.md) — all 30 static PNGs from `reports/figures/`
+* [Interactive charts](../../how-it-fits-together/eda-interactive.md) — live dashboard plus 18 Plotly HTMLs from `reports/figures_interactive/`
+
+The GitBook pages embed the GitHub Pages copies at [exios66.github.io/Mailroom-Corpus-EDA](https://exios66.github.io/Mailroom-Corpus-EDA/).
+
 `run_all.py` runs the analysis in phases:
 
 | Phase | What                                                | Output                                 |
