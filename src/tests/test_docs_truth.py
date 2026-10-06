@@ -101,6 +101,7 @@ _GITBOOK_DOCS_DIRS = {
     "mailroom-dataset",
     "repository-guides",
     "pipeline-reference-llm-mailroom",
+    "the-pipeline-in-depth",
     "about-this-site",
 }
 
