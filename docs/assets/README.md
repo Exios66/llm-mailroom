@@ -17,6 +17,7 @@ Images, diagrams, and other assets used in documentation.
 - `mascot/` — Fumi and Hermes (see `mascot/README.md`); `hoot-icon.png` is the page favicon
 - `fumi/fumi.gif` — GitBook home copy of Fumi (on-duty + Meet Fumi; not the page header)
 
+
 ## Usage
 
 Assets are referenced by documentation files in `docs/`.
