@@ -65,6 +65,8 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
     assert 'rel="icon"' in html
     assert 'href="assets/mascot/hoot-icon.png"' in html
     assert 'rel="apple-touch-icon"' in html
+    assert "Hermes the owl" in html
+    assert "Hoot" not in html
     assert "assets/mascot/fumi-icon.png" not in html
     copy_js = html.split("const text = ", 1)[1].split(";", 1)[0]
     assert "git clone https://github.com/Exios66/llm-mailroom.git" in copy_js
@@ -113,6 +115,11 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert 'Postal Worker Fumi (文, "letter") on duty' in on_duty
     assert "Specialist agents on a 13-node graph" in on_duty
     meet = home.split("## Meet Fumi", 1)[1]
+    assert "Hermes" in meet
+    assert "Hoot" not in meet
+    assert "standalone static page uses this icon" not in meet
+    assert "GitBook's published tab icon" not in meet
+    assert "upload this same file" not in meet
     assert "build_mascot.py" not in meet
     assert "header corner" not in meet
     assert "landing/" not in meet.split("## Related files", 1)[0]

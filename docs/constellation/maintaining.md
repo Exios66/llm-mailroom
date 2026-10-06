@@ -44,7 +44,7 @@ Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration 
 
 GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. Keep that link as `* [The LLM-Mailroom](README.md)` so it matches the `# The LLM-Mailroom` heading in `docs/README.md` (the previous `* [Welcome](README.md)` title is why the live home used to read **Welcome**).
 
-GitBook's published favicon is the site icon in **Customize** ([icons, colors, and themes](https://gitbook.com/docs/manage-your-site/customization/icons-colors-and-themes)). Git Sync cannot set it: `gitbook-docs.yaml` has no favicon field. Upload `docs/assets/mascot/hoot-icon.png` (Hoot, the pixel owl). The static `landing/` page uses that same file as `<link rel="icon">`.
+GitBook's published favicon is the site icon in **Customize** ([icons, colors, and themes](https://gitbook.com/docs/manage-your-site/customization/icons-colors-and-themes)). Git Sync cannot set it: `gitbook-docs.yaml` has no favicon field. Upload `docs/assets/mascot/hoot-icon.png` (Hermes, the pixel owl). The static `landing/` page uses that same file as `<link rel="icon">`.
 
 ## Rules for editing
 
@@ -65,4 +65,4 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
 | Compose matrix, Mode G, or Modal vLLM knobs change | [Docker](../docker-deployment.md) and [Modal + vLLM](../modal-vllm.md) first; keep `deploy/README.md` as an index that links those pages |
 | Sandbox run reports or figures change | [Run reports](repos/local-mailroom-sandbox-reports.md) and [Visuals](repos/local-mailroom-sandbox-visuals.md); keep image URLs on `Exios66/local-mailroom-sandbox` `main` |
-| Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG/Hoot favicon into `docs/assets/mascot/` and `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. The home header is the centered **The LLM-Mailroom** wordmark; Fumi appears after the masthead as Postal Worker Fumi (文, "letter") on duty. The owl banner, title, and badges stay the masthead. Re-upload `hoot-icon.png` in GitBook Customize if Hoot's sprite changes. |
+| Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG/Hermes favicon into `docs/assets/mascot/` and `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. The home header is the centered **The LLM-Mailroom** wordmark; Fumi appears after the masthead as Postal Worker Fumi (文, "letter") on duty. The owl banner, title, and badges stay the masthead. Re-upload `hoot-icon.png` in GitBook Customize if the Hermes sprite changes. |
