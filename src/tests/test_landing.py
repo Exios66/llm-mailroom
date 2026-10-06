@@ -52,17 +52,10 @@ def test_landing_javascript_behaviors():
 
 def test_landing_html_header_masthead_and_coderabbit_contracts():
     html = LANDING.read_text(encoding="utf-8")
-    header = html.split('id="top"', 1)[0]
-    assert 'class="fumi-mark"' not in html
-    assert "fumi.gif" not in header
-    assert "fumi.svg" not in header
-    assert "The <b>LLM</b>-Mailroom" in header
-    assert html.count('src="assets/mascot/fumi.gif"') == 2
-    assert html.index('class="masthead"') < html.index("fumi.gif")
-    assert 'Postal Worker Fumi (文, "letter") on duty' in html
-    assert "top-bar corner" not in html
-    assert "part of the header" not in html
+    assert 'class="fumi-mark"' in html
     assert 'src="assets/mascot/fumi.svg"' in html
+    assert 'The <b>LLM</b>-Mailroom' in html
+    assert html.index('class="fumi-mark"') < html.index('class="masthead"')
     assert 'src="assets/banner.png"' in html
     assert "<h1>The <span class=\"llm\">LLM</span>-Mailroom</h1>" in html
     for badge in BADGES:
@@ -89,9 +82,8 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
 
 def test_gitbook_home_ports_the_enhanced_landing():
     home = GITBOOK_HOME.read_text(encoding="utf-8")
-    # Centered wordmark table, then GitBook-synced assets after the masthead.
-    assert home.lstrip().startswith("<table")
-    assert "# The LLM-Mailroom" in home
+    # GitBook uses the H1 / SUMMARY title as the page header — title only.
+    assert home.lstrip().startswith("# LLM-MAILROOM\n")
     assert home.count("fumi.gif") == 2
     assert 'src=".gitbook/assets/fumi.gif"' in home
     assert 'src=".gitbook/assets/banner.png"' in home
@@ -113,11 +105,10 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "Pixelify" not in home
     assert "font-family" not in home
     assert "fonts.googleapis.com" not in home
-    # Header is a centered The LLM-Mailroom wordmark — no Fumi before the masthead.
+    # GitBook page header is the LLM-MAILROOM H1 — no Fumi, no table wrapper.
     header = home.split(".gitbook/assets/banner.png", 1)[0]
-    assert 'width="100%"' in header
-    assert 'align="center"' in header
-    assert "# The LLM-Mailroom" in header
+    assert header.lstrip().startswith("# LLM-MAILROOM\n")
+    assert "<table" not in header
     assert "fumi.gif" not in header
     assert 'Fumi (文, "letter")' not in header
     assert "lives in this header corner" not in header
@@ -139,7 +130,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "header corner" not in meet
     assert "landing/" not in meet.split("## Related files", 1)[0]
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
-    assert "* [The LLM-Mailroom](README.md)" in summary
+    assert "* [LLM-MAILROOM](README.md)" in summary
     assert "docker-deployment.md" in summary
     assert "modal-vllm.md" in summary
     assert "local-mailroom-sandbox-reports.md" in summary
@@ -157,7 +148,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
         maintaining = (REPO / "docs" / "constellation" / "maintaining.md").read_text(
             encoding="utf-8"
         )
-    assert "centered **The LLM-Mailroom** wordmark" in maintaining
+    assert "LLM-MAILROOM" in maintaining
     assert "Postal Worker Fumi" in maintaining
     assert "header corner" not in maintaining
     assert "Hoot" not in maintaining
