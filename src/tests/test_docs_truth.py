@@ -83,7 +83,14 @@ def test_v7_taxonomy_reference_removed():
 
 _SUMMARY_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md)\)")
 _DOCS = REPO_ROOT / "docs"
-_SKIP_SUMMARY_DIRS = {"wiki", "assets", "changelog"}
+_SKIP_SUMMARY_DIRS = {
+    "wiki",
+    "assets",
+    "changelog",
+    ".gitbook",
+    # Canonical copies GitBook re-exported under URL-mapped folders.
+    "constellation",
+}
 _SKIP_SUMMARY_FILES = {"SUMMARY.md"}
 # GitBook Git Sync rewrote the Mailroom Docs TOC into nested folders. The
 # leftover GitHub-canonical copies (docs/*.md, docs/constellation/) stay in
