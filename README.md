@@ -19,7 +19,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 
 <img src="docs/assets/mascot/fumi.svg" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, navy skirt with a red and white hem stripe, a mini carrier cap on her frilled headdress) with a mail satchel and a little owl on her shoulder" width="192" height="232">
 
-<sub>Say hi to <b>Fumi</b> (文, "letter"), the mailroom's head maid, and Hoot the owl. Landing page source: <a href="landing/">landing/</a></sub>
+<sub>Say hi to <b>Fumi</b> (文, "letter"), the mailroom's head maid, and Hoot the owl. Static landing: <a href="landing/">landing/</a>. Published docs home: GitBook via <a href="docs/README.md">docs/README.md</a>.</sub>
 
 </div>
 

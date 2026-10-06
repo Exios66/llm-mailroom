@@ -73,8 +73,16 @@ def _install_modal_stub() -> None:
 
             return deco
 
-    def _web_server(port=None, startup_timeout=None):
+    def _web_server(port=None, startup_timeout=None, label=None):
         def deco(fn):
+            fn._web_label = label
+            return fn
+
+        return deco
+
+    def _concurrent(max_inputs=None, target_inputs=None):
+        def deco(fn):
+            fn._max_inputs = max_inputs
             return fn
 
         return deco
@@ -84,6 +92,7 @@ def _install_modal_stub() -> None:
     stub.Image = _Image
     stub.App = _App
     stub.web_server = _web_server
+    stub.concurrent = _concurrent
     sys.modules["modal"] = stub
 
 
@@ -257,3 +266,223 @@ class TestVllmProviderSeam:
         monkeypatch.setattr(client_mod, "instrument_client", lambda c: c)
         with pytest.raises(RuntimeError, match="not free"):
             client_mod.get_llm("sorter")
+
+
+class TestModalTierBoundaries:
+    @pytest.fixture
+    def snapshot_download(self, monkeypatch, mocker):
+        # huggingface_hub is installed in Modal's image, not the test runtime.
+        hub = types.ModuleType("huggingface_hub")
+        hub.snapshot_download = mocker.Mock()
+        monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+        return hub.snapshot_download
+
+    @pytest.fixture
+    def tier_app(self, monkeypatch):
+        import os
+
+        # Tier settings are read at import time; developer deployment knobs
+        # must not alter these unit tests or escape into the Modal stub.
+        for name in list(os.environ):
+            if name.startswith("MODAL_VLLM_") or name == "HF_TOKEN":
+                monkeypatch.delenv(name)
+        monkeypatch.delitem(sys.modules, "modal", raising=False)
+        _install_modal_stub()
+        stub = sys.modules.pop("modal")
+        monkeypatch.setitem(sys.modules, "modal", stub)
+        return _load_app_module()
+
+    @pytest.mark.parametrize("scoped,expected", [(" scoped/model ", "scoped/model"), ("  ", "legacy/model")])
+    def test_scoped_model_precedes_legacy_with_blank_fallback(self, tier_app, monkeypatch, scoped, expected):
+        monkeypatch.setenv("MODAL_VLLM_MODEL", "legacy/model")
+        monkeypatch.setenv("MODAL_VLLM_FAST_MODEL", scoped)
+        assert tier_app.resolve_tier("fast").model == expected
+        assert tier_app.resolve_tier("extract").model == tier_app.TIERS["extract"].model
+
+    @pytest.mark.parametrize("gpu,override,expected", [
+        ("A100-80GB:2", None, 2), ("H100:4", "2", 2),
+        ("L4", None, 1), ("L4:invalid", None, 1),
+    ])
+    def test_tensor_parallelism_follows_gpu_unless_overridden(self, tier_app, monkeypatch, gpu, override, expected):
+        monkeypatch.setenv("MODAL_VLLM_EXTRACT_GPU", gpu)
+        if override is not None:
+            monkeypatch.setenv("MODAL_VLLM_EXTRACT_TP_SIZE", override)
+        spec = tier_app.resolve_tier("extract")
+        assert spec.tp_size == expected
+        cmd = tier_app.build_vllm_command(spec.model, spec)
+        if expected == 1:
+            assert "--tensor-parallel-size" not in cmd
+        else:
+            assert cmd[cmd.index("--tensor-parallel-size") + 1] == str(expected)
+
+    def test_parser_none_disables_default_reasoning_parser(self, tier_app, monkeypatch):
+        monkeypatch.setenv("MODAL_VLLM_FAST_REASONING_PARSER", " NoNe ")
+        spec = tier_app.resolve_tier("fast")
+        assert spec.reasoning_parser == ""
+        assert "--reasoning-parser" not in tier_app.build_vllm_command(spec.model, spec)
+
+    def test_custom_tier_options_reach_server_command(self, tier_app, monkeypatch):
+        knobs = {
+            "MODEL": "custom/vision", "REVISION": "pinned-revision", "QUANTIZATION": "awq",
+            "MAX_MODEL_LEN": "16384", "GPU_MEMORY_UTILIZATION": "0.75",
+            "MAX_NUM_SEQS": "8", "LIMIT_IMAGES": "3", "MAX_INPUTS": "7",
+            "MAX_CONTAINERS": "2", "MIN_CONTAINERS": "1", "SCALEDOWN_SECONDS": "60",
+        }
+        for knob, value in knobs.items():
+            monkeypatch.setenv(f"MODAL_VLLM_VISION_{knob}", value)
+        spec = tier_app.resolve_tier("vision")
+        cmd = tier_app.build_vllm_command(spec.model, spec)
+        assert cmd[:3] == ["vllm", "serve", "custom/vision"]
+        alias_pos = cmd.index("--served-model-name")
+        assert cmd[alias_pos + 1:alias_pos + 3] == ["mailroom-vision", "custom/vision"]
+        for flag, expected in {
+            "--revision": "pinned-revision", "--quantization": "awq",
+            "--max-model-len": "16384", "--gpu-memory-utilization": "0.75",
+            "--max-num-seqs": "8", "--limit-mm-per-prompt": '{"image": 3}',
+        }.items():
+            assert cmd[cmd.index(flag) + 1] == expected
+        assert (spec.max_inputs, spec.max_containers, spec.min_containers, spec.scaledown_seconds) == (7, 2, 1, 60)
+
+    def test_zero_image_budget_omits_multimodal_flag(self, tier_app, monkeypatch):
+        monkeypatch.setenv("MODAL_VLLM_VISION_LIMIT_IMAGES", "0")
+        spec = tier_app.resolve_tier("vision")
+        assert spec.limit_images == 0
+        assert "--limit-mm-per-prompt" not in tier_app.build_vllm_command(spec.model, spec)
+
+    @pytest.mark.parametrize("knob", ["MAX_MODEL_LEN", "TP_SIZE", "MAX_INPUTS", "LIMIT_IMAGES"])
+    def test_malformed_integer_knobs_fail_loudly(self, tier_app, monkeypatch, knob):
+        monkeypatch.setenv(f"MODAL_VLLM_FAST_{knob}", "many")
+        with pytest.raises(ValueError):
+            tier_app.resolve_tier("fast")
+
+    def test_unknown_tier_fails_loudly(self, tier_app):
+        with pytest.raises(ValueError, match="unknown tier 'typo'"):
+            tier_app.resolve_tier("typo")
+
+    @pytest.mark.parametrize("selection,expected", [
+        ("", ["fast", "extract", "vision"]),
+        ("  ", ["fast", "extract", "vision"]),
+        (" vision, , fast ", ["vision", "fast"]),
+    ])
+    def test_enabled_tier_selection(self, tier_app, monkeypatch, selection, expected):
+        monkeypatch.setenv("MODAL_VLLM_TIERS", selection)
+        assert tier_app.enabled_tiers() == expected
+
+    def test_unknown_enabled_tier_is_rejected(self, tier_app, monkeypatch):
+        monkeypatch.setenv("MODAL_VLLM_TIERS", "fast,typo")
+        with pytest.raises(ValueError, match="unknown tier.*typo"):
+            tier_app.enabled_tiers()
+
+    def test_only_selected_server_is_registered(self, tier_app, monkeypatch):
+        monkeypatch.setenv("MODAL_VLLM_TIERS", "vision")
+        mod = _load_app_module()
+        assert not hasattr(mod, "serve_fast")
+        assert not hasattr(mod, "serve_extract")
+        assert mod.serve_vision._web_label == "mailroom-vllm-vision"
+        assert mod.serve_vision._max_inputs == mod.TIERS["vision"].max_inputs
+        launch = []
+        monkeypatch.setattr(mod, "_launch", launch.append)
+        mod.serve_vision()
+        assert launch == ["vision"]
+
+    def test_deployment_forwards_only_model_settings_and_credentials(self, tier_app, monkeypatch):
+        assert tier_app._config_secrets() == []
+        monkeypatch.setenv("MODAL_VLLM_EXTRACT_MODEL", "custom/extract")
+        monkeypatch.setenv("MODAL_VLLM_API_TOKEN", "test-token")
+        monkeypatch.setenv("HF_TOKEN", "test-hf-token")
+        monkeypatch.setenv("MODAL_VLLM_FAST_REVISION", "")
+        monkeypatch.setenv("UNRELATED_SECRET", "must-not-forward")
+        assert tier_app._config_secrets() == [("secret", {
+            "MODAL_VLLM_EXTRACT_MODEL": "custom/extract",
+            "MODAL_VLLM_API_TOKEN": "test-token", "HF_TOKEN": "test-hf-token",
+        })]
+
+    def test_tier_launch_uses_scoped_config_without_logging_tokens(self, tier_app, monkeypatch, mocker, capsys):
+        monkeypatch.setenv("MODAL_VLLM_EXTRACT_MODEL", "custom/extract")
+        monkeypatch.setenv("MODAL_VLLM_API_TOKEN", "test-private-token")
+        monkeypatch.setenv("HF_TOKEN", "test-private-hf")
+        popen = mocker.patch.object(tier_app.subprocess, "Popen")
+        tier_app._launch("extract")
+        popen.assert_called_once()
+        cmd = popen.call_args.args[0]
+        assert cmd[:3] == ["vllm", "serve", "custom/extract"]
+        assert cmd[cmd.index("--served-model-name") + 1] == "mailroom-extract"
+        env = popen.call_args.kwargs["env"]
+        assert env["VLLM_API_KEY"] == "test-private-token"
+        assert env["HF_TOKEN"] == "test-private-hf"
+        output = capsys.readouterr().out
+        assert "mailroom-extract" in output
+        assert "test-private-token" not in output
+        assert "test-private-hf" not in output
+
+    @pytest.mark.parametrize("tier", ["fast", "extract", "vision"])
+    def test_registration_applies_tier_resources_and_decorator_order(self, tier_app, monkeypatch, mocker, tier):
+        for knob, value in {
+            "GPU": "H100:2", "MAX_INPUTS": "9", "MIN_CONTAINERS": "1",
+            "MAX_CONTAINERS": "3", "SCALEDOWN_SECONDS": "120",
+        }.items():
+            monkeypatch.setenv(f"MODAL_VLLM_{tier.upper()}_{knob}", value)
+        spec = tier_app.resolve_tier(tier)
+        events = []
+
+        def decorator(name):
+            def apply(fn):
+                events.append(name)
+                return fn
+            return apply
+
+        web = mocker.patch.object(tier_app.modal, "web_server", return_value=decorator("web"))
+        concurrent = mocker.patch.object(tier_app.modal, "concurrent", return_value=decorator("concurrent"))
+        function = mocker.patch.object(tier_app.app, "function", return_value=decorator("function"))
+        serve = mocker.Mock()
+        assert tier_app._tier_function(spec)(serve) is serve
+        assert events == ["web", "concurrent", "function"]
+        web.assert_called_once_with(
+            port=8000, startup_timeout=tier_app.STARTUP_TIMEOUT_SECONDS, label=f"mailroom-vllm-{tier}",
+        )
+        concurrent.assert_called_once_with(max_inputs=9)
+        function.assert_called_once_with(
+            gpu="H100:2",
+            volumes={tier_app.HF_CACHE_MOUNT: tier_app.hf_cache, tier_app.VLLM_CACHE_MOUNT: tier_app.vllm_cache},
+            secrets=tier_app._config_secrets(), timeout=1800, scaledown_window=120,
+            min_containers=1, max_containers=3, startup_timeout=tier_app.STARTUP_TIMEOUT_SECONDS,
+        )
+
+    @pytest.mark.parametrize("tier,model,revision,expected_model,expected_revision", [
+        ("", "", "", "Qwen/Qwen3-8B-FP8", None),
+        ("extract", "", "", "custom/extract", "tier-revision"),
+        ("extract", "override/model", "explicit-revision", "override/model", "explicit-revision"),
+    ])
+    def test_download_uses_tier_defaults_and_commits_populated_cache(
+        self, tier_app, monkeypatch, mocker, tmp_path, snapshot_download,
+        tier, model, revision, expected_model, expected_revision,
+    ):
+        monkeypatch.setenv("MODAL_VLLM_EXTRACT_MODEL", "custom/extract")
+        monkeypatch.setenv("MODAL_VLLM_EXTRACT_REVISION", "tier-revision")
+        (tmp_path / "config.json").write_text("{}")
+        snapshot_download.return_value = str(tmp_path)
+        cache = mocker.Mock()
+        monkeypatch.setattr(tier_app, "hf_cache", cache)
+        tier_app.download_model(model=model, revision=revision, tier=tier)
+        snapshot_download.assert_called_once_with(repo_id=expected_model, revision=expected_revision)
+        cache.commit.assert_called_once_with()
+
+    @pytest.mark.parametrize("snapshot", ["empty-directory", "", None])
+    def test_empty_download_never_commits_cache(self, tier_app, monkeypatch, mocker, tmp_path, snapshot_download, snapshot):
+        snapshot_download.return_value = str(tmp_path) if snapshot == "empty-directory" else snapshot
+        cache = mocker.Mock()
+        monkeypatch.setattr(tier_app, "hf_cache", cache)
+        with pytest.raises(SystemExit, match="empty snapshot"):
+            tier_app.download_model(tier="vision")
+        snapshot_download.assert_called_once_with(repo_id="Qwen/Qwen3-VL-8B-Instruct-FP8", revision=None)
+        cache.commit.assert_not_called()
+
+    def test_failed_download_propagates_without_committing(self, tier_app, monkeypatch, mocker, snapshot_download):
+        error = OSError("synthetic download failure")
+        snapshot_download.side_effect = error
+        cache = mocker.Mock()
+        monkeypatch.setattr(tier_app, "hf_cache", cache)
+        with pytest.raises(OSError) as caught:
+            tier_app.download_model(tier="extract")
+        assert caught.value is error
+        cache.commit.assert_not_called()

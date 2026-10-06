@@ -32,6 +32,12 @@ IMAGE_MIME = {
 
 
 def _vision_config() -> dict:
+    """Return vision settings with enabled, page-count, and DPI env overrides.
+
+    Model inclusion and exclusion substrings come from the taxonomy. Invalid
+    integer page-count or DPI values raise ValueError (or TypeError for
+    non-convertible taxonomy values).
+    """
     import os
 
     cfg = load_config().get("vision", {}) or {}
@@ -53,6 +59,7 @@ def _vision_config() -> dict:
         "max_pages": max_pages,
         "dpi": dpi,
         "models": list(cfg.get("models", []) or []),
+        "exclude": list(cfg.get("exclude", []) or []),
     }
 
 
@@ -66,28 +73,46 @@ def max_pages() -> int:
 
 
 def is_vision_capable(model: str) -> bool:
-    """True when `model` matches any configured `vision.models` substring.
+    """True when vision is enabled and `model` matches `vision.models`.
 
     Called with an agent's resolved model string (e.g. `qwen/qwen3.7-flash`).
-    Case-insensitive substring match so `Qwen/Qwen3.7-flash` and
-    `ollama/qwen2.5vl` both match `qwen/`/`qwen-vl` patterns.
+    Matching is by case-insensitive substring; `vision.exclude` takes
+    precedence over inclusion patterns. Empty model IDs return False.
     """
     if not vision_enabled():
         return False
     if not model:
         return False
     lowered = model.lower()
-    return any(pat.lower() in lowered for pat in _vision_config()["models"])
+    cfg = _vision_config()
+    if any(pat.lower() in lowered for pat in cfg["exclude"]):
+        return False
+    return any(pat.lower() in lowered for pat in cfg["models"])
 
 
 def agent_uses_vision(agent_name: str) -> bool:
-    """Whether a given agent's configured model is vision-capable."""
+    """Whether the model this agent actually calls is vision-capable.
+
+    Judged on the RESOLVED model id (self-hosted remap / gateway tier alias),
+    not the taxonomy champion: with DEFAULT_PROVIDER=litellm the sorter calls
+    the text-only ``mailroom-fast`` even though its champion
+    ``qwen/qwen3.7-flash`` reads images. Judging the champion would skip the
+    scanned-PDF transcription pass while no agent receives the page images.
+
+    If resolution or capability checking fails, retry using the taxonomy model;
+    return False if that fallback also fails.
+    """
     try:
-        cfg = get_agent_config(agent_name)
-        return is_vision_capable(cfg.get("model", ""))
+        from llm.client import resolve_agent_model
+
+        return is_vision_capable(resolve_agent_model(agent_name).model)
     except Exception:
-        logger.warning("vision_agent_config_unavailable", agent=agent_name)
-        return False
+        try:
+            cfg = get_agent_config(agent_name)
+            return is_vision_capable(cfg.get("model", ""))
+        except Exception:
+            logger.warning("vision_agent_config_unavailable", agent=agent_name)
+            return False
 
 
 def pipeline_uses_vision() -> bool:
@@ -103,6 +128,11 @@ def pipeline_uses_vision() -> bool:
 
 
 def _any_specialist_uses_vision() -> bool:
+    """Whether any configured document specialist passes the vision check.
+
+    Skip specialists whose agent config cannot be loaded. Errors loading the
+    document-class taxonomy itself propagate.
+    """
     from pipeline.config import get_agent_config, load_config
 
     cfg = load_config().get("doc_classes", [])
@@ -111,10 +141,11 @@ def _any_specialist_uses_vision() -> bool:
         if not spec:
             continue
         try:
-            if is_vision_capable(get_agent_config(spec).get("model", "")):
-                return True
+            get_agent_config(spec)
         except Exception:
             continue
+        if agent_uses_vision(spec):
+            return True
     return False
 
 

@@ -1,0 +1,90 @@
+# LiteLLM gateway for llm-mailroom (deploy/docker-compose.full.yml, service
+# `llm-gateway`). One OpenAI-compatible endpoint in front of:
+#   - the Modal vLLM GPU tiers (deploy/modal_vllm.py), addressed by the tier
+#     alias each tier serves (`--served-model-name mailroom-<tier>`), and
+#   - OpenRouter, for agents on the `api` tier (they send their champion slug).
+#
+# Which agent uses which tier is decided by the PIPELINE, not here:
+# taxonomy.yaml `agents.<name>.tier` (+ MAILROOM_GATEWAY_TIERS overrides).
+# This file only maps tier aliases to endpoints.
+#
+# Tracing: NO LiteLLM callbacks on purpose. The mailroom traces every
+# generation client-side (langfuse.openai / Phoenix OpenInference / Braintrust
+# wrap the OpenAI client in llm/client.py), so a LiteLLM Langfuse callback
+# would double-log every call as an orphan trace outside the per-document
+# `document-pipeline` trace.
+#
+# Retries: num_retries 0 — llm/retry.py is the mailroom's SINGLE retry layer
+# (L-16/L-17); a second layer here multiplies calls on every failure. A
+# cold-start 503 passes straight through and the pipeline's long cold-start
+# backoff handles it (llm/retry.py:_is_gateway_url).
+
+model_list:
+  # ── Modal GPU tiers ────────────────────────────────────────────────────
+  # `hosted_vllm/<alias>`: the vLLM server serves the alias as its model id.
+  - model_name: mailroom-fast
+    litellm_params:
+      model: hosted_vllm/mailroom-fast
+      api_base: os.environ/MODAL_FAST_URL
+      api_key: os.environ/MODAL_VLLM_API_TOKEN
+      timeout: 900            # long enough to ride out a cold boot
+    model_info:
+      mode: chat
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: mailroom-extract
+    litellm_params:
+      model: hosted_vllm/mailroom-extract
+      api_base: os.environ/MODAL_EXTRACT_URL
+      api_key: os.environ/MODAL_VLLM_API_TOKEN
+      timeout: 900
+    model_info:
+      mode: chat
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: mailroom-vision
+    litellm_params:
+      model: hosted_vllm/mailroom-vision
+      api_base: os.environ/MODAL_VISION_URL
+      api_key: os.environ/MODAL_VLLM_API_TOKEN
+      timeout: 900
+    model_info:
+      mode: chat
+      supports_vision: true
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  # ── `api` tier: OpenRouter passthrough ─────────────────────────────────
+  # Agents on the api tier send their taxonomy champion slug
+  # (qwen/qwen3.7-flash, deepseek/deepseek-v4-pro, openrouter/free, ...).
+  # The wildcard forwards any such slug to OpenRouter unchanged, so cost
+  # pricing (taxonomy cost_models / Langfuse model registry) keeps working.
+  - model_name: "*"
+    litellm_params:
+      model: openrouter/*
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      timeout: 180
+
+litellm_settings:
+  num_retries: 0
+  request_timeout: 900
+  # Unknown OpenAI params are dropped per provider instead of 400ing.
+  # Provider-specific fields the pipeline sends in extra_body
+  # (`chat_template_kwargs` for vLLM, `reasoning` for OpenRouter) are passed
+  # through in the request body.
+  drop_params: true
+
+router_settings:
+  num_retries: 0
+  # Optional production hardening: fall back from a GPU tier to its
+  # OpenRouter champion when the tier is down. Off by default because it
+  # turns a GPU outage into silent API spend — enable deliberately.
+  # fallbacks:
+  #   - mailroom-fast: ["qwen/qwen3.7-flash"]
+  #   - mailroom-extract: ["qwen/qwen3.7-flash"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
