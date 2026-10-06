@@ -111,7 +111,12 @@ a { color: var(--post); }
   box-shadow: 6px 6px 0 var(--post); background: var(--card);
 }
 .banner img { display: block; width: 100%; height: auto; }
-.masthead h1 { margin: 0 auto; max-width: 18ch; }
+.masthead h1 { margin: 0; max-width: 18ch; text-align: left; }
+/* Fumi sits small beside the title, cropped at the chest like the dsh-TUI whale-girl */
+.title-row { display: flex; align-items: flex-end; justify-content: center; gap: .9rem; margin-top: 2.2rem; }
+.fumi-bust { position: relative; flex: none; width: 150px; }
+.fumi-bust .crop { height: 113px; overflow: hidden; }
+.fumi-bust picture, .fumi-bust img { display: block; width: 150px; height: auto; image-rendering: pixelated; }
 .masthead .lede { margin-inline: auto; }
 .masthead .sub { margin-inline: auto; }
 .badges {
@@ -121,15 +126,12 @@ a { color: var(--post); }
 .badges a { display: inline-flex; line-height: 0; }
 .badges img { height: 20px; }
 
-/* hero — Fumi stands beside the wordmark, she does not replace it */
-.hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 1rem 2.5rem; padding-block: 2.4rem 1.2rem; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); align-items: end; gap: 1rem 2.5rem; padding-block: 2.4rem 1.2rem; }
 .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
 .tag { font: 500 .82rem/1 var(--mono); padding: .45rem .7rem; border: 1px solid var(--line); background: var(--card); border-radius: 4px; color: var(--ink-soft); }
 .tag em { font-style: normal; color: var(--post); }
-.fumi-stage { position: relative; width: 200px; max-width: 100%; }
-.fumi-stage picture, .fumi-stage img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 .say {
-  position: absolute; top: -1.6rem; left: 38%;
+  position: absolute; top: -1.4rem; left: 80%; z-index: 1;
   font: 700 1rem/1 var(--display); color: var(--ink); background: var(--card);
   border: 3px solid var(--ink); padding: .5rem .7rem; box-shadow: 4px 4px 0 var(--post);
   white-space: nowrap; animation: say 3.2s steps(1) infinite;
@@ -291,9 +293,13 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
 @media (max-width: 760px) {
   .steps, .facts, .shelf { grid-template-columns: minmax(0, 1fr); }
   .hero-text { padding-top: 0; }
-  .say { left: 42%; font-size: .9rem; }
-  .hero { grid-template-columns: minmax(0, 1fr); padding-block: 1.5rem 1rem; }
-  .fumi-stage { width: 168px; margin-top: 1.75rem; }
+  .say { left: 70%; font-size: .8rem; padding: .4rem .55rem; }
+  .hero { padding-block: 1.5rem 1rem; }
+  .title-row { gap: .4rem; margin-top: 2.2rem; }
+  .title-row h1 { font-size: 1.85rem; }
+  .fumi-bust { width: 96px; }
+  .fumi-bust .crop { height: 72px; }
+  .fumi-bust picture, .fumi-bust img { width: 96px; }
   .bar { padding-block: .55rem; }
   .brand { font-size: 1.05rem; }
   .brand .fumi-mark { width: 30px; height: 36px; }
@@ -354,7 +360,18 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
       <figure class="banner">
         <img src="assets/banner.png" width="1280" height="640" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight">
       </figure>
-      <h1>The <span class="llm">LLM</span>-Mailroom</h1>
+      <div class="title-row">
+        <div class="fumi-bust">
+          <div class="crop">
+            <picture>
+              <source srcset="assets/mascot/fumi.png" media="(prefers-reduced-motion: reduce)">
+              <img src="assets/mascot/fumi.svg" width="150" height="181" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, a mini carrier cap on her frilled headdress) with a little owl on her shoulder">
+            </picture>
+          </div>
+          <span class="say" aria-hidden="true">You've got mail!</span>
+        </div>
+        <h1>The <span class="llm">LLM</span>-Mailroom</h1>
+      </div>
       <p class="lede">A multi-agent pipeline that <strong>ingests, classifies, extracts, and archives</strong> legal documents — with a full audit trail.</p>
       <p class="sub">One LangGraph state machine per document. Specialist LLM agents per document class. Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.</p>
       <div class="badges" aria-label="Project badges">
@@ -379,17 +396,9 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
         <a class="tag" href="https://github.com/Exios66/llm-mailroom#observability"><em>tracing</em> · Langfuse · Braintrust · Phoenix</a>
         <a class="tag" href="https://github.com/Exios66/llm-mailroom#llm-providers"><em>LLM</em> · OpenRouter · Ollama · vLLM</a>
       </div>
-      <div class="fumi-stage">
-        <picture>
-          <source srcset="assets/mascot/fumi.png" media="(prefers-reduced-motion: reduce)">
-          <img src="assets/mascot/fumi.svg" width="200" height="242" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, navy skirt with a red and white hem stripe, a mini carrier cap on her frilled headdress) with a mail satchel and a little owl on her shoulder">
-        </picture>
-        <span class="say" aria-hidden="true">You've got mail!</span>
-      </div>
       <div class="hero-text">
         <p class="eyebrow">Postal maid on duty</p>
         <p class="lede">Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.</p>
-        <p class="sub">Fumi (文, "letter") lives in the top-bar corner next to the wordmark. She is part of the header, not the header itself. The banner, title, and badges above are the same masthead as the README.</p>
       </div>
     </div>
 

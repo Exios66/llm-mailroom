@@ -214,6 +214,14 @@ def test_main_exports_all_assets_and_identical_deployable_copies(exported_assets
     }
     gitbook_gif = exported_assets / "docs" / "assets" / "fumi" / "fumi.gif"
     assert gitbook_gif.read_bytes() == (docs / "fumi.gif").read_bytes()
+    with Image.open(gitbook_gif.with_name("fumi-bust.gif")) as bust:
+        assert bust.size == (192, 144)
+        durations = []
+        for i in range(bust.n_frames):  # Pillow merges repeated frames, so sum durations
+            bust.seek(i)
+            durations.append(bust.info["duration"])
+        assert bust.n_frames > 1
+        assert sum(durations) == mascot.TICKS * mascot.TICK_MS
     for copy in landing.iterdir():
         assert copy.read_bytes() == (docs / copy.name).read_bytes()
     for name, size in [("fumi.png", (576, 696)), ("fumi-icon.png", (256, 256)), ("hoot-icon.png", (256, 256)), ("fumi-sheet.png", (1536, 928))]:

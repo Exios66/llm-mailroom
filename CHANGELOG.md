@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Landing page Fumi** now sits small beside the title, cropped at the chest with her "You've got mail!" bubble, like the dsh-TUI header mascot; the large hero copy is gone.
+
 - **The shoulder owl is Hermes** (was Hoot). The GitBook Meet caption is character copy only — it no longer tells readers to upload the favicon in Customize.
 - **GitBook home header is a centered The LLM-Mailroom wordmark.** The header-corner Fumi is gone; a full-width centered `# The LLM-Mailroom` heading fills that slot. The name and 文 translation move onto the on-duty caption: **Postal Worker Fumi (文, "letter") on duty.**
 - **LiteLLM gateway image pinned to `ghcr.io/berriai/litellm:v1.104.0`** (`deploy/docker-compose.full.yml` default; override with `LITELLM_IMAGE`). `main-stable` floats; `main-v1.104.0-stable` is not a published GHCR tag. This is the release exercised with the Mode G stub-backend tests.
