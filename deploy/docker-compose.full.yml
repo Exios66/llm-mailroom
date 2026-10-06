@@ -93,8 +93,10 @@ services:
     # ports: ["127.0.0.1:5432:5432"]
 
   llm-gateway:
-    # Pin a tested release tag for production (e.g. main-v1.xx.x-stable).
-    image: "${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-stable}"
+    # Default is the release exercised with this stack (stub backends +
+    # compose smoke). main-stable floats; main-v1.104.0-stable is not a
+    # published GHCR tag. Override with LITELLM_IMAGE if needed.
+    image: "${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0}"
     restart: unless-stopped
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
     volumes:
