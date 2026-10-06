@@ -50,7 +50,7 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 ## Rules for editing
 
 - **Link, don't copy.** Each repository's own README and `docs/` stay canonical. A guide here summarizes what a newcomer needs to orient, then links to the source. This follows the llm-mailroom rule that `docs/` content is never duplicated.
-- **Every new page goes in `SUMMARY.md`.** A page that is not listed is not published. Operator recipes that belong on this site (Docker compose matrix, Modal + vLLM) live under `docs/` and are listed here — `deploy/README.md` is a file index, not a GitBook page. Sandbox run reports and visuals are nested under the [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) guide.
+- **Every new page goes in `SUMMARY.md`.** A page that is not listed is not published. Operator recipes that belong on this site (Docker compose matrix, Modal + vLLM) live under `docs/` and are listed here — `deploy/README.md` is a file index, not a GitBook page. Sandbox run reports and visuals are nested under the [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) guide. Corpus EDA figures are nested under [Data and corpora](data-and-corpora.md).
 - **Use relative links between pages on this site** (`repos/llm-mailroom.md`, `../architecture.md`) and full GitHub URLs for anything in another repository.
 - **Date facts that drift.** Versions, pins and counts carry an "as of" date; when a release moves them, update [Overview](overview.md) and the affected guide.
 - **Keep the GitHub wiki separate.** `docs/wiki/` remains wiki-only and is not a mirror of these pages.
@@ -64,6 +64,7 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 | Repository archived or superseded | Move it to the copies or earlier-monorepos table in the [Repository index](repo-index.md) |
 | A release changes versions or pins | [Overview](overview.md) version table, the repo's guide, the [dependency table](architecture.md#dependency-summary) |
 | Dataset revision changes | [Data and corpora](data-and-corpora.md) |
+| Mailroom-Corpus-EDA figures or dashboard change | [EDA visuals](../how-it-fits-together/eda-visuals.md) and [Interactive charts](../how-it-fits-together/eda-interactive.md); keep image and iframe URLs on `exios66.github.io/Mailroom-Corpus-EDA` |
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
 | Compose matrix, Mode G, or Modal vLLM knobs change | [Docker](../docker-deployment.md) and [Modal + vLLM](../modal-vllm.md) first; keep `deploy/README.md` as an index that links those pages |
 | Sandbox run reports or figures change | [Run reports](repos/local-mailroom-sandbox-reports.md) and [Visuals](repos/local-mailroom-sandbox-visuals.md); keep image URLs on `Exios66/local-mailroom-sandbox` `main` |

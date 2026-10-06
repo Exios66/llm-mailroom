@@ -59,7 +59,7 @@ All of these packages also live together in the [Digital-Mailroom](../repository
 ### Data: from raw corpora to a pinned dataset
 
 1. **Corpus feeds build class-specific samples.** Enron-Evaluation-Environment turns 517K Enron emails into a stratified, de-duplicated `correspondence` sample. claims-data-eda renders CMS Medicare claim events into plain-text EOB documents with ground truth for `insurance_claim`. Contracts (CUAD), merger agreements (MAUD) and corporate records (EDGAR S-1 exhibits) come from public legal corpora.
-2. **Everything is published to one dataset.** The canonical corpus is [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset): 3,302 documents, five classes, 55 class-by-subclass strata. Mailroom-Corpus-EDA profiles it (phases P0 to P6) and owns the upload helpers.
+2. **Everything is published to one dataset.** The canonical corpus is [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset): 3,302 documents, five classes, 55 class-by-subclass strata. Mailroom-Corpus-EDA profiles it (phases P0 to P6) and owns the upload helpers. GitBook embeds those figures on [Data and corpora](data-and-corpora.md) ([EDA visuals](eda-visuals.md), [interactive charts](eda-interactive.md)).
 3. **Consumers pin a revision, never a live tip.** The pipeline, eval-environment and mailroom-ml all pin the same Hub revision (`ed7576b6`, tag v9.1 at time of writing). The labels sit in a separate `ground_truth` config joined to the blind `default` config on `filename`, so a model under test never sees its answers.
 
 Details: [Data and corpora](data-and-corpora.md).

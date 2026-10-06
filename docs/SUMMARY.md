@@ -12,6 +12,8 @@
 
 * [The constellation](how-it-fits-together/architecture.md)
 * [Data and corpora](how-it-fits-together/data-and-corpora.md)
+  * [EDA visuals](how-it-fits-together/eda-visuals.md)
+  * [Interactive charts](how-it-fits-together/eda-interactive.md)
 * [Governance and workflow](how-it-fits-together/governance.md)
 * [Repository index](how-it-fits-together/repo-index.md)
 
@@ -33,6 +35,8 @@
   * [agent-mailroom](repository-guides/repos/agent-mailroom.md)
   * [llm-mailroom-graph](repository-guides/repos/llm-mailroom-graph.md)
   * [Mailroom-Corpus-EDA](repository-guides/repos/mailroom-corpus-eda.md)
+    * [EDA visuals](how-it-fits-together/eda-visuals.md)
+    * [Interactive charts](how-it-fits-together/eda-interactive.md)
   * [Enron-Evaluation-Environment](repository-guides/repos/enron-evaluation-environment.md)
   * [claims-data-eda](repository-guides/repos/claims-data-eda.md)
   * [atticus-investigation](repository-guides/repos/atticus-investigation.md)

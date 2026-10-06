@@ -24,7 +24,7 @@ One page per repository: what it does, where it fits, how to start, and where it
 
 ## Data
 
-* [Mailroom-Corpus-EDA](mailroom-corpus-eda.md) — canonical dataset EDA and uploads
+* [Mailroom-Corpus-EDA](mailroom-corpus-eda.md) — canonical dataset EDA and uploads ([visuals](../../how-it-fits-together/eda-visuals.md), [interactive](../../how-it-fits-together/eda-interactive.md))
 * [Enron-Evaluation-Environment](enron-evaluation-environment.md) — correspondence corpus
 * [claims-data-eda](claims-data-eda.md) — insurance claims corpus
 

@@ -141,6 +141,10 @@ def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
     assert "    * [Documentation](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-docs.md)" in summary
     assert "    * [Run reports](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-reports.md)" in summary
     assert "    * [Visuals](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-visuals.md)" in summary
+    assert "* [Data and corpora](how-it-fits-together/data-and-corpora.md)" in summary
+    assert "  * [EDA visuals](how-it-fits-together/eda-visuals.md)" in summary
+    assert "  * [Interactive charts](how-it-fits-together/eda-interactive.md)" in summary
+    assert "* [Mailroom-Corpus-EDA](repository-guides/repos/mailroom-corpus-eda.md)" in summary
 
     docker = (
         _DOCS / "pipeline-reference-llm-mailroom" / "deployment" / "docker-deployment.md"
@@ -173,6 +177,36 @@ def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
     assert "cmp-quality.png" in visuals
     assert "cost-by-specialist-hardware.png" in visuals
     assert "board-terminal.svg" in visuals
+
+    data = (_DOCS / "how-it-fits-together" / "data-and-corpora.md").read_text(
+        encoding="utf-8"
+    )
+    eda_visuals = (_DOCS / "how-it-fits-together" / "eda-visuals.md").read_text(
+        encoding="utf-8"
+    )
+    eda_interactive = (_DOCS / "how-it-fits-together" / "eda-interactive.md").read_text(
+        encoding="utf-8"
+    )
+    pages = "https://exios66.github.io/Mailroom-Corpus-EDA"
+    assert f'<iframe src="{pages}/"' in data
+    assert "01_type_and_subclass_distribution.png" in data
+    assert "23_imbalance_treemap.png" in data
+    assert "huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/embed/viewer" in data
+    assert '{% embed url="https://exios66.github.io/Mailroom-Corpus-EDA/" %}' in data
+    for n, name in (
+        ("01", "type_and_subclass_distribution"),
+        ("08", "cuad_clause_presence"),
+        ("14", "maud_answer_distribution"),
+        ("21", "corr_intent"),
+        ("30", "metadata_cardinality"),
+    ):
+        assert f"{n}_{name}.png" in eda_visuals
+        assert f"{pages}/figures/{n}_{name}.png" in eda_visuals
+    assert eda_visuals.count(f"{pages}/figures/") == 30
+    assert f'<iframe src="{pages}/"' in eda_interactive
+    assert f"{pages}/figures_interactive/04_text_length_violin.html" in eda_interactive
+    assert f"{pages}/figures_interactive/23_imbalance_treemap.html" in eda_interactive
+    assert eda_interactive.count(f"{pages}/figures_interactive/") >= 18
 
 
 def test_docker_and_modal_pages_cover_operator_matrix():
