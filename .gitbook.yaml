@@ -1,0 +1,9 @@
+# GitBook Git Sync configuration for the Mailroom constellation docs site.
+# The site is built from docs/: README.md is the landing page and SUMMARY.md
+# is the table of contents. Pages not listed in SUMMARY.md (docs/wiki/,
+# docs/assets/) are not published. See docs/constellation/maintaining.md.
+root: ./docs/
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md

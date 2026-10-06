@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>llm-mailroom</title>
+<meta name="description" content="A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents with a full audit trail. Meet Fumi, our mail clerk.">
+<link rel="icon" type="image/png" href="assets/mascot/fumi-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: graph-paper sorting desk; mascot + wordmark hero, then the idle mailroom TUI as the centerpiece, then a short pipeline walk-through. */
+:root {
+  --paper: #eef0f8;          /* page ground, cool lavender-grey */
+  --grid: #dde1f0;           /* graph-paper rules */
+  --card: #ffffff;
+  --ink: #1b1f3b;            /* text */
+  --ink-soft: #565d80;
+  --post: #3346b8;           /* postal navy-blue accent */
+  --seal: #d92b45;           /* wax-seal red */
+  --brass: #e9b53c;          /* badge brass */
+  --line: #cfd4ea;
+  --term-bg: #151933;        /* terminal is dark in both themes */
+  --term-fg: #dfe3ff;
+  --term-dim: #7d84b3;
+  --term-line: #2b3160;
+  --halo: #c9d1ff;
+  --ok: #4fd18b;
+  --warn: #f2b84b;
+  --bad: #ff6b80;
+  --display: "Pixelify Sans", "Silkscreen", ui-monospace, monospace;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #10132a; --grid: #1a1e3c; --card: #171b38; --ink: #e8eaff; --ink-soft: #a3a9d6;
+    --post: #8a9bff; --seal: #ff6b80; --brass: #f2c14e; --line: #2a2f5a;
+    --term-bg: #0b0e22; --term-fg: #dfe3ff; --term-dim: #7178aa; --term-line: #262b55; --halo: #2a3380;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #10132a; --grid: #1a1e3c; --card: #171b38; --ink: #e8eaff; --ink-soft: #a3a9d6;
+  --post: #8a9bff; --seal: #ff6b80; --brass: #f2c14e; --line: #2a2f5a;
+  --term-bg: #0b0e22; --term-fg: #dfe3ff; --term-dim: #7178aa; --term-line: #262b55; --halo: #2a3380;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--ink);
+  font: 400 1rem/1.6 var(--body);
+}
+a { color: var(--post); }
+:focus-visible { outline: 2px solid var(--post); outline-offset: 2px; }
+.wrap { max-width: 68rem; margin: 0 auto; padding-inline: max(16px, 4vw); }
+
+/* top bar */
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1.1rem; }
+.brand { display: flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--ink); font: 700 1.35rem/1 var(--display); }
+.brand img { width: 40px; height: 40px; image-rendering: pixelated; }
+.brand b { color: var(--post); font-weight: 700; }
+.bar nav { display: flex; gap: .5rem; align-items: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: .45rem; padding: .5rem .85rem;
+  border: 1.5px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink);
+  font: 500 .9rem/1 var(--body); text-decoration: none; cursor: pointer;
+}
+.btn:hover { border-color: var(--post); }
+.btn.primary { background: var(--post); border-color: var(--post); color: var(--card); }
+.btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+/* hero */
+.hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 1rem 2.5rem; padding-block: 3rem 2rem; }
+.tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
+.tag { font: 500 .82rem/1 var(--mono); padding: .45rem .7rem; border: 1px solid var(--line); background: var(--card); border-radius: 4px; color: var(--ink-soft); }
+.tag em { font-style: normal; color: var(--post); }
+.fumi-stage { position: relative; width: 240px; max-width: 100%; }
+.fumi-stage img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.say {
+  position: absolute; top: -1.6rem; left: 38%;
+  font: 700 1rem/1 var(--display); color: var(--ink); background: var(--card);
+  border: 3px solid var(--ink); padding: .5rem .7rem; box-shadow: 4px 4px 0 var(--post);
+  white-space: nowrap; animation: say 3.2s steps(1) infinite;
+}
+.say::before { content: ""; position: absolute; left: 14px; bottom: -15px; border: 6px solid transparent; border-top-color: var(--ink); }
+@keyframes say { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+.hero-text { padding-bottom: 1rem; }
+h1 { margin: 0; font: 700 clamp(2.6rem, 8vw, 5.4rem)/1 var(--display); letter-spacing: -.01em; text-wrap: balance; }
+h1 .llm { color: var(--post); }
+.lede { margin: 1rem 0 0; font-size: clamp(1.1rem, 2.2vw, 1.4rem); line-height: 1.45; max-width: 34ch; text-wrap: balance; }
+.lede strong { color: var(--post); font-weight: 600; }
+.sub { margin: .9rem 0 0; color: var(--ink-soft); max-width: 60ch; }
+
+.install {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+  margin-block: 1.5rem 0; padding: 1rem 1.1rem; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+}
+.install pre { margin: 0; min-width: 0; overflow-x: auto; font: 500 .92rem/1.7 var(--mono); color: var(--post); }
+.install pre span { color: var(--ink-soft); }
+
+/* section heads */
+.eyebrow { font: 600 .78rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--seal); margin: 0 0 .5rem; }
+h2 { margin: 0; font: 700 clamp(1.6rem, 3.5vw, 2.2rem)/1.15 var(--display); text-wrap: balance; }
+section { padding-block: 2.5rem; }
+.section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: .5rem 2rem; margin-bottom: 1.25rem; }
+.section-head p { margin: 0; color: var(--ink-soft); max-width: 46ch; }
+
+/* ---------- the idle TUI ---------- */
+.term {
+  background: var(--term-bg); color: var(--term-fg); border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--term-line); box-shadow: 0 18px 50px -24px rgba(20, 24, 60, .55), 6px 6px 0 var(--post);
+  font: 400 .84rem/1.55 var(--mono);
+}
+.term-top { display: flex; align-items: center; gap: .75rem; padding: .55rem .9rem; background: rgba(255,255,255,.04); border-bottom: 1px solid var(--term-line); }
+.dots { display: flex; gap: 6px; }
+.dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--term-line); }
+.dots i:first-child { background: var(--bad); }
+.dots i:nth-child(2) { background: var(--warn); }
+.dots i:nth-child(3) { background: var(--ok); }
+.term-title { color: var(--term-dim); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.term-title b { color: var(--term-fg); font-weight: 600; }
+.sim { color: var(--term-dim); font-size: .75rem; border: 1px solid var(--term-line); padding: .1rem .45rem; border-radius: 3px; white-space: nowrap; }
+
+.tui { display: grid; grid-template-columns: 15rem minmax(0, 1fr); }
+.pane { padding: .8rem .9rem; min-width: 0; }
+.pane + .pane { border-left: 1px solid var(--term-line); }
+.pane h3 { margin: 0 0 .4rem; font: 600 .72rem/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--term-dim); }
+
+.clerk { display: flex; gap: .7rem; align-items: center; padding-bottom: .7rem; margin-bottom: .7rem; border-bottom: 1px dashed var(--term-line); }
+.clerk img { width: 72px; height: 72px; image-rendering: pixelated; flex: none; }
+.clerk-name { font: 700 1rem/1.2 var(--display); color: var(--term-fg); }
+.clerk-mood { color: var(--term-dim); font-size: .78rem; }
+.clerk-mood .live { color: var(--ok); }
+
+.bins { list-style: none; margin: 0; padding: 0; font-variant-numeric: tabular-nums; }
+.bins li { display: flex; justify-content: space-between; gap: .5rem; white-space: nowrap; }
+.bins li span:first-child { color: var(--term-dim); }
+.bins li.indent span:first-child { padding-left: 1.1em; }
+.bins li .n { color: var(--term-fg); }
+.bins li.hot .n { color: var(--warn); }
+.bins li.flash { animation: flash .6s ease-out; }
+@keyframes flash { from { background: rgba(138,155,255,.25); } to { background: transparent; } }
+
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-bottom: .8rem; }
+.node { padding: .15rem .5rem; border: 1px solid var(--term-line); border-radius: 3px; color: var(--term-dim); white-space: nowrap; transition: color .2s, border-color .2s, background .2s; }
+.node.on { color: var(--term-bg); background: var(--warn); border-color: var(--warn); font-weight: 600; }
+.node.done { color: var(--ok); border-color: rgba(79,209,139,.45); }
+.node.review { color: var(--term-bg); background: var(--bad); border-color: var(--bad); }
+.arrow { color: var(--term-line); }
+
+.current { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .1rem 1rem; padding: .55rem .7rem; border: 1px dashed var(--term-line); border-radius: 4px; margin-bottom: .8rem; min-height: 5.9rem; }
+.current dt { color: var(--term-dim); }
+.current dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conf { display: inline-flex; align-items: center; gap: .5rem; }
+.meter { display: inline-block; width: 7rem; height: .5rem; background: var(--term-line); position: relative; vertical-align: middle; }
+.meter i { position: absolute; inset: 0 auto 0 0; background: var(--ok); }
+.meter::after { content: ""; position: absolute; left: 88%; top: -2px; bottom: -2px; width: 1px; background: var(--warn); }
+.meter::before { content: ""; position: absolute; left: 97%; top: -2px; bottom: -2px; width: 1px; background: var(--term-fg); z-index: 1; }
+
+.log { height: 13.5rem; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+.log div { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.log .t { color: var(--term-dim); }
+.log .lv { color: var(--ok); }
+.log .lv.warn { color: var(--warn); }
+.log .ev { color: #a9b6ff; }
+.log .k { color: var(--term-dim); }
+.log .seal { color: var(--bad); }
+
+.statusline { display: flex; flex-wrap: wrap; gap: .25rem 1.2rem; padding: .45rem .9rem; border-top: 1px solid var(--term-line); background: rgba(255,255,255,.03); color: var(--term-dim); font-size: .78rem; font-variant-numeric: tabular-nums; }
+.statusline b { color: var(--term-fg); font-weight: 500; }
+.statusline .ok { color: var(--ok); }
+.cursor { display: inline-block; width: .55em; height: 1em; background: var(--term-fg); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* pipeline steps */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1rem; counter-reset: s; }
+.steps li { counter-increment: s; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem; min-width: 0; }
+.steps li::before { content: counter(s, decimal-leading-zero); display: block; font: 700 1.1rem/1 var(--display); color: var(--seal); margin-bottom: .5rem; }
+.steps h3 { margin: 0 0 .3rem; font: 600 1rem/1.3 var(--body); }
+.steps p { margin: 0; color: var(--ink-soft); font-size: .93rem; }
+.steps code { font: 500 .85em var(--mono); color: var(--post); }
+
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.5rem 2rem; margin: 0; }
+.facts div { border-top: 2px solid var(--ink); padding-top: .7rem; min-width: 0; }
+.facts dt { font: 700 1.05rem/1.3 var(--display); }
+.facts dd { margin: .3rem 0 0; color: var(--ink-soft); font-size: .95rem; }
+
+.meet { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1.5rem 2rem; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.5rem; }
+.meet img { width: 160px; max-width: 100%; image-rendering: pixelated; }
+.meet p { margin: .5rem 0 0; color: var(--ink-soft); max-width: 60ch; }
+
+footer { padding-block: 2rem 3rem; color: var(--ink-soft); font-size: .9rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; }
+footer nav { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+
+/* ambient: soft glows + drifting pixels, like a sorting desk under lamplight */
+.ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.ambient .glow { position: absolute; border-radius: 50%; filter: blur(60px); opacity: .55; background: var(--halo); }
+.ambient .g1 { width: 34rem; height: 34rem; left: -10rem; top: -12rem; }
+.ambient .g2 { width: 30rem; height: 30rem; right: -12rem; top: 22rem; }
+.ambient i { position: absolute; width: 8px; height: 8px; background: var(--post); opacity: .45; animation: drift 9s steps(18) infinite alternate; }
+@keyframes drift { from { transform: translate(0, 0); } to { transform: translate(14px, -28px); } }
+.wrap { position: relative; z-index: 1; }
+
+/* menu */
+.menu { position: relative; }
+.menu-panel {
+  position: absolute; right: 0; top: calc(100% + .5rem); width: 15rem; padding: .5rem;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 8px; box-shadow: 0 16px 40px -20px rgba(20, 24, 60, .45);
+  display: grid; gap: 2px; z-index: 5;
+}
+.menu-panel a { padding: .5rem .65rem; border-radius: 5px; text-decoration: none; color: var(--ink); font-size: .93rem; display: flex; justify-content: space-between; gap: .5rem; }
+.menu-panel a:hover, .menu-panel a:focus-visible { background: var(--paper); }
+.menu-panel a span { color: var(--ink-soft); font: .78rem/1.6 var(--mono); }
+.menu-panel hr { border: 0; border-top: 1px solid var(--line); margin: .3rem 0; width: 100%; }
+a.tag { text-decoration: none; }
+a.tag:hover { border-color: var(--post); color: var(--ink); }
+.icon-btn { padding: .55rem; }
+
+/* docs shelf */
+.shelf { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.shelf a {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .15rem .8rem; align-items: start; align-content: start;
+  padding: .9rem 1rem; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  text-decoration: none; color: var(--ink); transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.shelf a:hover { transform: translate(-2px, -2px); border-color: var(--post); box-shadow: 4px 4px 0 var(--post); }
+.shelf .env { grid-row: span 2; width: 26px; height: 20px; margin-top: .2rem; image-rendering: pixelated; }
+.shelf b { font: 600 .98rem/1.3 var(--body); }
+.shelf span { color: var(--ink-soft); font-size: .88rem; line-height: 1.45; }
+.shelf code { font: 500 .8rem var(--mono); color: var(--post); }
+
+@media (max-width: 1000px) {
+  .shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .steps li:last-child { grid-column: 1 / -1; }
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .steps, .facts, .shelf { grid-template-columns: minmax(0, 1fr); }
+  .hero-text { padding-top: 0; }
+  .say { left: 42%; }
+  .hero { grid-template-columns: minmax(0, 1fr); padding-block: 1.5rem 1rem; }
+  .fumi-stage { width: 200px; margin-top: 1.75rem; }
+  .say { font-size: .9rem; }
+  .tui { grid-template-columns: minmax(0, 1fr); }
+  .pane + .pane { border-left: 0; border-top: 1px solid var(--term-line); }
+  .clerk img { width: 56px; height: 56px; }
+  .log { height: 11rem; font-size: .76rem; }
+  .meet { grid-template-columns: minmax(0, 1fr); }
+  .bar .label { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="ambient" aria-hidden="true">
+  <div class="glow g1"></div><div class="glow g2"></div>
+  <i style="left:8%;top:22%"></i><i style="left:61%;top:14%;animation-delay:-3s"></i>
+  <i style="left:91%;top:38%;animation-delay:-5s"></i><i style="left:5%;top:63%;animation-delay:-2s"></i>
+  <i style="left:47%;top:81%;animation-delay:-7s"></i><i style="left:83%;top:72%;animation-delay:-1s"></i>
+</div>
+<div class="wrap">
+  <header class="bar">
+    <a class="brand" href="#top" aria-label="llm-mailroom home">
+      <img src="assets/mascot/fumi-icon.png" alt="" width="40" height="40">
+      <span><b>llm</b>-mailroom</span>
+    </a>
+    <nav>
+      <button class="btn" id="theme" type="button" aria-label="Toggle dark mode">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+      <a class="btn primary" href="https://github.com/Exios66/llm-mailroom">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span class="label">GitHub</span>
+      </a>
+      <div class="menu">
+        <button class="btn icon-btn" id="menu-btn" type="button" aria-expanded="false" aria-controls="menu-panel" aria-label="Open menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+        </button>
+        <div class="menu-panel" id="menu-panel" hidden>
+          <a href="#floor">Mail floor <span>live sim</span></a>
+          <a href="#route">Pipeline <span>5 stops</span></a>
+          <a href="#box">Features</a>
+          <a href="#shelf">Documentation</a>
+          <a href="#meet">Meet Fumi</a>
+          <hr>
+          <a href="https://github.com/Exios66/llm-mailroom">Repository <span>↗</span></a>
+          <a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md">Changelog <span>↗</span></a>
+          <a href="https://github.com/Exios66/llm-mailroom/issues">Issues <span>↗</span></a>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <div class="hero">
+      <div class="tags">
+        <a class="tag" href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md"><em>release</em> · v0.7.1</a>
+        <a class="tag" href="https://github.com/Exios66/llm-mailroom#langgraph-state-machine"><em>LangGraph</em> · 13-node state machine</a>
+        <a class="tag" href="https://github.com/Exios66/llm-mailroom/blob/main/docs/architecture.md"><em>audit</em> · hash-chained log</a>
+        <a class="tag" href="https://github.com/Exios66/llm-mailroom#quick-start"><em>storage</em> · SQLite-first</a>
+      </div>
+      <div class="fumi-stage">
+        <img src="assets/mascot/fumi.svg" width="240" height="290" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, navy skirt with a red and white hem stripe, a mini carrier cap on her frilled headdress) with a mail satchel and a little owl on her shoulder">
+        <span class="say" aria-hidden="true">You've got mail!</span>
+      </div>
+      <div class="hero-text">
+        <h1><span class="llm">llm</span>-mailroom</h1>
+        <p class="lede">A multi-agent pipeline that <strong>ingests, classifies, extracts, and archives</strong> legal documents with a full audit trail.</p>
+        <p class="sub">One LangGraph run per document, a specialist LLM agent per document class, and a provider-agnostic model layer. Every step is traced, and every archive entry is hash-chained to the one before it.</p>
+      </div>
+    </div>
+
+    <div class="install">
+      <pre id="install-cmd"><span># install, then start the API (it embeds the inbox watcher)</span>
+pip install -e ".[dev]"
+PYTHONPATH=src python -m api.main</pre>
+      <button class="btn icon-btn" id="copy" type="button" aria-label="Copy install commands">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h11v13h-2V5H8zM4 7h11v14H4zm2 2v10h7V9z"/></svg>
+      </button>
+    </div>
+
+    <section aria-labelledby="floor">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">The mail floor</p>
+          <h2 id="floor">Fumi minds the inbox</h2>
+        </div>
+        <p>A simulated watcher session. Mail arrives, gets sorted by class, routed on confidence, and filed with a sealed audit entry. Between deliveries, the floor idles.</p>
+      </div>
+
+      <div class="term" role="img" aria-label="Simulated llm-mailroom terminal showing documents moving through the pipeline">
+        <div class="term-top">
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="term-title"><b>mailroom</b> · watcher · data/pipeline/inbox</span>
+          <span class="sim">simulated · sample documents</span>
+        </div>
+        <div class="tui">
+          <div class="pane">
+            <div class="clerk">
+              <img src="assets/mascot/fumi-icon.png" alt="" width="72" height="72">
+              <div>
+                <div class="clerk-name">Fumi</div>
+                <div class="clerk-mood" id="mood"><span class="live">●</span> idle · waiting for mail</div>
+              </div>
+            </div>
+            <h3>Bins</h3>
+            <ul class="bins" id="bins"></ul>
+          </div>
+          <div class="pane">
+            <h3>Pipeline</h3>
+            <div class="flow" id="flow"></div>
+            <dl class="current" id="current"></dl>
+            <h3>Log</h3>
+            <div class="log" id="log" aria-live="off"></div>
+          </div>
+        </div>
+        <div class="statusline">
+          <span class="ok">● watcher</span>
+          <span>archived <b id="s-arch">0</b></span>
+          <span>review <b id="s-rev">0</b></span>
+          <span>audit chain <b id="s-chain">0</b> <span class="ok">verified</span></span>
+          <span>thresholds <b>0.88 / 0.97</b></span>
+          <span><span class="cursor" aria-hidden="true"></span></span>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="route">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Route of a letter</p>
+          <h2 id="route">From inbox to archive</h2>
+        </div>
+        <p>The happy path costs two LLM generations. Everything else is procedural, gated, or a human's call.</p>
+      </div>
+      <ol class="steps">
+        <li><h3>Intake</h3><p>The watcher claims the upload by atomic rename into <code>processing/</code>, transcribes it, and cleans it. Nothing is ever truncated.</p></li>
+        <li><h3>Classify</h3><p>The sorter picks one of five classes. At <code>0.97</code> or above it goes straight on; between <code>0.88</code> and <code>0.97</code> it goes to review.</p></li>
+        <li><h3>Extract</h3><p>The class specialist fills its schema. Guardrails check the JSON before anything moves forward.</p></li>
+        <li><h3>Verify</h3><p>Ambiguous extractions get a judge, then an arbiter. Conflicts go to the boss agent or a human.</p></li>
+        <li><h3>Archive</h3><p>A procedural report, a catalog row in SQLite, and an archive entry sealed into the hash-chained audit log.</p></li>
+      </ol>
+    </section>
+
+    <section aria-labelledby="box">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">In the satchel</p>
+          <h2 id="box">What ships with it</h2>
+        </div>
+      </div>
+      <dl class="facts">
+        <div><dt>Five document classes</dt><dd>Contracts, merger agreements, corporate records, correspondence, and insurance claims, each with its own specialist.</dd></div>
+        <div><dt>Any model provider</dt><dd>OpenRouter, Ollama, or vLLM. Agents ask for a role; <code>taxonomy.yaml</code> decides the model.</dd></div>
+        <div><dt>Traced end to end</dt><dd>Langfuse, Braintrust, or a local Arize Phoenix. The pipeline runs fine with none of them.</dd></div>
+        <div><dt>Evaluation built in</dt><dd>A 23-sample pilot with ground truth, deterministic field scoring, LLM judges, and a LegalBench harness.</dd></div>
+      </dl>
+    </section>
+
+    <section aria-labelledby="shelf">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Pigeonholes</p>
+          <h2 id="shelf">Read the docs</h2>
+        </div>
+        <p>Everything lives in the repository's <code>docs/</code> folder. Each card opens the page on GitHub.</p>
+      </div>
+      <div class="shelf">
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/architecture.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Architecture</b><span>The 13-node graph, routing, and the auxiliary lanes.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/agents.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Agents</b><span>Sorter, five specialists, judge, arbiter, and boss.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/configuration.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Configuration</b><span><code>taxonomy.yaml</code>, thresholds, and environment variables.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/api.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>API</b><span>Upload, status, and audit endpoints on the FastAPI server.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/local-models.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Local models</b><span>Cutting agents over to Ollama or vLLM.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/deployment.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Deployment</b><span>Docker, Railway, Modal, and the Hugging Face Space pair.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/gmail-intake.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Gmail intake</b><span>Mailbox polling, the free triage lane, and reply echoes.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/testing.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Testing</b><span>Hermetic pytest suite, pilots, and evaluators.</span></a>
+        <a href="https://github.com/Exios66/llm-mailroom/blob/main/docs/sister-repos.md"><svg class="env" viewBox="0 0 13 10" aria-hidden="true" shape-rendering="crispEdges"><path fill="var(--ink)" d="M0 0h13v10H0z"/><path fill="var(--card)" d="M1 1h11v8H1z"/><path fill="var(--line)" d="M1 1h1v1h1v1h1v1h1v1h3V4h1V3h1V2h1V1h1v1h-1v1h-1v1h-1v1h-1v1H5V5H4V4H3V3H2V2H1z"/><path fill="var(--seal)" d="M6 5h1v2H6z"/></svg><b>Sister repos</b><span>How the mailroom fits into its constellation.</span></a>
+      </div>
+    </section>
+
+    <section aria-labelledby="meet">
+      <div class="meet">
+        <img src="assets/mascot/fumi.gif" alt="Fumi in her postal uniform while Hoot the owl blinks on her shoulder, animated" width="160" height="193">
+        <div>
+          <p class="eyebrow">Mascot</p>
+          <h2 id="meet">Meet Fumi</h2>
+          <p>Fumi (文, "letter") is the mailroom's head maid, in a carrier's uniform: postal-blue shirt, navy skirt with the red and white stripe, a mini carrier cap pinned to her headdress, and a leather satchel. Hoot the owl, a junior colleague of the night-shift owl on our banner, checks the postmarks from her shoulder. She's animated from a pixel sprite by <code>src/scripts/build_mascot.py</code>.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>llm-mailroom · documentation lives in the repository's <code>docs/</code> folder.</span>
+    <nav>
+      <a href="https://github.com/Exios66/llm-mailroom#readme">README</a>
+      <a href="https://github.com/Exios66/llm-mailroom/tree/main/docs">Docs</a>
+      <a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md">Changelog</a>
+    </nav>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // theme toggle (per-viewer convenience only)
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("mailroom-theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  document.getElementById("theme").addEventListener("click", () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("mailroom-theme", root.dataset.theme); } catch (e) {}
+  });
+
+  // menu
+  const menuBtn = document.getElementById("menu-btn"), panel = document.getElementById("menu-panel");
+  /** Show or hide the menu and update the toggle's expanded state. */
+  const setMenu = (open) => { panel.hidden = !open; menuBtn.setAttribute("aria-expanded", String(open)); };
+  menuBtn.addEventListener("click", (e) => { e.stopPropagation(); setMenu(panel.hidden); });
+  panel.addEventListener("click", (e) => { if (e.target.closest("a")) setMenu(false); });
+  document.addEventListener("click", (e) => { if (!panel.hidden && !panel.contains(e.target)) setMenu(false); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMenu(false); });
+
+  // copy install command
+  const copyBtn = document.getElementById("copy");
+  copyBtn.addEventListener("click", () => {
+    const text = 'pip install -e ".[dev]"\nPYTHONPATH=src python -m api.main';
+    /** Show successful-copy feedback for 1500 ms, then restore the button. */
+    const done = () => { copyBtn.setAttribute("aria-label", "Copied"); copyBtn.style.borderColor = "var(--ok)"; setTimeout(() => { copyBtn.style.borderColor = ""; copyBtn.setAttribute("aria-label", "Copy install commands"); }, 1500); };
+    /** Select the install text for manual copying when clipboard access fails. */
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById("install-cmd")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  // ---------- simulated mail floor ----------
+  const STAGES = ["intake", "classify", "extract", "judge", "report", "catalog", "archive"];
+  const CLASSES = ["contract", "merger_agreement", "corporate_record", "correspondence", "insurance_claim"];
+  const SPECIALIST = { contract: "contracts_specialist", merger_agreement: "merger_agreement_specialist", corporate_record: "corporate_records_specialist", correspondence: "correspondence_specialist", insurance_claim: "insurance_claims_specialist" };
+  const SAMPLES = [
+    { f: "sample_msa.txt", c: "contract", m: "MATTER-001" },
+    { f: "atticus_03.pdf", c: "contract", m: "MATTER-014" },
+    { f: "maud_merger_02.pdf", c: "merger_agreement", m: "MATTER-022" },
+    { f: "fnol_claim_0142.pdf", c: "insurance_claim", m: "MATTER-031" },
+    { f: "board_resolution_q3.pdf", c: "corporate_record", m: "MATTER-007" },
+    { f: "enron_memo_118.eml", c: "correspondence", m: "MATTER-040" },
+    { f: "denial_letter_0219.pdf", c: "insurance_claim", m: "MATTER-031" },
+    { f: "nda_mutual_v2.pdf", c: "contract", m: "MATTER-001" },
+    { f: "bylaws_amendment.pdf", c: "corporate_record", m: "MATTER-007" },
+  ];
+  /** Return the element with the given ID, or null if none exists. */
+  const $ = (id) => document.getElementById(id);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const counts = { inbox: 0, processing: 0, review: 0, failed: 0, archived: 0 };
+  const byClass = Object.fromEntries(CLASSES.map((c) => [c, 0]));
+  let chain = 412, sampleIdx = 0, prevHash = "9c1e40aa";
+  counts.archived = 37; byClass.contract = 14; byClass.correspondence = 9; byClass.insurance_claim = 6; byClass.corporate_record = 5; byClass.merger_agreement = 3; counts.review = 2;
+
+  /** Return n random lowercase hex digits for simulated IDs and audit hashes. */
+  const hex = (n) => Array.from({ length: n }, () => "0123456789abcdef"[Math.random() * 16 | 0]).join("");
+  /** Return the local time as HH:MM:SS for terminal timestamps. */
+  const clock = () => new Date().toTimeString().slice(0, 8);
+
+  /** Redraw simulated bin counts, highlighting the optional flash bin or class key. */
+  function renderBins(flash) {
+    const rows = [
+      ["inbox/", counts.inbox, "inbox"], ["processing/", counts.processing, "processing"],
+      ["review/", counts.review, "review"], ["failed/", counts.failed, "failed"],
+      ["archive/", counts.archived, "archived"],
+      ...CLASSES.map((c) => [c + "/", byClass[c], c, true]),
+    ];
+    $("bins").innerHTML = rows.map(([name, n, key, indent]) =>
+      `<li class="${indent ? "indent" : ""} ${key === "inbox" && n ? "hot" : ""} ${flash === key ? "flash" : ""}"><span>${name}</span><span class="n">${n}</span></li>`).join("");
+  }
+  /**
+   * Redraw stages from their names: review styling takes precedence over active,
+   * then completed stages in done. Null active/review values leave those styles off.
+   */
+  function renderFlow(active, done, review) {
+    $("flow").innerHTML = STAGES.map((s, i) => {
+      let cls = "node";
+      if (review && s === review) cls += " review";
+      else if (s === active) cls += " on";
+      else if (done.includes(s)) cls += " done";
+      return (i ? '<span class="arrow">›</span>' : "") + `<span class="${cls}">${s}</span>`;
+    }).join("");
+  }
+  /**
+   * Show a simulated document's f (filename), m (matter), cls, and conf (0–1).
+   * A missing class or confidence stays pending; a falsy doc clears the display.
+   * Values are inserted as HTML and must come from trusted sample data.
+   */
+  function renderCurrent(doc) {
+    if (!doc) {
+      $("current").innerHTML = `<dt>doc</dt><dd>—</dd><dt>class</dt><dd>—</dd><dt>confidence</dt><dd><span class="conf"><span class="meter"><i style="width:0"></i></span> —</span></dd><dt>matter</dt><dd>—</dd>`;
+      return;
+    }
+    const c = doc.conf == null ? 0 : doc.conf;
+    $("current").innerHTML = `<dt>doc</dt><dd>${doc.f}</dd><dt>class</dt><dd>${doc.cls || "…"}</dd>` +
+      `<dt>confidence</dt><dd><span class="conf"><span class="meter"><i style="width:${c * 100}%;background:${c >= .97 ? "var(--ok)" : "var(--warn)"}"></i></span> ${doc.conf == null ? "…" : c.toFixed(2)}</span></dd><dt>matter</dt><dd>${doc.m}</dd>`;
+  }
+  /** Append trusted HTML with a timestamp, keeping only the latest 14 entries. */
+  function log(html) {
+    const el = $("log");
+    const line = document.createElement("div");
+    line.innerHTML = `<span class="t">${clock()}</span> ${html}`;
+    el.appendChild(line);
+    while (el.children.length > 14) el.removeChild(el.firstChild);
+  }
+  /** Append an info event using trusted event and key/value HTML. */
+  const info = (ev, kv) => log(`<span class="lv">[info]</span> <span class="ev">${ev}</span> ${kv}`);
+  /** Append a warning event using trusted event and key/value HTML. */
+  const warn = (ev, kv) => log(`<span class="lv warn">[warn]</span> <span class="ev">${ev}</span> ${kv}`);
+  /** Format object entries as key/value HTML without escaping keys or values. */
+  const kv = (o) => Object.entries(o).map(([k, v]) => `<span class="k">${k}=</span>${v}`).join(" ");
+  /** Replace the simulation status with trusted HTML and return that HTML. */
+  const mood = (html) => ($("mood").innerHTML = html);
+  /** Resolve after a delay in milliseconds, capped at 400 when reduced motion is set. */
+  const wait = (ms) => new Promise((r) => setTimeout(r, reduce ? Math.min(ms, 400) : ms));
+
+  /**
+   * Animate the next cyclic sample, updating simulated bins, counters, and displays.
+   * Randomly choose review (20%) or archive and generate matching confidence;
+   * archived samples also advance the mock audit chain. Resolve after clearing
+   * the stage and document displays; no files or backend records are changed.
+   */
+  async function deliver() {
+    const s = SAMPLES[sampleIdx++ % SAMPLES.length];
+    const doc = { ...s, id: "doc_" + hex(6), conf: null, cls: null };
+    // ~1 in 5 lands in the review band
+    const toReview = Math.random() < 0.2;
+    const conf = toReview ? 0.89 + Math.random() * 0.07 : 0.97 + Math.random() * 0.029;
+
+    counts.inbox++; renderBins("inbox");
+    mood('<span class="live">●</span> sorting incoming mail');
+    info("inbox-received", kv({ file: doc.f, matter: doc.m }));
+    await wait(900);
+
+    counts.inbox--; counts.processing++; renderBins("processing");
+    const done = [];
+    renderFlow("intake", done); renderCurrent(doc);
+    info("intake-document", kv({ doc: doc.id, chars: (4000 + Math.random() * 60000 | 0).toLocaleString("en-US") }));
+    await wait(1100); done.push("intake");
+
+    renderFlow("classify", done);
+    await wait(1200);
+    doc.cls = doc.c; doc.conf = conf; renderCurrent(doc);
+    info("classify-document", kv({ class: doc.cls, confidence: conf.toFixed(2) }));
+    await wait(700); done.push("classify");
+
+    if (toReview) {
+      renderFlow(null, done, "extract");
+      warn("route-for-review", kv({ reason: '"0.88 ≤ conf < 0.97"', bin: "review/" }));
+      counts.processing--; counts.review++; renderBins("review");
+      mood('<span class="live">●</span> flagged one for a human');
+      await wait(1600);
+    } else {
+      renderFlow("extract", done);
+      await wait(1300);
+      info("extract-fields", kv({ specialist: SPECIALIST[doc.cls], fields: 6 + (Math.random() * 9 | 0), schema_valid: "true" }));
+      done.push("extract");
+      const judged = Math.random() < 0.3;
+      if (judged) {
+        renderFlow("judge", done); await wait(1100);
+        info("judge-verify", kv({ verdict: "complete" }));
+      }
+      done.push("judge");
+      for (const st of ["report", "catalog"]) {
+        renderFlow(st, done); await wait(650); done.push(st);
+      }
+      info("write-catalog", kv({ table: "documents", matter: doc.m }));
+      renderFlow("archive", done); await wait(900);
+      const h = hex(8);
+      chain++;
+      log(`<span class="lv">[info]</span> <span class="ev">archive-document</span> ${kv({ sha256: h + "…", prev: prevHash + "…" })} <span class="seal">✉ sealed</span>`);
+      prevHash = h;
+      done.push("archive");
+      counts.processing--; counts.archived++; byClass[doc.cls]++;
+      renderFlow(null, done); renderBins(doc.cls);
+      $("s-arch").textContent = counts.archived; $("s-chain").textContent = chain;
+      mood('<span class="live">●</span> filed! ♡');
+      await wait(1400);
+    }
+    $("s-rev").textContent = counts.review;
+    renderFlow(null, []); renderCurrent(null);
+  }
+
+  /**
+   * Initialize the simulated terminal and deliver samples serially after idle delays.
+   * The returned promise stays pending during normal operation; an uncaught
+   * delivery error rejects it and stops the loop.
+   */
+  async function loop() {
+    renderBins(); renderFlow(null, []); renderCurrent(null);
+    $("s-arch").textContent = counts.archived; $("s-rev").textContent = counts.review; $("s-chain").textContent = chain;
+    info("watcher-started", kv({ inbox: "data/pipeline/inbox", embedded: "true" }));
+    info("audit-chain-verified", kv({ entries: chain, broken_links: 0 }));
+    for (;;) {
+      mood('<span class="live">●</span> idle · waiting for mail');
+      const idle = 3500 + Math.random() * 4500;
+      await wait(idle);
+      if (Math.random() < 0.25) info("rescan-sweep", kv({ inbox: 0, stale_claims: 0 }));
+      await deliver();
+    }
+  }
+  loop();
+})();
+</script>
+</body>
+</html>
