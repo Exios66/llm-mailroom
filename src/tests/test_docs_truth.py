@@ -262,3 +262,16 @@ def test_gitbook_changelog_space_mirrors_repo_changelog():
     assert "tag: feature" in tags
     assert "tag: improvement" in tags
     assert "tag: fix" in tags
+
+
+def test_gitbook_agents_honest_gaps_cite_dojo_0191():
+    """GitBook Agents page must name the current scoring-dojo release, not a
+    frozen 0.14.0 snapshot. Canonical docs/agents.md stays in lockstep."""
+    published = (
+        _DOCS / "pipeline-reference-llm-mailroom" / "agents.md"
+    ).read_text(encoding="utf-8")
+    canonical = (_DOCS / "agents.md").read_text(encoding="utf-8")
+    for text in (published, canonical):
+        assert text.count("**Honest gap (dojo 0.19.1):**") == 2
+        assert "Honest gap (dojo 0.14.0)" not in text
+        assert "CMS DE-SynPUF source tables" in text

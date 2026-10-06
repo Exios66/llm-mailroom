@@ -85,13 +85,14 @@ scorable expected_fields. Provenance (`n_hub` / `n_posthoc`) is recorded; a
 post-hoc fill is never billed as an official Hub annotation. Retired classes
 stay out of Hub `--real` entirely.
 
-## Honesty gaps (dojo 0.14.0)
+## Honesty gaps (dojo 0.19.1)
 
 `observability/honest_gaps.py` reads `honest_gap` / `in_corpus` / `retired`
 from `get_suite(doc_class)` and attaches a slim block as **trace metadata**
 (never tags — tags are immutable/upfront). Registered extras
 (`determination_consistency`, field-micro F1/F2) are SCORE_CONFIGS names
-that exist in the v0.14.0 registry. v0.14.0 adds `citation` / `inclusion` /
+that exist in the current dojo registry (latest `v0.19.1`; these extras have
+been registered since v0.14.0). v0.14.0 added `citation` / `inclusion` /
 `ground_truth` on T0/T1 `MetricDef`s and an importable prompt catalog
 (`llm_dojo_scoring.prompts`). `field_presence` is documented as unemitted —
 do not treat a missing key as 0.0.

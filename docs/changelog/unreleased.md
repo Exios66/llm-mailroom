@@ -28,6 +28,7 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
 ### Changed
 
+- **GitBook Agents honest-gap labels cite dojo 0.19.1** (not 0.14.0): the Insurance Claims Specialist excerpt (and the matching Corporate Records gap) on the pipeline Agents page now names the current scoring-dojo release. The GitHub-canonical `docs/agents.md` copy, HF-pilot honesty heading, and observability README heading match.
 - **The shoulder owl is Hermes** (was Hoot). The GitBook Meet caption is character copy only — it no longer tells readers to upload the favicon in Customize.
 - **GitBook home header is a centered The LLM-Mailroom wordmark.** The header-corner Fumi is gone; a full-width centered `# The LLM-Mailroom` heading fills that slot. The name and 文 translation move onto the on-duty caption: **Postal Worker Fumi (文, "letter") on duty.**
 - **LiteLLM gateway image pinned to `ghcr.io/berriai/litellm:v1.104.0`** (`deploy/docker-compose.full.yml` default; override with `LITELLM_IMAGE`). `main-stable` floats; `main-v1.104.0-stable` is not a published GHCR tag. This is the release exercised with the Mode G stub-backend tests.
