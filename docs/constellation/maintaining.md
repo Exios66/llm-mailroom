@@ -1,12 +1,12 @@
 # Maintaining this site
 
-This site is published with [GitBook Git Sync](https://gitbook.com/docs/getting-started/git-sync) from the `docs/` folder of [Exios66/llm-mailroom](https://github.com/Exios66/llm-mailroom).
+This site is **[Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/)**, published with [GitBook Git Sync](https://gitbook.com/docs/getting-started/git-sync) from the `docs/` folder of [Exios66/llm-mailroom](https://github.com/Exios66/llm-mailroom). `docs/README.md` is the site landing page (the space is mounted at path `/`). A merge to `main` replaces that home.
 
 ## How it is built
 
 | File | Role |
 | :--- | :--- |
-| `gitbook-docs.yaml` (repository root) | Site Git Sync: maps the `mailroom-docs` space to `./docs` at path `/`, so this space **is** the published GitBook landing |
+| `gitbook-docs.yaml` (repository root) | Site Git Sync for https://mailroom-inc.gitbook.io/mailroom-inc.-docs/ : maps the `mailroom-docs` space to `./docs` at path `/`. Do not change `key`. Site title stays **Mailroom Inc. Docs**. |
 | `.gitbook.yaml` (repository root) | Classic space Git Sync: content root is `docs/` |
 | `docs/.gitbook.yaml` | Space config inside the mapped directory: `README.md` is the first page |
 | `docs/README.md` | The GitBook landing page. Port of `landing/`: Fumi in the header corner, owl banner, **The LLM-Mailroom** title, README badges, install, pipeline walk-through. GitBook strips scripts, so the idle TUI stays on the static page. |
@@ -27,6 +27,23 @@ This site is published with [GitBook Git Sync](https://gitbook.com/docs/getting-
 After that, a merge to `main` updates the site. Edits made in the GitBook editor come back as commits.
 
 Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration enabled on the space, otherwise they show as code blocks.
+
+## `path` vs `directory` (this is the usual mix-up)
+
+`./docs` in Git Sync is **not** a URL. Two different knobs share the word "docs":
+
+| Knob | File | Meaning | Correct value here |
+| :--- | :--- | :--- | :--- |
+| Git Sync **Project directory** (GitBook UI) | — | Where GitBook looks for `gitbook-docs.yaml` | Repository **root**. Do not set this to `docs`. |
+| `content.directory` | `gitbook-docs.yaml` | Git folder the space reads | `./docs` |
+| `path` | `gitbook-docs.yaml` | URL after the site slug | `/` (site home). `path: docs` would publish at `…/mailroom-inc.-docs/docs/` |
+| `root` | `.gitbook.yaml` | Extra subfolder inside the mapped directory | `./docs/` at the repo root file, or `./` in `docs/.gitbook.yaml` |
+
+On `main` today, `docs/gitbook-docs.yaml` had `path: docs` and `directory: ./docs` while sitting *inside* `docs/`. `path` is a URL slug, so it does not mean “use the docs folder.” `directory: ./docs` inside a Project directory of `docs/` would look for `docs/docs/` (that folder does not exist). The live site still shows `docs/README.md` because the **root** `.gitbook.yaml` already has `root: ./docs/`.
+
+Leave the GitBook UI Project directory at the repository root. Point at the folder with `gitbook-docs.yaml` (`directory: ./docs`, `path: /`) plus `.gitbook.yaml` (`root: ./docs/`). GitBook never publishes `landing/index.html`; that page is static HTML.
+
+GitBook also replaces the markdown H1 with the `SUMMARY.md` link title, which is why the live home reads **Welcome** even though `docs/README.md` starts with `# Mailroom Documentation`.
 
 ## Rules for editing
 

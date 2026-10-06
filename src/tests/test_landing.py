@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 LANDING = REPO / "landing" / "index.html"
@@ -57,7 +58,11 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
     assert 'media="(prefers-reduced-motion: reduce)"' in html
     assert 'srcset="assets/mascot/fumi.png"' in html
     assert INSTALL in html
-    assert INSTALL in html.split("const text = ", 1)[1]
+    copy_js = html.split("const text = ", 1)[1].split(";", 1)[0]
+    assert "git clone https://github.com/Exios66/llm-mailroom.git" in copy_js
+    assert "cd llm-mailroom" in copy_js
+    assert 'pip install -e ".[dev]"' in copy_js
+    assert "PYTHONPATH=src python -m api.main" in copy_js
 
 
 def test_gitbook_home_ports_the_enhanced_landing():
@@ -79,9 +84,14 @@ def test_gitbook_home_ports_the_enhanced_landing():
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [The LLM-Mailroom](README.md)" in summary
     site = (REPO / "gitbook-docs.yaml").read_text(encoding="utf-8")
-    assert "key: mailroom-docs" in site
-    assert "path: /" in site
-    assert "directory: ./docs" in site
-    assert "default: true" in site
+    assert not (REPO / "docs" / "gitbook-docs.yaml").exists()
+    site_cfg = yaml.safe_load(site)
+    space = site_cfg["site"]["structure"][0]
+    assert space["key"] == "mailroom-docs"
+    assert space["path"] == "/"
+    assert space["content"]["directory"] == "./docs"
+    assert space["default"] is True
+    assert site_cfg["site"]["title"] == "Mailroom Inc. Docs"
+    assert "https://mailroom-inc.gitbook.io/mailroom-inc.-docs/" in home
     space = (REPO / "docs" / ".gitbook.yaml").read_text(encoding="utf-8")
     assert "readme: README.md" in space
