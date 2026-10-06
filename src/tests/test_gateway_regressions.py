@@ -259,3 +259,127 @@ async def test_health_reports_bad_tier_without_contacting_provider(gateway, monk
     assert result["provider"] is None
     assert "unknown gateway tier 'typo'" in result["detail"]
     sdk.assert_not_called()
+
+
+@pytest.mark.parametrize("alias", ["custom-gpu", None, ""])
+def test_custom_tier_alias_controls_wire_model_and_spend_exemption(gateway, monkeypatch, mocker, alias):
+    monkeypatch.setenv("MAILROOM_LLM_FREE_ONLY", "1")
+    monkeypatch.setattr(client, "load_config", lambda: {
+        "gateway": {"tiers": {"custom": {"alias": alias}}},
+    })
+    config = {"tier": "custom", "model": "vendor/paid-champion"}
+    original = config.copy()
+    sdk = mocker.patch.object(client, "OpenAI")
+    # Resolving is also used by diagnostics: it must work without opening a
+    # client or enforcing the spend policy until the caller requests it.
+    resolved = client.resolve_agent_model("custom-agent", config)
+    assert resolved.champion == "vendor/paid-champion"
+    assert resolved.model == (alias or "vendor/paid-champion")
+    assert resolved.tier == "custom"
+    assert resolved.on_gpu_tier is bool(alias)
+    assert resolved.served_by_vllm is bool(alias)
+    assert resolved.spend_exempt is bool(alias)
+    if alias:
+        client.check_spend_guardrail("custom-agent", resolved)
+    else:
+        with pytest.raises(RuntimeError, match="not free"):
+            client.check_spend_guardrail("custom-agent", resolved)
+    assert config == original
+    sdk.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_free_api_model_does_not_exempt_an_unapproved_credential(gateway, monkeypatch, enabled):
+    from dataclasses import replace
+
+    monkeypatch.setenv("MAILROOM_LLM_FREE_ONLY", "1" if enabled else "0")
+    resolved = client.resolve_agent_model("sorter", {"tier": "api", "model": "openrouter/free"})
+    resolved = replace(resolved, provider=replace(resolved.provider, api_key_env="PRIVATE_API_KEY"))
+    if enabled:
+        with pytest.raises(RuntimeError, match="provider credential 'PRIVATE_API_KEY'"):
+            client.check_spend_guardrail("sorter", resolved)
+    else:
+        client.check_spend_guardrail("sorter", resolved)
+
+
+def test_gateway_client_returns_instrumented_wrapper_without_provider_key(gateway, monkeypatch, mocker):
+    monkeypatch.delenv("LITELLM_API_KEY")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "must-not-forward-to-gateway")
+    sdk = mocker.patch.object(client, "OpenAI")
+    wrapper = Mock()
+    instrument = mocker.patch.object(client, "instrument_client", return_value=wrapper)
+    actual, model = client.get_llm("sorter")
+    assert actual is wrapper
+    assert model == "mailroom-fast"
+    sdk.assert_called_once_with(base_url="http://gateway.test:4000/v1", api_key="not-needed")
+    instrument.assert_called_once_with(sdk.return_value)
+
+
+@pytest.mark.no_langchain_mock
+def test_langchain_allows_free_api_model_with_gateway_credential(gateway, monkeypatch, langchain_agent, mocker):
+    monkeypatch.setenv("MAILROOM_LLM_FREE_ONLY", "1")
+    monkeypatch.setattr(client, "get_agent_config", lambda name: {"tier": "api", "model": "openrouter/free"})
+    sdk = mocker.patch("langchain_agents.base_agent.ChatOpenAI")
+    langchain_agent._reasoning_effort = "low"
+    assert langchain_agent.llm() is sdk.return_value
+    assert sdk.call_args.kwargs["api_key"] == "test-gateway-key"
+    assert sdk.call_args.kwargs["model"] == langchain_agent.model == "openrouter/free"
+    assert sdk.return_value.extra_body == {"reasoning": {"effort": "low"}}
+
+
+@pytest.mark.parametrize("tier", ["fast", "extract", "vision"])
+def test_langchain_request_includes_images_only_for_vision_tier(gateway, monkeypatch, langchain_agent, mocker, tier):
+    monkeypatch.setenv("MAILROOM_GATEWAY_TIERS", f"sorter={tier}")
+    llm = Mock()
+    llm.invoke.return_value = SimpleNamespace(content="ok", usage_metadata={}, response_metadata={})
+    mocker.patch.object(langchain_agent, "llm", return_value=llm)
+    page = "data:image/png;base64,cGFnZQ=="
+    assert langchain_agent._call_llm("Document", system_prompt="Read.", pages=[page]) == "ok"
+    content = llm.invoke.call_args.args[0][1].content
+    if tier == "vision":
+        assert content == [
+            {"type": "text", "text": "Document"},
+            {"type": "image_url", "image_url": {"url": page}},
+        ]
+    else:
+        assert content == "Document"
+
+
+@pytest.mark.parametrize("model,expected", [("mailroom-vision", True), ("mailroom-fast", False), (None, False)])
+def test_vision_resolution_failure_uses_taxonomy_fallback(mocker, model, expected):
+    mocker.patch.object(client, "resolve_agent_model", side_effect=ValueError("unavailable provider"))
+    config = mocker.patch.object(vision, "get_agent_config")
+    if model is None:
+        config.side_effect = KeyError("missing agent")
+    else:
+        config.return_value = {"model": model}
+    assert vision.agent_uses_vision("sorter") is expected
+    config.assert_called_once_with("sorter")
+
+
+def test_vision_kill_switch_applies_to_resolved_gpu_tier(gateway, monkeypatch, langchain_agent):
+    monkeypatch.setenv("MAILROOM_GATEWAY_TIERS", "sorter=vision,contracts_specialist=vision")
+    monkeypatch.setenv("MAILROOM_VISION_ENABLED", "0")
+    assert vision.agent_uses_vision("sorter") is False
+    assert vision.pipeline_uses_vision() is False
+    assert langchain_agent._uses_vision() is False
+
+
+@pytest.mark.parametrize("failure_at", ["construct", "models"])
+async def test_health_probe_failure_retains_resolved_provider(gateway, mocker, failure_at):
+    from api.main import _check_llm_provider
+
+    sdk = mocker.patch("openai.OpenAI")
+    error = RuntimeError("synthetic provider failure")
+    if failure_at == "construct":
+        sdk.side_effect = error
+    else:
+        sdk.return_value.models.list.side_effect = error
+    assert await _check_llm_provider() == {
+        "status": "degraded", "provider": "litellm",
+        "detail": "litellm:mailroom-fast — models endpoint unreachable: RuntimeError",
+    }
+    sdk.assert_called_once_with(
+        base_url="http://gateway.test:4000/v1", api_key="test-gateway-key", timeout=5.0, max_retries=0,
+    )
+    sdk.return_value.chat.completions.create.assert_not_called()
