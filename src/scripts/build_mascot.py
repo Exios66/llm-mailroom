@@ -12,12 +12,15 @@ winged envelope Tegami), the blink frames, and the animation, then emits:
   docs/assets/mascot/fumi-icon.png   square head-and-shoulders icon (favicons, avatars)
   docs/assets/mascot/fumi-sheet.png  every GIF frame side by side
 
+and copies the files the landing page uses into landing/assets/mascot/.
+
 Run:  python src/scripts/build_mascot.py   (needs Pillow)
 """
 
 from __future__ import annotations
 
 import math
+import shutil
 from pathlib import Path
 
 from PIL import Image
@@ -39,6 +42,10 @@ SEAL, SEAL_L = "#e8445e", "#ff8a9c"
 BLUSH = "#ff9db5"
 WING, WING_D = "#ffffff", "#cfd8ff"
 SPARK = "#ffd34d"
+NAVY, NAVY_L, NAVY_D = "#2b3a8c", "#4a5fc2", "#1b2563"
+GOLD, GOLD_D = "#f6c54f", "#c98e25"
+BAG, BAG_L, BAG_D = "#b06f3c", "#d9955a", "#7a4523"
+STAMP, STAMP_EDGE = "#ffe3ea", "#9fb3e8"
 OWL = {"K": "#3a2a24", "b": "#8a6a4a", "d": "#6b4f36", "f": "#f1e3c6", "c": "#c9b08a",
        "E": "#2a1d1a", "w": "#ffffff", "O": "#e8a33a", "y": "#e8a33a"}
 
@@ -109,6 +116,27 @@ def draw_body() -> Layer:
             if a:
                 L.set(SX + x, SY + y, _hex((r, g, b)))
 
+    # brighten the collar bow to postal red
+    for (x, y), c in list(L.px.items()):
+        if 40 <= x <= 52 and 62 <= y <= 74:
+            r, g, b = (int(c[i:i + 2], 16) for i in (1, 3, 5))
+            if r > 90 and r > g + 40 and r > b + 20:
+                L.set(x, y, SEAL if r > 140 else "#b02a46")
+
+    # --- postal uniform touches (canvas coordinates) ---------------------
+    # crossbody satchel strap: from her left shoulder down to the bag on her right hip
+    for i in range(22):
+        x, y = 57 - i, 64 + round(i * 0.75)
+        L.set(x, y, BAG_D)
+        L.set(x, y + 1, BAG)
+        L.set(x, y + 2, BAG_D)
+    # little envelope charm hanging under the collar bow
+    charm = ["KKKKKK", "KGgGgK", "KGGgGK", "KKKKKK"]
+    L.sprite(43, 70, charm, {"K": OUT, "G": GOLD, "g": GOLD_D})
+    # postage-stamp patch on the apron, scalloped edge with a heart
+    stamp = [".E.E.E.", "EPPPPPE", ".PSPSP.", "EPSSSPE", ".PPSPP.", "EPPPPPE", ".E.E.E."]
+    L.sprite(52, 87, stamp, {"E": STAMP_EDGE, "P": STAMP, "S": SEAL})
+
     # a heart-sealed letter held in her clasped hands
     env = Layer()
     ex, ey = SX + 21, SY + 69
@@ -120,6 +148,34 @@ def draw_body() -> Layer:
     heart = [".S.S.", "SLSSS", ".SSS.", "..S.."]
     env.sprite(ex + 5, ey + 5, heart, {"S": SEAL, "L": SEAL_L})
     L.merge(env)
+
+    # leather mail satchel on her hip, a letter peeking out of it
+    bag = Layer()
+    satchel = [
+        "..ee.....",
+        "..eSe....",
+        ".FFFFFFF.",
+        "FFFFFFFFF",
+        "FFFRFRFFF",
+        "DDDRRRDDD",
+        "BBBBRBBBB",
+        "BBBBBBBBB",
+        "BBBBBBBBB",
+        ".DDDDDDD.",
+    ]
+    bag.sprite(28, 80, satchel, {"e": ENV, "S": SEAL, "F": BAG_L, "D": BAG_D, "B": BAG, "R": SEAL})
+    bag.outline(OUT)
+    L.merge(bag)
+
+    # mini postal cap pinned on her headdress, with an envelope badge
+    cap = Layer()
+    cap.ellipse(58, 8.5, 6.5, 3.5, NAVY)
+    cap.rect(51, 11, 66, 12, NAVY_D)
+    cap.outline(OUT)
+    cap.rect(53, 7, 62, 7, NAVY_L)
+    cap.rect(56, 8, 59, 10, GOLD)
+    cap.pts([(56, 8), (57, 9), (58, 9), (59, 8)], GOLD_D)
+    L.merge(cap)
 
     # Hoot, the owl assistant, perched on her shoulder
     L.sprite(SX + OWL_X, SY + OWL_Y, OWL_ROWS, OWL)
@@ -359,7 +415,12 @@ def main() -> None:
     for t in range(TICKS):
         sheet.paste(to_image(compose(t), 2), ((t % 8) * W * 2, (t // 8) * H * 2))
     sheet.save(OUT_DIR / "fumi-sheet.png", optimize=True)
-    print("wrote", *sorted(p.name for p in OUT_DIR.iterdir()))
+    # the landing page ships its own copy so the landing/ folder deploys as-is
+    site_dir = ROOT / "landing" / "assets" / "mascot"
+    site_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("fumi.svg", "fumi.gif", "fumi-icon.png"):
+        shutil.copyfile(OUT_DIR / name, site_dir / name)
+    print("wrote", *sorted(p.name for p in OUT_DIR.iterdir()), "+ landing/assets/mascot/")
 
 
 if __name__ == "__main__":
