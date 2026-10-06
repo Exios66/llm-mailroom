@@ -4,7 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 
 import pytest
-from PIL import Image, ImageColor
+from PIL import Image, ImageColor, UnidentifiedImageError
 
 from scripts import build_mascot as mascot
 
@@ -241,3 +241,111 @@ def test_frame_sheet_contains_timeline_frames_in_row_major_order(exported_assets
         x, y = tick % 8 * 192, tick // 8 * 232
         actual = sheet.crop((x, y, x + 192, y + 232))
         assert actual.tobytes() == mascot.to_image(mascot.compose(tick), 2).tobytes()
+
+
+@pytest.mark.parametrize("point,neighbors", [
+    ((-2, -2), {(-1, -2), (-2, -1)}),
+    ((97, 117), {(96, 117), (97, 116)}),
+])
+def test_outline_clips_at_margin_corners(point, neighbors):
+    layer = mascot.Layer()
+    layer.set(*point, "#ffffff")
+    layer.outline("#123456")
+    assert layer.px == {point: "#ffffff", **dict.fromkeys(neighbors, "#123456")}
+
+
+def test_empty_layer_exports_transparent_canvas_without_mutation():
+    layer = mascot.Layer()
+    layer.outline()
+    image = mascot.to_image(layer, 1)
+    assert image.size == (96, 116)
+    assert image.getchannel("A").getextrema() == (0, 0)
+    assert mascot.rects(layer) == ""
+    assert layer.px == {}
+
+
+def test_sprite_rejects_unknown_palette_symbols():
+    with pytest.raises(KeyError, match="X"):
+        mascot.Layer().sprite(0, 0, ["X"], {"R": "#ff0000"})
+
+
+def test_corrupt_base_sprite_fails_explicitly(tmp_path, monkeypatch):
+    source = tmp_path / "invalid.png"
+    source.write_bytes(b"not a PNG")
+    monkeypatch.setattr(mascot, "BASE", source)
+    with pytest.raises(UnidentifiedImageError):
+        mascot.draw_body()
+
+
+@pytest.mark.parametrize("above", [None, "#040506", "#343657"])
+def test_skirt_hem_only_whitens_adjacent_uniform_pixels(tmp_path, monkeypatch, above):
+    base = Image.new("RGBA", (62, 107))
+    # The edge columns avoid the accessories painted over the native sprite.
+    base.putpixel((0, 100), ImageColor.getcolor("#343657", "RGBA"))
+    if above is not None:
+        base.putpixel((0, 99), ImageColor.getcolor(above, "RGBA"))
+    base.putpixel((0, 102), (4, 5, 6, 255))
+    source = tmp_path / "base.png"
+    base.save(source)
+    monkeypatch.setattr(mascot, "BASE", source)
+
+    body = mascot.draw_body()
+
+    assert body.px[(mascot.SX, mascot.SY + 100)] == mascot.RED
+    expected = "#ffffff" if above == "#343657" else above
+    assert body.px.get((mascot.SX, mascot.SY + 99)) == expected
+    assert (mascot.SX, mascot.SY + 101) not in body.px
+    assert body.px[(mascot.SX, mascot.SY + 102)] == "#040506"
+
+
+@pytest.mark.parametrize("index", range(4))
+def test_sparkle_expands_to_a_white_centered_cross(index):
+    x, y = mascot.SPARKS[index]
+    assert mascot.draw_spark(index, False).px == {(x, y): mascot.SPARK}
+    assert mascot.draw_spark(index, True).px == {
+        (x, y): "#ffffff",
+        (x - 1, y): mascot.SPARK, (x + 1, y): mascot.SPARK,
+        (x, y - 1): mascot.SPARK, (x, y + 1): mascot.SPARK,
+    }
+
+
+def test_svg_encoding_does_not_depend_on_pixel_insertion_order():
+    pixels = [((97, 117), "#112233"), ((96, 117), "#112233"),
+              ((-2, -2), "#445566"), ((0, 0), "#112233")]
+    first, second = mascot.Layer(), mascot.Layer()
+    first.px.update(pixels)
+    second.px.update(reversed(pixels))
+    assert mascot.rects(first) == mascot.rects(second)
+    assert 'M96 117h2v1h-2z' in mascot.rects(first)
+
+
+def test_icon_exports_head_crop_with_nearest_neighbor_pixels(exported_assets):
+    # The avatar's documented crop is 64x64, enlarged four times.
+    body = mascot.to_image(mascot.draw_body(), 1)
+    expected = body.crop((15, 5, 79, 69)).resize((256, 256), Image.Resampling.NEAREST)
+    with Image.open(exported_assets / "docs/assets/mascot/fumi-icon.png") as icon:
+        assert icon.tobytes() == expected.tobytes()
+
+
+def test_gif_matches_every_timeline_tick_without_stale_overlay_pixels(exported_assets):
+    tick = 0
+    with Image.open(exported_assets / "docs/assets/mascot/fumi.gif") as gif:
+        for frame in range(gif.n_frames):
+            gif.seek(frame)
+            duration = gif.info["duration"]
+            assert duration > 0 and duration % 100 == 0
+            actual = gif.convert("RGBA")
+            # Adjacent identical ticks can share a GIF frame. Check each tick
+            # so a lost blink, stale bubble, or incorrect disposal is detected.
+            for _ in range(duration // 100):
+                expected = mascot.to_image(mascot.compose(tick), 4)
+                assert actual.getchannel("A").tobytes() == expected.getchannel("A").tobytes()
+                # RGB beneath transparent pixels is arbitrary in a GIF palette.
+                for background in ("black", "white"):
+                    actual_flat = Image.new("RGBA", actual.size, background)
+                    expected_flat = Image.new("RGBA", expected.size, background)
+                    actual_flat.alpha_composite(actual)
+                    expected_flat.alpha_composite(expected)
+                    assert actual_flat.tobytes() == expected_flat.tobytes(), f"tick {tick}"
+                tick += 1
+    assert tick == 32

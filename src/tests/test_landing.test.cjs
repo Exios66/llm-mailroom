@@ -57,6 +57,7 @@ function boot(options = {}) {
   const clipboard = [];
   const navigator = options.clipboard === 'missing' ? {} : {
     clipboard: { writeText(text) {
+      if (options.clipboard === 'throws') throw Error('clipboard unavailable');
       clipboard.push(text);
       return options.clipboard === 'denied' ? Promise.reject(Error('clipboard denied')) : Promise.resolve();
     } },
@@ -166,7 +167,7 @@ test('copy sends the exact two commands and resets its success feedback', async 
   assert.equal(button.style.borderColor, '');
 });
 
-for (const clipboard of ['missing', 'denied']) {
+for (const clipboard of ['missing', 'denied', 'throws']) {
   test(`copy selects install text when clipboard is ${clipboard}`, async () => {
     const page = boot({ clipboard });
     page.get('copy').fire('click');
@@ -283,4 +284,93 @@ test('idle rescan logs a sweep before the next delivery', async () => {
   await page.tick();
   assert.match(page.logs(), /rescan-sweep/);
   assert.ok(page.logs().indexOf('rescan-sweep') < page.logs().indexOf('inbox-received'));
+});
+
+test('clicking a nested non-link menu item keeps the menu open', () => {
+  const page = boot(), panel = page.get('menu-panel');
+  const container = new Element(), label = new Element();
+  panel.appendChild(container);
+  container.appendChild(label);
+  page.get('menu-btn').fire('click');
+  panel.fire('click', { target: label });
+  page.document.fire('click', { target: label });
+  assert.equal(panel.hidden, false);
+  assert.equal(page.get('menu-btn').attrs['aria-expanded'], 'true');
+});
+
+test('rescan probability excludes the exact 0.25 boundary', async () => {
+  const page = boot();
+  page.random.push(0.25);
+  await page.tick();
+  assert.doesNotMatch(page.logs(), /rescan-sweep/);
+  assert.match(page.logs(), /inbox-received/);
+  assert.equal(page.bin('inbox'), 1);
+});
+
+test('upper confidence draw stays below 100 percent despite rounded display', async () => {
+  const page = boot();
+  page.enqueueDelivery({ confidence: 0.999999 });
+  for (let i = 0; i < 4; i++) await page.tick();
+  const current = page.get('current').innerHTML;
+  assert.match(current, /1\.00/);
+  const width = Number(current.match(/width:([\d.]+)%/)[1]);
+  assert.ok(width > 99 && width < 100, `Unexpected confidence width ${width}`);
+  assert.match(current, /background:var\(--ok\)/);
+  await page.finishDelivery();
+  assert.equal(page.bin('archive'), 38);
+});
+
+for (const [route, judge] of [[0, 0.5], [0.5, 0], [0.5, 0.5]]) {
+  test(`delivery conserves documents at every stage (route=${route}, judge=${judge})`, async () => {
+    const page = boot();
+    page.enqueueDelivery({ route, judge });
+    const stages = new Set();
+    let completed = false;
+    for (let i = 0; i < 25; i++) {
+      await page.tick();
+      const bins = ['inbox', 'processing', 'review', 'failed', 'archive'].map(page.bin);
+      assert.ok(bins.every(n => n >= 0));
+      assert.equal(bins.reduce((sum, n) => sum + n, 0), 40);
+      const classes = ['contract', 'merger_agreement', 'corporate_record', 'correspondence', 'insurance_claim'];
+      assert.equal(classes.reduce((sum, name) => sum + page.bin(name), 0), page.bin('archive'));
+      assert.equal(Number(page.get('s-chain').textContent) - 412, page.bin('archive') - 37);
+      const active = [...page.get('flow').innerHTML.matchAll(/class="node on">(\w+)/g)];
+      assert.ok(active.length <= 1, 'Only one stage should be active');
+      active.forEach(match => stages.add(match[1]));
+      if (page.get('mood').innerHTML.includes('idle · waiting')) {
+        completed = true;
+        break;
+      }
+    }
+    assert.ok(completed, 'Delivery must finish in the bounded timer budget');
+    const expected = route < 0.2 ? ['intake', 'classify'] : [
+      'intake', 'classify', 'extract', ...(judge < 0.3 ? ['judge'] : []), 'report', 'catalog', 'archive',
+    ];
+    assert.deepEqual([...stages], expected);
+    assert.equal(page.timers.length, 1, 'Exactly one next delivery should be scheduled');
+  });
+}
+
+test('review between archives preserves the hash chain and resumes with the next sample', async () => {
+  const page = boot();
+  page.enqueueDelivery({ hash: 0.25 });
+  await page.finishDelivery();
+  page.enqueueDelivery({ route: 0 });
+  await page.finishDelivery();
+  assert.equal(page.bin('review'), 3);
+  assert.equal(page.bin('contract'), 15);
+  assert.equal(page.bin('archive'), 38);
+  assert.equal(Number(page.get('s-chain').textContent), 413);
+
+  page.enqueueDelivery({ hash: 0.75 });
+  await page.finishDelivery();
+  assert.match(page.logs(), /maud_merger_02\.pdf/);
+  assert.match(page.logs(), /merger_agreement_specialist/);
+  assert.match(page.logs(), /archive-document.*cccccccc….*44444444…/);
+  assert.equal(page.bin('contract'), 15);
+  assert.equal(page.bin('merger_agreement'), 4);
+  assert.equal(page.bin('review'), 3);
+  assert.equal(Number(page.get('s-rev').textContent), 3);
+  assert.equal(page.bin('archive'), 39);
+  assert.equal(Number(page.get('s-chain').textContent), 414);
 });
