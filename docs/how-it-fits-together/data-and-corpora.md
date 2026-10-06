@@ -1,8 +1,8 @@
 # Data and corpora
 
-Every evaluation, training run and pilot in the constellation draws from one dataset family on Hugging Face, published under the [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar) organization. This page explains what is in it, where each part comes from, and the rules for using it.
+Every evaluation, training run and pilot in the constellation draws from one dataset family on Hugging Face, published under the [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar) organization. This page is the constellation-wide rules summary.
 
-The charts and dashboard below are the live Mailroom-Corpus-EDA displays — the same figures GitHub Pages serves at [exios66.github.io/Mailroom-Corpus-EDA](https://exios66.github.io/Mailroom-Corpus-EDA/). Full static gallery: [EDA visuals](eda-visuals.md). Plotly charts: [Interactive charts](eda-interactive.md).
+The full GitBook breakdown — 55 strata, configs, source cards, EDA reports, and all 30 figures — lives in **[Mailroom dataset](../mailroom-dataset/)**. Live dashboard, Hub Dataset Viewer, and Plotly charts are on [Visualizations](../mailroom-dataset/visualizations.md).
 
 ## The canonical dataset
 
@@ -15,17 +15,6 @@ The charts and dashboard below are the live Mailroom-Corpus-EDA displays — the
 | Class-by-subclass strata | 55                                                                                                                          |
 | Pinned revision          | `ed7576b6` (tag v9.1)                                                                                                       |
 | Frozen parent            | [`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus) v8, 2,000 rows, revision `eafe1ab4` |
-| EDA run (figures)        | 2026-09-13 · `run_all.py` P0–P6 · [Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA)                      |
-
-### Live EDA dashboard
-
-The Mailroom-Corpus-EDA site (composition bar, Plotly grid, 30-figure gallery, tables, and the narrative summary). Open it full-page: [exios66.github.io/Mailroom-Corpus-EDA](https://exios66.github.io/Mailroom-Corpus-EDA/).
-
-<iframe src="https://exios66.github.io/Mailroom-Corpus-EDA/" title="mailroom-dataset EDA dashboard" width="100%" height="820" loading="lazy"></iframe>
-
-{% embed url="https://exios66.github.io/Mailroom-Corpus-EDA/" %}
-mailroom-dataset Corpus — EDA Dashboard (GitHub Pages)
-{% endembed %}
 
 ### Classes and sources
 
@@ -36,12 +25,6 @@ mailroom-dataset Corpus — EDA Dashboard (GitHub Pages)
 | `contract`         |   600 | CUAD v1 (509) + SEC EDGAR EX-10 (91)               | CC BY 4.0 / US public domain                             |
 | `corporate_record` |   450 | SEC EDGAR S-1 and 8-K exhibits                     | US public domain                                         |
 | `merger_agreement` |   152 | MAUD v1                                            | CC BY 4.0                                                |
-
-<figure><img src="https://exios66.github.io/Mailroom-Corpus-EDA/figures/01_type_and_subclass_distribution.png" alt="Document type and subclass distribution across the 3,302-document corpus"><figcaption><p>Type and subclass distribution (3,302 documents, 55 strata). Source: Mailroom-Corpus-EDA <code>reports/figures/01_type_and_subclass_distribution.png</code>.</p></figcaption></figure>
-
-<figure><img src="https://exios66.github.io/Mailroom-Corpus-EDA/figures/23_imbalance_treemap.png" alt="Class by subclass imbalance treemap"><figcaption><p>Class × subclass imbalance treemap (7.2× at type level, 557× at stratum level). Source: <code>23_imbalance_treemap.png</code>.</p></figcaption></figure>
-
-<figure><img src="https://exios66.github.io/Mailroom-Corpus-EDA/figures/27_source_proportions.png" alt="Source corpus proportions in mailroom-dataset"><figcaption><p>Source corpus proportions. Source: <code>27_source_proportions.png</code>.</p></figcaption></figure>
 
 ### Configs
 
@@ -62,26 +45,6 @@ gt = load_dataset("Lucius-Morningstar/mailroom-dataset", "ground_truth")
 ```
 
 The pipeline itself does not depend on the `datasets` library; it loads the corpus through `pipeline/hf_corpus_loader.py`, which also verifies each row's `content_sha256` against its text.
-
-Hub Dataset Viewer for the blind `default` config (train split):
-
-<iframe src="https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/embed/viewer/default/train" title="Hugging Face Dataset Viewer for mailroom-dataset default/train" width="100%" height="560" loading="lazy"></iframe>
-
-{% embed url="https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset" %}
-Lucius-Morningstar/mailroom-dataset on the Hub
-{% endembed %}
-
-### Length, tokens, and the train/test split
-
-Merger agreements are the long tail (mean ~89k characters, max ~252k — past common 32k/65k contexts). Insurance claims are uniformly short. Token-budget coverage from the EDA run: 77% ≤4k, 90% ≤16k, 93% ≤32k, 99.8% ≤128k.
-
-<figure><img src="https://exios66.github.io/Mailroom-Corpus-EDA/figures/04_text_length_violin.png" alt="Text length violin plot by document class"><figcaption><p>Text length by class. Source: <code>04_text_length_violin.png</code>.</p></figcaption></figure>
-
-<figure><img src="https://exios66.github.io/Mailroom-Corpus-EDA/figures/05_token_budget_coverage.png" alt="Token budget coverage across 4k, 16k, 32k, and 128k windows"><figcaption><p>Token-budget coverage. Source: <code>05_token_budget_coverage.png</code>.</p></figcaption></figure>
-
-<figure><img src="https://exios66.github.io/Mailroom-Corpus-EDA/figures/02_strata_train_test.png" alt="Train versus test counts for all 55 class-by-subclass strata"><figcaption><p>Train/test counts for all 55 strata (family split rule: <code>md5(filename) % 10 == 0</code> → test). Source: <code>02_strata_train_test.png</code>.</p></figcaption></figure>
-
-The remaining 24 static figures (CUAD, MAUD, claims, correspondence, imbalance, temporal, metadata) are on [EDA visuals](eda-visuals.md). Hover/zoom Plotly versions are on [Interactive charts](eda-interactive.md).
 
 ## Rules everyone follows
 
@@ -114,4 +77,4 @@ The remaining 24 static figures (CUAD, MAUD, claims, correspondence, imbalance, 
 | Subset grammar and stratified sampling for evals | [eval-environment](../repository-guides/repos/eval-environment.md) (`src/evals/cases.py`)                                                                                            |
 | Taxonomy terminology (v7 onward)                 | [Digital-Mailroom](../repository-guides/repos/digital-mailroom.md) ([v7 taxonomy contract](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/docs/v7-taxonomy.md)) |
 
-The dataset cards (one per source) live in Mailroom-Corpus-EDA under [`docs/dataset-cards/`](https://github.com/Exios66/Mailroom-Corpus-EDA/tree/main/docs/dataset-cards), and `run_all.py` there reproduces every number on this page. Figures are tracked in that repo under [`reports/figures/`](https://github.com/Exios66/Mailroom-Corpus-EDA/tree/main/reports/figures) (PNG) and [`reports/figures_interactive/`](https://github.com/Exios66/Mailroom-Corpus-EDA/tree/main/reports/figures_interactive) (Plotly HTML); this site embeds the GitHub Pages copies so they render in GitBook.
+The dataset cards (one per source) live in Mailroom-Corpus-EDA under [`docs/dataset-cards/`](https://github.com/Exios66/Mailroom-Corpus-EDA/tree/main/docs/dataset-cards), and `run_all.py` there reproduces every number on this page. GitBook copies of those cards, plus the EDA figures, are in [Mailroom dataset](../mailroom-dataset/).

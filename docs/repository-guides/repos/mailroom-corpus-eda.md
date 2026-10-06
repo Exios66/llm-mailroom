@@ -13,12 +13,7 @@
 
 This repository profiles the 3,302-document corpus (five classes, 55 strata, 7.2x class imbalance) and is the one place the family publishes to the Hub from. The upload helpers that used to live in llm-entity-extraction were centralized here.
 
-On this site (nested under [Data and corpora](../../how-it-fits-together/data-and-corpora.md) and this guide):
-
-* [EDA visuals](../../how-it-fits-together/eda-visuals.md) — all 30 static PNGs from `reports/figures/`
-* [Interactive charts](../../how-it-fits-together/eda-interactive.md) — live dashboard plus 18 Plotly HTMLs from `reports/figures_interactive/`
-
-The GitBook pages embed the GitHub Pages copies at [exios66.github.io/Mailroom-Corpus-EDA](https://exios66.github.io/Mailroom-Corpus-EDA/).
+The GitBook [Mailroom dataset](../../mailroom-dataset/) section embeds the GitHub Pages copies at [exios66.github.io/Mailroom-Corpus-EDA](https://exios66.github.io/Mailroom-Corpus-EDA/) — live dashboard, Hub Dataset Viewer, 30 static PNGs, and 18 Plotly charts.
 
 `run_all.py` runs the analysis in phases:
 
@@ -55,6 +50,14 @@ python run_all.py --phases P3 P4  # just the figures
 ## A note on the fork
 
 [LLM-Mailroom-Services/Mailroom-Corpus](https://github.com/LLM-Mailroom-Services/Mailroom-Corpus) is an organization fork of this repository. See the [Repository index](../../how-it-fits-together/repo-index.md).
+
+## On this site
+
+GitBook publishes the dataset as its own section, with the EDA figures and reports nested there:
+
+* [Mailroom dataset](../../mailroom-dataset/) — composition, configs, source corpora
+* [EDA reports](../../mailroom-dataset/eda-reports.md) — P0–P6 narrative
+* [Visualizations](../../mailroom-dataset/visualizations.md) — live dashboard, all 30 PNGs, and 18 Plotly charts
 
 ## Its documentation
 
