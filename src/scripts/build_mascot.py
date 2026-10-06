@@ -5,13 +5,13 @@ resolution pixel sprite (docs/assets/mascot/source/fumi-base.png, 62x107,
 cleaned from reference art supplied by the project owner); this script adds
 her USPS-style postal uniform (postal-blue shirt, navy skirt with a red and
 white hem stripe, a mini carrier cap, a shoulder patch, a mail satchel) and
-her owl assistant Hoot, plus the blink frames and the animation, then emits:
+her owl assistant Hermes, plus the blink frames and the animation, then emits:
 
   docs/assets/mascot/fumi.svg        animated SVG (CSS keyframes, no JS)
   docs/assets/mascot/fumi.gif        animated GIF (same timeline)
   docs/assets/mascot/fumi.png        static PNG, 6x scale
   docs/assets/mascot/fumi-icon.png   square head-and-shoulders icon (avatars)
-  docs/assets/mascot/hoot-icon.png   square pixel-owl icon of Hoot (page favicon)
+  docs/assets/mascot/hoot-icon.png   square pixel-owl icon of Hermes (page favicon)
   docs/assets/mascot/fumi-sheet.png  every GIF frame side by side
 
 and copies the files the landing page uses into landing/assets/mascot/.
@@ -131,7 +131,7 @@ def _hex(rgb) -> str:
 
 
 def draw_body() -> Layer:
-    """The base sprite in her postal uniform, with Hoot on her shoulder.
+    """The base sprite in her postal uniform, with Hermes on her shoulder.
 
     Read BASE on each call and return a new layer. Image-loading errors
     propagate, including FileNotFoundError when the base sprite is missing.
@@ -207,7 +207,7 @@ def draw_body() -> Layer:
     cap.pts([(57, 7)], "#fff1b8")
     L.merge(cap)
 
-    # Hoot, the owl assistant, perched on her shoulder
+    # Hermes, the owl assistant, perched on her shoulder
     L.sprite(SX + OWL_X, SY + OWL_Y, OWL_ROWS, OWL)
     return L
 
@@ -232,14 +232,14 @@ OWL_EYES_CLOSED = {(3, 5): "f", (4, 5): "f", (8, 5): "f", (9, 5): "f",
 
 
 def draw_hoot() -> Layer:
-    """Paint Hoot at the origin, independent of Fumi's canvas placement."""
+    """Paint Hermes at the origin, independent of Fumi's canvas placement."""
     layer = Layer()
     layer.sprite(0, 0, OWL_ROWS, OWL)
     return layer
 
 
 def hoot_icon_image(size: int = 256) -> Image.Image:
-    """Return a square nearest-neighbour PNG of Hoot for favicons."""
+    """Return a square nearest-neighbour PNG of Hermes for favicons."""
     layer = draw_hoot()
     xs = [x for x, _ in layer.px]
     ys = [y for _, y in layer.px]
@@ -423,7 +423,7 @@ def main() -> None:
     """Write the mascot assets and copy the landing page's assets into its folder.
 
     Create output directories as needed, overwriting the SVG, GIF, PNG,
-    Fumi icon, Hoot favicon, and frame sheet in OUT_DIR, the copies in
+    Fumi icon, Hermes favicon, and frame sheet in OUT_DIR, the copies in
     ROOT / "landing/assets/mascot", and the GitBook home GIF at
     docs/assets/fumi/fumi.gif. Image-loading and filesystem errors
     propagate; files already written are not rolled back.

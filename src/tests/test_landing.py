@@ -34,6 +34,12 @@ def _has_badge(haystack: str, badge: str) -> bool:
     return badge in haystack or badge.replace("%7C", "|") in haystack
 
 
+def _walk_gitbook_nodes(nodes):
+    for node in nodes:
+        yield node
+        yield from _walk_gitbook_nodes(node.get("children") or [])
+
+
 def test_landing_javascript_behaviors():
     node = shutil.which("node")
     if node is None:
@@ -70,6 +76,8 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
     assert 'rel="icon"' in html
     assert 'href="assets/mascot/hoot-icon.png"' in html
     assert 'rel="apple-touch-icon"' in html
+    assert "Hermes the owl" in html
+    assert "Hoot" not in html
     assert "assets/mascot/fumi-icon.png" not in html
     copy_js = html.split("const text = ", 1)[1].split(";", 1)[0]
     assert "git clone https://github.com/Exios66/llm-mailroom.git" in copy_js
@@ -80,9 +88,10 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
 
 def test_gitbook_home_ports_the_enhanced_landing():
     home = GITBOOK_HOME.read_text(encoding="utf-8")
-    assert home.startswith("# The LLM-Mailroom\n")
-    # GitBook Git Sync copies mascot files into docs/.gitbook/assets/.
-    # Fumi's GIF is below the owl banner (postal-maid hero / Meet Fumi), not the header.
+    # Centered wordmark — no Fumi in the header. Exactly two GIFs: on-duty + Meet Fumi.
+    assert home.lstrip().startswith("<table")
+    assert "# The LLM-Mailroom" in home
+    assert home.count("fumi.gif") == 2
     assert 'src=".gitbook/assets/fumi.gif"' in home
     assert 'src=".gitbook/assets/banner.png"' in home
     assert home.index(".gitbook/assets/banner.png") < home.index(".gitbook/assets/fumi.gif")
@@ -95,7 +104,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "start-here/overview.md" in home
     assert "From inbox to archive" in home
     assert "Meet Fumi" in home
-    assert "Postal maid on duty" in home
+    assert 'Postal Worker Fumi (文, "letter") on duty' in home
     assert "Read the docs" in home
     assert "[Architecture](pipeline-reference-llm-mailroom/architecture.md)" in home
     assert "**release** · v0.7.1" in home
@@ -103,19 +112,33 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "Pixelify" not in home
     assert "font-family" not in home
     assert "fonts.googleapis.com" not in home
-    # Header is the wordmark + 文 caption only — Fumi's sprite is below the banner.
-    assert home.strip().startswith("# The LLM-Mailroom")
-    header = home.split("# The LLM-Mailroom", 1)[1].split("<figure>", 1)[0]
+
+    header = home.split(".gitbook/assets/banner.png", 1)[0]
+    assert 'width="100%"' in header
+    assert 'align="center"' in header
+    assert "# The LLM-Mailroom" in header
     assert "fumi.gif" not in header
     assert "<img" not in header
-    assert "<table" not in header
-    assert 'Fumi (文, "letter")' in header
+    assert 'Fumi (文, "letter")' not in header
     assert "lives in this header corner" not in header
     assert "not the header itself" not in header
+
+    on_duty = home.split(".gitbook/assets/banner.png", 1)[1].split("## From inbox to archive", 1)[0]
+    assert on_duty.count("fumi.gif") == 1
+    assert 'Postal Worker Fumi (文, "letter") on duty' in on_duty
+    assert "Specialist agents on a 13-node graph" in on_duty
+
     meet = home.split("## Meet Fumi", 1)[1]
+    assert meet.count("fumi.gif") == 1
+    assert "Hermes" in meet
+    assert "Hoot" not in meet
+    assert "standalone static page uses this icon" not in meet
+    assert "GitBook's published tab icon" not in meet
+    assert "upload this same file" not in meet
     assert "build_mascot.py" not in meet
     assert "header corner" not in meet
     assert "landing/" not in meet.split("## Related files", 1)[0]
+
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [The LLM-Mailroom](README.md)" in summary
     assert "docker-deployment.md" in summary
@@ -127,20 +150,19 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "[Docker](" in home
     assert "[Modal + vLLM](" in home
 
-    # GitBook's Project directory is docs/; GITBOOK-SITE writes this file there.
-    # Live structure is a site with a Mailroom Docs section plus a Changelog
-    # section (GitBook export). Walk nodes so a section wrapper does not break
-    # the mailroom-docs identity check.
+    published_maintaining = REPO / "docs" / "about-this-site" / "maintaining.md"
+    maintaining = published_maintaining.read_text(encoding="utf-8")
+    assert "centered **The LLM-Mailroom** wordmark" in maintaining
+    assert "Postal Worker Fumi" in maintaining
+    assert "header corner" not in maintaining
+    assert "Hoot" not in maintaining
+    assert "Hermes" in maintaining
+
+    # Live GitBook: Mailroom Docs space + Changelog space (must stay published).
     site_path = REPO / "docs" / "gitbook-docs.yaml"
     assert site_path.is_file()
     site_cfg = yaml.safe_load(site_path.read_text(encoding="utf-8"))
-
-    def _walk(nodes):
-        for node in nodes:
-            yield node
-            yield from _walk(node.get("children") or [])
-
-    nodes = list(_walk(site_cfg["site"]["structure"]))
+    nodes = list(_walk_gitbook_nodes(site_cfg["site"]["structure"]))
     space = next(node for node in nodes if node.get("key") == "mailroom-docs")
     changelog = next(node for node in nodes if node.get("key") == "space-1")
     assert space["content"]["directory"] == "./"
@@ -149,11 +171,11 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert changelog["content"]["directory"] == "./changelog"
     assert changelog.get("draft") not in (True, "true")
     assert site_cfg["site"]["title"] == "Mailroom Inc. Docs"
-    # Repo-root fallback if the Git Sync Project directory is ever moved to root.
+
     root_site = REPO / "gitbook-docs.yaml"
     if root_site.is_file():
         root_cfg = yaml.safe_load(root_site.read_text(encoding="utf-8"))
-        root_nodes = list(_walk(root_cfg["site"]["structure"]))
+        root_nodes = list(_walk_gitbook_nodes(root_cfg["site"]["structure"]))
         root_space = next(node for node in root_nodes if node.get("key") == "mailroom-docs")
         assert root_space["path"] == "/"
         assert root_space["content"]["directory"] == "./docs"
@@ -161,8 +183,8 @@ def test_gitbook_home_ports_the_enhanced_landing():
         assert root_changelog["content"]["directory"] == "./docs/changelog"
         assert root_cfg["site"]["title"] == "Mailroom Inc. Docs"
     assert "https://mailroom-inc.gitbook.io/mailroom-inc.-docs/" in home
-    space = (REPO / "docs" / ".gitbook.yaml").read_text(encoding="utf-8")
-    assert "readme: README.md" in space
+    space_cfg = (REPO / "docs" / ".gitbook.yaml").read_text(encoding="utf-8")
+    assert "readme: README.md" in space_cfg
     readme = (REPO / "README.md").read_text(encoding="utf-8")
     for badge in BADGES:
         assert badge in readme
@@ -170,4 +192,3 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "](https://github.com/LLM-Mailroom-Services)" in home
     assert "https://github.com/grantmooslin" in readme
     assert "](https://github.com/LLM-Mailroom-Services)" in readme
-
