@@ -663,16 +663,40 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
         return None
     try:
         from llm_dojo_scoring import get_field_types
-        from observability.suite_scoring import score_with_suite
+        from observability.suite_scoring import (
+            is_unscorable,
+            payload_extras,
+            score_document_payload,
+            score_with_suite,
+        )
 
-        scored_class = doc_class
-        suite_class = scored_class
-        result, extras = score_with_suite(
-            suite_class,
+        field_types = get_field_types(doc_class)
+        payload = score_document_payload(
+            doc_class,
             extracted,
             expected_fields,
-            field_types=get_field_types(scored_class),
+            field_types=field_types,
+            dataset_revision=DATASET_REVISION,
         )
+        if is_unscorable(payload):
+            # dojo 0.19 fail-closed GT: no phantom score, keep the reason.
+            return {
+                "overall_score": None,
+                "n_fields": 0,
+                "needs_judge_review": False,
+                "extraction_status": "unscorable",
+                "unscorable_reason": payload.get("reason"),
+                "metric_id": payload.get("metric_id"),
+                "scorer_version": (payload.get("provenance") or {}).get("scorer_version"),
+                "dataset_revision": DATASET_REVISION,
+            }
+        result = payload.get("extraction") if payload else None
+        if result is None:
+            result, extras = score_with_suite(
+                doc_class, extracted, expected_fields, field_types=field_types
+            )
+        else:
+            extras = payload_extras(payload)
         overall = result.overall_score
         out = {
             "overall_score": None if overall is None else round(float(overall), 3),
@@ -681,6 +705,17 @@ def score_row_extraction(extracted: dict | None, expected_fields: dict | None, d
         }
         for key, value in extras.items():
             out[key] = round(float(value), 3)
+        if payload:
+            provenance = payload.get("provenance") or {}
+            out["metric_id"] = payload.get("metric_id")
+            out["scorer_version"] = provenance.get("scorer_version")
+            out["dataset_revision"] = provenance.get("dataset_revision")
+            # Format layer (fractions) — distinct from the pipeline's boolean
+            # schema_valid trace score, so stored under format_* names.
+            for key in ("parse_ok", "schema_adherence"):
+                value = payload.get(key)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    out[f"format_{key}"] = round(float(value), 3)
         if doc_class == "insurance_claim":
             from observability.honest_gaps import (
                 determination_consistency_is_quality,
