@@ -7,7 +7,8 @@ Fumi (文, "letter") is a chibi postal maid who runs the mailroom, in a USPS-sty
 | `fumi.svg` | Animated SVG (CSS keyframes: bob, blink, heart bubble, sparkles). Respects `prefers-reduced-motion`. Best for the README and the web. |
 | `fumi.gif` | Animated GIF, 384×464, 3.2 s loop. For places that don't animate SVG. |
 | `fumi.png` | Static 576×696 still. |
-| `fumi-icon.png` | Square 256×256 head-and-shoulders icon for favicons and avatars. |
+| `fumi-icon.png` | Square 256×256 head-and-shoulders icon for avatars. |
+| `hoot-icon.png` | Square 256×256 pixel owl (Hoot). Favicon for `landing/` and the GitBook Customize site icon. |
 | `fumi-sheet.png` | All 32 animation frames, for reference. |
 | `source/fumi-base.png` | The 62×107 base sprite at native pixel size. Everything else is built from it. |
 
