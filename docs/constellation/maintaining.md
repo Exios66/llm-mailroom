@@ -49,7 +49,7 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 ## Rules for editing
 
 - **Link, don't copy.** Each repository's own README and `docs/` stay canonical. A guide here summarizes what a newcomer needs to orient, then links to the source. This follows the llm-mailroom rule that `docs/` content is never duplicated.
-- **Every new page goes in `SUMMARY.md`.** A page that is not listed is not published.
+- **Every new page goes in `SUMMARY.md`.** A page that is not listed is not published. Operator recipes that belong on this site (Docker compose matrix, Modal + vLLM) live under `docs/` and are listed here — `deploy/README.md` is a file index, not a GitBook page. Sandbox run reports and visuals are nested under the [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) guide.
 - **Use relative links between pages on this site** (`repos/llm-mailroom.md`, `../architecture.md`) and full GitHub URLs for anything in another repository.
 - **Date facts that drift.** Versions, pins and counts carry an "as of" date; when a release moves them, update [Overview](overview.md) and the affected guide.
 - **Keep the GitHub wiki separate.** `docs/wiki/` remains wiki-only and is not a mirror of these pages.
@@ -63,4 +63,6 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 | A release changes versions or pins | [Overview](overview.md) version table, the repo's guide, the [dependency table](architecture.md#dependency-summary) |
 | Dataset revision changes | [Data and corpora](data-and-corpora.md) |
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
+| Compose matrix, Mode G, or Modal vLLM knobs change | [Docker](../docker-deployment.md) and [Modal + vLLM](../modal-vllm.md) first; keep `deploy/README.md` as an index that links those pages |
+| Sandbox run reports or figures change | [Run reports](repos/local-mailroom-sandbox-reports.md) and [Visuals](repos/local-mailroom-sandbox-visuals.md); keep image URLs on `Exios66/local-mailroom-sandbox` `main` |
 | Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG/Hoot favicon into `docs/assets/mascot/` and `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. The home header is the centered **The LLM-Mailroom** wordmark; Fumi appears after the masthead as Postal Worker Fumi (文, "letter") on duty. The owl banner, title, and badges stay the masthead. Re-upload `hoot-icon.png` in GitBook Customize if Hoot's sprite changes. |

@@ -1,5 +1,7 @@
 # Deployment Guide
 
+Laptop install, Railway, Hugging Face Spaces, and backup. The **full Docker compose matrix** (Modes B / Mixed / A-ollama / A-llamafile / M / G) is [Docker deployment](docker-deployment.md). Remote GPU OpenAI `/v1` is [Modal + vLLM](modal-vllm.md). Compose files themselves live in [`deploy/`](https://github.com/Exios66/llm-mailroom/tree/main/deploy).
+
 ## Prerequisites
 
 - Python 3.11+
@@ -176,6 +178,8 @@ For higher volumes:
 ---
 
 ## Docker Deployment (producer for The-Mailroom)
+
+The compose matrix (OpenRouter, Ollama, llamafile, Mode G LiteLLM + Modal GPU tiers, BERT build args) is documented in [Docker deployment](docker-deployment.md). This section is only the **reachable producer** The-Mailroom pairs with.
 
 The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30))
 needs a **reachable** llm-mailroom producer for the floor lamp, Inbox

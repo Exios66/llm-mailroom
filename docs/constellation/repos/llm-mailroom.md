@@ -37,9 +37,11 @@ The pipeline reference pages are part of this site:
 - [API](../../api.md)
 - [Gmail intake](../../gmail-intake.md)
 - [Deployment](../../deployment.md)
+- [Docker](../../docker-deployment.md)
+- [Modal + vLLM](../../modal-vllm.md)
 - [Operational procedure](../../operational-procedure.md)
 - [Local models](../../local-models.md)
 - [Testing](../../testing.md)
 - [Sister repositories](../../sister-repos.md)
 
-Also in the repository: the [README](https://github.com/Exios66/llm-mailroom/blob/main/README.md), [AGENTS.md](https://github.com/Exios66/llm-mailroom/blob/main/AGENTS.md) (the contributor and agent manual, including every script command), [CHANGELOG.md](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md), the [notebooks](https://github.com/Exios66/llm-mailroom/tree/main/notebooks) (00 to 14, from pipeline anatomy to the Gmail pilot), and [deploy/](https://github.com/Exios66/llm-mailroom/tree/main/deploy) for Docker, Modal vLLM and Hugging Face Space recipes.
+Also in the repository: the [README](https://github.com/Exios66/llm-mailroom/blob/main/README.md), [AGENTS.md](https://github.com/Exios66/llm-mailroom/blob/main/AGENTS.md) (the contributor and agent manual, including every script command), [CHANGELOG.md](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md), the [notebooks](https://github.com/Exios66/llm-mailroom/tree/main/notebooks) (00 to 14, from pipeline anatomy to the Gmail pilot), and [deploy/](https://github.com/Exios66/llm-mailroom/tree/main/deploy) (compose files, Modal app, Space payload — operator guides are the Docker and Modal pages above).
