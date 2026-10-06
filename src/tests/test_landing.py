@@ -75,9 +75,10 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
 
 def test_gitbook_home_ports_the_enhanced_landing():
     home = GITBOOK_HOME.read_text(encoding="utf-8")
-    assert home.startswith("# The LLM-Mailroom\n")
+    assert home.lstrip().startswith("<table")
+    assert "# The LLM-Mailroom" in home
     assert 'src="assets/fumi/fumi.gif"' in home
-    assert home.index("assets/fumi/fumi.gif") < home.index("assets/banner.png")
+    assert home.index("assets/banner.png") < home.index("assets/fumi/fumi.gif")
     assert 'src="assets/banner.png"' in home
     assert "A multi-agent pipeline that ingests, classifies, extracts, and archives" in home
     for badge in BADGES:
@@ -88,7 +89,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "constellation/overview.md" in home
     assert "From inbox to archive" in home
     assert "Meet Fumi" in home
-    assert "Postal maid on duty" in home
+    assert 'Postal Worker Fumi (文, "letter") on duty' in home
     assert "Read the docs" in home
     assert "[Architecture](architecture.md)" in home
     assert "**release** · v0.7.1" in home
@@ -96,13 +97,21 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "Pixelify" not in home
     assert "font-family" not in home
     assert "fonts.googleapis.com" not in home
-    # Fumi is in the header table, not the sole opening figure.
-    assert home.strip().startswith("# The LLM-Mailroom")
-    header = home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
-    assert "<table>" in header
-    assert 'Fumi (文, "letter")' in header
+    # Header is a centered The LLM-Mailroom wordmark — no Fumi before the masthead.
+    assert home.lstrip().startswith("<table")
+    header = home.split("assets/banner.png", 1)[0]
+    assert 'width="100%"' in header
+    assert 'align="center"' in header
+    assert "# The LLM-Mailroom" in header
+    assert "assets/fumi/fumi.gif" not in header
+    assert 'Fumi (文, "letter")' not in header
     assert "lives in this header corner" not in header
     assert "not the header itself" not in header
+    # Name + 文 live on the on-duty Fumi, after the banner.
+    on_duty = home.split("assets/banner.png", 1)[1].split("## From inbox to archive", 1)[0]
+    assert 'src="assets/fumi/fumi.gif"' in on_duty
+    assert 'Postal Worker Fumi (文, "letter") on duty' in on_duty
+    assert "Specialist agents on a 13-node graph" in on_duty
     meet = home.split("## Meet Fumi", 1)[1]
     assert "build_mascot.py" not in meet
     assert "header corner" not in meet
