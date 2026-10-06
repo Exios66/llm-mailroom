@@ -1,0 +1,17 @@
+# GitBook Site Git Sync configuration.
+# Schema: https://api.gitbook.com/gitbook-docs.yaml
+# Lives at the repository root (Git Sync Project directory defaults to root).
+# The Mailroom Docs space is the site landing (path: /), mapped to docs/.
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: The LLM-Mailroom
+  structure:
+    - type: space
+      key: mailroom-docs
+      title: The LLM-Mailroom
+      path: /
+      default: true
+      content:
+        directory: ./docs
+        language: en
