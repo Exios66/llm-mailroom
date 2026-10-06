@@ -5,7 +5,11 @@ network-free net so a doc rewrite cannot silently dangle a new reference."""
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -79,38 +83,40 @@ def test_v7_taxonomy_reference_removed():
 
 _SUMMARY_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md)\)")
 _DOCS = REPO_ROOT / "docs"
-_SKIP_SUMMARY_DIRS = {
-    "wiki",
-    "assets",
-    "changelog",
-    ".gitbook",
-    # Canonical copies GitBook re-exported under URL-mapped folders.
-    "constellation",
-}
+_SKIP_SUMMARY_DIRS = {"wiki", "assets", "changelog"}
 _SKIP_SUMMARY_FILES = {"SUMMARY.md"}
+# GitBook Git Sync rewrote the Mailroom Docs TOC into nested folders. The
+# leftover GitHub-canonical copies (docs/*.md, docs/constellation/) stay in
+# the repo but are not the published space tree. Changelog is a second space.
+_GITBOOK_DOCS_DIRS = {
+    "start-here",
+    "how-it-fits-together",
+    "repository-guides",
+    "pipeline-reference-llm-mailroom",
+    "about-this-site",
+}
 
 
-def _summary_targets() -> list[str]:
-    text = (_DOCS / "SUMMARY.md").read_text(encoding="utf-8")
+def _summary_targets(summary_path: Path) -> list[str]:
+    text = summary_path.read_text(encoding="utf-8")
     return _SUMMARY_LINK.findall(text)
 
 
 def test_gitbook_summary_lists_every_publishable_page():
     """GitBook only publishes pages listed in SUMMARY.md (maintaining.md)."""
-    listed = _summary_targets()
+    listed = _summary_targets(_DOCS / "SUMMARY.md")
     missing_files = [rel for rel in listed if not (_DOCS / rel).is_file()]
     assert not missing_files, f"SUMMARY.md points at missing files: {missing_files}"
 
     unpublished: list[str] = []
     for path in _DOCS.rglob("*.md"):
         rel = path.relative_to(_DOCS).as_posix()
-        if any(part in _SKIP_SUMMARY_DIRS for part in path.relative_to(_DOCS).parts):
+        parts = path.relative_to(_DOCS).parts
+        if any(part in _SKIP_SUMMARY_DIRS for part in parts):
             continue
         if path.name in _SKIP_SUMMARY_FILES:
             continue
-        # GitBook export keeps the original docs/*.md files and publishes
-        # URL-mapped copies (start-here/, pipeline-reference-llm-mailroom/, …).
-        if path.parent == _DOCS and path.name != "README.md":
+        if parts[0] not in _GITBOOK_DOCS_DIRS and rel != "README.md":
             continue
         if rel not in listed:
             unpublished.append(rel)
@@ -129,13 +135,25 @@ def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
     assert "    * [Run reports](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-reports.md)" in summary
     assert "    * [Visuals](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-visuals.md)" in summary
 
-    docker = (_DOCS / "docker-deployment.md").read_text(encoding="utf-8")
-    modal = (_DOCS / "modal-vllm.md").read_text(encoding="utf-8")
+    docker = (
+        _DOCS / "pipeline-reference-llm-mailroom" / "deployment" / "docker-deployment.md"
+    ).read_text(encoding="utf-8")
+    modal = (
+        _DOCS / "pipeline-reference-llm-mailroom" / "deployment" / "modal-vllm.md"
+    ).read_text(encoding="utf-8")
     reports = (
-        _DOCS / "constellation" / "repos" / "local-mailroom-sandbox-reports.md"
+        _DOCS
+        / "repository-guides"
+        / "repos"
+        / "local-mailroom-sandbox"
+        / "local-mailroom-sandbox-reports.md"
     ).read_text(encoding="utf-8")
     visuals = (
-        _DOCS / "constellation" / "repos" / "local-mailroom-sandbox-visuals.md"
+        _DOCS
+        / "repository-guides"
+        / "repos"
+        / "local-mailroom-sandbox"
+        / "local-mailroom-sandbox-visuals.md"
     ).read_text(encoding="utf-8")
     assert "Mode G" in docker
     assert "docker-compose.full.yml" in docker
@@ -151,8 +169,12 @@ def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
 
 
 def test_docker_and_modal_pages_cover_operator_matrix():
-    docker = (_DOCS / "docker-deployment.md").read_text(encoding="utf-8")
-    modal = (_DOCS / "modal-vllm.md").read_text(encoding="utf-8")
+    docker = (
+        _DOCS / "pipeline-reference-llm-mailroom" / "deployment" / "docker-deployment.md"
+    ).read_text(encoding="utf-8")
+    modal = (
+        _DOCS / "pipeline-reference-llm-mailroom" / "deployment" / "modal-vllm.md"
+    ).read_text(encoding="utf-8")
     for needle in (
         "MAILROOM_API_TOKEN",
         "litellm:v1.104.0",
@@ -167,3 +189,69 @@ def test_docker_and_modal_pages_cover_operator_matrix():
         "mailroom-vllm",
     ):
         assert needle in modal
+
+
+def test_gitbook_changelog_space_mirrors_repo_changelog():
+    """The Changelog site section is a generated mirror of CHANGELOG.md."""
+    script = REPO_ROOT / "src" / "scripts" / "sync_gitbook_changelog.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--check"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    changelog = REPO_ROOT / "CHANGELOG.md"
+    changelog_text = changelog.read_text(encoding="utf-8")
+    headings = re.findall(r"^## \[([^\]]+)\]", changelog_text, re.MULTILINE)
+    assert "Unreleased" in headings
+    assert "v0.7.1" in headings
+    assert "v0.7.0" in headings
+
+    space = _DOCS / "changelog"
+    feed = (space / "README.md").read_text(encoding="utf-8")
+    summary = (space / "SUMMARY.md").read_text(encoding="utf-8")
+    unreleased = (space / "unreleased.md").read_text(encoding="utf-8")
+    v071 = (space / "2026" / "v0-7-1.md").read_text(encoding="utf-8")
+
+    assert "{% updates format=\"full\" %}" in feed
+    assert "## Unreleased" in feed
+    assert "## v0.7.1" in feed
+    assert "* [Unreleased](unreleased.md)" in summary
+    assert "* [v0.7.1](2026/v0-7-1.md)" in summary
+    assert "GitBook Changelog space" in unreleased
+    assert "Corpus revision re-pinned to the GT-closure tip" in v071
+    assert "Feature description" not in feed
+    assert "Product improvement" not in feed
+    assert "gitbookio.github.io/onboarding-template-images" not in feed
+
+    listed = _summary_targets(space / "SUMMARY.md")
+    unpublished: list[str] = []
+    for path in space.rglob("*.md"):
+        rel = path.relative_to(space).as_posix()
+        if path.name == "SUMMARY.md":
+            continue
+        if rel not in listed:
+            unpublished.append(rel)
+    assert not unpublished, f"changelog pages not in changelog/SUMMARY.md: {unpublished}"
+    missing = [rel for rel in listed if not (space / rel).is_file()]
+    assert not missing, f"changelog/SUMMARY.md points at missing files: {missing}"
+
+    site_cfg = yaml.safe_load((_DOCS / "gitbook-docs.yaml").read_text(encoding="utf-8"))
+
+    def _walk(nodes):
+        for node in nodes:
+            yield node
+            yield from _walk(node.get("children") or [])
+
+    nodes = list(_walk(site_cfg["site"]["structure"]))
+    changelog_space = next(node for node in nodes if node.get("key") == "space-1")
+    assert changelog_space["title"] == "Changelog"
+    assert changelog_space["content"]["directory"] == "./changelog"
+    assert changelog_space.get("draft") not in (True, "true")
+    tags = (space / ".gitbook" / "tags.yaml").read_text(encoding="utf-8")
+    assert "tag: feature" in tags
+    assert "tag: improvement" in tags
+    assert "tag: fix" in tags

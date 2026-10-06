@@ -15,8 +15,9 @@ This site is **[Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc
 | `docs/constellation/` | The constellation pages: overview, getting started, architecture, data, governance, glossary, repo index |
 | `docs/constellation/repos/` | One guide per repository |
 | `docs/*.md` | The llm-mailroom pipeline reference, published as-is |
+| `docs/changelog/` | Separate GitBook **Changelog** space (site section). Generated from the repository `CHANGELOG.md` — never hand-edit. |
 
-`docs/wiki/` (GitHub wiki source) and `docs/assets/` are not listed in `SUMMARY.md`, so they stay off the site.
+`docs/wiki/` (GitHub wiki source) and `docs/assets/` are not listed in `SUMMARY.md`, so they stay off the site. The Changelog section has its own `docs/changelog/SUMMARY.md` and is not part of the Mailroom Docs TOC.
 
 ## Connecting a GitBook space (one-time)
 
@@ -53,6 +54,7 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 - **Use relative links between pages on this site** (`repos/llm-mailroom.md`, `../architecture.md`) and full GitHub URLs for anything in another repository.
 - **Date facts that drift.** Versions, pins and counts carry an "as of" date; when a release moves them, update [Overview](overview.md) and the affected guide.
 - **Keep the GitHub wiki separate.** `docs/wiki/` remains wiki-only and is not a mirror of these pages.
+- **Keep the GitBook Changelog generated.** After editing `CHANGELOG.md`, run `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py`. The GitBook onboarding placeholders in that space are gone; do not put them back.
 
 ## When a repository changes
 
@@ -66,3 +68,4 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 | Compose matrix, Mode G, or Modal vLLM knobs change | [Docker](../docker-deployment.md) and [Modal + vLLM](../modal-vllm.md) first; keep `deploy/README.md` as an index that links those pages |
 | Sandbox run reports or figures change | [Run reports](repos/local-mailroom-sandbox-reports.md) and [Visuals](repos/local-mailroom-sandbox-visuals.md); keep image URLs on `Exios66/local-mailroom-sandbox` `main` |
 | Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG/Hermes favicon into `docs/assets/mascot/` and `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. The home header is the centered **The LLM-Mailroom** wordmark; Fumi appears after the masthead as Postal Worker Fumi (文, "letter") on duty. The owl banner, title, and badges stay the masthead. Re-upload `hoot-icon.png` in GitBook Customize if the Hermes sprite changes. |
+| llm-mailroom `CHANGELOG.md` changes | Run `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py` so the GitBook Changelog section matches. `--check` is the guard. |
