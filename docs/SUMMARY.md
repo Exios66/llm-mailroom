@@ -22,6 +22,20 @@
 * [Governance and workflow](how-it-fits-together/governance.md)
 * [Repository index](how-it-fits-together/repo-index.md)
 
+## Mailroom dataset
+
+* [Overview](mailroom-dataset/README.md)
+* [Classes and strata](mailroom-dataset/classes-and-strata.md)
+* [Configs](mailroom-dataset/configs.md)
+* [Source corpora](mailroom-dataset/source-corpora.md)
+  * [CUAD contracts](mailroom-dataset/sources/cuad-contracts.md)
+  * [MAUD merger agreements](mailroom-dataset/sources/maud-merger-agreements.md)
+  * [SEC corporate records](mailroom-dataset/sources/edgar-corporate-records.md)
+  * [Enron correspondence](mailroom-dataset/sources/enron-correspondence.md)
+  * [CMS insurance claims](mailroom-dataset/sources/cms-insurance-claims.md)
+* [EDA reports](mailroom-dataset/eda-reports.md)
+* [Visualizations](mailroom-dataset/visualizations.md)
+
 ## Repository guides
 
 * [All repositories](repository-guides/repos/README.md)

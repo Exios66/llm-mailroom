@@ -44,7 +44,7 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 ## Data
 
-**Blind config / ground-truth config.** The two halves of `mailroom-dataset`. `default` has the document text and no labels; `ground_truth` has the labels. They join on `filename`.
+**Blind config / ground-truth config.** The two halves of `mailroom-dataset`. `default` has the document text and no labels; `ground_truth` has the labels. They join on `filename`. Full breakdown: [Mailroom dataset](../mailroom-dataset/).
 
 **Class / subclass.** The two levels of document type. Five classes (`contract`, `merger_agreement`, `corporate_record`, `correspondence`, `insurance_claim`); each has subclasses such as `all_cash` or `bylaws`.
 
