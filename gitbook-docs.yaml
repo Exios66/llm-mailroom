@@ -1,15 +1,18 @@
 # GitBook Site Git Sync configuration.
 # Schema: https://api.gitbook.com/gitbook-docs.yaml
-# Lives at the repository root (Git Sync Project directory defaults to root).
-# The Mailroom Docs space is the site landing (path: /), mapped to docs/.
+# Lives at the repository ROOT (leave the GitBook UI Project directory at root;
+# do not set it to docs/). directory: ./docs is the git folder; path: / is the
+# site home URL. path: docs would nest the space at …/mailroom-inc.-docs/docs/.
+# Published site: https://mailroom-inc.gitbook.io/mailroom-inc.-docs/
+# Keep key: mailroom-docs — changing it would replace the live space.
 $schema: https://api.gitbook.com/gitbook-docs.yaml
 version: 1
 site:
-  title: The LLM-Mailroom
+  title: Mailroom Inc. Docs
   structure:
     - type: space
       key: mailroom-docs
-      title: The LLM-Mailroom
+      title: Mailroom Inc. Docs
       path: /
       default: true
       content:
