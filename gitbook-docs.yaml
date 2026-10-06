@@ -17,3 +17,10 @@ site:
       content:
         directory: ./docs
         language: en
+    - type: space
+      key: space-1
+      title: Changelog
+      path: changelog
+      content:
+        directory: ./docs/changelog
+        language: en
