@@ -3,8 +3,9 @@
 Fumi is a chibi pixel maid who works the mailroom. Her body is a native-
 resolution pixel sprite (docs/assets/mascot/source/fumi-base.png, 62x107,
 cleaned from reference art supplied by the project owner); this script adds
-the mailroom props (the letter in her hands, her owl assistant Hoot, the
-winged envelope Tegami), the blink frames, and the animation, then emits:
+her USPS-style postal uniform (postal-blue shirt, navy skirt with a red and
+white hem stripe, a mini carrier cap, a shoulder patch, a mail satchel) and
+her owl assistant Hoot, plus the blink frames and the animation, then emits:
 
   docs/assets/mascot/fumi.svg        animated SVG (CSS keyframes, no JS)
   docs/assets/mascot/fumi.gif        animated GIF (same timeline)
@@ -37,7 +38,6 @@ CX = SX + 30.5
 OUT = "#0f1433"
 SKIN = "#ffd3b4"
 LASH = "#0f1433"
-ENV, ENV_D = "#fff8e6", "#e6d3a8"
 SEAL, SEAL_L = "#e8445e", "#ff8a9c"
 BLUSH = "#ff9db5"
 WING, WING_D = "#ffffff", "#cfd8ff"
@@ -45,6 +45,11 @@ SPARK = "#ffd34d"
 NAVY, NAVY_L, NAVY_D = "#2b3a8c", "#4a5fc2", "#1b2563"
 GOLD, GOLD_D = "#f6c54f", "#c98e25"
 BAG, BAG_L, BAG_D = "#b06f3c", "#d9955a", "#7a4523"
+RED = "#d7263d"
+# dress colours in the base sprite -> tone index (0 shadow, 1 base, 2 light)
+UNIFORM_SRC = {"#1f1d3d": 0, "#343657": 1, "#45507e": 2}
+SHIRT = ("#6f8fc4", "#9ab7e0", "#c4d8f2")
+SKIRT = ("#18245c", "#26357d", "#3d50a8")
 STAMP, STAMP_EDGE = "#ffe3ea", "#9fb3e8"
 OWL = {"K": "#3a2a24", "b": "#8a6a4a", "d": "#6b4f36", "f": "#f1e3c6", "c": "#c9b08a",
        "E": "#2a1d1a", "w": "#ffffff", "O": "#e8a33a", "y": "#e8a33a"}
@@ -107,7 +112,7 @@ def _hex(rgb) -> str:
 
 
 def draw_body() -> Layer:
-    """The base sprite plus the letter she holds and Hoot on her shoulder."""
+    """The base sprite in her postal uniform, with Hoot on her shoulder."""
     L = Layer()
     base = Image.open(BASE).convert("RGBA")
     for y in range(base.height):
@@ -115,6 +120,23 @@ def draw_body() -> Layer:
             r, g, b, a = base.getpixel((x, y))
             if a:
                 L.set(SX + x, SY + y, _hex((r, g, b)))
+
+    # USPS-style uniform: light postal-blue shirt up top, navy skirt below,
+    # with a red-white stripe running along the skirt hem
+    for (x, y), c in list(L.px.items()):
+        if c in UNIFORM_SRC:
+            tone = UNIFORM_SRC[c]
+            L.set(x, y, (SHIRT if y < SY + 76 else SKIRT)[tone])
+    for x in range(SX, SX + 62):
+        col = [y for y in range(SY + 76, SY + 107) if L.px.get((x, y)) in SKIRT]
+        if col:
+            low = max(col)
+            L.set(x, low, RED)
+            if L.px.get((x, low - 1)) in SKIRT:
+                L.set(x, low - 1, "#ffffff")
+    # postal shoulder patch on her sleeve
+    patch = ["KKKKK", "KWRWK", "KRBRK", "KWRWK", "KKKKK"]
+    L.sprite(SX + 20, SY + 63, patch, {"K": OUT, "W": "#ffffff", "R": RED, "B": NAVY})
 
     # brighten the collar bow to postal red
     for (x, y), c in list(L.px.items()):
@@ -130,30 +152,13 @@ def draw_body() -> Layer:
         L.set(x, y, BAG_D)
         L.set(x, y + 1, BAG)
         L.set(x, y + 2, BAG_D)
-    # little envelope charm hanging under the collar bow
-    charm = ["KKKKKK", "KGgGgK", "KGGgGK", "KKKKKK"]
-    L.sprite(43, 70, charm, {"K": OUT, "G": GOLD, "g": GOLD_D})
     # postage-stamp patch on the apron, scalloped edge with a heart
     stamp = [".E.E.E.", "EPPPPPE", ".PSPSP.", "EPSSSPE", ".PPSPP.", "EPPPPPE", ".E.E.E."]
     L.sprite(52, 87, stamp, {"E": STAMP_EDGE, "P": STAMP, "S": SEAL})
 
-    # a heart-sealed letter held in her clasped hands
-    env = Layer()
-    ex, ey = SX + 21, SY + 69
-    env.rect(ex, ey, ex + 14, ey + 9, ENV)
-    env.outline(OUT)
-    for i in range(6):
-        env.set(ex + 1 + i, ey + 1 + i, ENV_D)
-        env.set(ex + 13 - i, ey + 1 + i, ENV_D)
-    heart = [".S.S.", "SLSSS", ".SSS.", "..S.."]
-    env.sprite(ex + 5, ey + 5, heart, {"S": SEAL, "L": SEAL_L})
-    L.merge(env)
-
-    # leather mail satchel on her hip, a letter peeking out of it
+    # leather mail satchel on her hip
     bag = Layer()
     satchel = [
-        "..ee.....",
-        "..eSe....",
         ".FFFFFFF.",
         "FFFFFFFFF",
         "FFFRFRFFF",
@@ -163,18 +168,20 @@ def draw_body() -> Layer:
         "BBBBBBBBB",
         ".DDDDDDD.",
     ]
-    bag.sprite(28, 80, satchel, {"e": ENV, "S": SEAL, "F": BAG_L, "D": BAG_D, "B": BAG, "R": SEAL})
+    bag.sprite(28, 82, satchel, { "F": BAG_L, "D": BAG_D, "B": BAG, "R": SEAL})
     bag.outline(OUT)
     L.merge(bag)
 
-    # mini postal cap pinned on her headdress, with an envelope badge
+    # mini carrier cap pinned on her headdress, with a red and white band
     cap = Layer()
     cap.ellipse(58, 8.5, 6.5, 3.5, NAVY)
     cap.rect(51, 11, 66, 12, NAVY_D)
     cap.outline(OUT)
     cap.rect(53, 7, 62, 7, NAVY_L)
-    cap.rect(56, 8, 59, 10, GOLD)
-    cap.pts([(56, 8), (57, 9), (58, 9), (59, 8)], GOLD_D)
+    cap.rect(52, 10, 64, 10, RED)            # red and white hat band
+    cap.rect(52, 9, 64, 9, "#ffffff")
+    cap.pts([(57, 6), (58, 6), (56, 7), (57, 7), (58, 7), (59, 7), (57, 8), (58, 8)], GOLD)
+    cap.pts([(57, 7)], "#fff1b8")
     L.merge(cap)
 
     # Hoot, the owl assistant, perched on her shoulder
@@ -221,36 +228,6 @@ def draw_eyes(closed: bool) -> Layer:
     return L
 
 
-# ---------------------------------------------------------------- buddy
-BUDDY_X, BUDDY_Y = 80, 30
-
-
-def draw_buddy(wings_up: bool) -> Layer:
-    L = Layer()
-    x0, y0 = BUDDY_X, BUDDY_Y
-    if wings_up:
-        lw = [(x0 - 3, y0 - 2), (x0 - 2, y0 - 2), (x0 - 4, y0 - 1), (x0 - 3, y0 - 1),
-              (x0 - 2, y0 - 1), (x0 - 1, y0), (x0 - 2, y0), (x0 - 1, y0 + 1)]
-    else:
-        lw = [(x0 - 1, y0 + 3), (x0 - 2, y0 + 3), (x0 - 3, y0 + 4), (x0 - 2, y0 + 4),
-              (x0 - 4, y0 + 5), (x0 - 3, y0 + 5), (x0 - 1, y0 + 4), (x0 - 1, y0 + 2)]
-    rw = [(2 * x0 + 9 - x, y) for x, y in lw]
-    L.pts(lw, WING)
-    L.pts(rw, WING)
-    L.rect(x0, y0, x0 + 9, y0 + 6, ENV)
-    L.outline()
-    for i in range(5):
-        L.set(x0 + i, y0 + i, ENV_D)
-        L.set(x0 + 9 - i, y0 + i, ENV_D)
-    L.pts([(x0 + 4, y0 + 4), (x0 + 5, y0 + 4)], SEAL)
-    L.pts([(x0 + 4, y0 + 3), (x0 + 5, y0 + 3)], SEAL_L)
-    L.pts([(x0 + 2, y0 + 5), (x0 + 7, y0 + 5)], LASH)
-    L.pts([(x0 + 1, y0 + 6), (x0 + 8, y0 + 6)], BLUSH)
-    for p in lw[:2] + rw[:2]:
-        L.set(*p, WING_D)
-    return L
-
-
 # ---------------------------------------------------------------- extras
 BUBBLE_X, BUBBLE_Y = 3, 14
 
@@ -291,8 +268,6 @@ def state(t: int) -> dict:
     return {
         "bob": 1 if (t // 4) % 2 else 0,           # 0.8 s bob cycle
         "blink": t in (20, 21),                    # one blink per loop
-        "wings_up": (t // 2) % 2 == 0,             # 0.4 s flap cycle
-        "buddy_dy": round(-1.5 * math.sin(2 * math.pi * t / 16) - 0.5),  # 1.6 s float
         "bubble": 6 <= t < 16,                     # heart bubble pops up
         "sparks": [((t + 4 * i) // 4) % 4 == 0 for i in range(len(SPARKS))],
     }
@@ -308,8 +283,6 @@ def compose(t: int) -> Layer:
     body.merge(draw_eyes(s["blink"]))
     shift.px = {(x, y + s["bob"]): c for (x, y), c in body.px.items()}
     out.merge(shift)
-    buddy = draw_buddy(s["wings_up"])
-    out.px.update({(x, y + s["buddy_dy"]): c for (x, y), c in buddy.px.items()})
     if s["bubble"]:
         out.merge(draw_bubble())
     return out
@@ -350,7 +323,7 @@ def build_svg() -> str:
         for i in range(len(SPARKS))
     )
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="288" height="348" shape-rendering="crispEdges" role="img" aria-labelledby="t">
-<title id="t">Fumi, the llm-mailroom mascot: a chibi pixel maid with long indigo hair and a frilled headdress, holding a heart-sealed letter, with an owl on her shoulder and a winged envelope fluttering beside her</title>
+<title id="t">Fumi, the llm-mailroom mascot: a chibi postal maid with long indigo hair, a frilled headdress with a mini carrier cap, a postal-blue uniform and a mail satchel, with an owl on her shoulder</title>
 <style>
 .bob{{animation:bob .8s steps(1) infinite}}
 @keyframes bob{{0%{{transform:translateY(0)}}50%{{transform:translateY(1px)}}}}
@@ -358,12 +331,6 @@ def build_svg() -> str:
 .ec{{opacity:0;animation:ec {loop}s steps(1) infinite}}
 @keyframes eo{{0%{{opacity:1}}62.5%{{opacity:0}}68.75%{{opacity:1}}}}
 @keyframes ec{{0%{{opacity:0}}62.5%{{opacity:1}}68.75%{{opacity:0}}}}
-.buddy{{animation:fly 1.6s ease-in-out infinite}}
-@keyframes fly{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(-2px)}}}}
-.wu{{animation:wu .4s steps(1) infinite}}
-.wd{{opacity:0;animation:wd .4s steps(1) infinite}}
-@keyframes wu{{0%{{opacity:1}}50%{{opacity:0}}}}
-@keyframes wd{{0%{{opacity:0}}50%{{opacity:1}}}}
 .bubble{{opacity:0;transform-origin:13px 24px;animation:pop {loop}s infinite}}
 @keyframes pop{{0%,18%{{opacity:0;transform:scale(.4)}}21%{{opacity:1;transform:scale(1.1)}}24%,46%{{opacity:1;transform:scale(1)}}50%,100%{{opacity:0;transform:scale(.6)}}}}
 .big{{opacity:0}}
@@ -376,7 +343,6 @@ def build_svg() -> str:
 </style>
 {sparks}
 <g class="bob">{rects(draw_body())}<g class="eo">{rects(draw_eyes(False))}</g><g class="ec">{rects(draw_eyes(True))}</g></g>
-<g class="buddy"><g class="wu">{rects(draw_buddy(True))}</g><g class="wd">{rects(draw_buddy(False))}</g></g>
 <g class="bubble">{rects(draw_bubble())}</g>
 </svg>
 """
@@ -391,7 +357,6 @@ def main() -> None:
         still.merge(draw_spark(i, i % 2 == 0))
     still.merge(draw_body())
     still.merge(draw_eyes(False))
-    still.merge(draw_buddy(True))
     still.merge(draw_bubble())
     to_image(still, 6).save(OUT_DIR / "fumi.png", optimize=True)
     icon = Layer()
