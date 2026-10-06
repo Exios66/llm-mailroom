@@ -10,7 +10,7 @@ This site is **[Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc
 | `gitbook-docs.yaml` (repository root) | Fallback only: same space mapping if the Project directory is ever moved to the repo root (`directory: ./docs`, `path: /`). Live GitBook does not read this file today. |
 | `.gitbook.yaml` (repository root) | Classic space Git Sync: content root is `docs/` |
 | `docs/.gitbook.yaml` | Space config inside the mapped directory: `README.md` is the first page |
-| `docs/README.md` | The GitBook landing page. Port of `landing/`: Fumi in the header corner (wordmark only — no layout caption), owl banner, **The LLM-Mailroom** title, README badges, tags, install, pipeline walk-through, and docs shelf. GitBook's own type; it does not load Pixelify Sans. GitBook strips scripts, so the idle TUI stays on the static page. |
+| `docs/README.md` | The GitBook landing page. Port of `landing/`: Fumi in the header corner with **The LLM-Mailroom — Fumi (文, "letter")**, owl banner below the badges, tags, install, pipeline walk-through, and docs shelf. GitBook's own type; it does not load Pixelify Sans. GitBook strips scripts, so the idle TUI stays on the static page. |
 | `docs/SUMMARY.md` | The table of contents. Only pages listed here are published. |
 | `docs/constellation/` | The constellation pages: overview, getting started, architecture, data, governance, glossary, repo index |
 | `docs/constellation/repos/` | One guide per repository |

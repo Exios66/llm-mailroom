@@ -78,6 +78,8 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "A multi-agent pipeline that ingests, classifies, extracts, and archives" in home
     for badge in BADGES:
         assert badge in home
+    assert home.index(BADGES[-1]) < home.index("assets/banner.png")
+    assert "night-shift owl at the sorting desk" in home.split("assets/banner.png", 1)[1]
     assert INSTALL in home
     assert "constellation/overview.md" in home
     assert "From inbox to archive" in home
@@ -94,8 +96,13 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert home.strip().startswith("# The LLM-Mailroom")
     header = home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
     assert "<table>" in header
+    assert 'Fumi (文, "letter")' in header
     assert "lives in this header corner" not in header
     assert "not the header itself" not in header
+    meet = home.split("## Meet Fumi", 1)[1]
+    assert "build_mascot.py" not in meet
+    assert "header corner" not in meet
+    assert "landing/" not in meet.split("## Related files", 1)[0]
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [The LLM-Mailroom](README.md)" in summary
     # GitBook's Project directory is docs/; GITBOOK-SITE writes this file there.
