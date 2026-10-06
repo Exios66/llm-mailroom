@@ -84,6 +84,11 @@ def _mailroom_docs_space(cfg: dict) -> dict:
     raise AssertionError("mailroom-docs space missing from gitbook-docs.yaml")
 
 
+def _decode_badge(text: str) -> str:
+    """GitBook export turns %7C into a literal pipe in shield URLs."""
+    return text.replace("%7C", "|")
+
+
 def test_gitbook_home_ports_the_enhanced_landing():
     home = GITBOOK_HOME.read_text(encoding="utf-8")
     assert home.startswith("# The LLM-Mailroom\n")
@@ -91,9 +96,10 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "banner.png" in home
     assert home.index("banner.png") < home.index("fumi.gif")
     assert "A multi-agent pipeline that ingests, classifies, extracts, and archives" in home
+    decoded_home = _decode_badge(home)
     for badge in BADGES:
-        assert badge in home
-    assert home.index(BADGES[-1]) < home.index("banner.png")
+        assert _decode_badge(badge) in decoded_home
+    assert decoded_home.index(_decode_badge(BADGES[-1])) < decoded_home.index("banner.png")
     assert "night-shift owl at the sorting desk" in home.split("banner.png", 1)[1]
     assert INSTALL in home
     assert "From inbox to archive" in home
@@ -108,7 +114,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "fonts.googleapis.com" not in home
     # Header is the wordmark + 文 caption only — Fumi's sprite is below the banner.
     assert home.strip().startswith("# The LLM-Mailroom")
-    header = home.split("# The LLM-Mailroom", 1)[1].split("banner.png", 1)[0]
+    header = home.split("# The LLM-Mailroom", 1)[1].split("<figure>", 1)[0]
     assert "fumi.gif" not in header
     assert "<img" not in header
     assert "<table" not in header
