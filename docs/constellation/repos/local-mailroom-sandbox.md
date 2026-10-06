@@ -59,6 +59,12 @@ A vLLM or Modal profile without `--local` warns instead of silently falling back
 
 The layout contract, including which paths are frozen by tests, is [docs/setting-up/LAYOUT.md](https://github.com/Exios66/local-mailroom-sandbox/blob/main/docs/setting-up/LAYOUT.md).
 
+On this site (nested under this guide in the table of contents):
+
+- [Documentation](local-mailroom-sandbox-docs.md) — every dedicated sandbox manual
+- [Run reports](local-mailroom-sandbox-reports.md) — SAND-37 grid, SAND-032 ladder, hub export
+- [Visuals](local-mailroom-sandbox-visuals.md) — performance charts and `sandbox watch` stills
+
 ## Its documentation
 
 - [docs/setting-up/QUICKSTART.md](https://github.com/Exios66/local-mailroom-sandbox/blob/main/docs/setting-up/QUICKSTART.md) — start here: install, full CLI reference, workflows
@@ -73,3 +79,4 @@ The layout contract, including which paths are frozen by tests, is [docs/setting
 - [docs/runbooks/](https://github.com/Exios66/local-mailroom-sandbox/tree/main/docs/runbooks) — operator runbooks per specialist and GPU
 - [docs/pretty-logging/mailroom-themed-logging.md](https://github.com/Exios66/local-mailroom-sandbox/blob/main/docs/pretty-logging/mailroom-themed-logging.md) — `sandbox watch`
 - [docs/datasets/](https://github.com/Exios66/local-mailroom-sandbox/tree/main/docs/datasets) — dataset card
+- [reports/](https://github.com/Exios66/local-mailroom-sandbox/tree/main/reports) — experiment log, SAND-32 / SAND-37 cards, serving figures, dashboard hub (GitBook: [Run reports](local-mailroom-sandbox-reports.md), [Visuals](local-mailroom-sandbox-visuals.md))

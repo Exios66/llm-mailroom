@@ -33,3 +33,4 @@ Every issue gets four label families: `type/*`, `domain/*`, `priority/*`, `statu
 - [docs/LIFECYCLE.md](https://github.com/LLM-Mailroom-Services/mailroom-issues/blob/main/docs/LIFECYCLE.md) — how an issue moves from triage to close
 - [docs/CONSTELLATION.md](https://github.com/LLM-Mailroom-Services/mailroom-issues/blob/main/docs/CONSTELLATION.md) — the repository map
 - [docs/PROMPTS.md](https://github.com/LLM-Mailroom-Services/mailroom-issues/blob/main/docs/PROMPTS.md) — prompt lineage and the frozen v1 set
+- [reports/](https://github.com/LLM-Mailroom-Services/mailroom-issues/tree/main/reports) — exported Modal vs API / GPU reports (built from the sandbox hub). Gallery on this site: [sandbox visuals](local-mailroom-sandbox-visuals.md). Pages: <https://llm-mailroom-services.github.io/mailroom-issues/>
