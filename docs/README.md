@@ -1,6 +1,6 @@
 # The LLM-Mailroom
 
-<table data-header-hidden><thead><tr><th valign="middle"></th><th valign="middle"></th></tr></thead><tbody><tr><td valign="middle"><img src=".gitbook/assets/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid with a mail satchel and Hoot the owl on her shoulder" data-size="original"></td><td valign="middle"><strong>The LLM-Mailroom</strong> — Fumi (文, "letter")</td></tr></tbody></table>
+**The LLM-Mailroom** — Fumi (文, "letter")
 
 **A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents — with a full audit trail.**
 
@@ -14,7 +14,7 @@ One LangGraph state machine per document. Specialist LLM agents per document cla
 
 <table data-header-hidden><thead><tr><th valign="middle"></th><th valign="middle"></th></tr></thead><tbody><tr><td valign="middle"><img src=".gitbook/assets/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform with a mail satchel and a little owl on her shoulder" data-size="original"></td><td valign="middle"><p>Postal maid on duty.</p><p>Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.</p></td></tr></tbody></table>
 
-This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, tags, Fumi in the header corner, install, pipeline walk-through, docs shelf). GitBook strips scripts, so the idle mail-floor terminal stays on the static page. This page uses GitBook's own type — it does not load the landing page's display font.
+This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, tags, install, pipeline walk-through, docs shelf). Fumi's sprite is in the postal-maid hero and Meet Fumi — not the header. GitBook strips scripts, so the idle mail-floor terminal stays on the static page. This page uses GitBook's own type — it does not load the landing page's display font.
 
 ```bash
 # clone, install, then start the API (it embeds the inbox watcher)

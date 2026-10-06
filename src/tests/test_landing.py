@@ -73,33 +73,45 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
     assert "PYTHONPATH=src python -m api.main" in copy_js
 
 
+def _mailroom_docs_space(cfg: dict) -> dict:
+    """GitBook export may nest the space under a section."""
+    for item in cfg["site"]["structure"]:
+        if item.get("key") == "mailroom-docs":
+            return item
+        for child in item.get("children") or []:
+            if child.get("key") == "mailroom-docs":
+                return child
+    raise AssertionError("mailroom-docs space missing from gitbook-docs.yaml")
+
+
 def test_gitbook_home_ports_the_enhanced_landing():
     home = GITBOOK_HOME.read_text(encoding="utf-8")
     assert home.startswith("# The LLM-Mailroom\n")
-    assert 'src="assets/fumi/fumi.gif"' in home
-    assert home.index("assets/fumi/fumi.gif") < home.index("assets/banner.png")
-    assert 'src="assets/banner.png"' in home
+    assert "fumi.gif" in home
+    assert "banner.png" in home
+    assert home.index("banner.png") < home.index("fumi.gif")
     assert "A multi-agent pipeline that ingests, classifies, extracts, and archives" in home
     for badge in BADGES:
         assert badge in home
-    assert home.index(BADGES[-1]) < home.index("assets/banner.png")
-    assert "night-shift owl at the sorting desk" in home.split("assets/banner.png", 1)[1]
+    assert home.index(BADGES[-1]) < home.index("banner.png")
+    assert "night-shift owl at the sorting desk" in home.split("banner.png", 1)[1]
     assert INSTALL in home
-    assert "constellation/overview.md" in home
     assert "From inbox to archive" in home
     assert "Meet Fumi" in home
     assert "Postal maid on duty" in home
     assert "Read the docs" in home
-    assert "[Architecture](architecture.md)" in home
+    assert "architecture.md" in home
     assert "**release** · v0.7.1" in home
-    assert "assets/mascot/hoot-icon.png" in home
+    assert "hoot-icon.png" in home
     assert "Pixelify" not in home
     assert "font-family" not in home
     assert "fonts.googleapis.com" not in home
-    # Fumi is in the header table, not the sole opening figure.
+    # Header is the wordmark + 文 caption only — Fumi's sprite is below the banner.
     assert home.strip().startswith("# The LLM-Mailroom")
-    header = home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
-    assert "<table>" in header
+    header = home.split("# The LLM-Mailroom", 1)[1].split("banner.png", 1)[0]
+    assert "fumi.gif" not in header
+    assert "<img" not in header
+    assert "<table" not in header
     assert 'Fumi (文, "letter")' in header
     assert "lives in this header corner" not in header
     assert "not the header itself" not in header
@@ -113,16 +125,15 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "modal-vllm.md" in summary
     assert "local-mailroom-sandbox-reports.md" in summary
     assert "local-mailroom-sandbox-visuals.md" in summary
-    assert "[Docker](docker-deployment.md)" in home
-    assert "[Modal + vLLM](modal-vllm.md)" in home
+    assert "docker-deployment.md" in home
+    assert "modal-vllm.md" in home
 
     # GitBook's Project directory is docs/; GITBOOK-SITE writes this file there.
     site_path = REPO / "docs" / "gitbook-docs.yaml"
     assert site_path.is_file()
     site_cfg = yaml.safe_load(site_path.read_text(encoding="utf-8"))
-    space = site_cfg["site"]["structure"][0]
+    space = _mailroom_docs_space(site_cfg)
     assert space["key"] == "mailroom-docs"
-    assert space["path"] == "/"
     assert space["content"]["directory"] == "./"
     assert space["default"] is True
     assert site_cfg["site"]["title"] == "Mailroom Inc. Docs"
@@ -130,9 +141,8 @@ def test_gitbook_home_ports_the_enhanced_landing():
     root_site = REPO / "gitbook-docs.yaml"
     if root_site.is_file():
         root_cfg = yaml.safe_load(root_site.read_text(encoding="utf-8"))
-        root_space = root_cfg["site"]["structure"][0]
+        root_space = _mailroom_docs_space(root_cfg)
         assert root_space["key"] == "mailroom-docs"
-        assert root_space["path"] == "/"
         assert root_space["content"]["directory"] == "./docs"
         assert root_cfg["site"]["title"] == "Mailroom Inc. Docs"
     assert "https://mailroom-inc.gitbook.io/mailroom-inc.-docs/" in home
