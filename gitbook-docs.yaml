@@ -1,0 +1,19 @@
+# Fallback GitBook Site Git Sync configuration for a repo-root Project directory.
+# Live GitBook writes docs/gitbook-docs.yaml (Project directory = docs/).
+# Use this file only if that UI setting is moved to the repository root:
+# directory: ./docs is the git folder; path: / is the site home URL.
+# Published site: https://mailroom-inc.gitbook.io/mailroom-inc.-docs/
+# Keep key: mailroom-docs — changing it would replace the live space.
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: Mailroom Inc. Docs
+  structure:
+    - type: space
+      key: mailroom-docs
+      title: Mailroom Inc. Docs
+      path: /
+      default: true
+      content:
+        directory: ./docs
+        language: en

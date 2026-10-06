@@ -144,19 +144,20 @@ app = FastAPI(
 async def _check_llm_provider() -> dict:
     """Best-effort LLM provider connectivity check.
 
-    Resolves the provider for the sorter agent (fails fast if the API key is
-    missing or is the mock placeholder) and pings the models endpoint with a
-    short timeout. Never spends completion tokens.
+    Resolve the sorter's wire model and gateway tier, then probe the models
+    endpoint with a five-second request timeout. Never spends completion tokens.
+    Return status, detail, and provider; resolution or probe errors become a
+    ``degraded`` result, with provider set to None if resolution fails.
     """
     import os
     try:
-        from llm.providers import resolve_provider
-        from pipeline.config import get_agent_config
+        from llm.client import resolve_agent_model
 
-        agent_cfg = get_agent_config("sorter")
-        provider, model = resolve_provider(agent_cfg)
+        resolved = resolve_agent_model("sorter")
+        provider, model = resolved.provider, resolved.model
         status = "ok"
-        detail = f"{provider.name}:{model}"
+        # Gateway runs report the tier too (e.g. litellm:mailroom-fast[fast]).
+        detail = f"{provider.name}:{model}" + (f"[{resolved.tier}]" if resolved.tier else "")
         try:
             from openai import OpenAI
 

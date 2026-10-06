@@ -1,11 +1,19 @@
+# GitBook Site Git Sync configuration.
+# Schema: https://api.gitbook.com/gitbook-docs.yaml
+# GitBook's Git Sync Project directory is docs/ — GITBOOK-SITE commits write
+# this file here. content.directory: ./ is this folder (not ./docs, which would
+# look for docs/docs/). path: / is the site home URL; path: docs would nest the
+# space at …/mailroom-inc.-docs/docs/.
+# Published site: https://mailroom-inc.gitbook.io/mailroom-inc.-docs/
+# Keep key: mailroom-docs — changing it would replace the live space.
 $schema: https://api.gitbook.com/gitbook-docs.yaml
 site:
-  title: Mailroom Docs
+  title: Mailroom Inc. Docs
   structure:
     - type: space
       key: mailroom-docs
-      title: Mailroom Docs
-      path: docs
+      title: Mailroom Inc. Docs
+      path: /
       default: true
       content:
         directory: ./
