@@ -109,6 +109,13 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "landing/" not in meet.split("## Related files", 1)[0]
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [The LLM-Mailroom](README.md)" in summary
+    assert "docker-deployment.md" in summary
+    assert "modal-vllm.md" in summary
+    assert "local-mailroom-sandbox-reports.md" in summary
+    assert "local-mailroom-sandbox-visuals.md" in summary
+    assert "[Docker](docker-deployment.md)" in home
+    assert "[Modal + vLLM](modal-vllm.md)" in home
+
     # GitBook's Project directory is docs/; GITBOOK-SITE writes this file there.
     site_path = REPO / "docs" / "gitbook-docs.yaml"
     assert site_path.is_file()

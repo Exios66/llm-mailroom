@@ -64,7 +64,7 @@ sandbox pilot --mock    # machinery only
 sandbox pilot --local   # real local model
 ```
 
-Next: [local-mailroom-sandbox guide](repos/local-mailroom-sandbox.md).
+Next: [local-mailroom-sandbox guide](repos/local-mailroom-sandbox.md), [run reports](repos/local-mailroom-sandbox-reports.md), [visuals](repos/local-mailroom-sandbox-visuals.md).
 
 ## 4. Measure a pipeline node
 
@@ -107,6 +107,19 @@ result = suite.score(expected_fields, predicted_fields)
 ```
 
 Next: [llm-dojo-scoring guide](repos/llm-dojo-scoring.md).
+
+## 7. Deploy with Docker or Modal GPU
+
+The GitBook pipeline reference publishes the full operator manuals (they are listed in `SUMMARY.md`):
+
+- [Docker deployment](../docker-deployment.md) — compose matrix (OpenRouter, Ollama, llamafile, Mode G LiteLLM + Modal GPU tiers) and the The-Mailroom producer image
+- [Modal + vLLM](../modal-vllm.md) — `mailroom-vllm` serve, pipeline cutover, multi-tier GPUs
+- [Deployment](../deployment.md) — laptop Python install, Railway, Hugging Face Spaces, backup
+
+```bash
+cp .env.example .env   # MAILROOM_API_TOKEN is required on every compose app
+docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
+```
 
 ## Keys you will eventually need
 

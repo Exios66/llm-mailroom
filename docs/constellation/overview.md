@@ -34,7 +34,7 @@ In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which
 | [llm-mailroom](repos/llm-mailroom.md) | Pipeline | The 13-node LangGraph pipeline and FastAPI producer. The center of everything. |
 | [llm-dojo-scoring](repos/llm-dojo-scoring.md) | Scoring | The shared, deterministic, field-type-aware scoring library every other repo imports. |
 | [llm-entity-extraction](repos/llm-entity-extraction.md) | Prompt experiments | Where sorter and specialist prompts are bred and measured before they reach the pipeline. |
-| [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) | Surface | Runs the full pipeline offline on Ollama, vLLM, llama.cpp or LM Studio, plus Modal GPU studies. |
+| [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) | Surface | Runs the full pipeline offline on Ollama, vLLM, llama.cpp or LM Studio, plus Modal GPU studies. GitBook: [docs](repos/local-mailroom-sandbox-docs.md), [run reports](repos/local-mailroom-sandbox-reports.md), [visuals](repos/local-mailroom-sandbox-visuals.md). |
 | [The-Mailroom](repos/the-mailroom.md) | Surface | Pixel-art visualizer and hosted Observatory, driven entirely by the pipeline's Langfuse traces. |
 | [agent-mailroom](repos/agent-mailroom.md) | Surface | A self-contained mailroom on a walking office floor, same doctrine, independent release train. |
 | [llm-mailroom-graph](repos/llm-mailroom-graph.md) | Surface | Interactive knowledge-graph site of the pipeline's code. |

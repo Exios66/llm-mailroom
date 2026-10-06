@@ -75,3 +75,84 @@ def test_v7_taxonomy_reference_removed():
         if "v7-taxonomy.md" in _local_text(path):
             hits.append(str(path.relative_to(REPO_ROOT)))
     assert not hits, f"v7-taxonomy.md still referenced: {hits}"
+
+
+_SUMMARY_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md)\)")
+_DOCS = REPO_ROOT / "docs"
+_SKIP_SUMMARY_DIRS = {"wiki", "assets"}
+_SKIP_SUMMARY_FILES = {"SUMMARY.md"}
+
+
+def _summary_targets() -> list[str]:
+    text = (_DOCS / "SUMMARY.md").read_text(encoding="utf-8")
+    return _SUMMARY_LINK.findall(text)
+
+
+def test_gitbook_summary_lists_every_publishable_page():
+    """GitBook only publishes pages listed in SUMMARY.md (maintaining.md)."""
+    listed = _summary_targets()
+    missing_files = [rel for rel in listed if not (_DOCS / rel).is_file()]
+    assert not missing_files, f"SUMMARY.md points at missing files: {missing_files}"
+
+    unpublished: list[str] = []
+    for path in _DOCS.rglob("*.md"):
+        rel = path.relative_to(_DOCS).as_posix()
+        if any(part in _SKIP_SUMMARY_DIRS for part in path.relative_to(_DOCS).parts):
+            continue
+        if path.name in _SKIP_SUMMARY_FILES:
+            continue
+        if rel not in listed:
+            unpublished.append(rel)
+    assert not unpublished, (
+        f"docs pages not in SUMMARY.md (GitBook will not publish them): {unpublished}"
+    )
+
+
+def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
+    summary = (_DOCS / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "* [Deployment](deployment.md)" in summary
+    assert "  * [Docker](docker-deployment.md)" in summary
+    assert "  * [Modal + vLLM](modal-vllm.md)" in summary
+    assert "* [local-mailroom-sandbox](constellation/repos/local-mailroom-sandbox.md)" in summary
+    assert "    * [Documentation](constellation/repos/local-mailroom-sandbox-docs.md)" in summary
+    assert "    * [Run reports](constellation/repos/local-mailroom-sandbox-reports.md)" in summary
+    assert "    * [Visuals](constellation/repos/local-mailroom-sandbox-visuals.md)" in summary
+
+    docker = (_DOCS / "docker-deployment.md").read_text(encoding="utf-8")
+    modal = (_DOCS / "modal-vllm.md").read_text(encoding="utf-8")
+    reports = (
+        _DOCS / "constellation" / "repos" / "local-mailroom-sandbox-reports.md"
+    ).read_text(encoding="utf-8")
+    visuals = (
+        _DOCS / "constellation" / "repos" / "local-mailroom-sandbox-visuals.md"
+    ).read_text(encoding="utf-8")
+    assert "Mode G" in docker
+    assert "docker-compose.full.yml" in docker
+    assert "mailroom-vllm" in modal
+    assert "SAND-37" in reports
+    assert "SAND-032" in reports
+    assert "mailroom-reports.html" in reports
+    assert "raw.githubusercontent.com/Exios66/local-mailroom-sandbox" in visuals
+    assert "sandbox watch" in visuals
+    assert "cmp-quality.png" in visuals
+    assert "cost-by-specialist-hardware.png" in visuals
+    assert "board-terminal.svg" in visuals
+
+
+def test_docker_and_modal_pages_cover_operator_matrix():
+    docker = (_DOCS / "docker-deployment.md").read_text(encoding="utf-8")
+    modal = (_DOCS / "modal-vllm.md").read_text(encoding="utf-8")
+    for needle in (
+        "MAILROOM_API_TOKEN",
+        "litellm:v1.104.0",
+        "DEFAULT_PROVIDER=litellm",
+        "mailroom-vllm",
+    ):
+        assert needle in docker
+    for needle in (
+        "sandbox-vllm",
+        "MODAL_VLLM_MODEL",
+        "DEFAULT_PROVIDER=vllm",
+        "mailroom-vllm",
+    ):
+        assert needle in modal
