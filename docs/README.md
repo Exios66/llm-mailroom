@@ -1,5 +1,7 @@
 # Mailroom Documentation
 
+<figure><img src="assets/fumi/fumi.gif" alt="Fumi, the Mailroom mascot, a chibi postal maid with Hoot the owl on her shoulder" width="192"><figcaption><p>Fumi and Hoot keep the mailroom running.</p></figcaption></figure>
+
 **One place to learn the Mailroom constellation: the llm-mailroom pipeline and every repository built around it.**
 
 The Mailroom reads legal and business documents, works out what each one is, pulls the important fields out of it, and files it in an archive with a tamper-evident audit trail. A team of specialist LLM agents does the work, one state machine per document.

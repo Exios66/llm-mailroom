@@ -43,3 +43,4 @@ Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration 
 | A release changes versions or pins | [Overview](overview.md) version table, the repo's guide, the [dependency table](architecture.md#dependency-summary) |
 | Dataset revision changes | [Data and corpora](data-and-corpora.md) |
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
+| Fumi's artwork changes | Copy the new animated `fumi.gif` export over `assets/fumi/fumi.gif` (shown on the home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use |
