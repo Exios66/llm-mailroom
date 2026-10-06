@@ -128,9 +128,9 @@ The pages below are the canonical documentation for the `llm-mailroom` pipeline 
 
 ## Meet Fumi
 
-<figure><img src="assets/fumi/fumi.gif" alt="Fumi in her postal uniform while Hoot the owl blinks on her shoulder" width="192"><figcaption><p>Fumi (文, "letter") is the mailroom's head maid — a USPS-style carrier uniform, a mini cap on her headdress, a leather satchel, and Hoot checking postmarks from her shoulder.</p></figcaption></figure>
+<figure><img src="assets/fumi/fumi.gif" alt="Fumi in her postal uniform while Hermes the owl blinks on her shoulder" width="192"><figcaption><p>Fumi (文, "letter") is the mailroom's head maid — a USPS-style carrier uniform, a mini cap on her headdress, a leather satchel, and Hermes checking postmarks from her shoulder.</p></figcaption></figure>
 
-<figure><img src="assets/mascot/hoot-icon.png" alt="Hoot, the pixel owl mascot used as the site favicon" width="96"><figcaption><p>Hoot is the pixel owl on Fumi's shoulder and the night-shift owl's junior colleague on the banner. The standalone static page uses this icon as its favicon. GitBook's published tab icon is the site icon in Customize — upload this same file.</p></figcaption></figure>
+<figure><img src="assets/mascot/hoot-icon.png" alt="Hermes, the pixel owl on Fumi's shoulder" width="96"><figcaption><p>Hermes is the pixel owl on Fumi's shoulder and the night-shift owl's junior colleague on the banner.</p></figcaption></figure>
 
 ## Related files
 
