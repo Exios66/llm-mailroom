@@ -100,6 +100,7 @@ _GITBOOK_DOCS_DIRS = {
     "how-it-fits-together",
     "repository-guides",
     "pipeline-reference-llm-mailroom",
+    "the-pipeline-in-depth",
     "about-this-site",
 }
 
