@@ -102,6 +102,42 @@ extra contains **no torch**: runtime inference is onnxruntime CPU only
 `optimum` belong exclusively to the future build-time ONNX export tooling
 and are deliberately NOT in `pyproject.toml`.
 
+## Full stack — Mode G (LiteLLM gateway + Modal GPU tiers)
+
+`docker-compose.full.yml` is the single-host production topology: `app` (API +
+embedded watcher + LangGraph runtime), `ops-monitor`, `watchdog` (shares the
+app's PID namespace), `postgres`, `llm-gateway` (LiteLLM) and optional
+`phoenix` (`--profile phoenix`). Startup is healthcheck-gated: postgres +
+gateway healthy → app healthy → ops-monitor + watchdog.
+
+1. `modal deploy deploy/modal_vllm.py` — one scale-to-zero vLLM function per
+   tier, grouped by model so each model has at most one warm GPU pool:
+
+   | Tier | Alias | Default model | GPU | Context | Agents |
+   |---|---|---|---|---|---|
+   | fast | `mailroom-fast` | Qwen3-8B-FP8 | L4 | 32k | sorter, sorter_reviewer, intake, gmail_triage, relations |
+   | extract | `mailroom-extract` | Qwen3-30B-A3B-Instruct-2507-FP8 | L40S | 64k | specialists, arbiter, boss, judge |
+   | vision | `mailroom-vision` | Qwen3-VL-8B-Instruct-FP8 | L4 | 32k | pdf_transcriber, image_extractor |
+
+   Per-tier knobs: `MODAL_VLLM_<TIER>_<KNOB>` (MODEL, GPU, MAX_MODEL_LEN,
+   MAX_NUM_SEQS, MAX_INPUTS, MAX_CONTAINERS, MIN_CONTAINERS, SCALEDOWN_SECONDS, …);
+   unscoped `MODAL_VLLM_<KNOB>` still applies to `fast`. `MODAL_VLLM_TIERS`
+   selects which tiers deploy.
+2. Put the three tier URLs + secrets in `.env` (see `.env.example`).
+3. `docker compose -f deploy/docker-compose.full.yml --env-file .env up -d --build`
+   The gateway image defaults to `ghcr.io/berriai/litellm:v1.104.0` (the
+   Mode G stub-backend test). Do not use `main-stable`. Override with
+   `LITELLM_IMAGE` if you promote a newer release.
+4. `PYTHONPATH=src python src/scripts/smoke_modal_tiers.py --check`, then
+   `--warm` and `--run` (one document per class end to end; verifies each
+   node's Langfuse generation model against its tier).
+
+Routing lives in `src/config/taxonomy.yaml` (`gateway:` + per-agent `tier:`);
+`MAILROOM_GATEWAY_TIERS=sorter=api` moves one agent to OpenRouter at runtime.
+The gateway runs `num_retries: 0` and no trace callbacks: the mailroom's own
+retry ladder (gateway 503 = Modal cold start → long backoff) and client-side
+tracing (Langfuse / Phoenix / Braintrust) remain authoritative.
+
 ## Modal vLLM
 
 `modal_vllm.py` runs vLLM's own OpenAI-compatible `/v1` server behind a Modal
