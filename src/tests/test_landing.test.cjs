@@ -153,11 +153,13 @@ test('menu toggles ARIA state and closes only for links, outside clicks, or Esca
   }
 });
 
-test('copy sends the exact two commands and resets its success feedback', async () => {
+test('copy sends clone, cd, install, and start commands and resets its success feedback', async () => {
   const page = boot(), button = page.get('copy');
   button.fire('click');
   await Promise.resolve();
-  assert.deepEqual(page.clipboard, ['pip install -e ".[dev]"\nPYTHONPATH=src python -m api.main']);
+  assert.deepEqual(page.clipboard, [
+    'git clone https://github.com/Exios66/llm-mailroom.git\ncd llm-mailroom\npip install -e ".[dev]"\nPYTHONPATH=src python -m api.main',
+  ]);
   assert.equal(button.attrs['aria-label'], 'Copied');
   assert.equal(button.style.borderColor, 'var(--ok)');
   const reset = page.timers.find(timer => timer.ms === 1500);

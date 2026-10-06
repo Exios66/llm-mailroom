@@ -1,0 +1,7 @@
+# Space-level Git Sync config. Lives in the mapped directory (docs/).
+# README.md is the published GitBook landing page (the enhanced landing port).
+root: ./
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md

@@ -396,8 +396,9 @@ def main() -> None:
     """Write the mascot assets and copy the landing page's assets into its folder.
 
     Create output directories as needed, overwriting the SVG, GIF, PNG,
-    icon, and frame sheet in OUT_DIR and the SVG, GIF, and icon copies in
-    ROOT / "landing/assets/mascot". Image-loading and filesystem errors
+    icon, and frame sheet in OUT_DIR, the SVG, GIF, PNG, and icon copies
+    in ROOT / "landing/assets/mascot", and the GitBook home GIF at
+    docs/assets/fumi/fumi.gif. Image-loading and filesystem errors
     propagate; files already written are not rolled back.
     """
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -434,9 +435,14 @@ def main() -> None:
     # the landing page ships its own copy so the landing/ folder deploys as-is
     site_dir = ROOT / "landing" / "assets" / "mascot"
     site_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("fumi.svg", "fumi.gif", "fumi-icon.png"):
+    for name in ("fumi.svg", "fumi.gif", "fumi.png", "fumi-icon.png"):
         shutil.copyfile(OUT_DIR / name, site_dir / name)
-    print("wrote", *sorted(p.name for p in OUT_DIR.iterdir()), "+ landing/assets/mascot/")
+    # GitBook home uses the GIF (the site strips scripts and may not animate SVG)
+    gitbook_dir = ROOT / "docs" / "assets" / "fumi"
+    gitbook_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(OUT_DIR / "fumi.gif", gitbook_dir / "fumi.gif")
+    print("wrote", *sorted(p.name for p in OUT_DIR.iterdir()),
+          "+ landing/assets/mascot/ + docs/assets/fumi/fumi.gif")
 
 
 if __name__ == "__main__":
