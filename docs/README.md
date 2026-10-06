@@ -7,7 +7,7 @@
 </td>
 <td valign="middle">
 
-**The LLM-Mailroom** — Fumi (文, "letter") lives in this header corner next to the wordmark. She is part of the header, not the header itself.
+**The LLM-Mailroom** — Fumi (文, "letter")
 
 </td>
 </tr>
