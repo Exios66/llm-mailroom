@@ -82,6 +82,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert home.strip().startswith("# The LLM-Mailroom")
     header = home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
     assert "<table>" in header
+    assert 'Fumi (文, "letter")' in header
     assert "lives in this header corner" not in header
     assert "not the header itself" not in header
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")

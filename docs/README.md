@@ -7,7 +7,7 @@
 </td>
 <td valign="middle">
 
-**The LLM-Mailroom**
+**The LLM-Mailroom** — Fumi (文, "letter")
 
 </td>
 </tr>
