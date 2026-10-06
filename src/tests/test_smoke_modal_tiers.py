@@ -352,3 +352,149 @@ def test_zero_polling_budget_returns_timeout_without_fetching(tmp_path, mocker):
     }
     http.get.assert_not_called()
     sleep.assert_not_called()
+
+
+@pytest.mark.parametrize("api_key,master_key,expected", [
+    ("gateway-key", "master-key", "gateway-key"),
+    ("", "master-key", "master-key"),
+    (None, None, "not-needed"),
+])
+def test_warmup_client_credential_precedence(monkeypatch, mocker, api_key, master_key, expected):
+    for name, value in (("LITELLM_API_KEY", api_key), ("LITELLM_MASTER_KEY", master_key)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    monkeypatch.setenv("LITELLM_BASE_URL", "http://gateway.test/v1")
+    sdk = mocker.patch("openai.OpenAI")
+    assert smoke._gateway_client(17) is sdk.return_value
+    sdk.assert_called_once_with(base_url="http://gateway.test/v1", api_key=expected, timeout=17, max_retries=0)
+
+
+def test_warmup_recovers_after_cold_start(mocker):
+    sdk = mocker.patch.object(smoke, "_gateway_client")
+    create = sdk.return_value.chat.completions.create
+    create.side_effect = [RuntimeError("cold start"), SimpleNamespace(model="mailroom-fast")]
+    # Patch the script's clock, leaving clocks used by logging and the SDK alone.
+    clock = mocker.patch.object(smoke, "time")
+    clock.perf_counter.side_effect = [0, 0, 15, 16]
+    results = smoke.warm_tiers({"gateway": {"tiers": {"fast": {"alias": "mailroom-fast"}}}}, timeout=30)
+    assert results == {"mailroom-fast": "ok (16s, served as mailroom-fast)"}
+    sdk.assert_called_once_with(30)
+    assert create.call_count == 2
+    assert create.call_args_list[0] == create.call_args_list[1]
+    clock.sleep.assert_called_once_with(15)
+
+
+@pytest.mark.parametrize("complete", [True, False])
+def test_session_polling_waits_for_traces_and_preserves_partial_results(mocker, complete):
+    sdk = mocker.patch("langfuse.Langfuse").return_value
+    first = SimpleNamespace(id="trace-1", name="document-pipeline", metadata={"filename": "one.txt"})
+    second = SimpleNamespace(id="trace-2", name="document-pipeline", metadata={"filename": "two.txt"})
+    sdk.api.trace.list.side_effect = [
+        SimpleNamespace(data=None), SimpleNamespace(data=[first]), SimpleNamespace(data=[first, second]),
+    ]
+    generation = mocker.Mock()
+    generation.model_dump.return_value = {"type": "GENERATION", "name": "sorter", "model": "mailroom-fast"}
+    sdk.api.observations.get_many.side_effect = [
+        SimpleNamespace(data=[generation]), SimpleNamespace(data=None),
+    ]
+    clock = mocker.patch.object(smoke, "time")
+    clock.time.side_effect = [0, 0, 10, 20]
+
+    result = smoke.fetch_session_observations("session-1", expect_traces=2, wait_s=30 if complete else 20)
+
+    assert set(result) == ({"trace-1", "trace-2"} if complete else {"trace-1"})
+    assert result["trace-1"] == [
+        generation.model_dump.return_value,
+        {"id": None, "type": "TRACE_META", "name": "document-pipeline", "metadata": {"filename": "one.txt"}},
+    ]
+    generation.model_dump.assert_called_once_with(mode="json")
+    expected_ids = ["trace-1", "trace-2"] if complete else ["trace-1"]
+    assert sdk.api.observations.get_many.call_args_list == [
+        mocker.call(trace_id=trace_id, limit=100) for trace_id in expected_ids
+    ]
+    assert sdk.api.trace.list.call_args_list == [
+        mocker.call(session_id="session-1", limit=50)
+    ] * (3 if complete else 2)
+    assert clock.sleep.call_args_list == [mocker.call(10), mocker.call(10)]
+    if complete:
+        assert result["trace-2"] == [
+            {"id": None, "type": "TRACE_META", "name": "document-pipeline", "metadata": {"filename": "two.txt"}},
+        ]
+
+
+@pytest.mark.parametrize("wait_s", [0, -1])
+def test_session_polling_without_time_budget_makes_no_api_calls(mocker, wait_s):
+    sdk = mocker.patch("langfuse.Langfuse").return_value
+    clock = mocker.patch.object(smoke, "time")
+    clock.time.return_value = 100
+    assert smoke.fetch_session_observations("session-1", 1, wait_s=wait_s) == {}
+    sdk.api.trace.list.assert_not_called()
+    sdk.api.observations.get_many.assert_not_called()
+    clock.sleep.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["trace-list", "observations"])
+def test_session_fetch_propagates_sdk_errors(mocker, operation):
+    sdk = mocker.patch("langfuse.Langfuse").return_value
+    sdk.api.trace.list.return_value = SimpleNamespace(data=[SimpleNamespace(id="trace-1")])
+    error = RuntimeError("synthetic Langfuse failure")
+    if operation == "trace-list":
+        sdk.api.trace.list.side_effect = error
+    else:
+        sdk.api.observations.get_many.side_effect = error
+    clock = mocker.patch.object(smoke, "time")
+    clock.time.return_value = 0
+    with pytest.raises(RuntimeError) as caught:
+        smoke.fetch_session_observations("session-1", 1)
+    assert caught.value is error
+    clock.sleep.assert_not_called()
+
+
+@pytest.mark.parametrize("depth,expected", [(50, "extract-fields"), (51, None)])
+def test_node_attribution_has_a_bounded_parent_walk(depth, expected):
+    parents = {
+        str(i): {"name": "wrapper", "parentObservationId": str(i + 1)}
+        for i in range(1, depth)
+    }
+    parents[str(depth)] = {"name": "extract-fields"}
+    assert smoke.node_of({"parentObservationId": "1"}, parents) == expected
+
+
+@pytest.mark.parametrize("field", ["input", "metadata"])
+def test_trace_document_class_is_found_in_input_or_metadata(field):
+    results = {"contract": {"filename": "contract.txt"}, "correspondence": {"filename": "letter.txt"}}
+    assert smoke.doc_class_of_trace([{field: {"filename": "letter.txt"}}], results) == "correspondence"
+    assert smoke.doc_class_of_trace([{field: {"filename": "unrelated.txt"}}], results) is None
+
+
+def test_in_process_runner_copies_documents_and_propagates_trace_context(tmp_path, mocker):
+    files = {}
+    for cls in ("contract", "correspondence"):
+        path = tmp_path / f"{cls}.txt"
+        path.write_text(f"Synthetic {cls}")
+        files[cls] = path
+    inbox = tmp_path / "pipeline" / "inbox"
+    mocker.patch("pipeline.bins.inbox_dir", return_value=inbox)
+    run = mocker.patch("graph.build_graph.run_pipeline", side_effect=[
+        {"stage": "archived", "doc_type": "contract", "doc_id": "doc-1"},
+        {"stage": "review", "doc_type": "correspondence", "doc_id": "doc-2"},
+    ])
+    flush = mocker.patch("observability.tracing.flush")
+    result = smoke.run_in_process(files, "matter-1", "run-1")
+    assert result == {
+        "contract": {"stage": "archived", "doc_type": "contract", "doc_id": "doc-1", "filename": "contract.txt"},
+        "correspondence": {"stage": "review", "doc_type": "correspondence", "doc_id": "doc-2", "filename": "correspondence.txt"},
+    }
+    assert run.call_args_list == [
+        mocker.call(
+            inbox / path.name, "matter-1", source="smoke-modal",
+            ground_truth={"expected_doc_class": cls, "expected_stage": "archived"},
+            session_id="matter-1", run_id="run-1",
+        )
+        for cls, path in files.items()
+    ]
+    for path in files.values():
+        assert (inbox / path.name).read_bytes() == path.read_bytes()
+    flush.assert_called_once_with()
