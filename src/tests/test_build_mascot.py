@@ -209,7 +209,11 @@ def test_main_exports_all_assets_and_identical_deployable_copies(exported_assets
     assert {p.name for p in docs.iterdir()} == {
         "fumi.svg", "fumi.png", "fumi-icon.png", "fumi.gif", "fumi-sheet.png",
     }
-    assert {p.name for p in landing.iterdir()} == {"fumi.svg", "fumi.gif", "fumi-icon.png"}
+    assert {p.name for p in landing.iterdir()} == {
+        "fumi.svg", "fumi.gif", "fumi.png", "fumi-icon.png",
+    }
+    gitbook_gif = exported_assets / "docs" / "assets" / "fumi" / "fumi.gif"
+    assert gitbook_gif.read_bytes() == (docs / "fumi.gif").read_bytes()
     for copy in landing.iterdir():
         assert copy.read_bytes() == (docs / copy.name).read_bytes()
     for name, size in [("fumi.png", (576, 696)), ("fumi-icon.png", (256, 256)), ("fumi-sheet.png", (1536, 928))]:
