@@ -1,6 +1,6 @@
 # Table of contents
 
-* [The LLM-Mailroom](README.md)
+* [LLM-MAILROOM](README.md)
 
 ## Start here
 
