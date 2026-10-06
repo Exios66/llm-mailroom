@@ -1,15 +1,17 @@
 # Fumi, the mailroom mascot
 
-Fumi (文, "letter") is a pixel-art chibi postal clerk: rose-pink twin tails tied with red ribbons, big blue eyes, a little navy postal cap with an envelope badge, a sailor collar, and a heart-sealed letter held to her chest. Tegami, the winged envelope, flutters beside her.
+Fumi (文, "letter") is a chibi pixel maid who runs the mailroom: long indigo hair, a frilled headdress, a heart-sealed letter held in both hands, and Hoot, a little owl, on her shoulder. Tegami, the winged envelope, flutters beside her.
 
 | File | Use |
 | --- | --- |
 | `fumi.svg` | Animated SVG (CSS keyframes: bob, blink, wing flap, heart bubble, sparkles). Respects `prefers-reduced-motion`. Best for the README and the web. |
-| `fumi.gif` | Animated GIF, 400×400, 3.2 s loop. For places that don't animate SVG. |
-| `fumi.png` | Static 640×640 still. Favicons, avatars, social cards. |
+| `fumi.gif` | Animated GIF, 384×464, 3.2 s loop. For places that don't animate SVG. |
+| `fumi.png` | Static 576×696 still. |
+| `fumi-icon.png` | Square 256×256 head-and-shoulders icon for favicons and avatars. |
 | `fumi-sheet.png` | All 32 animation frames, for reference. |
+| `source/fumi-base.png` | The 62×107 base sprite at native pixel size. Everything else is built from it. |
 
-Everything here is generated. Edit `src/scripts/build_mascot.py` and rerun it:
+The base sprite was cleaned up from reference art supplied by the project owner: resampled onto its native pixel grid, background removed, palette reduced to 32 colours. The script adds the letter, Hoot, Tegami, the blink frames and the animation. To change any of them, edit `src/scripts/build_mascot.py` and rerun it:
 
 ```bash
 python src/scripts/build_mascot.py   # needs Pillow

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>llm-mailroom</title>
 <meta name="description" content="A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents with a full audit trail. Meet Fumi, our mail clerk.">
-<link rel="icon" type="image/png" href="assets/mascot/fumi.png">
+<link rel="icon" type="image/png" href="assets/mascot/fumi-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -86,7 +86,7 @@ a { color: var(--post); }
 .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
 .tag { font: 500 .82rem/1 var(--mono); padding: .45rem .7rem; border: 1px solid var(--line); background: var(--card); border-radius: 4px; color: var(--ink-soft); }
 .tag em { font-style: normal; color: var(--post); }
-.fumi-stage { position: relative; width: 256px; max-width: 100%; }
+.fumi-stage { position: relative; width: 240px; max-width: 100%; }
 .fumi-stage img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 .say {
   position: absolute; top: -1.6rem; left: 38%;
@@ -276,7 +276,7 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
 <div class="wrap">
   <header class="bar">
     <a class="brand" href="#top" aria-label="llm-mailroom home">
-      <img src="assets/mascot/fumi.png" alt="" width="40" height="40">
+      <img src="assets/mascot/fumi-icon.png" alt="" width="40" height="40">
       <span><b>llm</b>-mailroom</span>
     </a>
     <nav>
@@ -315,7 +315,7 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
         <a class="tag" href="https://github.com/Exios66/llm-mailroom#quick-start"><em>storage</em> · SQLite-first</a>
       </div>
       <div class="fumi-stage">
-        <img src="assets/mascot/fumi.svg" width="256" height="256" alt="Fumi, the llm-mailroom mascot: a pixel-art chibi postal girl with rose-pink twin tails and a little postal cap, holding a heart-sealed letter, with a little winged envelope fluttering beside her">
+        <img src="assets/mascot/fumi.svg" width="240" height="290" alt="Fumi, the llm-mailroom mascot: a chibi pixel maid with long indigo hair and a frilled headdress, holding a heart-sealed letter, with a little owl on her shoulder, with a little winged envelope fluttering beside her">
         <span class="say" aria-hidden="true">You've got mail!</span>
       </div>
       <div class="hero-text">
@@ -352,7 +352,7 @@ PYTHONPATH=src python -m api.main</pre>
         <div class="tui">
           <div class="pane">
             <div class="clerk">
-              <img src="assets/mascot/fumi.svg" alt="" width="72" height="72">
+              <img src="assets/mascot/fumi-icon.png" alt="" width="72" height="72">
               <div>
                 <div class="clerk-name">Fumi</div>
                 <div class="clerk-mood" id="mood"><span class="live">●</span> idle · waiting for mail</div>
@@ -435,11 +435,11 @@ PYTHONPATH=src python -m api.main</pre>
 
     <section aria-labelledby="meet">
       <div class="meet">
-        <img src="assets/mascot/fumi.gif" alt="Fumi waving her letter, animated" width="160" height="160">
+        <img src="assets/mascot/fumi.gif" alt="Fumi holding her letter while Hoot the owl blinks on her shoulder, animated" width="160" height="193">
         <div>
           <p class="eyebrow">Mascot</p>
           <h2 id="meet">Meet Fumi</h2>
-          <p>Fumi (文, "letter") is the mailroom's clerk. She keeps an envelope clip in her twin tails and a regulation cap perched at an angle, and the winged envelope is Tegami, who has never once delivered anything on time. She's hand-drawn pixel by pixel; the build script lives in <code>src/scripts/build_mascot.py</code>.</p>
+          <p>Fumi (文, "letter") is the mailroom's head maid. She hand-delivers every sealed letter, Hoot the owl (a junior colleague of the night-shift owl on our banner) checks the postmarks from her shoulder, and Tegami, the winged envelope, has never once delivered anything on time. She's animated from a pixel sprite by <code>src/scripts/build_mascot.py</code>.</p>
         </div>
       </div>
     </section>
