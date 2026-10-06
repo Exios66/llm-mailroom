@@ -1,6 +1,8 @@
 # Data and corpora
 
-Every evaluation, training run and pilot in the constellation draws from one dataset family on Hugging Face, published under the [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar) organization. This page explains what is in it, where each part comes from, and the rules for using it.
+Every evaluation, training run and pilot in the constellation draws from one dataset family on Hugging Face, published under the [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar) organization. This page is the constellation-wide rules summary.
+
+The full GitBook breakdown — 55 strata, configs, source cards, EDA reports, and all 30 figures — lives in **[Mailroom dataset](../mailroom-dataset/)**.
 
 ## The canonical dataset
 
@@ -75,4 +77,4 @@ The pipeline itself does not depend on the `datasets` library; it loads the corp
 | Subset grammar and stratified sampling for evals | [eval-environment](repos/eval-environment.md) (`src/evals/cases.py`) |
 | Taxonomy terminology (v7 onward) | [Digital-Mailroom](repos/digital-mailroom.md) ([v7 taxonomy contract](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/docs/v7-taxonomy.md)) |
 
-The dataset cards (one per source) live in Mailroom-Corpus-EDA under [`docs/dataset-cards/`](https://github.com/Exios66/Mailroom-Corpus-EDA/tree/main/docs/dataset-cards), and `run_all.py` there reproduces every number on this page.
+The dataset cards (one per source) live in Mailroom-Corpus-EDA under [`docs/dataset-cards/`](https://github.com/Exios66/Mailroom-Corpus-EDA/tree/main/docs/dataset-cards), and `run_all.py` there reproduces every number on this page. GitBook copies of those cards, plus the EDA figures, are in [Mailroom dataset](../mailroom-dataset/).
