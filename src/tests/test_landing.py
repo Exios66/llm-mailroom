@@ -24,6 +24,8 @@ BADGES = (
     "storage-SQLite--first-lightgrey",
     "release-v0.7.1-2EA043",
     "contributor-Exios66-blue",
+    "contributor-grantmooslin-blue",
+    "org-LLM--Mailroom--Services-24292F",
 )
 
 
@@ -53,6 +55,8 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
     assert "<h1>The <span class=\"llm\">LLM</span>-Mailroom</h1>" in html
     for badge in BADGES:
         assert badge in html
+    assert "https://github.com/grantmooslin" in html
+    assert 'href="https://github.com/LLM-Mailroom-Services"' in html
     assert 'role="group"' in html
     assert 'role="img"' not in html.split("id=\"floor\"", 1)[1][:800]
     assert 'media="(prefers-reduced-motion: reduce)"' in html
@@ -127,3 +131,10 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "https://mailroom-inc.gitbook.io/mailroom-inc.-docs/" in home
     space = (REPO / "docs" / ".gitbook.yaml").read_text(encoding="utf-8")
     assert "readme: README.md" in space
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    for badge in BADGES:
+        assert badge in readme
+    assert "https://github.com/grantmooslin" in home
+    assert "](https://github.com/LLM-Mailroom-Services)" in home
+    assert "https://github.com/grantmooslin" in readme
+    assert "](https://github.com/LLM-Mailroom-Services)" in readme

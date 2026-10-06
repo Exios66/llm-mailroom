@@ -24,6 +24,8 @@ One LangGraph state machine per document. Specialist LLM agents per document cla
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](https://github.com/Exios66/llm-mailroom#quick-start)
 [![Release](https://img.shields.io/badge/release-v0.7.1-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.7.1)
 [![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
+[![Contributor](https://img.shields.io/badge/contributor-grantmooslin-blue)](https://github.com/grantmooslin)
+[![Organization](https://img.shields.io/badge/org-LLM--Mailroom--Services-24292F)](https://github.com/LLM-Mailroom-Services)
 
 <figure><img src="assets/banner.png" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight"><figcaption><p>The LLM-Mailroom masthead: the night-shift owl at the sorting desk.</p></figcaption></figure>
 
