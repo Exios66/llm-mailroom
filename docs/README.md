@@ -1,12 +1,4 @@
-<table width="100%">
-<tr>
-<td align="center" valign="middle">
-
-# The LLM-Mailroom
-
-</td>
-</tr>
-</table>
+# LLM-MAILROOM
 
 **A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents — with a full audit trail.**
 
@@ -18,7 +10,7 @@ One LangGraph state machine per document. Specialist LLM agents per document cla
 
 [**release** · v0.7.1](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md) · [**LangGraph** · 13-node state machine](https://github.com/Exios66/llm-mailroom#langgraph-state-machine) · [**audit** · hash-chained log](pipeline-reference-llm-mailroom/architecture.md) · [**storage** · SQLite-first](https://github.com/Exios66/llm-mailroom#quick-start) · [**tracing** · Langfuse · Braintrust · Phoenix](https://github.com/Exios66/llm-mailroom#observability) · [**LLM** · OpenRouter · Ollama · vLLM](https://github.com/Exios66/llm-mailroom#llm-providers)
 
-<table data-header-hidden><thead><tr><th valign="middle"></th><th valign="middle"></th></tr></thead><tbody><tr><td valign="middle"><img src=".gitbook/assets/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform with a mail satchel and a little owl on her shoulder" data-size="original"></td><td valign="middle"><p>Postal Worker Fumi (文, "letter") on duty.</p><p>Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.</p></td></tr></tbody></table>
+<table data-header-hidden><thead><tr><th valign="middle"></th><th valign="middle"></th></tr></thead><tbody><tr><td valign="middle"><img src=".gitbook/assets/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform with a mail satchel and a little owl on her shoulder" width="128"></td><td valign="middle"><p>Postal Worker Fumi (文, "letter") on duty.</p><p>Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.</p></td></tr></tbody></table>
 
 This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, tags, install, pipeline walk-through, docs shelf). Fumi appears after the masthead as Postal Worker Fumi (文, "letter") on duty. GitBook strips scripts, so the idle mail-floor terminal stays on the static page. This page uses GitBook's own type — it does not load the landing page's display font.
 
@@ -37,9 +29,9 @@ The happy path costs two LLM generations. Everything else is procedural, gated, 
 | Stop         | What happens                                                                                                                 |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | **Intake**   | The watcher claims the upload by atomic rename into `processing/`, transcribes it, and cleans it. Nothing is ever truncated. |
-| **Classify** | The sorter picks one of five classes. At `0.97` or above it goes straight on; between `0.88` and `0.97` it goes to review.   |
+| **Classify** | The sorter picks one of five classes. At `0.97` or above it goes straight on. Between `0.88` and `0.97` it gets one re-classification pass, then a second-opinion reviewer agent (Lane A). Below `0.88` it retries, then goes to human review. Contracts, merger agreements and insurance claims use stricter per-class thresholds. |
 | **Extract**  | The class specialist fills its schema. Guardrails check the JSON before anything moves forward.                              |
-| **Verify**   | Ambiguous extractions get a judge, then an arbiter. Conflicts go to the boss agent or a human.                               |
+| **Verify**   | Extractions in the ambiguous confidence band get a judge, then an arbiter. Conflicts go to the boss agent or a human. See the [Pipeline flowchart](the-pipeline-in-depth/flowchart.md). |
 | **Archive**  | A procedural report, a catalog row in SQLite, and an archive entry sealed into the hash-chained audit log.                   |
 
 ## What ships with it
@@ -53,7 +45,16 @@ The happy path costs two LLM generations. Everything else is procedural, gated, 
 
 ## Read the docs
 
-Everything lives in this repository's `docs/` folder. Each card opens the page on this site.
+New: the pipeline in depth.
+
+| Page | What it covers |
+| --- | --- |
+| [Running the pipeline](the-pipeline-in-depth/running.md) | Install, startup, every run, evaluation and audit command, and the full Docker stack. |
+| [Pipeline flowchart](the-pipeline-in-depth/flowchart.md) | Every node and routing condition in one diagram, plus the Gmail and review-resolve paths. |
+| [Extraction schemas](the-pipeline-in-depth/extraction-schemas.md) | The fields each specialist extracts, their types, and how they are normalized. |
+| [Scoring and performance](the-pipeline-in-depth/scoring-and-metrics.md) | How specialist extractions are scored, and every measured result on record. |
+
+The pipeline reference:
 
 | Page                                                                      | What it covers                                                               |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -68,6 +69,7 @@ Everything lives in this repository's `docs/` folder. Each card opens the page o
 | [Gmail intake](pipeline-reference-llm-mailroom/gmail-intake.md)           | Mailbox polling, the free triage lane, and reply echoes.                     |
 | [Testing](pipeline-reference-llm-mailroom/testing.md)                     | Hermetic pytest suite, pilots, and evaluators.                               |
 | [Sister repos](pipeline-reference-llm-mailroom/sister-repos.md)           | How the mailroom fits into its constellation.                                |
+| [Mailroom dataset](mailroom-dataset/)                                     | Canonical corpus: 55 strata, configs, EDA reports, and figures.              |
 
 ## Where to start
 
@@ -82,7 +84,7 @@ That system is spread across more than a dozen repositories: the pipeline itself
 | Understand what the Mailroom is and which repo does what    | [Overview](start-here/overview.md)                                          |
 | Get something running in the next ten minutes               | [Getting started](start-here/getting-started.md)                            |
 | See how data, prompts, scores and traces move between repos | [How the constellation fits together](how-it-fits-together/architecture.md) |
-| Browse the canonical dataset and its EDA charts             | [Data and corpora](how-it-fits-together/data-and-corpora.md)                |
+| Read the canonical dataset, EDA reports, and figures        | [Mailroom dataset](mailroom-dataset/)                                       |
 | Look up a term like "Lane A", "STP" or "virtual member"     | [Glossary](start-here/glossary.md)                                          |
 | Work on a specific repository                               | [Repository guides](repository-guides/repos/)                               |
 | Know which board, issue tracker or branch to use            | [Governance and workflow](how-it-fits-together/governance.md)               |
