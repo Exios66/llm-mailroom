@@ -692,7 +692,7 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 
 The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) needs this API reachable as `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1` (Inbox **Queue a document** → `POST /v1/upload`; REVIEW → `POST /v1/review/{doc_id}/resolve`). Local: `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`. Hosted pair (producer Space + Observatory floor): [`deploy/space/PAIRING.md`](deploy/space/PAIRING.md). Live Observatory: [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory). A Space floor cannot use `127.0.0.1`.
 
-For fully local/offline serving, see [`deploy/`](deploy/README.md) (Modal+vLLM) and [Local Model Cutover](#local-model-cutover).
+For fully local/offline serving, see [Docker deployment](docs/docker-deployment.md), [Modal + vLLM](docs/modal-vllm.md), and [Local Model Cutover](#local-model-cutover).
 
 ### Security
 
@@ -707,7 +707,9 @@ For fully local/offline serving, see [`deploy/`](deploy/README.md) (Modal+vLLM) 
 - [Configuration](docs/configuration.md) — config reference
 - [Agents](docs/agents.md) — agent specifications and personalities
 - [API Reference](docs/api.md) — complete API documentation
-- [Deployment](docs/deployment.md) — deployment and operations
+- [Deployment](docs/deployment.md) — laptop install, Railway, Spaces, backup
+- [Docker deployment](docs/docker-deployment.md) — compose matrix (Modes B / Mixed / A / M / G)
+- [Modal + vLLM](docs/modal-vllm.md) — `mailroom-vllm` serve and GPU-tier cutover
 - [Testing](docs/testing.md) — testing strategy and fixtures
 - [Local Models](docs/local-models.md) — local model cutover guide
 - [Sister Repositories](docs/sister-repos.md) — the llm-mailroom umbrella: entity-extraction, llm-dojo-scoring, corpus feeds, derived sites
