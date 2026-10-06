@@ -9,6 +9,19 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Markdown links into OTHER repositories (the constellation guides under
+# docs/constellation/ cite sibling repos' own docs/ trees) name paths that are
+# not this repo's — strip them before scanning. Links back into this repo
+# (Exios66/llm-mailroom) are still checked.
+_EXTERNAL_REPO_LINK = re.compile(
+    r"\[[^\]]*\]\(https?://github\.com/(?!Exios66/llm-mailroom/)[^)]*\)"
+)
+
+
+def _local_text(path: Path) -> str:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    return _EXTERNAL_REPO_LINK.sub("", text)
+
 
 def _referenced_doc_paths() -> set[str]:
     refs: set[str] = set()
@@ -21,7 +34,7 @@ def _referenced_doc_paths() -> set[str]:
         if ".opencode/skills" in str(path):  # vendored third-party skills (external URLs)
             continue
         try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            text = _local_text(path)
         except OSError:
             continue
         for m in glob.finditer(text):
@@ -59,6 +72,6 @@ def test_v7_taxonomy_reference_removed():
             continue
         if "node_modules" in path.parts or path.name == "test_docs_truth.py":
             continue
-        if "v7-taxonomy.md" in path.read_text(encoding="utf-8", errors="ignore"):
+        if "v7-taxonomy.md" in _local_text(path):
             hits.append(str(path.relative_to(REPO_ROOT)))
     assert not hits, f"v7-taxonomy.md still referenced: {hits}"
