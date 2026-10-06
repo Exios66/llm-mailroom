@@ -1,12 +1,4 @@
-<table width="100%">
-<tr>
-<td align="center" valign="middle">
-
-# The LLM-Mailroom
-
-</td>
-</tr>
-</table>
+# LLM-MAILROOM
 
 **A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents — with a full audit trail.**
 
