@@ -58,6 +58,10 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
     assert 'media="(prefers-reduced-motion: reduce)"' in html
     assert 'srcset="assets/mascot/fumi.png"' in html
     assert INSTALL in html
+    assert 'rel="icon"' in html
+    assert 'href="assets/mascot/hoot-icon.png"' in html
+    assert 'rel="apple-touch-icon"' in html
+    assert "assets/mascot/fumi-icon.png" not in html
     copy_js = html.split("const text = ", 1)[1].split(";", 1)[0]
     assert "git clone https://github.com/Exios66/llm-mailroom.git" in copy_js
     assert "cd llm-mailroom" in copy_js
@@ -78,9 +82,20 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "constellation/overview.md" in home
     assert "From inbox to archive" in home
     assert "Meet Fumi" in home
+    assert "Postal maid on duty" in home
+    assert "Read the docs" in home
+    assert "[Architecture](architecture.md)" in home
+    assert "**release** · v0.7.1" in home
+    assert "assets/mascot/hoot-icon.png" in home
+    assert "Pixelify" not in home
+    assert "font-family" not in home
+    assert "fonts.googleapis.com" not in home
     # Fumi is in the header table, not the sole opening figure.
     assert home.strip().startswith("# The LLM-Mailroom")
-    assert "<table>" in home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
+    header = home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
+    assert "<table>" in header
+    assert "lives in this header corner" not in header
+    assert "not the header itself" not in header
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [The LLM-Mailroom](README.md)" in summary
     # GitBook's Project directory is docs/; GITBOOK-SITE writes this file there.

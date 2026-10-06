@@ -12,9 +12,10 @@
 
 Images, diagrams, and other assets used in documentation.
 
-- `banner.png` — README banner
+- `banner.png` — README banner (night-shift owl at the sorting desk)
 - `mailroom-pipeline.svg` — pipeline diagram
-- `mascot/` — Fumi, the animated mascot (see `mascot/README.md`); also served by the landing page in `landing/`
+- `mascot/` — Fumi and Hoot (see `mascot/README.md`); `hoot-icon.png` is the page favicon
+- `fumi/fumi.gif` — GitBook header copy of Fumi
 
 ## Usage
 

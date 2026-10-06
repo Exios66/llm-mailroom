@@ -207,16 +207,16 @@ def test_main_exports_all_assets_and_identical_deployable_copies(exported_assets
     docs = exported_assets / "docs" / "assets" / "mascot"
     landing = exported_assets / "landing" / "assets" / "mascot"
     assert {p.name for p in docs.iterdir()} == {
-        "fumi.svg", "fumi.png", "fumi-icon.png", "fumi.gif", "fumi-sheet.png",
+        "fumi.svg", "fumi.png", "fumi-icon.png", "hoot-icon.png", "fumi.gif", "fumi-sheet.png",
     }
     assert {p.name for p in landing.iterdir()} == {
-        "fumi.svg", "fumi.gif", "fumi.png", "fumi-icon.png",
+        "fumi.svg", "fumi.gif", "fumi.png", "fumi-icon.png", "hoot-icon.png",
     }
     gitbook_gif = exported_assets / "docs" / "assets" / "fumi" / "fumi.gif"
     assert gitbook_gif.read_bytes() == (docs / "fumi.gif").read_bytes()
     for copy in landing.iterdir():
         assert copy.read_bytes() == (docs / copy.name).read_bytes()
-    for name, size in [("fumi.png", (576, 696)), ("fumi-icon.png", (256, 256)), ("fumi-sheet.png", (1536, 928))]:
+    for name, size in [("fumi.png", (576, 696)), ("fumi-icon.png", (256, 256)), ("hoot-icon.png", (256, 256)), ("fumi-sheet.png", (1536, 928))]:
         with Image.open(docs / name) as image:
             assert image.size == size
             assert image.mode == "RGBA"
@@ -329,6 +329,25 @@ def test_icon_exports_head_crop_with_nearest_neighbor_pixels(exported_assets):
     expected = body.crop((15, 5, 79, 69)).resize((256, 256), Image.Resampling.NEAREST)
     with Image.open(exported_assets / "docs/assets/mascot/fumi-icon.png") as icon:
         assert icon.tobytes() == expected.tobytes()
+
+
+def test_draw_hoot_paints_tufts_and_eye_whites():
+    layer = mascot.draw_hoot()
+    assert (0, 0) not in layer.px
+    assert layer.px[(1, 0)] == mascot.OWL["K"]
+    assert layer.px[(4, 5)] == mascot.OWL["w"]
+    assert layer.px[(3, 5)] == mascot.OWL["E"]
+
+
+def test_hoot_icon_is_square_pixel_owl(exported_assets):
+    expected = mascot.hoot_icon_image(256)
+    with Image.open(exported_assets / "docs/assets/mascot/hoot-icon.png") as icon:
+        assert icon.size == (256, 256)
+        assert icon.mode == "RGBA"
+        assert icon.tobytes() == expected.tobytes()
+        assert icon.getchannel("A").getextrema() == (0, 255)
+    landing = exported_assets / "landing/assets/mascot/hoot-icon.png"
+    assert landing.read_bytes() == (exported_assets / "docs/assets/mascot/hoot-icon.png").read_bytes()
 
 
 def test_gif_matches_every_timeline_tick_without_stale_overlay_pixels(exported_assets):
