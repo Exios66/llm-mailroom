@@ -34,6 +34,12 @@ def _has_badge(haystack: str, badge: str) -> bool:
     return badge in haystack or badge.replace("%7C", "|") in haystack
 
 
+def _walk_gitbook_nodes(nodes):
+    for node in nodes:
+        yield node
+        yield from _walk_gitbook_nodes(node.get("children") or [])
+
+
 def test_landing_javascript_behaviors():
     node = shutil.which("node")
     if node is None:
@@ -117,10 +123,12 @@ def test_gitbook_home_ports_the_enhanced_landing():
     on_duty = home.split(".gitbook/assets/banner.png", 1)[1].split(
         "## From inbox to archive", 1
     )[0]
-    assert ".gitbook/assets/fumi.gif" in on_duty
+    assert on_duty.count("fumi.gif") == 1
     assert 'Postal Worker Fumi (文, "letter") on duty' in on_duty
     assert "Specialist agents on a 13-node graph" in on_duty
+
     meet = home.split("## Meet Fumi", 1)[1]
+    assert meet.count("fumi.gif") == 1
     assert "Hermes" in meet
     assert "Hoot" not in meet
     assert "standalone static page uses this icon" not in meet
@@ -129,6 +137,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "build_mascot.py" not in meet
     assert "header corner" not in meet
     assert "landing/" not in meet.split("## Related files", 1)[0]
+
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [LLM-MAILROOM](README.md)" in summary
     assert "docker-deployment.md" in summary
@@ -140,14 +149,8 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "[Docker](" in home
     assert "[Modal + vLLM](" in home
 
-    # GitBook publishes the URL-mapped copy, not docs/constellation/maintaining.md.
-    published_maintaining = (REPO / "docs" / "about-this-site" / "maintaining.md")
-    if published_maintaining.is_file():
-        maintaining = published_maintaining.read_text(encoding="utf-8")
-    else:
-        maintaining = (REPO / "docs" / "constellation" / "maintaining.md").read_text(
-            encoding="utf-8"
-        )
+    published_maintaining = REPO / "docs" / "about-this-site" / "maintaining.md"
+    maintaining = published_maintaining.read_text(encoding="utf-8")
     assert "LLM-MAILROOM" in maintaining
     assert "Postal Worker Fumi" in maintaining
     assert "header corner" not in maintaining
@@ -155,20 +158,11 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "Hermes" in maintaining
     assert "sync_gitbook_changelog.py" in maintaining
 
-    # GitBook's Project directory is docs/; GITBOOK-SITE writes this file there.
-    # Live structure is a site with a Mailroom Docs section plus a Changelog
-    # section (GitBook export). Walk nodes so a section wrapper does not break
-    # the mailroom-docs identity check.
+    # Live GitBook: Mailroom Docs space + Changelog space (must stay published).
     site_path = REPO / "docs" / "gitbook-docs.yaml"
     assert site_path.is_file()
     site_cfg = yaml.safe_load(site_path.read_text(encoding="utf-8"))
-
-    def _walk(nodes):
-        for node in nodes:
-            yield node
-            yield from _walk(node.get("children") or [])
-
-    nodes = list(_walk(site_cfg["site"]["structure"]))
+    nodes = list(_walk_gitbook_nodes(site_cfg["site"]["structure"]))
     space = next(node for node in nodes if node.get("key") == "mailroom-docs")
     changelog = next(node for node in nodes if node.get("key") == "space-1")
     assert space["content"]["directory"] == "./"
@@ -177,11 +171,12 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert changelog["content"]["directory"] == "./changelog"
     assert changelog.get("draft") not in (True, "true")
     assert site_cfg["site"]["title"] == "Mailroom Inc. Docs"
+
     # Repo-root fallback if the Git Sync Project directory is ever moved to root.
     root_site = REPO / "gitbook-docs.yaml"
     assert root_site.is_file()
     root_cfg = yaml.safe_load(root_site.read_text(encoding="utf-8"))
-    root_nodes = list(_walk(root_cfg["site"]["structure"]))
+    root_nodes = list(_walk_gitbook_nodes(root_cfg["site"]["structure"]))
     root_space = next(node for node in root_nodes if node.get("key") == "mailroom-docs")
     assert root_space["path"] == "/"
     assert root_space["content"]["directory"] == "./docs"
