@@ -53,6 +53,7 @@ def _vision_config() -> dict:
         "max_pages": max_pages,
         "dpi": dpi,
         "models": list(cfg.get("models", []) or []),
+        "exclude": list(cfg.get("exclude", []) or []),
     }
 
 
@@ -77,17 +78,32 @@ def is_vision_capable(model: str) -> bool:
     if not model:
         return False
     lowered = model.lower()
-    return any(pat.lower() in lowered for pat in _vision_config()["models"])
+    cfg = _vision_config()
+    if any(pat.lower() in lowered for pat in cfg["exclude"]):
+        return False
+    return any(pat.lower() in lowered for pat in cfg["models"])
 
 
 def agent_uses_vision(agent_name: str) -> bool:
-    """Whether a given agent's configured model is vision-capable."""
+    """Whether the model this agent actually calls is vision-capable.
+
+    Judged on the RESOLVED model id (self-hosted remap / gateway tier alias),
+    not the taxonomy champion: with DEFAULT_PROVIDER=litellm the sorter calls
+    the text-only ``mailroom-fast`` even though its champion
+    ``qwen/qwen3.7-flash`` reads images. Judging the champion would skip the
+    scanned-PDF transcription pass while no agent receives the page images.
+    """
     try:
-        cfg = get_agent_config(agent_name)
-        return is_vision_capable(cfg.get("model", ""))
+        from llm.client import resolve_agent_model
+
+        return is_vision_capable(resolve_agent_model(agent_name).model)
     except Exception:
-        logger.warning("vision_agent_config_unavailable", agent=agent_name)
-        return False
+        try:
+            cfg = get_agent_config(agent_name)
+            return is_vision_capable(cfg.get("model", ""))
+        except Exception:
+            logger.warning("vision_agent_config_unavailable", agent=agent_name)
+            return False
 
 
 def pipeline_uses_vision() -> bool:
@@ -111,10 +127,11 @@ def _any_specialist_uses_vision() -> bool:
         if not spec:
             continue
         try:
-            if is_vision_capable(get_agent_config(spec).get("model", "")):
-                return True
+            get_agent_config(spec)
         except Exception:
             continue
+        if agent_uses_vision(spec):
+            return True
     return False
 
 

@@ -150,13 +150,13 @@ async def _check_llm_provider() -> dict:
     """
     import os
     try:
-        from llm.providers import resolve_provider
-        from pipeline.config import get_agent_config
+        from llm.client import resolve_agent_model
 
-        agent_cfg = get_agent_config("sorter")
-        provider, model = resolve_provider(agent_cfg)
+        resolved = resolve_agent_model("sorter")
+        provider, model = resolved.provider, resolved.model
         status = "ok"
-        detail = f"{provider.name}:{model}"
+        # Gateway runs report the tier too (e.g. litellm:mailroom-fast[fast]).
+        detail = f"{provider.name}:{model}" + (f"[{resolved.tier}]" if resolved.tier else "")
         try:
             from openai import OpenAI
 

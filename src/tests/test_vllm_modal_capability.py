@@ -73,8 +73,16 @@ def _install_modal_stub() -> None:
 
             return deco
 
-    def _web_server(port=None, startup_timeout=None):
+    def _web_server(port=None, startup_timeout=None, label=None):
         def deco(fn):
+            fn._web_label = label
+            return fn
+
+        return deco
+
+    def _concurrent(max_inputs=None, target_inputs=None):
+        def deco(fn):
+            fn._max_inputs = max_inputs
             return fn
 
         return deco
@@ -84,6 +92,7 @@ def _install_modal_stub() -> None:
     stub.Image = _Image
     stub.App = _App
     stub.web_server = _web_server
+    stub.concurrent = _concurrent
     sys.modules["modal"] = stub
 
 

@@ -62,6 +62,14 @@ DEFAULT_MODELS = {
     "vllm": [
         "*",
     ],
+    # LiteLLM gateway (deploy/litellm/config.yaml): GPU tier aliases plus a
+    # wildcard OpenRouter passthrough for `api`-tier agents.
+    "litellm": [
+        "mailroom-fast",
+        "mailroom-extract",
+        "mailroom-vision",
+        "*",
+    ],
     "generic": [
         "*",
     ],
@@ -115,6 +123,18 @@ def _build_providers() -> Dict[str, ProviderConfig]:
             api_key_env="VLLM_API_KEY",
             default_model="*",
             available_models=DEFAULT_MODELS["vllm"],
+        ),
+        "litellm": ProviderConfig(
+            name="litellm",
+            # LiteLLM proxy (deploy/docker-compose.full.yml service
+            # `llm-gateway`): one OpenAI-compatible endpoint in front of the
+            # Modal GPU tiers and OpenRouter. Per-agent routing is the
+            # taxonomy `tier:` (llm/client.py:resolve_agent_model). The key is
+            # the gateway master key, never a provider key.
+            base_url=os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1"),
+            api_key_env="LITELLM_API_KEY",
+            default_model="mailroom-fast",
+            available_models=DEFAULT_MODELS["litellm"],
         ),
         "generic": ProviderConfig(
             name="generic",

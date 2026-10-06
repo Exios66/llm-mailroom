@@ -58,6 +58,37 @@ llamafile_model_map:
   deepseek/deepseek-v4-pro: qwen3:14b
   openrouter/free: qwen3:7b
 
+# LiteLLM gateway routing (DEFAULT_PROVIDER=litellm, deploy/docker-compose.full.yml).
+# Every agent names a `tier:` below. A GPU tier sends its `alias` as the
+# model id; the gateway (deploy/litellm/config.yaml) routes that alias to the
+# matching Modal vLLM function, which serves it under the same name
+# (`--served-model-name`, deploy/modal_vllm.py) — so Langfuse generations
+# record the tier alias as the model. The `api` tier has no alias: the agent
+# sends its OpenRouter champion slug and the gateway forwards it to
+# OpenRouter (priced via cost_models as before). Agents sharing a tier share
+# one GPU container — grouping is by model, never per node.
+#
+# Flip an agent between GPU and API without editing this file:
+#   MAILROOM_GATEWAY_TIERS="sorter=api,boss=extract"   (read per get_llm call)
+# Ignored unless the provider resolves to `litellm`.
+gateway:
+  default_tier: fast
+  tiers:
+    fast:                      # short-context classify/triage reads
+      alias: mailroom-fast
+      context_tokens: 32768
+      vision: false
+    extract:                   # long-context extraction / judgment
+      alias: mailroom-extract
+      context_tokens: 65536
+      vision: false
+    vision:                    # page-image transcription
+      alias: mailroom-vision
+      context_tokens: 32768
+      vision: true
+    api:                       # OpenRouter through the gateway (champion slug)
+      alias: null
+
 # Free-model swarm (Gmail triage pilot): the Free Models Router. Instead of
 # hardcoding individual free models (their availability alternates as
 # providers rotate in and out of the free tier), the swarm is OpenRouter's
@@ -116,6 +147,17 @@ cost_models:
   deepseek/deepseek-v4-pro:
     input_per_million: 0.435
     output_per_million: 0.87
+  # Self-hosted Modal GPU tiers (gateway aliases): no per-token price — the
+  # cost is GPU time, billed by Modal per container-second.
+  mailroom-fast:
+    input_per_million: 0.0
+    output_per_million: 0.0
+  mailroom-extract:
+    input_per_million: 0.0
+    output_per_million: 0.0
+  mailroom-vision:
+    input_per_million: 0.0
+    output_per_million: 0.0
 
 confidence:
   # Global fallbacks (used before doc_type is known). Per-class severity overrides
@@ -228,6 +270,19 @@ vision:
     - "llava"
     - "llama-3.2"
     - "qwen-vl"
+    - "-vl-"               # HF VL ids, e.g. Qwen/Qwen3-VL-8B-Instruct
+    - "mailroom-vision"    # gateway vision tier alias
+  # Text-only ids that a pattern above would otherwise match (checked first).
+  # Self-hosted served ids (vllm_model_map / gateway GPU tiers) are text-only
+  # Qwen3 checkpoints: sending them image_url parts is a hard 400.
+  exclude:
+    - "qwen/qwen3-8b"
+    - "qwen/qwen3-14b"
+    - "qwen/qwen3-32b"
+    - "qwen/qwen3-30b-a3b"
+    - "qwen/qwen3-4b"
+    - "mailroom-fast"
+    - "mailroom-extract"
 
 doc_classes:
   - key: contract
@@ -378,6 +433,7 @@ agents:
   gmail_triage:
     provider: openrouter
     model: openrouter/free
+    tier: fast
     temperature: 0.1
     max_tokens: 700
     max_input_chars: 12000
@@ -390,6 +446,7 @@ agents:
   relations:
     provider: openrouter
     model: inclusionai/ling-3.0-flash-fin:free
+    tier: fast
     temperature: 0.1
     max_tokens: 900
     max_input_chars: 12000
@@ -398,6 +455,7 @@ agents:
   sorter:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: fast
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 12000
@@ -414,6 +472,7 @@ agents:
   intake:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: fast
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 25000
@@ -424,6 +483,7 @@ agents:
   sorter_reviewer:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: fast
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 12000
@@ -434,6 +494,7 @@ agents:
   arbiter:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 100000
@@ -442,6 +503,7 @@ agents:
   contracts_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 100000
@@ -450,6 +512,7 @@ agents:
   merger_agreement_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 100000
@@ -458,6 +521,7 @@ agents:
   corporate_records_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 60000
@@ -466,6 +530,7 @@ agents:
   correspondence_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 40000
@@ -474,6 +539,7 @@ agents:
   insurance_claims_specialist:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 60000
@@ -485,6 +551,7 @@ agents:
   reporter:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: fast
     temperature: 0.0
     max_tokens: 512
     max_input_chars: 40000
@@ -494,6 +561,7 @@ agents:
   boss:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 40000
@@ -504,6 +572,7 @@ agents:
   pdf_transcriber:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: vision
     temperature: 0.1
     max_tokens: 8192
     max_input_chars: 40000
@@ -513,6 +582,7 @@ agents:
   image_extractor:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: vision
     temperature: 0.1
     max_tokens: 4096
     max_input_chars: 20000
@@ -522,6 +592,7 @@ agents:
   judge:
     provider: openrouter
     model: qwen/qwen3.7-flash
+    tier: extract
     temperature: 0.1
     max_tokens: 2048
     max_input_chars: 60000
