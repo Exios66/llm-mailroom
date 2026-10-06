@@ -10,7 +10,8 @@ her owl assistant Hoot, plus the blink frames and the animation, then emits:
   docs/assets/mascot/fumi.svg        animated SVG (CSS keyframes, no JS)
   docs/assets/mascot/fumi.gif        animated GIF (same timeline)
   docs/assets/mascot/fumi.png        static PNG, 6x scale
-  docs/assets/mascot/fumi-icon.png   square head-and-shoulders icon (favicons, avatars)
+  docs/assets/mascot/fumi-icon.png   square head-and-shoulders icon (avatars)
+  docs/assets/mascot/hoot-icon.png   square pixel-owl icon of Hoot (page favicon)
   docs/assets/mascot/fumi-sheet.png  every GIF frame side by side
 
 and copies the files the landing page uses into landing/assets/mascot/.
@@ -229,6 +230,32 @@ OWL_ROWS = [
 OWL_EYES_CLOSED = {(3, 5): "f", (4, 5): "f", (8, 5): "f", (9, 5): "f",
                    (3, 6): "E", (4, 6): "E", (8, 6): "E", (9, 6): "E"}
 
+
+def draw_hoot() -> Layer:
+    """Paint Hoot at the origin, independent of Fumi's canvas placement."""
+    layer = Layer()
+    layer.sprite(0, 0, OWL_ROWS, OWL)
+    return layer
+
+
+def hoot_icon_image(size: int = 256) -> Image.Image:
+    """Return a square nearest-neighbour PNG of Hoot for favicons."""
+    layer = draw_hoot()
+    xs = [x for x, _ in layer.px]
+    ys = [y for _, y in layer.px]
+    min_x, max_x, min_y, max_y = min(xs), max(xs), min(ys), max(ys)
+    width, height = max_x - min_x + 1, max_y - min_y + 1
+    pad = 1
+    side = max(width, height) + 2 * pad
+    image = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    origin_x = (side - width) // 2
+    origin_y = (side - height) // 2
+    for (x, y), color in layer.px.items():
+        rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5)) + (255,)
+        image.putpixel((origin_x + (x - min_x), origin_y + (y - min_y)), rgb)
+    return image.resize((size, size), Image.NEAREST)
+
+
 # eye boxes in base-sprite coordinates (x0, x1, y0, y1)
 EYE_BOXES = [(15, 22, 37, 44), (34, 42, 37, 44)]
 
@@ -396,8 +423,8 @@ def main() -> None:
     """Write the mascot assets and copy the landing page's assets into its folder.
 
     Create output directories as needed, overwriting the SVG, GIF, PNG,
-    icon, and frame sheet in OUT_DIR, the SVG, GIF, PNG, and icon copies
-    in ROOT / "landing/assets/mascot", and the GitBook home GIF at
+    Fumi icon, Hoot favicon, and frame sheet in OUT_DIR, the copies in
+    ROOT / "landing/assets/mascot", and the GitBook home GIF at
     docs/assets/fumi/fumi.gif. Image-loading and filesystem errors
     propagate; files already written are not rolled back.
     """
@@ -415,6 +442,7 @@ def main() -> None:
     icon.merge(draw_body())
     box = (SX - 2, SY - 1, SX + 62, SY + 63)  # 64x64 around her head
     to_image(icon, 1).crop(box).resize((256, 256), Image.NEAREST).save(OUT_DIR / "fumi-icon.png", optimize=True)
+    hoot_icon_image().save(OUT_DIR / "hoot-icon.png", optimize=True)
 
     scale = 4
     frames = [to_image(compose(t), scale) for t in range(TICKS)]
@@ -435,7 +463,7 @@ def main() -> None:
     # the landing page ships its own copy so the landing/ folder deploys as-is
     site_dir = ROOT / "landing" / "assets" / "mascot"
     site_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("fumi.svg", "fumi.gif", "fumi.png", "fumi-icon.png"):
+    for name in ("fumi.svg", "fumi.gif", "fumi.png", "fumi-icon.png", "hoot-icon.png"):
         shutil.copyfile(OUT_DIR / name, site_dir / name)
     # GitBook home uses the GIF (the site strips scripts and may not animate SVG)
     gitbook_dir = ROOT / "docs" / "assets" / "fumi"

@@ -10,7 +10,7 @@ This site is **[Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc
 | `gitbook-docs.yaml` (repository root) | Fallback only: same space mapping if the Project directory is ever moved to the repo root (`directory: ./docs`, `path: /`). Live GitBook does not read this file today. |
 | `.gitbook.yaml` (repository root) | Classic space Git Sync: content root is `docs/` |
 | `docs/.gitbook.yaml` | Space config inside the mapped directory: `README.md` is the first page |
-| `docs/README.md` | The GitBook landing page. Port of `landing/`: Fumi in the header corner, owl banner, **The LLM-Mailroom** title, README badges, install, pipeline walk-through. GitBook strips scripts, so the idle TUI stays on the static page. |
+| `docs/README.md` | The GitBook landing page. Port of `landing/`: Fumi in the header corner (wordmark only — no layout caption), owl banner, **The LLM-Mailroom** title, README badges, tags, install, pipeline walk-through, and docs shelf. GitBook's own type; it does not load Pixelify Sans. GitBook strips scripts, so the idle TUI stays on the static page. |
 | `docs/SUMMARY.md` | The table of contents. Only pages listed here are published. |
 | `docs/constellation/` | The constellation pages: overview, getting started, architecture, data, governance, glossary, repo index |
 | `docs/constellation/repos/` | One guide per repository |
@@ -42,7 +42,9 @@ Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration 
 
 `path` is a URL slug, not a folder name. `directory: ./docs` inside a Project directory of `docs/` would look for `docs/docs/` (that folder does not exist). Leave the GitBook UI Project directory at `docs/`. GitBook never publishes `landing/index.html`; that page is static HTML.
 
-GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. The first TOC entry is `* [The LLM-Mailroom](README.md)` so the published home heading matches `docs/README.md`.
+GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. Keep that link as `* [The LLM-Mailroom](README.md)` so it matches the `# The LLM-Mailroom` heading in `docs/README.md` (the previous `* [Welcome](README.md)` title is why the live home used to read **Welcome**).
+
+GitBook's published favicon is the site icon in **Customize** ([icons, colors, and themes](https://gitbook.com/docs/manage-your-site/customization/icons-colors-and-themes)). Git Sync cannot set it: `gitbook-docs.yaml` has no favicon field. Upload `docs/assets/mascot/hoot-icon.png` (Hoot, the pixel owl). The static `landing/` page uses that same file as `<link rel="icon">`.
 
 ## Rules for editing
 
@@ -61,4 +63,4 @@ GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. The firs
 | A release changes versions or pins | [Overview](overview.md) version table, the repo's guide, the [dependency table](architecture.md#dependency-summary) |
 | Dataset revision changes | [Data and corpora](data-and-corpora.md) |
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
-| Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG into `docs/assets/mascot/`, `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. Keep Fumi in the header corner of `docs/README.md`; do not make her the page header. The owl banner, title, and badges stay the masthead. |
+| Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG/Hoot favicon into `docs/assets/mascot/` and `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. Keep Fumi in the header corner of `docs/README.md`; do not make her the page header. The owl banner, title, and badges stay the masthead. Re-upload `hoot-icon.png` in GitBook Customize if Hoot's sprite changes. |
