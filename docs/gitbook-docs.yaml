@@ -1,0 +1,16 @@
+# GitBook Site Git Sync configuration.
+# Schema: https://api.gitbook.com/gitbook-docs.yaml
+# Directories resolve from this file's directory (docs/).
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: Mailroom Docs
+  structure:
+    - type: space
+      key: mailroom-docs
+      title: Mailroom Docs
+      path: docs
+      default: true
+      content:
+        directory: ./
+        language: en
