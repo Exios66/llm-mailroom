@@ -17,7 +17,7 @@ One page per repository: what it does, where it fits, how to start, and where it
 
 ## Surfaces
 
-- [local-mailroom-sandbox](local-mailroom-sandbox.md) — offline and Modal runs
+- [local-mailroom-sandbox](local-mailroom-sandbox.md) — offline and Modal runs ([docs](local-mailroom-sandbox-docs.md), [run reports](local-mailroom-sandbox-reports.md), [visuals](local-mailroom-sandbox-visuals.md))
 - [The-Mailroom](the-mailroom.md) — pixel-art visualizer and Observatory
 - [agent-mailroom](agent-mailroom.md) — the walking office floor
 - [llm-mailroom-graph](llm-mailroom-graph.md) — code knowledge graph

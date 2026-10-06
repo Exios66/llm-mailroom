@@ -88,7 +88,9 @@ Everything lives in this repository's `docs/` folder. Each card opens the page o
 | [Configuration](configuration.md) | `taxonomy.yaml`, thresholds, and environment variables. |
 | [API](api.md) | Upload, status, and audit endpoints on the FastAPI server. |
 | [Local models](local-models.md) | Cutting agents over to Ollama or vLLM. |
-| [Deployment](deployment.md) | Docker, Railway, Modal, and the Hugging Face Space pair. |
+| [Deployment](deployment.md) | Laptop install, Railway, Hugging Face Spaces, and backup. |
+| [Docker](docker-deployment.md) | Full compose matrix: Modes B / Mixed / A / M / G, producer image, BERT args. |
+| [Modal + vLLM](modal-vllm.md) | Remote GPU serve (`mailroom-vllm`), cutover, and Mode G tiers. |
 | [Gmail intake](gmail-intake.md) | Mailbox polling, the free triage lane, and reply echoes. |
 | [Testing](testing.md) | Hermetic pytest suite, pilots, and evaluators. |
 | [Sister repos](sister-repos.md) | How the mailroom fits into its constellation. |
@@ -121,7 +123,9 @@ The pages below are the canonical documentation for the `llm-mailroom` pipeline 
 | [Configuration](configuration.md) | `taxonomy.yaml`, environment variables, thresholds |
 | [Gmail intake](gmail-intake.md) | Gmail intake route: upload guide, subject-line contract, pathways (HUB-037) |
 | [API](api.md) | HTTP endpoint reference |
-| [Deployment](deployment.md) | Production deployment |
+| [Deployment](deployment.md) | Laptop install, Railway, Spaces, backup |
+| [Docker](docker-deployment.md) | Compose matrix (Modes B / Mixed / A / M / G) and producer image |
+| [Modal + vLLM](modal-vllm.md) | Modal `mailroom-vllm` serve, cutover, and GPU tiers |
 | [Operational procedure](operational-procedure.md) | Day-to-day operating runbook |
 | [Local models](local-models.md) | Local model integration and cutover |
 | [Testing](testing.md) | Test organization |

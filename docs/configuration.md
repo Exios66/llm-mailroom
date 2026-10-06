@@ -446,7 +446,8 @@ champion slugs to the served HF ids; a missing `VLLM_BASE_URL` warns and falls
 back to localhost. `VLLM_API_KEY` is sent as an optional bearer (the Modal
 deploy app enforces one). A `503` from a `*.modal.run` endpoint is a
 scale-to-zero cold start — `retry_chat_completion` uses a long bounded backoff
-(90s base / 240s cap, DMR-052).
+(90s base / 240s cap, DMR-052). Deploy and cutover: [Modal + vLLM](modal-vllm.md).
+Host compose that talks to those GPUs: [Docker deployment](docker-deployment.md).
 
 ### Generic OpenAI-Compatible
 
