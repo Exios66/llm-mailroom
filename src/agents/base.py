@@ -2,7 +2,7 @@ import json
 import structlog
 from abc import ABC, abstractmethod
 
-from llm.client import get_llm
+from llm.client import get_llm, reasoning_extra_body
 from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
@@ -155,7 +155,7 @@ class BaseAgent(ABC):
         if reasoning_effort is None:
             reasoning_effort = self._configured_reasoning_effort()
         if reasoning_effort:
-            kwargs["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
+            kwargs["extra_body"] = reasoning_extra_body(reasoning_effort, self.agent_name)
         kwargs.update(langfuse_call_attrs(self.agent_name))
         langfuse_prompt = getattr(self, "_langfuse_prompt", None)
         if langfuse_prompt is not None:

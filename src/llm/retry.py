@@ -66,6 +66,16 @@ def _is_modal_url(base_url: str | None) -> bool:
     return bool(base_url) and "modal.run" in str(base_url)
 
 
+def _is_gateway_url(base_url: str | None) -> bool:
+    """The LiteLLM gateway (``LITELLM_BASE_URL``) fronts the Modal GPU tiers:
+    a 503 through it is the same scale-to-zero cold start, re-emitted by the
+    proxy, so it earns the same long backoff as a direct *.modal.run 503."""
+    import os
+
+    gateway = os.environ.get("LITELLM_BASE_URL", "").strip().rstrip("/")
+    return bool(base_url) and bool(gateway) and str(base_url).rstrip("/").startswith(gateway)
+
+
 def retry_sleep_seconds(
     exc: Exception, attempt: int, cfg: dict | None = None, base_url: str | None = None
 ) -> float:
@@ -79,7 +89,7 @@ def retry_sleep_seconds(
     base = float(cfg.get("base_delay", 1.0))
     max_delay = float(cfg.get("max_delay", 30.0))
     jitter = float(cfg.get("jitter", 0.3))
-    if _is_modal_url(base_url) and _status_code(exc) == 503:
+    if (_is_modal_url(base_url) or _is_gateway_url(base_url)) and _status_code(exc) == 503:
         cold = float(cfg.get("modal_cold_start_delay", 90.0))
         max_cold = float(cfg.get("modal_cold_start_max_delay", 240.0))
         delay = min(max_cold, cold * (2 ** max(0, attempt - 1)))
