@@ -27,7 +27,7 @@ One LangGraph state machine per document. Specialist LLM agents per document cla
 [![Release](https://img.shields.io/badge/release-v0.7.1-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.7.1)
 [![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 
-This is the published GitBook home for the Mailroom constellation. It matches the repository landing page in `landing/` (banner, title, badges, Fumi in the header corner). GitBook strips scripts, so the idle mail-floor terminal stays on the static page; everything else below is the same walk-through.
+This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, Fumi in the header corner). GitBook strips scripts, so the idle mail-floor terminal stays on the static page; everything else below is the same walk-through.
 
 ```bash
 # clone, install, then start the API (it embeds the inbox watcher)
