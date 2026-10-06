@@ -22,7 +22,7 @@ cp .env.example .env              # add OPENROUTER_API_KEY for real runs
 pip install -e ".[dev]"
 ```
 
-The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@v0.18.0`), so `pip` needs `git` and network access on first install.
+The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@v0.18.0`), so `pip` needs `git` and network access on first install. Draft [PR #87](https://github.com/Exios66/llm-mailroom/pull/87) moves this pin to v0.19.1; until it merges, v0.18.0 is what installs.
 
 ### Optional extras
 

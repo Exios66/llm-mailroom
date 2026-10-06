@@ -9,6 +9,10 @@ Short version: the scoring logic is well defined and lives mostly in the [llm-do
 
 For the pipeline stages referenced below, see [Pipeline flowchart](flowchart.md) and [Architecture](../pipeline-reference-llm-mailroom/architecture.md). For the fields each specialist extracts, see [Extraction schemas](extraction-schemas.md).
 
+{% hint style="warning" %}
+**Pending PR #87.** [PR #87](https://github.com/Exios66/llm-mailroom/pull/87) (draft) moves the `llm-dojo-scoring` pin to v0.19.1 and routes all specialist scoring through the library's per-document scorer. Once it merges, scoring adds field-level precision, recall, F1 and F2, class-specific extras, a `metric_id` and provenance, and a document with nothing scorable gets `overall_score = None` instead of a number. This page describes the current v0.18.0 behaviour and will be updated when #87 lands.
+{% endhint %}
+
 ---
 
 ## Part 1: Scoring methodology
