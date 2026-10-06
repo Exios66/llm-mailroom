@@ -11,10 +11,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout: graph-paper sorting desk; Fumi sits in the sticky top-bar corner
-   beside The LLM-Mailroom wordmark (she is included in the header, she is
-   not the header). Banner + shields match the README masthead. Hero is
-   character + title in the dsh-TUI register, then the idle mailroom TUI. */
+/* Layout: graph-paper sorting desk. The sticky top bar is the
+   The LLM-Mailroom wordmark only — no Fumi in the header. Banner +
+   shields match the README masthead. Hero is Postal Worker Fumi on
+   duty (GIF) beside the title, then the idle mailroom TUI. Meet Fumi
+   is the second GIF. */
 :root {
   --paper: #eef0f8;          /* page ground, cool lavender-grey */
   --grid: #dde1f0;           /* graph-paper rules */
@@ -70,8 +71,7 @@ a { color: var(--post); }
 :focus-visible { outline: 2px solid var(--post); outline-offset: 2px; }
 .wrap { max-width: 68rem; margin: 0 auto; padding-inline: max(16px, 4vw); }
 
-/* top bar — Fumi is a corner mark inside the product header, like the
-   dsh-TUI whale: small, transparent, full-body, never the whole header. */
+/* top bar — product wordmark only. Fumi is not in the header. */
 .bar {
   position: sticky; top: 0; z-index: 8;
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -86,11 +86,6 @@ a { color: var(--post); }
   text-decoration: none; color: var(--ink);
   font: 700 1.2rem/1 var(--display);
   min-width: 0;
-}
-.brand .fumi-mark {
-  width: 36px; height: 44px; flex: none;
-  image-rendering: pixelated; display: block;
-  filter: drop-shadow(0 1px 0 var(--card));
 }
 .brand b { color: var(--post); font-weight: 700; }
 .bar nav { display: flex; gap: .5rem; align-items: center; }
@@ -121,7 +116,7 @@ a { color: var(--post); }
 .badges a { display: inline-flex; line-height: 0; }
 .badges img { height: 20px; }
 
-/* hero — Fumi stands beside the wordmark, she does not replace it */
+/* hero — Postal Worker Fumi on duty (GIF #1 of 2; Meet Fumi is #2) */
 .hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 1rem 2.5rem; padding-block: 2.4rem 1.2rem; }
 .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
 .tag { font: 500 .82rem/1 var(--mono); padding: .45rem .7rem; border: 1px solid var(--line); background: var(--card); border-radius: 4px; color: var(--ink-soft); }
@@ -296,7 +291,6 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
   .fumi-stage { width: 168px; margin-top: 1.75rem; }
   .bar { padding-block: .55rem; }
   .brand { font-size: 1.05rem; }
-  .brand .fumi-mark { width: 30px; height: 36px; }
   .tui { grid-template-columns: minmax(0, 1fr); }
   .pane + .pane { border-left: 0; border-top: 1px solid var(--term-line); }
   .clerk img { width: 48px; }
@@ -319,7 +313,6 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
 <div class="wrap">
   <header class="bar">
     <a class="brand" href="#top" aria-label="The LLM-Mailroom home">
-      <img class="fumi-mark" src="assets/mascot/fumi.svg" alt="" width="36" height="44">
       <span>The <b>LLM</b>-Mailroom</span>
     </a>
     <nav>
@@ -382,14 +375,14 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
       <div class="fumi-stage">
         <picture>
           <source srcset="assets/mascot/fumi.png" media="(prefers-reduced-motion: reduce)">
-          <img src="assets/mascot/fumi.svg" width="200" height="242" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, navy skirt with a red and white hem stripe, a mini carrier cap on her frilled headdress) with a mail satchel and a little owl on her shoulder">
+          <img class="motion-gif" src="assets/mascot/fumi.gif" width="200" height="242" alt="Postal Worker Fumi (文, letter) on duty: a chibi postal maid in a USPS-style uniform with a mail satchel and Hermes the owl on her shoulder">
         </picture>
         <span class="say" aria-hidden="true">You've got mail!</span>
       </div>
       <div class="hero-text">
-        <p class="eyebrow">Postal maid on duty</p>
+        <p class="eyebrow">Postal Worker Fumi (文, "letter") on duty</p>
         <p class="lede">Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.</p>
-        <p class="sub">Fumi (文, "letter") lives in the top-bar corner next to the wordmark. She is part of the header, not the header itself. The banner, title, and badges above are the same masthead as the README.</p>
+        <p class="sub">The banner, title, and badges above are the same masthead as the README. Fumi is not in the header — she appears here on duty, and again at Meet Fumi.</p>
       </div>
     </div>
 
