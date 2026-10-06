@@ -8,6 +8,13 @@
 * [Getting started](start-here/getting-started.md)
 * [Glossary](start-here/glossary.md)
 
+## The pipeline in depth
+
+* [Running the pipeline](the-pipeline-in-depth/running.md)
+* [Pipeline flowchart](the-pipeline-in-depth/flowchart.md)
+* [Extraction schemas](the-pipeline-in-depth/extraction-schemas.md)
+* [Scoring and performance](the-pipeline-in-depth/scoring-and-metrics.md)
+
 ## How it fits together
 
 * [The constellation](how-it-fits-together/architecture.md)
