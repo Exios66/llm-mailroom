@@ -419,13 +419,26 @@ def build_svg() -> str:
 """
 
 
+BUST_ROWS = 72  # sprite rows kept in the chest-up crop
+
+
+def to_gif_frame(img: Image.Image) -> Image.Image:
+    """Quantize an RGBA frame to a GIF palette, keeping 1-bit transparency at index 255."""
+    p = img.convert("RGBA")
+    alpha = p.getchannel("A")
+    q = p.convert("RGB").quantize(colors=255, method=Image.Quantize.MEDIANCUT)
+    q.paste(255, mask=Image.eval(alpha, lambda a: 255 if a < 128 else 0))
+    return q
+
+
 def main() -> None:
     """Write the mascot assets and copy the landing page's assets into its folder.
 
     Create output directories as needed, overwriting the SVG, GIF, PNG,
     Fumi icon, Hermes favicon, and frame sheet in OUT_DIR, the copies in
     ROOT / "landing/assets/mascot", and the GitBook home GIF at
-    docs/assets/fumi/fumi.gif. Image-loading and filesystem errors
+    docs/assets/fumi/fumi.gif plus its chest-up crop
+    fumi-bust.gif. Image-loading and filesystem errors
     propagate; files already written are not rolled back.
     """
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -446,13 +459,7 @@ def main() -> None:
 
     scale = 4
     frames = [to_image(compose(t), scale) for t in range(TICKS)]
-    pal = []
-    for f in frames:  # GIF needs palette mode; keep 1-bit transparency
-        p = f.convert("RGBA")
-        alpha = p.getchannel("A")
-        q = p.convert("RGB").quantize(colors=255, method=Image.Quantize.MEDIANCUT)
-        q.paste(255, mask=Image.eval(alpha, lambda a: 255 if a < 128 else 0))
-        pal.append(q)
+    pal = [to_gif_frame(f) for f in frames]
     pal[0].save(OUT_DIR / "fumi.gif", save_all=True, append_images=pal[1:],
                 duration=TICK_MS, loop=0, transparency=255, disposal=2, optimize=False)
 
@@ -469,8 +476,13 @@ def main() -> None:
     gitbook_dir = ROOT / "docs" / "assets" / "fumi"
     gitbook_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(OUT_DIR / "fumi.gif", gitbook_dir / "fumi.gif")
+    # small chest-up crop for a header corner, like the dsh-TUI mascot
+    bust = [to_gif_frame(to_image(compose(t), 2).crop((0, 0, W * 2, BUST_ROWS * 2)))
+            for t in range(TICKS)]
+    bust[0].save(gitbook_dir / "fumi-bust.gif", save_all=True, append_images=bust[1:],
+                 duration=TICK_MS, loop=0, transparency=255, disposal=2, optimize=False)
     print("wrote", *sorted(p.name for p in OUT_DIR.iterdir()),
-          "+ landing/assets/mascot/ + docs/assets/fumi/fumi.gif")
+          "+ landing/assets/mascot/ + docs/assets/fumi/fumi.gif, fumi-bust.gif")
 
 
 if __name__ == "__main__":
