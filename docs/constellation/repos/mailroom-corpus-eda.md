@@ -49,6 +49,14 @@ python run_all.py --phases P3 P4  # just the figures
 
 [LLM-Mailroom-Services/Mailroom-Corpus](https://github.com/LLM-Mailroom-Services/Mailroom-Corpus) is an organization fork of this repository. See the [Repository index](../repo-index.md).
 
+## On this site
+
+GitBook publishes the dataset as its own section, with the EDA figures and reports nested there:
+
+- [Mailroom dataset](../../mailroom-dataset/) — composition, configs, source corpora
+- [EDA reports](../../mailroom-dataset/eda-reports.md) — P0–P6 narrative
+- [Visualizations](../../mailroom-dataset/visualizations.md) — all 30 PNGs plus Plotly HTML
+
 ## Its documentation
 
 - [README](https://github.com/Exios66/Mailroom-Corpus-EDA/blob/main/README.md)
