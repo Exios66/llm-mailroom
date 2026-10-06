@@ -174,6 +174,7 @@ def _knob(tier: str, name: str) -> str | None:
 def _tp_from_gpu(gpu: str) -> int:
     # A multi-GPU container (e.g. "A100-80GB:2") MUST pass the matching
     # tensor-parallel size or vLLM serves on one GPU and OOMs (DMR-051).
+    """Return the integer suffix of a GPU spec, or 1 if absent or nonnumeric."""
     if ":" in gpu:
         try:
             return int(gpu.rsplit(":", 1)[1])
@@ -183,7 +184,13 @@ def _tp_from_gpu(gpu: str) -> int:
 
 
 def resolve_tier(name: str) -> TierSpec:
-    """The effective spec for one tier: defaults overlaid with env knobs."""
+    """Return a tier's defaults overlaid with current environment knobs.
+
+    Scoped knobs take precedence; legacy unscoped knobs apply only to ``fast``.
+    Without TP_SIZE, tensor parallelism follows the GPU spec's count suffix.
+    REASONING_PARSER=none disables the parser. Raise ValueError for an unknown
+    tier or a noninteger value in an integer knob.
+    """
     if name not in _DEFAULTS:
         raise ValueError(f"unknown tier '{name}' (known: {', '.join(ALL_TIERS)})")
     base = _DEFAULTS[name]
@@ -212,6 +219,11 @@ def resolve_tier(name: str) -> TierSpec:
 
 
 def enabled_tiers() -> list[str]:
+    """Return comma-separated MODAL_VLLM_TIERS names in order, defaulting to all.
+
+    Strip whitespace and omit empty entries. Raise ValueError for unknown names;
+    duplicates are retained.
+    """
     raw = os.environ.get("MODAL_VLLM_TIERS", "").strip()
     names = [t.strip() for t in raw.split(",") if t.strip()] if raw else list(ALL_TIERS)
     unknown = [t for t in names if t not in _DEFAULTS]
@@ -300,7 +312,11 @@ def _server_env() -> dict[str, str]:
 
 
 def _legacy_spec(model: str) -> TierSpec:
-    """A spec from the module-level legacy knobs (read at call time)."""
+    """Build a fast-tier spec from legacy module-level knobs read at call time.
+
+    Use ``model`` as the served checkpoint. Noninteger context, sequence-count,
+    or tensor-parallel knobs raise ValueError.
+    """
     return TierSpec(
         name=_LEGACY_TIER,
         model=model,
@@ -319,7 +335,8 @@ def build_vllm_command(model: str, spec: TierSpec | None = None) -> list[str]:
 
     With ``spec`` the tier's full serve config applies (served alias,
     reasoning parser, image budget); without it the legacy single-model
-    knobs do.
+    knobs do. ``model`` selects the checkpoint even when ``spec`` is supplied.
+    Invalid integer legacy knobs raise ValueError.
     """
     tier = spec or _legacy_spec(model)
     cmd = [
@@ -389,6 +406,11 @@ def _masked_config(spec: TierSpec | None = None) -> dict[str, str]:
 
 
 def _launch(tier_name: str) -> None:
+    """Start the tier's vLLM subprocess without waiting for readiness or exit.
+
+    Resolve current environment knobs and pass through server credentials.
+    Configuration ValueError and subprocess startup OSError propagate.
+    """
     spec = resolve_tier(tier_name)
     cmd = build_vllm_command(spec.model, spec)
     # Boot diagnostics (masked): the container log shows the EFFECTIVE config
@@ -405,6 +427,7 @@ def _tier_function(spec: TierSpec):
     function -> concurrent -> web_server)."""
 
     def deco(fn):
+        """Register the function as a tier web server with its GPU, concurrency, and scale limits."""
         fn = modal.web_server(
             port=SERVER_PORT, startup_timeout=STARTUP_TIMEOUT_SECONDS, label=spec.label
         )(fn)
@@ -432,6 +455,7 @@ if "fast" in _ENABLED:
 
     @_tier_function(TIERS["fast"])
     def serve_fast() -> None:
+        """Start the fast tier's vLLM subprocess for the Modal web server."""
         _launch("fast")
 
 
@@ -439,6 +463,7 @@ if "extract" in _ENABLED:
 
     @_tier_function(TIERS["extract"])
     def serve_extract() -> None:
+        """Start the extraction tier's vLLM subprocess for the Modal web server."""
         _launch("extract")
 
 
@@ -446,6 +471,7 @@ if "vision" in _ENABLED:
 
     @_tier_function(TIERS["vision"])
     def serve_vision() -> None:
+        """Start the vision tier's vLLM subprocess for the Modal web server."""
         _launch("vision")
 
 
@@ -461,7 +487,9 @@ def download_model(model: str = "", revision: str = "", tier: str = "") -> None:
     ``modal run deploy/modal_vllm.py::download_model --tier extract``
     (or ``--model <hf-id>``; no flags pre-warms the fast tier).
 
-    Fails loudly when nothing was cached (DMR-053).
+    Explicit model/revision values override the selected tier defaults. Commit
+    the cache Volume after downloading. Raise SystemExit for an empty snapshot
+    (DMR-053); tier configuration, download, and Volume commit errors propagate.
     """
     from huggingface_hub import snapshot_download
 
@@ -488,7 +516,11 @@ def tier_url_env(tier: str) -> str:
 
 @app.local_entrypoint()
 def main(check: bool = False, debug: bool = False) -> None:
-    """`modal run modal_vllm.py [--check] [--debug]` — guidance + probes."""
+    """`modal run modal_vllm.py [--check] [--debug]` — guidance + probes.
+
+    ``debug`` prints masked settings; ``check`` probes each configured tier URL.
+    Probe SystemExit errors propagate and stop the remaining checks.
+    """
     name = Path(__file__).name
     print(f"Deploy with:  modal deploy {name}")
     print(f"Image: vllm/vllm-openai:{VLLM_IMAGE_TAG}   tiers: {', '.join(_ENABLED)}")
@@ -515,7 +547,14 @@ def main(check: bool = False, debug: bool = False) -> None:
 
 
 def _smoke_check(base: str, expect: str = "", label: str = "VLLM_BASE_URL") -> None:
-    """Bearer-aware `/models` probe for `modal run ... --check` (DMR-053)."""
+    """Bearer-aware `/models` probe for `modal run ... --check` (DMR-053).
+
+    ``base`` is the /v1 URL; the request timeout is 600 seconds.
+    Use MODAL_VLLM_API_TOKEN, falling back to VLLM_API_KEY, for bearer auth.
+    Raise SystemExit for a missing URL, HTTP/transport failure, or invalid JSON.
+    A missing ``expect`` model alias only prints a note; it does not fail the
+    probe. ``label`` names the URL environment variable in missing-URL errors.
+    """
     import httpx
 
     if not base:

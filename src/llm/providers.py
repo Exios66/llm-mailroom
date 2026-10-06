@@ -86,6 +86,7 @@ class ProviderConfig:
 
 
 def _build_providers() -> Dict[str, ProviderConfig]:
+    """Build provider settings from current endpoint environment overrides and defaults."""
     return {
         "openrouter": ProviderConfig(
             name="openrouter",

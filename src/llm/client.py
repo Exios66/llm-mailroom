@@ -90,6 +90,7 @@ class ResolvedModel:
 
 
 def _gateway_config() -> dict:
+    """Return the cached taxonomy gateway settings, or an empty mapping."""
     return load_config().get("gateway") or {}
 
 
@@ -110,8 +111,10 @@ def _tier_overrides() -> dict[str, str]:
 
 def gateway_tier(agent_name: str, agent_cfg: dict | None = None) -> str:
     """The gateway tier an agent routes to: env override > ``tier:`` >
-    ``gateway.default_tier``. Unknown tiers raise (a typo must never silently
-    fall through to a paid route)."""
+    ``gateway.default_tier`` > ``api``. Raise ValueError for unknown tiers
+    (a typo must never silently fall through to a paid route). If ``agent_cfg``
+    is omitted, an unknown agent raises KeyError from the taxonomy lookup.
+    """
     if agent_cfg is None:
         agent_cfg = get_agent_config(agent_name)
     cfg = _gateway_config()
@@ -131,15 +134,24 @@ def gateway_tier(agent_name: str, agent_cfg: dict | None = None) -> str:
 
 
 def gateway_alias(tier: str) -> str | None:
-    """The served model alias of a gateway tier (None for the `api` tier)."""
+    """Return a tier's configured alias, or None for an unknown or unaliased tier."""
     spec = (_gateway_config().get("tiers") or {}).get(tier) or {}
     alias = spec.get("alias")
     return str(alias) if alias else None
 
 
 def resolve_agent_model(agent_name: str, agent_cfg: dict | None = None) -> ResolvedModel:
-    """Single resolution seam for BOTH client paths (``get_llm`` and the
-    vendored LangChain agents): provider, served-id remap, gateway tier."""
+    """Resolve an agent's provider, wire model, champion model, and gateway tier.
+
+    ``agent_cfg`` replaces the agent's taxonomy entry when supplied.
+    ``DEFAULT_PROVIDER`` overrides its provider; self-hosted model maps and
+    LiteLLM tier aliases determine the wire model. This does not create a
+    client or enforce the spend guardrail.
+
+    Propagates KeyError for an unknown agent when no config is supplied, and
+    ValueError for an unknown provider or tier, an empty provider URL, or a
+    missing/mock OpenRouter key.
+    """
     if agent_cfg is None:
         agent_cfg = get_agent_config(agent_name)
     provider, champion = resolve_provider(agent_cfg)
@@ -157,7 +169,12 @@ def resolve_agent_model(agent_name: str, agent_cfg: dict | None = None) -> Resol
 
 def check_spend_guardrail(agent_name: str, resolved: ResolvedModel) -> None:
     """The free-only guardrail bounds OpenRouter spend; self-hosted providers
-    and gateway GPU tiers have no per-token price and are exempt (DMR-052)."""
+    and gateway GPU tiers have no per-token price and are exempt (DMR-052).
+
+    When enabled, raise RuntimeError for a non-exempt model that is not free,
+    or a non-exempt provider whose nonempty credential variable is neither
+    ``OPENROUTER_API_KEY`` nor ``LITELLM_API_KEY``. Otherwise return None.
+    """
     if resolved.spend_exempt:
         return
     assert_free_model(resolved.model)
@@ -184,6 +201,7 @@ def reasoning_extra_body(effort: str | None, agent_name: str | None = None) -> d
     ``max_tokens`` budget the JSON object needs — so vLLM-served calls get
     the chat-template switch instead (``enable_thinking`` off for effort
     ``none``/``minimal``). Resolution failures keep the OpenRouter shape.
+    A missing or empty effort returns None.
     """
     if not effort:
         return None
@@ -198,6 +216,14 @@ def reasoning_extra_body(effort: str | None, agent_name: str | None = None) -> d
 
 
 def get_llm(agent_name: str) -> tuple[OpenAI, str]:
+    """Create a tracing-instrumented client and return it with the wire model ID.
+
+    Resolve the agent and enforce the free-only guardrail before creating the
+    client. Propagates resolution errors (KeyError/ValueError), guardrail
+    RuntimeError, and client construction or instrumentation errors. Providers
+    without a supplied key use ``not-needed``; OpenRouter resolution requires
+    a non-placeholder key.
+    """
     resolved = resolve_agent_model(agent_name, get_agent_config(agent_name))
     check_spend_guardrail(agent_name, resolved)
     provider = resolved.provider

@@ -135,6 +135,18 @@ class BaseAgent(ABC):
         reasoning_effort: str | None = None,
         pages: list[str] | None = None,
     ) -> str:
+        """Send a chat request and return the first choice's text, or an empty string.
+
+        ``system_prompt`` overrides the prompt head; skill text is still appended.
+        Page data-URIs are included only when the agent supports vision. None for
+        ``max_tokens`` or ``reasoning_effort`` selects the agent's configured value;
+        zero tokens or an empty effort omits the corresponding request option.
+        Reasoning options are shaped for the resolved backend.
+
+        Records returned token usage. Propagates RunDeadlineExceeded before an
+        attempt past the run deadline, and provider errors that are not retried or
+        persist after the retry limit.
+        """
         from pipeline.limits import get_run_deadline, record_usage
 
         content = self._build_multimodal(user_message, pages)
