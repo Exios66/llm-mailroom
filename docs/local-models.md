@@ -2,6 +2,8 @@
 
 Mailroom is designed for provider-agnostic LLM usage. OpenRouter is the primary provider today, but switching to local models (Ollama, vLLM) is a configuration change — no code rewrite required.
 
+Compose sidecars (Ollama / llamafile) and the Mode G host stack: [Docker deployment](docker-deployment.md). Remote GPU OpenAI `/v1` (`mailroom-vllm`): [Modal + vLLM](modal-vllm.md).
+
 ---
 
 ## Architecture
