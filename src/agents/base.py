@@ -2,7 +2,7 @@ import json
 import structlog
 from abc import ABC, abstractmethod
 
-from llm.client import get_llm
+from llm.client import get_llm, reasoning_extra_body
 from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
@@ -135,6 +135,18 @@ class BaseAgent(ABC):
         reasoning_effort: str | None = None,
         pages: list[str] | None = None,
     ) -> str:
+        """Send a chat request and return the first choice's text, or an empty string.
+
+        ``system_prompt`` overrides the prompt head; skill text is still appended.
+        Page data-URIs are included only when the agent supports vision. None for
+        ``max_tokens`` or ``reasoning_effort`` selects the agent's configured value;
+        zero tokens or an empty effort omits the corresponding request option.
+        Reasoning options are shaped for the resolved backend.
+
+        Records returned token usage. Propagates RunDeadlineExceeded before an
+        attempt past the run deadline, and provider errors that are not retried or
+        persist after the retry limit.
+        """
         from pipeline.limits import get_run_deadline, record_usage
 
         content = self._build_multimodal(user_message, pages)
@@ -155,7 +167,7 @@ class BaseAgent(ABC):
         if reasoning_effort is None:
             reasoning_effort = self._configured_reasoning_effort()
         if reasoning_effort:
-            kwargs["extra_body"] = {"reasoning": {"effort": reasoning_effort}}
+            kwargs["extra_body"] = reasoning_extra_body(reasoning_effort, self.agent_name)
         kwargs.update(langfuse_call_attrs(self.agent_name))
         langfuse_prompt = getattr(self, "_langfuse_prompt", None)
         if langfuse_prompt is not None:

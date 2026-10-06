@@ -1,0 +1,220 @@
+# llm-mailroom — FULL single-host topology (Mode G: LiteLLM gateway + Modal GPU tiers).
+#
+#   ┌──────────────── this host (one compose project, one network) ───────────────┐
+#   │  app ──────────► llm-gateway (LiteLLM) ──https──► Modal mailroom-vllm-fast     │
+#   │   │ (API :8000 + embedded watcher + Gmail poller + LangGraph runtime)         │
+#   │   │                                     └────────► Modal mailroom-vllm-extract │
+#   │   ├──► postgres (catalog / audit / relations)  └──► Modal mailroom-vllm-vision │
+#   │   └──► Langfuse Cloud | phoenix (profile)       └──► OpenRouter (`api` tier)   │
+#   │  ops-monitor ─► postgres + llm-gateway (boss)                                   │
+#   │  watchdog ─────► heartbeat on the shared /data volume (app's PID namespace)    │
+#   └────────────────────────────────────────────────────────────────────────────────┘
+#
+# The LangGraph pipeline runs IN the app process (all 13 nodes): nodes hand a
+# DocumentState to each other in memory and documents move through the
+# filesystem bins on the shared `mailroom_data` volume (inbox → processing →
+# archive/review/failed). Only LLM calls leave the host — through the gateway,
+# to the GPU tier the agent's taxonomy `tier:` names. See deploy/README.md
+# § Full stack.
+#
+# Prerequisites:
+#   1. modal deploy deploy/modal_vllm.py      (prints the three tier URLs)
+#   2. .env with: MAILROOM_API_TOKEN, LITELLM_MASTER_KEY, POSTGRES_PASSWORD,
+#      MODAL_FAST_URL / MODAL_EXTRACT_URL / MODAL_VISION_URL, MODAL_VLLM_API_TOKEN,
+#      (OPENROUTER_API_KEY only if some agent is on the `api` tier),
+#      LANGFUSE_* for Langfuse Cloud tracing (or use --profile phoenix).
+#
+# Run (from the repo root):
+#   docker compose -f deploy/docker-compose.full.yml --env-file .env up -d --build
+#   docker compose -f deploy/docker-compose.full.yml --env-file .env --profile phoenix up -d --build
+#   PYTHONPATH=src python src/scripts/smoke_modal_tiers.py --check   # then --run (see script)
+#
+# Startup order is healthcheck-gated: postgres + llm-gateway healthy → app
+# healthy (schema created, /health green) → ops-monitor + watchdog.
+
+name: mailroom
+
+x-mailroom-image: &mailroom-image
+  image: mailroom:full
+  user: "10001:10001"
+  security_opt:
+    - no-new-privileges:true
+  volumes:
+    - mailroom_data:/data
+
+# Env every mailroom process shares: storage, LLM routing, observability.
+x-mailroom-env: &mailroom-env
+  MAILROOM_BASE_DIR: /data
+  # Credentials come only from .env (POSTGRES_PASSWORD is required: the
+  # postgres image refuses to initialise without it, so the stack never
+  # comes up half-configured).
+  DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-mailroom}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mailroom}"
+  # ── LLM routing: every agent → gateway → its taxonomy tier ──
+  DEFAULT_PROVIDER: litellm
+  LITELLM_BASE_URL: http://llm-gateway:4000/v1
+  LITELLM_API_KEY: "${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}"
+  MAILROOM_GATEWAY_TIERS: "${MAILROOM_GATEWAY_TIERS:-}"   # e.g. sorter=api,boss=extract
+  # ── Observability (client-side; the gateway runs no trace callbacks) ──
+  OBSERVABILITY_PROVIDER: "${OBSERVABILITY_PROVIDER:-auto}"   # auto: Langfuse if keyed, else Phoenix
+  OBSERVABILITY_ENVIRONMENT: "${OBSERVABILITY_ENVIRONMENT:-live}"
+  LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
+  LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+  LANGFUSE_HOST: "${LANGFUSE_HOST:-}"
+  LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}"
+  PHOENIX_ENDPOINT: "${PHOENIX_ENDPOINT:-http://phoenix:6006/v1/traces}"
+  LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+  LOG_FORMAT: "${LOG_FORMAT:-json}"
+  # ── BERT intake fast-path (local ONNX, CPU) ──
+  ML_MODEL_DIR: "${ML_MODEL_DIR:-/models/mailroom-modernbert-classifier}"
+  MAILROOM_BERT_INTAKE: "${MAILROOM_BERT_INTAKE:-0}"
+  # ── Status mail (HUB-050) — opt-in; needs the Gmail SMTP pair below ──
+  MAILROOM_WATCHER_STATUS: "${MAILROOM_WATCHER_STATUS:-0}"
+  MAILROOM_STATUS_EMAIL: "${MAILROOM_STATUS_EMAIL:-}"
+  GMAIL_ADDRESS: "${GMAIL_ADDRESS:-}"
+  GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD:-}"
+
+services:
+  postgres:
+    image: "${POSTGRES_IMAGE:-postgres:16-alpine}"
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-mailroom}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB:-mailroom}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Not published: only the compose network reaches it. Uncomment for psql
+    # from the host.
+    # ports: ["127.0.0.1:5432:5432"]
+
+  llm-gateway:
+    # Default is the release exercised with this stack (stub backends +
+    # compose smoke). main-stable floats; main-v1.104.0-stable is not a
+    # published GHCR tag. Override with LITELLM_IMAGE if needed.
+    image: "${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.104.0}"
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "2"]
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}"
+      MODAL_FAST_URL: "${MODAL_FAST_URL:?set MODAL_FAST_URL (modal deploy deploy/modal_vllm.py)}"
+      MODAL_EXTRACT_URL: "${MODAL_EXTRACT_URL:?set MODAL_EXTRACT_URL}"
+      MODAL_VISION_URL: "${MODAL_VISION_URL:?set MODAL_VISION_URL}"
+      MODAL_VLLM_API_TOKEN: "${MODAL_VLLM_API_TOKEN:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      # No DATABASE_URL on purpose: the gateway stays stateless (no key/spend
+      # DB); the mailroom's own cost accounting + Langfuse cover spend.
+    healthcheck:
+      # /health/liveliness is unauthenticated and does not call any model —
+      # a cold Modal tier never fails the gateway healthcheck.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    # Debug from the host: ports: ["127.0.0.1:4000:4000"]
+
+  app:
+    <<: *mailroom-image
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PIP_EXTRAS: "${MAILROOM_PIP_EXTRAS:-bert,postgres}"   # postgres: psycopg async driver
+        ML_BUILD_NONE: "${ML_BUILD_NONE:-0}"
+        ML_MODEL_REPO: "${ML_MODEL_REPO:-Lucius-Morningstar/mailroom-modernbert-classifier}"
+        ML_MODEL_REVISION: "${ML_MODEL_REVISION:-main}"
+    restart: unless-stopped
+    ports:
+      - "${MAILROOM_API_BIND:-127.0.0.1}:${MAILROOM_API_PORT:-8000}:8000"
+    environment:
+      <<: *mailroom-env
+      MAILROOM_API_HOST: "0.0.0.0"                          # requires a bearer token (audit L-2)
+      MAILROOM_API_PORT: "8000"
+      MAILROOM_API_TOKEN: "${MAILROOM_API_TOKEN:?set MAILROOM_API_TOKEN for off-loopback bind}"
+      MAILROOM_API_TOKENS: "${MAILROOM_API_TOKENS:-}"
+      MAILROOM_API_TOKEN_REVOKED: "${MAILROOM_API_TOKEN_REVOKED:-}"
+      # The app is the single intake authority on /data (watcher.lock flock):
+      # the embedded watcher + Gmail poller run here, never in a sibling.
+      MAILROOM_EMBED_WATCHER: "1"
+      MAILROOM_GMAIL_ENABLED: "${MAILROOM_GMAIL_ENABLED:-0}"
+      MAILROOM_CHECKPOINTER: "${MAILROOM_CHECKPOINTER:-sqlite}"   # /data/checkpoints.db — review resume survives restarts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      llm-gateway:
+        condition: service_healthy
+      phoenix:
+        condition: service_healthy
+        required: false      # only when --profile phoenix is active
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 6s
+      retries: 8
+      start_period: 60s      # schema creation + score-config warm-up
+
+  ops-monitor:
+    <<: *mailroom-image
+    pull_policy: never       # built by `app`
+    restart: unless-stopped
+    command: ["python", "-m", "pipeline.ops_monitor"]
+    # The image HEALTHCHECK probes the API's /health; this process serves no
+    # HTTP, so it would read unhealthy forever. Liveness = restart policy.
+    healthcheck:
+      disable: true
+    environment:
+      <<: *mailroom-env
+    depends_on:
+      app:
+        condition: service_healthy
+
+  watchdog:
+    <<: *mailroom-image
+    pull_policy: never
+    # Exits 0 when disabled (MAILROOM_WATCHDOG=0) — on-failure keeps it down
+    # instead of restart-looping.
+    restart: on-failure
+    command: ["python", "-m", "pipeline.watchdog"]
+    # The heartbeat records the watcher's PID; liveness is os.kill(pid, 0),
+    # which only works inside the app's PID namespace.
+    pid: "service:app"
+    healthcheck:
+      disable: true          # no HTTP server here (see ops-monitor)
+    environment:
+      <<: *mailroom-env
+      MAILROOM_WATCHDOG: "${MAILROOM_WATCHDOG:-0}"
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # Local, cost-free tracing sink (OpenTelemetry). Use when no Langfuse keys
+  # are set (OBSERVABILITY_PROVIDER=auto falls through to Phoenix) or force it
+  # with OBSERVABILITY_PROVIDER=phoenix. UI: http://127.0.0.1:6006
+  phoenix:
+    image: "${PHOENIX_IMAGE:-arizephoenix/phoenix:latest}"
+    profiles: ["phoenix"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6006:6006"
+    environment:
+      PHOENIX_WORKING_DIR: /mnt/data
+    volumes:
+      - phoenix_data:/mnt/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6006/healthz', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  mailroom_data:      # bins, manifests, archive, checkpoints.db, watcher.lock, heartbeat
+  pgdata:
+  phoenix_data:

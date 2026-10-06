@@ -74,24 +74,44 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "A multi-agent pipeline that ingests, classifies, extracts, and archives" in home
     for badge in BADGES:
         assert badge in home
+    assert home.index(BADGES[-1]) < home.index("assets/banner.png")
+    assert "night-shift owl at the sorting desk" in home.split("assets/banner.png", 1)[1]
     assert INSTALL in home
     assert "constellation/overview.md" in home
     assert "From inbox to archive" in home
     assert "Meet Fumi" in home
     # Fumi is in the header table, not the sole opening figure.
     assert home.strip().startswith("# The LLM-Mailroom")
-    assert "<table>" in home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
+    header = home.split("# The LLM-Mailroom", 1)[1].split("assets/banner.png", 1)[0]
+    assert "<table>" in header
+    assert 'Fumi (文, "letter")' in header
+    assert "lives in this header corner" not in header
+    assert "not the header itself" not in header
+    meet = home.split("## Meet Fumi", 1)[1]
+    assert "build_mascot.py" not in meet
+    assert "header corner" not in meet
+    assert "landing/" not in meet.split("## Related files", 1)[0]
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
     assert "* [The LLM-Mailroom](README.md)" in summary
-    site = (REPO / "gitbook-docs.yaml").read_text(encoding="utf-8")
-    assert not (REPO / "docs" / "gitbook-docs.yaml").exists()
-    site_cfg = yaml.safe_load(site)
+    # GitBook's Project directory is docs/; GITBOOK-SITE writes this file there.
+    site_path = REPO / "docs" / "gitbook-docs.yaml"
+    assert site_path.is_file()
+    site_cfg = yaml.safe_load(site_path.read_text(encoding="utf-8"))
     space = site_cfg["site"]["structure"][0]
     assert space["key"] == "mailroom-docs"
     assert space["path"] == "/"
-    assert space["content"]["directory"] == "./docs"
+    assert space["content"]["directory"] == "./"
     assert space["default"] is True
     assert site_cfg["site"]["title"] == "Mailroom Inc. Docs"
+    # Repo-root fallback if the Git Sync Project directory is ever moved to root.
+    root_site = REPO / "gitbook-docs.yaml"
+    if root_site.is_file():
+        root_cfg = yaml.safe_load(root_site.read_text(encoding="utf-8"))
+        root_space = root_cfg["site"]["structure"][0]
+        assert root_space["key"] == "mailroom-docs"
+        assert root_space["path"] == "/"
+        assert root_space["content"]["directory"] == "./docs"
+        assert root_cfg["site"]["title"] == "Mailroom Inc. Docs"
     assert "https://mailroom-inc.gitbook.io/mailroom-inc.-docs/" in home
     space = (REPO / "docs" / ".gitbook.yaml").read_text(encoding="utf-8")
     assert "readme: README.md" in space
