@@ -277,7 +277,13 @@ def run_via_api(api_url: str, token: str, files: dict[str, Path], matter_id: str
         deadline = time.time() + timeout_s
         results: dict[str, dict] = {}
         while time.time() < deadline:
-            docs = http.get(f"/matters/{matter_id}").json().get("documents") or []
+            try:
+                resp = http.get(f"/matters/{matter_id}")
+                resp.raise_for_status()
+                docs = resp.json().get("documents") or []
+            except (httpx.HTTPError, ValueError):
+                time.sleep(10)
+                continue
             for d in docs:
                 cls = by_name.get(d.get("original_filename"))
                 if cls and d.get("stage") in TERMINAL_STAGES:
