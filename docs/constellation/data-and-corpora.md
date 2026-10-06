@@ -2,7 +2,7 @@
 
 Every evaluation, training run and pilot in the constellation draws from one dataset family on Hugging Face, published under the [`Lucius-Morningstar`](https://huggingface.co/Lucius-Morningstar) organization. This page is the constellation-wide rules summary.
 
-The full GitBook breakdown — 55 strata, configs, source cards, EDA reports, and all 30 figures — lives in **[Mailroom dataset](../mailroom-dataset/)**.
+The full GitBook breakdown — 55 strata, configs, source cards, EDA reports, and all 30 figures — lives in **[Mailroom dataset](../mailroom-dataset/)**. Live dashboard, Hub Dataset Viewer, and Plotly charts are on [Visualizations](../mailroom-dataset/visualizations.md).
 
 ## The canonical dataset
 
