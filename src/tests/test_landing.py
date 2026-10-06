@@ -113,7 +113,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "font-family" not in home
     assert "fonts.googleapis.com" not in home
 
-    header = home.split(".gitbook/assets/banner.png", 1)[0]
+    header = home.split("<figure>", 1)[0]
     assert 'width="100%"' in header
     assert 'align="center"' in header
     assert "# The LLM-Mailroom" in header
