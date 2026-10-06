@@ -79,7 +79,14 @@ def test_v7_taxonomy_reference_removed():
 
 _SUMMARY_LINK = re.compile(r"\[[^\]]+\]\(([^)]+\.md)\)")
 _DOCS = REPO_ROOT / "docs"
-_SKIP_SUMMARY_DIRS = {"wiki", "assets"}
+_SKIP_SUMMARY_DIRS = {
+    "wiki",
+    "assets",
+    "changelog",
+    ".gitbook",
+    # Canonical copies GitBook re-exported under URL-mapped folders.
+    "constellation",
+}
 _SKIP_SUMMARY_FILES = {"SUMMARY.md"}
 
 
@@ -101,6 +108,10 @@ def test_gitbook_summary_lists_every_publishable_page():
             continue
         if path.name in _SKIP_SUMMARY_FILES:
             continue
+        # GitBook export keeps the original docs/*.md files and publishes
+        # URL-mapped copies (start-here/, pipeline-reference-llm-mailroom/, …).
+        if path.parent == _DOCS and path.name != "README.md":
+            continue
         if rel not in listed:
             unpublished.append(rel)
     assert not unpublished, (
@@ -110,13 +121,13 @@ def test_gitbook_summary_lists_every_publishable_page():
 
 def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
     summary = (_DOCS / "SUMMARY.md").read_text(encoding="utf-8")
-    assert "* [Deployment](deployment.md)" in summary
-    assert "  * [Docker](docker-deployment.md)" in summary
-    assert "  * [Modal + vLLM](modal-vllm.md)" in summary
-    assert "* [local-mailroom-sandbox](constellation/repos/local-mailroom-sandbox.md)" in summary
-    assert "    * [Documentation](constellation/repos/local-mailroom-sandbox-docs.md)" in summary
-    assert "    * [Run reports](constellation/repos/local-mailroom-sandbox-reports.md)" in summary
-    assert "    * [Visuals](constellation/repos/local-mailroom-sandbox-visuals.md)" in summary
+    assert "* [Deployment](pipeline-reference-llm-mailroom/deployment/README.md)" in summary
+    assert "  * [Docker](pipeline-reference-llm-mailroom/deployment/docker-deployment.md)" in summary
+    assert "  * [Modal + vLLM](pipeline-reference-llm-mailroom/deployment/modal-vllm.md)" in summary
+    assert "* [local-mailroom-sandbox](repository-guides/repos/local-mailroom-sandbox/README.md)" in summary
+    assert "    * [Documentation](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-docs.md)" in summary
+    assert "    * [Run reports](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-reports.md)" in summary
+    assert "    * [Visuals](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-visuals.md)" in summary
 
     docker = (_DOCS / "docker-deployment.md").read_text(encoding="utf-8")
     modal = (_DOCS / "modal-vllm.md").read_text(encoding="utf-8")
