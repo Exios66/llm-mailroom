@@ -1,13 +1,15 @@
 # Maintaining this site
 
-This site is published with [GitBook Git Sync](https://gitbook.com/docs/getting-started/git-sync) from the `docs/` folder of [Exios66/llm-mailroom](https://github.com/Exios66/llm-mailroom).
+This site is **[Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/)**, published with [GitBook Git Sync](https://gitbook.com/docs/getting-started/git-sync) from the `docs/` folder of [Exios66/llm-mailroom](https://github.com/Exios66/llm-mailroom). `docs/README.md` is the site landing page (the space is mounted at path `/`). A merge to `main` replaces that home.
 
 ## How it is built
 
 | File | Role |
 | :--- | :--- |
-| `.gitbook.yaml` (repository root) | Tells GitBook the site root is `docs/` |
-| `docs/README.md` | The landing page |
+| `gitbook-docs.yaml` (repository root) | Site Git Sync for https://mailroom-inc.gitbook.io/mailroom-inc.-docs/ : maps the `mailroom-docs` space to `./docs` at path `/`. Do not change `key`. Site title stays **Mailroom Inc. Docs**. |
+| `.gitbook.yaml` (repository root) | Classic space Git Sync: content root is `docs/` |
+| `docs/.gitbook.yaml` | Space config inside the mapped directory: `README.md` is the first page |
+| `docs/README.md` | The GitBook landing page. Port of `landing/`: Fumi in the header corner, owl banner, **The LLM-Mailroom** title, README badges, install, pipeline walk-through. GitBook strips scripts, so the idle TUI stays on the static page. |
 | `docs/SUMMARY.md` | The table of contents. Only pages listed here are published. |
 | `docs/constellation/` | The constellation pages: overview, getting started, architecture, data, governance, glossary, repo index |
 | `docs/constellation/repos/` | One guide per repository |
@@ -19,12 +21,29 @@ This site is published with [GitBook Git Sync](https://gitbook.com/docs/getting-
 
 1. In GitBook, create a space (for example "Mailroom Docs").
 2. Open the space's **Configure** menu, choose **GitHub Sync**, and install the GitBook GitHub app on `Exios66/llm-mailroom`.
-3. Pick the `main` branch. GitBook reads `.gitbook.yaml` and finds `docs/`.
+3. Pick the `main` branch. GitBook reads `gitbook-docs.yaml` (site) and `.gitbook.yaml` (space) and publishes `docs/README.md` as the site home.
 4. Choose **GitHub to GitBook** for the first sync so the repository content is imported rather than overwritten.
 
 After that, a merge to `main` updates the site. Edits made in the GitBook editor come back as commits.
 
 Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration enabled on the space, otherwise they show as code blocks.
+
+## `path` vs `directory` (this is the usual mix-up)
+
+`./docs` in Git Sync is **not** a URL. Two different knobs share the word "docs":
+
+| Knob | File | Meaning | Correct value here |
+| :--- | :--- | :--- | :--- |
+| Git Sync **Project directory** (GitBook UI) | — | Where GitBook looks for `gitbook-docs.yaml` | Repository **root**. Do not set this to `docs`. |
+| `content.directory` | `gitbook-docs.yaml` | Git folder the space reads | `./docs` |
+| `path` | `gitbook-docs.yaml` | URL after the site slug | `/` (site home). `path: docs` would publish at `…/mailroom-inc.-docs/docs/` |
+| `root` | `.gitbook.yaml` | Extra subfolder inside the mapped directory | `./docs/` at the repo root file, or `./` in `docs/.gitbook.yaml` |
+
+On `main` today, `docs/gitbook-docs.yaml` had `path: docs` and `directory: ./docs` while sitting *inside* `docs/`. `path` is a URL slug, so it does not mean “use the docs folder.” `directory: ./docs` inside a Project directory of `docs/` would look for `docs/docs/` (that folder does not exist). The live site still shows `docs/README.md` because the **root** `.gitbook.yaml` already has `root: ./docs/`.
+
+Leave the GitBook UI Project directory at the repository root. Point at the folder with `gitbook-docs.yaml` (`directory: ./docs`, `path: /`) plus `.gitbook.yaml` (`root: ./docs/`). GitBook never publishes `landing/index.html`; that page is static HTML.
+
+GitBook also replaces the markdown H1 with the `SUMMARY.md` link title, which is why the live home reads **Welcome** even though `docs/README.md` starts with `# Mailroom Documentation`.
 
 ## Rules for editing
 
@@ -43,4 +62,4 @@ Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration 
 | A release changes versions or pins | [Overview](overview.md) version table, the repo's guide, the [dependency table](architecture.md#dependency-summary) |
 | Dataset revision changes | [Data and corpora](data-and-corpora.md) |
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
-| Fumi's artwork changes | Copy the new animated `fumi.gif` export over `assets/fumi/fumi.gif` (shown on the home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use |
+| Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG into `docs/assets/mascot/`, `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. Keep Fumi in the header corner of `docs/README.md`; do not make her the page header. The owl banner, title, and badges stay the masthead. |

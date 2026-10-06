@@ -3,14 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>llm-mailroom</title>
+<title>The LLM-Mailroom</title>
 <meta name="description" content="A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents with a full audit trail. Meet Fumi, our mail clerk.">
 <link rel="icon" type="image/png" href="assets/mascot/fumi-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout: graph-paper sorting desk; mascot + wordmark hero, then the idle mailroom TUI as the centerpiece, then a short pipeline walk-through. */
+/* Layout: graph-paper sorting desk; Fumi sits in the sticky top-bar corner
+   beside The LLM-Mailroom wordmark (she is included in the header, she is
+   not the header). Banner + shields match the README masthead. Hero is
+   character + title in the dsh-TUI register, then the idle mailroom TUI. */
 :root {
   --paper: #eef0f8;          /* page ground, cool lavender-grey */
   --grid: #dde1f0;           /* graph-paper rules */
@@ -66,10 +69,28 @@ a { color: var(--post); }
 :focus-visible { outline: 2px solid var(--post); outline-offset: 2px; }
 .wrap { max-width: 68rem; margin: 0 auto; padding-inline: max(16px, 4vw); }
 
-/* top bar */
-.bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1.1rem; }
-.brand { display: flex; align-items: center; gap: .6rem; text-decoration: none; color: var(--ink); font: 700 1.35rem/1 var(--display); }
-.brand img { width: 40px; height: 40px; image-rendering: pixelated; }
+/* top bar — Fumi is a corner mark inside the product header, like the
+   dsh-TUI whale: small, transparent, full-body, never the whole header. */
+.bar {
+  position: sticky; top: 0; z-index: 8;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  margin-inline: calc(-1 * max(16px, 4vw));
+  padding: .7rem max(16px, 4vw);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex; align-items: center; gap: .55rem;
+  text-decoration: none; color: var(--ink);
+  font: 700 1.2rem/1 var(--display);
+  min-width: 0;
+}
+.brand .fumi-mark {
+  width: 36px; height: 44px; flex: none;
+  image-rendering: pixelated; display: block;
+  filter: drop-shadow(0 1px 0 var(--card));
+}
 .brand b { color: var(--post); font-weight: 700; }
 .bar nav { display: flex; gap: .5rem; align-items: center; }
 .btn {
@@ -81,13 +102,31 @@ a { color: var(--post); }
 .btn.primary { background: var(--post); border-color: var(--post); color: var(--card); }
 .btn svg { width: 18px; height: 18px; fill: currentColor; }
 
-/* hero */
-.hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 1rem 2.5rem; padding-block: 3rem 2rem; }
+/* README masthead: owl banner + official title + shields */
+.masthead { padding-block: 1.6rem 0; text-align: center; }
+.banner {
+  margin: 0 auto 1.25rem; max-width: 56rem;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  box-shadow: 6px 6px 0 var(--post); background: var(--card);
+}
+.banner img { display: block; width: 100%; height: auto; }
+.masthead h1 { margin: 0 auto; max-width: 18ch; }
+.masthead .lede { margin-inline: auto; }
+.masthead .sub { margin-inline: auto; }
+.badges {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem;
+  margin: 1.1rem 0 0;
+}
+.badges a { display: inline-flex; line-height: 0; }
+.badges img { height: 20px; }
+
+/* hero — Fumi stands beside the wordmark, she does not replace it */
+.hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 1rem 2.5rem; padding-block: 2.4rem 1.2rem; }
 .tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .5rem; }
 .tag { font: 500 .82rem/1 var(--mono); padding: .45rem .7rem; border: 1px solid var(--line); background: var(--card); border-radius: 4px; color: var(--ink-soft); }
 .tag em { font-style: normal; color: var(--post); }
-.fumi-stage { position: relative; width: 240px; max-width: 100%; }
-.fumi-stage img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.fumi-stage { position: relative; width: 200px; max-width: 100%; }
+.fumi-stage picture, .fumi-stage img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 .say {
   position: absolute; top: -1.6rem; left: 38%;
   font: 700 1rem/1 var(--display); color: var(--ink); background: var(--card);
@@ -97,9 +136,9 @@ a { color: var(--post); }
 .say::before { content: ""; position: absolute; left: 14px; bottom: -15px; border: 6px solid transparent; border-top-color: var(--ink); }
 @keyframes say { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 .hero-text { padding-bottom: 1rem; }
-h1 { margin: 0; font: 700 clamp(2.6rem, 8vw, 5.4rem)/1 var(--display); letter-spacing: -.01em; text-wrap: balance; }
+h1 { margin: 0; font: 700 clamp(2.4rem, 7vw, 4.6rem)/1 var(--display); letter-spacing: -.01em; text-wrap: balance; }
 h1 .llm { color: var(--post); }
-.lede { margin: 1rem 0 0; font-size: clamp(1.1rem, 2.2vw, 1.4rem); line-height: 1.45; max-width: 34ch; text-wrap: balance; }
+.lede { margin: 1rem 0 0; font-size: clamp(1.1rem, 2.2vw, 1.4rem); line-height: 1.45; max-width: 36ch; text-wrap: balance; }
 .lede strong { color: var(--post); font-weight: 600; }
 .sub { margin: .9rem 0 0; color: var(--ink-soft); max-width: 60ch; }
 
@@ -139,7 +178,7 @@ section { padding-block: 2.5rem; }
 .pane h3 { margin: 0 0 .4rem; font: 600 .72rem/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--term-dim); }
 
 .clerk { display: flex; gap: .7rem; align-items: center; padding-bottom: .7rem; margin-bottom: .7rem; border-bottom: 1px dashed var(--term-line); }
-.clerk img { width: 72px; height: 72px; image-rendering: pixelated; flex: none; }
+.clerk img { width: 64px; height: auto; image-rendering: pixelated; flex: none; }
 .clerk-name { font: 700 1rem/1.2 var(--display); color: var(--term-fg); }
 .clerk-mood { color: var(--term-dim); font-size: .78rem; }
 .clerk-mood .live { color: var(--ok); }
@@ -198,7 +237,8 @@ section { padding-block: 2.5rem; }
 .facts dd { margin: .3rem 0 0; color: var(--ink-soft); font-size: .95rem; }
 
 .meet { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1.5rem 2rem; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.5rem; }
-.meet img { width: 160px; max-width: 100%; image-rendering: pixelated; }
+.meet picture, .meet img { width: 160px; max-width: 100%; display: block; }
+.meet img { image-rendering: pixelated; height: auto; }
 .meet p { margin: .5rem 0 0; color: var(--ink-soft); max-width: 60ch; }
 
 footer { padding-block: 2rem 3rem; color: var(--ink-soft); font-size: .9rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; }
@@ -250,13 +290,15 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
 @media (max-width: 760px) {
   .steps, .facts, .shelf { grid-template-columns: minmax(0, 1fr); }
   .hero-text { padding-top: 0; }
-  .say { left: 42%; }
+  .say { left: 42%; font-size: .9rem; }
   .hero { grid-template-columns: minmax(0, 1fr); padding-block: 1.5rem 1rem; }
-  .fumi-stage { width: 200px; margin-top: 1.75rem; }
-  .say { font-size: .9rem; }
+  .fumi-stage { width: 168px; margin-top: 1.75rem; }
+  .bar { padding-block: .55rem; }
+  .brand { font-size: 1.05rem; }
+  .brand .fumi-mark { width: 30px; height: 36px; }
   .tui { grid-template-columns: minmax(0, 1fr); }
   .pane + .pane { border-left: 0; border-top: 1px solid var(--term-line); }
-  .clerk img { width: 56px; height: 56px; }
+  .clerk img { width: 48px; }
   .log { height: 11rem; font-size: .76rem; }
   .meet { grid-template-columns: minmax(0, 1fr); }
   .bar .label { display: none; }
@@ -275,9 +317,9 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
 </div>
 <div class="wrap">
   <header class="bar">
-    <a class="brand" href="#top" aria-label="llm-mailroom home">
-      <img src="assets/mascot/fumi-icon.png" alt="" width="40" height="40">
-      <span><b>llm</b>-mailroom</span>
+    <a class="brand" href="#top" aria-label="The LLM-Mailroom home">
+      <img class="fumi-mark" src="assets/mascot/fumi.svg" alt="" width="36" height="44">
+      <span>The <b>LLM</b>-Mailroom</span>
     </a>
     <nav>
       <button class="btn" id="theme" type="button" aria-label="Toggle dark mode">
@@ -307,26 +349,51 @@ a.tag:hover { border-color: var(--post); color: var(--ink); }
   </header>
 
   <main id="top">
+    <div class="masthead">
+      <figure class="banner">
+        <img src="assets/banner.png" width="1280" height="640" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight">
+      </figure>
+      <h1>The <span class="llm">LLM</span>-Mailroom</h1>
+      <p class="lede">A multi-agent pipeline that <strong>ingests, classifies, extracts, and archives</strong> legal documents — with a full audit trail.</p>
+      <p class="sub">One LangGraph state machine per document. Specialist LLM agents per document class. Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.</p>
+      <div class="badges" aria-label="Project badges">
+        <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+"></a>
+        <a href="https://langchain-ai.github.io/langgraph/"><img src="https://img.shields.io/badge/LangGraph-13--node%20state%20machine-4C8CBF" alt="LangGraph 13-node state machine"></a>
+        <a href="https://github.com/Exios66/llm-mailroom#llm-providers"><img src="https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2" alt="LLM: OpenRouter, Ollama, or vLLM"></a>
+        <a href="https://github.com/Exios66/llm-mailroom#observability"><img src="https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623" alt="Tracing: Langfuse, Braintrust, or Phoenix"></a>
+        <a href="https://github.com/Exios66/llm-mailroom#quick-start"><img src="https://img.shields.io/badge/storage-SQLite--first-lightgrey" alt="Storage: SQLite-first"></a>
+        <a href="https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.7.1"><img src="https://img.shields.io/badge/release-v0.7.1-2EA043" alt="Release v0.7.1"></a>
+        <a href="https://github.com/Exios66"><img src="https://img.shields.io/badge/contributor-Exios66-blue" alt="Contributor Exios66"></a>
+      </div>
+    </div>
+
     <div class="hero">
       <div class="tags">
         <a class="tag" href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md"><em>release</em> · v0.7.1</a>
         <a class="tag" href="https://github.com/Exios66/llm-mailroom#langgraph-state-machine"><em>LangGraph</em> · 13-node state machine</a>
         <a class="tag" href="https://github.com/Exios66/llm-mailroom/blob/main/docs/architecture.md"><em>audit</em> · hash-chained log</a>
         <a class="tag" href="https://github.com/Exios66/llm-mailroom#quick-start"><em>storage</em> · SQLite-first</a>
+        <a class="tag" href="https://github.com/Exios66/llm-mailroom#observability"><em>tracing</em> · Langfuse · Braintrust · Phoenix</a>
+        <a class="tag" href="https://github.com/Exios66/llm-mailroom#llm-providers"><em>LLM</em> · OpenRouter · Ollama · vLLM</a>
       </div>
       <div class="fumi-stage">
-        <img src="assets/mascot/fumi.svg" width="240" height="290" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, navy skirt with a red and white hem stripe, a mini carrier cap on her frilled headdress) with a mail satchel and a little owl on her shoulder">
+        <picture>
+          <source srcset="assets/mascot/fumi.png" media="(prefers-reduced-motion: reduce)">
+          <img src="assets/mascot/fumi.svg" width="200" height="242" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, navy skirt with a red and white hem stripe, a mini carrier cap on her frilled headdress) with a mail satchel and a little owl on her shoulder">
+        </picture>
         <span class="say" aria-hidden="true">You've got mail!</span>
       </div>
       <div class="hero-text">
-        <h1><span class="llm">llm</span>-mailroom</h1>
-        <p class="lede">A multi-agent pipeline that <strong>ingests, classifies, extracts, and archives</strong> legal documents with a full audit trail.</p>
-        <p class="sub">One LangGraph run per document, a specialist LLM agent per document class, and a provider-agnostic model layer. Every step is traced, and every archive entry is hash-chained to the one before it.</p>
+        <p class="eyebrow">Postal maid on duty</p>
+        <p class="lede">Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.</p>
+        <p class="sub">Fumi (文, "letter") lives in the top-bar corner next to the wordmark. She is part of the header, not the header itself. The banner, title, and badges above are the same masthead as the README.</p>
       </div>
     </div>
 
     <div class="install">
-      <pre id="install-cmd"><span># install, then start the API (it embeds the inbox watcher)</span>
+      <pre id="install-cmd"><span># clone, install, then start the API (it embeds the inbox watcher)</span>
+git clone https://github.com/Exios66/llm-mailroom.git
+cd llm-mailroom
 pip install -e ".[dev]"
 PYTHONPATH=src python -m api.main</pre>
       <button class="btn icon-btn" id="copy" type="button" aria-label="Copy install commands">
@@ -343,7 +410,7 @@ PYTHONPATH=src python -m api.main</pre>
         <p>A simulated watcher session. Mail arrives, gets sorted by class, routed on confidence, and filed with a sealed audit entry. Between deliveries, the floor idles.</p>
       </div>
 
-      <div class="term" role="img" aria-label="Simulated llm-mailroom terminal showing documents moving through the pipeline">
+      <div class="term" role="group" aria-label="Simulated llm-mailroom terminal showing documents moving through the pipeline">
         <div class="term-top">
           <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
           <span class="term-title"><b>mailroom</b> · watcher · data/pipeline/inbox</span>
@@ -352,7 +419,7 @@ PYTHONPATH=src python -m api.main</pre>
         <div class="tui">
           <div class="pane">
             <div class="clerk">
-              <img src="assets/mascot/fumi-icon.png" alt="" width="72" height="72">
+              <img src="assets/mascot/fumi.svg" alt="" width="72" height="87">
               <div>
                 <div class="clerk-name">Fumi</div>
                 <div class="clerk-mood" id="mood"><span class="live">●</span> idle · waiting for mail</div>
@@ -435,7 +502,10 @@ PYTHONPATH=src python -m api.main</pre>
 
     <section aria-labelledby="meet">
       <div class="meet">
-        <img src="assets/mascot/fumi.gif" alt="Fumi in her postal uniform while Hoot the owl blinks on her shoulder, animated" width="160" height="193">
+        <picture>
+          <source srcset="assets/mascot/fumi.png" media="(prefers-reduced-motion: reduce)">
+          <img class="motion-gif" src="assets/mascot/fumi.gif" alt="Fumi in her postal uniform while Hoot the owl blinks on her shoulder, animated" width="160" height="193">
+        </picture>
         <div>
           <p class="eyebrow">Mascot</p>
           <h2 id="meet">Meet Fumi</h2>
@@ -446,7 +516,7 @@ PYTHONPATH=src python -m api.main</pre>
   </main>
 
   <footer>
-    <span>llm-mailroom · documentation lives in the repository's <code>docs/</code> folder.</span>
+    <span>The LLM-Mailroom · documentation lives in the repository's <code>docs/</code> folder.</span>
     <nav>
       <a href="https://github.com/Exios66/llm-mailroom#readme">README</a>
       <a href="https://github.com/Exios66/llm-mailroom/tree/main/docs">Docs</a>
@@ -478,7 +548,7 @@ PYTHONPATH=src python -m api.main</pre>
   // copy install command
   const copyBtn = document.getElementById("copy");
   copyBtn.addEventListener("click", () => {
-    const text = 'pip install -e ".[dev]"\nPYTHONPATH=src python -m api.main';
+    const text = 'git clone https://github.com/Exios66/llm-mailroom.git\ncd llm-mailroom\npip install -e ".[dev]"\nPYTHONPATH=src python -m api.main';
     /** Show successful-copy feedback for 1500 ms, then restore the button. */
     const done = () => { copyBtn.setAttribute("aria-label", "Copied"); copyBtn.style.borderColor = "var(--ok)"; setTimeout(() => { copyBtn.style.borderColor = ""; copyBtn.setAttribute("aria-label", "Copy install commands"); }, 1500); };
     /** Select the install text for manual copying when clipboard access fails. */

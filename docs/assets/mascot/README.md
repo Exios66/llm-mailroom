@@ -11,7 +11,7 @@ Fumi (文, "letter") is a chibi postal maid who runs the mailroom, in a USPS-sty
 | `fumi-sheet.png` | All 32 animation frames, for reference. |
 | `source/fumi-base.png` | The 62×107 base sprite at native pixel size. Everything else is built from it. |
 
-The base sprite was cleaned up from reference art supplied by the project owner: resampled onto its native pixel grid, background removed, palette reduced to 32 colours. The script recolours the dress into the postal uniform and adds the cap, patches, satchel, Hoot, the blink frames and the animation, and copies the web files into `landing/assets/mascot/`. To change any of them, edit `src/scripts/build_mascot.py` and rerun it:
+The base sprite was cleaned up from reference art supplied by the project owner: resampled onto its native pixel grid, background removed, palette reduced to 32 colours. The script recolours the dress into the postal uniform and adds the cap, patches, satchel, Hoot, the blink frames and the animation, and copies the web files into `landing/assets/mascot/` (including the still `fumi.png` for reduced-motion visitors) and the GitBook home GIF into `docs/assets/fumi/fumi.gif`. To change any of them, edit `src/scripts/build_mascot.py` and rerun it:
 
 ```bash
 python src/scripts/build_mascot.py   # needs Pillow
