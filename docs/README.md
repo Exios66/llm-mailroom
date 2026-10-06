@@ -27,7 +27,24 @@ One LangGraph state machine per document. Specialist LLM agents per document cla
 
 <figure><img src="assets/banner.png" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight"><figcaption><p>The LLM-Mailroom masthead: the night-shift owl at the sorting desk.</p></figcaption></figure>
 
-This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, Fumi in the header corner). GitBook strips scripts, so the idle mail-floor terminal stays on the static page; everything else below is the same walk-through.
+[**release** · v0.7.1](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md) · [**LangGraph** · 13-node state machine](https://github.com/Exios66/llm-mailroom#langgraph-state-machine) · [**audit** · hash-chained log](architecture.md) · [**storage** · SQLite-first](https://github.com/Exios66/llm-mailroom#quick-start) · [**tracing** · Langfuse · Braintrust · Phoenix](https://github.com/Exios66/llm-mailroom#observability) · [**LLM** · OpenRouter · Ollama · vLLM](https://github.com/Exios66/llm-mailroom#llm-providers)
+
+<table>
+<tr>
+<td width="200" valign="middle">
+<img src="assets/fumi/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform with a mail satchel and a little owl on her shoulder" width="160">
+</td>
+<td valign="middle">
+
+Postal maid on duty.
+
+Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.
+
+</td>
+</tr>
+</table>
+
+This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, tags, Fumi in the header corner, install, pipeline walk-through, docs shelf). GitBook strips scripts, so the idle mail-floor terminal stays on the static page. This page uses GitBook's own type — it does not load the landing page's display font.
 
 ```bash
 # clone, install, then start the API (it embeds the inbox watcher)
@@ -57,6 +74,22 @@ The happy path costs two LLM generations. Everything else is procedural, gated, 
 | **Any model provider** | OpenRouter, Ollama, or vLLM. Agents ask for a role; `taxonomy.yaml` decides the model. |
 | **Traced end to end** | Langfuse, Braintrust, or a local Arize Phoenix. The pipeline runs fine with none of them. |
 | **Evaluation built in** | A 23-sample pilot with ground truth, deterministic field scoring, LLM judges, and a LegalBench harness. |
+
+## Read the docs
+
+Everything lives in this repository's `docs/` folder. Each card opens the page on this site.
+
+| Page | What it covers |
+| :--- | :--- |
+| [Architecture](architecture.md) | The 13-node graph, routing, and the auxiliary lanes. |
+| [Agents](agents.md) | Sorter, five specialists, judge, arbiter, and boss. |
+| [Configuration](configuration.md) | `taxonomy.yaml`, thresholds, and environment variables. |
+| [API](api.md) | Upload, status, and audit endpoints on the FastAPI server. |
+| [Local models](local-models.md) | Cutting agents over to Ollama or vLLM. |
+| [Deployment](deployment.md) | Docker, Railway, Modal, and the Hugging Face Space pair. |
+| [Gmail intake](gmail-intake.md) | Mailbox polling, the free triage lane, and reply echoes. |
+| [Testing](testing.md) | Hermetic pytest suite, pilots, and evaluators. |
+| [Sister repos](sister-repos.md) | How the mailroom fits into its constellation. |
 
 ## Where to start
 
@@ -95,6 +128,8 @@ The pages below are the canonical documentation for the `llm-mailroom` pipeline 
 ## Meet Fumi
 
 <figure><img src="assets/fumi/fumi.gif" alt="Fumi in her postal uniform while Hoot the owl blinks on her shoulder" width="192"><figcaption><p>Fumi (文, "letter") is the mailroom's head maid — a USPS-style carrier uniform, a mini cap on her headdress, a leather satchel, and Hoot checking postmarks from her shoulder.</p></figcaption></figure>
+
+<figure><img src="assets/mascot/hoot-icon.png" alt="Hoot, the pixel owl mascot used as the site favicon" width="96"><figcaption><p>Hoot is the pixel owl on Fumi's shoulder and the night-shift owl's junior colleague on the banner. The standalone static page uses this icon as its favicon. GitBook's published tab icon is the site icon in Customize — upload this same file.</p></figcaption></figure>
 
 ## Related files
 
