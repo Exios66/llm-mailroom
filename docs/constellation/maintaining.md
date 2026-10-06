@@ -6,8 +6,10 @@ This site is published with [GitBook Git Sync](https://gitbook.com/docs/getting-
 
 | File | Role |
 | :--- | :--- |
-| `.gitbook.yaml` (repository root) | Tells GitBook the site root is `docs/` |
-| `docs/README.md` | The landing page |
+| `gitbook-docs.yaml` (repository root) | Site Git Sync: maps the `mailroom-docs` space to `./docs` at path `/`, so this space **is** the published GitBook landing |
+| `.gitbook.yaml` (repository root) | Classic space Git Sync: content root is `docs/` |
+| `docs/.gitbook.yaml` | Space config inside the mapped directory: `README.md` is the first page |
+| `docs/README.md` | The GitBook landing page. Port of `landing/`: Fumi in the header corner, owl banner, **The LLM-Mailroom** title, README badges, install, pipeline walk-through. GitBook strips scripts, so the idle TUI stays on the static page. |
 | `docs/SUMMARY.md` | The table of contents. Only pages listed here are published. |
 | `docs/constellation/` | The constellation pages: overview, getting started, architecture, data, governance, glossary, repo index |
 | `docs/constellation/repos/` | One guide per repository |
@@ -19,7 +21,7 @@ This site is published with [GitBook Git Sync](https://gitbook.com/docs/getting-
 
 1. In GitBook, create a space (for example "Mailroom Docs").
 2. Open the space's **Configure** menu, choose **GitHub Sync**, and install the GitBook GitHub app on `Exios66/llm-mailroom`.
-3. Pick the `main` branch. GitBook reads `.gitbook.yaml` and finds `docs/`.
+3. Pick the `main` branch. GitBook reads `gitbook-docs.yaml` (site) and `.gitbook.yaml` (space) and publishes `docs/README.md` as the site home.
 4. Choose **GitHub to GitBook** for the first sync so the repository content is imported rather than overwritten.
 
 After that, a merge to `main` updates the site. Edits made in the GitBook editor come back as commits.
@@ -43,4 +45,4 @@ Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration 
 | A release changes versions or pins | [Overview](overview.md) version table, the repo's guide, the [dependency table](architecture.md#dependency-summary) |
 | Dataset revision changes | [Data and corpora](data-and-corpora.md) |
 | Pipeline nodes or classes change | The pipeline reference pages first; then [Architecture](architecture.md) and [Glossary](glossary.md) if terms changed |
-| Fumi's artwork changes | Copy the new animated `fumi.gif` export over `assets/fumi/fumi.gif` (shown on the home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use |
+| Fumi's artwork changes | Re-run `python src/scripts/build_mascot.py` (copies GIF/PNG/SVG into `docs/assets/mascot/`, `landing/assets/mascot/`, and `docs/assets/fumi/fumi.gif` for this home page). GitBook strips scripts and may not animate SVG, so the GIF is the one to use on this page. Keep Fumi in the header corner of `docs/README.md`; do not make her the page header. The owl banner, title, and badges stay the masthead. |
