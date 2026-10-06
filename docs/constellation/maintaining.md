@@ -43,7 +43,7 @@ On `main` today, `docs/gitbook-docs.yaml` had `path: docs` and `directory: ./doc
 
 Leave the GitBook UI Project directory at the repository root. Point at the folder with `gitbook-docs.yaml` (`directory: ./docs`, `path: /`) plus `.gitbook.yaml` (`root: ./docs/`). GitBook never publishes `landing/index.html`; that page is static HTML.
 
-GitBook also replaces the markdown H1 with the `SUMMARY.md` link title, which is why the live home reads **Welcome** even though `docs/README.md` starts with `# Mailroom Documentation`.
+GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. Keep that link as `* [The LLM-Mailroom](README.md)` so it matches the `# The LLM-Mailroom` heading in `docs/README.md` (the previous `* [Welcome](README.md)` title is why the live home used to read **Welcome**).
 
 ## Rules for editing
 
