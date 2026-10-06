@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitBook Changelog space** (`docs/changelog/`): the recently added Mailroom Inc. Docs Changelog section is a generated Keep a Changelog mirror of this file (dated updates feed + one page per release). Regenerated with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py`; `--check` fails if the space drifts from this file. Do not hand-edit the GitBook pages.
 - **GitBook Docker + Modal/vLLM operator pages** (`docs/docker-deployment.md`, `docs/modal-vllm.md`): the full compose matrix (Modes B / Mixed / A / M / G, including Mode G LiteLLM + Modal GPU tiers) and the `mailroom-vllm` serve/cutover guide are now listed in `docs/SUMMARY.md`, so GitBook publishes them. `deploy/README.md` is the file index and points at those pages.
 - **GitBook local-mailroom-sandbox reports and visuals** (`docs/constellation/repos/local-mailroom-sandbox-{docs,reports,visuals}.md`): nested under the sandbox guide in `docs/SUMMARY.md` — every dedicated sandbox manual, SAND-37 / SAND-032 run reports, hub charts, and `sandbox watch` stills.
 - **Contributor and org badges:** `grantmooslin` alongside `Exios66`, plus the [LLM-Mailroom-Services](https://github.com/LLM-Mailroom-Services) organization (constellation home) on the README, GitBook home, and landing badge rows.

@@ -1,13 +1,21 @@
 # Table of contents
 
 * [Changelog](README.md)
+* [Unreleased](unreleased.md)
 
 ## 2026
 
-* [Product update](2026/product-update.md)
-* [Product update](2026/product-update-1.md)
-
-## 2025
-
-* [Product update](2025/product-update.md)
-* [Product update](2025/product-update-1.md)
+* [v0.7.1](2026/v0-7-1.md)
+* [v0.7.0](2026/v0-7-0.md)
+* [v0.6.0](2026/v0-6-0.md)
+* [v0.5.0](2026/v0-5-0.md)
+* [v0.4.1](2026/v0-4-1.md)
+* [v0.4.0](2026/v0-4-0.md)
+* [v0.3.2](2026/v0-3-2.md)
+* [v0.3.1](2026/v0-3-1.md)
+* [v0.3.0](2026/v0-3-0.md)
+* [Released backlog — v0.4.0 → v0.6.0 era](2026/released-backlog-v0-4-0-v0-6-0-era.md)
+* [0.2.2](2026/0-2-2.md)
+* [0.2.1](2026/0-2-1.md)
+* [0.2.0](2026/0-2-0.md)
+* [0.1.0](2026/0-1-0.md)

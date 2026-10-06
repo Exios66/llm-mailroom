@@ -1,0 +1,7 @@
+# Space-level Git Sync config for the Changelog section.
+# Site mapping: docs/gitbook-docs.yaml → content.directory: ./changelog
+root: ./
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md
