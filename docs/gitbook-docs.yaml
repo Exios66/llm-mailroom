@@ -27,6 +27,6 @@ site:
           title: Changelog
           path: changelog
           default: true
-          draft: true
           content:
             directory: ./changelog
+            language: en
