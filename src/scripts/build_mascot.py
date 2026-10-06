@@ -83,7 +83,12 @@ class Layer:
                 self.set(x, y, c)
 
     def ellipse(self, cx: float, cy: float, rx: float, ry: float, c: str, where=None) -> None:
-        """Fill an ellipse, optionally restricting pixels with where(x, y)."""
+        """Fill an ellipse, optionally restricting pixels with where(x, y).
+
+        Center and radii are in sprite pixels; inclusion uses pixel centers.
+        Only 0 <= x < W and 0 <= y < H + 2 are considered. Zero radii
+        raise ZeroDivisionError; errors from where propagate to the caller.
+        """
         for y in range(H + 2):
             for x in range(W):
                 if ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1:
@@ -91,7 +96,12 @@ class Layer:
                         self.set(x, y, c)
 
     def sprite(self, x0: int, y0: int, rows, cmap, mirror: bool = False) -> None:
-        """Paint character rows through cmap, skipping dots and optionally mirroring horizontally."""
+        """Paint character rows through cmap, leaving dots unchanged.
+
+        Place each row at (x0, y0 + row index), mirroring within that row's
+        width when requested. A non-dot character missing from cmap raises
+        KeyError; pixels already painted remain in the layer.
+        """
         for dy, row in enumerate(rows):
             for dx, ch in enumerate(row):
                 if ch != ".":
@@ -120,7 +130,11 @@ def _hex(rgb) -> str:
 
 
 def draw_body() -> Layer:
-    """The base sprite in her postal uniform, with Hoot on her shoulder."""
+    """The base sprite in her postal uniform, with Hoot on her shoulder.
+
+    Read BASE on each call and return a new layer. Image-loading errors
+    propagate, including FileNotFoundError when the base sprite is missing.
+    """
     L = Layer()
     base = Image.open(BASE).convert("RGBA")
     for y in range(base.height):
@@ -258,7 +272,11 @@ SPARKS = [(8, 52), (86, 66), (10, 88), (84, 10)]
 
 
 def draw_spark(i: int, big: bool) -> Layer:
-    """Return the indexed sparkle as a single pixel or a white-centred cross."""
+    """Return the indexed sparkle as a single pixel or a white-centered cross.
+
+    Index SPARKS using normal list indexing, including negative indices;
+    an out-of-range index raises IndexError.
+    """
     L = Layer()
     x, y = SPARKS[i]
     L.set(x, y, SPARK)
@@ -274,7 +292,13 @@ TICKS, TICK_MS = 32, 100
 
 
 def state(t: int) -> dict:
-    """Return bob, blink, bubble and sparkle settings for a tick within one loop."""
+    """Return bob, blink, bubble and sparkle settings for a tick within one loop.
+
+    t is a zero-based 100 ms tick, normally 0 through 31; it is not wrapped
+    to that range. bob is a downward offset in sprite pixels, blink and
+    bubble are visibility flags, and sparks selects the large sparkle at
+    each SPARKS position.
+    """
     return {
         "bob": 1 if (t // 4) % 2 else 0,           # 0.8 s bob cycle
         "blink": t in (20, 21),                    # one blink per loop
@@ -284,7 +308,11 @@ def state(t: int) -> dict:
 
 
 def compose(t: int) -> Layer:
-    """Compose the mascot and effects into a layer for animation tick t."""
+    """Compose the mascot and effects into a layer for animation tick t.
+
+    Use the tick units and range described by state. Errors loading the
+    base sprite in draw_body propagate to the caller.
+    """
     s = state(t)
     out = Layer()
     for i, on in enumerate(s["sparks"]):
@@ -310,7 +338,7 @@ def to_image(layer: Layer, scale: int) -> Image.Image:
 
 
 def rects(layer: Layer) -> str:
-    """Run-length encode rows into <rect>s grouped by colour."""
+    """Return SVG path elements for horizontal pixel runs, grouped by color."""
     by_color: dict[str, list[str]] = {}
     for y in range(-2, H + 2):
         x = -2
@@ -328,7 +356,10 @@ def rects(layer: Layer) -> str:
 
 
 def build_svg() -> str:
-    """Return the animated mascot SVG with CSS keyframes and reduced-motion support."""
+    """Return the animated mascot SVG with CSS keyframes and reduced-motion support.
+
+    Errors loading the base sprite in draw_body propagate to the caller.
+    """
     loop = TICKS * TICK_MS / 1000
     sparks = "".join(
         f'<g class="sp sp{i}"><g class="dim">{rects(draw_spark(i, False))}</g>'
@@ -362,7 +393,13 @@ def build_svg() -> str:
 
 
 def main() -> None:
-    """Write the mascot assets and copy the landing page's assets into its folder."""
+    """Write the mascot assets and copy the landing page's assets into its folder.
+
+    Create output directories as needed, overwriting the SVG, GIF, PNG,
+    icon, and frame sheet in OUT_DIR and the SVG, GIF, and icon copies in
+    ROOT / "landing/assets/mascot". Image-loading and filesystem errors
+    propagate; files already written are not rolled back.
+    """
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "fumi.svg").write_text(build_svg())
 
