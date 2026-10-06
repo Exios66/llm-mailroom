@@ -17,7 +17,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![Release](https://img.shields.io/badge/release-v0.7.1-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.7.1)
 [![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 
-<img src="docs/assets/mascot/fumi.svg" alt="Fumi, the llm-mailroom mascot: a pixel-art chibi postal girl with owl-tuft hair holding a heart-sealed letter while a winged envelope flutters beside her" width="192" height="192">
+<img src="docs/assets/mascot/fumi.svg" alt="Fumi, the llm-mailroom mascot: a pixel-art chibi postal girl with rose-pink twin tails and a little postal cap, holding a heart-sealed letter while a winged envelope flutters beside her" width="192" height="192">
 
 <sub>Say hi to <b>Fumi</b> (文, "letter"), the mailroom's clerk. Landing page: <a href="https://exios66.github.io/llm-mailroom/">exios66.github.io/llm-mailroom</a></sub>
 

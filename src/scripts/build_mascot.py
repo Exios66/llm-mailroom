@@ -1,6 +1,6 @@
 """Build Fumi, the llm-mailroom pixel mascot.
 
-Fumi is drawn procedurally on a 64x64 pixel grid, split into layers
+Fumi is drawn procedurally on an 80x80 pixel grid, split into layers
 (body, open/closed eyes, the flying envelope buddy, sparkles, speech bubble).
 The same layers are emitted as:
 
@@ -19,25 +19,25 @@ from pathlib import Path
 
 from PIL import Image
 
-W = H = 64
+W = H = 80
 OUT_DIR = Path(__file__).resolve().parents[2] / "docs" / "assets" / "mascot"
+CX = 39.5  # vertical axis of symmetry
 
 # ---------------------------------------------------------------- palette
-OUT = "#2b1b33"
-HAIR, HAIR_L, HAIR_D = "#8a5430", "#b97c45", "#5e3520"
-FEATHER = "#f3e3c8"
-SKIN, SKIN_D = "#ffe6d3", "#f6c7ad"
-BLUSH = "#ff8fa8"
-LASH, IRIS, IRIS_D, IRIS_L, SHINE = "#3a1f33", "#f5a623", "#c85f1a", "#ffd86b", "#ffffff"
-CAP, CAP_D, BRIM, GOLD = "#fbf8f2", "#d9d1c3", "#28336a", "#f4c34d"
-JACKET, JACKET_L, JACKET_D = "#34459a", "#4d62c0", "#232e6a"
-COLLAR, TIE = "#ffffff", "#e8475d"
-ENV, ENV_D, SEAL, SEAL_L = "#fff7e3", "#e6d4ad", "#d92b45", "#ff6b80"
-BAG, BAG_D, BAG_L = "#a5622f", "#6f3e1d", "#cf8748"
-SOCK, SHOE = "#ffffff", "#5b3221"
-WING, WING_D = "#ffffff", "#c9d3ff"
+OUT = "#3b2240"                      # soft plum outline (never pure black)
+HAIR, HAIR_L, HAIR_LL, HAIR_D, HAIR_DD = "#c46d8a", "#e396ad", "#f6c3d2", "#9c4f6d", "#723a57"
+SKIN, SKIN_D, SKIN_DD = "#fff0e8", "#fbd9cc", "#f0bfb1"
+BLUSH, BLUSH_L = "#ff9db5", "#ffd0dc"
+LASH, IRIS_D, IRIS, IRIS_L, IRIS_LL, SHINE = "#3b2240", "#3d5fae", "#5e95dc", "#8fc4f2", "#c9e8ff", "#ffffff"
+MOUTH, TONGUE = "#b4416a", "#ff8fa8"
+NAVY, NAVY_L, NAVY_D = "#3a4a9e", "#5468c4", "#283478"
+COLLAR, COLLAR_D = "#ffffff", "#d7dcf2"
+RIBBON, RIBBON_D = "#ef4f6a", "#c23552"
+GOLD, GOLD_D = "#f6c54f", "#d0962c"
+ENV, ENV_D = "#fff8e6", "#ecdcb6"
+SEAL, SEAL_L = "#e8445e", "#ff8a9c"
+WING, WING_D = "#ffffff", "#cfd8ff"
 SPARK = "#ffd34d"
-MOUTH = "#a8364f"
 
 
 class Layer:
@@ -45,32 +45,45 @@ class Layer:
         self.px: dict[tuple[int, int], str] = {}
 
     def set(self, x: int, y: int, c: str) -> None:
-        if 0 <= x < W and 0 <= y < H:
+        if -2 <= x < W + 2 and -2 <= y < H + 2:
             self.px[(x, y)] = c
 
     def pts(self, pts, c: str) -> None:
         for x, y in pts:
             self.set(x, y, c)
 
+    def sym(self, pts, c: str) -> None:
+        """Set points and their mirror image across the character's axis."""
+        for x, y in pts:
+            self.set(x, y, c)
+            self.set(int(2 * CX - x), y, c)
+
     def rect(self, x0: int, y0: int, x1: int, y1: int, c: str) -> None:
         for y in range(y0, y1 + 1):
             for x in range(x0, x1 + 1):
                 self.set(x, y, c)
 
-    def ellipse(self, cx: float, cy: float, rx: float, ry: float, c: str) -> None:
-        for y in range(H):
+    def ellipse(self, cx: float, cy: float, rx: float, ry: float, c: str, where=None) -> None:
+        for y in range(H + 2):
             for x in range(W):
                 if ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1:
-                    self.set(x, y, c)
+                    if where is None or where(x, y):
+                        self.set(x, y, c)
+
+    def sprite(self, x0: int, y0: int, rows, cmap, mirror: bool = False) -> None:
+        for dy, row in enumerate(rows):
+            for dx, ch in enumerate(row):
+                if ch != ".":
+                    x = x0 + (len(row) - 1 - dx if mirror else dx)
+                    self.set(x, y0 + dy, cmap[ch])
 
     def outline(self, c: str = OUT) -> None:
         """Add a 1px outline around every filled pixel (4-neighbourhood)."""
         add = set()
         for x, y in self.px:
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                n = (x + dx, y + dy)
-                if n not in self.px:
-                    add.add(n)
+                if (x + dx, y + dy) not in self.px:
+                    add.add((x + dx, y + dy))
         for x, y in add:
             self.set(x, y, c)
 
@@ -78,164 +91,179 @@ class Layer:
         self.px.update(other.px)
 
 
-def mirror(pts):
-    """Mirror points around the character's vertical axis (x=31.5)."""
-    return [(63 - x, y) for x, y in pts]
-
-
-# ---------------------------------------------------------------- body
+# ---------------------------------------------------------------- Fumi
 def draw_body() -> Layer:
     L = Layer()
 
-    # back hair (long, falls behind shoulders)
-    L.ellipse(32, 27, 15.5, 14, HAIR)
-    L.rect(17, 27, 21, 44, HAIR)
-    L.rect(42, 27, 46, 44, HAIR)
-    ends = [(18, 45), (19, 45), (21, 45), (18, 46), (21, 46), (17, 45)]
-    L.pts(ends, HAIR)
-    L.pts(mirror(ends), HAIR)
-    for y in range(30, 44):
-        L.set(17, y, HAIR_D)
-        L.set(46, y, HAIR_D)
-    for y in range(29, 41):
-        L.set(19, y, HAIR_L if y % 5 else HAIR)
-        L.set(44, y, HAIR_L if y % 5 else HAIR)
+    # --- back hair + twin tails (behind everything)
+    L.ellipse(CX, 31, 24, 23, HAIR)
+    L.ellipse(CX, 31, 24, 23, HAIR_D, where=lambda x, y: y >= 37)  # depth behind the face
+    for side in (1, -1):
+        # tails taper and curl outward toward the bottom
+        for y in range(36, 76):
+            t = (y - 36) / 40
+            w = 5.5 - 2.5 * t
+            cx = CX + side * (21.5 + 3 * math.sin(t * math.pi * 0.9))
+            for x in range(int(cx - w), int(cx + w) + 1):
+                L.set(x, y, HAIR)
+            L.set(int(cx - side * (w - 1)), y, HAIR_D)
+            if 0.15 < t < 0.8:
+                L.set(int(cx + side * 1), y, HAIR_L)
+        # curl tip
+        tip_x = int(CX + side * 24)
+        L.pts([(tip_x, 76), (tip_x + side, 76), (tip_x + 2 * side, 75)], HAIR)
 
-    # owl ear tufts
-    rows = {3: (12, 12), 4: (12, 13), 5: (12, 14), 6: (13, 15), 7: (13, 16), 8: (14, 17),
-            9: (14, 18), 10: (15, 19), 11: (16, 20), 12: (17, 21), 13: (18, 21)}
-    tuft = [(x, y) for y, (a, b) in rows.items() for x in range(a, b + 1)]
-    L.pts(tuft, HAIR)
-    L.pts(mirror(tuft), HAIR)
-    fl = [(13, 5), (14, 7), (15, 9), (16, 10)]
-    L.pts(fl, FEATHER)
-    L.pts(mirror(fl), FEATHER)
-    dk = [(15, 7), (16, 8), (17, 9), (18, 10), (19, 11)]
-    L.pts(dk, HAIR_D)
-    L.pts(mirror(dk), HAIR_D)
+    # --- body (bust, runs off the bottom edge)
+    for y in range(55, H + 2):
+        half = 9 + (y - 55) * 0.55
+        for x in range(int(CX - half), int(CX + half) + 1):
+            L.set(x, y, NAVY)
+    for y in range(64, H + 2):  # cardigan side shading
+        half = 9 + (y - 55) * 0.55
+        L.set(int(CX - half) + 1, y, NAVY_D)
+        L.set(int(CX + half) - 1, y, NAVY_D)
+    L.rect(36, 52, 43, 56, SKIN)  # neck
+    L.rect(36, 55, 43, 55, SKIN_D)
+    # sailor collar: two white flaps meeting in a V at the ribbon
+    for i in range(7):
+        L.sym([(x, 56 + i) for x in range(26 + i, 34 + i // 2)], COLLAR)
+    L.sym([(26 + i, 56 + i) for i in range(7)], COLLAR_D)
+    L.sym([(29 + i, 57 + i) for i in range(0, 5)], NAVY_L)  # stripe on collar
+    # ribbon bow
+    bow = ["RR.....RR", "RRRR.RRRR", "RRRDDDRRR", "RRRR.RRRR", ".RR...RR.", "..R...R.."]
+    L.sprite(35, 56, bow, {"R": RIBBON, "D": RIBBON_D})
 
-    # body: navy postal jacket
-    for i, y in enumerate(range(39, 52)):
-        half = 7 + min(i, 5) // 2 + (1 if i > 8 else 0)
-        L.rect(32 - half, y, 31 + half, y, JACKET)
-    L.rect(22, 47, 23, 51, JACKET_D)
-    L.rect(40, 47, 41, 51, JACKET_D)
-    L.rect(26, 52, 37, 52, JACKET_D)  # hem
-    for y in range(41, 52):  # buttons placket
-        L.set(31, y, JACKET_L)
-    # sleeves
-    L.rect(22, 41, 24, 46, JACKET)
-    L.rect(39, 41, 41, 46, JACKET)
-    L.pts([(22, 41), (41, 41)], JACKET_L)
+    # held envelope + mitten hands
+    L.rect(29, 64, 50, 76, ENV)
+    for i in range(7):
+        L.set(29 + i * 3 // 2, 64 + i, ENV_D)
+        L.set(50 - i * 3 // 2, 64 + i, ENV_D)
+    heart = ["SS.SS", "SLSSS", "SSSSS", ".SSS.", "..S.."]
+    L.sprite(37, 69, heart, {"S": SEAL, "L": SEAL_L})
+    hand = [".hhh.", "hhhhh", "hhhhh", "hhhhd", ".hhd."]
+    L.sprite(26, 66, hand, {"h": SKIN, "d": SKIN_DD})
+    L.sprite(49, 66, hand, {"h": SKIN, "d": SKIN_DD}, mirror=True)
 
-    # white sailor collar + red tie
-    L.pts([(26, 38), (27, 38), (28, 39), (29, 39), (30, 40), (37, 38), (36, 38), (35, 39),
-           (34, 39), (33, 40), (25, 39), (26, 39), (27, 40), (38, 39), (37, 39), (36, 40)], COLLAR)
-    L.pts([(31, 40), (32, 40), (30, 41), (31, 41), (32, 41), (33, 41)], TIE)
+    # --- face
+    L.ellipse(CX, 40, 15.5, 14, SKIN, where=lambda x, y: y >= 28)
+    # soften the jaw into a small rounded chin
+    L.ellipse(CX, 46, 11.5, 8, SKIN)
 
-    # legs
-    L.rect(27, 53, 29, 55, SKIN)
-    L.rect(34, 53, 36, 55, SKIN)
-    L.rect(27, 55, 29, 56, SOCK)
-    L.rect(34, 55, 36, 56, SOCK)
-    L.rect(26, 57, 29, 58, SHOE)
-    L.rect(34, 57, 37, 58, SHOE)
+    # --- side locks framing the face (in front of the face edge)
+    lock = [(24, y) for y in range(28, 52)] + [(25, y) for y in range(28, 50)] + \
+           [(26, y) for y in range(28, 44)] + [(23, y) for y in range(30, 54)] + \
+           [(27, y) for y in range(28, 37)] + [(24, 52), (24, 53), (25, 50), (25, 51)]
+    L.sym(lock, HAIR)
+    L.sym([(25, y) for y in range(33, 45)], HAIR_L)
+    L.sym([(26, y) for y in range(37, 44)], HAIR_D)
 
-    # satchel strap (diagonal, behind the envelope) + bag on right hip
-    for i in range(12):
-        L.set(25 + i, 39 + i, BAG_D)
-    L.rect(38, 46, 45, 52, BAG)
-    L.rect(38, 46, 45, 47, BAG_L)  # flap
-    L.pts([(41, 48), (42, 48)], GOLD)  # buckle
-    L.rect(38, 52, 45, 52, BAG_D)
-    L.pts([(40, 45), (41, 45), (42, 45), (43, 44), (44, 44)], ENV)  # letter peeking out
+    # --- bangs: rounded fringe made of soft pointed strands
+    L.ellipse(CX, 26, 19, 10, HAIR)
+    strands = {  # x: lowest y of the strand
+        26: 35, 27: 37, 28: 36, 29: 34, 30: 33, 31: 35, 32: 37, 33: 38, 34: 36, 35: 34,
+        36: 33, 37: 35, 38: 37, 39: 38,
+    }
+    for x, low in strands.items():
+        for y in range(28, low + 1):
+            L.set(x, y, HAIR)
+            L.set(int(2 * CX - x), y, HAIR)
+    # strands radiating from the crown give the top of the head some texture
+    for x0, slope in ((31, -0.25), (35, -0.1)):
+        for y in range(11, 24):
+            x = int(x0 + slope * (y - 11))
+            L.set(x, y, HAIR_D)
+            L.set(int(2 * CX - x), y, HAIR_D)
+    # a few darker strand partings + soft highlight ring ("angel ring")
+    L.sym([(29, 31), (29, 32), (29, 33), (35, 31), (35, 32), (35, 33)], HAIR_D)
+    ring = [(x, 17 + int(abs(x - CX) / 6)) for x in range(24, 40)]
+    L.sym(ring, HAIR_L)
+    L.sym([(x, y + 1) for x, y in ring if 28 <= x <= 36], HAIR_L)
+    L.sym([(30, 17), (31, 17), (32, 18)], HAIR_LL)
+    # shadow of the fringe on the forehead
+    L.sym([(x, 39) for x in range(33, 40) if x % 3 == 0], SKIN_D)
 
-    # held envelope in front of chest (with tiny hands)
-    L.rect(25, 42, 37, 49, ENV)
-    for i in range(6):  # flap V
-        L.set(25 + i, 42 + i, ENV_D)
-        L.set(37 - i, 42 + i, ENV_D)
-    L.pts([(29, 46), (30, 46), (32, 46), (33, 46), (29, 47), (30, 47), (31, 47), (32, 47),
-           (33, 47), (30, 48), (31, 48), (32, 48), (31, 49)], SEAL)  # heart wax seal
-    L.set(29, 46, SEAL_L)
-    L.pts([(24, 45), (24, 46), (25, 46), (38, 45), (38, 46), (37, 46)], SKIN)  # hands
+    # --- ahoge (the one rebellious strand)
+    L.pts([(38, 9), (37, 8), (36, 7), (35, 6), (35, 5), (36, 4), (37, 3), (38, 3), (39, 3),
+           (40, 4), (41, 5), (36, 5), (37, 4), (38, 4), (38, 8), (39, 9)], HAIR)
+    L.pts([(36, 5), (37, 4)], HAIR_L)
 
-    # face
-    L.ellipse(32, 28.5, 10.5, 9.5, SKIN)
-    L.rect(29, 37, 34, 38, SKIN)  # neck/chin blend
-    # side locks in front of face
-    lock = [(21, 24), (21, 25), (21, 26), (22, 24), (22, 25), (22, 26), (22, 27), (22, 28),
-            (22, 29), (22, 30), (23, 30), (22, 31), (23, 31), (22, 32), (23, 32), (23, 33),
-            (23, 34), (22, 33), (22, 34), (22, 35), (23, 35), (22, 36), (23, 36), (23, 37),
-            (22, 38), (23, 38), (22, 39), (21, 37), (21, 38), (21, 36)]
-    L.pts(lock, HAIR)
-    L.pts(mirror(lock), HAIR)
-    L.pts([(22, 26), (22, 27)], HAIR_L)
-    L.pts(mirror([(22, 26), (22, 27)]), HAIR_L)
+    # --- little postal cap perched on the right, with an envelope badge
+    L.ellipse(51, 10.5, 8, 4.5, NAVY)
+    L.rect(42, 13, 60, 14, NAVY_D)
+    L.rect(44, 12, 58, 12, NAVY)
+    L.rect(48, 7, 52, 7, NAVY_L)
+    L.rect(49, 9, 53, 11, GOLD)
+    L.pts([(49, 9), (50, 10), (51, 11), (52, 10), (53, 9)], GOLD_D)
 
-    # bangs: jagged fringe across the forehead
-    L.rect(21, 15, 42, 20, HAIR)
-    fringe_drop = {22: 3, 23: 3, 24: 2, 25: 1, 26: 2, 27: 1, 28: 2, 29: 3, 30: 4, 31: 2,
-                   32: 3, 33: 4, 34: 3, 35: 2, 36: 1, 37: 2, 38: 1, 39: 2, 40: 3, 41: 3}
-    for x, d in fringe_drop.items():
-        L.rect(x, 21, x, 20 + d, HAIR)
-    L.pts([(26, 18), (27, 18), (28, 17), (29, 17), (34, 17), (35, 17), (36, 18)], HAIR_L)
-    L.pts([(29, 22), (30, 23), (33, 23), (34, 22)], HAIR_D)
+    # --- envelope hair clip on the left
+    L.rect(16, 25, 21, 28, ENV)
+    L.pts([(16, 25), (17, 26), (18, 27), (19, 27), (20, 26), (21, 25)], ENV_D)
+    L.set(18, 28, SEAL)
+    L.set(19, 28, SEAL)
 
-    # blush + cat mouth (ω)
-    L.pts([(23, 31), (24, 31), (25, 31), (24, 32)], BLUSH)
-    L.pts([(38, 31), (39, 31), (40, 31), (39, 32)], BLUSH)
-    L.pts([(30, 33), (31, 34), (32, 34), (33, 33)], MOUTH)
-
-    # postal cap (white crown, navy brim, gold badge)
-    L.ellipse(32, 11.5, 12.5, 5.5, CAP)
-    L.rect(21, 12, 43, 14, CAP)
-    L.rect(22, 9, 42, 9, CAP)
-    L.rect(21, 14, 43, 14, CAP_D)
-    L.rect(19, 15, 45, 16, BRIM)
-    L.rect(20, 17, 44, 17, BRIM)
-    L.rect(30, 9, 33, 11, GOLD)
-    L.pts([(30, 9), (31, 10), (32, 10), (33, 9)], "#c48a22")
-
-    # ahoge sticking out of the cap
-    L.pts([(33, 6), (34, 5), (35, 4), (36, 4), (37, 5), (37, 6), (36, 6)], HAIR)
+    # --- ribbons tying the twin tails
+    tie = [".RR.RR.", "RRRRRRR", ".RRDRR.", "..R.R.."]
+    L.sprite(15, 44, tie, {"R": RIBBON, "D": RIBBON_D})
+    L.sprite(58, 44, tie, {"R": RIBBON, "D": RIBBON_D})
 
     L.outline()
 
-    # small internal shading done after the outline so it stays inside
-    L.pts([(31, 23), (32, 23)], SKIN_D)  # fringe shadow on forehead
+    # --- face details drawn after the outline so they stay inside
+    blush = ["bbbb", "bLbb"]
+    L.sprite(27, 47, blush, {"b": BLUSH, "L": BLUSH_L})
+    L.sprite(49, 47, blush, {"b": BLUSH, "L": BLUSH_L}, mirror=True)
+    # tiny soft smile
+    L.pts([(38, 50), (39, 51), (40, 51), (41, 50)], MOUTH)
+    # inner line between face and hair, so the face reads soft but defined
+    for (x, y), c in list(L.px.items()):
+        if c == SKIN and y < 52:
+            for dx in (-1, 1):
+                if L.px.get((x + dx, y)) == HAIR:
+                    L.set(x + dx, y, HAIR_D)
     return L
 
 
-EYE = [  # left eye, 5x7, top-left at (24, 23); right eye reuses it at x=35
-    "LLLLL",
-    "DDDDD",
-    "WWDPD",
-    "WDPPD",
-    "IIPPI",
-    "IIIIS",
-    ".KKK.",
+EYE = [  # 8x9 left eye; rows top to bottom
+    "..KKKK..",
+    ".KKKKKKK",
+    "KKDDDDKK",
+    "KWWDDDDK",
+    "KWWIIIDK",
+    "KIIIIIIK",
+    "KILLLIIK",
+    ".KLLLWK.",
+    "..KKKK..",
 ]
-EYE_COL = {"L": LASH, "D": IRIS_D, "W": SHINE, "P": LASH, "I": IRIS, "S": SHINE, "K": IRIS_L}
+EYE_COL = {"K": LASH, "D": IRIS_D, "W": SHINE, "I": IRIS, "L": IRIS_L}
+EYE_Y = 39
 
 
 def draw_eyes(closed: bool) -> Layer:
     L = Layer()
-    if closed:  # happy ^ ^ closed eyes
-        for ox in (24, 35):
-            L.pts([(ox, 28), (ox + 1, 27), (ox + 2, 26), (ox + 3, 27), (ox + 4, 28)], LASH)
+    if closed:
+        # gentle closed lids (a soft smile-curve) over clean skin
+        for x0 in (27, 45):
+            L.rect(x0, EYE_Y, x0 + 7, EYE_Y + 8, SKIN)
+        arc = [(0, 43), (1, 44), (2, 45), (3, 45), (4, 45), (5, 45), (6, 44), (7, 43)]
+        L.pts([(27 + x, y) for x, y in arc], LASH)
+        L.pts([(52 - x, y) for x, y in arc], LASH)
+        L.pts([(26, 42), (53, 42)], LASH)
         return L
-    for ox in (24, 35):
-        for dy, row in enumerate(EYE):
-            for dx, ch in enumerate(row):
-                if ch != ".":
-                    L.set(ox + dx, 23 + dy, EYE_COL[ch])
-    L.pts([(23, 23), (22, 22), (40, 23), (41, 22)], LASH)  # lash flicks
+    L.sprite(27, EYE_Y, EYE, EYE_COL)
+    L.sprite(45, EYE_Y, EYE, EYE_COL, mirror=True)
+    # keep the big catch-light on the same side for both eyes (one light source)
+    L.pts([(46, 42), (47, 42), (46, 43), (47, 43)], IRIS_D)
+    L.pts([(49, 42), (50, 42), (49, 43), (50, 43)], SHINE)
+    L.pts([(46, 43), (47, 43)], IRIS)
+    # outward lash flicks
+    L.pts([(26, 40), (25, 39), (53, 40), (54, 39)], LASH)
+    # a little sparkle in each iris
+    L.pts([(30, 45), (48, 45)], IRIS_LL)
     return L
 
 
 # ---------------------------------------------------------------- buddy
-BUDDY_X, BUDDY_Y = 50, 27
+BUDDY_X, BUDDY_Y = 65, 22
 
 
 def draw_buddy(wings_up: bool) -> Layer:
@@ -243,22 +271,21 @@ def draw_buddy(wings_up: bool) -> Layer:
     x0, y0 = BUDDY_X, BUDDY_Y
     if wings_up:
         lw = [(x0 - 3, y0 - 2), (x0 - 2, y0 - 2), (x0 - 4, y0 - 1), (x0 - 3, y0 - 1),
-              (x0 - 2, y0 - 1), (x0 - 1, y0), (x0 - 2, y0)]
+              (x0 - 2, y0 - 1), (x0 - 1, y0), (x0 - 2, y0), (x0 - 1, y0 + 1)]
     else:
         lw = [(x0 - 1, y0 + 3), (x0 - 2, y0 + 3), (x0 - 3, y0 + 4), (x0 - 2, y0 + 4),
-              (x0 - 4, y0 + 5), (x0 - 3, y0 + 5), (x0 - 1, y0 + 4)]
+              (x0 - 4, y0 + 5), (x0 - 3, y0 + 5), (x0 - 1, y0 + 4), (x0 - 1, y0 + 2)]
     rw = [(2 * x0 + 9 - x, y) for x, y in lw]
     L.pts(lw, WING)
     L.pts(rw, WING)
-    # envelope body 10x7
     L.rect(x0, y0, x0 + 9, y0 + 6, ENV)
     L.outline()
     for i in range(5):
         L.set(x0 + i, y0 + i, ENV_D)
         L.set(x0 + 9 - i, y0 + i, ENV_D)
-    L.pts([(x0 + 4, y0 + 4), (x0 + 5, y0 + 4)], SEAL)  # heart seal
+    L.pts([(x0 + 4, y0 + 4), (x0 + 5, y0 + 4)], SEAL)
     L.pts([(x0 + 4, y0 + 3), (x0 + 5, y0 + 3)], SEAL_L)
-    L.pts([(x0 + 2, y0 + 5), (x0 + 7, y0 + 5)], LASH)  # eyes
+    L.pts([(x0 + 2, y0 + 5), (x0 + 7, y0 + 5)], LASH)
     L.pts([(x0 + 1, y0 + 6), (x0 + 8, y0 + 6)], BLUSH)
     for p in lw[:2] + rw[:2]:
         L.set(*p, WING_D)
@@ -266,22 +293,24 @@ def draw_buddy(wings_up: bool) -> Layer:
 
 
 # ---------------------------------------------------------------- extras
+BUBBLE_X, BUBBLE_Y = 2, 6
+
+
 def draw_bubble() -> Layer:
-    """Little speech bubble with a pixel heart, above-left of her head."""
+    """Little speech bubble with a pixel heart, up and to the left of her head."""
     L = Layer()
-    x0, y0 = 3, 14
+    x0, y0 = BUBBLE_X, BUBBLE_Y
     L.rect(x0, y0, x0 + 10, y0 + 7, "#ffffff")
     L.pts([(x0 + 8, y0 + 8), (x0 + 9, y0 + 8), (x0 + 9, y0 + 9)], "#ffffff")
     L.outline()
-    heart = [(1, 0), (2, 0), (4, 0), (5, 0), (0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1),
-             (6, 1), (0, 2), (1, 2), (2, 2), (3, 2), (4, 2), (5, 2), (6, 2), (1, 3), (2, 3),
-             (3, 3), (4, 3), (5, 3), (2, 4), (3, 4), (4, 4), (3, 5)]
-    L.pts([(x0 + 2 + x, y0 + 1 + y) for x, y in heart], SEAL)
-    L.pts([(x0 + 3, y0 + 2)], "#ffffff")
+    heart = ["SS.SS..", "SSSSSS."]
+    heart = [".SS.SS.", "SSSSSSS", "SSSSSSS", ".SSSSS.", "..SSS..", "...S..."]
+    L.sprite(x0 + 2, y0 + 1, heart, {"S": SEAL})
+    L.set(x0 + 3, y0 + 2, "#ffffff")
     return L
 
 
-SPARKS = [(10, 34), (55, 14), (8, 52), (56, 47)]
+SPARKS = [(6, 40), (74, 52), (8, 64), (73, 7)]
 
 
 def draw_spark(i: int, big: bool) -> Layer:
@@ -362,7 +391,7 @@ def build_svg() -> str:
         for i in range(len(SPARKS))
     )
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="384" height="384" shape-rendering="crispEdges" role="img" aria-labelledby="t">
-<title id="t">Fumi, the llm-mailroom mascot: a chibi postal girl with owl-tuft hair, holding a wax-sealed letter while a winged envelope flutters beside her</title>
+<title id="t">Fumi, the llm-mailroom mascot: a chibi postal girl with rose-pink twin tails and a little postal cap, holding a heart-sealed letter while a winged envelope flutters beside her</title>
 <style>
 .bob{{animation:bob .8s steps(1) infinite}}
 @keyframes bob{{0%{{transform:translateY(0)}}50%{{transform:translateY(1px)}}}}
@@ -376,7 +405,7 @@ def build_svg() -> str:
 .wd{{opacity:0;animation:wd .4s steps(1) infinite}}
 @keyframes wu{{0%{{opacity:1}}50%{{opacity:0}}}}
 @keyframes wd{{0%{{opacity:0}}50%{{opacity:1}}}}
-.bubble{{opacity:0;transform-origin:13px 24px;animation:pop {loop}s infinite}}
+.bubble{{opacity:0;transform-origin:12px 16px;animation:pop {loop}s infinite}}
 @keyframes pop{{0%,18%{{opacity:0;transform:scale(.4)}}21%{{opacity:1;transform:scale(1.1)}}24%,46%{{opacity:1;transform:scale(1)}}50%,100%{{opacity:0;transform:scale(.6)}}}}
 .big{{opacity:0}}
 .sp .big{{animation:tw 1.6s steps(1) infinite}}
@@ -407,7 +436,7 @@ def main() -> None:
     still.merge(draw_bubble())
     to_image(still, 8).save(OUT_DIR / "fumi.png", optimize=True)
 
-    scale = 6
+    scale = 5
     frames = [to_image(compose(t), scale) for t in range(TICKS)]
     pal = []
     for f in frames:  # GIF needs palette mode; keep 1-bit transparency
