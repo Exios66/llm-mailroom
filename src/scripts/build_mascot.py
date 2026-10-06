@@ -1,12 +1,15 @@
-"""Build Fumi, the llm-mailroom pixel mascot.
+"""Build Fumi, the llm-mailroom mascot.
 
-Fumi is drawn procedurally on an 80x80 pixel grid, split into layers
-(body, open/closed eyes, the flying envelope buddy, sparkles, speech bubble).
-The same layers are emitted as:
+Fumi is a chibi pixel maid who works the mailroom. Her body is a native-
+resolution pixel sprite (docs/assets/mascot/source/fumi-base.png, 62x107,
+cleaned from reference art supplied by the project owner); this script adds
+the mailroom props (the letter in her hands, her owl assistant Hoot, the
+winged envelope Tegami), the blink frames, and the animation, then emits:
 
   docs/assets/mascot/fumi.svg        animated SVG (CSS keyframes, no JS)
   docs/assets/mascot/fumi.gif        animated GIF (same timeline)
-  docs/assets/mascot/fumi.png        static PNG, 8x scale
+  docs/assets/mascot/fumi.png        static PNG, 6x scale
+  docs/assets/mascot/fumi-icon.png   square head-and-shoulders icon (favicons, avatars)
   docs/assets/mascot/fumi-sheet.png  every GIF frame side by side
 
 Run:  python src/scripts/build_mascot.py   (needs Pillow)
@@ -19,25 +22,25 @@ from pathlib import Path
 
 from PIL import Image
 
-W = H = 80
-OUT_DIR = Path(__file__).resolve().parents[2] / "docs" / "assets" / "mascot"
-CX = 39.5  # vertical axis of symmetry
+ROOT = Path(__file__).resolve().parents[2]
+OUT_DIR = ROOT / "docs" / "assets" / "mascot"
+BASE = OUT_DIR / "source" / "fumi-base.png"
+
+W, H = 96, 116          # canvas, in sprite pixels
+SX, SY = 17, 6          # where the base sprite sits on the canvas
+CX = SX + 30.5
 
 # ---------------------------------------------------------------- palette
-OUT = "#3b2240"                      # soft plum outline (never pure black)
-HAIR, HAIR_L, HAIR_LL, HAIR_D, HAIR_DD = "#c46d8a", "#e396ad", "#f6c3d2", "#9c4f6d", "#723a57"
-SKIN, SKIN_D, SKIN_DD = "#fff0e8", "#fbd9cc", "#f0bfb1"
-BLUSH, BLUSH_L = "#ff9db5", "#ffd0dc"
-LASH, IRIS_D, IRIS, IRIS_L, IRIS_LL, SHINE = "#3b2240", "#3d5fae", "#5e95dc", "#8fc4f2", "#c9e8ff", "#ffffff"
-MOUTH, TONGUE = "#b4416a", "#ff8fa8"
-NAVY, NAVY_L, NAVY_D = "#3a4a9e", "#5468c4", "#283478"
-COLLAR, COLLAR_D = "#ffffff", "#d7dcf2"
-RIBBON, RIBBON_D = "#ef4f6a", "#c23552"
-GOLD, GOLD_D = "#f6c54f", "#d0962c"
-ENV, ENV_D = "#fff8e6", "#ecdcb6"
+OUT = "#0f1433"
+SKIN = "#ffd3b4"
+LASH = "#0f1433"
+ENV, ENV_D = "#fff8e6", "#e6d3a8"
 SEAL, SEAL_L = "#e8445e", "#ff8a9c"
+BLUSH = "#ff9db5"
 WING, WING_D = "#ffffff", "#cfd8ff"
 SPARK = "#ffd34d"
+OWL = {"K": "#3a2a24", "b": "#8a6a4a", "d": "#6b4f36", "f": "#f1e3c6", "c": "#c9b08a",
+       "E": "#2a1d1a", "w": "#ffffff", "O": "#e8a33a", "y": "#e8a33a"}
 
 
 class Layer:
@@ -92,178 +95,78 @@ class Layer:
 
 
 # ---------------------------------------------------------------- Fumi
+def _hex(rgb) -> str:
+    return "#%02x%02x%02x" % tuple(rgb[:3])
+
+
 def draw_body() -> Layer:
+    """The base sprite plus the letter she holds and Hoot on her shoulder."""
     L = Layer()
+    base = Image.open(BASE).convert("RGBA")
+    for y in range(base.height):
+        for x in range(base.width):
+            r, g, b, a = base.getpixel((x, y))
+            if a:
+                L.set(SX + x, SY + y, _hex((r, g, b)))
 
-    # --- back hair + twin tails (behind everything)
-    L.ellipse(CX, 31, 24, 23, HAIR)
-    L.ellipse(CX, 31, 24, 23, HAIR_D, where=lambda x, y: y >= 37)  # depth behind the face
-    for side in (1, -1):
-        # tails taper and curl outward toward the bottom
-        for y in range(36, 76):
-            t = (y - 36) / 40
-            w = 5.5 - 2.5 * t
-            cx = CX + side * (21.5 + 3 * math.sin(t * math.pi * 0.9))
-            for x in range(int(cx - w), int(cx + w) + 1):
-                L.set(x, y, HAIR)
-            L.set(int(cx - side * (w - 1)), y, HAIR_D)
-            if 0.15 < t < 0.8:
-                L.set(int(cx + side * 1), y, HAIR_L)
-        # curl tip
-        tip_x = int(CX + side * 24)
-        L.pts([(tip_x, 76), (tip_x + side, 76), (tip_x + 2 * side, 75)], HAIR)
+    # a heart-sealed letter held in her clasped hands
+    env = Layer()
+    ex, ey = SX + 21, SY + 69
+    env.rect(ex, ey, ex + 14, ey + 9, ENV)
+    env.outline(OUT)
+    for i in range(6):
+        env.set(ex + 1 + i, ey + 1 + i, ENV_D)
+        env.set(ex + 13 - i, ey + 1 + i, ENV_D)
+    heart = [".S.S.", "SLSSS", ".SSS.", "..S.."]
+    env.sprite(ex + 5, ey + 5, heart, {"S": SEAL, "L": SEAL_L})
+    L.merge(env)
 
-    # --- body (bust, runs off the bottom edge)
-    for y in range(55, H + 2):
-        half = 9 + (y - 55) * 0.55
-        for x in range(int(CX - half), int(CX + half) + 1):
-            L.set(x, y, NAVY)
-    for y in range(64, H + 2):  # cardigan side shading
-        half = 9 + (y - 55) * 0.55
-        L.set(int(CX - half) + 1, y, NAVY_D)
-        L.set(int(CX + half) - 1, y, NAVY_D)
-    L.rect(36, 52, 43, 56, SKIN)  # neck
-    L.rect(36, 55, 43, 55, SKIN_D)
-    # sailor collar: two white flaps meeting in a V at the ribbon
-    for i in range(7):
-        L.sym([(x, 56 + i) for x in range(26 + i, 34 + i // 2)], COLLAR)
-    L.sym([(26 + i, 56 + i) for i in range(7)], COLLAR_D)
-    L.sym([(29 + i, 57 + i) for i in range(0, 5)], NAVY_L)  # stripe on collar
-    # ribbon bow
-    bow = ["RR.....RR", "RRRR.RRRR", "RRRDDDRRR", "RRRR.RRRR", ".RR...RR.", "..R...R.."]
-    L.sprite(35, 56, bow, {"R": RIBBON, "D": RIBBON_D})
-
-    # held envelope + mitten hands
-    L.rect(29, 64, 50, 76, ENV)
-    for i in range(7):
-        L.set(29 + i * 3 // 2, 64 + i, ENV_D)
-        L.set(50 - i * 3 // 2, 64 + i, ENV_D)
-    heart = ["SS.SS", "SLSSS", "SSSSS", ".SSS.", "..S.."]
-    L.sprite(37, 69, heart, {"S": SEAL, "L": SEAL_L})
-    hand = [".hhh.", "hhhhh", "hhhhh", "hhhhd", ".hhd."]
-    L.sprite(26, 66, hand, {"h": SKIN, "d": SKIN_DD})
-    L.sprite(49, 66, hand, {"h": SKIN, "d": SKIN_DD}, mirror=True)
-
-    # --- face
-    L.ellipse(CX, 40, 15.5, 14, SKIN, where=lambda x, y: y >= 28)
-    # soften the jaw into a small rounded chin
-    L.ellipse(CX, 46, 11.5, 8, SKIN)
-
-    # --- side locks framing the face (in front of the face edge)
-    lock = [(24, y) for y in range(28, 52)] + [(25, y) for y in range(28, 50)] + \
-           [(26, y) for y in range(28, 44)] + [(23, y) for y in range(30, 54)] + \
-           [(27, y) for y in range(28, 37)] + [(24, 52), (24, 53), (25, 50), (25, 51)]
-    L.sym(lock, HAIR)
-    L.sym([(25, y) for y in range(33, 45)], HAIR_L)
-    L.sym([(26, y) for y in range(37, 44)], HAIR_D)
-
-    # --- bangs: rounded fringe made of soft pointed strands
-    L.ellipse(CX, 26, 19, 10, HAIR)
-    strands = {  # x: lowest y of the strand
-        26: 35, 27: 37, 28: 36, 29: 34, 30: 33, 31: 35, 32: 37, 33: 38, 34: 36, 35: 34,
-        36: 33, 37: 35, 38: 37, 39: 38,
-    }
-    for x, low in strands.items():
-        for y in range(28, low + 1):
-            L.set(x, y, HAIR)
-            L.set(int(2 * CX - x), y, HAIR)
-    # strands radiating from the crown give the top of the head some texture
-    for x0, slope in ((31, -0.25), (35, -0.1)):
-        for y in range(11, 24):
-            x = int(x0 + slope * (y - 11))
-            L.set(x, y, HAIR_D)
-            L.set(int(2 * CX - x), y, HAIR_D)
-    # a few darker strand partings + soft highlight ring ("angel ring")
-    L.sym([(29, 31), (29, 32), (29, 33), (35, 31), (35, 32), (35, 33)], HAIR_D)
-    ring = [(x, 17 + int(abs(x - CX) / 6)) for x in range(24, 40)]
-    L.sym(ring, HAIR_L)
-    L.sym([(x, y + 1) for x, y in ring if 28 <= x <= 36], HAIR_L)
-    L.sym([(30, 17), (31, 17), (32, 18)], HAIR_LL)
-    # shadow of the fringe on the forehead
-    L.sym([(x, 39) for x in range(33, 40) if x % 3 == 0], SKIN_D)
-
-    # --- ahoge (the one rebellious strand)
-    L.pts([(38, 9), (37, 8), (36, 7), (35, 6), (35, 5), (36, 4), (37, 3), (38, 3), (39, 3),
-           (40, 4), (41, 5), (36, 5), (37, 4), (38, 4), (38, 8), (39, 9)], HAIR)
-    L.pts([(36, 5), (37, 4)], HAIR_L)
-
-    # --- little postal cap perched on the right, with an envelope badge
-    L.ellipse(51, 10.5, 8, 4.5, NAVY)
-    L.rect(42, 13, 60, 14, NAVY_D)
-    L.rect(44, 12, 58, 12, NAVY)
-    L.rect(48, 7, 52, 7, NAVY_L)
-    L.rect(49, 9, 53, 11, GOLD)
-    L.pts([(49, 9), (50, 10), (51, 11), (52, 10), (53, 9)], GOLD_D)
-
-    # --- envelope hair clip on the left
-    L.rect(16, 25, 21, 28, ENV)
-    L.pts([(16, 25), (17, 26), (18, 27), (19, 27), (20, 26), (21, 25)], ENV_D)
-    L.set(18, 28, SEAL)
-    L.set(19, 28, SEAL)
-
-    # --- ribbons tying the twin tails
-    tie = [".RR.RR.", "RRRRRRR", ".RRDRR.", "..R.R.."]
-    L.sprite(15, 44, tie, {"R": RIBBON, "D": RIBBON_D})
-    L.sprite(58, 44, tie, {"R": RIBBON, "D": RIBBON_D})
-
-    L.outline()
-
-    # --- face details drawn after the outline so they stay inside
-    blush = ["bbbb", "bLbb"]
-    L.sprite(27, 47, blush, {"b": BLUSH, "L": BLUSH_L})
-    L.sprite(49, 47, blush, {"b": BLUSH, "L": BLUSH_L}, mirror=True)
-    # tiny soft smile
-    L.pts([(38, 50), (39, 51), (40, 51), (41, 50)], MOUTH)
-    # inner line between face and hair, so the face reads soft but defined
-    for (x, y), c in list(L.px.items()):
-        if c == SKIN and y < 52:
-            for dx in (-1, 1):
-                if L.px.get((x + dx, y)) == HAIR:
-                    L.set(x + dx, y, HAIR_D)
+    # Hoot, the owl assistant, perched on her shoulder
+    L.sprite(SX + OWL_X, SY + OWL_Y, OWL_ROWS, OWL)
     return L
 
 
-EYE = [  # 8x9 left eye; rows top to bottom
-    "..KKKK..",
-    ".KKKKKKK",
-    "KKDDDDKK",
-    "KWWDDDDK",
-    "KWWIIIDK",
-    "KIIIIIIK",
-    "KILLLIIK",
-    ".KLLLWK.",
-    "..KKKK..",
+OWL_X, OWL_Y = 46, 49
+OWL_ROWS = [
+    ".K.........K.",
+    ".KbK.....KbK.",
+    ".KbbKKKKKbbK.",
+    "KbbbbbbbbbbbK",
+    "KbffffbffffbK",
+    "KffEwfffEwffK",
+    "KffEEfffEEffK",
+    "KdbfffOfffbdK",
+    "KdbcbcbcbcbdK",
+    ".KdbcbcbcbdK.",
+    ".KdbbbbbbbdK.",
+    "..KKyKKKyKK..",
 ]
-EYE_COL = {"K": LASH, "D": IRIS_D, "W": SHINE, "I": IRIS, "L": IRIS_L}
-EYE_Y = 39
+OWL_EYES_CLOSED = {(3, 5): "f", (4, 5): "f", (8, 5): "f", (9, 5): "f",
+                   (3, 6): "E", (4, 6): "E", (8, 6): "E", (9, 6): "E"}
+
+# eye boxes in base-sprite coordinates (x0, x1, y0, y1)
+EYE_BOXES = [(15, 22, 37, 44), (34, 42, 37, 44)]
 
 
 def draw_eyes(closed: bool) -> Layer:
+    """Open eyes come from the base sprite; this layer only paints the blink."""
     L = Layer()
-    if closed:
-        # gentle closed lids (a soft smile-curve) over clean skin
-        for x0 in (27, 45):
-            L.rect(x0, EYE_Y, x0 + 7, EYE_Y + 8, SKIN)
-        arc = [(0, 43), (1, 44), (2, 45), (3, 45), (4, 45), (5, 45), (6, 44), (7, 43)]
-        L.pts([(27 + x, y) for x, y in arc], LASH)
-        L.pts([(52 - x, y) for x, y in arc], LASH)
-        L.pts([(26, 42), (53, 42)], LASH)
+    if not closed:
         return L
-    L.sprite(27, EYE_Y, EYE, EYE_COL)
-    L.sprite(45, EYE_Y, EYE, EYE_COL, mirror=True)
-    # keep the big catch-light on the same side for both eyes (one light source)
-    L.pts([(46, 42), (47, 42), (46, 43), (47, 43)], IRIS_D)
-    L.pts([(49, 42), (50, 42), (49, 43), (50, 43)], SHINE)
-    L.pts([(46, 43), (47, 43)], IRIS)
-    # outward lash flicks
-    L.pts([(26, 40), (25, 39), (53, 40), (54, 39)], LASH)
-    # a little sparkle in each iris
-    L.pts([(30, 45), (48, 45)], IRIS_LL)
+    for x0, x1, y0, y1 in EYE_BOXES:
+        L.rect(SX + x0, SY + y0, SX + x1, SY + y1, SKIN)
+        n = x1 - x0
+        for i in range(n + 1):
+            dip = 2 if 1 < i < n - 1 else (1 if i in (1, n - 1) else 0)
+            L.set(SX + x0 + i, SY + 41 + dip, LASH)
+    L.pts([(SX + 14, SY + 40), (SX + 43, SY + 40)], LASH)
+    for (x, y), ch in OWL_EYES_CLOSED.items():
+        L.set(SX + OWL_X + x, SY + OWL_Y + y, OWL[ch])
     return L
 
 
 # ---------------------------------------------------------------- buddy
-BUDDY_X, BUDDY_Y = 65, 22
+BUDDY_X, BUDDY_Y = 80, 30
 
 
 def draw_buddy(wings_up: bool) -> Layer:
@@ -293,7 +196,7 @@ def draw_buddy(wings_up: bool) -> Layer:
 
 
 # ---------------------------------------------------------------- extras
-BUBBLE_X, BUBBLE_Y = 2, 6
+BUBBLE_X, BUBBLE_Y = 3, 14
 
 
 def draw_bubble() -> Layer:
@@ -310,7 +213,7 @@ def draw_bubble() -> Layer:
     return L
 
 
-SPARKS = [(6, 40), (74, 52), (8, 64), (73, 7)]
+SPARKS = [(8, 52), (86, 66), (10, 88), (84, 10)]
 
 
 def draw_spark(i: int, big: bool) -> Layer:
@@ -390,8 +293,8 @@ def build_svg() -> str:
         f'<g class="big">{rects(draw_spark(i, True))}</g></g>'
         for i in range(len(SPARKS))
     )
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="384" height="384" shape-rendering="crispEdges" role="img" aria-labelledby="t">
-<title id="t">Fumi, the llm-mailroom mascot: a chibi postal girl with rose-pink twin tails and a little postal cap, holding a heart-sealed letter while a winged envelope flutters beside her</title>
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="288" height="348" shape-rendering="crispEdges" role="img" aria-labelledby="t">
+<title id="t">Fumi, the llm-mailroom mascot: a chibi pixel maid with long indigo hair and a frilled headdress, holding a heart-sealed letter, with an owl on her shoulder and a winged envelope fluttering beside her</title>
 <style>
 .bob{{animation:bob .8s steps(1) infinite}}
 @keyframes bob{{0%{{transform:translateY(0)}}50%{{transform:translateY(1px)}}}}
@@ -405,7 +308,7 @@ def build_svg() -> str:
 .wd{{opacity:0;animation:wd .4s steps(1) infinite}}
 @keyframes wu{{0%{{opacity:1}}50%{{opacity:0}}}}
 @keyframes wd{{0%{{opacity:0}}50%{{opacity:1}}}}
-.bubble{{opacity:0;transform-origin:12px 16px;animation:pop {loop}s infinite}}
+.bubble{{opacity:0;transform-origin:13px 24px;animation:pop {loop}s infinite}}
 @keyframes pop{{0%,18%{{opacity:0;transform:scale(.4)}}21%{{opacity:1;transform:scale(1.1)}}24%,46%{{opacity:1;transform:scale(1)}}50%,100%{{opacity:0;transform:scale(.6)}}}}
 .big{{opacity:0}}
 .sp .big{{animation:tw 1.6s steps(1) infinite}}
@@ -434,9 +337,13 @@ def main() -> None:
     still.merge(draw_eyes(False))
     still.merge(draw_buddy(True))
     still.merge(draw_bubble())
-    to_image(still, 8).save(OUT_DIR / "fumi.png", optimize=True)
+    to_image(still, 6).save(OUT_DIR / "fumi.png", optimize=True)
+    icon = Layer()
+    icon.merge(draw_body())
+    box = (SX - 2, SY - 1, SX + 62, SY + 63)  # 64x64 around her head
+    to_image(icon, 1).crop(box).resize((256, 256), Image.NEAREST).save(OUT_DIR / "fumi-icon.png", optimize=True)
 
-    scale = 5
+    scale = 4
     frames = [to_image(compose(t), scale) for t in range(TICKS)]
     pal = []
     for f in frames:  # GIF needs palette mode; keep 1-bit transparency
