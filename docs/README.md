@@ -1,13 +1,8 @@
-# The LLM-Mailroom
-
-<table>
+<table width="100%">
 <tr>
-<td width="80" valign="middle">
-<img src="assets/fumi/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid with a mail satchel and Hoot the owl on her shoulder" width="64">
-</td>
-<td valign="middle">
+<td align="center" valign="middle">
 
-**The LLM-Mailroom** — Fumi (文, "letter")
+# The LLM-Mailroom
 
 </td>
 </tr>
@@ -38,7 +33,7 @@ One LangGraph state machine per document. Specialist LLM agents per document cla
 </td>
 <td valign="middle">
 
-Postal maid on duty.
+Postal Worker Fumi (文, "letter") on duty.
 
 Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline files every letter.
 
@@ -46,7 +41,7 @@ Specialist agents on a 13-node graph — Fumi minds the inbox while the pipeline
 </tr>
 </table>
 
-This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, tags, Fumi in the header corner, install, pipeline walk-through, docs shelf). GitBook strips scripts, so the idle mail-floor terminal stays on the static page. This page uses GitBook's own type — it does not load the landing page's display font.
+This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, tags, install, pipeline walk-through, docs shelf). Fumi appears after the masthead as Postal Worker Fumi (文, "letter") on duty. GitBook strips scripts, so the idle mail-floor terminal stays on the static page. This page uses GitBook's own type — it does not load the landing page's display font.
 
 ```bash
 # clone, install, then start the API (it embeds the inbox watcher)

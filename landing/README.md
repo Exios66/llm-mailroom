@@ -2,7 +2,7 @@
 
 The llm-mailroom landing page. `index.html` is the whole page, with no build step. Its mascot files live in `assets/mascot/`, and `src/scripts/build_mascot.py` keeps them in sync with `docs/assets/mascot/`. That means this folder deploys as-is to any static host.
 
-The **published** landing for the constellation docs site is GitBook. `docs/README.md` is that home page: same masthead (owl banner, **The LLM-Mailroom**, README badges), Fumi in the header corner, tags, install commands, pipeline walk-through, and docs shelf. GitBook strips scripts, so the idle mail-floor terminal stays here. GitBook uses its own type and does not load Pixelify Sans. The tab icon on this page is Hoot (`assets/mascot/hoot-icon.png`).
+The **published** landing for the constellation docs site is GitBook. `docs/README.md` is that home page: same masthead (centered **The LLM-Mailroom** wordmark, owl banner, README badges), Postal Worker Fumi after the masthead, tags, install commands, pipeline walk-through, and docs shelf. GitBook strips scripts, so the idle mail-floor terminal stays here. GitBook uses its own type and does not load Pixelify Sans. The tab icon on this page is Hoot (`assets/mascot/hoot-icon.png`).
 
 ## Deploy on Posit Connect Cloud (no GitHub Actions needed)
 
