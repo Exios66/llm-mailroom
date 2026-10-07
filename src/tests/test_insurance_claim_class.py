@@ -145,6 +145,11 @@ def test_insurance_fixture_wires_into_conftest():
 def test_specialist_prompt_registered():
     import langchain_agents.prompts as lp
 
+    from llm.frozen_v1 import load_specialist_v1
+
     prompt = lp.INSURANCE_CLAIMS_SPECIALIST_PROMPT
     assert "insurance claim documentation" in prompt.lower()
-    assert lp.PROMPT_TEMPLATES()["insurance_claims_specialist"] is prompt
+    # Historical vendored constant stays; production alias is frozen v1.
+    assert lp.PROMPT_TEMPLATES()["insurance_claims_specialist"] == load_specialist_v1(
+        "insurance_claims_specialist"
+    )

@@ -46,6 +46,35 @@ DOC_CLASSES = [
 DOC_CLASS_KEYS = [d["key"] for d in DOC_CLASSES]
 
 
+def fill_sorter_placeholders(base_prompt: str) -> str:
+    """Compile sorter Mustache catalogs (taxonomy classes, CUAD subtypes, subclasses).
+
+    MAILROOM PATCH: extracted so the mailroom wrapper can run the same
+    substitution after ``get_managed_prompt`` (Langfuse production label)
+    without duplicating the catalog wiring.
+    """
+    if "{{doc_type_descriptions}}" not in base_prompt:
+        return base_prompt
+    doc_type_descriptions = "\n".join(
+        f"- {d['key']}: {d['label']} — {d['description']}"
+        for d in _doc_classes_for_prompt()
+    )
+    base_prompt = base_prompt.replace("{{doc_type_descriptions}}", doc_type_descriptions)
+    if "{{contract_subtypes}}" in base_prompt:
+        contract_subtypes = "\n".join(
+            f"- {s['key']}: {s['label']} — {s['description']}"
+            for s in CONTRACT_SUBTYPES
+        )
+        base_prompt = base_prompt.replace("{{contract_subtypes}}", contract_subtypes)
+    if "{{doc_subclasses}}" in base_prompt:
+        from langchain_agents.doc_inventories import format_sorter_subclass_catalogs
+
+        base_prompt = base_prompt.replace(
+            "{{doc_subclasses}}", format_sorter_subclass_catalogs()
+        )
+    return base_prompt
+
+
 def _doc_classes_for_prompt() -> list[dict]:
     """Prefer the live taxonomy catalog; fall back to the hardcoded table."""
     try:
@@ -320,27 +349,7 @@ class SorterAgent(BaseAgent):
         self._reasoning_effort = "medium"
 
     def system_prompt(self) -> str:
-        base_prompt = get_prompt(self.prompt_version)
-        if "{{doc_type_descriptions}}" not in base_prompt:
-            return base_prompt
-        doc_type_descriptions = "\n".join(
-            f"- {d['key']}: {d['label']} — {d['description']}"
-            for d in _doc_classes_for_prompt()
-        )
-        base_prompt = base_prompt.replace("{{doc_type_descriptions}}", doc_type_descriptions)
-        if "{{contract_subtypes}}" in base_prompt:
-            contract_subtypes = "\n".join(
-                f"- {s['key']}: {s['label']} — {s['description']}"
-                for s in CONTRACT_SUBTYPES
-            )
-            base_prompt = base_prompt.replace("{{contract_subtypes}}", contract_subtypes)
-        if "{{doc_subclasses}}" in base_prompt:
-            from langchain_agents.doc_inventories import format_sorter_subclass_catalogs
-
-            base_prompt = base_prompt.replace(
-                "{{doc_subclasses}}", format_sorter_subclass_catalogs()
-            )
-        return base_prompt
+        return fill_sorter_placeholders(get_prompt(self.prompt_version))
 
     def classify(
         self, doc_text: str, pages: list[str] | None = None  # MAILROOM PATCH: pages

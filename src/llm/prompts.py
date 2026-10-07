@@ -107,13 +107,13 @@ def _bound_prompt_versions() -> dict[str, str]:
     return {
         "sorter": "sorter_v14",
         "sorter_reviewer": "production",
-        # Must match prompt_templates() below — the sync source uses v33
-        # (DMR-052: the catalog previously claimed v32 while v33 shipped).
-        "contracts_specialist": "contracts_specialist_v33",
-        "merger_agreement_specialist": "production",
-        "corporate_records_specialist": "production",
-        "correspondence_specialist": "production",
-        "insurance_claims_specialist": "production",
+        # Specialists: sandbox / eval-environment frozen v1. Entity-extraction
+        # contracts_specialist_v33 remains an eval pin only. Sorter stays v14.
+        "contracts_specialist": "frozen_v1",
+        "merger_agreement_specialist": "frozen_v1",
+        "corporate_records_specialist": "frozen_v1",
+        "correspondence_specialist": "frozen_v1",
+        "insurance_claims_specialist": "frozen_v1",
         "boss": "production",
         "reporter": "production",
         "pdf_transcriber": "production",
@@ -153,19 +153,20 @@ def prompt_templates() -> dict[str, str]:
         sorter_reviewer,
     )
 
+    from llm.frozen_v1 import load_specialist_v1
+
     return {
-        # The sorter/contracts specialist are the vendored LangChain agents
-        # (llm-entity-extraction); their local templates are the eval-validated
-        # lineage plus the mailroom production mutation (sorter_v14 /
-        # contracts_specialist_v33). Lane A/B + insurance were previously
-        # missing from this registry and so never synced to Langfuse.
+        # Sorter: best classify prompt this pipeline has (V12 CUAD-subtype
+        # lineage + mailroom doctrine). Specialists: frozen v1 stems from
+        # the sandbox / eval-environment lineage — LangGraph extract nodes
+        # and Langfuse `mailroom-<agent>` production share these bytes.
         "sorter": _langchain_prompt("sorter_v14"),
         "sorter_reviewer": sorter_reviewer.REVIEWER_SYSTEM_PROMPT,
-        "contracts_specialist": _langchain_prompt("contracts_specialist_v33"),
-        "merger_agreement_specialist": merger_agreement_specialist.SYSTEM_PROMPT,
-        "corporate_records_specialist": corporate_records_specialist.SYSTEM_PROMPT,
-        "correspondence_specialist": correspondence_specialist.SYSTEM_PROMPT,
-        "insurance_claims_specialist": insurance_claims_specialist.SYSTEM_PROMPT,
+        "contracts_specialist": load_specialist_v1("contracts_specialist"),
+        "merger_agreement_specialist": load_specialist_v1("merger_agreement_specialist"),
+        "corporate_records_specialist": load_specialist_v1("corporate_records_specialist"),
+        "correspondence_specialist": load_specialist_v1("correspondence_specialist"),
+        "insurance_claims_specialist": load_specialist_v1("insurance_claims_specialist"),
         "boss": boss.BOSS_SYSTEM_PROMPT,
         "reporter": reporter.COMPILE_SYSTEM_PROMPT,
         "pdf_transcriber": pdf_transcriber.SYSTEM_PROMPT,

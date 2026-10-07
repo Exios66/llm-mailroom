@@ -1,7 +1,7 @@
 """Contracts specialist — LangChain version vendored from llm-entity-extraction.
 
 Re-exports ``langchain_agents.specialist_agents.ContractsSpecialist`` (the
-eval-validated LangChain contracts specialist, ``contracts_specialist_v32``
+eval-validated LangChain contracts specialist, production frozen-v1
 prompt, per-field ``reasoning`` trace, chunked-extraction support,
 ``normalize_extraction`` field-presence guarantee and evidence-derived
 confidence) with mailroom defaults applied from ``config/taxonomy.yaml``
@@ -14,7 +14,9 @@ that agreement family in mind.
 """
 
 import structlog
+from langchain_agents.prompts import get_prompt
 from langchain_agents.specialist_agents import ContractsSpecialist as _LangChainContractsSpecialist
+from llm.prompts import get_managed_prompt
 from pipeline.config import get_agent_config
 
 logger = structlog.get_logger(__name__)
@@ -26,9 +28,11 @@ class ContractsSpecialist(_LangChainContractsSpecialist):
     - Model/budget defaults come from ``taxonomy.yaml``
       ``agents.contracts_specialist`` (explicit ``model=``/``api_key=`` args
       still win).
-    - Uses the vendored ``contracts_specialist_v32`` prompt by default
-      (V31 eval-validated lineage + mailroom pipeline doctrine); override
-      with ``prompt_version=``.
+    - Uses the sandbox / eval-environment **frozen v1** prompt by default
+      (``contracts_specialist`` alias, sha256-locked in ``llm/frozen_v1``);
+      override with ``prompt_version=`` for entity-extraction eval pins
+      (``contracts_specialist_v1``…``v33``). Production extract nodes serve
+      it through ``get_managed_prompt``.
     - ``handoff_context`` carries the sorter's classification (doc_type +
       contract subtype) into extraction, mirroring the sister repo's chained
       eval.
@@ -38,7 +42,7 @@ class ContractsSpecialist(_LangChainContractsSpecialist):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        prompt_version: str = "contracts_specialist_v33",
+        prompt_version: str = "contracts_specialist",
         handoff_context: str | None = None,
     ):
         super().__init__(model=model, api_key=api_key, prompt_version=prompt_version)
@@ -52,3 +56,8 @@ class ContractsSpecialist(_LangChainContractsSpecialist):
             self._reasoning_effort = cfg["reasoning_effort"]
         if handoff_context is not None:
             self.handoff_context = handoff_context
+
+    def system_prompt(self) -> str:
+        default = get_prompt(self.prompt_version)
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, default)
+        return text

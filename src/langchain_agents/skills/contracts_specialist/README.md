@@ -28,7 +28,7 @@ agreements are handled by [`../merger_agreement_specialist/`](../merger_agreemen
 
 ## Prompt Version
 
-Production: `contracts_specialist_v33`
+Production: frozen v1 (`llm/frozen_v1/contracts_specialist.txt`). Entity-extraction `contracts_specialist_v33` remains an eval pin.
 
 ## Related Files
 
