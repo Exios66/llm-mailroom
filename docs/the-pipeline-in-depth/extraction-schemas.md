@@ -29,11 +29,11 @@ The classes come from `doc_classes` in [`src/config/taxonomy.yaml`](https://gith
 
 | Class key | Label | Pydantic schema | Specialist (`agents/`) | Prompt base |
 |---|---|---|---|---|
-| `contract` | Contract / Agreement | `ContractExtraction` | `contracts_specialist.py` (subclasses the vendored LangChain `ContractsSpecialist`) | Vendored prompt `contracts_specialist_v33` |
-| `merger_agreement` | Merger Agreement | `MergerAgreementExtraction` | `merger_agreement_specialist.py` (subclasses the vendored `MergerAgreementSpecialist`) | Mailroom `SYSTEM_PROMPT` (V0 + doctrine), Langfuse-managed |
-| `corporate_record` | Corporate Record | `CorporateRecordExtraction` | `corporate_records_specialist.py` (mailroom `BaseAgent`) | Mailroom `SYSTEM_PROMPT` (V0 + doctrine), Langfuse-managed |
-| `correspondence` | Correspondence | `CorrespondenceExtraction` | `correspondence_specialist.py` (mailroom `BaseAgent`) | Mailroom `SYSTEM_PROMPT` (V0 + doctrine), Langfuse-managed |
-| `insurance_claim` | Insurance Claim | `InsuranceClaimExtraction` | `insurance_claims_specialist.py` (mailroom `BaseAgent`) | Mailroom `SYSTEM_PROMPT` (V0 + doctrine), Langfuse-managed |
+| `contract` | Contract / Agreement | `ContractExtraction` | `contracts_specialist.py` (subclasses the vendored LangChain `ContractsSpecialist`) | Frozen v1 (`llm/frozen_v1/contracts_specialist.txt`), Langfuse-managed |
+| `merger_agreement` | Merger Agreement | `MergerAgreementExtraction` | `merger_agreement_specialist.py` (subclasses the vendored `MergerAgreementSpecialist`) | Frozen v1, Langfuse-managed |
+| `corporate_record` | Corporate Record | `CorporateRecordExtraction` | `corporate_records_specialist.py` (mailroom `BaseAgent`) | Frozen v1, Langfuse-managed |
+| `correspondence` | Correspondence | `CorrespondenceExtraction` | `correspondence_specialist.py` (mailroom `BaseAgent`) | Frozen v1, Langfuse-managed |
+| `insurance_claim` | Insurance Claim | `InsuranceClaimExtraction` | `insurance_claims_specialist.py` (mailroom `BaseAgent`) | Frozen v1, Langfuse-managed |
 
 Notes:
 

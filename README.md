@@ -388,7 +388,7 @@ PYTHONPATH=src python src/scripts/sync_prompts.py --agent sorter
 
 The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
 
-Vendored LangChain prompts are pinned by version key — `sorter_v14`, `contracts_specialist_v33` (`_bound_prompt_versions` now matches the shipped sync source; DMR-052).
+Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14`, `contracts_specialist_v1…v33`) so eval loops can pin one version per experiment. Production is different: **sorter_v14** for classify, and sandbox / eval-environment **frozen v1** stems for every extract specialist (`llm/frozen_v1/`, `_bound_prompt_versions`). Mailroom wrappers resolve both through `get_managed_prompt` (`mailroom-<agent>`, `production` label) so LangGraph classify/extract nodes share the Langfuse surface.
 
 ### Observability
 
