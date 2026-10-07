@@ -20,7 +20,12 @@ both are prepended to every window so no window classifies blind.
 """
 
 import structlog
-from langchain_agents.sorter_agent import SorterAgent as _LangChainSorterAgent
+from langchain_agents.prompts import get_prompt
+from langchain_agents.sorter_agent import (
+    SorterAgent as _LangChainSorterAgent,
+    fill_sorter_placeholders,
+)
+from llm.prompts import get_managed_prompt
 from pipeline.config import get_agent_config
 
 logger = structlog.get_logger(__name__)
@@ -43,7 +48,9 @@ class SorterAgent(_LangChainSorterAgent):
       multimodal content (additive, never replacing the text) when the
       configured model is vision-capable — attached to the FIRST window only.
     - Keeps the vendored ``sorter_v14`` prompt by default (V12 lineage +
-      mailroom pipeline doctrine); override with ``prompt_version=``.
+      mailroom pipeline doctrine — the strongest sorter this pipeline has);
+      override with ``prompt_version=``. Production classify nodes serve it
+      through ``get_managed_prompt`` (Langfuse ``mailroom-sorter``).
     """
 
     def __init__(
@@ -61,6 +68,18 @@ class SorterAgent(_LangChainSorterAgent):
         self._temperature = float(cfg.get("temperature", self._temperature))
         if cfg.get("reasoning_effort"):
             self._reasoning_effort = cfg["reasoning_effort"]
+
+    def system_prompt(self) -> str:
+        """Langfuse-managed sorter_v14 with live taxonomy catalogs compiled in.
+
+        LangGraph ``classify`` / ``retry_classify`` call ``classify_json`` →
+        ``_call_structured`` → this method. Eval pins via ``prompt_version=``
+        still work when Langfuse is off (the managed fetch falls back to the
+        versioned local stem).
+        """
+        default = get_prompt(self.prompt_version)
+        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, default)
+        return fill_sorter_placeholders(text)
 
     def classify(self, doc_text: str, pages: list[str] | None = None):
         """Classify a document, optionally with page images attached.

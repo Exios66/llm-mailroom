@@ -17,7 +17,6 @@ from llm.prompts import prompt_templates
 AGENT_PROMPTS_WITH_CONFIDENCE = [
     "sorter",
     "contracts_specialist",
-    "corporate_records_specialist",
     "correspondence_specialist",
     "insurance_claims_specialist",
     "merger_agreement_specialist",
@@ -30,10 +29,13 @@ ANTI_ANCHOR = "never default to a fixed high value (e.g. 0.90 or 0.95)"
 ANTI_ANCHOR_VARIANT = (
     "high score (0.90+) is acceptable only when the reasoning cites the concrete evidence"
 )
+# Frozen v1 specialist stems (sandbox / eval-environment).
+ANTI_ANCHOR_FROZEN_V1 = "never default to 0.90 / 0.95"
 EVIDENCE_BASE = "derived from the evidence"
 # ...which sorter_v5 words as "Derive the confidence from the evidence in THIS
 # document".
 EVIDENCE_VARIANT = "from the evidence in this document"
+EVIDENCE_FROZEN_V1 = "from evidence in this"
 
 
 def _normalize(prompt: str) -> str:
@@ -43,9 +45,20 @@ def _normalize(prompt: str) -> str:
 @pytest.mark.parametrize("agent_name", AGENT_PROMPTS_WITH_CONFIDENCE)
 def test_confidence_calibration_rule_present(agent_name):
     prompt = _normalize(prompt_templates()[agent_name])
-    assert any(anchor in prompt for anchor in (ANTI_ANCHOR, ANTI_ANCHOR_VARIANT)), (
-        f"{agent_name} prompt must forbid anchoring confidence on a fixed high value"
-    )
-    assert any(evidence in prompt for evidence in (EVIDENCE_BASE, EVIDENCE_VARIANT)), (
-        f"{agent_name} prompt must require evidence-derived confidence"
-    )
+    assert any(
+        anchor in prompt
+        for anchor in (ANTI_ANCHOR, ANTI_ANCHOR_VARIANT, ANTI_ANCHOR_FROZEN_V1)
+    ), f"{agent_name} prompt must forbid anchoring confidence on a fixed high value"
+    assert any(
+        evidence in prompt
+        for evidence in (EVIDENCE_BASE, EVIDENCE_VARIANT, EVIDENCE_FROZEN_V1)
+    ), f"{agent_name} prompt must require evidence-derived confidence"
+
+
+def test_corporate_records_frozen_v1_omits_confidence_as_a_registered_field():
+    """CorporateRecordExtraction has no confidence key; frozen v1 must not invent one.
+
+    The graph derives extraction_confidence when the model omits it.
+    """
+    prompt = _normalize(prompt_templates()["corporate_records_specialist"])
+    assert "confidence is not a registered field" in prompt
