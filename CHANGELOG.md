@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Gmail intake hardening** (`pipeline/gmail_intake.py`): a message that keeps raising is quarantined after `MAILROOM_GMAIL_MAX_ATTEMPTS` (default 3) sweeps — marked `\Seen`, labelled `mailroom/failed`, recorded as processed — instead of being retried forever (`failed_attempts` in the state file, `quarantined` in the poll report). Attachments now stage in a same-filesystem `<inbox>.staging/*.part` and are placed with a no-clobber link (copy fallback on `EXDEV` via a dest-side `.part`), so cross-device deployments no longer fail and staging files are always removed. State is saved after every message, Message-ID-less mail is keyed `uid:<folder>:<uidvalidity>:<uid>`, and attachment filenames are capped at 120 chars with `\` and `..` neutralized.
+
 ## [v0.8.0] - 2026-10-07
 
 ### Added

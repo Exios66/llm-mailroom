@@ -7,6 +7,8 @@ with real credentials can never leak network polls into tests.
 """
 
 import email.message
+import errno
+import os
 
 import pytest
 
@@ -49,6 +51,7 @@ class FakeIMAP:
         self.store_calls = 0
         self.logged_in = False
         self.selected = None
+        self.uidvalidity = 1
 
     def login(self, user, password):
         self.logged_in = True
@@ -60,6 +63,11 @@ class FakeIMAP:
     def select(self, folder, readonly=False):
         self.selected = folder
         return ("OK", [b"1"])
+
+    def response(self, code):
+        if code == "UIDVALIDITY":
+            return (code, [str(self.uidvalidity).encode()])
+        return (code, [None])
 
     def uid(self, command, *args):
         command = command.upper()  # real imaplib does the same
@@ -755,3 +763,161 @@ def test_reaction_failure_tracks_reactions_failed_counter(temp_base_dir):
     client = FakeIMAP({})
     gmail_intake.react_to_message("<react-fail@example.com>", config=_cfg(), imap_factory=lambda: client)
     assert gmail_intake.status()["reactions_failed"] >= 1
+
+
+# ── poison-message cap, same-fs staging, per-message state save ───────────
+
+
+def _one_pdf_client(uid="1", message_id="<poison@example.com>"):
+    return FakeIMAP(
+        {uid: _message("docs", attachments=({"d.pdf": _pdf_bytes()}), message_id=message_id)}
+    )
+
+
+def _staging_dir():
+    from pipeline.bins import inbox_dir
+
+    d = inbox_dir()
+    return d.with_name(d.name + ".staging")
+
+
+class _Fatal(BaseException):
+    """Escapes the per-message ``except Exception`` (simulates a hard crash)."""
+
+
+def test_exdev_rename_falls_back_to_copy(temp_base_dir, monkeypatch):
+    from pipeline.bins import inbox_dir
+
+    inbox_prefix = str(inbox_dir())
+    real_link, real_replace = os.link, os.replace
+    raised = {"link": 0, "replace": 0}
+
+    def _flaky(name, real):
+        def wrapper(src, dst, *a, **kw):
+            # Fail the first placement into the inbox only (the state-file
+            # save also uses os.replace and must not be disturbed).
+            if str(dst).startswith(inbox_prefix) and raised[name] == 0:
+                raised[name] += 1
+                raise OSError(errno.EXDEV, "x")
+            return real(src, dst, *a, **kw)
+
+        return wrapper
+
+    monkeypatch.setattr(gmail_intake.os, "link", _flaky("link", real_link))
+    monkeypatch.setattr(gmail_intake.os, "replace", _flaky("replace", real_replace))
+
+    client = _one_pdf_client()
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+
+    assert report["errors"] == []
+    assert report["attachments_queued"] == 1
+    assert [p.read_bytes() for p in inbox_dir().glob("*.pdf")] == [_pdf_bytes()]
+    assert raised["link"] + raised["replace"] >= 1
+    assert list(inbox_dir().glob("*.part")) == []
+    assert list(inbox_dir().glob(".*.part")) == []
+    staging = _staging_dir()
+    assert not staging.exists() or list(staging.glob("*")) == []
+
+
+def test_message_that_raises_is_quarantined_after_cap(temp_base_dir, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_MAX_ATTEMPTS", "3")
+
+    def boom(*a, **kw):
+        raise RuntimeError("poison")
+
+    monkeypatch.setattr(gmail_intake, "deliver_attachment", boom)
+    client = _one_pdf_client()
+
+    for _ in range(2):
+        report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+        assert report["errors"]
+        assert report["quarantined"] == 0
+        assert "1" not in client.seen
+
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["quarantined"] == 1
+    assert "1" in client.seen
+    assert any("mailroom/failed" in label for label in client.labels["1"])
+
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["messages_seen"] == 0
+
+
+def test_temp_file_removed_when_deliver_raises(temp_base_dir, monkeypatch):
+    def boom(*a, **kw):
+        raise RuntimeError("poison")
+
+    monkeypatch.setattr(gmail_intake, "deliver_attachment", boom)
+    client = _one_pdf_client()
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+
+    staging = _staging_dir()
+    assert not staging.exists() or list(staging.glob("*")) == []
+
+
+def test_state_saved_per_message_survives_mid_sweep_crash(temp_base_dir, monkeypatch):
+    client = FakeIMAP(
+        {
+            "1": _message("a", attachments=({"a.pdf": _pdf_bytes()}), message_id="<first@example.com>"),
+            "2": _message("b", attachments=({"b.pdf": _pdf_bytes()}), message_id="<second@example.com>"),
+        }
+    )
+    real_fetch = gmail_intake._fetch_message
+
+    def fetch(c, uid):
+        if uid == "2":
+            raise _Fatal()
+        return real_fetch(c, uid)
+
+    monkeypatch.setattr(gmail_intake, "_fetch_message", fetch)
+    with pytest.raises(_Fatal):
+        gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+
+    assert "<first@example.com>" in gmail_intake._load_state()["processed_message_ids"]
+
+
+def test_safe_filename_neutralizes_traversal():
+    name = gmail_intake._safe_filename("..\\..\\x" * 40)
+    assert name is not None
+    assert "\\" not in name
+    assert ".." not in name
+    assert len(name) <= 120
+
+
+def test_exdev_copy_failure_leaves_no_partial_in_inbox(temp_base_dir, monkeypatch):
+    from pipeline.bins import inbox_dir
+
+    def exdev(*a, **kw):
+        raise OSError(errno.EXDEV, "x")
+
+    def broken_copy(fin, fout, *a, **kw):
+        fout.write(b"partial")
+        raise OSError(errno.EIO, "disk died mid-copy")
+
+    monkeypatch.setattr(gmail_intake.os, "link", exdev)
+    monkeypatch.setattr(gmail_intake.os, "replace", exdev)
+    monkeypatch.setattr(gmail_intake.shutil, "copyfileobj", broken_copy)
+
+    client = _one_pdf_client()
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+
+    assert report["errors"]
+    assert report["attachments_queued"] == 0
+    leftovers = [p.name for p in inbox_dir().iterdir() if not p.name.endswith(".meta")]
+    assert leftovers == []
+    staging = _staging_dir()
+    assert not staging.exists() or list(staging.glob("*")) == []
+
+
+def test_missing_message_id_key_scoped_by_folder_and_uidvalidity(temp_base_dir):
+    raw = _message("no id", attachments=({"d.pdf": _pdf_bytes()}))
+    raw = b"\n".join(
+        line for line in raw.split(b"\n") if not line.lower().startswith(b"message-id:")
+    )
+    assert b"Message-ID" not in raw
+    client = FakeIMAP({"7": raw})
+    client.uidvalidity = 4242
+    report = gmail_intake.poll_once(config=_cfg(folder="Work"), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1
+    ids = gmail_intake._load_state()["processed_message_ids"]
+    assert ids == ["uid:Work:4242:7"]
