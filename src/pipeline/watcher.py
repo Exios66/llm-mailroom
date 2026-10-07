@@ -1132,6 +1132,11 @@ class Watcher:
 
             self._gmail_poller = start_embedded_poller()
 
+            # Durable echo outbox: drains queued completion echoes with backoff.
+            from .mail_outbox import start_outbox_worker
+
+            self._outbox_worker = start_outbox_worker()
+
             # Relations sweeper (HUB-040): the regular archive association
             # sweep — same embedded pattern, watermark-incremental, fail-soft.
             from .relations import start_embedded_relations_scanner
@@ -1196,6 +1201,10 @@ class Watcher:
 
         stop_embedded_poller(self._gmail_poller)
         self._gmail_poller = None
+        from .mail_outbox import stop_outbox_worker
+
+        stop_outbox_worker(getattr(self, "_outbox_worker", None))
+        self._outbox_worker = None
         stop_embedded_relations_scanner(getattr(self, "_relations_sweeper", None))
         self._relations_sweeper = None
         if self._running:
