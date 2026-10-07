@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: >-
+  Be precise and brief. Cite the file and line that contradicts the finding.
+  Prefer one consolidated finding for a fact that is wrong in several places.
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: true
+    base_branches:
+      - ".*"
+  path_filters:
+    - "!**/*.lock"
+    - "!tree.html"
+    - "!notebooks/**/*.ipynb"
+    - "!landing/**/*.min.*"
+  path_instructions:
+    - path: "**/*.md"
+      instructions: |
+        Documentation audit (apply to every changed page, and to any page that
+        repeats a changed fact):
+        1. Links. Check that every relative link resolves to an existing file or directory in this repository
+           and that every #anchor matches a heading on the target page. Check that
+           GitHub links point at a path that exists at the ref named in the URL
+           (tag, commit or branch). Use the default branch only when the link
+           names no ref.
+        2. References. Check that every file path, command, flag, environment
+           variable, class, function, config key and version named in the text exists
+           in the source it describes. If the source is not in this review, inspect it in the repository first.
+           Mark a claim unverified only when its source cannot be inspected. Do not guess.
+        3. Stale content. Flag dates, version numbers, counts, test totals, model
+           names, dataset revisions and "currently" or "still" claims that the
+           changed code or neighbouring pages contradict. A dated fact needs an
+           "as of" date.
+        4. Inconsistency. When a fact appears on more than one page, check that all
+           copies agree (dataset pins, versions, counts, ports, defaults, names). Report
+           the pages that disagree, not only the changed one.
+        5. Incomplete information. Flag steps with no prerequisite, commands with no
+           expected result, options with no default, tables with an empty cell, and
+           "TODO", "TBD" or "see below" with no target.
+        6. Remove or correct claims instead of softening them. A claim that cannot be
+           verified must be marked as unverified.
+        Check each claim against the code under src/ in this repository.
+    - path: "CHANGELOG.md"
+      instructions: |
+        Check that each entry has a version and date and that the newest entry matches the version in pyproject.toml. Do not hand-edit generated sections.
+    - path: ".env.example"
+      instructions: |
+        Check that every variable the code reads under src/ is listed with a default or an explanation, and that no listed variable is unused. Never accept a real secret.
+    - path: "src/**/*.py"
+      instructions: |
+        Code and documentation must agree. When this change alters behaviour, a
+        setting, an API route, a CLI flag, an environment variable, a default, a
+        version or a count, check that README.md, AGENTS.md, CHANGELOG.md and docs/
+        were updated in the same change. Name the documents that are now stale. Flag
+        changed docstrings and comments that no longer describe the code.
+    - path: "deploy/**"
+      instructions: |
+        Code and documentation must agree. When this change alters behaviour, a
+        setting, an API route, a CLI flag, an environment variable, a default, a
+        version or a count, check that README.md, AGENTS.md, CHANGELOG.md and docs/
+        were updated in the same change. Name the documents that are now stale. Flag
+        changed docstrings and comments that no longer describe the code.
+    - path: "pyproject.toml"
+      instructions: |
+        Check that the version, Python requirement and dependency pins agree with README.md, AGENTS.md and CHANGELOG.md.
+  tools:
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    github-checks:
+      enabled: true
+chat:
+  auto_reply: true
