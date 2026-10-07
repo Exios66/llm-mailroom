@@ -111,7 +111,7 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
                     "keywords",
                     [" ".join(str(p).split()[:4]) for p in coerced[:8]],
                 )
-                _put(expected_fields, "intent", "record_governance")
+                _put(expected_fields, "intent", "governance_rules")
         for key in CORPORATE_GT_KEYS:
             if key == "record_type" and expected_fields.get("record_type"):
                 continue
@@ -132,7 +132,7 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
                     "keywords",
                     [" ".join(str(p).split()[:4]) for p in coerced[:8]],
                 )
-                _put(expected_fields, "intent", "correspondence")
+                _put(expected_fields, "intent", "other")
         for key in CORRESPONDENCE_GT_KEYS:
             if key == "communication_type" and expected_fields.get("communication_type"):
                 continue

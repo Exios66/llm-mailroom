@@ -122,8 +122,9 @@ SORTER_REVIEWER = classification_doctrine(
 )
 
 CONTRACTS = extraction_doctrine(
-    "document_name, parties, effective_date, term_length, termination_clauses, "
-    "governing_law, key_obligations, contract_value, renewal_terms",
+    "reasoning, document_name, parties, effective_date, term_length, "
+    "governing_law, contract_value, renewal_terms, cuad_family, "
+    "merger_consideration, cuad_clauses, maud_clauses, confidence",
     [
         "parties is an entity list of distinct named parties; do not invent from letterhead without contract language.",
         "contract_value may be $0; that is a stated amount.",
@@ -133,8 +134,8 @@ CONTRACTS = extraction_doctrine(
 )
 
 CORPORATE_RECORDS = extraction_doctrine(
-    "entity_name, record_type, effective_date, key_provisions, signatories, "
-    "jurisdiction, filing_number",
+    "entity_name, record_type, effective_date, signatories, jurisdiction, "
+    "filing_number, intent, subject_matter, keywords",
     [
         "entity_name is the legal name as written — do not abbreviate unless the document does.",
         "filing_number is an identifier; transcribe it exactly.",
@@ -144,8 +145,8 @@ CORPORATE_RECORDS = extraction_doctrine(
 
 CORRESPONDENCE = extraction_doctrine(
     "sender, recipient, additional_recipients, communication_type, "
-    "communication_date, key_points, demand_amount, action_items, urgency, "
-    "referenced_communications",
+    "communication_date, demand_amount, action_items, urgency, intent, "
+    "subject_matter, keywords",
     [
         "A demand letter about a contract is still correspondence. demand_amount of 0 is a stated amount.",
         "Press releases and wire articles often have no named recipient — use null, not a invented audience.",
@@ -171,7 +172,8 @@ MERGER_AGREEMENT = extraction_doctrine(
 INSURANCE_CLAIMS = extraction_doctrine(
     "claim_number, policy_number, insurer, insured_party, claim_type, "
     "date_of_loss, date_filed, claimed_amount, adjuster, damages_description, "
-    "coverage_determination, denial_reasons, supporting_documents",
+    "coverage_determination, denial_reasons, supporting_documents, intent, "
+    "subject_matter, keywords, claim_checklist",
     [
         "claim_number and policy_number are identifiers; never paraphrase them.",
         "On CMS Medicare Summary Notices, Notice ID is the claim_number; Claim total "

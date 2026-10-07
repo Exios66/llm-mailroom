@@ -138,7 +138,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `entity_name` | `str` | Legal entity name |
 | `record_type` | `str` | Hub extract tokens: `articles_of_incorporation`, `bylaws`, `powers_of_attorney`, `rights_instrument`, `other` (sorter catalog is wider) |
 | `effective_date` | `str \| None` | Date the record took effect |
-| `intent` | `str \| None` | Short controlled label (e.g. `record_governance`) |
+| `intent` | `str \| None` | Controlled Hub purpose label (e.g. `governance_rules`, `corporate_action_approval`, `entity_formation`, `authority_delegation`, `investor_rights`, `other`) |
 | `subject_matter` | `str \| None` | One grounded sentence |
 | `keywords` | `list[str]` | Up to 8 grounded terms |
 | `signatories` | `list[str]` | Who signed/approved |
@@ -167,7 +167,7 @@ The Contracts Specialist is also a **vendored LangChain agent** (`agents/contrac
 | `additional_recipients` | `list[str]` | Cc'd / copied parties |
 | `communication_type` | `str` | letter, email, memo, notice, demand, etc. |
 | `communication_date` | `str \| None` | When it was sent |
-| `intent` | `str \| None` | Short controlled label (e.g. `demand_payment`) |
+| `intent` | `str \| None` | Controlled Hub purpose label (e.g. `payment_demand`, `notice`, `analysis`, `request`, `update`, `meeting_invite`, `press_communication`, `other`) |
 | `subject_matter` | `str \| None` | One grounded sentence |
 | `keywords` | `list[str]` | Up to 8 grounded terms |
 | `demand_amount` | `float \| None` | Exact dollar amount demanded (demand letters) |
@@ -216,7 +216,7 @@ documents that would have been classified as compliance filings route as
 | `coverage_determination` | `str` | approved, denied, partial, pending |
 | `denial_reasons` | `list[str]` | Stated denial reasons |
 | `supporting_documents` | `list[str]` | Documents referenced as supporting the claim |
-| `intent` | `str \| None` | Short controlled label (e.g. `coverage_denial`) |
+| `intent` | `str \| None` | Controlled Hub purpose label (e.g. `claim_filing`, `coverage_determination`, `loss_report`, `claim_data_record`, `other`) |
 | `subject_matter` | `str \| None` | One grounded sentence |
 | `keywords` | `list[str]` | Up to 8 grounded terms |
 | `claim_checklist` | `list[str]` | Present claim categories as `"<Category>: <evidence>"` |

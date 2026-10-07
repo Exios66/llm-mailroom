@@ -6,18 +6,22 @@ from langchain_agents.doc_inventories import (
     CORPORATE_RECORD_TYPES,
     CORRESPONDENCE_TYPES,
     INSURANCE_CLAIM_TYPES,
+    INTENT_DESCRIPTIONS,
     RECORD_TYPE_DESCRIPTION,
     enrich_extraction,
     normalize_claim_type,
     normalize_communication_type,
+    normalize_intent,
     normalize_record_type,
     skip_conflict_field,
     specialist_handoff,
 )
 from langchain_agents.specialist_agents import (
+    CONTRACTS_SCHEMA,
     CORPORATE_RECORDS_SCHEMA,
     CORRESPONDENCE_SCHEMA,
     INSURANCE_CLAIMS_SCHEMA,
+    normalize_extraction,
 )
 from schemas.documents import (
     CorporateRecordExtraction,
@@ -106,6 +110,9 @@ def test_schemas_and_pydantic_carry_hub_descriptions():
     assert RECORD_TYPE_DESCRIPTION in CORPORATE_RECORDS_SCHEMA["properties"]["record_type"]["description"]
     assert COMMUNICATION_TYPE_DESCRIPTION in CORRESPONDENCE_SCHEMA["properties"]["communication_type"]["description"]
     assert CLAIM_TYPE_DESCRIPTION in INSURANCE_CLAIMS_SCHEMA["properties"]["claim_type"]["description"]
+    assert INTENT_DESCRIPTIONS["corporate_record"] in CORPORATE_RECORDS_SCHEMA["properties"]["intent"]["description"]
+    assert INTENT_DESCRIPTIONS["correspondence"] in CORRESPONDENCE_SCHEMA["properties"]["intent"]["description"]
+    assert INTENT_DESCRIPTIONS["insurance_claim"] in INSURANCE_CLAIMS_SCHEMA["properties"]["intent"]["description"]
     assert CorporateRecordExtraction.model_validate(
         {"record_type": "articles_of_incorporation"}
     ).record_type == "articles_of_incorporation"
@@ -115,6 +122,55 @@ def test_schemas_and_pydantic_carry_hub_descriptions():
     assert InsuranceClaimExtraction.model_validate(
         {"claim_type": "outpatient", "adjuster": None}
     ).claim_type == "outpatient"
+
+
+def test_amount_fields_are_nullable_numbers_in_schema_and_pydantic():
+    """The request schema must agree with the Pydantic float models."""
+    assert CORRESPONDENCE_SCHEMA["properties"]["demand_amount"]["type"] == ["number", "null"]
+    assert INSURANCE_CLAIMS_SCHEMA["properties"]["claimed_amount"]["type"] == ["number", "null"]
+    assert CorrespondenceExtraction.model_validate(
+        {"demand_amount": 218440.0}
+    ).demand_amount == 218440.0
+    assert CorrespondenceExtraction.model_validate({"demand_amount": None}).demand_amount is None
+    assert InsuranceClaimExtraction.model_validate(
+        {"claimed_amount": 10.0}
+    ).claimed_amount == 10.0
+
+
+def test_normalize_extraction_keeps_unstated_amounts_null():
+    """A nullable number defaults to null; confidence still defaults to 0.0."""
+    assert normalize_extraction({}, CORRESPONDENCE_SCHEMA)["demand_amount"] is None
+    assert normalize_extraction({}, INSURANCE_CLAIMS_SCHEMA)["claimed_amount"] is None
+    assert normalize_extraction({}, CONTRACTS_SCHEMA)["confidence"] == 0.0
+
+
+def test_enrich_extraction_canonicalizes_intent():
+    assert (
+        enrich_extraction({"intent": "demand_payment"}, doc_type="correspondence")["intent"]
+        == "payment_demand"
+    )
+    assert (
+        enrich_extraction({"intent": "coverage_denial"}, doc_type="insurance_claim")["intent"]
+        == "coverage_determination"
+    )
+    assert (
+        enrich_extraction({"intent": "record_governance"}, doc_type="corporate_record")["intent"]
+        == "governance_rules"
+    )
+    # An unmapped purpose is preserved (never blanked by enrichment).
+    assert (
+        enrich_extraction({"intent": "a very custom purpose"}, doc_type="correspondence")["intent"]
+        == "a very custom purpose"
+    )
+
+
+def test_normalize_intent_never_leaks_another_class_label():
+    assert normalize_intent("correspondence", "request_information") == "request"
+    assert normalize_intent("insurance_claim", "request_information") == ""
+    assert normalize_intent("correspondence", "coverage_denial") == ""
+    assert normalize_intent("insurance_claim", "demand_payment") == ""
+    assert normalize_intent("correspondence", "demand_payment") == "payment_demand"
+    assert normalize_intent("insurance_claim", "coverage_denial") == "coverage_determination"
 
 
 def test_skip_conflict_covers_type_and_clause_inventories():
