@@ -346,7 +346,7 @@ multi-document full pipeline), completion echoes, and troubleshooting — is
 | `MAILROOM_GMAIL_ALLOWED_SENDERS` | No | — | CSV allowlist of sender addresses (exact, case-insensitive bare address; `+tag` variants do not match); empty = accept all |
 | `MAILROOM_GMAIL_REQUIRE_DMARC` | No | `1` | An allowlisted sender must also carry Gmail's own `dmarc=pass` verdict (topmost `Authentication-Results` from `mx.google.com` only; anything else fails closed). A sender whose domain publishes no DMARC record is rejected while this is on |
 | `MAILROOM_GMAIL_MAX_ATTEMPTS` | No | `3` | Failed sweeps before a message that keeps raising is quarantined (marked seen, labelled `mailroom/failed`) |
-| `MAILROOM_GMAIL_MAX_REPLIES_PER_HOUR` | No | `20` | Cap on reject, acknowledgment and digest replies to any one address |
+| `MAILROOM_GMAIL_MAX_REPLIES_PER_HOUR` | No | `20` | Cap on reject, acknowledgment and digest replies to any one address (completion echoes are not capped) |
 | `MAILROOM_GMAIL_ACKS` | No | `1` | Acknowledgment reply when an email's attachments are queued (names each document, its ID and the path it takes) |
 | `MAILROOM_GMAIL_IDLE` | No | `0` | IMAP IDLE push between sweeps (new mail swept on arrival); falls back to plain polling on any IDLE error. Verify with `gmail_smoke_test.py --real` before enabling |
 | `MAILROOM_GMAIL_ALLOW_SELF` | No | `0` | Process mail sent from the agent's own address (the smoke test mails itself). Our own replies stay excluded by their `Auto-Submitted` header |

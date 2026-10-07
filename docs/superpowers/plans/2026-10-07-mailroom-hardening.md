@@ -54,9 +54,9 @@ Rulings that refine the task text below:
 
 Rulings from executing Tasks 3–7 (branch `claude/gmail-triage-plan-remainder-cv5bjr`):
 - **T3 self-mail:** own-address mail is skipped unless `MAILROOM_GMAIL_ALLOW_SELF=1` (the smoke test mails itself and sets it). Our replies carry `Auto-Submitted: auto-replied`, so they stay excluded either way.
-- **T4 promote failure with nothing published** re-raises (message retried, counts toward the cap); only a failure after ≥ 1 published file records the message processed. Sidecars are written before the file (temp + replace); a stale sidecar left by a claimed file is replaced, not treated as a name collision.
-- **T5 breaker inside one call:** three consecutive 429s in a single ladder open the breaker and the ladder stops with `FreeQuotaExhausted`. With a multi-entry swarm on OpenRouter the server does the fallback and client-side rotation is skipped.
-- **T6 cache key** includes the filename (it is part of the prompt). The BODYSTRUCTURE fixture is a hand-written literal in Gmail's format, not a live recording; the parser falls back to a full fetch on anything it cannot read.
+- **T4 promote failure with nothing published** re-raises (message retried, counts toward the cap); only a failure after ≥ 1 published file records the message processed. Sidecars are created exclusively before the file (temp + link). An existing sidecar counts as a name collision and is never overwritten, because the watcher reads the sidecar after claiming its file (reversed after review: replacing it could misroute a pending claim). Bundle `expected` lowered after a part-way promote failure is re-checked at once, so a bundle whose queued files already finished still gets its full digest.
+- **T5 breaker inside one call:** three consecutive 429s in a single ladder open the breaker and the ladder stops with `FreeQuotaExhausted`, also when the opening 429 is the final attempt. With a multi-entry swarm on OpenRouter the server does the fallback (`models` holds only the fallbacks, `model` stays the primary) and client-side rotation is skipped.
+- **T6 cache key** hashes the full request as sent: system prompt with the json note and skills, and the user message with the schema and boilerplate (so it includes the filename). Expired rows are swept on write. IDLE waits with `select()`, never a socket timeout, so the reader stays usable for DONE. The BODYSTRUCTURE fixture is a hand-written literal in Gmail's format, not a live recording; the parser falls back to a full fetch on anything it cannot read.
 - **T7 bundles** are registered before any file is visible; a doc already reported in a closed digest gets no extra echo for the same stage, but a later stage does. The digest footer names the triage model when known, else "the full mailroom pipeline" (the manifest carries no served model for pipeline runs).
 
 Parked for the final fix pass:
@@ -224,7 +224,7 @@ Parked for the final fix pass:
   - `idle_wait(client, timeout_s: float) -> bool` (True = server pushed new mail; raw IDLE over `client.send`/`readline`, re-issued every ≤ 5 min); poller uses it only when `MAILROOM_GMAIL_IDLE=1` (default `0` until verified with `gmail_smoke_test.py --real`) and falls back to `_stop_event.wait(poll_seconds)` on any error.
   - `result_cache.py`: `cache_key(model_tag: str, prompt: str, doc_text: str) -> str` (sha256 hex); `get(key: str) -> dict | None`; `put(key: str, value: dict) -> None`; SQLite at `get_base_dir()/llm_result_cache.sqlite`, TTL 30 days, `MAILROOM_LLM_CACHE=0` disables. Triage consults it before the LLM call and stores validated results only.
 - [x] **Step 1: Write failing tests**
-  - `test_parse_bodystructure_real_gmail_sample`: use a recorded two-attachment Gmail `BODYSTRUCTURE` literal committed under `src/tests/fixtures/`; assert names and sizes.
+  - `test_parse_bodystructure_gmail_format_sample`: use a hand-written two-attachment `BODYSTRUCTURE` literal in Gmail's format, committed under `src/tests/fixtures/gmail/`; assert names and sizes. It is not a capture from a live mailbox, so confirm the shape against a real Gmail response during the live smoke test.
   - `test_oversize_only_message_never_downloads_body`: `FakeIMAP` counts `BODY.PEEK[]` fetches → 0, reject reply enqueued.
   - `test_fetch_uses_peek_and_does_not_mark_seen_until_handled`.
   - `test_unparseable_structure_falls_back_to_full_fetch`.
@@ -274,4 +274,4 @@ Node-level hardening outside the Gmail/LLM layers (watcher stale-claim reclaim, 
 ## Self-review notes
 
 - Coverage: all seven requested items map to Tasks 1–7 (requested #3→T2, #7→T3, #2→T4, #4→T5, #5→T6, #6→T7, #1→T1).
-- Known unverified assumptions to confirm during execution: Gmail's literal `BODYSTRUCTURE` shape (hence the recorded fixture and full-fetch fallback), raw IDLE over `imaplib` (hence opt-in), and the triage agent's fail-soft code location (Task 5 says to read it first).
+- Known unverified assumptions to confirm during execution: Gmail's literal `BODYSTRUCTURE` shape (hence the hand-written fixture and full-fetch fallback), raw IDLE over `imaplib` (hence opt-in), and the triage agent's fail-soft code location (Task 5 says to read it first).

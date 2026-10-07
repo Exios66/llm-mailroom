@@ -71,3 +71,33 @@ def test_unparseable_result_is_not_cached(cache_on, mock_openai_client, sample_i
     assert out["debug"]["parse_ok"] is False
     again = GmailTriageAgent().triage(sample_insurance_claim_text, filename="a.txt")
     assert "cache" not in again["debug"]
+
+
+def test_put_sweeps_expired_rows_never_read_again(cache_on):
+    result_cache.put("old", {"x": 1}, now=0)
+    result_cache.put("new", {"x": 2}, now=result_cache.TTL_SECONDS + 10)
+    with result_cache._db() as conn:
+        keys = [k for (k,) in conn.execute("SELECT key FROM results")]
+    assert keys == ["new"]
+
+
+def test_triage_cache_key_covers_schema_and_skills(cache_on, mock_openai_client, monkeypatch, sample_insurance_claim_text):
+    import agents.gmail_triage as triage_mod
+    from agents.gmail_triage import GmailTriageAgent
+
+    choice = MagicMock()
+    choice.message.content = json.dumps(
+        {"primary_doc_class": "insurance_claim", "confidence": 0.9, "gist": "FNOL", "keywords": ["hail"]}
+    )
+    mock_openai_client.chat.completions.create.return_value.choices = [choice]
+    keys = []
+    real_key = result_cache.cache_key
+    monkeypatch.setattr(result_cache, "cache_key", lambda *a: keys.append(real_key(*a)) or keys[-1])
+
+    GmailTriageAgent().triage(sample_insurance_claim_text, filename="a.txt")
+    monkeypatch.setattr(GmailTriageAgent, "_skill_appendix", lambda self: "\n\nnew skill text")
+    GmailTriageAgent().triage(sample_insurance_claim_text, filename="a.txt")
+    schema = {**triage_mod.TRIAGE_SCHEMA, "description": "changed"}
+    monkeypatch.setattr(triage_mod, "TRIAGE_SCHEMA", schema)
+    GmailTriageAgent().triage(sample_insurance_claim_text, filename="a.txt")
+    assert len(keys) == 3 and len(set(keys)) == 3

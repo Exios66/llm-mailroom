@@ -26,7 +26,23 @@ DEFAULT_MAX_REPLIES_PER_HOUR = 20
 
 _AUTOMATED_LOCAL_PARTS = frozenset({"mailer-daemon", "postmaster", "no-reply", "noreply"})
 _BULK_PRECEDENCE = frozenset({"bulk", "list", "junk"})
-_METHOD_RE = re.compile(r"\b(dmarc|dkim|spf)\s*=\s*([A-Za-z]+)", re.IGNORECASE)
+_METHOD_RE = re.compile(r"^(dmarc|dkim|spf)\s*=\s*([A-Za-z]+)", re.IGNORECASE)
+_QUOTED_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
+def _strip_comments(text: str) -> str:
+    """Drop RFC 5322 ``(comments)`` (nesting-aware) and quoted strings."""
+    text = _QUOTED_RE.sub('""', text)
+    out: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch == "(":
+            depth += 1
+        elif ch == ")" and depth:
+            depth -= 1
+        elif not depth:
+            out.append(ch)
+    return "".join(out)
 
 
 @dataclasses.dataclass
@@ -51,9 +67,14 @@ def parse_authentication_results(
     first_token = top.split(";", 1)[0].strip().split()
     if not first_token or first_token[0].lower() != authserv_id.lower():
         return AuthVerdict()
+    # A method is only recognised at the START of a ``;``-delimited resinfo
+    # segment, so property values such as ``smtp.mailfrom=dmarc=pass@x`` can
+    # never be mistaken for a result.
     found: dict[str, str] = {}
-    for method, result in _METHOD_RE.findall(top.split(";", 1)[1] if ";" in top else ""):
-        found.setdefault(method.lower(), result.lower())
+    for segment in _strip_comments(top).split(";")[1:]:
+        m = _METHOD_RE.match(segment.strip())
+        if m:
+            found.setdefault(m.group(1).lower(), m.group(2).lower())
     return AuthVerdict(dmarc=found.get("dmarc"), dkim=found.get("dkim"), spf=found.get("spf"))
 
 

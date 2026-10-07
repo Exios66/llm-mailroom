@@ -185,6 +185,21 @@ class BaseAgent(ABC):
         logger.info("llm_response", agent=self.agent_name, length=len(content), served_model=served_model)
         return content
 
+    def _structured_messages(
+        self, user_message: str, json_schema: dict, system_prompt: str | None = None
+    ) -> tuple[str, str]:
+        """``(system, user)`` exactly as ``_call_structured`` hands them to
+        ``_call_llm`` (which then appends the skill text to the system)."""
+        schema_text = json.dumps(json_schema)
+        user_message = (
+            f"{user_message}\n\n"
+            "Return ONLY a valid json object that conforms to the schema below. "
+            "Do not include any text outside the json object. Output strict JSON only.\n\n"
+            f"JSON schema:\n{schema_text}"
+        )
+        base_system = system_prompt if system_prompt is not None else self.system_prompt()
+        return f"{base_system}{_JSON_MODE_SYSTEM_NOTE}", user_message
+
     def _call_structured(
         self,
         user_message: str,
@@ -204,15 +219,7 @@ class BaseAgent(ABC):
         # BOTH the system message (see _JSON_MODE_SYSTEM_NOTE) and the user
         # message below: the pilot showed Alibaba intermittently rejecting a
         # user-message-only variant with HTTP 400.
-        schema_text = json.dumps(json_schema)
-        user_message = (
-            f"{user_message}\n\n"
-            "Return ONLY a valid json object that conforms to the schema below. "
-            "Do not include any text outside the json object. Output strict JSON only.\n\n"
-            f"JSON schema:\n{schema_text}"
-        )
-        base_system = system_prompt if system_prompt is not None else self.system_prompt()
-        system_prompt = f"{base_system}{_JSON_MODE_SYSTEM_NOTE}"
+        system_prompt, user_message = self._structured_messages(user_message, json_schema, system_prompt)
         raw = self._call_llm(
             user_message,
             response_format={"type": "json_object"},

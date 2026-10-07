@@ -58,7 +58,7 @@ The channel is **explicit opt-in** — it never starts polling on its own.
    # MAILROOM_GMAIL_DEFAULT_MATTER_ID=DEFAULT # matter when the subject has no [M:] tag
    # MAILROOM_GMAIL_ALLOWED_SENDERS=          # CSV allowlist; empty = accept all
    # MAILROOM_GMAIL_REQUIRE_DMARC=1           # allowlisted senders need Gmail's dmarc=pass
-   # MAILROOM_GMAIL_MAX_REPLIES_PER_HOUR=20   # reply budget per address
+   # MAILROOM_GMAIL_MAX_REPLIES_PER_HOUR=20   # reject/ack/digest budget per address
    # MAILROOM_GMAIL_ACKS=1                    # acknowledgment reply on queue
    # MAILROOM_GMAIL_IDLE=0                    # IMAP IDLE push (opt-in)
    # MAILROOM_GMAIL_REACTIONS=1               # ✅ claim acknowledgement
@@ -127,7 +127,7 @@ prefixes are irrelevant. The rules that DO matter:
 | **Accepted extensions** | `file_extensions` from `config/taxonomy.yaml`: `.pdf`, `.txt`, `.docx`, `.md`, `.jpg`, `.jpeg`, `.png`, `.gif`. Anything else is skipped (message still acknowledged) |
 | **Size** | ≤ `MAILROOM_GMAIL_MAX_ATTACHMENT_MB` (default **50 MB**) per attachment; oversized attachments are skipped, message still acknowledged |
 | **Sender** | Any mailbox can send unless `MAILROOM_GMAIL_ALLOWED_SENDERS` is set (CSV, exact case-insensitive match). An allowlisted sender also needs Gmail's `dmarc=pass` verdict (`MAILROOM_GMAIL_REQUIRE_DMARC`). Auto-replies, bounces, mailing-list mail and the agent's own address are skipped without a reply |
-| **Replies** | Every reply goes through the durable outbox: an acknowledgment when attachments are queued, a reject reply naming each refused file and why (wrong type, too large, no usable name, no attachment), the completion echo for a single document, and ONE digest per multi-document email once every document finishes (a partial digest after 6 hours). Capped per address per hour |
+| **Replies** | Every reply goes through the durable outbox: an acknowledgment when attachments are queued, a reject reply naming each refused file and why (wrong type, too large, no usable name, no attachment), the completion echo for a single document, and ONE digest per multi-document email once every document finishes (a partial digest after 6 hours). Reject, acknowledgment and digest replies are capped per address per hour; completion echoes are not, since each answers one queued document |
 | **Subject matter tag** | Optional `[M:<matter_id>]` — see § Subject line below |
 | **One email = one document** | Best practice for traceability: send each document as its own email with one attachment |
 
