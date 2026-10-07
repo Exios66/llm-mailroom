@@ -23,6 +23,7 @@ logger = structlog.get_logger(__name__)
 
 # O-1: kick the score-config warm-up off the document path at startup.
 from observability.scores import warmup_score_configs
+from observability.masking import allowlist_intake_meta
 from observability.tracing import install_on_dropped, pipeline_trace
 
 install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
@@ -698,7 +699,7 @@ def _triage_trace_kwargs(claimed: Path, intake_meta: dict) -> dict:
         "tags": ["mailroom", environment, "source-gmail", "route-triage"],
         "environment": environment,
         "input": {"filename": Path(claimed).name, "size_bytes": size},
-        "metadata": intake_meta or {},
+        "metadata": allowlist_intake_meta(intake_meta),
     }
 
 

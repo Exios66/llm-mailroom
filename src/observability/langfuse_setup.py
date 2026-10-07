@@ -144,6 +144,9 @@ def client_kwargs() -> dict:
         "host": _resolve_host(),
         "release": _release_label(),
     }
+    from observability.masking import mask_otel_spans
+
+    kwargs["mask_otel_spans"] = mask_otel_spans
     environment = (
         os.environ.get("OBSERVABILITY_ENVIRONMENT")
         or os.environ.get("LANGFUSE_TRACING_ENVIRONMENT")
