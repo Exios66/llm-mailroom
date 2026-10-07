@@ -37,7 +37,7 @@ def test_live_specialists_equal_dojo_production():
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="dojo v0.20.1 re-pins taxonomy fixture (plan Task 11)",
+    reason="dojo v0.21.0 DEFAULT_FIELD_TYPES still has intent: name; mailroom taxonomy uses label (plan Task 11 re-pins the fixture)",
 )
 def test_taxonomy_field_types_equal_dojo_defaults_for_live_classes():
     tax = {c["key"]: c["field_types"] for c in load_config()["doc_classes"]}
