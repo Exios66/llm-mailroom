@@ -1,7 +1,7 @@
 import structlog
 from agents.base import BaseAgent
 from langchain_agents.specialist_agents import CORRESPONDENCE_SCHEMA
-from llm.prompt_doctrine import CORRESPONDENCE as _PRODUCTION_DOCTRINE
+from llm.frozen_v1 import load_specialist_v1
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
@@ -37,7 +37,7 @@ Extraction rules:
 Use the explicit text as the source of truth. Return one complete JSON object with every
 schema field; use null for unstated optional values."""
 
-SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
+SYSTEM_PROMPT = load_specialist_v1("correspondence_specialist")
 
 
 class CorrespondenceSpecialist(BaseAgent):

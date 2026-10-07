@@ -2,7 +2,7 @@
 
 Wraps ``langchain_agents.specialist_agents.MergerAgreementSpecialist`` so
 long agreements keep the chunked-extraction pass, while the production
-prompt is the mailroom SYSTEM_PROMPT (V0 + doctrine) served through
+prompt is the sandbox / eval-environment frozen v1 stem served through
 ``get_managed_prompt`` like the insurance/corporate peers.
 
 ``handoff_context`` carries the sorter's classification (doc_type + MAUD
@@ -14,7 +14,7 @@ import structlog
 from langchain_agents.specialist_agents import (
     MergerAgreementSpecialist as _LangChainMergerAgreementSpecialist,
 )
-from llm.prompt_doctrine import MERGER_AGREEMENT as _PRODUCTION_DOCTRINE
+from llm.frozen_v1 import load_specialist_v1
 from llm.prompts import get_managed_prompt
 from pipeline.config import get_agent_config
 
@@ -60,7 +60,7 @@ Extraction rules:
     it further for uncertain values or truncated input. Never default to a fixed high value
     (e.g. 0.90 or 0.95)."""
 
-SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
+SYSTEM_PROMPT = load_specialist_v1("merger_agreement_specialist")
 
 
 class MergerAgreementSpecialist(_LangChainMergerAgreementSpecialist):
@@ -68,8 +68,8 @@ class MergerAgreementSpecialist(_LangChainMergerAgreementSpecialist):
 
     - Model/budget defaults come from ``taxonomy.yaml``
       ``agents.merger_agreement_specialist``.
-    - Production prompt is SYSTEM_PROMPT (V0 + mailroom doctrine) via
-      Langfuse-managed ``mailroom-merger_agreement_specialist``.
+    - Production prompt is frozen v1 via Langfuse-managed
+      ``mailroom-merger_agreement_specialist``.
     - Inherits chunked extraction from the LangChain specialist so long
       MAUD agreements are windowed, not truncated.
     """

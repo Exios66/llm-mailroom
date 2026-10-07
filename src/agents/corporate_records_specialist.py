@@ -1,7 +1,7 @@
 import structlog
 from agents.base import BaseAgent
 from langchain_agents.specialist_agents import CORPORATE_RECORDS_SCHEMA
-from llm.prompt_doctrine import CORPORATE_RECORDS as _PRODUCTION_DOCTRINE
+from llm.frozen_v1 import load_specialist_v1
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +33,7 @@ Extraction rules:
 
 Be methodical and thorough — corporate records are the backbone of the client's legal structure."""
 
-SYSTEM_PROMPT = SYSTEM_PROMPT_V0.rstrip() + "\n\n" + _PRODUCTION_DOCTRINE
+SYSTEM_PROMPT = load_specialist_v1("corporate_records_specialist")
 
 
 class CorporateRecordsSpecialist(BaseAgent):

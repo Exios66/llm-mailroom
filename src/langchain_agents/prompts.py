@@ -2964,7 +2964,7 @@ PROMPT_VERSIONS = {
     "legalbench_task_v0": LEGALBENCH_TASK_PROMPT_V0,
 
     # Specialists
-    "contracts_specialist": CONTRACTS_SPECIALIST_PROMPT_V33,  # mailroom production alias
+    "contracts_specialist": CONTRACTS_SPECIALIST_PROMPT_V33,  # rebound to frozen v1 below
     "contracts_specialist_v1": CONTRACTS_SPECIALIST_PROMPT_V1,
     "contracts_specialist_v2": CONTRACTS_SPECIALIST_PROMPT_V2,
     "contracts_specialist_v3": CONTRACTS_SPECIALIST_PROMPT_V3,
@@ -3018,6 +3018,13 @@ PROMPT_VERSIONS = {
     # PDF
     "pdf_transcriber": PDF_TRANSCRIBER_SYSTEM_PROMPT,
 }
+
+# Production specialist aliases: sandbox / eval-environment frozen v1 stems.
+# Historical entity-extraction keys (contracts_specialist_v1…v33, sorter_v0…v14)
+# stay on this dict for eval loops. Sorter production remains sorter_v14.
+from llm.frozen_v1 import bind_production_specialists  # noqa: E402
+
+bind_production_specialists(PROMPT_VERSIONS)
 
 DEFAULT_PROMPT_VERSION = "sorter"
 
