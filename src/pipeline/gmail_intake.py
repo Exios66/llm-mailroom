@@ -1069,8 +1069,6 @@ if __name__ == "__main__":
 # chain. The ✅ reaction proves pickup; the echo proves the pipeline happened.
 # ---------------------------------------------------------------------------
 
-_ECHO_DONE: _BoundedSet = _BoundedSet()
-_ECHO_LOCK = threading.Lock()
 
 
 def echoes_enabled() -> bool:
@@ -1611,110 +1609,128 @@ def _load_audit_rows(doc_id: str) -> tuple[list[dict], bool | None]:
         return [], None
 
 
-def send_intake_echo(manifest: dict) -> bool:
-    """Reply on the source Gmail thread with the terminal-stage report.
+def _retry_reaction(message_id: str) -> None:
+    """Terminal-stage reaction retry (see send_intake_echo). Never raises."""
+    try:
+        if reactions_enabled():
+            react_to_message(str(message_id))
+    except Exception:
+        logger.warning("gmail_echo_reaction_retry_failed", message_id=str(message_id), exc_info=True)
 
-    Called by the graph at every terminal manifest (archived / review /
-    failed). Best-effort: never raises, retried by a later terminal event of
-    the same document if the send fails. Returns True when sent.
-    """
+
+def _echo_gate(manifest: dict):
+    """(doc_id, stage, message_id, sender, intake) when an echo applies, else None."""
     intake = (manifest or {}).get("intake") or {}
     doc_id = str((manifest or {}).get("doc_id") or "")
     stage = str((manifest or {}).get("stage") or "")
     message_id = intake.get("message_id")
     sender = intake.get("sender")
     if not (intake.get("source") == "gmail" and message_id and sender):
-        return False
+        return None
     if not echoes_enabled():
-        return False
-    # Reaction guarantee (HUB-037): the claim-time ✅ reaction is best-effort
-    # and a failed attempt is only retried on a LATER claim — but a
-    # single-document triage-lane document has exactly ONE claim, so a
-    # claim-time failure would leave the sender without the "picked up"
-    # acknowledgement forever. Retry the reaction now that the document has
-    # reached a terminal stage. Deduped per Message-ID: a reaction that
-    # already succeeded (or is still in flight) is never re-sent, and
-    # MAILROOM_GMAIL_REACTIONS=0 stays respected. Best-effort — a failed
-    # retry must never block the completion echo.
+        return None
+    return doc_id, stage, message_id, sender, intake
+
+
+def _enqueue_echo(manifest: dict) -> str | None:
+    """Build the echo and enqueue it durably. Returns its dedup key (None = no echo)."""
+    from . import mail_outbox
+
+    gate = _echo_gate(manifest)
+    if gate is None:
+        return None
+    doc_id, stage, message_id, sender, intake = gate
+    dedup_key = f"echo:{doc_id}:{stage}"
+    if mail_outbox.row_state(dedup_key) is not None:
+        return dedup_key  # already queued/sent/dead: skip the audit read and build
+    cfg = load_config()
+    audit_rows, chain_valid = _load_audit_rows(doc_id)
+    body = build_echo_body(manifest, audit_rows, chain_valid)
+    html = build_echo_html(manifest, audit_rows, chain_valid)
+    original_subject = str(intake.get("subject") or manifest.get("original_filename") or "mailroom intake")
+    domain = str(cfg.get("address") or "").rpartition("@")[2].strip() or "mailroom.local"
+    mail_outbox.enqueue(
+        dedup_key,
+        to_addr=str(sender),
+        subject=f"Re: {original_subject}",
+        text=body,
+        html=html,
+        headers={
+            "In-Reply-To": str(message_id),
+            "References": str(message_id),
+            "Message-ID": f"<mailroom-echo-{doc_id or uuid.uuid4().hex[:12]}-{stage}@{domain}>",
+        },
+    )
+    return dedup_key
+
+
+def send_intake_echo(manifest: dict) -> bool:
+    """Reply on the source Gmail thread with the terminal-stage report.
+
+    Called at every terminal manifest (archived / review / failed). Enqueues
+    the echo in the durable outbox (idempotent per ``echo:<doc>:<stage>``,
+    across restarts), drains inline, and returns True only when the row is
+    ``sent`` (also when it was already sent earlier). Failed sends are retried
+    by the outbox worker with backoff. Never raises.
+    """
     try:
-        if reactions_enabled():
-            react_to_message(str(message_id))
+        gate = _echo_gate(manifest)
+        if gate is None:
+            return False
+        # Reaction guarantee (HUB-037): the claim-time reaction is best-effort
+        # and a single-document triage-lane document has exactly ONE claim, so
+        # retry it now (deduped per Message-ID; REACTIONS=0 respected).
+        _retry_reaction(str(gate[2]))
+        from . import mail_outbox
+
+        dedup_key = _enqueue_echo(manifest)
+        if dedup_key is None:
+            return False
+        if mail_outbox.row_state(dedup_key) != "sent":
+            mail_outbox.drain_once()
+        return mail_outbox.row_state(dedup_key) == "sent"
     except Exception:
-        logger.warning("gmail_echo_reaction_retry_failed", message_id=str(message_id), exc_info=True)
-    dedup_key = (doc_id, stage)
-    with _ECHO_LOCK:
-        if dedup_key in _ECHO_DONE:
-            return True
-        _ECHO_DONE.add(dedup_key)
-
-    ok = False
-    client = None
-    try:
-        cfg = load_config()
-        audit_rows, chain_valid = _load_audit_rows(doc_id)
-        body = build_echo_body(manifest, audit_rows, chain_valid)
-        html = build_echo_html(manifest, audit_rows, chain_valid)
-
-        msg = email.message.EmailMessage()
-        msg["From"] = cfg["address"]
-        msg["To"] = str(sender)
-        original_subject = str(intake.get("subject") or manifest.get("original_filename") or "mailroom intake")
-        msg["Subject"] = f"Re: {original_subject}"
-        msg["In-Reply-To"] = str(message_id)
-        msg["References"] = str(message_id)
-        msg["Date"] = email.utils.formatdate(localtime=False)
-        msg["Message-ID"] = f"<mailroom-echo-{doc_id or uuid.uuid4().hex[:12]}-{stage}@mailroom.local>"
-        msg.set_content(body)  # text/plain first (preferred fallback)
-        msg.add_alternative(html, subtype="html")  # clean rendering in Gmail
-
-        factory = _INJECTED_SMTP_FACTORY or (
-            lambda: smtplib.SMTP_SSL(cfg["smtp_host"], cfg["smtp_port"], timeout=IMAP_TIMEOUT_SECONDS)
-        )
-        client = factory()
-        client.login(cfg["address"], cfg["password"])
-        client.sendmail(cfg["address"], [str(sender)], msg.as_bytes())
-        ok = True
-        _record_status(echoes_sent=_STATUS["echoes_sent"] + 1)
-        logger.info(
-            "gmail_echo_sent",
-            doc_id=doc_id,
-            stage=stage,
-            to=sender,
-            message_id=message_id,
-        )
-    except Exception as exc:
-        logger.warning(
-            "gmail_echo_failed",
-            doc_id=doc_id,
-            stage=stage,
-            error=f"{type(exc).__name__}: {exc}",
-        )
-    finally:
-        if client is not None:
-            try:
-                client.quit()
-            except Exception:
-                pass
-    if not ok:
-        # A failed echo must be retried by a later terminal event.
-        with _ECHO_LOCK:
-            _ECHO_DONE.discard(dedup_key)
-    return ok
+        logger.warning("gmail_echo_failed", exc_info=True)
+        return False
 
 
 def dispatch_intake_echo(manifest) -> None:
-    """Fire the completion echo off the document path (daemon thread, never raises)."""
+    """Enqueue the completion echo and wake the outbox worker (never raises).
+
+    Delivery happens on the worker thread (no thread per echo). ``_enqueue_echo``
+    reads the audit chain via ``asyncio.run``, so under a running event loop it
+    runs on a short helper thread that is joined (DB-only work, no network).
+    """
     try:
         if not isinstance(manifest, dict):
             manifest = manifest.model_dump(mode="json") if hasattr(manifest, "model_dump") else dict(manifest)
-        intake = manifest.get("intake") or {}
-        if intake.get("source") != "gmail" or not echoes_enabled():
+        gate = _echo_gate(manifest)
+        if gate is None:
             return
-        threading.Thread(
-            target=send_intake_echo,
-            args=(manifest,),
-            name="gmail-echo",
-            daemon=True,
-        ).start()
+        message_id = str(gate[2])
+        with _REACTION_LOCK:
+            reaction_pending = message_id not in _REACTION_ATTEMPTED
+        if reaction_pending and reactions_enabled():
+            threading.Thread(
+                target=_retry_reaction, args=(message_id,), name="gmail-echo-react", daemon=True
+            ).start()
+        import asyncio
+
+        try:
+            asyncio.get_running_loop()
+            in_loop = True
+        except RuntimeError:
+            in_loop = False
+        if in_loop:
+            t = threading.Thread(target=_enqueue_echo, args=(manifest,), name="gmail-echo-enqueue", daemon=True)
+            t.start()
+            t.join(60)
+        else:
+            _enqueue_echo(manifest)
+        from . import mail_outbox
+
+        worker = mail_outbox.get_worker()
+        if worker is not None:
+            worker.wake()
     except Exception:
         logger.exception("gmail_echo_dispatch_failed")
