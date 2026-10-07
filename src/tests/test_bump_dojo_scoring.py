@@ -193,7 +193,7 @@ def test_apply_pin_includes_new_published_surfaces(tmp_path, relative_path):
     assert {p.relative_to(tmp_path) for p in tmp_path.rglob("*") if p.is_file()} == original_files
 
 
-@pytest.mark.parametrize("old_tag", ["v0.19.1", "v0.20.0-rc.1", "v0.20.0.rc.1"])
+@pytest.mark.parametrize("old_tag", ["v0.19.1", "v0.22.0-rc.1", "v0.20.0.rc.1"])
 @pytest.mark.parametrize("tag", ["v0.20.0", "0.20.0-rc.2"])
 @pytest.mark.parametrize(
     "template",
@@ -206,6 +206,13 @@ def test_apply_pin_includes_new_published_surfaces(tmp_path, relative_path):
         '<a href="https://github.com/Exios66/llm-dojo-scoring/releases/tag/{version}">'
         '<img src="https://img.shields.io/badge/dojo-{version}-6f42c1" '
         'alt="llm-dojo-scoring {version}"></a>',
+        "| llm-mailroom | llm-dojo-scoring | git pin `@{version}`, auto-bumped |\n",
+        "| llm-mailroom | llm-dojo-scoring | git pin `@{version}` as of "
+        "2026-10-07, auto-bumped |\n",
+        "| llm-mailroom | llm-dojo-scoring | git pin `@{version}`, "
+        "auto-bumped (as of 2026-10-07) |\n",
+        "PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply "
+        "--tag {version} --allow-missing-release\n",
     ],
 )
 def test_rewrite_replaces_full_pin_in_urls_badges_and_alt_text(old_tag, tag, template):

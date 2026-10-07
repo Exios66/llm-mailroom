@@ -181,7 +181,7 @@ Local check / apply:
 
 ```bash
 PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check
-PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.19.1
+PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.21.0
 ```
 
 ## Corpus feeds

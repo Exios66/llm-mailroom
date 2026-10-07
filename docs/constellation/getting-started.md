@@ -97,7 +97,7 @@ For a self-contained alternative with no Langfuse at all, run [agent-mailroom](r
 ## 6. Score extraction output
 
 ```bash
-pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.19.1"
+pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.21.0"
 ```
 
 ```python
