@@ -16,16 +16,20 @@
     "corporate_records_specialist": {
       "eval_environment_key": "corporate_records_specialist_v1",
       "sandbox_stem": "corporate_records_specialist_simplified",
-      "sha256": "484e64dd847b7bb35afebca74edc1fb6c381f0f7d5e9367ad8673bec0b8af45c",
-      "chars": 5801,
-      "opening": "You are the corporate-records specialist."
+      "sha256": "fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399",
+      "chars": 5865,
+      "opening": "You are the corporate-records specialist.",
+      "source": "llm-dojo-scoring production_prompts",
+      "refrozen_at": "2026-10-05"
     },
     "correspondence_specialist": {
       "eval_environment_key": "correspondence_specialist_v1",
       "sandbox_stem": "correspondence_specialist_simplified",
-      "sha256": "eab63b5afd29906b1ad3aca2d7698bf5c15d4b7f4ce9ade3b744be535d18d4f3",
-      "chars": 6061,
-      "opening": "You are the correspondence specialist."
+      "sha256": "2b0b81ff98920b9207627707443e2b023db39212fda5bdcba7bfbded39fa38b6",
+      "chars": 6113,
+      "opening": "You are the correspondence specialist.",
+      "source": "llm-dojo-scoring production_prompts",
+      "refrozen_at": "2026-10-05"
     },
     "insurance_claims_specialist": {
       "eval_environment_key": "insurance_claims_specialist_v1",
