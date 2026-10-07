@@ -92,7 +92,12 @@ class ImageExtractor(BaseAgent):
                     else {}
                 ),
             )
-            record_usage(getattr(response, "usage", None), self.model, agent=self.agent_name)
+            record_usage(
+                getattr(response, "usage", None),
+                self.model,
+                agent=self.agent_name,
+                served_model=getattr(response, "model", None),
+            )
             text = response.choices[0].message.content or ""
             logger.info("vision_extraction_complete", filename=filename, chars=len(text))
             return {"text": text, "confidence": 0.85, "method": "vision"}

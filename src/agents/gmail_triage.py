@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from agents.base import BaseAgent
 from llm.prompts import get_managed_prompt
 from pipeline.config import get_all_doc_types
+from llm.quota import FreeQuotaExhausted
 from schemas.documents import EXTRACTION_SCHEMAS, get_extraction_schema
 
 logger = structlog.get_logger(__name__)
@@ -472,6 +473,26 @@ class GmailTriageAgent(BaseAgent):
                 TRIAGE_SCHEMA,
                 system_prompt=self.system_prompt(),
             )
+        except FreeQuotaExhausted as exc:
+            # The free pool is rate-limited (breaker open): no paid fallback
+            # and no raise — answer with the deterministic header pass so the
+            # lane still parks the document with grounded entities.
+            logger.warning(
+                "triage_free_quota_degraded",
+                agent=self.agent_name,
+                open_until=getattr(exc, "open_until", None),
+                filename=filename,
+            )
+            result = validate_triage({}, doc_text=doc_text)
+            result["degraded"] = "free_quota"
+            result["debug"] = {
+                "model": None,
+                "attempted_models": captured.get("attempted_models") or [],
+                "parse_ok": None,
+                "parse_error": None,
+                "degraded": "free_quota",
+            }
+            return result
         except Exception as exc:
             # The call itself failed (rate-limit exhaustion, timeout, …).
             # Park evidence first: the full INPUT is written even though no
