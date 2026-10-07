@@ -185,6 +185,20 @@ def _free_swarm() -> list[str]:
         return []
 
 
+def _ordered_dedup(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def _is_openrouter_url(base_url: str | None) -> bool:
+    return bool(base_url) and "openrouter.ai" in str(base_url)
+
+
 def retry_chat_completion(
     client,
     *,
@@ -212,6 +226,13 @@ def retry_chat_completion(
     every attempt on one saturated model parked documents that another free
     model could have served instantly. Paid models NEVER rotate (a failover
     would silently change cost); the swarm order is priority (primary first).
+    On an OpenRouter base URL the chain is sent as the ``models`` array (with
+    ``provider.require_parameters``) so the server falls back instead.
+
+    FREE-QUOTA BREAKER (``llm/quota.py``): free calls record 429s/successes;
+    after ``free_quota.trip_after`` consecutive 429s further free calls raise
+    ``FreeQuotaExhausted`` without touching the network until the cooldown
+    ends. Paid models never touch the breaker.
 
     Returns the SDK response on success, re-raises the last exception when all
     attempts are exhausted.
@@ -223,24 +244,60 @@ def retry_chat_completion(
     if timeout is None:
         timeout = float(get_call_timeout_seconds())
     model = str(kwargs.get("model") or "")
+    free = False
     if model:
         from .client import is_free_model
 
-        failover = (
-            [m for m in _free_swarm() if m != model]
-            if is_free_model(model)
-            else []
-        )
-    else:
-        failover = []
+        free = is_free_model(model)
+    failover = [m for m in _free_swarm() if m != model] if free else []
+    breaker = None
+    if free:
+        from .quota import get_breaker
+
+        breaker = get_breaker()
+        base_url = str(getattr(client, "base_url", "") or "")
+        chain = _ordered_dedup([model, *failover])
+        if _is_openrouter_url(base_url) and len(chain) > 1:
+            # Server-side fallback: OpenRouter tries `models` in order and
+            # only routes to providers supporting every request parameter,
+            # so the client-side rotation below is not needed.
+            # `model` stays the primary; `models` carries only the fallbacks.
+            extra = dict(kwargs.get("extra_body") or {})
+            extra["models"] = chain[1:]
+            provider = dict(extra.get("provider") or {})
+            provider["require_parameters"] = True
+            extra["provider"] = provider
+            kwargs = {**kwargs, "extra_body": extra}
+            failover = []
     attempt = 0
     while True:
         attempt += 1
         if run_deadline is not None:
             check_run_deadline(run_deadline)
+        if breaker is not None and breaker.is_open():
+            from .quota import FreeQuotaExhausted
+
+            logger.warning("llm_free_quota_open", model=kwargs.get("model"), open_until=breaker.open_until)
+            raise FreeQuotaExhausted(breaker.open_until)
         try:
-            return client.chat.completions.create(**kwargs, timeout=timeout)
+            response = client.chat.completions.create(**kwargs, timeout=timeout)
+            if breaker is not None:
+                breaker.note_success()
+            return response
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
+            if breaker is not None and (
+                isinstance(exc, RateLimitError) or _status_code(exc) == 429
+            ):
+                breaker.note_rate_limit(_retry_after_seconds(exc))
+                if breaker.is_open():
+                    # Raised even on the final attempt, so callers always see
+                    # the breaker (and degrade) rather than a bare 429.
+                    from .quota import FreeQuotaExhausted
+
+                    logger.warning(
+                        "llm_free_quota_open", model=kwargs.get("model"), open_until=breaker.open_until
+                    )
+                    raise FreeQuotaExhausted(breaker.open_until) from exc
             # A model-capability 400 is not "retryable" in place, but it IS a
             # failover trigger — the next swarm entry may support the feature.
             # With no failover model left, retrying the same model is futile.

@@ -27,13 +27,19 @@ def _message(
     sender: str = "sender@example.com",
     attachments=(),
     message_id: str = "<msg-1@example.com>",
+    extra_headers=None,
+    auth_results: str | None = "mx.google.com; dkim=pass; spf=pass; dmarc=pass",
 ) -> bytes:
     msg = email.message.EmailMessage()
+    if auth_results is not None:
+        msg["Authentication-Results"] = auth_results
     msg["From"] = sender
     msg["To"] = "llmmailroom@gmail.com"
     msg["Subject"] = subject
     msg["Message-ID"] = message_id
     msg["Date"] = "Tue, 01 Sep 2026 12:00:00 +0000"
+    for name, value in dict(extra_headers or {}).items():
+        msg[name] = value
     msg.set_content("please process the attached documents")
     for filename, payload in dict(attachments).items():
         subtype = "pdf" if filename.endswith(".pdf") else "octet-stream"
@@ -46,8 +52,15 @@ def _message(
 class FakeIMAP:
     """Minimal imaplib.IMAP4_SSL stand-in (uid commands only, as used by the poller)."""
 
-    def __init__(self, messages: dict[str, bytes], ignore_store: bool = False):
+    def __init__(
+        self,
+        messages: dict[str, bytes],
+        ignore_store: bool = False,
+        structures: dict[str, bytes] | None = None,
+    ):
         self._messages = messages
+        self._structures = structures or {}
+        self.fetch_specs: list[str] = []
         self._ignore_store = ignore_store
         self.seen: set[str] = set()
         self.labels: dict[str, list[str]] = {}
@@ -93,9 +106,17 @@ class FakeIMAP:
             return ("OK", [unseen.encode()])
         if command == "FETCH":
             uid = self._arg(args[0])
+            spec = self._arg(args[1]).upper() if len(args) > 1 else ""
+            self.fetch_specs.append(spec)
+            if spec == "(BODYSTRUCTURE)":
+                if uid in self._structures:
+                    return ("OK", [self._structures[uid]])
+                return ("OK", [None])  # unsupported → poller falls back to a full fetch
             data = self._messages.get(uid)
             if data is None:
                 return ("OK", [None])
+            if spec == "(BODY.PEEK[HEADER])":
+                data = data.split(b"\n\n", 1)[0] + b"\n\n"
             header = b"1 (UID " + uid.encode() + b" RFC822 {" + str(len(data)).encode() + b"}"
             return ("OK", [(header, data), b")"])
         if command == "STORE":
@@ -1283,3 +1304,578 @@ def test_already_processed_message_drops_carried_attempts(temp_base_dir):
     report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
     assert report["already_processed"] == 1
     assert gmail_intake._load_state()["failed_attempts"] == {}
+
+
+# ── reject replies + two-phase delivery (hardening T4) ────────────────────
+
+
+def _outbox_rows():
+    import sqlite3
+
+    from pipeline import mail_outbox
+
+    if not mail_outbox.db_path().exists():
+        return []
+    conn = sqlite3.connect(str(mail_outbox.db_path()))
+    try:
+        return conn.execute(
+            "SELECT dedup_key, to_addr, subject, text, html FROM outbox ORDER BY created_at"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def test_unaccepted_extension_gets_reject_reply(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("Scan", attachments={"malware.exe": b"MZ"}, message_id="<rej-1@x>")}
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["reject_replies"] == 1
+    assert "1" in client.seen
+    rows = _outbox_rows()
+    assert len(rows) == 1
+    key, to, subject, text, html = rows[0]
+    assert key == "reject:<rej-1@x>"
+    assert to == "sender@example.com"
+    assert subject == "Re: Scan"
+    assert "malware.exe" in text and ".pdf" in text
+
+
+def test_no_attachments_gets_reject_reply(temp_base_dir):
+    client = FakeIMAP({"1": _message("hi", message_id="<rej-2@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["reject_replies"] == 1
+    (row,) = _outbox_rows()
+    assert "no attachment" in row[3]
+
+
+def test_non_allowlisted_sender_gets_no_reply(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("x", sender="stranger@evil.example", attachments={"a.exe": b"MZ"}, message_id="<rej-3@x>")}
+    )
+    report = gmail_intake.poll_once(
+        config=_cfg(allowed_senders={"client@firm.example"}), imap_factory=lambda: client
+    )
+    assert report["skipped_sender"] == 1
+    assert _outbox_rows() == []
+
+
+def test_reject_reply_respects_hourly_budget(temp_base_dir):
+    client = FakeIMAP({"1": _message("x", attachments={"a.exe": b"MZ"}, message_id="<rej-4@x>")})
+    report = gmail_intake.poll_once(
+        config=_cfg(max_replies_per_hour=0), imap_factory=lambda: client
+    )
+    assert report["reject_replies"] == 0
+    assert _outbox_rows() == []
+    assert "1" in client.seen
+
+
+def test_reject_reply_html_escapes_filename():
+    text, html = gmail_intake.build_reject_reply(
+        "s", [("<script>x</script>.exe", "extension")], [".pdf"], 50
+    )
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_io_error_during_staging_publishes_nothing_and_retries(temp_base_dir, monkeypatch):
+    from pathlib import Path
+
+    from pipeline.bins import inbox_dir
+
+    client = FakeIMAP(
+        {"1": _message("two", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b"}, message_id="<io-1@x>")}
+    )
+    real_write = Path.write_bytes
+    calls = {"n": 0}
+
+    def flaky_write(self, data):
+        if self.name.endswith(".part"):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError(errno.ENOSPC, "disk full")
+        return real_write(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", flaky_write)
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 0
+    assert list(inbox_dir().glob("*.pdf")) == [] if inbox_dir().exists() else True
+    assert list(_staging_dir().glob("*")) == []
+    assert "1" not in client.seen
+    assert gmail_intake._load_state()["failed_attempts"]["<io-1@x>"] == 1
+
+    monkeypatch.setattr(Path, "write_bytes", real_write)
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 2
+    assert sorted(p.name for p in inbox_dir().glob("*.pdf")) == ["a.pdf", "b.pdf"]
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 0
+
+
+def test_promote_failure_never_unlinks_published_file(temp_base_dir, monkeypatch):
+    from pipeline.bins import inbox_dir
+
+    client = FakeIMAP(
+        {"1": _message("two", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b"}, message_id="<pf-1@x>")}
+    )
+    real_place = gmail_intake._place
+    calls = {"n": 0}
+
+    def flaky_place(src, dest_dir, name, meta=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("promote boom")
+        return real_place(src, dest_dir, name, meta)
+
+    monkeypatch.setattr(gmail_intake, "_place", flaky_place)
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert [p.name for p in inbox_dir().glob("*.pdf")] == ["a.pdf"]
+    assert report["attachments_queued"] == 1
+    assert any(e.startswith("promote_failed:1:") and "b.pdf" in e for e in report["errors"])
+    assert "1" in client.seen
+    assert list(_staging_dir().glob("*")) == []
+
+    monkeypatch.setattr(gmail_intake, "_place", real_place)
+    client.seen.clear()
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["already_processed"] == 1
+    assert len(list(inbox_dir().glob("*.pdf"))) == 1
+
+
+def test_sidecar_written_before_file_is_visible(temp_base_dir, monkeypatch):
+    from pipeline.bins import inbox_meta_path
+
+    seen_meta = []
+    real_link = gmail_intake.os.link
+
+    def spy_link(src, dest):
+        if not str(dest).endswith(".meta"):  # the sidecar itself is linked too
+            seen_meta.append(inbox_meta_path(gmail_intake.Path(dest)).exists())
+        return real_link(src, dest)
+
+    monkeypatch.setattr(gmail_intake.os, "link", spy_link)
+    client = FakeIMAP({"1": _message("one", attachments={"a.pdf": _pdf_bytes()}, message_id="<sc-1@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1
+    assert seen_meta == [True]
+
+
+def test_existing_sidecar_is_never_overwritten(temp_base_dir):
+    """An existing `<file>.meta` may belong to a claim in flight: take a new name."""
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    inbox_dir().mkdir(parents=True, exist_ok=True)
+    (inbox_dir() / "scan.pdf.meta").write_text('{"matter_id": "OLD"}')
+    client = FakeIMAP({"1": _message("[M:NEW]", attachments={"scan.pdf": _pdf_bytes()}, message_id="<st-1@x>")})
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert read_inbox_meta(inbox_dir() / "scan.pdf")["matter_id"] == "OLD"
+    assert not (inbox_dir() / "scan.pdf").exists()
+    assert read_inbox_meta(inbox_dir() / "scan-1.pdf")["matter_id"] == "NEW"
+
+
+def test_deliver_attachment_returns_io_on_oserror(temp_base_dir, monkeypatch):
+    def boom(*a, **kw):
+        raise OSError(errno.EIO, "io")
+
+    monkeypatch.setattr(gmail_intake, "_place", boom)
+    delivered, reason = gmail_intake.deliver_attachment(
+        "a.pdf", b"%PDF", {"_max_attachment_bytes": 1024}
+    )
+    assert (delivered, reason) == (None, "io")
+
+
+# ── BODYSTRUCTURE pre-filter + PEEK fetch (hardening T6) ──────────────────
+
+
+def _fixture_structure() -> bytes:
+    from pathlib import Path
+
+    return (Path(__file__).parent / "fixtures" / "gmail" / "bodystructure_two_attachments.txt").read_bytes()
+
+
+def test_parse_bodystructure_gmail_format_sample():
+    parts = gmail_intake.parse_bodystructure(_fixture_structure())
+    named = [(p.name, p.size, p.maintype) for p in parts if p.name]
+    assert named == [
+        ("Master Services Agreement.pdf", 2873450, "application"),
+        ("étiquette.png", 70140, "image"),
+    ]
+    assert [p.maintype for p in parts if not p.name] == ["text", "text"]
+    pdf = parts[2]
+    assert pdf.decoded_size == 2873450 * 57 // 78
+
+
+def test_parse_bodystructure_literal_and_rfc2231_and_garbage():
+    raw = (
+        b'(UID 9 BODYSTRUCTURE (("text" "plain" NIL NIL NIL "7bit" 10 1 NIL NIL NIL NIL)'
+        b'("application" "pdf" NIL NIL NIL "base64" 400 NIL ("attachment" ("filename*" '
+        b"\"utf-8''r%C3%A9sum%C3%A9.pdf\")) NIL NIL) \"mixed\" NIL NIL NIL))"
+    )
+    parts = gmail_intake.parse_bodystructure(raw)
+    assert parts[1].name == "résumé.pdf"
+    lit = b'(UID 9 BODYSTRUCTURE ("application" "pdf" ("name" {7}\r\nx y.pdf) NIL NIL "base64" 8 NIL NIL NIL NIL))'
+    assert gmail_intake.parse_bodystructure(lit)[0].name == "x y.pdf"
+    assert gmail_intake.parse_bodystructure(b"garbage (((") == []
+    assert gmail_intake.parse_bodystructure(b"") == []
+
+
+def test_oversize_only_message_never_downloads_body(temp_base_dir):
+    structure = (
+        b'1 (UID 1 BODYSTRUCTURE (("text" "plain" NIL NIL NIL "7bit" 10 1 NIL NIL NIL NIL)'
+        b'("application" "pdf" ("name" "big.pdf") NIL NIL "base64" 99999999 NIL '
+        b'("attachment" ("filename" "big.pdf")) NIL NIL) "mixed" NIL NIL NIL))'
+    )
+    client = FakeIMAP(
+        {"1": _message("Big", attachments={"big.pdf": b"%PDF"}, message_id="<big@x>")},
+        structures={"1": structure},
+    )
+    report = gmail_intake.poll_once(config=_cfg(max_attachment_bytes=1024), imap_factory=lambda: client)
+    assert "(BODY.PEEK[])" not in client.fetch_specs
+    assert "(BODY.PEEK[HEADER])" in client.fetch_specs
+    assert report["prefiltered"] == 1
+    assert report["skipped_size"] == 1
+    assert report["reject_replies"] == 1
+    assert "1" in client.seen
+    (row,) = _outbox_rows()
+    assert row[0] == "reject:<big@x>" and "big.pdf" in row[3]
+
+
+def test_acceptable_structure_downloads_body(temp_base_dir):
+    structure = (
+        b'1 (UID 1 BODYSTRUCTURE ("application" "pdf" ("name" "c.pdf") NIL NIL "base64" 40 NIL '
+        b'("attachment" ("filename" "c.pdf")) NIL NIL))'
+    )
+    client = FakeIMAP(
+        {"1": _message("ok", attachments={"c.pdf": _pdf_bytes()}, message_id="<ok@x>")},
+        structures={"1": structure},
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert "(BODY.PEEK[])" in client.fetch_specs
+    assert report["attachments_queued"] == 1
+
+
+def test_fetch_uses_peek_and_does_not_mark_seen_until_handled(temp_base_dir, monkeypatch):
+    client = FakeIMAP({"1": _message("x", attachments={"c.pdf": _pdf_bytes()}, message_id="<pk@x>")})
+
+    def boom(*a, **kw):
+        raise RuntimeError("deliver failed")
+
+    monkeypatch.setattr(gmail_intake, "deliver_attachment", boom)
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert "(RFC822)" not in client.fetch_specs
+    assert "(BODY.PEEK[])" in client.fetch_specs
+    assert "1" not in client.seen
+
+
+def test_unparseable_structure_falls_back_to_full_fetch(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("x", attachments={"c.pdf": _pdf_bytes()}, message_id="<up@x>")},
+        structures={"1": b"1 (UID 1 BODYSTRUCTURE (garbage"},
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert "(BODY.PEEK[])" in client.fetch_specs
+    assert report["attachments_queued"] == 1
+    assert report["prefiltered"] == 0
+
+
+class _FakeSock:
+    def __init__(self):
+        self.timeout = 30.0
+
+    def gettimeout(self):
+        return self.timeout
+
+    def settimeout(self, value):
+        self.timeout = value
+
+
+class _IdleClient:
+    def __init__(self, lines):
+        self.lines = list(lines)
+        self.sent = []
+        self.sock = _FakeSock()
+
+    def _new_tag(self):
+        return b"A001"
+
+    def send(self, data):
+        self.sent.append(data)
+
+    def readline(self):
+        item = self.lines.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    def socket(self):
+        return self.sock
+
+
+def test_idle_wait_returns_true_on_exists_push(monkeypatch):
+    selects = []
+
+    def fake_select(r, w, x, timeout):
+        selects.append(timeout)
+        return (r, [], [])
+
+    monkeypatch.setattr(gmail_intake.select, "select", fake_select)
+    client = _IdleClient([b"+ idling\r\n", b"* 5 EXISTS\r\n", b"A001 OK IDLE terminated\r\n"])
+    assert gmail_intake.idle_wait(client, 60) is True
+    assert client.sent == [b"A001 IDLE\r\n", b"DONE\r\n"]
+    assert len(selects) == 1 and 0 < selects[0] <= 60
+    assert client.sock.timeout == 30.0  # the socket timeout is never touched
+
+
+def test_idle_wait_timeout_uses_select_and_still_reads_done(monkeypatch):
+    monkeypatch.setattr(gmail_intake.select, "select", lambda r, w, x, t: ([], [], []))
+    client = _IdleClient([b"+ idling\r\n", b"A001 OK done\r\n"])
+    assert gmail_intake.idle_wait(client, 1) is False
+    assert client.sent == [b"A001 IDLE\r\n", b"DONE\r\n"]
+    assert client.lines == []  # tagged OK consumed through the same reader
+
+
+def test_idle_wait_raises_when_refused():
+    client = _IdleClient([b"A001 BAD unknown command\r\n"])
+    with pytest.raises(gmail_intake.GmailIntakeError):
+        gmail_intake.idle_wait(client, 5)
+
+
+def test_poller_uses_idle_when_enabled_and_falls_back_on_error(monkeypatch):
+    events = []
+    poller = gmail_intake.GmailIntakePoller(poll_seconds=0.01, use_idle=True)
+    monkeypatch.setattr(poller, "_open_idle_client", lambda: object())
+
+    calls = {"n": 0}
+
+    def fake_idle(client, timeout_s):
+        calls["n"] += 1
+        events.append("idle")
+        if calls["n"] == 2:
+            raise OSError("connection dropped")
+        return True
+
+    def fake_poll(**kw):
+        events.append("poll")
+        if events.count("poll") >= 4:
+            poller.stop()
+        return {}
+
+    real_wait = poller._stop_event.wait
+
+    def spy_wait(timeout=None):
+        events.append("sleep")
+        return real_wait(0)
+
+    monkeypatch.setattr(gmail_intake, "idle_wait", fake_idle)
+    monkeypatch.setattr(gmail_intake, "poll_once", fake_poll)
+    monkeypatch.setattr(poller._stop_event, "wait", spy_wait)
+    poller.run()
+    assert events[:6] == ["poll", "idle", "poll", "idle", "sleep", "poll"]
+    assert poller._idle_client is None  # closed on stop
+
+
+def test_poller_without_idle_sleeps(monkeypatch):
+    poller = gmail_intake.GmailIntakePoller(poll_seconds=0.01, use_idle=False)
+    monkeypatch.setattr(gmail_intake, "idle_wait", lambda *a: pytest.fail("idle used while disabled"))
+    n = {"polls": 0}
+
+    def fake_poll(**kw):
+        n["polls"] += 1
+        if n["polls"] >= 2:
+            poller.stop()
+        return {}
+
+    monkeypatch.setattr(gmail_intake, "poll_once", fake_poll)
+    poller.run()
+    assert n["polls"] == 2
+
+
+# ── acknowledgment + bundle digest (hardening T7) ─────────────────────────
+
+
+@pytest.fixture
+def echo_env(monkeypatch, temp_base_dir):
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    gmail_intake.set_imap_factory(lambda: FakeIMAP({}))
+    yield
+    gmail_intake.set_imap_factory(None)
+
+
+def _bundle_manifest(doc_id, message_id="<bundle@x>", group_size=3, stage="archived", **extra):
+    m = {
+        "doc_id": doc_id,
+        "matter_id": "M-1",
+        "original_filename": f"{doc_id}.pdf",
+        "stage": stage,
+        "doc_type": "contract",
+        "classification_confidence": 0.9,
+        "intake": {
+            "source": "gmail",
+            "message_id": message_id,
+            "sender": "sender@example.com",
+            "subject": "Bundle",
+            "group_size": group_size,
+        },
+    }
+    m.update(extra)
+    return m
+
+
+def _keys():
+    return [r[0] for r in _outbox_rows()]
+
+
+def test_single_doc_message_gets_ack_then_echo(echo_env):
+    client = FakeIMAP({"1": _message("One", attachments={"a.pdf": _pdf_bytes()}, message_id="<one@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["ack_replies"] == 1
+    manifest = _bundle_manifest("d1", message_id="<one@x>", group_size=1)
+    assert gmail_intake._enqueue_echo(manifest) == "echo:d1:archived"
+    assert _keys() == ["ack:<one@x>", "echo:d1:archived"]
+    ack_text = _outbox_rows()[0][3]
+    assert "a.pdf" in ack_text and "triage" in ack_text
+
+
+def test_three_doc_bundle_gets_one_ack_and_one_digest(echo_env):
+    from pipeline import mail_outbox
+
+    client = FakeIMAP(
+        {"1": _message("Bundle", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b", "c.pdf": b"%PDF c"},
+                       message_id="<bundle@x>")}
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 3 and report["ack_replies"] == 1
+    assert mail_outbox.group_info("<bundle@x>")["expected"] == 3
+
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    assert {read_inbox_meta(p)["group_size"] for p in inbox_dir().glob("*.pdf")} == {3}
+    for doc in ("d1", "d2"):
+        assert gmail_intake._enqueue_echo(_bundle_manifest(doc)) is None
+    assert _keys() == ["ack:<bundle@x>"]
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d3")) == "digest:<bundle@x>"
+    assert _keys() == ["ack:<bundle@x>", "digest:<bundle@x>"]
+    digest_text = _outbox_rows()[1][3]
+    assert all(f"d{i}.pdf" in digest_text for i in (1, 2, 3))
+    assert "INCOMPLETE" not in digest_text
+
+
+def test_stale_group_flushes_partial_digest(echo_env):
+    import time as _time
+
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=3, sender="sender@example.com", subject="Bundle")
+    gmail_intake._enqueue_echo(_bundle_manifest("d1"))
+    gmail_intake._enqueue_echo(_bundle_manifest("d2"))
+    assert gmail_intake.flush_stale_digests(now=_time.time() + 60) == []
+    assert gmail_intake.flush_stale_digests(now=_time.time() + 21601) == ["digest:<bundle@x>"]
+    (row,) = [r for r in _outbox_rows() if r[0].startswith("digest:")]
+    assert "INCOMPLETE: 2 of 3" in row[3]
+
+
+def test_late_result_after_partial_digest_gets_own_echo(echo_env):
+    import time as _time
+
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=3, sender="sender@example.com", subject="Bundle")
+    gmail_intake._enqueue_echo(_bundle_manifest("d1"))
+    gmail_intake.flush_stale_digests(now=_time.time() + 21601)
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d3")) == "echo:d3:archived"
+    # d1 was already in the digest: no extra echo for the same stage...
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d1")) is None
+    # ...but a later stage for d1 is new information.
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d1", stage="review")) == "echo:d1:review"
+    assert _keys().count("digest:<bundle@x>") == 1
+
+
+def test_duplicate_terminal_manifest_is_idempotent(echo_env):
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=2, sender="sender@example.com", subject="Bundle")
+    gmail_intake._enqueue_echo(_bundle_manifest("d1", group_size=2))
+    gmail_intake._enqueue_echo(_bundle_manifest("d1", group_size=2))
+    assert mail_outbox.record_group_result("<bundle@x>", "d1", "archived", {}) == (1, 2)
+    gmail_intake._enqueue_echo(_bundle_manifest("d2", group_size=2))
+    gmail_intake._enqueue_echo(_bundle_manifest("d2", group_size=2))
+    assert _keys().count("digest:<bundle@x>") == 1
+    assert [k for k in _keys() if k.startswith("echo:")] == []
+
+
+def test_lowered_group_expected_closes_when_results_already_in(echo_env):
+    """A promote failure lowers `expected` after the queued files finished."""
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=3, sender="sender@example.com", subject="Bundle")
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d1")) is None
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d2")) is None
+    gmail_intake._register_group("<bundle@x>", 2, "sender@example.com", "Bundle")
+    assert gmail_intake._close_group_if_complete("<bundle@x>") == "digest:<bundle@x>"
+    assert mail_outbox.group_info("<bundle@x>")["closed_at"] is not None
+    assert gmail_intake._close_group_if_complete("<bundle@x>") is None  # once only
+    assert _keys().count("digest:<bundle@x>") == 1
+    assert "INCOMPLETE" not in [r for r in _outbox_rows() if r[0].startswith("digest:")][0][3]
+
+
+def test_unknown_group_falls_back_to_per_document_echo(echo_env):
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d9", message_id="<nogroup@x>")) == "echo:d9:archived"
+
+
+def test_digest_escapes_hostile_extracted_values():
+    results = [
+        {
+            "doc_id": "d1",
+            "stage": "review",
+            "filename": '<script>alert("x")</script>.pdf',
+            "doc_type": "a & b",
+            "reason": '"quoted" <b>bold</b>',
+        }
+    ]
+    html = gmail_intake.build_digest_html("s", results, 1, False)
+    assert "<script>" not in html and "<b>bold</b>" not in html
+    assert "&lt;script&gt;" in html and "a &amp; b" in html and "&quot;quoted&quot;" in html
+    _, ack_html = gmail_intake.build_ack_email(
+        "s", [{"filename": "<script>x</script>.pdf", "upload_id": "u1"}], "triage",
+        rejected=[("<img src=x>.exe", "extension")],
+    )
+    assert "<script>" not in ack_html and "<img" not in ack_html
+
+
+def test_digest_and_ack_are_multipart_with_text_part(echo_env):
+    import email as _email
+
+    from pipeline import mail_outbox
+
+    client = FakeIMAP(
+        {"1": _message("Bundle", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b"}, message_id="<bundle@x>")}
+    )
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    gmail_intake._enqueue_echo(_bundle_manifest("d1", group_size=2))
+    gmail_intake._enqueue_echo(_bundle_manifest("d2", group_size=2))
+    rows = {r[0]: r for r in _outbox_rows()}
+    for key in ("ack:<bundle@x>", "digest:<bundle@x>"):
+        _k, to, subject, text, html = rows[key]
+        row = mail_outbox.OutboxRow(key, to, subject, {"In-Reply-To": "<bundle@x>"}, text, html, 0)
+        msg = _email.message_from_bytes(mail_outbox._build_message(row, "llmmailroom@gmail.com").as_bytes())
+        types = {p.get_content_type() for p in msg.walk()}
+        assert {"text/plain", "text/html"} <= types
+        assert msg["Subject"] == "Re: Bundle"
+
+
+def test_group_size_survives_watcher_intake_meta_whitelist():
+    from pipeline.watcher import _intake_meta_from_sidecar
+
+    meta = _intake_meta_from_sidecar({"source": "gmail", "message_id": "<m@x>", "group_size": 3, "junk": 1})
+    assert meta["group_size"] == 3
+    assert "junk" not in meta
+
+
+def test_ack_disabled_by_env(echo_env, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_ACKS", "0")
+    client = FakeIMAP({"1": _message("One", attachments={"a.pdf": _pdf_bytes()}, message_id="<one@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1 and report["ack_replies"] == 0
+    assert _keys() == []

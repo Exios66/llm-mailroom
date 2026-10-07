@@ -39,8 +39,11 @@ Executed subagent-driven (Sonnet implementers + Sonnet adversarial reviewers; Op
 |---|---|---|
 | 1 Poison cap, same-fs staging | complete, CI green | 54f390a, 4460f8e, 68ce0da |
 | 2 Durable outbox, echo dedup | complete, CI green | f1ef0c5, d867a51 |
-| 3 DMARC + loop guards | next (first dispatch stopped before any change; re-dispatch) | — |
-| 4–7 | pending | — |
+| 3 DMARC + loop guards | complete | 1d556b5 |
+| 4 Reject replies, two-phase delivery | complete | c9f3cae |
+| 5 `models` fallback, served model, quota breaker | complete | 8a9b0fa |
+| 6 BODYSTRUCTURE, IDLE, result cache | complete | b896e24 |
+| 7 Ack + bundle digest | complete | 71506a1 |
 
 Rulings that refine the task text below:
 - **T1 transport errors:** only `imaplib.IMAP4.abort`, `socket.timeout`/`gaierror`/`herror`, `ConnectionError`, `ssl.SSLError`, `EOFError` abort a sweep without counting. Plain `IMAP4.error` (BAD/NO for one message) is per-message and counts toward the cap.
@@ -48,6 +51,13 @@ Rulings that refine the task text below:
 - **T2 delivery semantics:** at-least-once. Rows are claimed with a lease (`state='sending'`, `lease_until=now+300`) so two processes never send the same row; a crash mid-send delays retry up to 5 min. Dead rows are never auto-revived.
 - **T2 echo build off the document path:** `dispatch_intake_echo` spawns one non-joined daemon thread that builds, enqueues and wakes the single `OutboxWorker`; failures log `gmail_echo_build_failed`. Sending stays on the worker.
 - **CR1–CR10** (CodeRabbit review of this plan) are folded into the task text: exact-match allowlist (no plus-stripping), topmost-only `Authentication-Results` (T3), `uid:{folder}:{uidvalidity}:{uid}` key, dest-side `.part` on EXDEV, ordered-dedup `models` (T5), idempotent `record_group_result` and closed-group late echo (T7), two-phase delivery (T4).
+
+Rulings from executing Tasks 3–7 (branch `claude/gmail-triage-plan-remainder-cv5bjr`):
+- **T3 self-mail:** own-address mail is skipped unless `MAILROOM_GMAIL_ALLOW_SELF=1` (the smoke test mails itself and sets it). Our replies carry `Auto-Submitted: auto-replied`, so they stay excluded either way.
+- **T4 promote failure with nothing published** re-raises (message retried, counts toward the cap); only a failure after ≥ 1 published file records the message processed. Sidecars are created exclusively before the file (temp + link). An existing sidecar counts as a name collision and is never overwritten, because the watcher reads the sidecar after claiming its file (reversed after review: replacing it could misroute a pending claim). Bundle `expected` lowered after a part-way promote failure is re-checked at once, so a bundle whose queued files already finished still gets its full digest.
+- **T5 breaker inside one call:** three consecutive 429s in a single ladder open the breaker and the ladder stops with `FreeQuotaExhausted`, also when the opening 429 is the final attempt. With a multi-entry swarm on OpenRouter the server does the fallback (`models` holds only the fallbacks, `model` stays the primary) and client-side rotation is skipped.
+- **T6 cache key** hashes the full request as sent: system prompt with the json note and skills, and the user message with the schema and boilerplate (so it includes the filename). Expired rows are swept on write. IDLE waits with `select()`, never a socket timeout, so the reader stays usable for DONE. The BODYSTRUCTURE fixture is a hand-written literal in Gmail's format, not a live recording; the parser falls back to a full fetch on anything it cannot read.
+- **T7 bundles** are registered before any file is visible; a doc already reported in a closed digest gets no extra echo for the same stage, but a later stage does. The digest footer names the triage model when known, else "the full mailroom pipeline" (the manifest carries no served model for pipeline runs).
 
 Parked for the final fix pass:
 - T1 finding 13 (sidecar written after placement) → handled by T4 two-phase ordering.
@@ -131,7 +141,7 @@ Parked for the final fix pass:
   - `sender_permitted(allowed: set[str], sender: str, verdict: AuthVerdict, require_dmarc: bool) -> tuple[bool, str]` — empty allowlist → `(True, "open")`; otherwise requires case-insensitive bare-address match and, when `require_dmarc`, `verdict.dmarc == "pass"`.
   - `reply_allowed(to_addr: str, max_per_hour: int) -> bool` using `mail_outbox.count_recent`.
   - Config: `MAILROOM_GMAIL_REQUIRE_DMARC` (default `1`), `MAILROOM_GMAIL_MAX_REPLIES_PER_HOUR` (default `20`); `report["skipped_automated"]`, `report["skipped_auth"]`.
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `test_forged_auth_results_header_ignored`: values `["mx.google.com; dmarc=fail", "mx.google.com; dmarc=pass"]` (forged pass below Gmail's) → `dmarc == "fail"`.
   - `test_untrusted_topmost_auth_results_fails_closed`: values `["evil.example; dmarc=pass", "mx.google.com; dmarc=pass"]` → `dmarc is None`, and `sender_permitted(..., require_dmarc=True)` → `(False, "dmarc")`.
   - `test_allowlist_requires_dmarc_pass`: allowlisted sender with `dmarc=fail` → `(False, "dmarc")`; with `pass` → True; case/`"Name" <A@Firm.Example>` forms match.
@@ -139,10 +149,10 @@ Parked for the final fix pass:
   - `test_poll_skips_automated_without_reply`: message with `Auto-Submitted: auto-replied` → marked seen, `skipped_automated == 1`, no inbox file, outbox empty.
   - `test_plus_tag_does_not_match_bare_allowlist_entry`.
   - `test_reply_budget`: enqueue 20 rows for one recipient → `reply_allowed(...) is False`.
-- [ ] **Step 2: Run to verify failure** — `PYTHONPATH=src pytest src/tests/test_mail_guards.py -q`; expected FAIL.
-- [ ] **Step 3: Implement** the module and wire `poll_once` (automated check first, then sender/DMARC, both mark seen + record processed). Extend the `FakeIMAP` message helper to emit an `Authentication-Results: mx.google.com; dmarc=pass` header by default so existing tests keep passing.
-- [ ] **Step 4: Run** `PYTHONPATH=src pytest src/tests/test_mail_guards.py src/tests/test_gmail_intake.py -q`; expected PASS.
-- [ ] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(gmail): DMARC-gated allowlist and automated-mail loop guards"`
+- [x] **Step 2: Run to verify failure** — `PYTHONPATH=src pytest src/tests/test_mail_guards.py -q`; expected FAIL.
+- [x] **Step 3: Implement** the module and wire `poll_once` (automated check first, then sender/DMARC, both mark seen + record processed). Extend the `FakeIMAP` message helper to emit an `Authentication-Results: mx.google.com; dmarc=pass` header by default so existing tests keep passing.
+- [x] **Step 4: Run** `PYTHONPATH=src pytest src/tests/test_mail_guards.py src/tests/test_gmail_intake.py -q`; expected PASS.
+- [x] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(gmail): DMARC-gated allowlist and automated-mail loop guards"`
 
 ---
 
@@ -159,15 +169,15 @@ Parked for the final fix pass:
   - `build_reject_reply(subject: str, rejected: list[tuple[str, str]], accepted_exts: list[str], max_mb: int) -> tuple[str, str]` → `(text, html)`; reasons map to plain sentences (`extension`, `size`, `filename`, `none`), all values HTML-escaped.
   - `enqueue_reject_reply(cfg: dict, *, message_id: str, sender: str, subject: str, rejected: list[tuple[str, str]]) -> bool` with dedup key `reject:{message_id}`; only for senders that passed the allowlist/DMARC check, never for automated mail, and subject to `reply_allowed`.
   - Poll rule (two-phase, no rollback of published files): stage EVERY accepted attachment of a message (Task 1 `_stage_path`) before publishing any. If any staging step returns `"io"`, unlink only that message's staged `.part` files (never visible to the watcher) and raise `GmailIntakeError("io")` so Task 1's attempt counter handles it; the message stays unseen and is not added to processed. Only after all are staged, promote each with `_place` (file then sidecar). Files already in the inbox are never unlinked, because the watcher may have claimed them. If a promote fails part-way, the message is recorded processed with `report["errors"]` naming the unpromoted files, and is not retried, so no attachment is ever queued twice.
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `test_unaccepted_extension_gets_reject_reply`: `.exe` only → one outbox row to the sender with subject `Re: <subject>` whose text lists `.exe` and the accepted extensions; message marked seen.
   - `test_no_attachments_gets_reject_reply` (`none` reason).
   - `test_non_allowlisted_sender_gets_no_reply` (backscatter guard).
   - `test_io_error_during_staging_publishes_nothing_and_retries`: two PDFs, second staging write hits `OSError` → inbox empty, staging empty, uid unseen, attempts == 1; next poll with the error removed delivers both exactly once.
   - `test_promote_failure_never_unlinks_published_file`: second `_place` raises → first file still in inbox, message processed, `report["errors"]` names the second file, next poll delivers nothing new.
   - `test_reject_reply_html_escapes_filename`: filename `<script>x</script>.exe` → html has no raw `<script>`.
-- [ ] **Step 2: Run to verify failure**, **Step 3: Implement**, **Step 4: Run** `PYTHONPATH=src pytest src/tests/test_gmail_intake.py -q` (PASS).
-- [ ] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(gmail): reject replies for sender-fixable errors; I/O errors retry instead of dropping"`
+- [x] **Step 2: Run to verify failure**, **Step 3: Implement**, **Step 4: Run** `PYTHONPATH=src pytest src/tests/test_gmail_intake.py -q` (PASS).
+- [x] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(gmail): reject replies for sender-fixable errors; I/O errors retry instead of dropping"`
 
 ---
 
@@ -184,17 +194,17 @@ Parked for the final fix pass:
   - `retry_chat_completion`: for free models on an OpenRouter base URL, when the swarm has more than the primary, merge `extra_body={"models": ordered_dedup([primary, *swarm]), "provider": {"require_parameters": True}}` into the call (preserving an existing `extra_body`), so the server falls back; client-side rotation stays for non-OpenRouter URLs. Before each free call, raise `FreeQuotaExhausted` if `get_breaker().is_open()`; call `note_rate_limit` on 429s and `note_success` on success. Paid models never touch the breaker.
   - `record_usage(usage, model=None, agent=None, served_model: str | None = None)`; `usage_summary()["by_agent"][agent]["served_models"]: list[str]`; `BaseAgent._call_llm` passes `getattr(response, "model", None)` and logs it as `served_model` in `llm_response`.
   - Triage: on `FreeQuotaExhausted` the agent returns the deterministic header-extraction result with `degraded: "free_quota"` in the triage payload (no paid fallback, no raise).
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `test_breaker_opens_after_three_429s_and_closes_after_cooldown` (injected `now`); `test_breaker_uses_default_cooldown_without_retry_after`; `test_success_resets_consecutive_count`.
   - `test_openrouter_free_call_sends_models_array`: fake client records kwargs; swarm `["a:free","b:free"]`, model `a:free`, base_url `https://openrouter.ai/api/v1` → `kwargs["extra_body"]["models"] == ["a:free","b:free"]` and `provider.require_parameters is True`; existing `extra_body` keys preserved.
   - `test_paid_model_gets_no_models_array_and_ignores_breaker`.
   - `test_open_breaker_short_circuits_free_call`: client create never called, `FreeQuotaExhausted` raised.
   - `test_served_model_recorded_in_usage_summary`: response with `.model == "x/y:free"` while requested `openrouter/free` → `served_models == ["x/y:free"]`.
   - `test_triage_degrades_to_deterministic_when_quota_open` (extend `test_gmail_triage.py` fixtures).
-- [ ] **Step 2: Run to verify failure** — `PYTHONPATH=src pytest src/tests/test_llm_quota.py src/tests/test_llm_retry.py src/tests/test_llm_free_swarm.py src/tests/test_run_limits.py -q`.
-- [ ] **Step 3: Implement.** Keep `openrouter/free` as the last swarm entry; the ranked free-model list ahead of it is a taxonomy edit made after scoring candidates in `llm-dojo-scoring` (decision for the owner; ship with `openrouter/free` alone, which keeps behavior unchanged).
-- [ ] **Step 4: Run** the four files plus `src/tests/test_gmail_triage.py`; expected PASS.
-- [ ] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(llm): models fallback, served-model recording, free-quota breaker"`
+- [x] **Step 2: Run to verify failure** — `PYTHONPATH=src pytest src/tests/test_llm_quota.py src/tests/test_llm_retry.py src/tests/test_llm_free_swarm.py src/tests/test_run_limits.py -q`.
+- [x] **Step 3: Implement.** Keep `openrouter/free` as the last swarm entry; the ranked free-model list ahead of it is a taxonomy edit made after scoring candidates in `llm-dojo-scoring` (decision for the owner; ship with `openrouter/free` alone, which keeps behavior unchanged).
+- [x] **Step 4: Run** the four files plus `src/tests/test_gmail_triage.py`; expected PASS.
+- [x] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(llm): models fallback, served-model recording, free-quota breaker"`
 
 ---
 
@@ -213,15 +223,15 @@ Parked for the final fix pass:
   - Pre-filter rule: classify each named part by extension and size from structure; if no part is acceptable, skip the body download and go straight to the reject path (Task 4).
   - `idle_wait(client, timeout_s: float) -> bool` (True = server pushed new mail; raw IDLE over `client.send`/`readline`, re-issued every ≤ 5 min); poller uses it only when `MAILROOM_GMAIL_IDLE=1` (default `0` until verified with `gmail_smoke_test.py --real`) and falls back to `_stop_event.wait(poll_seconds)` on any error.
   - `result_cache.py`: `cache_key(model_tag: str, prompt: str, doc_text: str) -> str` (sha256 hex); `get(key: str) -> dict | None`; `put(key: str, value: dict) -> None`; SQLite at `get_base_dir()/llm_result_cache.sqlite`, TTL 30 days, `MAILROOM_LLM_CACHE=0` disables. Triage consults it before the LLM call and stores validated results only.
-- [ ] **Step 1: Write failing tests**
-  - `test_parse_bodystructure_real_gmail_sample`: use a recorded two-attachment Gmail `BODYSTRUCTURE` literal committed under `src/tests/fixtures/`; assert names and sizes.
+- [x] **Step 1: Write failing tests**
+  - `test_parse_bodystructure_gmail_format_sample`: use a hand-written two-attachment `BODYSTRUCTURE` literal in Gmail's format, committed under `src/tests/fixtures/gmail/`; assert names and sizes. It is not a capture from a live mailbox, so confirm the shape against a real Gmail response during the live smoke test.
   - `test_oversize_only_message_never_downloads_body`: `FakeIMAP` counts `BODY.PEEK[]` fetches → 0, reject reply enqueued.
   - `test_fetch_uses_peek_and_does_not_mark_seen_until_handled`.
   - `test_unparseable_structure_falls_back_to_full_fetch`.
   - `test_poller_uses_idle_when_enabled_and_falls_back_on_error` (fake `idle_wait` raising).
   - `test_result_cache_hit_skips_llm`: second triage of identical text makes 0 client calls; `test_cache_key_changes_with_prompt`; `test_cache_ttl_expiry` (injected clock); `test_cache_disabled_by_env`.
-- [ ] **Step 2: Run to verify failure**, **Step 3: Implement**, **Step 4: Run** `PYTHONPATH=src pytest src/tests/test_gmail_intake.py src/tests/test_result_cache.py src/tests/test_gmail_triage.py -q` (PASS).
-- [ ] **Step 5: Commit** — `git add <changed paths> && git commit -m "perf(gmail): BODYSTRUCTURE pre-filter, opt-in IDLE, triage result cache"`
+- [x] **Step 2: Run to verify failure**, **Step 3: Implement**, **Step 4: Run** `PYTHONPATH=src pytest src/tests/test_gmail_intake.py src/tests/test_result_cache.py src/tests/test_gmail_triage.py -q` (PASS).
+- [x] **Step 5: Commit** — `git add <changed paths> && git commit -m "perf(gmail): BODYSTRUCTURE pre-filter, opt-in IDLE, triage result cache"`
 
 ---
 
@@ -238,7 +248,7 @@ Parked for the final fix pass:
   - Sidecar/intake meta gains `group_size: int` (number of queued attachments for the message).
   - `mail_outbox`: tables `message_groups(message_id PRIMARY KEY, expected, sender, subject, created_at)` and `group_results(message_id, doc_id, stage, summary_json, PRIMARY KEY(message_id, doc_id))`; `record_group_result(message_id: str, doc_id: str, stage: str, summary: dict) -> tuple[int, int]` returning `(have, expected)` (a duplicate `(message_id, doc_id)` is a no-op that returns the current counts); `flush_stale_groups(now: float, max_age_s: float = 21600) -> list[str]` marks each flushed group closed (`message_groups.closed_at`).
   - `send_intake_echo`: when `intake["group_size"] > 1`, record the result and send nothing until `have == expected`, then enqueue one `digest:{message_id}` (table of per-document class, confidence, outcome, and a footer naming the model that answered); the worker's sweep calls `flush_stale_groups` and sends a partial digest marked "incomplete". A result that arrives for a closed group gets the normal per-document echo (`echo:{doc_id}:{stage}`), never a second digest. Single-document messages behave exactly as before.
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `test_single_doc_message_gets_ack_then_echo` (two outbox rows, keys `ack:` and `echo:`).
   - `test_three_doc_bundle_gets_one_ack_and_one_digest`: terminal manifests for 3 doc IDs → after the 3rd, exactly one `digest:` row; none before.
   - `test_stale_group_flushes_partial_digest` (injected `now`, 2 of 3 done).
@@ -247,8 +257,8 @@ Parked for the final fix pass:
   - `test_digest_escapes_hostile_extracted_values` (`<script>`, `&`, `"` in `extracted_data`).
   - `test_digest_and_ack_are_multipart_with_text_part` (parse the queued message, assert both parts).
   - `test_group_size_survives_watcher_intake_meta_whitelist`.
-- [ ] **Step 2: Run to verify failure**, **Step 3: Implement**, **Step 4: Run** the affected-test gate on the changed files (PASS), then `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check`.
-- [ ] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(gmail): acknowledgment email and one-digest-per-bundle replies"`
+- [x] **Step 2: Run to verify failure**, **Step 3: Implement**, **Step 4: Run** the affected-test gate on the changed files (PASS), then `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check`.
+- [x] **Step 5: Commit** — `git add <changed paths> && git commit -m "feat(gmail): acknowledgment email and one-digest-per-bundle replies"`
 
 ---
 
@@ -264,4 +274,4 @@ Node-level hardening outside the Gmail/LLM layers (watcher stale-claim reclaim, 
 ## Self-review notes
 
 - Coverage: all seven requested items map to Tasks 1–7 (requested #3→T2, #7→T3, #2→T4, #4→T5, #5→T6, #6→T7, #1→T1).
-- Known unverified assumptions to confirm during execution: Gmail's literal `BODYSTRUCTURE` shape (hence the recorded fixture and full-fetch fallback), raw IDLE over `imaplib` (hence opt-in), and the triage agent's fail-soft code location (Task 5 says to read it first).
+- Known unverified assumptions to confirm during execution: Gmail's literal `BODYSTRUCTURE` shape (hence the hand-written fixture and full-fetch fallback), raw IDLE over `imaplib` (hence opt-in), and the triage agent's fail-soft code location (Task 5 says to read it first).

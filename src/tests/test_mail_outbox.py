@@ -212,13 +212,16 @@ def test_mark_sent_db_error_does_not_abort_batch_or_resend(monkeypatch):
     assert len(smtp.sent) == 2
 
 
-def test_dead_row_logged_and_counted():
+def test_dead_row_logged_and_counted(monkeypatch):
     import structlog
 
     _q()
     bad = FakeSMTP(fail=True)
     now = 0.0
     with structlog.testing.capture_logs() as logs:
+        # A fresh proxy binds under capture_logs even when an earlier test ran
+        # setup_logging() (cache_logger_on_first_use pins the module logger).
+        monkeypatch.setattr(mail_outbox, "logger", structlog.get_logger(mail_outbox.__name__))
         for _ in range(mail_outbox.MAX_ATTEMPTS):
             mail_outbox.drain_once(lambda: bad, now=now)
             now += 4000
