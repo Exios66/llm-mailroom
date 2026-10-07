@@ -57,6 +57,10 @@ The channel is **explicit opt-in** — it never starts polling on its own.
    # MAILROOM_GMAIL_MAX_ATTACHMENT_MB=50      # per-attachment cap
    # MAILROOM_GMAIL_DEFAULT_MATTER_ID=DEFAULT # matter when the subject has no [M:] tag
    # MAILROOM_GMAIL_ALLOWED_SENDERS=          # CSV allowlist; empty = accept all
+   # MAILROOM_GMAIL_REQUIRE_DMARC=1           # allowlisted senders need Gmail's dmarc=pass
+   # MAILROOM_GMAIL_MAX_REPLIES_PER_HOUR=20   # reply budget per address
+   # MAILROOM_GMAIL_ACKS=1                    # acknowledgment reply on queue
+   # MAILROOM_GMAIL_IDLE=0                    # IMAP IDLE push (opt-in)
    # MAILROOM_GMAIL_REACTIONS=1               # ✅ claim acknowledgement
    # MAILROOM_GMAIL_REACTION_LABEL=✅
    # MAILROOM_GMAIL_ECHOES=1                  # completion-report replies
@@ -122,7 +126,8 @@ prefixes are irrelevant. The rules that DO matter:
 | **Attach the document** | Only attachments are processed — the email body is never read. Body-only emails are marked seen and skipped (logged as `gmail_message_no_processable_attachments`) |
 | **Accepted extensions** | `file_extensions` from `config/taxonomy.yaml`: `.pdf`, `.txt`, `.docx`, `.md`, `.jpg`, `.jpeg`, `.png`, `.gif`. Anything else is skipped (message still acknowledged) |
 | **Size** | ≤ `MAILROOM_GMAIL_MAX_ATTACHMENT_MB` (default **50 MB**) per attachment; oversized attachments are skipped, message still acknowledged |
-| **Sender** | Any mailbox can send unless `MAILROOM_GMAIL_ALLOWED_SENDERS` is set (CSV, lowercased comparison) |
+| **Sender** | Any mailbox can send unless `MAILROOM_GMAIL_ALLOWED_SENDERS` is set (CSV, exact case-insensitive match). An allowlisted sender also needs Gmail's `dmarc=pass` verdict (`MAILROOM_GMAIL_REQUIRE_DMARC`). Auto-replies, bounces, mailing-list mail and the agent's own address are skipped without a reply |
+| **Replies** | Every reply goes through the durable outbox: an acknowledgment when attachments are queued, a reject reply naming each refused file and why (wrong type, too large, no usable name, no attachment), the completion echo for a single document, and ONE digest per multi-document email once every document finishes (a partial digest after 6 hours). Capped per address per hour |
 | **Subject matter tag** | Optional `[M:<matter_id>]` — see § Subject line below |
 | **One email = one document** | Best practice for traceability: send each document as its own email with one attachment |
 
@@ -377,7 +382,9 @@ echo time (it has exactly one claim, so this is the last chance to ack).
 | Document parked in `review/` | Pipeline confidence/guardrails (normal) or fail-safe | Resolve via the review flow (The-Mailroom REVIEW or `POST /v1/review/{doc_id}/resolve`) |
 | Document parked in `review/` after triage with `triage_llm_unavailable` | No `OPENROUTER_API_KEY` for the triage model, rate limit, or provider error | Add/verify the key; reprocess from the review bin (intake itself never crashes) |
 | Everything runs the paid pipeline | Triage disabled (`MAILROOM_GMAIL_TRIAGE=0`) or capability handoff | Expected for images, scans, over-budget text; check `intake.triage_handoff` on the manifest |
-| Echo never arrives | Echo send failed (SMTP) | It retries on the next terminal event; check `gmail_echo_failed` logs + `MAILROOM_GMAIL_SMTP_*` |
+| Echo never arrives | Echo send failed (SMTP) | The outbox worker retries with backoff (dead after 8 attempts); check `gmail_echo_failed` / `gmail_echo_dead` logs + `MAILROOM_GMAIL_SMTP_*` |
+| Allowlisted sender ignored | No `dmarc=pass` from Gmail (`skipped_auth` in the poll report) | Check the sender domain's DMARC record; `MAILROOM_GMAIL_REQUIRE_DMARC=0` relaxes it |
+| Multi-document email got no per-file echoes | Expected: bundles get one digest when all documents finish | A partial digest goes out after 6 hours; later documents get their own echo |
 | Two watchers fight over the inbox | A second drain process exists | Only one `watcher.lock` holder; the Gmail poller always runs inside it |
 
 **Disablement matrix**

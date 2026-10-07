@@ -67,7 +67,16 @@ def _bare_address(value: str | None) -> str:
     return email.utils.parseaddr(str(value or ""))[1].strip().lower()
 
 
-def automated_reason(msg: email.message.Message, own_address: str) -> str | None:
+def allow_self() -> bool:
+    """``MAILROOM_GMAIL_ALLOW_SELF=1`` lets mail from the agent's own address in
+    (``gmail_smoke_test.py`` mails itself). Our own replies stay excluded by
+    their ``Auto-Submitted: auto-replied`` header."""
+    return str(os.environ.get("MAILROOM_GMAIL_ALLOW_SELF", "0")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def automated_reason(
+    msg: email.message.Message, own_address: str, allow_self: bool = False
+) -> str | None:
     """Why ``msg`` is automated mail that must never be processed or answered, else None."""
     auto_submitted = str(msg.get("Auto-Submitted") or "").strip().lower()
     if auto_submitted and auto_submitted != "no":
@@ -87,7 +96,7 @@ def automated_reason(msg: email.message.Message, own_address: str) -> str | None
     if sender.partition("@")[0] in _AUTOMATED_LOCAL_PARTS:
         return "daemon-sender"
     own = _bare_address(own_address)
-    if own and sender == own:
+    if own and sender == own and not allow_self:
         return "own-address"
     return None
 

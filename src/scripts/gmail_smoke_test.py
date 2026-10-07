@@ -26,9 +26,9 @@ What it proves, leg by leg:
                    ``intake.triage`` on those manifests)
     [classify]     the pipeline-route document classifies as
                    ``insurance_claim``
-    [echo]         completion reports reply on the source email threads;
-                   the single-document echo carries the INTAKE TRIAGE
-                   section, the pipeline echo does not
+    [echo]         replies on the source email threads via the outbox: one
+                   acknowledgment per email, the single-document echo carries
+                   the INTAKE TRIAGE section, the bundle gets ONE digest
 
 Modes:
 
@@ -361,6 +361,10 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     os.environ.setdefault("GMAIL_APP_PASSWORD", "smoke-smoke-smoke-sm")
     os.environ.setdefault("MAILROOM_GMAIL_ENABLED", "1")
     os.environ["MAILROOM_GMAIL_ALLOWED_SENDERS"] = "smoke@example.com"
+    # The smoke mails itself, and the fake mailbox has no Gmail-stamped
+    # Authentication-Results header: let self-mail through, skip DMARC.
+    os.environ["MAILROOM_GMAIL_ALLOW_SELF"] = "1"
+    os.environ["MAILROOM_GMAIL_REQUIRE_DMARC"] = "0"
 
     scratch = _prepare_base_dir()
     from pipeline import gmail_intake
@@ -421,6 +425,11 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     # bundle files take the full paid pipeline.
     smtp = _FakeSMTP()
     gmail_intake.set_smtp_factory(lambda: smtp)
+    # Echoes, acks and digests are sent by the outbox worker (the watcher
+    # starts it in production; the smoke drives the claim path directly).
+    from pipeline import mail_outbox
+
+    outbox_worker = mail_outbox.start_outbox_worker()
     single_manifest, _ = _run_watcher_route(single_path, llm_mode)
     bundle_manifests = [_run_watcher_route(p, llm_mode)[0] for p in bundle_paths]
 
@@ -511,43 +520,39 @@ def run_mock(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
         )
     )
 
-    # [echo] completion reports replied on the source threads (async daemon
-    # threads — bounded wait, then inspect what was sent). The triage-lane
-    # echo carries the INTAKE TRIAGE section; the pipeline echoes do not.
-    deadline = time.time() + 10
-    while time.time() < deadline and gmail_intake.status()["echoes_sent"] < 3:
-        time.sleep(0.1)
-    echo_triage = echo_pipeline = False
-    if smtp.sent:
-        import email as _email
+    # [echo] replies on the source threads, sent by the outbox worker: one
+    # acknowledgment per email, the triage-lane echo (carries INTAKE TRIAGE)
+    # for the single document, and ONE digest for the two-document bundle.
+    expected_sends = 4  # 2 acks + 1 echo + 1 digest
+    deadline = time.time() + 15
+    while time.time() < deadline and len(smtp.sent) < expected_sends:
+        if outbox_worker is not None:
+            outbox_worker.wake()
+        time.sleep(0.2)
+    kinds: dict[str, list[str]] = {"ack": [], "echo": [], "digest": [], "other": []}
+    import email as _email
 
-        for _, to, raw in smtp.sent:
-            msg = _email.message_from_bytes(raw)
-            # Multipart alternative: read the text/plain part (fallback is
-            # single-part for robustness).
-            if msg.is_multipart():
-                payload = next(
-                    (
-                        p.get_payload(decode=True)
-                        for p in msg.walk()
-                        if p.get_content_type() == "text/plain"
-                    ),
-                    None,
-                )
-            else:
-                payload = msg.get_payload(decode=True)
-            body = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else (payload or "")
-            if "INTAKE TRIAGE" in body:
-                echo_triage = True
-            else:
-                echo_pipeline = True
+    for _, to, raw in smtp.sent:
+        msg = _email.message_from_bytes(raw)
+        payload = next(
+            (p.get_payload(decode=True) for p in msg.walk() if p.get_content_type() == "text/plain"),
+            None,
+        )
+        body = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else ""
+        mid = str(msg.get("Message-ID") or "")
+        kind = next((k for k in ("ack", "echo", "digest") if f"<mailroom-{k}-" in mid), "other")
+        kinds[kind].append(body)
+    echo_triage = any("INTAKE TRIAGE" in b for b in kinds["echo"])
+    digest_ok = len(kinds["digest"]) == 1 and all(n in kinds["digest"][0] for n in bundle_names)
     checks.append(
         (
-            "echo: triage-lane echo carries INTAKE TRIAGE; pipeline echoes do not",
-            echo_triage and echo_pipeline,
-            f"sent={len(smtp.sent)} triage_echo={echo_triage} pipeline_echo={echo_pipeline}",
+            "echo: one ack per email, triage echo carries INTAKE TRIAGE, one digest for the bundle",
+            len(kinds["ack"]) == 2 and echo_triage and len(kinds["echo"]) == 1 and digest_ok,
+            f"sent={len(smtp.sent)} acks={len(kinds['ack'])} echoes={len(kinds['echo'])} "
+            f"triage_echo={echo_triage} digests={len(kinds['digest'])} digest_lists_both={digest_ok}",
         )
     )
+    mail_outbox.stop_outbox_worker(outbox_worker)
     gmail_intake.set_smtp_factory(None)  # reset the seam
     gmail_intake.set_imap_factory(None)  # reset the seam
     print(f"scratch base dir: {scratch}")
@@ -558,6 +563,11 @@ def run_real(matter_id: str, fixture: Path, llm_mode: str) -> list[tuple[str, bo
     """Real connectivity: SMTP send → real IMAP poll → watcher route."""
     checks: list[tuple[str, bool, str]] = []
 
+    # The smoke mails the agent mailbox FROM itself: the loop guard would
+    # otherwise skip it as own-address mail. Mail Gmail delivers internally
+    # may carry no dmarc verdict, so the smoke does not require one.
+    os.environ["MAILROOM_GMAIL_ALLOW_SELF"] = "1"
+    os.environ["MAILROOM_GMAIL_REQUIRE_DMARC"] = "0"
     scratch = _prepare_base_dir()
     single_raw, single_mid, single_names = build_smoke_email(matter_id, fixture)
     bundle_raw, bundle_mid, bundle_names = build_smoke_email(
