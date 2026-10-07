@@ -506,7 +506,7 @@ needs). Task numbering continues; Task 12 keeps its slot. Repos per task header.
 
 - GitBook docs now live in `Exios66/mailroom-documentation`. Mailroom keeps only: `AGENTS.md`, `README.md`, `CHANGELOG.md`, the flat operator pages under `docs/` (agents, architecture, api, configuration, deployment, docker-deployment, modal-vllm, local-models, testing, gmail-intake, operational-procedure, sister-repos), `docs/wiki/**`, `docs/superpowers/plans/**`, `docs/reports/**`, `landing/**`, `.cursor/skills/**`, `.opencode/skills/**`. Redefining `docs/` as no longer the source of truth is a **human decision**, out of scope here.
 - Never hand-edit prompt text; dojo `production_prompts` stays the prompt authority (Global Constraints above still bind).
-- Langfuse work implements from **fresh docs** (`curl -s https://langfuse.com/llms.txt`, pages via `.md` suffix); SDK floor `langfuse>=4.9,<5` (required for Task 18's `mask_otel_spans` hook).
+- Langfuse work implements from **fresh docs** (`curl -s https://langfuse.com/llms.txt`, pages via `.md` suffix); SDK floor `langfuse>=4.9,<5` (`mask_otel_spans` first ships in 4.9.0).
 - Every new Langfuse score name must exist in the dojo registry (KANBAN-061 import-time check in `observability/scores.py`).
 - Outward-facing steps (push to another repo, tag, release, emem writes) are human gates, as in Task 7 Step 6.
 - emem is **never** on the pipeline path and never decides a score; checkpoints are verified data (signature + pinned hashes) before use.
