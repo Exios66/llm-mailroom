@@ -36,6 +36,7 @@ def test_live_specialists_equal_dojo_production():
 
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="dojo v0.20.1 re-pins taxonomy fixture (plan Task 11)",
 )
 def test_taxonomy_field_types_equal_dojo_defaults_for_live_classes():
