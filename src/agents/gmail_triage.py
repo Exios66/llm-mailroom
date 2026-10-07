@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from agents.base import BaseAgent
 from llm.prompts import get_managed_prompt
 from pipeline.config import get_all_doc_types
+from llm.quota import FreeQuotaExhausted
 from schemas.documents import EXTRACTION_SCHEMAS, get_extraction_schema
 
 logger = structlog.get_logger(__name__)
@@ -424,6 +425,23 @@ class GmailTriageAgent(BaseAgent):
             f"Document text:\n{doc_text}"
         )
 
+        # Result cache (llm/result_cache.py): an identical document under the
+        # same model + full request (system prompt with json note and skills,
+        # user message with schema and boilerplate) reuses the validated read.
+        from llm import result_cache
+
+        system_text = self.system_prompt()
+        sent_system, sent_user = self._structured_messages(user, TRIAGE_SCHEMA, system_text)
+        cache_key = result_cache.cache_key(
+            str(getattr(self, "model", "") or ""), self.system_prompt_with_skills(sent_system), sent_user
+        )
+        cached = result_cache.get(cache_key)
+        if cached is not None:
+            logger.info("triage_cache_hit", agent=self.agent_name, filename=filename)
+            cached = dict(cached)
+            cached["debug"] = {**(cached.get("debug") or {}), "cache": "hit"}
+            return cached
+
         # Capture the EXACT final prompt/response by wrapping the transport
         # call: _call_structured appends the json_object boilerplate + schema
         # to the user message, so only the transport sees the full payload.
@@ -470,8 +488,28 @@ class GmailTriageAgent(BaseAgent):
             raw = self._call_structured(
                 user,
                 TRIAGE_SCHEMA,
-                system_prompt=self.system_prompt(),
+                system_prompt=system_text,
             )
+        except FreeQuotaExhausted as exc:
+            # The free pool is rate-limited (breaker open): no paid fallback
+            # and no raise — answer with the deterministic header pass so the
+            # lane still parks the document with grounded entities.
+            logger.warning(
+                "triage_free_quota_degraded",
+                agent=self.agent_name,
+                open_until=getattr(exc, "open_until", None),
+                filename=filename,
+            )
+            result = validate_triage({}, doc_text=doc_text)
+            result["degraded"] = "free_quota"
+            result["debug"] = {
+                "model": None,
+                "attempted_models": captured.get("attempted_models") or [],
+                "parse_ok": None,
+                "parse_error": None,
+                "degraded": "free_quota",
+            }
+            return result
         except Exception as exc:
             # The call itself failed (rate-limit exhaustion, timeout, …).
             # Park evidence first: the full INPUT is written even though no
@@ -559,6 +597,14 @@ class GmailTriageAgent(BaseAgent):
             debug_block["debug_dir"] = debug_dir
             if parsed is None:
                 result["debug"]["debug_dir"] = debug_dir
+        if parsed is not None:
+            result_cache.put(
+                cache_key,
+                {
+                    **{k: v for k, v in result.items() if k != "debug"},
+                    "debug": {k: v for k, v in debug_block.items() if k != "debug_dir"},
+                },
+            )
         logger.info(
             "triage_llm_io",
             agent=self.agent_name,

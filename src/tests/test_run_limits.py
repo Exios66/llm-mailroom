@@ -224,3 +224,37 @@ class TestRunAbort:
         assert record.scores["run_aborted"] == 0
         assert record.scores["stage_completed"] == 1
         assert record.scores["success_rate"] == 1
+
+
+def test_served_model_recorded_in_usage_summary():
+    from types import SimpleNamespace
+
+    from pipeline.limits import record_usage, reset_run_usage, usage_summary
+
+    reset_run_usage()
+    usage = SimpleNamespace(prompt_tokens=10, completion_tokens=5)
+    record_usage(usage, "openrouter/free", agent="gmail_triage", served_model="x/y:free")
+    record_usage(usage, "openrouter/free", agent="gmail_triage", served_model="x/y:free")
+    record_usage(usage, "openrouter/free", agent="gmail_triage", served_model=object())
+    slot = usage_summary()["by_agent"]["gmail_triage"]
+    assert slot["models"] == ["openrouter/free"]
+    assert slot["served_models"] == ["x/y:free"]
+
+
+def test_base_agent_records_served_model(mock_openai_client):
+    from agents.base import BaseAgent
+    from pipeline.limits import reset_run_usage, usage_summary
+
+    class _A(BaseAgent):
+        agent_name = "sorter"
+
+        def system_prompt(self) -> str:
+            return "sys"
+
+    reset_run_usage()
+    mock_openai_client.chat.completions.create.return_value.model = "served/model-x"
+    mock_openai_client.chat.completions.create.return_value.usage.prompt_tokens = 3
+    mock_openai_client.chat.completions.create.return_value.usage.completion_tokens = 2
+    agent = _A()
+    agent._call_llm("hello")
+    assert usage_summary()["by_agent"]["sorter"]["served_models"] == ["served/model-x"]

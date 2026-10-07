@@ -58,7 +58,9 @@ def get_run_deadline() -> float | None:
     return _run_deadline.get()
 
 
-def record_usage(usage, model: str | None = None, agent: str | None = None) -> None:
+def record_usage(
+    usage, model: str | None = None, agent: str | None = None, served_model: str | None = None
+) -> None:
     """Append an OpenAI-compatible usage object to the current run's
     accumulator. Tolerates mocks and odd shapes: only real int counts count.
 
@@ -67,6 +69,9 @@ def record_usage(usage, model: str | None = None, agent: str | None = None) -> N
     ``usage["prompt_tokens"]``) so the vendored LangChain agents record too.
     ``agent`` attributes the call to the calling agent (per-agent token/cost
     accounting in evals and run reports); callers pass ``self.agent_name``.
+    ``served_model`` is the model the provider reports having answered with
+    (``response.model``) — it differs from ``model`` behind a router such as
+    ``openrouter/free`` or a ``models`` fallback chain.
     """
     if usage is None:
         return
@@ -84,6 +89,7 @@ def record_usage(usage, model: str | None = None, agent: str | None = None) -> N
             "completion_tokens": completion,
             "model": model,
             "agent": agent,
+            "served_model": served_model if isinstance(served_model, str) and served_model else None,
         }
     )
 
@@ -93,7 +99,7 @@ def usage_summary() -> dict:
 
     Returns {"prompt_tokens", "completion_tokens", "total", "calls",
     "by_agent"} where ``by_agent`` maps agent name → per-agent {calls,
-    prompt_tokens, completion_tokens, total, models} (unattributed calls
+    prompt_tokens, completion_tokens, total, models, served_models} (unattributed calls
     land under ``None`` → key ``"unattributed"``).
     """
     items = _run_usage.get()
@@ -103,7 +109,15 @@ def usage_summary() -> dict:
     for i in items:
         key = i.get("agent") or "unattributed"
         slot = by_agent.setdefault(
-            key, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "total": 0, "models": []}
+            key,
+            {
+                "calls": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total": 0,
+                "models": [],
+                "served_models": [],
+            },
         )
         slot["calls"] += 1
         slot["prompt_tokens"] += i["prompt_tokens"]
@@ -112,6 +126,9 @@ def usage_summary() -> dict:
         model = i.get("model")
         if model and model not in slot["models"]:
             slot["models"].append(model)
+        served = i.get("served_model")
+        if served and served not in slot["served_models"]:
+            slot["served_models"].append(served)
     return {
         "prompt_tokens": prompt,
         "completion_tokens": completion,

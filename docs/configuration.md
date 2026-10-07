@@ -343,7 +343,13 @@ multi-document full pipeline), completion echoes, and troubleshooting — is
 | `MAILROOM_GMAIL_POLL_SECONDS` | No | `60` | Seconds between sweeps |
 | `MAILROOM_GMAIL_DEFAULT_MATTER_ID` | No | `DEFAULT` | Matter used when the subject has no `[M:<matter_id>]` tag |
 | `MAILROOM_GMAIL_MAX_ATTACHMENT_MB` | No | `50` | Per-attachment size cap (larger attachments are skipped, message still marked seen) |
-| `MAILROOM_GMAIL_ALLOWED_SENDERS` | No | — | CSV allowlist of sender addresses (lowercased); empty = accept all |
+| `MAILROOM_GMAIL_ALLOWED_SENDERS` | No | — | CSV allowlist of sender addresses (exact, case-insensitive bare address; `+tag` variants do not match); empty = accept all |
+| `MAILROOM_GMAIL_REQUIRE_DMARC` | No | `1` | An allowlisted sender must also carry Gmail's own `dmarc=pass` verdict (topmost `Authentication-Results` from `mx.google.com` only; anything else fails closed). A sender whose domain publishes no DMARC record is rejected while this is on |
+| `MAILROOM_GMAIL_MAX_ATTEMPTS` | No | `3` | Failed sweeps before a message that keeps raising is quarantined (marked seen, labelled `mailroom/failed`) |
+| `MAILROOM_GMAIL_MAX_REPLIES_PER_HOUR` | No | `20` | Cap on reject, acknowledgment and digest replies to any one address (completion echoes are not capped) |
+| `MAILROOM_GMAIL_ACKS` | No | `1` | Acknowledgment reply when an email's attachments are queued (names each document, its ID and the path it takes) |
+| `MAILROOM_GMAIL_IDLE` | No | `0` | IMAP IDLE push between sweeps (new mail swept on arrival); falls back to plain polling on any IDLE error. Verify with `gmail_smoke_test.py --real` before enabling |
+| `MAILROOM_GMAIL_ALLOW_SELF` | No | `0` | Process mail sent from the agent's own address (the smoke test mails itself). Our own replies stay excluded by their `Auto-Submitted` header |
 | `MAILROOM_GMAIL_REACTIONS` | No | `1` | When the watcher claims a Gmail-channel attachment, react to the source email with the check emoji (a Gmail label via IMAP `X-GM-LABELS`) — the "picked up for processing" ack. Best-effort: a reaction failure never disturbs the claim. Set `0` to disable |
 | `MAILROOM_GMAIL_REACTION_LABEL` | No | `✅` | The emoji-named Gmail label applied as the reaction (auto-created best-effort) |
 | `MAILROOM_GMAIL_ECHOES` | No | `1` (with channel on) | When a Gmail-intake document reaches a terminal stage (archived/review/failed), reply on the source email thread with the completion report: status, classification, extraction, archive entry (path + sha256) and the verified audit chain |

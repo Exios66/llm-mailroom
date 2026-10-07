@@ -80,14 +80,28 @@ def test_rotates_to_next_free_model_on_rate_limit(no_sleep, swarm):
     assert client.calls == [SWARM[0], SWARM[1]]
 
 
-def test_rotation_walks_the_swarm_then_parks(no_sleep, swarm):
+def test_rotation_walks_the_swarm_then_parks(no_sleep, swarm, monkeypatch):
+    import llm.quota as quota
     from llm.retry import retry_chat_completion
 
+    # Breaker out of the way: this test pins the rotation order alone.
+    monkeypatch.setattr(quota, "_BREAKER", quota.FreeQuotaBreaker(trip_after=100))
     client = _RotatingClient(fail_for=set(SWARM))
     with pytest.raises(RateLimitError):
         retry_chat_completion(client, model=SWARM[0], messages=[], max_attempts=5)
     # primary, then the remaining swarm entries, then the last one repeats
     assert client.calls == [SWARM[0], SWARM[1], SWARM[2], SWARM[2], SWARM[2]]
+
+
+def test_whole_pool_exhausted_trips_quota_breaker(no_sleep, swarm):
+    from llm.quota import FreeQuotaExhausted
+    from llm.retry import retry_chat_completion
+
+    client = _RotatingClient(fail_for=set(SWARM))
+    with pytest.raises(FreeQuotaExhausted):
+        retry_chat_completion(client, model=SWARM[0], messages=[], max_attempts=5)
+    # three consecutive 429s open the breaker; the ladder stops there
+    assert client.calls == [SWARM[0], SWARM[1], SWARM[2]]
 
 
 def test_no_rotation_for_paid_models(no_sleep, swarm):
