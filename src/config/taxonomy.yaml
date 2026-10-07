@@ -344,7 +344,7 @@ doc_classes:
       signatories: entity_list:name
       jurisdiction: name
       filing_number: id
-      intent: name
+      intent: label
       subject_matter: free_text
       keywords: entity_list:name
 
@@ -362,7 +362,7 @@ doc_classes:
       demand_amount: money
       action_items: entity_list
       urgency: name
-      intent: name
+      intent: label
       subject_matter: free_text
       keywords: entity_list:name
 
@@ -385,7 +385,7 @@ doc_classes:
       coverage_determination: name
       denial_reasons: entity_list:free_text
       supporting_documents: entity_list
-      intent: name
+      intent: label
       subject_matter: free_text
       keywords: entity_list:name
       claim_checklist: entity_list:free_text
