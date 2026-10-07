@@ -1,4 +1,4 @@
-"""llm-dojo-scoring v0.19.x enhanced scoring wired into mailroom.
+"""llm-dojo-scoring enhanced scoring wired into mailroom (pin >= 0.19).
 
 ``score_with_suite`` / the HF pilot route through ``suite.score_document``
 (full per-document payload, fail-closed unscorable GT, provenance), and the
@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import llm_dojo_scoring
 from llm_dojo_scoring.archive import archive_entry_hash
+from llm_dojo_scoring.scorecard_honesty import SCORER_VERSION
 
 from observability.suite_scoring import (
     is_unscorable,
@@ -40,7 +42,9 @@ def test_score_document_payload_carries_format_metric_id_and_provenance():
     assert payload["parse_ok"] == 1.0
     assert 0.0 <= payload["schema_adherence"] <= 1.0
     assert payload["provenance"]["dataset_revision"] == "v9.1"
-    assert payload["provenance"]["scorer_version"].startswith("0.19")
+    # The provenance version is the installed library's own version, so the
+    # assertion follows the pyproject pin instead of a hardcoded series.
+    assert payload["provenance"]["scorer_version"] == SCORER_VERSION == llm_dojo_scoring.__version__
 
 
 def test_payload_extras_keep_registry_names_and_drop_format_fractions():
@@ -71,7 +75,7 @@ def test_hf_pilot_row_records_scorecard_identity():
     out = score_row_extraction(CLAIM, CLAIM, "insurance_claim")
     assert out["overall_score"] == 1.0
     assert out["metric_id"]
-    assert out["scorer_version"].startswith("0.19")
+    assert out["scorer_version"] == SCORER_VERSION == llm_dojo_scoring.__version__
     assert out["dataset_revision"] == DATASET_REVISION
     assert out["format_parse_ok"] == 1.0
 
