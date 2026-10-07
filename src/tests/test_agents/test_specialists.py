@@ -81,7 +81,7 @@ def test_insurance_claims_specialist_constructs_and_builds_schema():
     assert agent.agent_name == "insurance_claims_specialist"
     # system_prompt resolves through get_managed_prompt's local fallback
     prompt = agent.system_prompt()
-    assert "insurance claim" in prompt.lower()
+    assert "insurance-claims" in prompt.lower()
     assert "coverage determination" in prompt.lower()
 
 
