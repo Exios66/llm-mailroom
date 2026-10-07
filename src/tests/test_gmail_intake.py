@@ -8,7 +8,10 @@ with real credentials can never leak network polls into tests.
 
 import email.message
 import errno
+import imaplib
 import os
+import stat
+import time
 
 import pytest
 
@@ -52,6 +55,7 @@ class FakeIMAP:
         self.logged_in = False
         self.selected = None
         self.uidvalidity = 1
+        self.label_store_status = "OK"
 
     def login(self, user, password):
         self.logged_in = True
@@ -103,6 +107,8 @@ class FakeIMAP:
             )
             if "X-GM-LABELS" in flags:
                 # Gmail reaction: emoji label arrives as pre-encoded UTF-8 bytes.
+                if self.label_store_status != "OK":
+                    return (self.label_store_status, [b"denied"])
                 self.labels.setdefault(uid, []).append(
                     flags.split("X-GM-LABELS", 1)[1].strip()
                 )
@@ -812,7 +818,7 @@ def test_exdev_rename_falls_back_to_copy(temp_base_dir, monkeypatch):
     assert report["errors"] == []
     assert report["attachments_queued"] == 1
     assert [p.read_bytes() for p in inbox_dir().glob("*.pdf")] == [_pdf_bytes()]
-    assert raised["link"] + raised["replace"] >= 1
+    assert raised["link"] == 1
     assert list(inbox_dir().glob("*.part")) == []
     assert list(inbox_dir().glob(".*.part")) == []
     staging = _staging_dir()
@@ -847,12 +853,23 @@ def test_temp_file_removed_when_deliver_raises(temp_base_dir, monkeypatch):
     def boom(*a, **kw):
         raise RuntimeError("poison")
 
+    created = []
+    real_stage = gmail_intake._stage_path
+
+    def spy(ext):
+        path = real_stage(ext)
+        assert path.exists()
+        created.append(path)
+        return path
+
     monkeypatch.setattr(gmail_intake, "deliver_attachment", boom)
+    monkeypatch.setattr(gmail_intake, "_stage_path", spy)
     client = _one_pdf_client()
     gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
 
-    staging = _staging_dir()
-    assert not staging.exists() or list(staging.glob("*")) == []
+    assert len(created) == 1
+    assert created[0].parent == _staging_dir()
+    assert not created[0].exists()
 
 
 def test_state_saved_per_message_survives_mid_sweep_crash(temp_base_dir, monkeypatch):
@@ -921,3 +938,181 @@ def test_missing_message_id_key_scoped_by_folder_and_uidvalidity(temp_base_dir):
     assert report["attachments_queued"] == 1
     ids = gmail_intake._load_state()["processed_message_ids"]
     assert ids == ["uid:Work:4242:7"]
+
+
+# ── review fixes (round 1) ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        imaplib.IMAP4.abort("socket error: EOF"),
+        imaplib.IMAP4.error("fetch transport"),
+        TimeoutError("timed out"),
+        ConnectionResetError("reset"),
+    ],
+)
+def test_transport_errors_abort_sweep_without_counting(temp_base_dir, monkeypatch, exc):
+    monkeypatch.setenv("MAILROOM_GMAIL_MAX_ATTEMPTS", "2")
+    fetched = []
+
+    def fetch(c, uid):
+        fetched.append(uid)
+        raise exc
+
+    monkeypatch.setattr(gmail_intake, "_fetch_message", fetch)
+    client = FakeIMAP(
+        {
+            "1": _message("a", attachments=({"a.pdf": _pdf_bytes()}), message_id="<a@example.com>"),
+            "2": _message("b", attachments=({"b.pdf": _pdf_bytes()}), message_id="<b@example.com>"),
+        }
+    )
+    for _ in range(4):
+        fetched.clear()
+        report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+        assert report["quarantined"] == 0
+        assert report["errors"]
+        assert fetched == ["1"]  # sweep stopped at the first connection failure
+    assert client.seen == set()
+    assert gmail_intake._load_state()["failed_attempts"] == {}
+
+
+def test_fetch_failed_counts_toward_cap(temp_base_dir, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_MAX_ATTEMPTS", "3")
+    monkeypatch.setattr(gmail_intake, "_fetch_message", lambda c, uid: None)
+    client = _one_pdf_client()
+    reports = [
+        gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client) for _ in range(3)
+    ]
+    assert [r["quarantined"] for r in reports] == [0, 0, 1]
+    assert "1" in client.seen
+    assert any("quarantined:1" in e for e in reports[2]["errors"])
+
+
+def test_placed_attachment_has_umask_governed_mode(temp_base_dir):
+    from pipeline.bins import inbox_dir
+
+    old = os.umask(0o022)
+    try:
+        client = _one_pdf_client()
+        gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    finally:
+        os.umask(old)
+    (pdf,) = inbox_dir().glob("*.pdf")
+    assert stat.S_IMODE(pdf.stat().st_mode) == 0o644
+
+
+@pytest.mark.parametrize("err", [errno.EPERM, errno.ENOTSUP, errno.EMLINK, errno.ENOSYS])
+def test_place_falls_back_to_copy_when_hardlinks_unsupported(temp_base_dir, monkeypatch, err):
+    from pipeline.bins import inbox_dir
+
+    def nolink(*a, **kw):
+        raise OSError(err, "no hard links here")
+
+    real_link = os.link
+    calls = {"n": 0}
+
+    def link(src, dst, *a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            nolink()
+        return real_link(src, dst, *a, **kw)
+
+    monkeypatch.setattr(gmail_intake.os, "link", link)
+    client = _one_pdf_client()
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["errors"] == []
+    assert [p.read_bytes() for p in inbox_dir().glob("*.pdf")] == [_pdf_bytes()]
+    assert list(inbox_dir().glob(".*.part")) == []
+
+
+def test_safe_filename_caps_utf8_bytes_and_keeps_extension():
+    for stem in ("文" * 118, "😀" * 100, "é" * 150):
+        name = gmail_intake._safe_filename(stem + ".pdf")
+        assert name.endswith(".pdf")
+        assert len(name.encode("utf-8")) <= 200
+        name.encode("utf-8").decode("utf-8")  # whole code points only
+    assert gmail_intake._safe_filename("a" * 300 + ".pdf").endswith(".pdf")
+
+
+def test_safe_filename_never_returns_whitespace_only():
+    assert gmail_intake._safe_filename(". .") is None
+    assert gmail_intake._safe_filename(" .. a") == "a"
+    assert gmail_intake._safe_filename("  a b .pdf ") == "a b .pdf"
+
+
+def test_state_save_is_unique_tmp_and_fsynced(temp_base_dir, monkeypatch):
+    synced = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(gmail_intake.os, "fsync", lambda fd: (synced.append(fd), real_fsync(fd))[1])
+    gmail_intake._save_state({"processed_message_ids": ["<x>"], "failed_attempts": {}})
+    assert synced
+    path = gmail_intake._state_path()
+    assert list(path.parent.glob("gmail_intake_state.json*")) == [path]
+    assert gmail_intake._load_state()["processed_message_ids"] == ["<x>"]
+
+
+def test_unreadable_state_logs_loudly(temp_base_dir):
+    from structlog.testing import capture_logs
+
+    path = gmail_intake._state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{truncated")
+    with capture_logs() as logs:
+        state = gmail_intake._load_state()
+    assert state["processed_message_ids"] == []
+    assert any(e["event"] == "gmail_intake_state_unreadable" for e in logs)
+
+
+def test_quarantine_label_failure_is_reported(temp_base_dir, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_MAX_ATTEMPTS", "1")
+    monkeypatch.setattr(
+        gmail_intake, "deliver_attachment", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("poison"))
+    )
+    client = _one_pdf_client()
+    client.label_store_status = "NO"
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["quarantined"] == 1
+    assert "quarantine_label_failed:1" in report["errors"]
+    assert any(e.startswith("quarantined:1:RuntimeError") for e in report["errors"])
+
+
+def test_stale_part_files_are_swept_at_poll_start(temp_base_dir):
+    from pipeline.bins import inbox_dir
+
+    staging = _staging_dir()
+    staging.mkdir(parents=True, exist_ok=True)
+    inbox_dir().mkdir(parents=True, exist_ok=True)
+    old_a, new_a = staging / "gmail-old.pdf.part", staging / "gmail-new.pdf.part"
+    old_b, new_b = inbox_dir() / ".old.part", inbox_dir() / ".new.part"
+    for f in (old_a, new_a, old_b, new_b):
+        f.write_bytes(b"x")
+    stale = time.time() - 2 * 3600
+    for f in (old_a, old_b):
+        os.utime(f, (stale, stale))
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: FakeIMAP({}))
+    assert not old_a.exists() and not old_b.exists()
+    assert new_a.exists() and new_b.exists()
+
+
+def test_fallback_attempts_carry_over_to_message_id(temp_base_dir, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_MAX_ATTEMPTS", "3")
+    real_fetch = gmail_intake._fetch_message
+    state_calls = {"n": 0}
+
+    def flaky_fetch(c, uid):
+        state_calls["n"] += 1
+        return None if state_calls["n"] == 1 else real_fetch(c, uid)
+
+    monkeypatch.setattr(gmail_intake, "_fetch_message", flaky_fetch)
+    monkeypatch.setattr(
+        gmail_intake, "deliver_attachment", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("p"))
+    )
+    client = _one_pdf_client()
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)  # fetch_failed: fallback=1
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)  # carry 1 + 1 = 2 under Message-ID
+    failed = gmail_intake._load_state()["failed_attempts"]
+    assert failed == {"<poison@example.com>": 2}
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["quarantined"] == 1
+    assert "<poison@example.com>" in gmail_intake._load_state()["processed_message_ids"]
