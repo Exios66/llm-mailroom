@@ -1,4 +1,4 @@
-"""Dedicated specialist scoring suites from llm-dojo-scoring 0.14.0.
+"""Dedicated specialist scoring suites from llm-dojo-scoring (0.19.1 pin).
 
 ``get_suite(doc_class)`` returns the specialist suite (merger_agreement
 rebinds the MAUD catalog rather than inheriting CUAD families). Extraction
@@ -6,9 +6,10 @@ suites may wrap extras — Enron topic/sentiment on correspondence, MAUD
 per-question metrics on merger agreements, insurance determination /
 amount extras — beside the typed ExtractionScoreResult.
 
-Single-doc ``suite.score(dict, dict)`` still returns ``ExtractionScoreResult``
-unless content extras force a dict; field-micro P/R/F1/F2 and claims extras
-are attached here so they land on the trace.
+Mailroom scores one document at a time through ``suite.score_document``
+(dojo 0.19): one payload with the extraction result, field-micro
+P/R/F1/F2, class extras, the format layer, ``metric_id`` and provenance.
+Unscorable GT fails closed instead of producing a phantom score.
 
 ``get_suite("intake")`` is a different shape: it returns a dict (accuracy,
 prep completeness, changed/messy rates, hyphen/blank counts) rather than an
@@ -85,67 +86,68 @@ def _numeric_extra(name: str, value: Any) -> float | None:
     return float(value)
 
 
-def attach_single_doc_extras(
+def is_unscorable(payload: Any) -> bool:
+    """True when dojo failed the document closed (``status == "unscorable"``)."""
+    return isinstance(payload, dict) and payload.get("status") == "unscorable"
+
+
+def score_document_payload(
     doc_class: str,
     predicted: dict,
     expected: dict,
-    result: ExtractionScoreResult,
-    extras: dict[str, float],
     *,
     field_types: dict[str, str] | None = None,
-) -> dict[str, float]:
-    """Fill field-micro P/R/F1/F2 and insurance claims extras (dojo 0.10.0+).
+    doc_text: str | None = None,
+    **provenance: Any,
+) -> dict[str, Any] | None:
+    """Full per-document scorecard from ``suite.score_document`` (dojo 0.19+).
 
-    Single-doc ``suite.score`` returns ``ExtractionScoreResult`` and only
-    attaches claims extras on the batch path. Mailroom always scores one
-    document, so we compute those extras here.
+    One call carries the ``ExtractionScoreResult`` (``extraction``),
+    field-micro P/R/F1/F2, single-document class extras (content / MAUD /
+    insurance consistency), the format layer (``parse_ok`` /
+    ``schema_valid`` / ``schema_adherence`` — a fraction, unlike the
+    pipeline's boolean ``schema_valid`` trace score), ``metric_id`` and a
+    ``provenance`` block. Hub ``gt_fields`` metadata is parsed and scoped to
+    the class inside dojo. GT with nothing scorable comes back as
+    ``{"status": "unscorable", "reason": ...}`` — fail-closed, never a
+    phantom score.
+
+    ``provenance`` kwargs (``dataset_revision``, ``split``, ``draw_seed``,
+    ``prompt_id``, ``model_id``, ``serving_kind``) are stamped on the
+    payload. Returns ``None`` when no live extraction suite exists for the
+    class or dojo raises.
     """
-    merged = dict(extras)
-    ftypes = field_types or {}
-    if not ftypes:
-        try:
-            from llm_dojo_scoring import get_suite
-
-            ftypes = dict(get_suite(doc_class).field_types or {})
-        except Exception:
-            ftypes = {}
     try:
-        from llm_dojo_scoring.extraction_metrics import (
-            extraction_binary_metrics,
-            prf_bundle_keys,
-        )
+        from llm_dojo_scoring import get_suite
 
-        one = extraction_binary_metrics(
+        suite = get_suite(doc_class)
+        stamps = {k: v for k, v in provenance.items() if v is not None}
+        return suite.score_document(
             expected,
             predicted,
-            field_map=ftypes,
-            doc_class=doc_class,
-            result=result,
+            doc_text=doc_text,
+            field_types=field_types,
+            **stamps,
         )
-        for key, value in prf_bundle_keys(one).items():
-            numeric = _numeric_extra(key, value)
-            if numeric is not None:
-                merged[key] = numeric
     except Exception:
-        pass
-    kind = str(doc_class or "")
-    try:
-        from pipeline.config import resolve_extract_class
+        return None
 
-        kind = resolve_extract_class(doc_class) or kind
-    except Exception:
-        pass
-    if kind == "insurance_claim" or doc_class == "insurance_claim":
-        try:
-            from llm_dojo_scoring.claims_consistency import score_claims_extras
 
-            for key, value in score_claims_extras(expected, predicted).items():
-                numeric = _numeric_extra(key, value)
-                if numeric is not None:
-                    merged[key] = numeric
-        except Exception:
-            pass
-    return merged
+def payload_extras(payload: dict[str, Any] | None) -> dict[str, float]:
+    """Registry-backed numeric extras from a ``score_document`` payload."""
+    extras: dict[str, float] = {}
+    for key, value in (payload or {}).items():
+        numeric = _numeric_extra(key, value)
+        if numeric is not None:
+            extras[key] = numeric
+    return extras
+
+
+def unscorable_result(doc_class: str) -> ExtractionScoreResult:
+    """Empty result for fail-closed GT: no field scores, ``overall_score=None``."""
+    return ExtractionScoreResult(
+        doc_class=doc_class, field_scores={}, overall_score=None, ambiguous_fields=[]
+    )
 
 
 def score_with_suite(
@@ -158,32 +160,21 @@ def score_with_suite(
 ) -> tuple[ExtractionScoreResult, dict[str, float]]:
     """Score one document with the dedicated specialist suite.
 
-    Falls back to ``score_extraction`` when ``get_suite`` has no live suite
-    for the class (unknown / retired).
+    Routes through ``suite.score_document`` so field-micro P/R/F1/F2 and the
+    insurance single-document extras come from dojo, not a local re-derivation.
+    Unscorable GT returns an empty result (``overall_score=None``) with no
+    extras. Falls back to ``score_extraction`` only when ``get_suite`` has no
+    live extraction suite for the class (unknown / retired).
     """
-    try:
-        from llm_dojo_scoring import get_suite
-
-        suite = get_suite(doc_class)
-        out = suite.score(
-            expected,
-            predicted,
-            doc_text=doc_text,
-            field_types=field_types,
-        )
-        result, extras = unwrap_suite_result(out)
-        if result is not None:
-            extras = attach_single_doc_extras(
-                doc_class,
-                predicted,
-                expected,
-                result,
-                extras,
-                field_types=field_types or dict(suite.field_types or {}),
-            )
-            return result, extras
-    except Exception:
-        pass
+    payload = score_document_payload(
+        doc_class, predicted, expected, field_types=field_types, doc_text=doc_text
+    )
+    if is_unscorable(payload):
+        return unscorable_result(doc_class), {}
+    if payload is not None:
+        result = payload.get("extraction")
+        if isinstance(result, ExtractionScoreResult):
+            return result, payload_extras(payload)
     return score_extraction(
         doc_class, field_types or {}, predicted, expected, doc_text=doc_text
     ), {}

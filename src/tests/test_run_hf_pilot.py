@@ -444,7 +444,8 @@ def test_summarize_rows_merger_predicted_as_contract_is_a_class_miss():
     from llm_dojo_scoring.mailroom import score_aligned_classification
 
     dojo = score_aligned_classification(["merger_agreement"], ["contract"])
-    assert dojo["aligned_accuracy"] == 1.0  # dojo 0.14.0 aliases MAUD ≡ CUAD (align_doc_type)
+    # dojo 0.14–0.18 aliased MAUD ≡ CUAD (align_doc_type); 0.19 retired it.
+    assert dojo["aligned_accuracy"] == 0.0
     md = render_metrics_markdown({
         "session_id": "pilot-hf-test",
         "samples": [{

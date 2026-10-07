@@ -244,7 +244,8 @@ One accepted attachment per email (`route: triage`) and
                         extracted/archived vocabulary) → file + manifest +
                         JSON sidecar into archive/<matter>/<doc_type>/
         ▼
- terminal manifest (ARCHIVED) → completion echo on the source thread
+ terminal manifest (ARCHIVED, or REVIEW: see below) → completion echo
+                        on the source thread
 ```
 
 - **No paid agent is ever called.** The lane performs the core steps of the
@@ -253,9 +254,18 @@ One accepted attachment per email (`route: triage`) and
 - **Advisory by design:** the triage read is the accurate intake log, never
   the final word. It never overrules pipeline agents (it only exists where
   no pipeline run happens).
-- **Fail-soft:** no `OPENROUTER_API_KEY`, a rate limit, or a provider error
-  never blocks intake — the document parks to `failed/` (abort path) and
-  the echo reports it.
+- **Review routes:** the lane has no retry loop and no reviewer, so it parks
+  the document in `review/` (audit entry `triage_reviewed`) instead of
+  archiving when the triage read's `primary_doc_class` is `unknown`
+  (`triage_unknown_class`) or its confidence is missing or below the
+  taxonomy `low` threshold for that class (`triage_low_confidence`).
+- **Fail-soft (HUB-049):** if the triage call itself fails (no
+  `OPENROUTER_API_KEY`, a rate limit, a timeout, a provider error), intake
+  is not blocked: the document parks in `review/` with an escalation reason
+  starting `triage_llm_unavailable`, and the echo reports it. Only a later
+  unexpected error parks to `failed/` (abort path).
+- The lane never enters the LangGraph graph. The full chart is in
+  [Pipeline flowchart](../the-pipeline-in-depth/flowchart.md#gmail-intake-path).
 
 ### Pathway B — capability handoff → the full paid pipeline
 
@@ -335,7 +345,7 @@ echo time (it has exactly one claim, so this is the last chance to ack).
 
 | You send | Pathway | Cost | Ends in |
 |:---|:---|:---|:---|
-| 1 text-based attachment, ≤ free budget | A — free triage lane | $0 | archived (or failed, fail-soft) |
+| 1 text-based attachment, ≤ free budget | A — free triage lane | $0 | archived (or review: unknown class, low confidence, or triage call failed) |
 | 1 image-only / scanned / over-budget attachment | B — honest handoff → C | paid | full-pipeline terminal stages |
 | 2+ accepted attachments | C — full paid pipeline per attachment | paid | full-pipeline terminal stages |
 | No accepted attachment | — | — | marked seen, skipped (no document) |
@@ -365,7 +375,7 @@ echo time (it has exactly one claim, so this is the last chance to ack).
 | Email never picked up | Not unseen / no accepted attachment / sender rejected / already processed | Check the skip counters + `gmail_message_*` log events; confirm the attachment extension + size |
 | No ✅ reaction | Best-effort reaction failed (network/IMAP) | Retry happens on the next claim or at echo time; `reactions_failed` counter exposes it; `MAILROOM_GMAIL_REACTIONS=0` disables entirely |
 | Document parked in `review/` | Pipeline confidence/guardrails (normal) or fail-safe | Resolve via the review flow (The-Mailroom REVIEW or `POST /v1/review/{doc_id}/resolve`) |
-| Document parked in `failed/` after triage | No `OPENROUTER_API_KEY` for the triage model, rate limit, or provider error | Add/verify the key; re-run from the failed bin — intake itself never crashes |
+| Document parked in `review/` after triage with `triage_llm_unavailable` | No `OPENROUTER_API_KEY` for the triage model, rate limit, or provider error | Add/verify the key; reprocess from the review bin (intake itself never crashes) |
 | Everything runs the paid pipeline | Triage disabled (`MAILROOM_GMAIL_TRIAGE=0`) or capability handoff | Expected for images, scans, over-budget text; check `intake.triage_handoff` on the manifest |
 | Echo never arrives | Echo send failed (SMTP) | It retries on the next terminal event; check `gmail_echo_failed` logs + `MAILROOM_GMAIL_SMTP_*` |
 | Two watchers fight over the inbox | A second drain process exists | Only one `watcher.lock` holder; the Gmail poller always runs inside it |
