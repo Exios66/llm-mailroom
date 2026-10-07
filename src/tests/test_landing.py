@@ -89,9 +89,8 @@ def test_landing_html_header_masthead_and_coderabbit_contracts():
 
 def test_gitbook_home_ports_the_enhanced_landing():
     home = GITBOOK_HOME.read_text(encoding="utf-8")
-    # Centered wordmark — no Fumi in the header. Exactly two GIFs: on-duty + Meet Fumi.
-    assert home.lstrip().startswith("<table")
-    assert "# The LLM-Mailroom" in home
+    # GitBook uses the H1 / SUMMARY title as the page header — title only.
+    assert home.lstrip().startswith("# LLM-MAILROOM\n")
     assert home.count("fumi.gif") == 2
     assert 'src=".gitbook/assets/fumi.gif"' in home
     assert 'src=".gitbook/assets/banner.png"' in home
@@ -113,18 +112,18 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "Pixelify" not in home
     assert "font-family" not in home
     assert "fonts.googleapis.com" not in home
-
-    header = home.split("<figure>", 1)[0]
-    assert 'width="100%"' in header
-    assert 'align="center"' in header
-    assert "# The LLM-Mailroom" in header
+    # GitBook page header is the LLM-MAILROOM H1 — no Fumi, no table wrapper.
+    header = home.split(".gitbook/assets/banner.png", 1)[0]
+    assert header.lstrip().startswith("# LLM-MAILROOM\n")
+    assert "<table" not in header
     assert "fumi.gif" not in header
-    assert "<img" not in header
     assert 'Fumi (文, "letter")' not in header
     assert "lives in this header corner" not in header
     assert "not the header itself" not in header
-
-    on_duty = home.split(".gitbook/assets/banner.png", 1)[1].split("## From inbox to archive", 1)[0]
+    # Name + 文 live on the on-duty Fumi, after the banner.
+    on_duty = home.split(".gitbook/assets/banner.png", 1)[1].split(
+        "## From inbox to archive", 1
+    )[0]
     assert on_duty.count("fumi.gif") == 1
     assert 'Postal Worker Fumi (文, "letter") on duty' in on_duty
     assert "Specialist agents on a 13-node graph" in on_duty
@@ -141,11 +140,14 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert "landing/" not in meet.split("## Related files", 1)[0]
 
     summary = (REPO / "docs" / "SUMMARY.md").read_text(encoding="utf-8")
-    assert "* [The LLM-Mailroom](README.md)" in summary
+    assert "* [LLM-MAILROOM](README.md)" in summary
     assert "docker-deployment.md" in summary
     assert "modal-vllm.md" in summary
     assert "local-mailroom-sandbox-reports.md" in summary
     assert "local-mailroom-sandbox-visuals.md" in summary
+    assert "mailroom-dataset/README.md" in summary
+    assert "mailroom-dataset/visualizations.md" in summary
+    assert "mailroom-dataset/eda-reports.md" in summary
     assert "docker-deployment.md" in home
     assert "modal-vllm.md" in home
     assert "[Docker](" in home
@@ -153,11 +155,12 @@ def test_gitbook_home_ports_the_enhanced_landing():
 
     published_maintaining = REPO / "docs" / "about-this-site" / "maintaining.md"
     maintaining = published_maintaining.read_text(encoding="utf-8")
-    assert "centered **The LLM-Mailroom** wordmark" in maintaining
+    assert "LLM-MAILROOM" in maintaining
     assert "Postal Worker Fumi" in maintaining
     assert "header corner" not in maintaining
     assert "Hoot" not in maintaining
     assert "Hermes" in maintaining
+    assert "sync_gitbook_changelog.py" in maintaining
 
     # Live GitBook: Mailroom Docs space + Changelog space (must stay published).
     site_path = REPO / "docs" / "gitbook-docs.yaml"
@@ -173,16 +176,17 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert changelog.get("draft") not in (True, "true")
     assert site_cfg["site"]["title"] == "Mailroom Inc. Docs"
 
+    # Repo-root fallback if the Git Sync Project directory is ever moved to root.
     root_site = REPO / "gitbook-docs.yaml"
-    if root_site.is_file():
-        root_cfg = yaml.safe_load(root_site.read_text(encoding="utf-8"))
-        root_nodes = list(_walk_gitbook_nodes(root_cfg["site"]["structure"]))
-        root_space = next(node for node in root_nodes if node.get("key") == "mailroom-docs")
-        assert root_space["path"] == "/"
-        assert root_space["content"]["directory"] == "./docs"
-        root_changelog = next(node for node in root_nodes if node.get("key") == "space-1")
-        assert root_changelog["content"]["directory"] == "./docs/changelog"
-        assert root_cfg["site"]["title"] == "Mailroom Inc. Docs"
+    assert root_site.is_file()
+    root_cfg = yaml.safe_load(root_site.read_text(encoding="utf-8"))
+    root_nodes = list(_walk_gitbook_nodes(root_cfg["site"]["structure"]))
+    root_space = next(node for node in root_nodes if node.get("key") == "mailroom-docs")
+    assert root_space["path"] == "/"
+    assert root_space["content"]["directory"] == "./docs"
+    root_changelog = next(node for node in root_nodes if node.get("key") == "space-1")
+    assert root_changelog["content"]["directory"] == "./docs/changelog"
+    assert root_cfg["site"]["title"] == "Mailroom Inc. Docs"
     assert "https://mailroom-inc.gitbook.io/mailroom-inc.-docs/" in home
     space_cfg = (REPO / "docs" / ".gitbook.yaml").read_text(encoding="utf-8")
     assert "readme: README.md" in space_cfg

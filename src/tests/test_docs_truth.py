@@ -98,8 +98,10 @@ _SKIP_SUMMARY_FILES = {"SUMMARY.md"}
 _GITBOOK_DOCS_DIRS = {
     "start-here",
     "how-it-fits-together",
+    "mailroom-dataset",
     "repository-guides",
     "pipeline-reference-llm-mailroom",
+    "the-pipeline-in-depth",
     "about-this-site",
 }
 
@@ -141,6 +143,8 @@ def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
     assert "    * [Documentation](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-docs.md)" in summary
     assert "    * [Run reports](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-reports.md)" in summary
     assert "    * [Visuals](repository-guides/repos/local-mailroom-sandbox/local-mailroom-sandbox-visuals.md)" in summary
+    assert "* [Data and corpora](how-it-fits-together/data-and-corpora.md)" in summary
+    assert "* [Mailroom-Corpus-EDA](repository-guides/repos/mailroom-corpus-eda.md)" in summary
 
     docker = (
         _DOCS / "pipeline-reference-llm-mailroom" / "deployment" / "docker-deployment.md"
@@ -173,6 +177,79 @@ def test_gitbook_toc_nests_docker_modal_and_sandbox_reports():
     assert "cmp-quality.png" in visuals
     assert "cost-by-specialist-hardware.png" in visuals
     assert "board-terminal.svg" in visuals
+
+    data = (_DOCS / "how-it-fits-together" / "data-and-corpora.md").read_text(
+        encoding="utf-8"
+    )
+    overview = (_DOCS / "mailroom-dataset" / "README.md").read_text(encoding="utf-8")
+    visuals = (_DOCS / "mailroom-dataset" / "visualizations.md").read_text(
+        encoding="utf-8"
+    )
+    pages = "https://exios66.github.io/Mailroom-Corpus-EDA"
+    assert "mailroom-dataset/" in data
+    assert "Lucius-Morningstar/mailroom-dataset" in data
+    assert f'<iframe src="{pages}/"' in overview
+    assert "huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/embed/viewer" in overview
+    assert '{% embed url="https://exios66.github.io/Mailroom-Corpus-EDA/" %}' in overview
+    assert f'<iframe src="{pages}/"' in visuals
+    assert f"{pages}/figures_interactive/04_text_length_violin.html" in visuals
+    assert f"{pages}/figures_interactive/23_imbalance_treemap.html" in visuals
+    assert visuals.count(f"{pages}/figures_interactive/") >= 18
+    for n, name in (
+        ("01", "type_and_subclass_distribution"),
+        ("08", "cuad_clause_presence"),
+        ("14", "maud_answer_distribution"),
+        ("21", "corr_intent"),
+        ("30", "metadata_cardinality"),
+    ):
+        assert f"{n}_{name}.png" in visuals
+
+
+def test_gitbook_toc_nests_mailroom_dataset_section():
+    summary = (_DOCS / "SUMMARY.md").read_text(encoding="utf-8")
+    assert "## Mailroom dataset" in summary
+    assert "* [Overview](mailroom-dataset/README.md)" in summary
+    assert "* [Classes and strata](mailroom-dataset/classes-and-strata.md)" in summary
+    assert "* [Configs](mailroom-dataset/configs.md)" in summary
+    assert "* [Source corpora](mailroom-dataset/source-corpora.md)" in summary
+    assert "  * [CUAD contracts](mailroom-dataset/sources/cuad-contracts.md)" in summary
+    assert "  * [MAUD merger agreements](mailroom-dataset/sources/maud-merger-agreements.md)" in summary
+    assert "  * [SEC corporate records](mailroom-dataset/sources/edgar-corporate-records.md)" in summary
+    assert "  * [Enron correspondence](mailroom-dataset/sources/enron-correspondence.md)" in summary
+    assert "  * [CMS insurance claims](mailroom-dataset/sources/cms-insurance-claims.md)" in summary
+    assert "* [EDA reports](mailroom-dataset/eda-reports.md)" in summary
+    assert "* [Visualizations](mailroom-dataset/visualizations.md)" in summary
+
+    overview = (_DOCS / "mailroom-dataset" / "README.md").read_text(encoding="utf-8")
+    strata = (_DOCS / "mailroom-dataset" / "classes-and-strata.md").read_text(encoding="utf-8")
+    eda = (_DOCS / "mailroom-dataset" / "eda-reports.md").read_text(encoding="utf-8")
+    visuals = (_DOCS / "mailroom-dataset" / "visualizations.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Lucius-Morningstar/mailroom-dataset" in overview
+    assert "3,302" in overview
+    assert "ed7576b6" in overview
+    assert "55" in strata
+    assert "mixed_cash_stock_election" in strata
+    assert "run_all.py" in eda
+    assert "P0" in eda and "P6" in eda
+    assert "13,753" in eda
+    png_base = "raw.githubusercontent.com/Exios66/Mailroom-Corpus-EDA/main/reports/figures"
+    assert png_base in visuals
+    for stem in (
+        "01_type_and_subclass_distribution.png",
+        "08_cuad_clause_presence.png",
+        "13_maud_task_frequency.png",
+        "16_claim_amount_distribution.png",
+        "21_corr_intent.png",
+        "23_imbalance_treemap.png",
+        "30_metadata_cardinality.png",
+    ):
+        assert stem in visuals
+    assert "figures_interactive" in visuals
+    assert "exios66.github.io/Mailroom-Corpus-EDA" in visuals
+    assert '<iframe src="https://exios66.github.io/Mailroom-Corpus-EDA/"' in visuals
+    assert "huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset/embed/viewer" in overview
 
 
 def test_docker_and_modal_pages_cover_operator_matrix():

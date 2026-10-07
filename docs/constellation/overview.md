@@ -38,7 +38,7 @@ In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which
 | [The-Mailroom](repos/the-mailroom.md) | Surface | Pixel-art visualizer and hosted Observatory, driven entirely by the pipeline's Langfuse traces. |
 | [agent-mailroom](repos/agent-mailroom.md) | Surface | A self-contained mailroom on a walking office floor, same doctrine, independent release train. |
 | [llm-mailroom-graph](repos/llm-mailroom-graph.md) | Surface | Interactive knowledge-graph site of the pipeline's code. |
-| [Mailroom-Corpus-EDA](repos/mailroom-corpus-eda.md) | Data | EDA of the canonical `mailroom-dataset` and the central Hugging Face upload helpers. |
+| [Mailroom-Corpus-EDA](repos/mailroom-corpus-eda.md) | Data | EDA of the canonical `mailroom-dataset` and the central Hugging Face upload helpers. GitBook: [Mailroom dataset](../mailroom-dataset/), [visualizations](../mailroom-dataset/visualizations.md). |
 | [Enron-Evaluation-Environment](repos/enron-evaluation-environment.md) | Data | Builds the `correspondence` corpus from the CMU Enron emails. |
 | [claims-data-eda](repos/claims-data-eda.md) | Data | Builds the `insurance_claim` corpus from CMS DE-SynPUF Medicare claims. |
 
@@ -63,7 +63,7 @@ Older copies, forks and earlier monorepo attempts also exist. They are listed wi
 | :--- | :--- |
 | What code is current? | `Digital-Mailroom/packages/<name>` for development; `Exios66/<name>` for releases. |
 | Which document classes and thresholds exist? | `llm-mailroom`'s `config/taxonomy.yaml`. |
-| What is the dataset? | [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) on Hugging Face, pinned by revision. See [Data and corpora](data-and-corpora.md). |
+| What is the dataset? | [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) on Hugging Face, pinned by revision. See [Mailroom dataset](../mailroom-dataset/) (strata, EDA, figures) and [Data and corpora](data-and-corpora.md) (rules). |
 | How is quality scored? | `llm-dojo-scoring`. Nobody re-implements a metric locally. |
 | Who is working on what? | `Digital-Mailroom/governance/TASKS.md` for hub work; each package's own board for package work. See [Governance](governance.md). |
 | Where do cross-repo bugs go? | `mailroom-issues`. |
