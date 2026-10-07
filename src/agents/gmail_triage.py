@@ -425,6 +425,19 @@ class GmailTriageAgent(BaseAgent):
             f"Document text:\n{doc_text}"
         )
 
+        # Result cache (llm/result_cache.py): an identical document under the
+        # same model + prompt reuses the validated read with no LLM call.
+        from llm import result_cache
+
+        system_text = self.system_prompt()
+        cache_key = result_cache.cache_key(str(getattr(self, "model", "") or ""), system_text, user)
+        cached = result_cache.get(cache_key)
+        if cached is not None:
+            logger.info("triage_cache_hit", agent=self.agent_name, filename=filename)
+            cached = dict(cached)
+            cached["debug"] = {**(cached.get("debug") or {}), "cache": "hit"}
+            return cached
+
         # Capture the EXACT final prompt/response by wrapping the transport
         # call: _call_structured appends the json_object boilerplate + schema
         # to the user message, so only the transport sees the full payload.
@@ -471,7 +484,7 @@ class GmailTriageAgent(BaseAgent):
             raw = self._call_structured(
                 user,
                 TRIAGE_SCHEMA,
-                system_prompt=self.system_prompt(),
+                system_prompt=system_text,
             )
         except FreeQuotaExhausted as exc:
             # The free pool is rate-limited (breaker open): no paid fallback
@@ -580,6 +593,14 @@ class GmailTriageAgent(BaseAgent):
             debug_block["debug_dir"] = debug_dir
             if parsed is None:
                 result["debug"]["debug_dir"] = debug_dir
+        if parsed is not None:
+            result_cache.put(
+                cache_key,
+                {
+                    **{k: v for k, v in result.items() if k != "debug"},
+                    "debug": {k: v for k, v in debug_block.items() if k != "debug_dir"},
+                },
+            )
         logger.info(
             "triage_llm_io",
             agent=self.agent_name,
