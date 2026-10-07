@@ -492,3 +492,208 @@ From `grep -rhoE "from llm_dojo_scoring…"` over mailroom `src/` + `notebooks/`
 - Dojo `dojo-docs:TODOS.md` items for `LLM-Mailroom-Services/eval-environment` and `Exios66/local-mailroom-sandbox` (re-freeze upstream, mirror stems) — different repos.
 - Dojo scoring profiles for `gmail_triage` / `relations` (no scorer consumes them today).
 - Making the other controlled `name` fields (`communication_type`, `record_type`, `claim_type`, `urgency`, `coverage_determination`) `label` — same mechanism, but no pipeline change demands it yet.
+
+---
+
+# Addendum (2026-10-07, second pass) — Phases 5–8
+
+Appended after Tasks 1–11 shipped (dojo v0.21.0 released; mailroom PRs #104/#105
+and dojo PR #39 open; **Task 12 still pending** on those merges plus a new dojo
+tag). Source: three read-only audits (GitBook residue, Langfuse wiring, dojo
+needs). Task numbering continues; Task 12 keeps its slot. Repos per task header.
+
+## Addendum — Global Constraints
+
+- GitBook docs now live in `Exios66/mailroom-documentation`. Mailroom keeps only: `AGENTS.md`, `README.md`, `CHANGELOG.md`, the flat operator pages under `docs/` (agents, architecture, api, configuration, deployment, docker-deployment, modal-vllm, local-models, testing, gmail-intake, operational-procedure, sister-repos), `docs/wiki/**`, `docs/superpowers/plans/**`, `docs/reports/**`, `landing/**`, `.cursor/skills/**`, `.opencode/skills/**`. Redefining `docs/` as no longer the source of truth is a **human decision**, out of scope here.
+- Never hand-edit prompt text; dojo `production_prompts` stays the prompt authority (Global Constraints above still bind).
+- Langfuse work implements from **fresh docs** (`curl -s https://langfuse.com/llms.txt`, pages via `.md` suffix); SDK floor `langfuse>=4.9,<5` (required for Task 18's `mask_otel_spans` hook).
+- Every new Langfuse score name must exist in the dojo registry (KANBAN-061 import-time check in `observability/scores.py`).
+- Outward-facing steps (push to another repo, tag, release, emem writes) are human gates, as in Task 7 Step 6.
+- emem is **never** on the pipeline path and never decides a score; checkpoints are verified data (signature + pinned hashes) before use.
+
+## Addendum — Review Focus
+
+1. **Doc-reference guard after deletions** — `test_referenced_docs_exist_or_annotated` must stay green once page trees vanish; no kept file may link a removed page.
+2. **Masking must not blank the evaluation signal** — redaction removes emails/raw text from child generations but judge input (`pipeline-result`) and score payloads stay intact.
+3. **Triage trace on failure** — a failing triage lane still flushes and still carries `mailroom` + environment tags.
+4. **Prompt cache after a transient fetch failure** — `None` is never cached; a later call recovers the managed prompt.
+5. **`label` on all-null ground truth** — null GT + predicted `other` stays a spurious fill for the five new label fields too.
+6. **Experiment gate on an empty/mock dataset** — must fail closed (non-zero exit), never pass vacuously.
+
+## Phase 5 — mailroom working tree clean-up (repo: `llm-mailroom`)
+
+Order matters: trim the tests/scripts that read the doomed files first, then delete.
+
+### Task 13: Land the rescued null-string fix [llm-mailroom]
+
+Branch `claude/extraction-null-strings`, commit `b9fda96` (rescued from the discarded dirty tree; backup patch in the 2026-10-07 session scratchpad only).
+
+**Files:** `src/pipeline/extraction_normalize.py`, `src/tests/test_extraction_null_strings.py`.
+
+- [ ] **Step 1:** `pytest -q -p no:cacheprovider src/tests/test_extraction_null_strings.py` → 18 passed.
+- [ ] **Step 2:** Full suite `pytest -q -p no:cacheprovider` → `0 failed`; open the PR.
+
+### Task 14: Decouple tests and scripts from GitBook pages [llm-mailroom]
+
+**Files:**
+- Modify: `src/tests/test_docs_truth.py` — delete `test_docker_and_modal_pages_cover_operator_matrix`, the start-here/constellation/repository-guides/the-pipeline-in-depth params of `test_release_docs_match_package_version` and `test_release_docs_match_declared_dojo_pin`, `test_release_operator_docs_do_not_describe_scoring_as_pending`, `test_release_gitbook_page_and_feed_preserve_all_notes` and the changelog-parser tests that import `sync_gitbook_changelog`. Keep `test_referenced_docs_exist_or_annotated` and `test_current_dojo_pin_outside_changelog`.
+- Modify: `src/tests/test_bump_dojo_scoring.py` (DOC_TARGETS path list), `src/scripts/bump_dojo_scoring.py` (`DOC_TARGETS` — drop the removed page trees), `src/tests/test_landing.py` (gitbook-yaml tree walk), `src/tests/test_build_mascot.py` (GitBook gif assertion), `src/scripts/affected_tests.py` (prune GitBook mappings).
+
+**Interfaces:** Produces a suite that no longer reads any page slated for deletion in Task 15/16.
+
+- [ ] **Step 1: Write the guard test first** — in `test_bump_dojo_scoring.py`: `test_doc_targets_all_exist` asserts every path in `bump_dojo_scoring.DOC_TARGETS` exists on disk. Run → FAIL after Step 2's deletion preview (`git rm --cached` dry-run via monkeypatched path list), PASS once targets are pruned.
+- [ ] **Step 2:** Make the edits above. Run `pytest -q -p no:cacheprovider src/tests/test_docs_truth.py src/tests/test_bump_dojo_scoring.py src/tests/test_landing.py src/tests/test_build_mascot.py src/tests/test_affected_tests.py` → `0 failed`.
+- [ ] **Step 3:** Commit — `git commit -am "test: stop asserting on GitBook-hosted pages"`.
+
+### Task 15: Remove GitBook infrastructure [llm-mailroom]
+
+**Files:** delete `.gitbook.yaml`, `gitbook-docs.yaml`, `docs/.gitbook.yaml`, `docs/gitbook-docs.yaml`, `docs/.gitbook/**`, `docs/changelog/**`, `src/scripts/sync_gitbook_changelog.py`, the GitBook summary file under `docs/`; edit `AGENTS.md` (the two `sync_gitbook_changelog` command lines and the GitBook-docs bullet), `deploy/README.md`, `.cursor/skills/modal/SKILL.md` (drop the "listed in the summary" remark).
+
+- [ ] **Step 1: HUMAN GATE.** `docs/constellation/**` and `docs/changelog/**` are **not** in `mailroom-documentation`. Ask the human: copy them there first, or discard. Do not delete before the answer.
+- [ ] **Step 2:** Delete + edit as listed; `grep -rniE 'gitbook|SUMMARY\.md' . --exclude-dir=.git --exclude-dir=.superpowers` returns only historical `CHANGELOG.md` lines and this plan.
+- [ ] **Step 3:** `pytest -q -p no:cacheprovider` → `0 failed`. Commit — `git commit -am "chore: remove GitBook infrastructure (docs moved to mailroom-documentation)"`.
+
+### Task 16: Remove migrated GitBook page trees [llm-mailroom]
+
+**Files:** delete `docs/{start-here,how-it-fits-together,the-pipeline-in-depth,pipeline-reference-llm-mailroom,repository-guides,mailroom-dataset,about-this-site,constellation}/**`, `docs/assets/fumi/`, root `tree.html` (human confirms it is a stray artifact), and fix links in `README.md`, `docs/README.md`, `.cursor/skills/**`. Add a `CHANGELOG.md` `[Unreleased]` → `### Removed` entry.
+
+- [ ] **Step 1:** Guard test — `test_referenced_docs_exist_or_annotated` stays the acceptance test (Review Focus 1); run it before and after.
+- [ ] **Step 2:** Delete, then repoint every dangling link to the `mailroom-documentation` URL or a kept page.
+- [ ] **Step 3:** `pytest -q -p no:cacheprovider` → `0 failed`; `git status --short` empty after commit — `git commit -am "chore: drop GitBook page trees now hosted in mailroom-documentation"`.
+
+## Phase 6 — Langfuse wiring (repo: `llm-mailroom`)
+
+Invoke the project `langfuse` skill and fetch current docs before each task. Task 17 is independent of Phase 5.
+
+### Task 17: SDK floor, triage trace tagging, daemon-thread flush [llm-mailroom]
+
+**Files:** `pyproject.toml` (`langfuse>=4.9,<5`), `src/pipeline/watcher.py` (the two duplicated triage-trace blocks near L1035 and L1264), `src/observability/langfuse_setup.py`, `AGENTS.md` (drop the claim that `on_dropped` detects drops on v4).
+
+**Interfaces:** Produces `_triage_trace_kwargs(claimed: Path, intake_meta: dict) -> dict` in `pipeline/watcher.py` returning `tags=["mailroom", <env>, "source-gmail", "route-triage"]`, `environment=default_environment()`, curated `input` (filename, size — never raw text), used by both sites.
+
+- [ ] **Step 1: Failing tests** in `src/tests/test_gmail_triage_tracing.py`: `test_triage_trace_carries_mailroom_and_env_tags`, `test_triage_trace_input_has_no_document_text`, `test_triage_lane_flushes_on_failure` (Review Focus 3; fake client records `flush` call when the lane raises).
+- [ ] **Step 2:** Run → FAIL. **Step 3:** Implement helper, apply at both sites, call `flush_langfuse()` in a `finally` of `_run_triage_lane`, the relations judgment and echo dispatch. **Step 4:** Run → PASS; full suite green.
+- [ ] **Step 5:** Commit — `git commit -am "feat(tracing): tag and flush the Gmail triage trace like every pipeline trace"`.
+
+### Task 18: Masking hook [llm-mailroom]
+
+**Files:** `src/observability/langfuse_setup.py` (`client_kwargs()`), new `src/observability/masking.py`, `src/tests/test_trace_masking.py`.
+
+**Interfaces:** Produces `mask_otel_spans(*, params: MaskOtelSpansParams) -> MaskOtelSpansResult | None` (types from `langfuse.types`; signature per the fetched masking docs) redacting email addresses everywhere and dropping `gen_ai.prompt.*` / completion bodies on generations **only when** `MAILROOM_TRACE_REDACT=1`; `intake_meta` reaches trace metadata through an allowlist (`source`, `route`, `message_id_hash`). Iterate the read-only batch in `params.spans`; return `MaskOtelSpansResult(span_patches=...)` with sparse `OtelSpanPatch` values keyed by the batch's span identifiers, or `None` to leave the batch unchanged.
+
+- [ ] **Step 1: Failing tests:** `test_emails_redacted_in_generation_input`, `test_pipeline_result_judge_input_untouched` (Review Focus 2), `test_intake_meta_allowlist_drops_sender`. **Step 2:** FAIL. **Step 3:** Implement. **Step 4:** PASS + full suite. **Step 5:** commit `feat(tracing): redact PII from exported spans`.
+
+### Task 19: Prompt cache that expires [llm-mailroom]
+
+**Files:** `src/llm/prompts.py` (`get_managed_prompt`, `_prompt_cache`), `src/tests/test_prompts.py`.
+
+- [ ] **Step 1: Failing tests:** `test_none_result_is_not_cached` (Review Focus 4), `test_cache_entry_expires_after_ttl` (inject clock; TTL from `MAILROOM_PROMPT_CACHE_TTL`, default 60). **Step 2:** FAIL. **Step 3:** Add TTL, never store `None`, pass `fallback=` to `get_prompt` so offline still links. **Step 4:** PASS + suite. **Step 5:** commit `fix(prompts): expire the managed-prompt cache and never cache misses`.
+
+### Task 20: Score configs for intent/triage; default `config_id` [llm-mailroom]
+
+Depends on Task 24's registry names for the triage score; do the intent half now.
+
+**Files:** `src/observability/scores.py` (`SCORE_CONFIGS`, `score_trace`/`create_trace_score`), `src/observability/suite_scoring.py` (`SUITE_EXTRA_SCORE_NAMES`), tests in `src/tests/test_scores.py`.
+
+**Interfaces:** Produces BOOLEAN `intent_correct` (via `llm_dojo_scoring.intents.normalize_intent`), and `config_id` defaulting from a `name → id` map built in `ensure_score_configs()`.
+
+- [ ] **Step 1: Failing tests:** `test_intent_correct_registered_in_dojo_registry`, `test_score_trace_defaults_config_id`. **Step 2:** FAIL. **Step 3:** Implement. **Step 4:** PASS + suite. **Step 5:** commit `feat(scores): emit intent_correct and attach score-config ids`.
+
+### Task 21: Dataset experiment runner [llm-mailroom]
+
+**Files:** create `src/scripts/run_experiment.py`; modify `src/scripts/sync_dataset.py` (`--source hf` via `pipeline.hf_corpus_loader`, pinned revision in item metadata); tests `src/tests/test_run_experiment.py`.
+
+**Interfaces:** `run_experiment.py --dataset NAME [--mock|--real] [--max-items N] [--baseline PATH]` runs `run_pipeline` per dataset item through the current SDK experiment API, item evaluators `class_correct` + dojo `score_with_suite`, run evaluators macro accuracy / F1; exit 1 on regression versus the baseline JSON. The same module also exposes `experiment(context: RunnerContext)` for `langfuse/experiment-action`, calls `context.run_experiment(...)` to honor action-injected dataset/version/metadata, and returns the experiment result; raise SDK `RegressionError(result=result)` on baseline regression. Both entrypoints share evaluators and baseline comparison, reject empty datasets, and support mock pipeline execution. Keep CLI parsing under `if __name__ == "__main__":`; the action entrypoint reads mock mode, item limit, and baseline path from documented environment settings supplied by Task 22.
+
+- [ ] **Step 1: Failing tests:** `test_mock_experiment_scores_every_item`, `test_regression_vs_baseline_exits_nonzero`, `test_empty_dataset_fails_closed` (Review Focus 6), `test_action_entrypoint_matches_cli_regression_gate` (mock `RunnerContext`; assert returned result on pass and `RegressionError` on regression). **Step 2:** FAIL. **Step 3:** Implement from the fetched experiments-via-sdk page. **Step 4:** PASS; `PYTHONPATH=src python src/scripts/run_experiment.py --dataset mailroom-pilot --mock` exits 0 and a run appears under Experiments (self-audit loop). **Step 5:** commit `feat(eval): run Langfuse dataset experiments from the pilot manifest and HF corpus`.
+
+### Task 22: CI experiment gate [llm-mailroom]
+
+**Files:** create `.github/workflows/langfuse-experiment.yml`, `docs/superpowers/baselines/experiment-baseline.json` (committed approved baseline).
+
+- [ ] **Step 1:** Workflow on `pull_request` uses `langfuse/experiment-action` with `experiment_path: src/scripts/run_experiment.py`, invoking Task 21's `experiment(context: RunnerContext)` entrypoint with mock mode and the committed baseline configured through its documented environment settings (SDK ≥ 4.9, Task 17). Set `should_fail_on_regression: true` and `should_fail_on_script_error: true`. Skip the credentialed job for fork PRs (`github.event.pull_request.head.repo.full_name != github.repository`); for same-repository PRs, check required `LANGFUSE_*` credentials through step environment variables and skip the action with an explicit reason if unavailable. Runs with credentials must enforce the baseline regression gate. **Step 2:** Verify with `actionlint` if available, plus a dry local run → exit 0 on baseline, exit 1 after a hand-degraded copy; verify the action contract with a mocked `RunnerContext` and the workflow conditions for fork, missing-credential, and credentialed runs. **Step 3: HUMAN GATE** — repository secrets (`LANGFUSE_*`) are the human's to add. **Step 4:** commit `ci: gate PRs on Langfuse experiment regression`.
+
+## Phase 7 — dojo expansion for mailroom's needs (repo: `llm-dojo-scoring` unless noted)
+
+Order from the dojo audit: 23 → 24 → 25 → 26 → 27 → 28 → 29. Each ends with a dojo suite run and, where the mailroom consumes it, a cross-repo parity test in mailroom.
+
+### Task 23: `label` for the remaining controlled fields [dojo + llm-mailroom]
+
+Fields: `record_type`, `communication_type`, `urgency`, `claim_type`, `coverage_determination` (mailroom taxonomy lines currently `name`).
+
+**Files:** dojo `llm_dojo_scoring/intents.py` (generalize to a per-`(doc_class, field)` vocabulary map; keep `INTENT_LABELS`/`normalize_intent` public), `field_scoring.py`, `suites.py`, `tests/test_label_fields.py`; mailroom `src/config/taxonomy.yaml`, `src/langchain_agents/doc_inventories.py`.
+
+**Interfaces:** Produces `FIELD_VOCABS: dict[tuple[str, str], tuple[str, ...]]` and `normalize_field(doc_class, field, value) -> str`; `normalize_intent` becomes a thin wrapper.
+
+- [ ] **Step 1: Failing tests:** for each of the five fields `test_alias_scores_one`, `test_out_of_vocabulary_scores_zero`, `test_null_gt_other_pred_is_spurious_fill` (Review Focus 5), and `test_explicit_name_map_keeps_fuzzy_rescoring`. **Step 2:** FAIL. **Step 3:** Implement; mailroom flips the five fields to `label` only after the dojo release is pinned (ordering constraint from the original Architecture paragraph). **Step 4:** both suites green; regenerate the fixture with `gen_taxonomy_fixture.py`. **Step 5:** commit per repo; **HUMAN GATE** for the dojo tag.
+
+### Task 24: `gmail_triage` + `relations` prompts, triage scorer, registry export [dojo + llm-mailroom]
+
+**Files:** dojo `profiles.py` (`DEFAULT_PROFILES`), `prompts/catalog.yaml`, `scripts/sync_production_prompts.py`, new `llm_dojo_scoring/triage.py`, `registry.py`, `tests/test_triage.py`; mailroom `src/tests/test_dojo_parity.py`, `src/observability/scores.py`.
+
+**Interfaces:** Produces `score_triage(triage: dict, gt: dict, final_class: str | None = None) -> dict[str, float]` with `triage_class_correct`, `triage_prior_agreement`, `triage_extraction_field_f1` (via `score_extraction`), `triage_schema_clamp_rate`, `triage_handoff_precision`; and `dojo registry --export-score-configs` emitting `{name, data_type, min, max}` for every metric tagged `emit_in: pipeline`.
+
+- [ ] **Step 1: Failing tests:** six hand-built triage dicts with exact expected metrics; `test_registry_export_has_bounds_for_pipeline_metrics`; mailroom `test_prompt_templates_all_vendored` (every key of `prompt_templates()` has a dojo entry) and `test_score_configs_equal_dojo_export_subset`. **Step 2:** FAIL. **Step 3:** Implement; vendor with `sync_production_prompts.py`. **Step 4:** both suites green. **Step 5:** commits; mailroom wires `triage_class_correct` onto the Gmail triage trace (closes Task 20's second half).
+
+### Task 25: Full hash-chain verification [dojo]
+
+**Files:** `llm_dojo_scoring/archive.py`, `tests/test_archive_chain.py`.
+
+**Interfaces:** `verify_chain(entries: Sequence[dict]) -> ChainResult(valid: bool, break_index: int | None, reason: str)` — `prev_hash` linkage, strictly monotonic timestamps, scope separation, per-stage event order; metrics `chain_valid`, `chain_break_index`.
+
+- [ ] **Step 1: Failing tests:** valid 5-entry chain passes; tampered detail, reordered pair, repeated timestamp, wrong `prev_hash` each fail with the right `break_index`; plus a mailroom-side `test_audit_chain_passes_dojo_verify` feeding `storage.audit_log.get_audit_chain` output. **Steps 2–5** as usual.
+
+### Task 26: Sliding-window merge scorer [dojo]
+
+**Files:** `llm_dojo_scoring/intake.py`, `tests/test_window_merge.py`.
+
+**Interfaces:** `score_window_merge(text: str, windows: list[Window], merged: MergeResult, gt_class: str | None) -> dict[str, float]` → `window_coverage`, `section_offset_roundtrip`, `merge_vote_correct`, `window_disagreement_rate`.
+
+- [ ] **Step 1: Failing tests:** synthetic long text → coverage 1.0; deliberately dropped tail → < 1.0; off-by-one offset fails round-trip; 2-vs-1 wrong majority fails. Steps 2–5 as usual; mailroom adds a test feeding real `agents.intake.sliding_windows` output.
+
+### Task 27: Router and gateway-tier serving identity [dojo + llm-mailroom]
+
+**Files:** dojo `serving.py` (`ServingIdentity.routed_model`, `.tier`, kind `router`), `cost.py` (`priced: bool`; free pool = 0.0 unpriced, excluded from totals), new `compare_tiers()`; mailroom `src/scripts/sync_langfuse_logs.py` (carry `generation.model`).
+
+- [ ] **Step 1: Failing tests:** three records with one prompt and different served models group into one `router` run with a per-model breakdown; free-pool cost excluded from aggregate; `compare_tiers` returns per-tier quality, p95 latency, cold-start fraction (503 count) and cost-per-correct-document, and flags tier/alias drift. Steps 2–5 as usual.
+
+### Task 28: ModernBERT fast-path scorer [dojo]
+
+Depends on Task 27 (paired on/off runs need a flag on run identity).
+
+**Files:** new `llm_dojo_scoring/bert_intake.py`, `tests/test_bert_intake.py`.
+
+**Interfaces:** `score_bert_intake(rows: Sequence[dict]) -> dict[str, float]` → `bert_fast_path_precision`, `bert_route_coverage`, `bert_availability_rate`, `bert_prior_harm_rate`, `bert_latency_p95`; rows with `reason != "ok"` excluded from precision, counted in availability.
+
+- [ ] Steps 1–5 as usual; the acceptance test is a wrong `fast_path` row driving precision below 1.0. Gates the sorter-skip decision (#90).
+
+### Task 29: Relations clerk scorer [dojo]
+
+**Files:** new `llm_dojo_scoring/relations.py`, `tests/test_relations.py`. **First sub-step:** define a labelled pair set (matter ids from the HF corpus) in the test fixtures — design before code.
+
+**Interfaces:** `score_relations(edges, gold_pairs) -> dict` → per-`rtype` precision/recall/F1, `llm_edge_lift`, `near_miss_band_calibration`, `ledger_chain_valid`, `ledger_monotonic_ts` (reuses Task 25's `verify_chain`).
+
+- [ ] Steps 1–5 as usual; 5-document toy graph with hand-computed P/R/F1; tampered ledger row fails; duplicated timestamp flagged. Output informs whether `relations.llm` should go live.
+
+## Phase 8 — long-horizon run memory (optional, last)
+
+### Task 30: emem checkpoint sink for long runs [dojo]
+
+**Files:** new `llm_dojo_scoring/experiment_checkpoint.py`, `tests/test_experiment_checkpoint.py`; mailroom long scripts (`run_pilot.py`, `run_vision_sweep.py`, `sync_hf_ground_truth.py`) take `--resume`.
+
+**Interfaces:** `CheckpointSink` protocol — `write(state: RunState) -> str`, `read() -> RunState | None`; `RunState = {run_id, dataset_sha, taxonomy_blob_sha1, prompt_sha256: dict, completed_doc_ids, partial_metrics}`. Implementations: `JsonFileSink` (default, hermetic) and `EmemSink` (adapter over the emem note tools; signature verified with the skill's `verify_note` before trust).
+
+- [ ] **Step 1: Failing tests:** run killed after 3 of 6 documents resumes and scores only the last 3 with final metrics equal to an uninterrupted run; a checkpoint whose `prompt_sha256` or `taxonomy_blob_sha1` differs is rejected; `EmemSink` rejects an unsigned/foreign note (stub transport). **Steps 2–4** as usual.
+- [ ] **Step 5: HUMAN GATE** before any real write to `emem.dev` (identity creation and external publish); default stays `JsonFileSink`.
+
+## Addendum — Execution order and gates
+
+1. Task 12 (original) after #104/#105/dojo#39 merge and the dojo tag.
+2. Phase 5: 13 → 14 → (gate) 15 → 16.
+3. Phase 6: 17 → 18 → 19 → 20 → 21 → 22 (parallel with Phase 5 where files do not overlap).
+4. Phase 7: 23 → 24 → 25 → 26 → 27 → 28 → 29; one dojo release per two tasks, each a human gate.
+5. Phase 8 last.
+
+**Human gates collected:** Task 15 Step 1 (copy or discard `constellation/` + `changelog/`), Task 16 (`tree.html`), Task 22 Step 3 (CI secrets), every dojo tag/release in Phase 7, Task 30 Step 5 (emem writes).
+
+**Out of scope still:** eval-environment and local-mailroom-sandbox re-freezes (other repos); making `docs/` no longer the source of truth.
