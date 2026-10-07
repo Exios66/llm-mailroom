@@ -449,6 +449,7 @@ _INTAKE_META_KEYS = (
     "upload_id",
     "uploaded_at",
     "original_filename",
+    "group_size",
 )
 
 

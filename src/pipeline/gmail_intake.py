@@ -2375,6 +2375,14 @@ def _enqueue_echo(manifest: dict) -> str | None:
     if gate is None:
         return None
     doc_id, stage, message_id, sender, intake = gate
+    try:
+        group_size = int(intake.get("group_size") or 0)
+    except (TypeError, ValueError):
+        group_size = 0
+    if group_size > 1:
+        handled, digest_key = _handle_group_result(manifest, gate)
+        if handled:
+            return digest_key
     dedup_key = f"echo:{doc_id}:{stage}"
     if mail_outbox.row_state(dedup_key) is not None:
         return dedup_key  # already queued/sent/dead: skip the audit read and build
@@ -2400,6 +2408,150 @@ def _enqueue_echo(manifest: dict) -> str | None:
         },
     )
     return dedup_key
+
+
+def _digest_summary(manifest: dict) -> dict:
+    intake = manifest.get("intake") or {}
+    triage = intake.get("triage") if isinstance(intake.get("triage"), dict) else {}
+    debug = triage.get("debug") if isinstance(triage.get("debug"), dict) else {}
+    return {
+        "filename": manifest.get("original_filename"),
+        "doc_type": manifest.get("doc_type"),
+        "doc_subclass": manifest.get("doc_subclass"),
+        "confidence": manifest.get("classification_confidence"),
+        "reason": manifest.get("escalation_reason") or manifest.get("error_message"),
+        "model": debug.get("model") if isinstance(debug.get("model"), str) else None,
+    }
+
+
+def _handle_group_result(manifest: dict, gate) -> tuple[bool, str | None]:
+    """Bundle handling for one terminal manifest: ``(handled, digest_key)``.
+
+    ``handled`` False → send the normal per-document echo (unknown group, or a
+    late result for a group whose digest already went out without it).
+    """
+    from . import mail_outbox
+
+    doc_id, stage, message_id, _sender, _intake = gate
+    info = mail_outbox.group_info(str(message_id))
+    if info is None:
+        return False, None
+    if info.get("closed_at") is not None:
+        if mail_outbox.group_result_stage(str(message_id), doc_id) == stage:
+            return True, None  # already in the digest
+        return False, None
+    have, expected = mail_outbox.record_group_result(
+        str(message_id), doc_id, stage, _digest_summary(manifest)
+    )
+    if expected and have >= expected and mail_outbox.close_group(str(message_id)):
+        return True, _enqueue_digest(str(message_id), incomplete=False)
+    return True, None
+
+
+def build_digest_text(subject: str, results: list[dict], expected: int, incomplete: bool) -> str:
+    lines = ["MAILROOM BUNDLE REPORT", "=" * 60, ""]
+    if incomplete:
+        lines.append(
+            f"INCOMPLETE: {len(results)} of {expected} documents finished; the rest are still "
+            "processing or were parked. Each late document gets its own report."
+        )
+    else:
+        lines.append(f"All {len(results)} documents from your email have finished processing.")
+    lines.append("")
+    for r in results:
+        conf = r.get("confidence")
+        lines.append(
+            f"- {r.get('filename') or r.get('doc_id')}: {str(r.get('stage') or '').upper()}"
+            f" | {r.get('doc_type') or 'n/a'}"
+            + (f" / {r.get('doc_subclass')}" if r.get("doc_subclass") else "")
+            + f" | confidence {conf if conf is not None else 'n/a'}"
+        )
+        if r.get("reason"):
+            lines.append(f"    why: {r.get('reason')}")
+        lines.append(f"    doc_id: {r.get('doc_id')}")
+    models = sorted({str(r["model"]) for r in results if r.get("model")})
+    lines += ["", f"answered by: {', '.join(models) if models else 'the full mailroom pipeline'}"]
+    lines += ["", "Processed by the LLM Mailroom agent", "mailroom-dev: https://github.com/Exios66/mailroom-dev"]
+    return "\n".join(lines)
+
+
+def build_digest_html(subject: str, results: list[dict], expected: int, incomplete: bool) -> str:
+    colors = {"ARCHIVED": "#1a7f37", "REVIEW": "#9a6700", "FAILED": "#cf222e"}
+    rows = []
+    for r in results:
+        stage = str(r.get("stage") or "").upper()
+        conf = r.get("confidence")
+        reason = f'<div style="color:#57606a;">{_esc(r.get("reason"))}</div>' if r.get("reason") else ""
+        rows.append(
+            "<tr>"
+            f'<td style="padding:4px 10px 4px 0;"><strong>{_esc(r.get("filename") or r.get("doc_id"))}</strong>{reason}</td>'
+            f'<td style="padding:4px 10px 4px 0;">{_esc(r.get("doc_type") or "n/a")}'
+            + (f" / {_esc(r.get('doc_subclass'))}" if r.get("doc_subclass") else "")
+            + "</td>"
+            f'<td style="padding:4px 10px 4px 0;">{_esc(conf if conf is not None else "n/a")}</td>'
+            f'<td style="padding:4px 0;color:{colors.get(stage, "#57606a")};font-weight:600;">{_esc(stage)}</td>'
+            "</tr>"
+        )
+    banner = (
+        f"Incomplete &mdash; {len(results)} of {_esc(expected)} documents finished"
+        if incomplete
+        else f"All {len(results)} documents finished"
+    )
+    models = sorted({str(r["model"]) for r in results if r.get("model")})
+    return (
+        '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;color:#1f2328;">'
+        f'<div style="padding:10px 14px;border-radius:6px;background:#0969da1a;border:1px solid #0969da;">'
+        f'<strong style="color:#0969da;">{banner}</strong></div>'
+        '<table style="margin:12px 0;font-size:13px;border-collapse:collapse;">'
+        '<tr style="color:#57606a;"><td>Document</td><td>Class</td><td>Confidence</td><td>Outcome</td></tr>'
+        + "".join(rows)
+        + "</table>"
+        f'<div style="color:#57606a;font-size:12px;">Answered by: {_esc(", ".join(models) if models else "the full mailroom pipeline")}</div>'
+        '<div style="margin-top:14px;color:#57606a;font-size:12px;">Processed by the LLM Mailroom agent &middot; '
+        '<a href="https://github.com/Exios66/mailroom-dev" style="color:#0969da;">github.com/Exios66/mailroom-dev</a></div></div>'
+    )
+
+
+def _enqueue_digest(message_id: str, *, incomplete: bool) -> str | None:
+    """Queue ``digest:<message_id>`` for a closed group. Returns its key or None."""
+    from . import mail_outbox
+
+    info = mail_outbox.group_info(message_id) or {}
+    sender = str(info.get("sender") or "")
+    if not sender:
+        return None
+    cfg = load_config()
+    if not mail_guards.reply_allowed(sender, cfg.get("max_replies_per_hour")):
+        logger.warning("gmail_reply_budget_exceeded", to=sender, kind="digest")
+        return None
+    results = mail_outbox.group_results(message_id)
+    expected = int(info.get("expected") or len(results))
+    subject = str(info.get("subject") or "")
+    key = f"digest:{message_id}"
+    mail_outbox.enqueue(
+        key,
+        to_addr=sender,
+        subject=_reply_subject(subject),
+        text=build_digest_text(subject, results, expected, incomplete),
+        html=build_digest_html(subject, results, expected, incomplete),
+        headers=_reply_headers(cfg, message_id, "digest"),
+    )
+    return key
+
+
+def flush_stale_digests(now: float | None = None, max_age_s: float = 21600) -> list[str]:
+    """Send a partial digest for bundles still open after ``max_age_s`` (worker sweep)."""
+    from . import mail_outbox
+
+    keys = []
+    for message_id in mail_outbox.flush_stale_groups(now=now, max_age_s=max_age_s):
+        try:
+            key = _enqueue_digest(message_id, incomplete=True)
+            if key:
+                keys.append(key)
+        except Exception:
+            logger.exception("gmail_digest_flush_failed", message_id=message_id)
+    return keys
 
 
 def send_intake_echo(manifest: dict) -> bool:

@@ -1674,3 +1674,179 @@ def test_poller_without_idle_sleeps(monkeypatch):
     monkeypatch.setattr(gmail_intake, "poll_once", fake_poll)
     poller.run()
     assert n["polls"] == 2
+
+
+# ── acknowledgment + bundle digest (hardening T7) ─────────────────────────
+
+
+@pytest.fixture
+def echo_env(monkeypatch, temp_base_dir):
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    gmail_intake.set_imap_factory(lambda: FakeIMAP({}))
+    yield
+    gmail_intake.set_imap_factory(None)
+
+
+def _bundle_manifest(doc_id, message_id="<bundle@x>", group_size=3, stage="archived", **extra):
+    m = {
+        "doc_id": doc_id,
+        "matter_id": "M-1",
+        "original_filename": f"{doc_id}.pdf",
+        "stage": stage,
+        "doc_type": "contract",
+        "classification_confidence": 0.9,
+        "intake": {
+            "source": "gmail",
+            "message_id": message_id,
+            "sender": "sender@example.com",
+            "subject": "Bundle",
+            "group_size": group_size,
+        },
+    }
+    m.update(extra)
+    return m
+
+
+def _keys():
+    return [r[0] for r in _outbox_rows()]
+
+
+def test_single_doc_message_gets_ack_then_echo(echo_env):
+    client = FakeIMAP({"1": _message("One", attachments={"a.pdf": _pdf_bytes()}, message_id="<one@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["ack_replies"] == 1
+    manifest = _bundle_manifest("d1", message_id="<one@x>", group_size=1)
+    assert gmail_intake._enqueue_echo(manifest) == "echo:d1:archived"
+    assert _keys() == ["ack:<one@x>", "echo:d1:archived"]
+    ack_text = _outbox_rows()[0][3]
+    assert "a.pdf" in ack_text and "triage" in ack_text
+
+
+def test_three_doc_bundle_gets_one_ack_and_one_digest(echo_env):
+    from pipeline import mail_outbox
+
+    client = FakeIMAP(
+        {"1": _message("Bundle", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b", "c.pdf": b"%PDF c"},
+                       message_id="<bundle@x>")}
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 3 and report["ack_replies"] == 1
+    assert mail_outbox.group_info("<bundle@x>")["expected"] == 3
+
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    assert {read_inbox_meta(p)["group_size"] for p in inbox_dir().glob("*.pdf")} == {3}
+    for doc in ("d1", "d2"):
+        assert gmail_intake._enqueue_echo(_bundle_manifest(doc)) is None
+    assert _keys() == ["ack:<bundle@x>"]
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d3")) == "digest:<bundle@x>"
+    assert _keys() == ["ack:<bundle@x>", "digest:<bundle@x>"]
+    digest_text = _outbox_rows()[1][3]
+    assert all(f"d{i}.pdf" in digest_text for i in (1, 2, 3))
+    assert "INCOMPLETE" not in digest_text
+
+
+def test_stale_group_flushes_partial_digest(echo_env):
+    import time as _time
+
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=3, sender="sender@example.com", subject="Bundle")
+    gmail_intake._enqueue_echo(_bundle_manifest("d1"))
+    gmail_intake._enqueue_echo(_bundle_manifest("d2"))
+    assert gmail_intake.flush_stale_digests(now=_time.time() + 60) == []
+    assert gmail_intake.flush_stale_digests(now=_time.time() + 21601) == ["digest:<bundle@x>"]
+    (row,) = [r for r in _outbox_rows() if r[0].startswith("digest:")]
+    assert "INCOMPLETE: 2 of 3" in row[3]
+
+
+def test_late_result_after_partial_digest_gets_own_echo(echo_env):
+    import time as _time
+
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=3, sender="sender@example.com", subject="Bundle")
+    gmail_intake._enqueue_echo(_bundle_manifest("d1"))
+    gmail_intake.flush_stale_digests(now=_time.time() + 21601)
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d3")) == "echo:d3:archived"
+    # d1 was already in the digest: no extra echo for the same stage...
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d1")) is None
+    # ...but a later stage for d1 is new information.
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d1", stage="review")) == "echo:d1:review"
+    assert _keys().count("digest:<bundle@x>") == 1
+
+
+def test_duplicate_terminal_manifest_is_idempotent(echo_env):
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=2, sender="sender@example.com", subject="Bundle")
+    gmail_intake._enqueue_echo(_bundle_manifest("d1", group_size=2))
+    gmail_intake._enqueue_echo(_bundle_manifest("d1", group_size=2))
+    assert mail_outbox.record_group_result("<bundle@x>", "d1", "archived", {}) == (1, 2)
+    gmail_intake._enqueue_echo(_bundle_manifest("d2", group_size=2))
+    gmail_intake._enqueue_echo(_bundle_manifest("d2", group_size=2))
+    assert _keys().count("digest:<bundle@x>") == 1
+    assert [k for k in _keys() if k.startswith("echo:")] == []
+
+
+def test_unknown_group_falls_back_to_per_document_echo(echo_env):
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d9", message_id="<nogroup@x>")) == "echo:d9:archived"
+
+
+def test_digest_escapes_hostile_extracted_values():
+    results = [
+        {
+            "doc_id": "d1",
+            "stage": "review",
+            "filename": '<script>alert("x")</script>.pdf',
+            "doc_type": "a & b",
+            "reason": '"quoted" <b>bold</b>',
+        }
+    ]
+    html = gmail_intake.build_digest_html("s", results, 1, False)
+    assert "<script>" not in html and "<b>bold</b>" not in html
+    assert "&lt;script&gt;" in html and "a &amp; b" in html and "&quot;quoted&quot;" in html
+    _, ack_html = gmail_intake.build_ack_email(
+        "s", [{"filename": "<script>x</script>.pdf", "upload_id": "u1"}], "triage",
+        rejected=[("<img src=x>.exe", "extension")],
+    )
+    assert "<script>" not in ack_html and "<img" not in ack_html
+
+
+def test_digest_and_ack_are_multipart_with_text_part(echo_env):
+    import email as _email
+
+    from pipeline import mail_outbox
+
+    client = FakeIMAP(
+        {"1": _message("Bundle", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b"}, message_id="<bundle@x>")}
+    )
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    gmail_intake._enqueue_echo(_bundle_manifest("d1", group_size=2))
+    gmail_intake._enqueue_echo(_bundle_manifest("d2", group_size=2))
+    rows = {r[0]: r for r in _outbox_rows()}
+    for key in ("ack:<bundle@x>", "digest:<bundle@x>"):
+        _k, to, subject, text, html = rows[key]
+        row = mail_outbox.OutboxRow(key, to, subject, {"In-Reply-To": "<bundle@x>"}, text, html, 0)
+        msg = _email.message_from_bytes(mail_outbox._build_message(row, "llmmailroom@gmail.com").as_bytes())
+        types = {p.get_content_type() for p in msg.walk()}
+        assert {"text/plain", "text/html"} <= types
+        assert msg["Subject"] == "Re: Bundle"
+
+
+def test_group_size_survives_watcher_intake_meta_whitelist():
+    from pipeline.watcher import _intake_meta_from_sidecar
+
+    meta = _intake_meta_from_sidecar({"source": "gmail", "message_id": "<m@x>", "group_size": 3, "junk": 1})
+    assert meta["group_size"] == 3
+    assert "junk" not in meta
+
+
+def test_ack_disabled_by_env(echo_env, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_ACKS", "0")
+    client = FakeIMAP({"1": _message("One", attachments={"a.pdf": _pdf_bytes()}, message_id="<one@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1 and report["ack_replies"] == 0
+    assert _keys() == []
