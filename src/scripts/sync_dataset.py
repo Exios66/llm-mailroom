@@ -65,6 +65,8 @@ SOURCE_DATASETS = {
     "legalbench": "mailroom-pilot-legalbench",
     "atticus": "mailroom-pilot-atticus",
     "pileoflaw": "mailroom-pilot-pileoflaw",
+    # HF corpus (Lucius-Morningstar/mailroom-dataset), pinned revision in item metadata.
+    "hf": "mailroom-hf",
 }
 SOURCE_DESCRIPTIONS = {
     "original": "Pilot evaluation set: 13 original-corpus documents with "
@@ -74,6 +76,9 @@ SOURCE_DESCRIPTIONS = {
                   "contract texts behind the maud_* tasks) — CC BY 4.0.",
     "atticus": "The Atticus Project samples: 6 CUAD v1 contract PDFs (SEC "
                "filing exhibits) — CC BY 4.0.",
+    "hf": "Mailroom corpus rows from the Hugging Face dataset (labels joined to "
+          "doc_text via pipeline.hf_corpus_loader); every item pins the dataset revision "
+          "and content_sha256.",
     "pileoflaw": "Pile of Law samples (retired from the live pilot): U.S. "
                  "court opinions remain on disk; court_opinion is no longer "
                  "a pipeline class.",
@@ -103,7 +108,69 @@ def _ensure_dataset(client, dataset_name: str, source: str) -> None:
         print(f"Dataset '{dataset_name}' already exists (id={existing.id}).")
 
 
+def hf_manifest_rows(rows: list[dict], provenance: dict) -> list[dict]:
+    """Map HF corpus rows (``labels`` + ``doc_text``) to manifest-shaped rows.
+
+    ``gt_fields`` is clamped to the live extraction schema (the published
+    dict also carries promoted ground-truth-check fields); rows whose class
+    is not a live extract class are dropped.
+    """
+    out = []
+    revision = str(provenance.get("hub_sha") or provenance.get("plan_revision_pin") or "")
+    for row in rows:
+        labels = row.get("labels") or {}
+        doc_class = labels.get("expected") or row.get("role")
+        schema = get_extraction_schema(doc_class) if doc_class else None
+        if schema is None or not row.get("doc_text"):
+            continue
+        gt = labels.get("gt_fields")
+        if isinstance(gt, str):
+            try:
+                gt = json.loads(gt)
+            except json.JSONDecodeError:
+                gt = {}
+        fields = {k: v for k, v in (gt or {}).items() if k in schema.model_fields}
+        out.append(
+            {
+                "id": labels.get("document_id") or labels.get("filename"),
+                "filename": labels.get("filename", ""),
+                "subdir": "hf",
+                "expected_doc_class": doc_class,
+                "expected_stage": labels.get("expected_stage") or "archived",
+                "expected_fields": json.dumps(fields),
+                "size_tier": "",
+                "source": labels.get("source_corpus", ""),
+                "license": "",
+                "notes": labels.get("expected_subclass", ""),
+                "dataset": "hf",
+                "doc_text": row["doc_text"],
+                "revision": revision,
+                "content_sha256": labels.get("content_sha256", ""),
+            }
+        )
+    return out
+
+
+def _load_hf_rows(*, live: bool) -> list[dict]:
+    """HF corpus rows via the canonical loader (snapshot offline, pinned Hub revision live)."""
+    if live:
+        from pipeline.hf_corpus_loader import load_corpus
+
+        frame, provenance = load_corpus()
+        raw = [
+            {"role": rec.get("expected"), "doc_text": rec.get("doc_text"), "labels": rec}
+            for rec in frame.to_dict("records")
+        ]
+    else:
+        from pipeline.hf_corpus_loader import load_snapshot
+
+        raw, provenance = load_snapshot()
+    return hf_manifest_rows(raw, provenance)
+
+
 def _doc_text(sample: dict, samples_dir: Path) -> str:
+    if sample.get("doc_text"):
+        return sample["doc_text"]
     from agents.pdf_transcriber import PDFTranscriber
 
     pdf = samples_dir / sample["subdir"] / sample["filename"]
@@ -170,6 +237,9 @@ def sync_items(client, rows: list[dict], *, dry_run: bool, samples_dir: Path, da
             "notes": row["notes"],
             "dataset": row.get("dataset", ""),
         }
+        if row.get("revision"):
+            metadata["dataset_revision"] = row["revision"]
+            metadata["content_sha256"] = row.get("content_sha256", "")
 
         if dry_run:
             print(f"would sync  {item_id}  ({row['expected_doc_class']}, chars={len(doc_text)})")
@@ -200,17 +270,28 @@ def main() -> int:
         help="Only sync samples from this source corpus (default: all — every "
         "sample goes to its per-source dataset).",
     )
+    parser.add_argument(
+        "--source",
+        choices=("manifest", "hf"),
+        default="manifest",
+        help="Row source: the pilot manifest (default) or the HF mailroom corpus "
+        "(offline snapshot; --hf-live loads the pinned revision from the Hub).",
+    )
+    parser.add_argument("--hf-live", action="store_true", help="With --source hf: load the pinned Hub revision.")
     args = parser.parse_args()
 
     client = _client()
     if client is None:
         return 1
 
-    prepare_samples()
     samples_dir = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "samples"
 
-    with MANIFEST.open() as fh:
-        rows = list(csv.DictReader(fh))
+    if args.source == "hf":
+        rows = _load_hf_rows(live=args.hf_live)
+    else:
+        prepare_samples()
+        with MANIFEST.open() as fh:
+            rows = list(csv.DictReader(fh))
     if args.include:
         rows = [r for r in rows if r["expected_doc_class"] == args.include]
     if args.dataset:
