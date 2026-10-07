@@ -580,6 +580,8 @@ def test_send_intake_echo_replies_on_source_thread(temp_base_dir, monkeypatch):
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
     fake = FakeSMTP()
     gmail_intake.set_smtp_factory(lambda: fake)
+    # The terminal-stage reaction retry opens IMAP: inject a fake so no socket is touched.
+    gmail_intake.set_imap_factory(lambda: FakeIMAP({}))
     try:
         ok = gmail_intake.send_intake_echo(_echo_manifest())
         assert ok is True
@@ -607,6 +609,25 @@ def test_send_intake_echo_replies_on_source_thread(temp_base_dir, monkeypatch):
         assert len(fake.sent) == 1
     finally:
         gmail_intake.set_smtp_factory(None)
+        gmail_intake.set_imap_factory(None)
+
+
+def test_echo_not_resent_after_restart(temp_base_dir, monkeypatch, mocker):
+    """The outbox row is durable: a fresh process (no in-memory state) never re-sends."""
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    mocker.patch("pipeline.gmail_intake.react_to_message", return_value=True)
+    fake = FakeSMTP()
+    gmail_intake.set_smtp_factory(lambda: fake)
+    try:
+        assert gmail_intake.send_intake_echo(_echo_manifest()) is True
+        with gmail_intake._REACTION_LOCK:
+            gmail_intake._REACTION_ATTEMPTED.clear()  # simulate a restart
+        assert gmail_intake.send_intake_echo(_echo_manifest()) is True
+        assert len(fake.sent) == 1
+    finally:
+        gmail_intake.set_smtp_factory(None)
 
 
 def test_echo_skips_non_gmail_and_disabled_channel(temp_base_dir, monkeypatch):
@@ -615,7 +636,6 @@ def test_echo_skips_non_gmail_and_disabled_channel(temp_base_dir, monkeypatch):
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
     fake = FakeSMTP()
     gmail_intake.set_smtp_factory(lambda: fake)
-    gmail_intake._ECHO_DONE.clear()
     try:
         # /upload document — no gmail provenance → no echo.
         m = _echo_manifest()
@@ -739,7 +759,6 @@ def test_echo_retries_failed_reaction_at_terminal(temp_base_dir, monkeypatch, mo
     fake = FakeSMTP()
     gmail_intake.set_smtp_factory(lambda: fake)
     react_spy = mocker.patch("pipeline.gmail_intake.react_to_message", return_value=True)
-    gmail_intake._ECHO_DONE.clear()
     try:
         ok = gmail_intake.send_intake_echo(_echo_manifest())
         assert ok is True
@@ -756,7 +775,6 @@ def test_echo_skips_reaction_retry_when_reactions_disabled(temp_base_dir, monkey
     fake = FakeSMTP()
     gmail_intake.set_smtp_factory(lambda: fake)
     react_spy = mocker.patch("pipeline.gmail_intake.react_to_message", return_value=True)
-    gmail_intake._ECHO_DONE.clear()
     try:
         ok = gmail_intake.send_intake_echo(_echo_manifest())
         assert ok is True
