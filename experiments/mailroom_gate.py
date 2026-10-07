@@ -25,6 +25,8 @@ def experiment(context):
     from langfuse import RegressionError
 
     os.environ.setdefault("MAILROOM_RELATIONS_EMBEDDINGS", "0")
+    # Mock traces must never land in (or trigger judges on) live/pilot data.
+    os.environ["OBSERVABILITY_ENVIRONMENT"] = "mock"
     from scripts import run_experiment as rx
 
     rows = rx.fixture_rows(None)

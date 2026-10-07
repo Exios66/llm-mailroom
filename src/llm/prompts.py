@@ -30,6 +30,11 @@ PROMPT_PREFIX = "mailroom"
 # long-running watcher picks up a re-labelled `production` prompt.
 _prompt_cache: dict[tuple[str, str], tuple[float, object]] = {}
 _now = time.monotonic
+# (agent_name, label) -> time of the last failed fetch. The SDK retries a miss
+# (~2 s), so a never-synced prompt or a Langfuse outage must not pay that on
+# every LLM call; the local fallback is served until this short TTL lapses.
+_miss_cache: dict[tuple[str, str], float] = {}
+MISS_TTL = 30.0
 
 
 def prompt_cache_ttl() -> float:
@@ -81,7 +86,9 @@ def get_managed_prompt(
     if cached is not None and _now() - cached[0] >= prompt_cache_ttl():
         cached = None
     prompt_obj = cached[1] if cached is not None else None
-    if prompt_obj is None:
+    missed_at = _miss_cache.get(cache_key)
+    recently_missed = missed_at is not None and _now() - missed_at < MISS_TTL
+    if prompt_obj is None and not recently_missed:
         client = _client()
         if client is not None:
             try:
@@ -91,8 +98,11 @@ def get_managed_prompt(
                 prompt_obj = None
         if prompt_obj is not None:
             _prompt_cache[cache_key] = (_now(), prompt_obj)
+            _miss_cache.pop(cache_key, None)
         else:
             _prompt_cache.pop(cache_key, None)
+            if client is not None:
+                _miss_cache[cache_key] = _now()
 
     if prompt_obj is not None:
         try:

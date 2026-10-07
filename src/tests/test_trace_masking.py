@@ -86,3 +86,32 @@ def test_triage_trace_metadata_uses_allowlist():
 
     kw = watcher._triage_trace_kwargs(Path("a.txt"), {"source": "gmail", "sender": "alice@example.com"})
     assert "sender" not in kw["metadata"]
+
+
+def test_redact_flag_drops_openai_generation_bodies(monkeypatch):
+    """langfuse.openai writes bodies to langfuse.observation.input/output."""
+    monkeypatch.setenv("MAILROOM_TRACE_REDACT", "1")
+    s = _span(
+        "classify",
+        {
+            "langfuse.observation.type": "generation",
+            "langfuse.observation.input": "full doc text",
+            "langfuse.observation.output": "answer",
+        },
+    )
+    res, params = _run(s)
+    patch = res.span_patches[next(iter(params.spans))]
+    assert set(patch.delete_attributes) == {
+        "langfuse.observation.input",
+        "langfuse.observation.output",
+    }
+
+
+def test_redact_flag_keeps_pipeline_result_bodies(monkeypatch):
+    monkeypatch.setenv("MAILROOM_TRACE_REDACT", "1")
+    s = _span(
+        "pipeline-result",
+        {"langfuse.observation.type": "generation", "langfuse.observation.input": "x"},
+        scope="langfuse",
+    )
+    assert _run(s)[0] is None

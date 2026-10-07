@@ -23,6 +23,7 @@ from langfuse.types import MaskOtelSpansParams, MaskOtelSpansResult, OtelSpanPat
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 PROTECTED_SPAN_NAMES = frozenset({"pipeline-result"})
 _BODY_PREFIXES = ("gen_ai.prompt", "gen_ai.completion", "llm.input_messages", "llm.output_messages")
+_OBS_BODY_KEYS = ("langfuse.observation.input", "langfuse.observation.output")
 INTAKE_META_ALLOWLIST = ("source", "route")
 
 
@@ -42,8 +43,11 @@ def mask_otel_spans(*, params: MaskOtelSpansParams) -> Optional[MaskOtelSpansRes
             continue
         set_attrs: dict = {}
         delete_attrs: list = []
+        is_generation = span.attributes.get("langfuse.observation.type") == "generation"
         for key, value in span.attributes.items():
-            if redact_bodies and key.startswith(_BODY_PREFIXES):
+            if redact_bodies and (
+                key.startswith(_BODY_PREFIXES) or (is_generation and key in _OBS_BODY_KEYS)
+            ):
                 delete_attrs.append(key)
             elif isinstance(value, str):
                 redacted = redact_emails(value)
