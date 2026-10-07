@@ -548,6 +548,22 @@ def _link_no_clobber(src: Path, dest_dir: Path, name: str) -> Path:
             counter += 1
 
 
+def _rename_no_clobber(src: Path, dest_dir: Path, name: str) -> Path:
+    """Promote ``src`` by rename after an existence check (no hard-link support).
+
+    The poller is the sole writer of these inbox names (one ``watcher.lock``
+    drain point), so the small check-then-rename window is accepted.
+    """
+    stem, suffix = os.path.splitext(name)
+    counter = 0
+    while True:
+        dest = dest_dir / (name if counter == 0 else f"{stem}-{counter}{suffix}")
+        if not dest.exists():
+            os.rename(src, dest)
+            return dest
+        counter += 1
+
+
 def _place(src: Path, dest_dir: Path, name: str) -> Path:
     """Atomically place ``src`` in ``dest_dir`` as ``name`` without clobbering.
 
@@ -568,7 +584,12 @@ def _place(src: Path, dest_dir: Path, name: str) -> Path:
                 shutil.copyfileobj(fin, fout)
                 fout.flush()
                 os.fsync(fout.fileno())
-            dest = _link_no_clobber(part, dest_dir, name)
+            try:
+                dest = _link_no_clobber(part, dest_dir, name)
+            except OSError as link_exc:
+                if link_exc.errno not in _LINK_FALLBACK_ERRNOS:
+                    raise
+                dest = _rename_no_clobber(part, dest_dir, name)
         finally:
             part.unlink(missing_ok=True)
     src.unlink(missing_ok=True)
@@ -704,9 +725,10 @@ def _fetch_message(client, uid: str) -> bytes | None:
 
 
 _TRANSPORT_ERRORS = (
-    imaplib.IMAP4.abort,
-    imaplib.IMAP4.error,
+    imaplib.IMAP4.abort,  # NOT IMAP4.error: a BAD/NO for one message is per-message
     socket.timeout,
+    socket.gaierror,
+    socket.herror,
     ConnectionError,
     ssl.SSLError,
     EOFError,
@@ -825,6 +847,8 @@ def poll_once(
                     if carried:
                         failed_attempts[message_id] = failed_attempts.get(message_id, 0) + carried
                 if message_id in processed_ids:
+                    failed_attempts.pop(message_id, None)
+                    failed_attempts.pop(fallback_key, None)
                     report["already_processed"] += 1
                     _mark_seen(client, uid)
                     continue

@@ -947,7 +947,6 @@ def test_missing_message_id_key_scoped_by_folder_and_uidvalidity(temp_base_dir):
     "exc",
     [
         imaplib.IMAP4.abort("socket error: EOF"),
-        imaplib.IMAP4.error("fetch transport"),
         TimeoutError("timed out"),
         ConnectionResetError("reset"),
     ],
@@ -1116,3 +1115,56 @@ def test_fallback_attempts_carry_over_to_message_id(temp_base_dir, monkeypatch):
     report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
     assert report["quarantined"] == 1
     assert "<poison@example.com>" in gmail_intake._load_state()["processed_message_ids"]
+
+
+def test_imap4_error_on_fetch_is_per_message_and_quarantines(temp_base_dir, monkeypatch):
+    monkeypatch.setenv("MAILROOM_GMAIL_MAX_ATTEMPTS", "3")
+
+    def fetch(c, uid):
+        raise imaplib.IMAP4.error("BAD")
+
+    monkeypatch.setattr(gmail_intake, "_fetch_message", fetch)
+    client = _one_pdf_client()
+    reports = [
+        gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client) for _ in range(3)
+    ]
+    assert [r["quarantined"] for r in reports] == [0, 0, 1]
+    assert "1" in client.seen
+
+
+def test_no_hardlink_filesystem_promotes_part_by_rename(temp_base_dir, monkeypatch):
+    from pipeline.bins import inbox_dir
+
+    def nolink(*a, **kw):
+        raise OSError(errno.EPERM, "no hard links")
+
+    monkeypatch.setattr(gmail_intake.os, "link", nolink)
+    client = FakeIMAP(
+        {
+            "1": _message("a", attachments=({"d.pdf": _pdf_bytes()}), message_id="<a@example.com>"),
+            "2": _message("b", attachments=({"d.pdf": _pdf_bytes() + b"2"}), message_id="<b@example.com>"),
+        }
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["errors"] == []
+    assert report["attachments_queued"] == 2
+    assert sorted(p.name for p in inbox_dir().glob("*.pdf")) == ["d-1.pdf", "d.pdf"]
+    assert list(inbox_dir().glob(".*.part")) == []
+    staging = _staging_dir()
+    assert not staging.exists() or list(staging.glob("*")) == []
+
+
+def test_already_processed_message_drops_carried_attempts(temp_base_dir):
+    gmail_intake._save_state(
+        {
+            "processed_message_ids": ["<poison@example.com>"],
+            "failed_attempts": {
+                "<poison@example.com>": 1,
+                "uid:INBOX:1:1": 1,
+            },
+        }
+    )
+    client = _one_pdf_client()
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["already_processed"] == 1
+    assert gmail_intake._load_state()["failed_attempts"] == {}
