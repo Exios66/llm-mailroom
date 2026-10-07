@@ -56,6 +56,8 @@ import os
 import re
 import shutil
 import smtplib
+import socket
+import ssl
 import tempfile
 import threading
 import time
@@ -82,6 +84,14 @@ _STATE_KEEP_FAILED_ATTEMPTS = 2000
 MAX_MESSAGE_ATTEMPTS = 3
 FAILED_LABEL = "mailroom/failed"
 _MAX_FILENAME_CHARS = 120
+_MAX_FILENAME_BYTES = 200
+_ORPHAN_MAX_AGE_SECONDS = 3600
+# Filesystems without hard links / cross-device links: fall back to the copy path.
+_LINK_FALLBACK_ERRNOS = frozenset(
+    getattr(errno, name)
+    for name in ("EXDEV", "EPERM", "ENOTSUP", "EOPNOTSUPP", "EMLINK", "ENOSYS")
+    if hasattr(errno, name)
+)
 # The "check" reaction: an emoji-named Gmail label applied to the source
 # message when the watcher picks the attachment up for processing (HUB-037).
 DEFAULT_REACTION_LABEL = "✅"
@@ -419,8 +429,10 @@ def _load_state() -> dict:
                     for k, v in failed.items()
                     if isinstance(v, int) and not isinstance(v, bool)
                 }
-    except Exception:
+    except FileNotFoundError:
         pass
+    except Exception:
+        logger.error("gmail_intake_state_unreadable", path=str(_state_path()), exc_info=True)
     return state
 
 
@@ -430,17 +442,23 @@ def _save_state(state: dict) -> None:
         failed = dict(list(state.get("failed_attempts", {}).items())[-_STATE_KEEP_FAILED_ATTEMPTS:])
         path = _state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps(
-                {
-                    "processed_message_ids": ids,
-                    "failed_attempts": failed,
-                    "updated_at": _now_iso(),
-                }
-            )
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+        payload = json.dumps(
+            {
+                "processed_message_ids": ids,
+                "failed_attempts": failed,
+                "updated_at": _now_iso(),
+            }
         )
-        tmp.replace(path)
+        try:
+            with open(tmp, "w") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
     except Exception:
         logger.exception("gmail_intake_state_write_failed")
 
@@ -453,11 +471,16 @@ def _safe_filename(name: str | None) -> str | None:
     if not name:
         return None
     name = _FILENAME_UNSAFE_RE.sub("_", name)
-    name = _DOT_RUN_RE.sub(".", name).strip().strip(".")
-    if len(name) > _MAX_FILENAME_CHARS:
+    name = _DOT_RUN_RE.sub(".", name).strip(" .")
+    if len(name) > _MAX_FILENAME_CHARS or len(name.encode("utf-8")) > _MAX_FILENAME_BYTES:
         dot = name.rfind(".")
         suffix = name[dot:] if 0 < dot and len(name) - dot <= 16 else ""
-        name = name[: _MAX_FILENAME_CHARS - len(suffix)].rstrip(". ") + suffix
+        if len(suffix.encode("utf-8")) > 40:
+            suffix = ""
+        stem = name[: len(name) - len(suffix)][: _MAX_FILENAME_CHARS - len(suffix)]
+        budget = _MAX_FILENAME_BYTES - len(suffix.encode("utf-8"))
+        stem = stem.encode("utf-8")[:budget].decode("utf-8", "ignore").rstrip(" .")
+        name = stem + suffix if stem else ""
     return name or None
 
 
@@ -478,11 +501,38 @@ def _stage_path(ext: str) -> Path:
     staging = _staging_dir()
     staging.mkdir(parents=True, exist_ok=True)
     ext = ext.lower() if _STAGE_EXT_RE.fullmatch(ext.lower() if ext else "") else ""
-    fd = tempfile.NamedTemporaryFile(
-        dir=staging, prefix="gmail-", suffix=f"{ext}.part", delete=False
-    )
-    fd.close()
-    return Path(fd.name)
+    # os.open with 0o666 so the umask governs the mode (NamedTemporaryFile
+    # would force 0o600, unreadable by a watcher running as another user).
+    while True:
+        path = staging / f"gmail-{uuid.uuid4().hex[:12]}{ext}.part"
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
+            return path
+        except FileExistsError:
+            continue
+
+
+def _sweep_orphans() -> None:
+    """Best-effort removal of stale ``.part`` files left by hard crashes."""
+    try:
+        from .bins import inbox_dir
+
+        cutoff = time.time() - _ORPHAN_MAX_AGE_SECONDS
+        staging = _staging_dir()
+        candidates = []
+        if staging.is_dir():
+            candidates += list(staging.glob("*.part"))
+        inbox = inbox_dir()
+        if inbox.is_dir():
+            candidates += list(inbox.glob(".*.part"))
+        for path in candidates:
+            try:
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except Exception:
+        logger.exception("gmail_orphan_sweep_failed")
 
 
 def _link_no_clobber(src: Path, dest_dir: Path, name: str) -> Path:
@@ -510,7 +560,7 @@ def _place(src: Path, dest_dir: Path, name: str) -> Path:
     try:
         dest = _link_no_clobber(src, dest_dir, name)
     except OSError as exc:
-        if exc.errno != errno.EXDEV:
+        if exc.errno not in _LINK_FALLBACK_ERRNOS:
             raise
         part = dest_dir / f".{uuid.uuid4().hex}.part"
         try:
@@ -525,7 +575,9 @@ def _place(src: Path, dest_dir: Path, name: str) -> Path:
     return dest
 
 
-def _quarantine(client, uid: str, message_key: str, reason: str) -> None:
+def _quarantine(
+    client, uid: str, message_key: str, reason: str, errors: list | None = None
+) -> None:
     """Park a poison message: record processed, mark ``\\Seen``, label it failed.
 
     Best-effort and never raises.
@@ -546,9 +598,13 @@ def _quarantine(client, uid: str, message_key: str, reason: str) -> None:
             client.create(b'"' + _to_mutf7(FAILED_LABEL) + b'"')
         except Exception:
             pass
-        client.uid("STORE", uid.encode(), "+X-GM-LABELS", wire)
+        typ, _ = client.uid("STORE", uid.encode(), "+X-GM-LABELS", wire)
+        if typ != "OK":
+            raise GmailIntakeError(f"label store returned {typ}")
     except Exception:
         logger.exception("gmail_quarantine_label_failed", uid=uid)
+        if errors is not None:
+            errors.append(f"quarantine_label_failed:{uid}")
 
 
 def extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes]]:
@@ -647,6 +703,16 @@ def _fetch_message(client, uid: str) -> bytes | None:
     return None
 
 
+_TRANSPORT_ERRORS = (
+    imaplib.IMAP4.abort,
+    imaplib.IMAP4.error,
+    socket.timeout,
+    ConnectionError,
+    ssl.SSLError,
+    EOFError,
+)
+
+
 def _uidvalidity(client) -> str:
     """UIDVALIDITY of the selected folder ("0" when the server does not say)."""
     try:
@@ -699,6 +765,7 @@ def poll_once(
         _record_status(last_error="missing_credentials", last_poll_at=_now_iso())
         return report
 
+    _sweep_orphans()
     state = _load_state()
     processed_ids: list[str] = state.get("processed_message_ids", [])
     failed_attempts: dict[str, int] = state.get("failed_attempts", {})
@@ -725,19 +792,38 @@ def poll_once(
         uidvalidity = _uidvalidity(client)
         max_attempts = _max_attempts()
 
+        def _record_failure(uid, message_key, known_mid, desc):
+            attempts = failed_attempts.get(message_key, 0) + 1
+            failed_attempts[message_key] = attempts
+            if attempts >= max_attempts:
+                _quarantine(client, uid, message_key, desc, errors=report["errors"])
+                for key in (message_key, known_mid):
+                    if key and key not in processed_ids:
+                        processed_ids.append(key)
+                failed_attempts.pop(message_key, None)
+                report["quarantined"] += 1
+                report["errors"].append(f"quarantined:{uid}:{desc}")
+
         for uid in uid_list:
             uid = uid.decode("ascii", errors="ignore")
             fallback_key = f"uid:{cfg['folder']}:{uidvalidity}:{uid}"
             message_key = fallback_key
+            known_mid = None
             staged: list[Path] = []
             try:
                 raw = _fetch_message(client, uid)
                 if raw is None:
                     report["errors"].append(f"fetch_failed:{uid}")
+                    _record_failure(uid, message_key, None, "fetch_failed")
                     continue
                 msg = email.message_from_bytes(raw)
-                message_id = _message_id(msg) or fallback_key
+                known_mid = _message_id(msg)
+                message_id = known_mid or fallback_key
                 message_key = message_id
+                if message_id != fallback_key:
+                    carried = failed_attempts.pop(fallback_key, 0)
+                    if carried:
+                        failed_attempts[message_id] = failed_attempts.get(message_id, 0) + carried
                 if message_id in processed_ids:
                     report["already_processed"] += 1
                     _mark_seen(client, uid)
@@ -822,17 +908,16 @@ def poll_once(
                 failed_attempts.pop(message_id, None)
                 if _mark_seen(client, uid):
                     report["marked_seen"] += 1
+            except _TRANSPORT_ERRORS:
+                # Connection-level failure: abort the sweep (outer handler
+                # records it) WITHOUT counting against any message.
+                raise
             except Exception as exc:  # one bad message must not stop the sweep
                 logger.exception("gmail_message_failed", uid=uid)
                 report["errors"].append(f"message_failed:{uid}:{type(exc).__name__}")
-                attempts = failed_attempts.get(message_key, 0) + 1
-                failed_attempts[message_key] = attempts
-                if attempts >= max_attempts:
-                    _quarantine(client, uid, message_key, f"{type(exc).__name__}: {exc}")
-                    if message_key not in processed_ids:
-                        processed_ids.append(message_key)
-                    failed_attempts.pop(message_key, None)
-                    report["quarantined"] += 1
+                _record_failure(
+                    uid, message_key, known_mid, f"{type(exc).__name__}: {exc}"
+                )
             finally:
                 for path in staged:
                     try:
