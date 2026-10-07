@@ -4,8 +4,10 @@ site:
   structure:
     - type: section
       key: section-1
-      title: Mailroom Inc. Docs
+      title: Mailroom Inc.
       path: mailroom-inc.-docs
+      description: ""
+      icon: envelope-open-text
       default: true
       children: []
     - type: section
