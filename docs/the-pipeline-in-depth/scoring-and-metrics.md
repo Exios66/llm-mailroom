@@ -59,7 +59,7 @@ The fields `confidence` and `reasoning` are never scored.
 
 ### Per-field match rules
 
-Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/field_scoring.py`](https://github.com/Exios66/llm-dojo-scoring/blob/v0.18.0/llm_dojo_scoring/field_scoring.py).
+Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/field_scoring.py`](https://github.com/Exios66/llm-dojo-scoring/blob/v0.19.1/llm_dojo_scoring/field_scoring.py).
 
 | Type | Rule | Score |
 |---|---|---|
@@ -108,7 +108,7 @@ f1        = 2 * precision * recall / (precision + recall)   (0 when matched = 0)
 overall_score = sum(field_scores) / count(field_scores)
 ```
 
-> **Note on `type_bands`.** `taxonomy.yaml` defines per-type bands (`date: never`, `id: never`, `money: [0.675, 0.938]`, `free_text: [0.6, 0.95]`, `name: [0.5, 1.0]`, `entity_list: [0.5, 1.0]`) and comments say they were calibrated by [`scripts/calibrate_field_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/calibrate_field_scoring.py). In the pinned v0.18.0, these bands are read by the library function `field_is_ambiguous`, but `score_extraction` checks only the global `ambiguous_band` [0.5, 0.85]. The pipeline does not call `field_is_ambiguous`. So in practice the global band decides `needs_judge_review`.
+> **Note on `type_bands`.** `taxonomy.yaml` defines per-type bands (`date: never`, `id: never`, `money: [0.675, 0.938]`, `free_text: [0.6, 0.95]`, `name: [0.5, 1.0]`, `entity_list: [0.5, 1.0]`) and comments say they were calibrated by [`scripts/calibrate_field_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/calibrate_field_scoring.py). In the pinned v0.19.1, these bands are read by the library function `field_is_ambiguous`, but `score_extraction` checks only the global `ambiguous_band` [0.5, 0.85]. The pipeline does not call `field_is_ambiguous`. So in practice the global band decides `needs_judge_review`.
 
 **Factuality audit.** When the source text is available (`factuality_verification.enabled: true`), every field the model filled in is checked, including fields with no ground-truth label. A predicted item is "true" when it matches a ground-truth label at the 0.6 threshold or when at least **70%** of its tokens (`token_coverage: 0.7`) appear in the source document. This gives `verified_precision` and `hallucination_rate` per field. The document-level values are means over audited fields.
 
@@ -389,7 +389,7 @@ At import, every name in `SCORE_CONFIGS` is checked against the llm-dojo-scoring
 - [`src/agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), [`arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py), [`sorter_reviewer.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/sorter_reviewer.py)
 - [`src/graph/routing.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/routing.py), [`src/graph/build_graph.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/build_graph.py), [`src/pipeline/reconsideration.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/pipeline/reconsideration.py), [`src/config/taxonomy.yaml`](https://github.com/Exios66/llm-mailroom/blob/main/src/config/taxonomy.yaml)
 - [`src/legalbench/scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/scoring.py), [`src/scripts/run_quality_judges.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_quality_judges.py), [`src/scripts/sync_evaluators.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/sync_evaluators.py), [`src/scripts/run_pilot.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_pilot.py)
-- [llm-dojo-scoring `field_scoring.py` (v0.18.0)](https://github.com/Exios66/llm-dojo-scoring/blob/v0.18.0/llm_dojo_scoring/field_scoring.py) and [`config.py`](https://github.com/Exios66/llm-dojo-scoring/blob/v0.18.0/llm_dojo_scoring/config.py)
+- [llm-dojo-scoring `field_scoring.py` (v0.19.1)](https://github.com/Exios66/llm-dojo-scoring/blob/v0.19.1/llm_dojo_scoring/field_scoring.py) and [`config.py`](https://github.com/Exios66/llm-dojo-scoring/blob/v0.19.1/llm_dojo_scoring/config.py)
 - [eval-environment API-leg reports](https://github.com/LLM-Mailroom-Services/eval-environment/blob/main/reports/api-comparisons/README.md) and [`docs/scoring.md`](https://github.com/LLM-Mailroom-Services/eval-environment/blob/main/docs/scoring.md)
 - [mailroom-ml reports](https://github.com/LLM-Mailroom-Services/mailroom-ml/blob/main/reports/README.md)
 - [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md), [`src/legalbench/reports/experiment_log.md`](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/reports/experiment_log.md)
