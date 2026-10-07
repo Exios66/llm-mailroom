@@ -1,7 +1,9 @@
 """Run landing-page JavaScript unit tests through the repository's pytest entry point."""
 
+import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -32,6 +34,31 @@ BADGES = (
 def _has_badge(haystack: str, badge: str) -> bool:
     """GitBook Git Sync may decode `%7C` back to `|` in shields.io URLs."""
     return badge in haystack or badge.replace("%7C", "|") in haystack
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/README.md", "landing/index.html"])
+def test_release_badge_label_and_destination_match_package(path):
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    version = f"v{project['version']}"
+    text = (REPO / path).read_text(encoding="utf-8")
+    badge = f"https://img.shields.io/badge/release-{version}-2EA043"
+    destination = f"https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/{version}"
+    if path.endswith(".html"):
+        badges = re.findall(
+            r'<a\s+href="([^"]+)"[^>]*>\s*<img\s+src="(https://img.shields.io/badge/release-[^"]+)"\s+alt="([^"]+)"[^>]*>\s*</a>',
+            text,
+        )
+        assert badges == [(destination, badge, f"Release {version}")]
+        tags = re.findall(r'<em>release</em>\s*·\s*(v[\d.]+)', text)
+        assert tags == [version]
+    else:
+        badges = re.findall(r"\[!\[Release\]\(([^)]+)\)\]\(([^)]+)\)", text)
+        assert badges == [(badge, destination)]
+        if path == "README.md":
+            assert f"[`{version}`]({destination})" in text
+        else:
+            tags = re.findall(r"\[\*\*release\*\* · (v[\d.]+)\]", text)
+            assert tags == [version]
 
 
 def _walk_gitbook_nodes(nodes):
