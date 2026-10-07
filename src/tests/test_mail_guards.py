@@ -149,3 +149,10 @@ def test_reply_budget(temp_base_dir):
     assert mail_guards.reply_allowed("a@x.example", 20) is False
     assert mail_guards.reply_allowed("A <a@x.example>", 21) is True
     assert mail_guards.reply_allowed("b@x.example", 20) is True
+
+
+def test_allow_self_lets_own_address_through_but_not_auto_replies():
+    own = _msg(From="llmmailroom@gmail.com")
+    assert mail_guards.automated_reason(own, "llmmailroom@gmail.com", allow_self=True) is None
+    reply = _msg(From="llmmailroom@gmail.com", Auto_Submitted="auto-replied")
+    assert mail_guards.automated_reason(reply, "llmmailroom@gmail.com", allow_self=True) == "auto-submitted"

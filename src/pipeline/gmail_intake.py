@@ -1422,7 +1422,9 @@ def poll_once(
                 sender = _sender_address(msg)
                 # Loop guard first: automated mail (auto-replies, bounces,
                 # lists, our own messages) is never processed or answered.
-                auto = mail_guards.automated_reason(msg, cfg.get("address", ""))
+                auto = mail_guards.automated_reason(
+                    msg, cfg.get("address", ""), allow_self=mail_guards.allow_self()
+                )
                 if auto is not None:
                     logger.info("gmail_message_automated_skipped", sender=sender, uid=uid, reason=auto)
                     report["skipped_automated"] += 1
