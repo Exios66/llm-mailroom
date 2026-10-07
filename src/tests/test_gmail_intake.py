@@ -1289,3 +1289,178 @@ def test_already_processed_message_drops_carried_attempts(temp_base_dir):
     report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
     assert report["already_processed"] == 1
     assert gmail_intake._load_state()["failed_attempts"] == {}
+
+
+# ── reject replies + two-phase delivery (hardening T4) ────────────────────
+
+
+def _outbox_rows():
+    import sqlite3
+
+    from pipeline import mail_outbox
+
+    if not mail_outbox.db_path().exists():
+        return []
+    conn = sqlite3.connect(str(mail_outbox.db_path()))
+    try:
+        return conn.execute(
+            "SELECT dedup_key, to_addr, subject, text, html FROM outbox ORDER BY created_at"
+        ).fetchall()
+    finally:
+        conn.close()
+
+
+def test_unaccepted_extension_gets_reject_reply(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("Scan", attachments={"malware.exe": b"MZ"}, message_id="<rej-1@x>")}
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["reject_replies"] == 1
+    assert "1" in client.seen
+    rows = _outbox_rows()
+    assert len(rows) == 1
+    key, to, subject, text, html = rows[0]
+    assert key == "reject:<rej-1@x>"
+    assert to == "sender@example.com"
+    assert subject == "Re: Scan"
+    assert "malware.exe" in text and ".pdf" in text
+
+
+def test_no_attachments_gets_reject_reply(temp_base_dir):
+    client = FakeIMAP({"1": _message("hi", message_id="<rej-2@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["reject_replies"] == 1
+    (row,) = _outbox_rows()
+    assert "no attachment" in row[3]
+
+
+def test_non_allowlisted_sender_gets_no_reply(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("x", sender="stranger@evil.example", attachments={"a.exe": b"MZ"}, message_id="<rej-3@x>")}
+    )
+    report = gmail_intake.poll_once(
+        config=_cfg(allowed_senders={"client@firm.example"}), imap_factory=lambda: client
+    )
+    assert report["skipped_sender"] == 1
+    assert _outbox_rows() == []
+
+
+def test_reject_reply_respects_hourly_budget(temp_base_dir):
+    client = FakeIMAP({"1": _message("x", attachments={"a.exe": b"MZ"}, message_id="<rej-4@x>")})
+    report = gmail_intake.poll_once(
+        config=_cfg(max_replies_per_hour=0), imap_factory=lambda: client
+    )
+    assert report["reject_replies"] == 0
+    assert _outbox_rows() == []
+    assert "1" in client.seen
+
+
+def test_reject_reply_html_escapes_filename():
+    text, html = gmail_intake.build_reject_reply(
+        "s", [("<script>x</script>.exe", "extension")], [".pdf"], 50
+    )
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
+def test_io_error_during_staging_publishes_nothing_and_retries(temp_base_dir, monkeypatch):
+    from pathlib import Path
+
+    from pipeline.bins import inbox_dir
+
+    client = FakeIMAP(
+        {"1": _message("two", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b"}, message_id="<io-1@x>")}
+    )
+    real_write = Path.write_bytes
+    calls = {"n": 0}
+
+    def flaky_write(self, data):
+        if self.name.endswith(".part"):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError(errno.ENOSPC, "disk full")
+        return real_write(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", flaky_write)
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 0
+    assert list(inbox_dir().glob("*.pdf")) == [] if inbox_dir().exists() else True
+    assert list(_staging_dir().glob("*")) == []
+    assert "1" not in client.seen
+    assert gmail_intake._load_state()["failed_attempts"]["<io-1@x>"] == 1
+
+    monkeypatch.setattr(Path, "write_bytes", real_write)
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 2
+    assert sorted(p.name for p in inbox_dir().glob("*.pdf")) == ["a.pdf", "b.pdf"]
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 0
+
+
+def test_promote_failure_never_unlinks_published_file(temp_base_dir, monkeypatch):
+    from pipeline.bins import inbox_dir
+
+    client = FakeIMAP(
+        {"1": _message("two", attachments={"a.pdf": b"%PDF a", "b.pdf": b"%PDF b"}, message_id="<pf-1@x>")}
+    )
+    real_place = gmail_intake._place
+    calls = {"n": 0}
+
+    def flaky_place(src, dest_dir, name, meta=None):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("promote boom")
+        return real_place(src, dest_dir, name, meta)
+
+    monkeypatch.setattr(gmail_intake, "_place", flaky_place)
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert [p.name for p in inbox_dir().glob("*.pdf")] == ["a.pdf"]
+    assert report["attachments_queued"] == 1
+    assert any(e.startswith("promote_failed:1:") and "b.pdf" in e for e in report["errors"])
+    assert "1" in client.seen
+    assert list(_staging_dir().glob("*")) == []
+
+    monkeypatch.setattr(gmail_intake, "_place", real_place)
+    client.seen.clear()
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["already_processed"] == 1
+    assert len(list(inbox_dir().glob("*.pdf"))) == 1
+
+
+def test_sidecar_written_before_file_is_visible(temp_base_dir, monkeypatch):
+    from pipeline.bins import inbox_meta_path
+
+    seen_meta = []
+    real_link = gmail_intake.os.link
+
+    def spy_link(src, dest):
+        seen_meta.append(inbox_meta_path(gmail_intake.Path(dest)).exists())
+        return real_link(src, dest)
+
+    monkeypatch.setattr(gmail_intake.os, "link", spy_link)
+    client = FakeIMAP({"1": _message("one", attachments={"a.pdf": _pdf_bytes()}, message_id="<sc-1@x>")})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["attachments_queued"] == 1
+    assert seen_meta == [True]
+
+
+def test_stale_sidecar_does_not_force_renaming(temp_base_dir):
+    """The watcher leaves `<file>.meta` behind after a claim; the name stays usable."""
+    from pipeline.bins import inbox_dir, read_inbox_meta
+
+    inbox_dir().mkdir(parents=True, exist_ok=True)
+    (inbox_dir() / "scan.pdf.meta").write_text('{"matter_id": "OLD"}')
+    client = FakeIMAP({"1": _message("[M:NEW]", attachments={"scan.pdf": _pdf_bytes()}, message_id="<st-1@x>")})
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert read_inbox_meta(inbox_dir() / "scan.pdf")["matter_id"] == "NEW"
+
+
+def test_deliver_attachment_returns_io_on_oserror(temp_base_dir, monkeypatch):
+    def boom(*a, **kw):
+        raise OSError(errno.EIO, "io")
+
+    monkeypatch.setattr(gmail_intake, "_place", boom)
+    delivered, reason = gmail_intake.deliver_attachment(
+        "a.pdf", b"%PDF", {"_max_attachment_bytes": 1024}
+    )
+    assert (delivered, reason) == (None, "io")
