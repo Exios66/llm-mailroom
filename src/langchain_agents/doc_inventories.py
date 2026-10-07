@@ -647,10 +647,11 @@ def enrich_extraction(
         if token:
             result["record_type"] = token
     elif kind == "correspondence":
-        token = normalize_communication_type(
-            result.get("communication_type") or subtype
-        )
-        if token:
+        own = result.get("communication_type")
+        token = normalize_communication_type(own or subtype)
+        # The model's own null is a valid contract answer; do not backfill
+        # it from a sorter subtype that only normalizes to the residual "other".
+        if token and not (not own and token == "other"):
             result["communication_type"] = token
     elif kind == "insurance_claim":
         token = normalize_claim_type(result.get("claim_type") or subtype)
