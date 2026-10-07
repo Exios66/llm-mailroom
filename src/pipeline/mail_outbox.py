@@ -67,6 +67,29 @@ CREATE TABLE IF NOT EXISTS outbox (
 """
 
 
+_GROUP_SCHEMA = (
+    """
+CREATE TABLE IF NOT EXISTS message_groups (
+    message_id TEXT PRIMARY KEY,
+    expected INTEGER NOT NULL,
+    sender TEXT,
+    subject TEXT,
+    created_at REAL NOT NULL,
+    closed_at REAL
+)
+""",
+    """
+CREATE TABLE IF NOT EXISTS group_results (
+    message_id TEXT NOT NULL,
+    doc_id TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    summary_json TEXT NOT NULL,
+    PRIMARY KEY (message_id, doc_id)
+)
+""",
+)
+
+
 @dataclasses.dataclass
 class OutboxRow:
     dedup_key: str
@@ -95,6 +118,8 @@ def _db():
             except sqlite3.Error:
                 pass
             conn.execute(_SCHEMA)
+            for ddl in _GROUP_SCHEMA:
+                conn.execute(ddl)
             cols = {r[1] for r in conn.execute("PRAGMA table_info(outbox)")}
             if "lease_until" not in cols:  # DB created before the lease column existed
                 conn.execute("ALTER TABLE outbox ADD COLUMN lease_until REAL")
@@ -140,6 +165,96 @@ def count_recent(to_addr: str, window_s: float, now: float | None = None) -> int
             (to_addr, now - window_s),
         ).fetchone()
     return int(r[0])
+
+
+# ---------------------------------------------------------------------------
+# Bundle groups: a multi-attachment email gets ONE digest reply once every
+# document reaches a terminal stage (or a partial one after max_age_s).
+# ---------------------------------------------------------------------------
+
+
+def register_group(message_id: str, *, expected: int, sender: str, subject: str, now: float | None = None) -> None:
+    """Create the group, or update ``expected`` while it is still open."""
+    now = time.time() if now is None else now
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO message_groups (message_id, expected, sender, subject, created_at) VALUES (?,?,?,?,?)"
+            " ON CONFLICT(message_id) DO UPDATE SET expected=excluded.expected WHERE closed_at IS NULL",
+            (message_id, int(expected), sender, subject, now),
+        )
+
+
+def group_info(message_id: str) -> dict | None:
+    with _db() as conn:
+        r = conn.execute(
+            "SELECT expected, sender, subject, created_at, closed_at FROM message_groups WHERE message_id=?",
+            (message_id,),
+        ).fetchone()
+    if r is None:
+        return None
+    return {"expected": r[0], "sender": r[1], "subject": r[2], "created_at": r[3], "closed_at": r[4]}
+
+
+def record_group_result(message_id: str, doc_id: str, stage: str, summary: dict) -> tuple[int, int]:
+    """Record one document's terminal result; returns ``(have, expected)``.
+
+    A repeat ``(message_id, doc_id)`` is a no-op returning the current counts.
+    ``expected`` is 0 when the group is unknown.
+    """
+    with _db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO group_results (message_id, doc_id, stage, summary_json) VALUES (?,?,?,?)",
+            (message_id, doc_id, stage, json.dumps(summary, default=str)),
+        )
+        have = conn.execute("SELECT COUNT(*) FROM group_results WHERE message_id=?", (message_id,)).fetchone()[0]
+        r = conn.execute("SELECT expected FROM message_groups WHERE message_id=?", (message_id,)).fetchone()
+    return int(have), int(r[0]) if r else 0
+
+
+def group_result_stage(message_id: str, doc_id: str) -> str | None:
+    with _db() as conn:
+        r = conn.execute(
+            "SELECT stage FROM group_results WHERE message_id=? AND doc_id=?", (message_id, doc_id)
+        ).fetchone()
+    return r[0] if r else None
+
+
+def group_results(message_id: str) -> list[dict]:
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT doc_id, stage, summary_json FROM group_results WHERE message_id=? ORDER BY rowid",
+            (message_id,),
+        ).fetchall()
+    out = []
+    for doc_id, stage, summary in rows:
+        try:
+            data = json.loads(summary)
+        except Exception:
+            data = {}
+        out.append({"doc_id": doc_id, "stage": stage, **(data if isinstance(data, dict) else {})})
+    return out
+
+
+def close_group(message_id: str, now: float | None = None) -> bool:
+    """Close an open group; True only for the caller that closed it."""
+    now = time.time() if now is None else now
+    with _db() as conn:
+        cur = conn.execute(
+            "UPDATE message_groups SET closed_at=? WHERE message_id=? AND closed_at IS NULL", (now, message_id)
+        )
+        return cur.rowcount == 1
+
+
+def flush_stale_groups(now: float | None = None, max_age_s: float = 21600) -> list[str]:
+    """Close open groups older than ``max_age_s`` that have ≥ 1 result; return their ids."""
+    now = time.time() if now is None else now
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT g.message_id FROM message_groups g WHERE g.closed_at IS NULL AND g.created_at<=?"
+            " AND EXISTS (SELECT 1 FROM group_results r WHERE r.message_id=g.message_id)",
+            (now - max_age_s,),
+        ).fetchall()
+    return [mid for (mid,) in rows if close_group(mid, now)]
 
 
 def _build_message(row: OutboxRow, from_addr: str) -> email.message.EmailMessage:
@@ -323,6 +438,12 @@ class OutboxWorker(threading.Thread):
             self._event.clear()
             if self._stop_flag:
                 break
+            try:
+                from .gmail_intake import flush_stale_digests
+
+                flush_stale_digests()
+            except Exception:
+                logger.exception("mail_outbox_group_flush_failed")
             try:
                 for _ in range(MAX_DRAIN_ROUNDS):  # work off a backlog > limit
                     r = drain_once()
