@@ -44,7 +44,7 @@ LLM calls — never a generic tool/span), PII masked via curated input/output
 (file metadata, not raw payloads), `session_id` grouping (matter/run),
 tag taxonomy (environment/run/source), environments on every trace,
 `langfuse_prompt=` linking, auto-created score configs, native LLM-as-a-
-judge evaluators, synced dashboards, flush health + `on_dropped`, and the
+judge evaluators, synced dashboards, flush health counters (the v4 SDK has no `on_dropped` hook, so drops are not detected beyond SDK logs), and the
 mandatory self-audit loop (run end-to-end, fetch the trace fresh, audit
 against https://langfuse.com/docs/observability/best-practices — documented
 in the Langfuse section above). Running on langfuse 4.14.3 with the v4-
