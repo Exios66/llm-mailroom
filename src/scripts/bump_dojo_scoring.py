@@ -94,7 +94,7 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         # architecture dependency table mailroom row only
-        re.compile(r"(git pin `@)(v?\d+\.\d+\.\d+)(`(?: as of \d{4}-\d{2}-\d{2})?, auto-bumped)"),
+        re.compile(r"(git pin `@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(`(?: as of \d{4}-\d{2}-\d{2})?, auto-bumped)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
@@ -258,7 +258,7 @@ def _rewrite_text(text: str, tag: str) -> str:
     )
     # Documented invocation of this script in docs/sister-repos.md.
     out = re.sub(
-        r"(bump_dojo_scoring\.py --apply --tag )(v?\d+\.\d+\.\d+)",
+        r"(bump_dojo_scoring\.py --apply --tag )(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)",
         rf"\g<1>{tag}",
         out,
     )
