@@ -64,3 +64,88 @@ class TestPromptTemplates:
             if agent == "sorter":
                 continue
             assert "{{" not in template, f"{agent} template has unresolved variable"
+
+
+class _FakePrompt:
+    prompt = "managed text"
+
+    def compile(self, **kw):
+        return "managed text"
+
+
+class _FakeClient:
+    def __init__(self, results):
+        self.results = list(results)
+        self.calls = 0
+
+    def get_prompt(self, name, label=None):
+        self.calls += 1
+        r = self.results.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+def _wire(monkeypatch, client, clock=None):
+    monkeypatch.setattr("llm.prompts._prompt_cache", {})
+    monkeypatch.setattr("llm.prompts._miss_cache", {})
+    monkeypatch.setattr("llm.prompts._client", lambda: client)
+    if clock is not None:
+        monkeypatch.setattr("llm.prompts._now", clock)
+
+
+class TestPromptCacheExpiry:
+    def test_none_result_is_not_cached(self, monkeypatch):
+        """A transient fetch failure must not pin the local fallback."""
+        t = {"now": 1000.0}
+        client = _FakeClient([RuntimeError("503"), _FakePrompt()])
+        _wire(monkeypatch, client, clock=lambda: t["now"])
+        from llm.prompts import get_managed_prompt
+
+        text1, obj1 = get_managed_prompt("sorter", "local")
+        assert (text1, obj1) == ("local", None)
+        t["now"] += 31  # past the short negative TTL
+        text2, obj2 = get_managed_prompt("sorter", "local")
+        assert text2 == "managed text" and obj2 is not None
+        assert client.calls == 2
+
+    def test_cache_entry_expires_after_ttl(self, monkeypatch):
+        t = {"now": 1000.0}
+        client = _FakeClient([_FakePrompt(), _FakePrompt()])
+        _wire(monkeypatch, client, clock=lambda: t["now"])
+        monkeypatch.setenv("MAILROOM_PROMPT_CACHE_TTL", "60")
+        from llm.prompts import get_managed_prompt
+
+        get_managed_prompt("sorter", "local")
+        t["now"] += 59
+        get_managed_prompt("sorter", "local")
+        assert client.calls == 1
+        t["now"] += 2
+        get_managed_prompt("sorter", "local")
+        assert client.calls == 2
+
+    def test_default_ttl_is_60_seconds(self):
+        from llm.prompts import prompt_cache_ttl
+
+        import os
+
+        os.environ.pop("MAILROOM_PROMPT_CACHE_TTL", None)
+        assert prompt_cache_ttl() == 60.0
+
+
+class TestMissBackoff:
+    def test_miss_is_not_refetched_within_negative_ttl(self, monkeypatch):
+        """A never-synced prompt must not pay SDK retries on every LLM call."""
+        t = {"now": 1000.0}
+        client = _FakeClient([RuntimeError("404"), _FakePrompt()])
+        _wire(monkeypatch, client, clock=lambda: t["now"])
+        from llm.prompts import get_managed_prompt
+
+        get_managed_prompt("sorter", "local")
+        t["now"] += 5
+        text, obj = get_managed_prompt("sorter", "local")
+        assert (text, obj) == ("local", None)
+        assert client.calls == 1
+        t["now"] += 30
+        text, obj = get_managed_prompt("sorter", "local")
+        assert obj is not None and client.calls == 2

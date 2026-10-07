@@ -702,27 +702,33 @@ def _llm_judgment_edges(
         # trace per scan; the auto-traced generation nests under it (same
         # thread → contextvars propagate).
         environment = str(os.environ.get("OBSERVABILITY_ENVIRONMENT", "live"))
-        with pipeline_trace(
-            seed=f"relations-judgment-{doc_id}-{run_id}",
-            name="relations-judgment",
-            session_id=row.get("matter_id") or None,
-            input={
-                "doc_id": doc_id,
-                "candidates": [
-                    f'{c["source_doc_id"]} <-> {c["target_doc_id"]}' for c in candidate_edges
-                ],
-            },
-            metadata={
-                "pipeline": "mailroom-relations",
-                "scanner_run_id": run_id,
-                "top_k": top_k,
-                "llm_confidence_gate": gate,
-                "candidate_count": len(candidate_edges),
-            },
-            tags=["mailroom", environment, "relations"],
-        ):
-            agent = RelationsAgent()
-            raw_judgments = agent.judge(candidate_edges)
+        try:
+            with pipeline_trace(
+                seed=f"relations-judgment-{doc_id}-{run_id}",
+                name="relations-judgment",
+                session_id=row.get("matter_id") or None,
+                input={
+                    "doc_id": doc_id,
+                    "candidates": [
+                        f'{c["source_doc_id"]} <-> {c["target_doc_id"]}' for c in candidate_edges
+                    ],
+                },
+                metadata={
+                    "pipeline": "mailroom-relations",
+                    "scanner_run_id": run_id,
+                    "top_k": top_k,
+                    "llm_confidence_gate": gate,
+                    "candidate_count": len(candidate_edges),
+                },
+                tags=["mailroom", environment, "relations"],
+            ):
+                agent = RelationsAgent()
+                raw_judgments = agent.judge(candidate_edges)
+        finally:
+            # Daemon-thread trace: nothing else flushes it, even on failure.
+            from observability.tracing import flush as _flush_traces
+
+            _flush_traces()
         # Defense-in-depth: the scanner re-validates the agent's output
         # against ITS OWN proposed pairs — the closed vocabulary, pair
         # normalization, and unproposed-pair refusal are applied twice so
