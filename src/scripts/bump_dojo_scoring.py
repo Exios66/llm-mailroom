@@ -121,6 +121,10 @@ PIN_FILES = (
     ".cursor/skills/dojo-scoring/SKILL.md",
     ".cursor/skills/mailroom-tool-router/SKILL.md",
     "src/tests/test_dojo_v012.py",
+    "docs/the-pipeline-in-depth/scoring-and-metrics.md",
+    "docs/the-pipeline-in-depth/running.md",
+    "docs/pipeline-reference-llm-mailroom/architecture.md",
+    "docs/architecture.md",
     "landing/index.html",
 )
 
