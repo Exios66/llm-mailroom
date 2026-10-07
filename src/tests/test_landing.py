@@ -35,6 +35,25 @@ def _has_badge(haystack: str, badge: str) -> bool:
     return badge in haystack or badge.replace("%7C", "|") in haystack
 
 
+@pytest.mark.parametrize("relative_path", ["README.md", "docs/README.md", "landing/index.html"])
+def test_dojo_badge_links_to_the_pinned_release(relative_path):
+    """The badge, release destination, and HTML alt text must agree with the pin."""
+    from scripts.bump_dojo_scoring import current_pin
+
+    tag = current_pin(REPO)
+    badge = f"https://img.shields.io/badge/dojo-{tag}-6f42c1"
+    release = f"https://github.com/Exios66/llm-dojo-scoring/releases/tag/{tag}"
+    text = (REPO / relative_path).read_text(encoding="utf-8")
+    if relative_path.endswith(".html"):
+        assert (
+            f'<a href="{release}"><img src="{badge}" '
+            f'alt="llm-dojo-scoring {tag}"></a>'
+        ) in text
+    else:
+        assert f"[![Dojo]({badge})]({release})" in text
+    assert text.count("https://img.shields.io/badge/dojo-") == 1
+
+
 def _walk_gitbook_nodes(nodes):
     for node in nodes:
         yield node
