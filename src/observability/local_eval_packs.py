@@ -117,7 +117,7 @@ _CORPORATE_EXTRACTION: tuple[dict[str, Any], ...] = (
             "entity_name": "Meridian Holdings, Inc.",
             "record_type": "bylaws",
             "effective_date": "2023-02-01",
-            "intent": "record_governance",
+            "intent": "governance_rules",
             "subject_matter": (
                 "The annual meeting of stockholders shall be held on the second Tuesday of May"
             ),
@@ -140,7 +140,7 @@ _CORPORATE_EXTRACTION: tuple[dict[str, Any], ...] = (
             "entity_name": "Meridian Holdings, Inc.",
             "record_type": "other",
             "effective_date": "2024-03-15",
-            "intent": "authorize_financing",
+            "intent": "corporate_action_approval",
             "subject_matter": "Authorization of Series B Preferred Stock Financing",
             "keywords": [
                 "Series B",

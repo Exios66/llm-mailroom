@@ -208,7 +208,7 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
             "keywords",
             [" ".join(str(p).split()[:4]) for p in legacy_provisions[:8]],
         )
-        sample.setdefault("intent", "record_governance")
+        sample.setdefault("intent", "governance_rules")
     legacy_points = coerce_gt_value(
         gt.get("key_points")
         if gt.get("key_points") not in (None, "")
@@ -220,7 +220,7 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
             "keywords",
             [" ".join(str(p).split()[:4]) for p in legacy_points[:8]],
         )
-        sample.setdefault("intent", "correspondence")
+        sample.setdefault("intent", "other")
     return sample
 
 

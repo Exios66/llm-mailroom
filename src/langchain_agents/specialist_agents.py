@@ -21,6 +21,7 @@ from langchain_agents.base_agent import BaseAgent, build_structured_schema
 from langchain_agents.doc_inventories import (
     CLAIM_TYPE_DESCRIPTION,
     COMMUNICATION_TYPE_DESCRIPTION,
+    INTENT_DESCRIPTIONS,
     RECORD_TYPE_DESCRIPTION,
 )
 from langchain_agents.prompts import get_prompt
@@ -67,6 +68,13 @@ def _nullable_string(description: str = "") -> dict:
     return {"type": ["string", "null"], "description": description}
 
 
+def _nullable_number(description: str = "") -> dict:
+    # MAILROOM PATCH: amount fields are floats in the Pydantic models; the
+    # request schema must say number (not string) so the model emits a number
+    # and the guardrail's model_validate cannot disagree on the type.
+    return {"type": ["number", "null"], "description": description}
+
+
 def _string_array(description: str = "") -> dict:
     return {"type": "array", "items": {"type": "string"}, "description": description}
 
@@ -76,20 +84,29 @@ def normalize_extraction(result: dict, schema: dict) -> dict:
 
     The model occasionally omits a field (e.g. ``confidence``) or returns a
     malformed shape. This fills missing keys with their schema defaults
-    (null for nullable strings, [] for arrays, 0.0 for numbers) so downstream
-    scoring and reporting always see a complete, conformant extraction.
+    (null for nullable strings and nullable numbers, [] for arrays, 0.0 for
+    non-nullable numbers) so downstream scoring and reporting always see a
+    complete, conformant extraction.
     """
     normalized = dict(result or {})
     for key, spec in (schema.get("properties") or {}).items():
         if key in normalized and normalized[key] not in (None, ""):
             continue
         type_spec = spec.get("type")
+        nullable = isinstance(type_spec, list) and "null" in type_spec
         if isinstance(type_spec, list):
             type_spec = next((t for t in type_spec if t != "null"), type_spec[0])
         if type_spec == "array":
             normalized[key] = normalized.get(key) or []
         elif type_spec == "number":
-            normalized[key] = normalized.get(key) if isinstance(normalized.get(key), (int, float)) else 0.0
+            # MAILROOM PATCH: a nullable number (demand_amount / claimed_amount)
+            # defaults to null so an unstated amount is never coerced into a
+            # stated 0. Non-nullable numbers (confidence) keep the 0.0 default.
+            value = normalized.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                normalized[key] = value
+            else:
+                normalized[key] = None if nullable else 0.0
         else:
             normalized[key] = normalized.get(key) if normalized.get(key) not in (None, "") else None
     return normalized
@@ -171,10 +188,7 @@ CORPORATE_RECORDS_SCHEMA = build_structured_schema({
     "signatories": _string_array("Individuals who signed or approved"),
     "jurisdiction": _nullable_string("State/country of incorporation"),
     "filing_number": _nullable_string("Official filing or document reference number"),
-    "intent": _nullable_string(
-        "Primary purpose as a short controlled label, e.g. record_filing, authorize, "
-        "amend_governance, appoint_officer, notice — one label, not a paragraph"
-    ),
+    "intent": _nullable_string(INTENT_DESCRIPTIONS["corporate_record"]),
     "subject_matter": _nullable_string("One tight grounded sentence: what this record is about"),
     "keywords": _string_array(
         "Up to 8 salient terms/phrases grounded in the text (no invented topics)"
@@ -187,13 +201,10 @@ CORRESPONDENCE_SCHEMA = build_structured_schema({
     "additional_recipients": _string_array("Cc'd or otherwise copied parties"),
     "communication_type": _nullable_string(COMMUNICATION_TYPE_DESCRIPTION),
     "communication_date": _nullable_string("Date the communication was sent"),
-    "demand_amount": _nullable_string("Exact dollar amount demanded (demand letters only)"),
+    "demand_amount": _nullable_number("Exact dollar amount demanded (demand letters only)"),
     "action_items": _string_array("At most 3 concrete actions required, with deadlines if stated"),
     "urgency": _nullable_string("Urgency level: routine, time-sensitive, urgent, critical"),
-    "intent": _nullable_string(
-        "Primary communicative purpose as a short controlled label, e.g. demand_payment, "
-        "notice, request_information, threaten_litigation, acknowledge, schedule_meeting"
-    ),
+    "intent": _nullable_string(INTENT_DESCRIPTIONS["correspondence"]),
     "subject_matter": _nullable_string("One tight grounded sentence: what this communication is about"),
     "keywords": _string_array(
         "Up to 8 salient terms/phrases grounded in the text (no invented topics)"
@@ -208,17 +219,13 @@ INSURANCE_CLAIMS_SCHEMA = build_structured_schema({
     "claim_type": _nullable_string(CLAIM_TYPE_DESCRIPTION),
     "date_of_loss": _nullable_string("Date the loss/event occurred, if stated"),
     "date_filed": _nullable_string("Date the claim was filed, if stated"),
-    "claimed_amount": _nullable_string("Amount claimed/demanded, if stated"),
+    "claimed_amount": _nullable_number("Amount claimed/demanded, if stated"),
     "adjuster": _nullable_string("Named adjuster handling the claim, if stated; null when absent"),
     "damages_description": _nullable_string("Summary of the loss/damages as described"),
     "coverage_determination": _nullable_string("Outcome as stated: approved, denied, partial, pending"),
     "denial_reasons": _string_array("Stated denial/limitation grounds, if denied"),
     "supporting_documents": _string_array("Referenced supporting documents"),
-    "intent": _nullable_string(
-        "Primary claim purpose as a short controlled label, e.g. coverage_denial, "
-        "coverage_approval, demand_payment, notice_of_loss, reservation_of_rights, "
-        "request_information"
-    ),
+    "intent": _nullable_string(INTENT_DESCRIPTIONS["insurance_claim"]),
     "subject_matter": _nullable_string("One tight grounded sentence: what this claim document is about"),
     "keywords": _string_array(
         "Up to 8 salient terms/phrases grounded in the text (no invented topics)"

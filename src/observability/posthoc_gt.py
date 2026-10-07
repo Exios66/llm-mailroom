@@ -304,7 +304,7 @@ def extract_corporate_fields(text: str) -> dict[str, Any]:
         out["keywords"] = [
             " ".join(str(a).split()[:4]) for a in articles[:8] if a
         ]
-        out["intent"] = "record_governance"
+        out["intent"] = "governance_rules"
     file_no = _label_value(
         head,
         ("File Number", "FILE NUMBER", "Commission File Number", "Filing Number"),
@@ -341,7 +341,7 @@ def extract_correspondence_fields(text: str) -> dict[str, Any]:
     if subject:
         out["subject_matter"] = subject[:240]
         out["keywords"] = [" ".join(subject.split()[:6])]
-        out["intent"] = "correspondence"
+        out["intent"] = "other"
     m = re.search(
         r"(?:Cordially|Sincerely|Best regards|Best Rgds|Very truly yours)"
         r"[,.]?\s+([A-Z][a-zA-Z.'-]+(?:\s+[A-Z][a-zA-Z.'-]+){0,3})",
@@ -384,7 +384,7 @@ def extract_correspondence_fields(text: str) -> dict[str, Any]:
         body = _norm_space(head)
         if len(body) > 20:
             out["subject_matter"] = body[:240]
-            out.setdefault("intent", "correspondence")
+            out.setdefault("intent", "other")
             out.setdefault("keywords", [" ".join(body.split()[:6])])
     m = re.match(r"([A-Z][a-zA-Z.'-]{2,40})\s*[?:]", _norm_space(head[:80]))
     if m and "recipient" not in out:

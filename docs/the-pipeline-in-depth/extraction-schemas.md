@@ -21,7 +21,7 @@ Each class is defined twice in the code. You need to know both.
 
 The JSON schemas are built with `build_structured_schema`, which marks **every property as required** and sets `additionalProperties: false`. So the model is always asked for every key. The Pydantic models give **every field a default**, so validation accepts a payload with keys missing. In the field tables below, "Default" is the Pydantic default.
 
-The two definitions do not always agree on types. Where they differ, the tables show both.
+The two definitions agree on field types. The one remaining asymmetry is that `confidence` is present in the contract/merger Pydantic models and in the contract/merger JSON schemas, but is absent from the corporate-record / correspondence / insurance-claim JSON schemas even though those Pydantic models carry a `float` default (see the per-class notes).
 
 ## Taxonomy overview
 
@@ -139,7 +139,7 @@ Bylaws, articles or certificates of incorporation, powers of attorney, stockhold
 | `signatories` | `list[str]` ([]) | array of string | `entity_list:name` | Individuals who signed or approved. |
 | `jurisdiction` | `str \| None` (None) | string or null | `name` | State or country of incorporation. |
 | `filing_number` | `str \| None` (None) | string or null | `id` | Official filing or document reference number, transcribed exactly. |
-| `intent` | `str \| None` (None) | string or null | `name` | One short purpose label, e.g. `record_filing`, `authorize`, `amend_governance`, `appoint_officer`, `notice`. |
+| `intent` | `str \| None` (None) | string or null | `name` | One controlled Hub purpose label: `governance_rules`, `corporate_action_approval`, `entity_formation`, `authority_delegation`, `investor_rights`, `other`. |
 | `subject_matter` | `str \| None` (None) | string or null | `free_text` | One tight grounded sentence about the record. |
 | `keywords` | `list[str]` ([]) | array of string | `entity_list:name` | Up to 8 salient grounded terms. |
 
@@ -170,15 +170,15 @@ Letters, emails, memos, notices, demand letters, press releases and meeting requ
 | `additional_recipients` | `list[str]` ([]) | array of string | `entity_list` | Cc'd or otherwise copied parties. |
 | `communication_type` | `str` ("") | string or null | `name` | Exactly one of `email`, `letter`, `memo`, `notice`, `demand`, `attorney_demand`, `press_release`, `meeting_request`. |
 | `communication_date` | `str \| None` (None) | string or null | `date` | Date the communication was sent, not a referenced deadline. |
-| `demand_amount` | `float \| None` (None) | **string** or null | `money` | Exact dollar amount demanded, as a number (prompt example: `218440.00`). Null when nothing is demanded. |
+| `demand_amount` | `float \| None` (None) | number or null | `money` | Exact dollar amount demanded, as a number (prompt example: `218440.00`). Null when nothing is demanded. |
 | `action_items` | `list[str]` ([]) | array of string | `entity_list` | At most 3 concrete actions, with deadlines if stated. |
 | `urgency` | `str` ("") | string or null | `name` | `routine`, `time-sensitive`, `urgent` or `critical`. Neutral defaults to `routine`. |
-| `intent` | `str \| None` (None) | string or null | `name` | One short purpose label, e.g. `demand_payment`, `notice`, `request_information`, `threaten_litigation`, `acknowledge`, `schedule_meeting`. |
+| `intent` | `str \| None` (None) | string or null | `name` | One controlled Hub purpose label: `payment_demand`, `notice`, `analysis`, `request`, `update`, `meeting_invite`, `press_communication`, `other`. |
 | `subject_matter` | `str \| None` (None) | string or null | `free_text` | One tight grounded sentence about the communication. |
 | `keywords` | `list[str]` ([]) | array of string | `entity_list:name` | Up to 8 salient grounded terms. |
 | `confidence` | `float` (0.0) | not in the JSON schema | not scored | Asked for by the prompt only. |
 
-`demand_amount` is a string in the JSON schema but a float in the Pydantic model. A plain numeric string such as `"218440.00"` coerces and validates; a string with a currency symbol or thousands separator such as `"$218,440.00"` fails validation.
+`demand_amount` is a nullable number in both the JSON schema and the Pydantic model, so the model is asked for a number and the guardrail validates it without a type disagreement. An unstated amount stays `null` (it is never coerced to a stated `0`).
 
 ```json
 {
@@ -209,13 +209,13 @@ FNOL forms, adjuster reports, demand packages, coverage determinations, denial l
 | `claim_type` | `str` ("") | string or null | `name` | CMS tables: `pde`, `inpatient`, `outpatient`, `carrier`. FNOL/policy documents: `auto`, `property`, `liability`, `health`, `life`, `workers_comp`. `other` only when none fit. |
 | `date_of_loss` | `str \| None` (None) | string or null | `date` | Date the loss or event occurred. |
 | `date_filed` | `str \| None` (None) | string or null | `date` | Date the claim was filed. |
-| `claimed_amount` | `float \| None` (None) | **string** or null | `money` | Amount claimed or demanded. `0` is a stated amount. |
+| `claimed_amount` | `float \| None` (None) | number or null | `money` | Amount claimed or demanded. `0` is a stated amount. |
 | `adjuster` | `str \| None` (None) | string or null | `name` | Named adjuster, null when absent (CMS rows often have none). |
 | `damages_description` | `str` ("") | string or null | `free_text` | Summary of the loss or damages as described. |
 | `coverage_determination` | `str` ("") | string or null | `name` | Outcome as stated: `approved`, `denied`, `partial`, `pending`. |
 | `denial_reasons` | `list[str]` ([]) | array of string | `entity_list:free_text` | Stated denial or limitation grounds. Empty when approved. |
 | `supporting_documents` | `list[str]` ([]) | array of string | `entity_list` | Referenced supporting documents. |
-| `intent` | `str \| None` (None) | string or null | `name` | One short purpose label, e.g. `coverage_denial`, `coverage_approval`, `demand_payment`, `notice_of_loss`, `reservation_of_rights`, `request_information`. |
+| `intent` | `str \| None` (None) | string or null | `name` | One controlled Hub purpose label: `claim_filing`, `coverage_determination`, `loss_report`, `claim_data_record`, `other`. |
 | `subject_matter` | `str \| None` (None) | string or null | `free_text` | One tight grounded sentence about the claim document. |
 | `keywords` | `list[str]` ([]) | array of string | `entity_list:name` | Up to 8 salient grounded terms. |
 | `claim_checklist` | `list[str]` ([]) | array of string | `entity_list:free_text` | Present-only answers as `"<Category>: <short evidence>"`. Categories: Coverage Determination, Policy Limits, Exclusions Cited, Deductible, Reservation Of Rights, Timely Notice, Proof Of Loss, Subrogation, Independent Medical Exam, Amount Consistency. |
@@ -346,11 +346,13 @@ After the specialist returns, the extract node calls `langchain_agents/doc_inven
 |---|---|
 | `contract` | Coerces `cuad_clauses` and `maud_clauses` to `"<label>: <text>"` lines (`as_clause_lines`, which also accepts Hub-style dicts and dedupes). Fills an empty `cuad_family` from the sorter subtype (unless the subtype is `other`). Ensures `merger_consideration`, `cuad_family`, `cuad_clauses` and `maud_clauses` keys exist. |
 | `merger_agreement` | Coerces `maud_clauses` to lines. Fills an empty `merger_consideration` by inference (`infer_merger_consideration`: from `merger_consideration`, `contract_value`, `document_name`, a `Type of Consideration:` line, then any clause text). Removes `cuad_family` and `cuad_clauses`. |
-| `corporate_record` | Maps `record_type` (or, if empty, the sorter subclass) onto a canonical token with `normalize_record_type`. |
-| `correspondence` | Maps `communication_type` (or the subclass) with `normalize_communication_type`. |
-| `insurance_claim` | Maps `claim_type` (or the subclass) with `normalize_claim_type`. |
+| `corporate_record` | Maps `record_type` (or, if empty, the sorter subclass) onto a canonical token with `normalize_record_type`. Canonicalizes `intent` with `normalize_intent`. |
+| `correspondence` | Maps `communication_type` (or the subclass) with `normalize_communication_type`. Canonicalizes `intent` with `normalize_intent`. |
+| `insurance_claim` | Maps `claim_type` (or the subclass) with `normalize_claim_type`. Canonicalizes `intent` with `normalize_intent`. |
 
 The token mappers compact the value to lowercase letters and digits, then try an exact key, an exact alias, a long-alias prefix or substring match, and finally a key prefix or substring match. Unmapped values leave the field unchanged. Examples of aliases from the code: `poa` to `powers_of_attorney`, `memorandum` to `memo`, `workerscompensation` to `workers_comp`, `partd` to `pde`.
+
+`normalize_intent` maps a free-text `intent` onto the class's controlled vocabulary (`INTENT_LABELS`), including legacy aliases (`demand_payment` to `payment_demand`, `coverage_denial` to `coverage_determination`, `record_governance` to `governance_rules`). Its result is always a member of the class's own vocabulary — an alias never leaks another class's token — and an unmapped purpose is left exactly as the model returned it. The extract path therefore emits the canonical label rather than whatever label the model chose.
 
 The extract call also gets a matching instruction block in its handoff context (`specialist_handoff`), which lists the allowed tokens for the class, so the model is told the vocabulary before enrichment runs.
 
@@ -364,9 +366,6 @@ These follow from the code as written. They are listed so a reader is not surpri
 
 * `insurance_claim`: `normalize_extraction` sets missing or null string fields to `null`, but `insurer`, `insured_party`, `claim_type`, `damages_description` and `coverage_determination` are non-nullable `str` in the Pydantic model. An extraction that leaves any of them null (and that the regex fill does not cover) fails validation, and the guard records `extraction_schema_invalid`. Checked locally by running `normalize_specialist_extraction("insurance_claim", {"claim_number": "X"})` through `InsuranceClaimExtraction.model_validate` (5 validation errors).
 * `corporate_record`: `entity_name` and `record_type` are non-nullable `str` in the Pydantic model, while the JSON schema allows null and no normalization step runs for this class. A null `entity_name`, or a null `record_type` that enrichment cannot fill from the subclass, fails validation.
-* `demand_amount` and `claimed_amount` are strings in the JSON schema and floats in the Pydantic model (see the correspondence section).
-* The "Registered schema fields" line in the production doctrine (`llm/prompt_doctrine.py`) for contracts, corporate records and correspondence still names fields that are not in the current schemas (`termination_clauses`, `key_obligations`, `key_provisions`, `key_points`, `referenced_communications`). The insurance doctrine line omits `intent`, `subject_matter`, `keywords` and `claim_checklist`. The JSON schema embedded in the same request is the current one.
-* `intent` labels: the prompts suggest labels such as `demand_payment` or `coverage_denial`. The Hub ground-truth vocabulary (`doc_inventories.py:INTENT_LABELS`) uses different labels, for example `payment_demand` and `coverage_determination`, and `normalize_intent` maps aliases between them. In this repo `normalize_intent` is only called by `scripts/sync_hf_ground_truth.py` and tests, not by the extract path, so pipeline output keeps whatever label the model chose.
 
 ## Subclass inventories
 

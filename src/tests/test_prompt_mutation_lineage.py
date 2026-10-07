@@ -149,3 +149,39 @@ def test_doctrine_has_no_mustache_placeholders():
         value = getattr(doctrine, name)
         if isinstance(value, str):
             assert "{{" not in value, name
+
+
+def test_extraction_doctrine_lists_exactly_the_current_schema_fields():
+    """The 'Registered schema fields' line must not drift from the schemas."""
+    from langchain_agents.specialist_agents import (
+        CONTRACTS_SCHEMA,
+        CORPORATE_RECORDS_SCHEMA,
+        CORRESPONDENCE_SCHEMA,
+        INSURANCE_CLAIMS_SCHEMA,
+    )
+
+    def listed_fields(doctrine: str) -> set[str]:
+        marker = "Registered schema fields: "
+        line = next(line for line in doctrine.splitlines() if marker in line)
+        rest = line.split(marker, 1)[1].split(". Return every key", 1)[0]
+        return {field.strip() for field in rest.split(",") if field.strip()}
+
+    for doctrine, schema in (
+        (CONTRACTS, CONTRACTS_SCHEMA),
+        (CORPORATE_RECORDS, CORPORATE_RECORDS_SCHEMA),
+        (CORRESPONDENCE, CORRESPONDENCE_SCHEMA),
+        (INSURANCE_CLAIMS, INSURANCE_CLAIMS_SCHEMA),
+    ):
+        assert listed_fields(doctrine) == set(schema["properties"])
+
+    # Retired / stale names must not reappear.
+    for stale in (
+        "termination_clauses",
+        "key_obligations",
+        "key_provisions",
+        "key_points",
+        "referenced_communications",
+    ):
+        for doctrine in (CONTRACTS, CORPORATE_RECORDS, CORRESPONDENCE, INSURANCE_CLAIMS):
+            assert stale not in doctrine
+

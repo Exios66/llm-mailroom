@@ -199,6 +199,7 @@ _INTENT_ALIASES = {
     "rightsinstrument": "investor_rights",
     "demand": "payment_demand",
     "paymentdemand": "payment_demand",
+    "demandpayment": "payment_demand",
     "demandforpayment": "payment_demand",
     "demandletter": "payment_demand",
     "attorneydemand": "payment_demand",
@@ -210,16 +211,19 @@ _INTENT_ALIASES = {
     "remediesanalysis": "analysis",
     "recommendation": "analysis",
     "request": "request",
+    "requestinformation": "request",
     "update": "update",
     "statusupdate": "update",
     "meetinginvite": "meeting_invite",
     "meetingrequest": "meeting_invite",
+    "schedulemeeting": "meeting_invite",
     "pressrelease": "press_communication",
     "presscommunication": "press_communication",
     "publicstatement": "press_communication",
     "claimfiling": "claim_filing",
     "filing": "claim_filing",
     "firstnoticeofloss": "claim_filing",
+    "noticeofloss": "claim_filing",
     "fnol": "claim_filing",
     "initialfnol": "claim_filing",
     "coveragedetermination": "coverage_determination",
@@ -248,13 +252,16 @@ def normalize_intent(doc_type: str | None, value: Any) -> str:
     """Map a free-text purpose onto the class's controlled intent label.
 
     Unknown/unmapped values return ``""`` (never ``other`` inventively) —
-    callers decide whether ``other`` is warranted by the document.
+    callers decide whether ``other`` is warranted by the document. The result
+    is always a member of ``INTENT_LABELS[doc_type]`` (aliases never leak a
+    different class's token, e.g. ``request_information`` -> ``entity_formation``).
     """
     kind = str(doc_type or "")
     keys = INTENT_LABELS.get(kind, ())
     if not keys:
         return ""
-    return _normalize(value, keys, _INTENT_ALIASES)
+    token = _normalize(value, keys, _INTENT_ALIASES)
+    return token if token in keys else ""
 
 
 # Sorter subclass catalogs from llm-dojo-scoring 0.9.0 (PR #4). Hub extraction
@@ -617,7 +624,13 @@ def enrich_extraction(
     extract_class: str | None = None,
     subtype: str | None = None,
 ) -> dict:
-    """Fill Hub inventory fields without overwriting a specialist value."""
+    """Fill Hub inventory fields without overwriting a specialist value.
+
+    Inventory/type tokens are canonicalized; a free-text ``intent`` is mapped
+    onto the class's controlled vocabulary (``normalize_intent``) when it maps,
+    and left untouched when it does not — the extract path therefore emits the
+    canonical label rather than whatever the model chose (HUB intent fix).
+    """
     kind = str(doc_type or "")
     resolved = str(extract_class or kind)
     if resolved == "contract" or kind in ("contract", "merger_agreement"):
@@ -643,6 +656,10 @@ def enrich_extraction(
         token = normalize_claim_type(result.get("claim_type") or subtype)
         if token:
             result["claim_type"] = token
+    if kind in INTENT_LABELS:
+        intent = normalize_intent(kind, result.get("intent"))
+        if intent:
+            result["intent"] = intent
     return result
 
 
