@@ -94,7 +94,7 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         # architecture dependency table mailroom row only
-        re.compile(r"(git pin `@)(v?\d+\.\d+\.\d+)(`, auto-bumped)"),
+        re.compile(r"(git pin `@)(v?\d+\.\d+\.\d+)(`(?: as of \d{4}-\d{2}-\d{2})?, auto-bumped)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
@@ -118,7 +118,9 @@ PIN_FILES = (
     "docs/README.md",
     "docs/sister-repos.md",
     "docs/wiki/Home.md",
+    "docs/start-here/getting-started.md",
     "docs/start-here/overview.md",
+    "docs/constellation/getting-started.md",
     "docs/how-it-fits-together/architecture.md",
     "docs/repository-guides/repos/llm-dojo-scoring.md",
     "docs/pipeline-reference-llm-mailroom/sister-repos.md",
@@ -250,8 +252,14 @@ def _rewrite_text(text: str, tag: str) -> str:
         out,
     )
     out = re.sub(
-        r"(Pinned as a git dependency \(`@)(v?\d+\.\d+\.\d+)(`)",
+        r"([Pp]inned as a git dependency \(`@)(v?\d+\.\d+\.\d+)(`)",
         rf"\g<1>{tag}\g<3>",
+        out,
+    )
+    # Documented invocation of this script in docs/sister-repos.md.
+    out = re.sub(
+        r"(bump_dojo_scoring\.py --apply --tag )(v?\d+\.\d+\.\d+)",
+        rf"\g<1>{tag}",
         out,
     )
     for pattern, repl in DOC_PIN_PATTERNS:

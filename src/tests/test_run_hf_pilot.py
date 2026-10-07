@@ -31,7 +31,7 @@ def test_metrics_markdown_uses_current_dojo_honesty_heading(mocker, include_hone
     markdown = render_metrics_markdown(report)
 
     assert [line for line in markdown.splitlines() if line.startswith("## Corpus honesty")] == [
-        "## Corpus honesty (dojo 0.19.1)"
+        "## Corpus honesty (dojo 0.21.0)"
     ]
     assert "CMS GT is homogeneous." in markdown
     if include_honesty:
