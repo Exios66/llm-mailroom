@@ -48,3 +48,20 @@ def test_committed_baseline_is_well_formed():
     base = json.loads((GATE.parent.parent / "docs/superpowers/baselines/experiment-baseline.json").read_text())
     assert base["n_items"] > 0 and base["n_errors"] == 0
     assert base["metrics"]["class_accuracy"] == 1.0
+
+
+def test_langfuse_floor_covers_mask_otel_spans():
+    import re
+
+    text = (GATE.parent.parent / "pyproject.toml").read_text()
+    m = re.search(r'"langfuse>=(\d+)\.(\d+)', text)
+    assert (int(m.group(1)), int(m.group(2))) >= (4, 9)
+
+
+def test_gate_runs_in_mock_environment(monkeypatch):
+    monkeypatch.delenv("OBSERVABILITY_ENVIRONMENT", raising=False)
+    mod = _load()
+    mod.experiment(_Ctx())
+    import os
+
+    assert os.environ["OBSERVABILITY_ENVIRONMENT"] == "mock"
