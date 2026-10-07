@@ -16,14 +16,27 @@ Syncing: `scripts/sync_prompts.py` pushes the local templates up to Langfuse,
 so code and the managed prompts never drift.
 """
 
+import os
+import time
+
 import structlog
 
 logger = structlog.get_logger(__name__)
 
 PROMPT_PREFIX = "mailroom"
 
-# (agent_name, label) -> fetched prompt object (None when unavailable)
-_prompt_cache: dict[tuple[str, str], object | None] = {}
+# (agent_name, label) -> (fetched_at, prompt object). Misses (None) are never
+# stored, and entries expire after ``MAILROOM_PROMPT_CACHE_TTL`` seconds so a
+# long-running watcher picks up a re-labelled `production` prompt.
+_prompt_cache: dict[tuple[str, str], tuple[float, object]] = {}
+_now = time.monotonic
+
+
+def prompt_cache_ttl() -> float:
+    try:
+        return float(os.environ.get("MAILROOM_PROMPT_CACHE_TTL", "60"))
+    except ValueError:
+        return 60.0
 
 
 def prompt_name(agent_name: str) -> str:
@@ -64,18 +77,23 @@ def get_managed_prompt(
     `default_text` (rendered with `variables`) when unavailable.
     """
     cache_key = (agent_name, label)
-    if cache_key not in _prompt_cache:
+    cached = _prompt_cache.get(cache_key)
+    if cached is not None and _now() - cached[0] >= prompt_cache_ttl():
+        cached = None
+    prompt_obj = cached[1] if cached is not None else None
+    if prompt_obj is None:
         client = _client()
-        prompt_obj = None
         if client is not None:
             try:
                 prompt_obj = client.get_prompt(prompt_name(agent_name), label=label)
             except Exception:
                 logger.warning("prompt_fetch_failed", agent=agent_name, label=label, exc_info=True)
                 prompt_obj = None
-        _prompt_cache[cache_key] = prompt_obj
+        if prompt_obj is not None:
+            _prompt_cache[cache_key] = (_now(), prompt_obj)
+        else:
+            _prompt_cache.pop(cache_key, None)
 
-    prompt_obj = _prompt_cache[cache_key]
     if prompt_obj is not None:
         try:
             compiled = prompt_obj.compile(**variables) if variables else prompt_obj.prompt
