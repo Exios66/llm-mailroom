@@ -12,27 +12,27 @@ python run_all.py --phases P3 P4  # figures only
 
 ## Pipeline
 
-| Phase | What | Output |
-| --- | --- | --- |
-| P0 | Download and manifest validation | `data/parquet/` |
-| P1 | Structural integrity and provenance audit | `reports/tables/integrity_report.json` |
-| P2 | Composition: strata, imbalance, provenance | `strata_counts.csv`, `imbalance_metrics.json` |
-| P3 | Static PNG figures and tables | `reports/figures/`, `reports/tables/` |
-| P4 | Interactive Plotly figures | `reports/figures_interactive/` |
-| P5 | Cast-safe JSONL and parquet staging | `data/staging/` |
-| P6 | Correspondence intent coverage and provenance | `reports/SUMMARY_REPORT.json` |
+| Phase | What                                          | Output                                        |
+| ----- | --------------------------------------------- | --------------------------------------------- |
+| P0    | Download and manifest validation              | `data/parquet/`                               |
+| P1    | Structural integrity and provenance audit     | `reports/tables/integrity_report.json`        |
+| P2    | Composition: strata, imbalance, provenance    | `strata_counts.csv`, `imbalance_metrics.json` |
+| P3    | Static PNG figures and tables                 | `reports/figures/`, `reports/tables/`         |
+| P4    | Interactive Plotly figures                    | `reports/figures_interactive/`                |
+| P5    | Cast-safe JSONL and parquet staging           | `data/staging/`                               |
+| P6    | Correspondence intent coverage and provenance | `reports/SUMMARY_REPORT.json`                 |
 
 ## Executive findings
 
-The corpus is fully joinable (blind ↔ ground_truth, 3,302/3,302 filename-set agreement). The split rule is byte-exact (zero mismatches). All CUAD annotation offsets validate (13,753/13,753 = 100%).
+The corpus is fully joinable (blind ↔ ground\_truth, 3,302/3,302 filename-set agreement). The split rule is byte-exact (zero mismatches). All CUAD annotation offsets validate (13,753/13,753 = 100%).
 
-| Class | Rows | Share | Provenance (EDA) |
-| --- | ---: | ---: | --- |
-| `insurance_claim` | 1,100 | 33.3% | CMS DE-SynPUF, BDR, INSURBIAS |
-| `correspondence` | 1,000 | 30.3% | `cmu_enron_maildir` |
-| `contract` | 600 | 18.2% | `cuad_v1` (+ EX-10) |
-| `corporate_record` | 450 | 13.6% | `edgar_s1` |
-| `merger_agreement` | 152 | 4.6% | `maud_v1` |
+| Class              |  Rows | Share | Provenance (EDA)              |
+| ------------------ | ----: | ----: | ----------------------------- |
+| `insurance_claim`  | 1,100 | 33.3% | CMS DE-SynPUF, BDR, INSURBIAS |
+| `correspondence`   | 1,000 | 30.3% | `cmu_enron_maildir`           |
+| `contract`         |   600 | 18.2% | `cuad_v1` (+ EX-10)           |
+| `corporate_record` |   450 | 13.6% | `edgar_s1`                    |
+| `merger_agreement` |   152 |  4.6% | `maud_v1`                     |
 
 Imbalance: **7.2×** at type level, **557×** at stratum level. Type entropy = 2.09 bits. Composition tables: [Classes and strata](classes-and-strata.md).
 
@@ -52,27 +52,27 @@ From [`integrity_report.json`](https://github.com/Exios66/Mailroom-Corpus-EDA/bl
 
 Character lengths from [`text_length_stats_by_type.csv`](https://github.com/Exios66/Mailroom-Corpus-EDA/blob/main/reports/tables/text_length_stats_by_type.csv) (heuristic tokens ≈ chars / 4):
 
-| Class | Mean chars | p50 | p95 | Max | Mean tokens (÷4) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `merger_agreement` | 89,049 | 84,547 | 124,430 | 252,135 | 22,262 |
-| `contract` | 12,290 | 7,414 | 39,799 | 154,004 | 3,073 |
-| `corporate_record` | 9,462 | 2,295 | 66,087 | 157,740 | 2,366 |
-| `insurance_claim` | 692 | 288 | 2,921 | 5,678 | 173 |
-| `correspondence` | 526 | 264 | 1,490 | 26,209 | 131 |
+| Class              | Mean chars |    p50 |     p95 |     Max | Mean tokens (÷4) |
+| ------------------ | ---------: | -----: | ------: | ------: | ---------------: |
+| `merger_agreement` |     89,049 | 84,547 | 124,430 | 252,135 |           22,262 |
+| `contract`         |     12,290 |  7,414 |  39,799 | 154,004 |            3,073 |
+| `corporate_record` |      9,462 |  2,295 |  66,087 | 157,740 |            2,366 |
+| `insurance_claim`  |        692 |    288 |   2,921 |   5,678 |              173 |
+| `correspondence`   |        526 |    264 |   1,490 |  26,209 |              131 |
 
 Merger agreements **exceed common 32k/65k contexts**. Insurance claims are uniformly short.
 
 Token-budget coverage ([`token_budget_coverage.csv`](https://github.com/Exios66/Mailroom-Corpus-EDA/blob/main/reports/tables/token_budget_coverage.csv)):
 
-| Budget | Documents | Share |
-| ---: | ---: | ---: |
-| 4,096 | 2,530 | 76.6% |
-| 8,192 | 2,737 | 82.9% |
-| 16,384 | 2,958 | 89.6% |
-| 32,768 | 3,078 | 93.2% |
-| 65,536 | 3,137 | 95.0% |
-| 131,072 | 3,295 | 99.8% |
-| 200,000 | 3,300 | 99.9% |
+|  Budget | Documents | Share |
+| ------: | --------: | ----: |
+|   4,096 |     2,530 | 76.6% |
+|   8,192 |     2,737 | 82.9% |
+|  16,384 |     2,958 | 89.6% |
+|  32,768 |     3,078 | 93.2% |
+|  65,536 |     3,137 | 95.0% |
+| 131,072 |     3,295 | 99.8% |
+| 200,000 |     3,300 | 99.9% |
 
 <figure><img src="https://raw.githubusercontent.com/Exios66/Mailroom-Corpus-EDA/main/reports/figures/04_text_length_violin.png" alt="Text-length violin plot by document class"><figcaption><p>Length violin (figure 04).</p></figcaption></figure>
 
@@ -84,14 +84,14 @@ Token-budget coverage ([`token_budget_coverage.csv`](https://github.com/Exios66/
 
 ## Per-class EDA
 
-| Block | Figures | Report page |
-| --- | --- | --- |
-| CUAD clauses (509 contracts, 41 types, 13,753 spans) | 08–12 | [CUAD contracts](sources/cuad-contracts.md) |
-| MAUD tasks (152 agreements, 22 tasks) | 13–15 | [MAUD merger agreements](sources/maud-merger-agreements.md) |
-| Insurance (1,100 rows, six LOBs) | 16–19 | [CMS insurance claims](sources/cms-insurance-claims.md) |
-| Correspondence (1,000 rows, intent 100% hydrated) | 20–22 | [Enron correspondence](sources/enron-correspondence.md) |
-| Imbalance and minority strata | 23–25 | [Classes and strata](classes-and-strata.md) |
-| Temporal / source / metadata | 26–30 | [Source corpora](source-corpora.md), below |
+| Block                                                | Figures | Report page                                                        |
+| ---------------------------------------------------- | ------- | ------------------------------------------------------------------ |
+| CUAD clauses (509 contracts, 41 types, 13,753 spans) | 08–12   | [CUAD contracts](source-corpora/cuad-contracts.md)                 |
+| MAUD tasks (152 agreements, 22 tasks)                | 13–15   | [MAUD merger agreements](source-corpora/maud-merger-agreements.md) |
+| Insurance (1,100 rows, six LOBs)                     | 16–19   | [CMS insurance claims](source-corpora/cms-insurance-claims.md)     |
+| Correspondence (1,000 rows, intent 100% hydrated)    | 20–22   | [Enron correspondence](source-corpora/enron-correspondence.md)     |
+| Imbalance and minority strata                        | 23–25   | [Classes and strata](classes-and-strata.md)                        |
+| Temporal / source / metadata                         | 26–30   | [Source corpora](source-corpora/), below                           |
 
 ## Metadata structure (figures 03, 29–30)
 
@@ -107,22 +107,22 @@ Token-budget coverage ([`token_budget_coverage.csv`](https://github.com/Exios66/
 
 All under [`reports/tables/`](https://github.com/Exios66/Mailroom-Corpus-EDA/tree/main/reports/tables):
 
-| File | Contents |
-| --- | --- |
-| `integrity_report.json` | P1 join, split, CUAD offsets, MAUD counts |
-| `imbalance_metrics.json` | Type/stratum ratios, entropy, subclass counts |
-| `strata_counts.csv` | 55-cell train/test |
-| `strata_imbalance_detailed.csv` | Per-stratum ratios |
-| `minority_strata_report.csv` | Five cells with < 10 rows |
-| `text_length_stats_by_type.csv` | Length percentiles |
-| `token_budget_coverage.csv` | Context-window fit |
-| `provenance_by_type.csv`, `provenance_detailed.csv` | Source mix |
-| `temporal_summary.csv` | Date coverage |
-| `cuad_clause_stats.csv`, `cuad_cooccurrence_matrix.csv` | Clause gold |
-| `maud_task_stats.csv` | 22 MAUD tasks |
-| `claim_amount_stats.csv`, `claim_field_coverage.csv` | Insurance GT |
-| `correspondence_topic_intent.csv` | Topic × intent |
-| `metadata_coverage_by_type.csv` | Fill rates |
+| File                                                    | Contents                                      |
+| ------------------------------------------------------- | --------------------------------------------- |
+| `integrity_report.json`                                 | P1 join, split, CUAD offsets, MAUD counts     |
+| `imbalance_metrics.json`                                | Type/stratum ratios, entropy, subclass counts |
+| `strata_counts.csv`                                     | 55-cell train/test                            |
+| `strata_imbalance_detailed.csv`                         | Per-stratum ratios                            |
+| `minority_strata_report.csv`                            | Five cells with < 10 rows                     |
+| `text_length_stats_by_type.csv`                         | Length percentiles                            |
+| `token_budget_coverage.csv`                             | Context-window fit                            |
+| `provenance_by_type.csv`, `provenance_detailed.csv`     | Source mix                                    |
+| `temporal_summary.csv`                                  | Date coverage                                 |
+| `cuad_clause_stats.csv`, `cuad_cooccurrence_matrix.csv` | Clause gold                                   |
+| `maud_task_stats.csv`                                   | 22 MAUD tasks                                 |
+| `claim_amount_stats.csv`, `claim_field_coverage.csv`    | Insurance GT                                  |
+| `correspondence_topic_intent.csv`                       | Topic × intent                                |
+| `metadata_coverage_by_type.csv`                         | Fill rates                                    |
 
 ## Audits (EDA `docs/reports/audits/`)
 
