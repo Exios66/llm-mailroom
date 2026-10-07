@@ -23,6 +23,7 @@ logger = structlog.get_logger(__name__)
 
 # O-1: kick the score-config warm-up off the document path at startup.
 from observability.scores import warmup_score_configs
+from observability.masking import allowlist_intake_meta
 from observability.tracing import install_on_dropped, pipeline_trace
 
 install_on_dropped()  # O-3: dropped trace events log a warning, never vanish
@@ -676,6 +677,46 @@ def _triage_catalog_upsert(
         logger.exception("triage_catalog_upsert_failed")
 
 
+def _triage_trace_kwargs(claimed: Path, intake_meta: dict) -> dict:
+    """``pipeline_trace`` kwargs for the Gmail triage lane.
+
+    Same mandatory tag taxonomy as ``run_pipeline`` (``mailroom`` + the
+    environment tag + source/route tags). The trace input is file metadata
+    only — never document text.
+    """
+    environment = (
+        os.environ.get("OBSERVABILITY_ENVIRONMENT")
+        or os.environ.get("LANGFUSE_TRACING_ENVIRONMENT")
+        or "live"
+    )
+    try:
+        size = Path(claimed).stat().st_size
+    except OSError:
+        size = None
+    return {
+        "seed": Path(claimed).name,
+        "name": "gmail-triage",
+        "tags": ["mailroom", environment, "source-gmail", "route-triage"],
+        "environment": environment,
+        "input": {"filename": Path(claimed).name, "size_bytes": size},
+        "metadata": allowlist_intake_meta(intake_meta),
+    }
+
+
+def _run_triage_traced(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
+    """Run the triage lane inside its trace; always flush, even on failure."""
+    try:
+        with pipeline_trace(session_id=matter_id, **_triage_trace_kwargs(claimed, intake_meta)):
+            return _run_triage_lane(claimed, matter_id, intake_meta)
+    finally:
+        try:
+            from observability.tracing import flush
+
+            flush()
+        except Exception:
+            logger.warning("triage_trace_flush_failed", exc_info=True)
+
+
 def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     """Single-document Gmail intake → the free-triage lane (HUB-037).
 
@@ -1032,15 +1073,7 @@ class InboxHandler(FileSystemEventHandler):
                     matter_id=matter_id,
                     intake_source=intake_meta.get("source"),
                 )
-                with pipeline_trace(
-                    seed=claimed.name,
-                    session_id=matter_id,
-                    name="gmail-triage",
-                    tags=["source-gmail", "route-triage"],
-                    metadata=intake_meta or {},
-                    environment="live",
-                ) as _triage_trace:
-                    _run_triage_lane(claimed, matter_id, intake_meta)
+                _run_triage_traced(claimed, matter_id, intake_meta)
             else:
                 logger.info(
                     "file_claimed",
@@ -1261,15 +1294,7 @@ class Watcher:
                     matter_id=matter_id,
                     intake_source=intake_meta.get("source"),
                 )
-                with pipeline_trace(
-                    seed=claimed.name,
-                    session_id=matter_id,
-                    name="gmail-triage",
-                    tags=["source-gmail", "route-triage"],
-                    metadata=intake_meta or {},
-                    environment="live",
-                ) as _triage_trace:
-                    _run_triage_lane(claimed, matter_id, intake_meta)
+                _run_triage_traced(claimed, matter_id, intake_meta)
             else:
                 logger.info(
                     "existing_file_claimed",

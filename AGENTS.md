@@ -44,7 +44,7 @@ LLM calls — never a generic tool/span), PII masked via curated input/output
 (file metadata, not raw payloads), `session_id` grouping (matter/run),
 tag taxonomy (environment/run/source), environments on every trace,
 `langfuse_prompt=` linking, auto-created score configs, native LLM-as-a-
-judge evaluators, synced dashboards, flush health + `on_dropped`, and the
+judge evaluators, synced dashboards, flush health counters (the v4 SDK has no `on_dropped` hook, so drops are not detected beyond SDK logs), and the
 mandatory self-audit loop (run end-to-end, fetch the trace fresh, audit
 against https://langfuse.com/docs/observability/best-practices — documented
 in the Langfuse section above). Running on langfuse 4.14.3 with the v4-
@@ -85,6 +85,7 @@ PYTHONPATH=src python src/scripts/run_quality_judges.py --real  # LLM-as-a-judge
 PYTHONPATH=src python src/scripts/run_agent_eval.py --list      # per-agent isolation eval (also --agent <name>|all --mock|--real --n --self-check)
 PYTHONPATH=src python src/scripts/sync_prompts.py             # push agent prompts into Langfuse prompt management (idempotent)
 PYTHONPATH=src python src/scripts/sync_dataset.py             # build the mailroom-pilot Langfuse dataset (PDF text + manifest ground truth/metadata)
+PYTHONPATH=src python src/scripts/run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json  # hermetic experiment regression gate (CI); --write-baseline to re-approve, --langfuse for the hosted runner
 PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --check   # network-free contract for the intent/subject_matter/keywords ground-truth labeler
 PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --dry-run # derive purpose/gist labels for corporate_record/correspondence/insurance_claim → data/hf_gt/ preview CSV
 PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --real --push  # LLM-label the mailroom-dataset ground_truth config (needs OPENROUTER_API_KEY + HF_TOKEN); re-pins FULL_CORPUS_REVISION
