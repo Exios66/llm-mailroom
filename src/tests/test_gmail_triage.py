@@ -1301,3 +1301,18 @@ def test_build_echo_body_renders_triage_handoff():
     body = gmail_intake.build_echo_body(manifest, [], None)
     assert "triage handoff: exceeds_free_budget:25000>12000" in body
     assert "handled by the full pipeline" in body
+
+def test_triage_degrades_to_deterministic_when_quota_open(mock_openai_client):
+    import time
+
+    from llm.quota import get_breaker
+
+    agent = GmailTriageAgent()
+    agent.model = "x/free-model:free"
+    get_breaker().open_until = time.time() + 600
+    text = "From: Alice <a@firm.example>\nTo: Bob\nDate: 1 Sep 2026\nSubject: Renewal\n\nPlease renew."
+    out = agent.triage(text, filename="mail.txt")
+    assert out["degraded"] == "free_quota"
+    assert out["primary_doc_class"] == "unknown"
+    assert out["extraction"]["sender"].startswith("Alice")
+    assert out["debug"]["attempted_models"] == []  # no request ever reached the client

@@ -63,6 +63,13 @@ def _set_test_env():
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
               "LANGFUSE_BASE_URL", "BRAINTRUST_API_KEY"):
         os.environ.pop(k, None)
+    # Free-quota breaker (llm/quota.py) is a process singleton: start every
+    # test closed so mocked 429s in one test never short-circuit another.
+    from llm.quota import reset_breaker
+
+    reset_breaker()
+    # Triage result cache (llm/result_cache.py) off unless a case opts in.
+    os.environ["MAILROOM_LLM_CACHE"] = "0"
 
 
 @pytest.fixture

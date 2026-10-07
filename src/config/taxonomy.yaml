@@ -98,8 +98,20 @@ gateway:
 # listed here; pin one only if a future eval proves the router wrong for a
 # specific surface. The free predicate is satisfied via the 0/0 cost_models
 # entry below.
+# A ranked list may precede it (keep `openrouter/free` LAST as the catch-all);
+# with more than one entry, OpenRouter calls send the list as the `models`
+# fallback array (server-side fallback, `provider.require_parameters: true`).
 free_model_swarm:
   - openrouter/free
+
+# Free-quota circuit breaker (llm/quota.py): after `trip_after` consecutive
+# 429s from free models, free calls short-circuit (FreeQuotaExhausted) for
+# Retry-After seconds or `cooldown_s` (doubling per consecutive trip, capped
+# at 3600). The Gmail triage lane then degrades to its deterministic header
+# pass instead of burning the retry ladder. Paid models never use it.
+free_quota:
+  trip_after: 3
+  cooldown_s: 300
 
 run_limits:
   # Hard wall-clock cutoff per document run (abort past this).

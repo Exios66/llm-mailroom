@@ -176,9 +176,13 @@ class BaseAgent(ABC):
 
         logger.info("llm_call", agent=self.agent_name, model=self.model, max_tokens=max_tokens)
         response = retry_chat_completion(self.client, **kwargs)
-        record_usage(getattr(response, "usage", None), self.model, agent=self.agent_name)
+        served_model = getattr(response, "model", None)
+        served_model = served_model if isinstance(served_model, str) and served_model else None
+        record_usage(
+            getattr(response, "usage", None), self.model, agent=self.agent_name, served_model=served_model
+        )
         content = response.choices[0].message.content or ""
-        logger.info("llm_response", agent=self.agent_name, length=len(content))
+        logger.info("llm_response", agent=self.agent_name, length=len(content), served_model=served_model)
         return content
 
     def _call_structured(
