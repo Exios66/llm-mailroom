@@ -1648,7 +1648,9 @@ def _enqueue_echo(manifest: dict) -> str | None:
     body = build_echo_body(manifest, audit_rows, chain_valid)
     html = build_echo_html(manifest, audit_rows, chain_valid)
     original_subject = str(intake.get("subject") or manifest.get("original_filename") or "mailroom intake")
-    domain = str(cfg.get("address") or "").rpartition("@")[2].strip() or "mailroom.local"
+    address = str(cfg.get("address") or "")
+    domain = address.rpartition("@")[2].strip() if "@" in address else ""
+    domain = domain or "mailroom.local"
     mail_outbox.enqueue(
         dedup_key,
         to_addr=str(sender),
@@ -1694,12 +1696,27 @@ def send_intake_echo(manifest: dict) -> bool:
         return False
 
 
-def dispatch_intake_echo(manifest) -> None:
-    """Enqueue the completion echo and wake the outbox worker (never raises).
+def _dispatch_echo_job(manifest: dict, message_id: str) -> None:
+    """Thread target: build + enqueue the echo, wake the worker, retry the reaction."""
+    try:
+        _enqueue_echo(manifest)
+        from . import mail_outbox
 
-    Delivery happens on the worker thread (no thread per echo). ``_enqueue_echo``
-    reads the audit chain via ``asyncio.run``, so under a running event loop it
-    runs on a short helper thread that is joined (DB-only work, no network).
+        worker = mail_outbox.get_worker()
+        if worker is not None:
+            worker.wake()
+    except Exception:
+        logger.exception("gmail_echo_build_failed", message_id=message_id)
+    if reactions_enabled():
+        _retry_reaction(message_id)
+
+
+def dispatch_intake_echo(manifest) -> None:
+    """Queue the completion echo off the document path (never raises).
+
+    Starts one daemon thread (not joined) that builds the echo (audit read,
+    chain verification, HTML), enqueues it durably and wakes the outbox worker,
+    which does the sending. The caller never waits on I/O.
     """
     try:
         if not isinstance(manifest, dict):
@@ -1707,30 +1724,11 @@ def dispatch_intake_echo(manifest) -> None:
         gate = _echo_gate(manifest)
         if gate is None:
             return
-        message_id = str(gate[2])
-        with _REACTION_LOCK:
-            reaction_pending = message_id not in _REACTION_ATTEMPTED
-        if reaction_pending and reactions_enabled():
-            threading.Thread(
-                target=_retry_reaction, args=(message_id,), name="gmail-echo-react", daemon=True
-            ).start()
-        import asyncio
-
-        try:
-            asyncio.get_running_loop()
-            in_loop = True
-        except RuntimeError:
-            in_loop = False
-        if in_loop:
-            t = threading.Thread(target=_enqueue_echo, args=(manifest,), name="gmail-echo-enqueue", daemon=True)
-            t.start()
-            t.join(60)
-        else:
-            _enqueue_echo(manifest)
-        from . import mail_outbox
-
-        worker = mail_outbox.get_worker()
-        if worker is not None:
-            worker.wake()
+        threading.Thread(
+            target=_dispatch_echo_job,
+            args=(manifest, str(gate[2])),
+            name="gmail-echo-enqueue",
+            daemon=True,
+        ).start()
     except Exception:
         logger.exception("gmail_echo_dispatch_failed")
