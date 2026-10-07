@@ -56,7 +56,7 @@ def test_contracts_v33_is_pure_append_of_v32():
     )
     assert "PARED EXTRACTION" in LP.CONTRACTS_SPECIALIST_PROMPT_V33
     assert LP.PROMPT_TEMPLATES()["contracts_specialist_v32"] is LP.CONTRACTS_SPECIALIST_PROMPT_V32
-    assert LP.PROMPT_TEMPLATES()["contracts_specialist"] is LP.CONTRACTS_SPECIALIST_PROMPT_V33
+    assert LP.PROMPT_TEMPLATES()["contracts_specialist_v33"] is LP.CONTRACTS_SPECIALIST_PROMPT_V33
 
 
 def test_contracts_v32_is_pure_append_of_v31():
@@ -69,20 +69,30 @@ def test_contracts_v32_is_pure_append_of_v31():
     assert LP.PROMPT_TEMPLATES()["contracts_specialist_v32"] is LP.CONTRACTS_SPECIALIST_PROMPT_V32
 
 
-def test_mailroom_specialist_prompts_are_pure_appends_of_v0():
-    pairs = [
-        (corporate_records_specialist, CORPORATE_RECORDS),
-        (correspondence_specialist, CORRESPONDENCE),
-        (insurance_claims_specialist, INSURANCE_CLAIMS),
-        (merger_agreement_specialist, MERGER_AGREEMENT),
-        (pdf_transcriber, PDF_TRANSCRIBER),
+def test_mailroom_specialist_v0_plus_doctrine_is_preserved_as_history():
+    """V0 + doctrine stays constructible; production SYSTEM_PROMPT is frozen v1."""
+    from llm.frozen_v1 import load_specialist_v1
+
+    historical = [
+        (corporate_records_specialist, CORPORATE_RECORDS, "corporate_records_specialist"),
+        (correspondence_specialist, CORRESPONDENCE, "correspondence_specialist"),
+        (insurance_claims_specialist, INSURANCE_CLAIMS, "insurance_claims_specialist"),
+        (merger_agreement_specialist, MERGER_AGREEMENT, "merger_agreement_specialist"),
     ]
-    for module, doctrine in pairs:
+    for module, doctrine, agent in historical:
         v0 = module.SYSTEM_PROMPT_V0
-        current = module.SYSTEM_PROMPT
-        assert current.startswith(v0.rstrip())
-        assert doctrine in current
-        assert current != v0
+        mutated = v0.rstrip() + "\n\n" + doctrine
+        assert mutated.startswith(v0.rstrip())
+        assert doctrine in mutated
+        assert mutated != v0
+        assert module.SYSTEM_PROMPT == load_specialist_v1(agent)
+        assert module.SYSTEM_PROMPT != mutated
+
+    v0 = pdf_transcriber.SYSTEM_PROMPT_V0
+    current = pdf_transcriber.SYSTEM_PROMPT
+    assert current.startswith(v0.rstrip())
+    assert PDF_TRANSCRIBER in current
+    assert current != v0
 
 
 def test_supporting_prompts_are_pure_appends_of_v0():
@@ -104,9 +114,11 @@ def test_supporting_prompts_are_pure_appends_of_v0():
 
 
 def test_production_templates_are_the_mutated_versions():
+    from llm.frozen_v1 import load_specialist_v1
+
     templates = prompt_templates()
     assert templates["sorter"] == LP.SORTER_PROMPT_V14
-    assert templates["contracts_specialist"] == LP.CONTRACTS_SPECIALIST_PROMPT_V33
+    assert templates["contracts_specialist"] == load_specialist_v1("contracts_specialist")
     assert templates["corporate_records_specialist"] == corporate_records_specialist.SYSTEM_PROMPT
     assert templates["insurance_claims_specialist"] == insurance_claims_specialist.SYSTEM_PROMPT
     assert templates["merger_agreement_specialist"] == merger_agreement_specialist.SYSTEM_PROMPT
@@ -125,7 +137,7 @@ def test_runtime_defaults_pin_the_new_versions():
     sorter_params = inspect.signature(SorterAgent.__init__).parameters
     assert sorter_params["prompt_version"].default == "sorter_v14"
     contracts_params = inspect.signature(ContractsSpecialist.__init__).parameters
-    assert contracts_params["prompt_version"].default == "contracts_specialist_v33"
+    assert contracts_params["prompt_version"].default == "contracts_specialist"
 
 
 def test_doctrine_has_no_mustache_placeholders():
