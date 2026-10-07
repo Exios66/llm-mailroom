@@ -7,8 +7,10 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts.bump_dojo_scoring import current_pin
@@ -293,6 +295,7 @@ def test_gitbook_changelog_space_mirrors_repo_changelog():
     changelog_text = changelog.read_text(encoding="utf-8")
     headings = re.findall(r"^## \[([^\]]+)\]", changelog_text, re.MULTILINE)
     assert "Unreleased" in headings
+    assert "v0.8.0" in headings
     assert "v0.7.1" in headings
     assert "v0.7.0" in headings
 
@@ -300,14 +303,19 @@ def test_gitbook_changelog_space_mirrors_repo_changelog():
     feed = (space / "README.md").read_text(encoding="utf-8")
     summary = (space / "SUMMARY.md").read_text(encoding="utf-8")
     unreleased = (space / "unreleased.md").read_text(encoding="utf-8")
+    v080 = (space / "2026" / "v0-8-0.md").read_text(encoding="utf-8")
     v071 = (space / "2026" / "v0-7-1.md").read_text(encoding="utf-8")
 
     assert "{% updates format=\"full\" %}" in feed
     assert "## Unreleased" in feed
+    assert "## v0.8.0" in feed
     assert "## v0.7.1" in feed
     assert "* [Unreleased](unreleased.md)" in summary
+    assert "* [v0.8.0](2026/v0-8-0.md)" in summary
     assert "* [v0.7.1](2026/v0-7-1.md)" in summary
-    assert "GitBook Changelog space" in unreleased
+    assert "Unreleased work on `main`" in unreleased
+    assert "Mode G — LiteLLM gateway + Modal GPU tiers" in v080
+    assert "GitBook Changelog space" in v080
     assert "Corpus revision re-pinned to the GT-closure tip" in v071
     assert "Feature description" not in feed
     assert "Product improvement" not in feed
@@ -341,6 +349,46 @@ def test_gitbook_changelog_space_mirrors_repo_changelog():
     assert "tag: feature" in tags
     assert "tag: improvement" in tags
     assert "tag: fix" in tags
+
+
+def test_gitbook_site_structure_imports_and_publishes_changelog():
+    """A site ``gitbook-docs.yaml`` whose structure carries a literal
+    ``undefined`` path fails GitBook's site import. The published site then
+    silently keeps the previous structure and the Changelog space never
+    appears (``…/changelog`` 404s). Pin the shipped structure so that
+    regression cannot return."""
+    site_cfg = yaml.safe_load((_DOCS / "gitbook-docs.yaml").read_text(encoding="utf-8"))
+
+    def _nodes(items):
+        for node in items:
+            yield node
+            yield from _nodes(node.get("children") or [])
+
+    nodes = list(_nodes(site_cfg["site"]["structure"]))
+
+    # No node may carry an undefined/null path (the GitBook-editor regression).
+    undefined = [
+        node.get("key")
+        for node in nodes
+        if node.get("path") is None or node.get("path") == "undefined"
+    ]
+    assert not undefined, f"site nodes with an undefined path: {undefined}"
+
+    # Keys are unique across the whole file (GitBook's identity contract).
+    keys = [node.get("key") for node in nodes]
+    assert len(keys) == len(set(keys)), f"duplicate site keys: {keys}"
+
+    # The docs home is mounted at the site root.
+    home = next(node for node in nodes if node.get("key") == "mailroom-docs")
+    assert home["path"] == "/"
+    assert home["content"]["directory"] == "./"
+
+    # The Changelog space is published (present, mapped, not a draft).
+    changelog = next(node for node in nodes if node.get("key") == "space-1")
+    assert changelog["title"] == "Changelog"
+    assert changelog["path"] == "changelog"
+    assert changelog["content"]["directory"] == "./changelog"
+    assert changelog.get("draft") not in (True, "true")
 
 
 def test_gitbook_agents_honest_gaps_cite_dojo_0191():
@@ -394,3 +442,119 @@ def test_current_dojo_pin_outside_changelog():
             if needle in text:
                 hits.append(f"{path.relative_to(REPO_ROOT)}: {needle}")
     assert not hits, f"stale dojo pin copy: {hits}"
+
+
+@pytest.fixture
+def release_project():
+    return tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+
+@pytest.mark.parametrize("path,pattern", [
+    ("docs/constellation/overview.md", r"\| llm-mailroom\s*\|\s*(v[\d.]+)\s*\|"),
+    ("docs/start-here/overview.md", r"\| llm-mailroom\s*\|\s*(v[\d.]+)\s*\|"),
+    ("docs/constellation/repos/llm-mailroom.md", r"\| Release\s*\|\s*(v[\d.]+)\s*\|"),
+    ("docs/repository-guides/repos/llm-mailroom.md", r"\| Release\s*\|\s*(v[\d.]+)\s*\|"),
+    ("docs/the-pipeline-in-depth/running.md", r"`mailroom` ([\d.]+)"),
+    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"current release \(([\d.]+)\)"),
+])
+def test_release_docs_match_package_version(release_project, path, pattern):
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    versions = re.findall(pattern, text)
+    assert len(versions) == 1, f"{path}: expected one current release declaration"
+    assert versions[0].removeprefix("v") == release_project["version"]
+
+
+@pytest.mark.parametrize("path,pattern", [
+    ("docs/constellation/overview.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/start-here/overview.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
+    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
+    ("docs/sister-repos.md", r"`@(v[\d.]+)`"),
+    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+)`"),
+    ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+)`"),
+    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+)"),
+])
+def test_release_docs_match_declared_dojo_pin(release_project, path, pattern):
+    dependency, = [dep for dep in release_project["dependencies"]
+                   if dep.startswith("llm-dojo-scoring @")]
+    pin = dependency.rsplit("@", 1)[1]
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    pins = re.findall(pattern, text)
+    assert pins, f"{path}: missing pipeline dependency pin"
+    assert set(pins) == {pin}, f"{path}: documented pins disagree with pyproject.toml"
+
+
+@pytest.mark.parametrize("path", [
+    "docs/the-pipeline-in-depth/running.md",
+    "docs/the-pipeline-in-depth/scoring-and-metrics.md",
+])
+def test_release_operator_docs_do_not_describe_scoring_as_pending(path):
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    assert not re.search(r"(?:pending|draft)\s+(?:\[)?PR #87", text, re.IGNORECASE)
+    assert "until it merges" not in text.lower()
+    assert "once it merges" not in text.lower()
+
+
+def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
+    from scripts.sync_gitbook_changelog import parse_changelog
+
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    releases = parse_changelog(text, unreleased_date="2026-10-07")
+    titles = [release.title for release in releases]
+    assert titles[:3] == ["Unreleased", f"v{release_project['version']}", "v0.7.1"]
+    assert len(titles) == len(set(titles)), "duplicate changelog release headings"
+    current = releases[1]
+    assert current.date == "2026-10-07"
+    assert current.tags == ("feature", "improvement", "fix")
+    assert current.page_rel == "2026/v0-8-0.md"
+    # Allow future Unreleased work, but don't duplicate notes already shipped.
+    released_notes = set(re.findall(r"^- .+$", current.body, re.MULTILINE))
+    unreleased_notes = set(re.findall(r"^- .+$", releases[0].body, re.MULTILINE))
+    assert released_notes.isdisjoint(unreleased_notes)
+    assert re.findall(r"^### (.+)$", current.body, re.MULTILINE) == ["Added", "Changed", "Fixed"]
+
+
+@pytest.mark.parametrize("label,comparison", [
+    ("Unreleased", "v0.8.0...HEAD"),
+    ("v0.8.0", "v0.7.1...v0.8.0"),
+    ("v0.7.1", "v0.7.0...v0.7.1"),
+    ("v0.7.0", "v0.6.0...v0.7.0"),
+])
+def test_release_changelog_comparison_links(label, comparison):
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    links = re.findall(rf"^\[{re.escape(label)}\]:\s+(\S+)$", text, re.MULTILINE)
+    assert links == [f"https://github.com/Exios66/llm-mailroom/compare/{comparison}"]
+
+
+def test_release_gitbook_page_and_feed_preserve_all_notes():
+    from scripts.sync_gitbook_changelog import parse_changelog
+
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    release = next(r for r in parse_changelog(text, unreleased_date="2026-10-07")
+                   if r.title == "v0.8.0")
+    page = (_DOCS / "changelog" / release.page_rel).read_text(encoding="utf-8")
+    _, frontmatter, content = page.split("---", 2)
+    assert yaml.safe_load(frontmatter)["tags"] == ["feature", "improvement", "fix"]
+    assert content.count("# v0.8.0\n") == 1
+    assert "Released 2026-10-07." in content
+    assert content.split("### Added", 1)[1].strip() == release.body.split("### Added", 1)[1].strip()
+
+    feed = (_DOCS / "changelog" / "README.md").read_text(encoding="utf-8")
+    cards = re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
+    titles = [re.search(r"^## (.+)$", body, re.MULTILINE).group(1) for _, body in cards]
+    assert titles[:3] == ["Unreleased", "v0.8.0", "v0.7.1"]
+    assert titles.count("v0.8.0") == 1
+    attrs, body = cards[1]
+    assert 'date="2026-10-07"' in attrs
+    assert 'tags="feature,improvement,fix"' in attrs
+    assert release.body in body
+    assert '<a href="2026/v0-8-0.md" class="button primary">' in body
+    released_notes = set(re.findall(r"^- .+$", release.body, re.MULTILINE))
+    unreleased_notes = set(re.findall(r"^- .+$", cards[0][1], re.MULTILINE))
+    assert released_notes.isdisjoint(unreleased_notes)
+
+    listed = _summary_targets(_DOCS / "changelog" / "SUMMARY.md")
+    assert listed[:4] == ["README.md", "unreleased.md", "2026/v0-8-0.md", "2026/v0-7-1.md"]
+    assert listed.count("2026/v0-8-0.md") == 1

@@ -1,7 +1,9 @@
 """Run landing-page JavaScript unit tests through the repository's pytest entry point."""
 
+import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -25,7 +27,7 @@ BADGES = (
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
     f"dojo-{current_pin(REPO)}-6f42c1",
-    "release-v0.7.1-2EA043",
+    "release-v0.8.0-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",
     "org-LLM--Mailroom--Services-24292F",
@@ -52,6 +54,31 @@ def test_dojo_badge_links_to_the_pinned_release(relative_path):
     else:
         assert f"[![Dojo]({badge})]({release})" in text
     assert text.count("https://img.shields.io/badge/dojo-") == 1
+
+
+@pytest.mark.parametrize("path", ["README.md", "docs/README.md", "landing/index.html"])
+def test_release_badge_label_and_destination_match_package(path):
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    version = f"v{project['version']}"
+    text = (REPO / path).read_text(encoding="utf-8")
+    badge = f"https://img.shields.io/badge/release-{version}-2EA043"
+    destination = f"https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/{version}"
+    if path.endswith(".html"):
+        badges = re.findall(
+            r'<a\s+href="([^"]+)"[^>]*>\s*<img\s+src="(https://img.shields.io/badge/release-[^"]+)"\s+alt="([^"]+)"[^>]*>\s*</a>',
+            text,
+        )
+        assert badges == [(destination, badge, f"Release {version}")]
+        tags = re.findall(r'<em>release</em>\s*·\s*(v[\d.]+)', text)
+        assert tags == [version]
+    else:
+        badges = re.findall(r"\[!\[Release\]\(([^)]+)\)\]\(([^)]+)\)", text)
+        assert badges == [(badge, destination)]
+        if path == "README.md":
+            assert f"[`{version}`]({destination})" in text
+        else:
+            tags = re.findall(r"\[\*\*release\*\* · (v[\d.]+)\]", text)
+            assert tags == [version]
 
 
 def _walk_gitbook_nodes(nodes):
@@ -126,7 +153,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert 'Postal Worker Fumi (文, "letter") on duty' in home
     assert "Read the docs" in home
     assert "[Architecture](pipeline-reference-llm-mailroom/architecture.md)" in home
-    assert "**release** · v0.7.1" in home
+    assert "**release** · v0.8.0" in home
     assert ".gitbook/assets/hoot-icon.png" in home
     assert "Pixelify" not in home
     assert "font-family" not in home

@@ -55,6 +55,7 @@ GitBook's published favicon is the site icon in **Customize** ([icons, colors, a
 - **Date facts that drift.** Versions, pins and counts carry an "as of" date; when a release moves them, update [Overview](overview.md) and the affected guide.
 - **Keep the GitHub wiki separate.** `docs/wiki/` remains wiki-only and is not a mirror of these pages.
 - **Keep the GitBook Changelog generated.** After editing `CHANGELOG.md`, run `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py`. The GitBook onboarding placeholders in that space are gone; do not put them back.
+- **Keep the site path mapping valid.** `docs/gitbook-docs.yaml` must list the `mailroom-docs` home space at `path: /` (directory `./`) and the `space-1` Changelog space at `path: changelog` (directory `./changelog`). A space/section `path` of `undefined` — which GitBook's editor has written into this file before — fails the whole site import, so the Changelog section silently stops publishing (`…/changelog` 404s). `test_gitbook_site_structure_imports_and_publishes_changelog` guards the shipped structure.
 
 ## When a repository changes
 
