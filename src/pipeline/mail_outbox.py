@@ -340,14 +340,18 @@ def get_worker() -> OutboxWorker | None:
 
 
 def start_outbox_worker() -> OutboxWorker | None:
-    """Start the worker (no-op when the echo channel is disabled; never raises)."""
+    """Start the worker (no-op when the Gmail channel is disabled; never raises).
+
+    Runs whenever the channel is on — echoes, acknowledgments, reject replies
+    and digests all drain through it.
+    """
     global _WORKER
     try:
         if _WORKER is not None and _WORKER.is_alive():
             return _WORKER
-        from .gmail_intake import echoes_enabled
+        from .gmail_intake import gmail_intake_enabled
 
-        if not echoes_enabled():
+        if not gmail_intake_enabled():
             return None
         worker = OutboxWorker()
         worker.start()

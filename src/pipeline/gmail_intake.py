@@ -541,46 +541,86 @@ def _sweep_orphans() -> None:
         logger.exception("gmail_orphan_sweep_failed")
 
 
-def _link_no_clobber(src: Path, dest_dir: Path, name: str) -> Path:
-    """Hard-link ``src`` into ``dest_dir`` under ``name`` (uniquified), no overwrite."""
+def _write_sidecar(dest: Path, meta: dict) -> Path:
+    """Write ``<dest>.meta`` atomically (temp + replace), fsynced."""
+    from .bins import inbox_meta_path
+
+    side = inbox_meta_path(dest)
+    tmp = dest.parent / f".{uuid.uuid4().hex}.meta.part"
+    try:
+        with open(tmp, "w") as fh:
+            fh.write(json.dumps(meta, default=str))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, side)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return side
+
+
+def _publish_no_clobber(publish, dest_dir: Path, name: str, meta: dict | None) -> Path:
+    """Run ``publish(dest)`` under the first free ``name`` variant in ``dest_dir``.
+
+    ``publish`` raises ``FileExistsError`` when the name is taken. When
+    ``meta`` is given the ``<dest>.meta`` sidecar is written BEFORE the file
+    appears, so the watcher can never claim a Gmail file without its intake
+    metadata. A name whose file exists is skipped up front; a stale sidecar
+    (the watcher leaves sidecars behind after a claim) is simply replaced.
+    """
     stem, suffix = os.path.splitext(name)
     counter = 0
     while True:
         dest = dest_dir / (name if counter == 0 else f"{stem}-{counter}{suffix}")
+        counter += 1
+        if os.path.lexists(dest):
+            continue
+        side = _write_sidecar(dest, meta) if meta is not None else None
         try:
-            os.link(src, dest)
+            publish(dest)
             return dest
         except FileExistsError:
-            counter += 1
+            # Lost a race for this name: the sidecar now belongs to nobody we
+            # know of; leave it (the poller is the sole writer of these names).
+            logger.warning("gmail_publish_name_race", dest=str(dest))
+            continue
+        except BaseException:
+            if side is not None:
+                side.unlink(missing_ok=True)
+            raise
 
 
-def _rename_no_clobber(src: Path, dest_dir: Path, name: str) -> Path:
+def _link_no_clobber(src: Path, dest_dir: Path, name: str, meta: dict | None = None) -> Path:
+    """Hard-link ``src`` into ``dest_dir`` under ``name`` (uniquified), no overwrite."""
+    return _publish_no_clobber(lambda dest: os.link(src, dest), dest_dir, name, meta)
+
+
+def _rename_no_clobber(src: Path, dest_dir: Path, name: str, meta: dict | None = None) -> Path:
     """Promote ``src`` by rename after an existence check (no hard-link support).
 
     The poller is the sole writer of these inbox names (one ``watcher.lock``
     drain point), so the small check-then-rename window is accepted.
     """
-    stem, suffix = os.path.splitext(name)
-    counter = 0
-    while True:
-        dest = dest_dir / (name if counter == 0 else f"{stem}-{counter}{suffix}")
-        if not dest.exists():
-            os.rename(src, dest)
-            return dest
-        counter += 1
+
+    def _rename(dest: Path) -> None:
+        if os.path.lexists(dest):
+            raise FileExistsError(str(dest))
+        os.rename(src, dest)
+
+    return _publish_no_clobber(_rename, dest_dir, name, meta)
 
 
-def _place(src: Path, dest_dir: Path, name: str) -> Path:
+def _place(src: Path, dest_dir: Path, name: str, meta: dict | None = None) -> Path:
     """Atomically place ``src`` in ``dest_dir`` as ``name`` without clobbering.
 
     Uniquifies on collision. When ``src`` is on another device (``EXDEV``) it
     is copied to a dest-side ``.part`` file, fsynced, then promoted with the
     same no-clobber primitive; the final inbox name is never written directly.
-    ``src`` is removed on success.
+    With ``meta`` the ``.meta`` sidecar is written just before the file
+    appears. ``src`` is removed on success.
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
     try:
-        dest = _link_no_clobber(src, dest_dir, name)
+        dest = _link_no_clobber(src, dest_dir, name, meta)
     except OSError as exc:
         if exc.errno not in _LINK_FALLBACK_ERRNOS:
             raise
@@ -591,11 +631,11 @@ def _place(src: Path, dest_dir: Path, name: str) -> Path:
                 fout.flush()
                 os.fsync(fout.fileno())
             try:
-                dest = _link_no_clobber(part, dest_dir, name)
+                dest = _link_no_clobber(part, dest_dir, name, meta)
             except OSError as link_exc:
                 if link_exc.errno not in _LINK_FALLBACK_ERRNOS:
                     raise
-                dest = _rename_no_clobber(part, dest_dir, name)
+                dest = _rename_no_clobber(part, dest_dir, name, meta)
         finally:
             part.unlink(missing_ok=True)
     src.unlink(missing_ok=True)
@@ -682,15 +722,17 @@ def deliver_attachment(filename: str, content: Path | bytes, meta: dict) -> tupl
     ``content`` may be raw ``bytes`` (API /upload) or a ``Path`` to a
     temporary file already written to disk (Gmail poller streaming).  When a
     ``Path`` is provided the file is moved into the inbox directly, keeping
-    peak heap low for large multi-attachment emails.
+    peak heap low for large multi-attachment emails. The sidecar is written
+    before the file becomes visible.
 
     Returns ``(delivered_filename, reject_reason)`` — reason is None on
-    success, else ``"filename"`` | ``"extension"`` | ``"size"``. Collisions
-    are uniquified exactly like ``/upload``.
+    success, else ``"filename"`` | ``"extension"`` | ``"size"`` | ``"io"``
+    (an ``OSError``; never raised for I/O). Collisions are uniquified exactly
+    like ``/upload``.
     """
     from pathlib import Path as _Path
 
-    from .bins import inbox_dir, write_inbox_meta, accepted_extensions
+    from .bins import inbox_dir, accepted_extensions
 
     safe = _safe_filename(filename)
     if safe is None:
@@ -698,26 +740,288 @@ def deliver_attachment(filename: str, content: Path | bytes, meta: dict) -> tupl
     if _extension_of(safe) not in accepted_extensions():
         return None, "extension"
 
-    # Support streaming from a temp file path (Gmail poller) or raw bytes.
-    if isinstance(content, _Path):
-        size = content.stat().st_size
-    else:
-        size = len(content)
-    if size > meta["_max_attachment_bytes"]:
-        return None, "size"
+    sidecar = {k: v for k, v in meta.items() if not k.startswith("_")}
+    try:
+        # Support streaming from a temp file path (Gmail poller) or raw bytes.
+        if isinstance(content, _Path):
+            size = content.stat().st_size
+        else:
+            size = len(content)
+        if size > meta["_max_attachment_bytes"]:
+            return None, "size"
 
-    inbox = inbox_dir()
-    if isinstance(content, _Path):
-        dest = _place(content, inbox, safe)
-    else:
-        staged = _stage_path(_extension_of(safe))
-        try:
-            staged.write_bytes(content)
-            dest = _place(staged, inbox, safe)
-        finally:
-            staged.unlink(missing_ok=True)
-    write_inbox_meta(dest, **{k: v for k, v in meta.items() if not k.startswith("_")})
+        inbox = inbox_dir()
+        if isinstance(content, _Path):
+            dest = _place(content, inbox, safe, sidecar)
+        else:
+            staged = _stage_path(_extension_of(safe))
+            try:
+                staged.write_bytes(content)
+                dest = _place(staged, inbox, safe, sidecar)
+            finally:
+                staged.unlink(missing_ok=True)
+    except OSError:
+        logger.exception("gmail_attachment_io_error", file=safe)
+        return None, "io"
     return dest.name, None
+
+
+def _screen_attachments(
+    attachments: list[tuple[str, bytes]], max_bytes: int
+) -> tuple[list[tuple[str, bytes]], list[tuple[str, str]]]:
+    """Split attachments into ``accepted`` and ``rejected`` ``(filename, reason)``.
+
+    Reasons: ``filename`` (no usable name), ``extension``, ``size``.
+    """
+    from .bins import accepted_extensions
+
+    accepted: list[tuple[str, bytes]] = []
+    rejected: list[tuple[str, str]] = []
+    for filename, content in attachments:
+        safe = _safe_filename(filename)
+        if safe is None:
+            rejected.append((str(filename or ""), "filename"))
+        elif _extension_of(safe) not in accepted_extensions():
+            rejected.append((filename, "extension"))
+        elif len(content) > max_bytes:
+            rejected.append((filename, "size"))
+        else:
+            accepted.append((filename, content))
+    return accepted, rejected
+
+
+def _register_group(message_id: str, expected: int, sender: str, subject: str) -> None:
+    try:
+        from . import mail_outbox
+
+        mail_outbox.register_group(message_id, expected=expected, sender=sender, subject=subject)
+    except Exception:
+        logger.exception("gmail_group_register_failed", message_id=message_id)
+
+
+# ---------------------------------------------------------------------------
+# Sender-facing replies: reject (nothing queued) and acknowledgment (queued).
+# Every reply goes through the durable outbox, only to senders that passed the
+# allowlist/DMARC checks, never to automated mail, and within the per-address
+# hourly budget (``mail_guards.reply_allowed``).
+# ---------------------------------------------------------------------------
+
+_REJECT_SENTENCES = {
+    "extension": "this file type is not accepted",
+    "size": "the file is larger than the {max_mb} MB limit",
+    "filename": "the attachment has no usable file name",
+    "none": "the email had no attachment",
+}
+
+
+def _esc(value) -> str:
+    import html as _html
+
+    return _html.escape(str(value if value is not None else ""), quote=True)
+
+
+def _mail_domain(cfg: dict) -> str:
+    address = str(cfg.get("address") or "")
+    domain = address.rpartition("@")[2].strip() if "@" in address else ""
+    return domain or "mailroom.local"
+
+
+def _reply_headers(cfg: dict, message_id: str, kind: str) -> dict[str, str]:
+    import hashlib
+
+    tag = hashlib.sha256(str(message_id).encode("utf-8")).hexdigest()[:16]
+    return {
+        "In-Reply-To": str(message_id),
+        "References": str(message_id),
+        "Message-ID": f"<mailroom-{kind}-{tag}@{_mail_domain(cfg)}>",
+        "Auto-Submitted": "auto-replied",
+    }
+
+
+def _reply_subject(subject: str) -> str:
+    subject = " ".join(str(subject or "").split()) or "mailroom intake"
+    return subject if subject.lower().startswith("re:") else f"Re: {subject}"
+
+
+def _wake_outbox() -> None:
+    try:
+        from . import mail_outbox
+
+        worker = mail_outbox.get_worker()
+        if worker is not None:
+            worker.wake()
+    except Exception:
+        logger.warning("gmail_outbox_wake_failed", exc_info=True)
+
+
+def build_reject_reply(
+    subject: str, rejected: list[tuple[str, str]], accepted_exts: list[str], max_mb: int
+) -> tuple[str, str]:
+    """``(text, html)`` telling the sender why nothing was queued and how to fix it."""
+    exts = ", ".join(sorted(accepted_exts))
+    rows = []
+    for name, reason in rejected:
+        sentence = _REJECT_SENTENCES.get(reason, "it could not be processed").format(max_mb=max_mb)
+        rows.append((name, reason, sentence))
+    text_lines = [
+        "The mailroom received your email but did not queue any document.",
+        "",
+    ]
+    for name, _reason, sentence in rows:
+        text_lines.append(f"  - {name}: {sentence}" if name else f"  - {sentence}")
+    text_lines += [
+        "",
+        f"Accepted file types: {exts}",
+        f"Maximum attachment size: {max_mb} MB",
+        "",
+        "Reply to this email with the corrected attachment to try again.",
+        "",
+        "Processed by the LLM Mailroom agent",
+    ]
+    items_html = "".join(
+        f"<li>{('<strong>' + _esc(name) + '</strong>: ') if name else ''}{_esc(sentence)}</li>"
+        for name, _reason, sentence in rows
+    )
+    html = (
+        '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;color:#1f2328;">'
+        '<div style="padding:10px 14px;border-radius:6px;background:#9a67001a;border:1px solid #9a6700;">'
+        '<strong style="color:#9a6700;">Nothing was queued</strong>'
+        '<span style="color:#57606a;"> &mdash; the mailroom received your email but could not accept its attachments.</span>'
+        f"</div><ul>{items_html}</ul>"
+        f"<div>Accepted file types: <code>{_esc(exts)}</code></div>"
+        f"<div>Maximum attachment size: {_esc(max_mb)} MB</div>"
+        "<p>Reply to this email with the corrected attachment to try again.</p>"
+        '<div style="color:#57606a;font-size:12px;">Processed by the LLM Mailroom agent</div></div>'
+    )
+    return "\n".join(text_lines), html
+
+
+def enqueue_reject_reply(
+    cfg: dict, *, message_id: str, sender: str, subject: str, rejected: list[tuple[str, str]]
+) -> bool:
+    """Queue the reject reply (dedup ``reject:<message_id>``). Never raises.
+
+    Callers invoke it only after the automated-mail and allowlist/DMARC
+    checks passed; the hourly reply budget is enforced here.
+    """
+    try:
+        from . import mail_outbox
+        from .bins import accepted_extensions
+
+        if not sender or not message_id:
+            return False
+        if not mail_guards.reply_allowed(sender, cfg.get("max_replies_per_hour")):
+            logger.warning("gmail_reply_budget_exceeded", to=sender, kind="reject")
+            return False
+        max_mb = max(1, int(cfg.get("max_attachment_bytes", DEFAULT_MAX_ATTACHMENT_MB * 1024 * 1024)) // (1024 * 1024))
+        text, html = build_reject_reply(subject, rejected, list(accepted_extensions()), max_mb)
+        queued = mail_outbox.enqueue(
+            f"reject:{message_id}",
+            to_addr=sender,
+            subject=_reply_subject(subject),
+            text=text,
+            html=html,
+            headers=_reply_headers(cfg, message_id, "reject"),
+        )
+        if queued:
+            _wake_outbox()
+        return queued
+    except Exception:
+        logger.exception("gmail_reject_reply_failed", message_id=message_id)
+        return False
+
+
+def build_ack_email(
+    subject: str,
+    items: list[dict],
+    route: str,
+    rejected: list[tuple[str, str]] | None = None,
+) -> tuple[str, str]:
+    """``(text, html)`` acknowledgment: what was queued, the path it takes, its IDs."""
+    if route == "triage":
+        path = (
+            "It will be handled by the fast triage lane (classification, key-entity "
+            "extraction and archive); you will get a completion report on this thread."
+        )
+    else:
+        path = (
+            f"All {len(items)} documents will run through the full pipeline; you will get "
+            "one summary report on this thread when every document has finished."
+            if len(items) > 1
+            else "It will run through the full pipeline; you will get a completion report on this thread."
+        )
+    noun = "document" if len(items) == 1 else "documents"
+    text_lines = [f"The mailroom received {len(items)} {noun} and queued {'it' if len(items) == 1 else 'them'} for processing.", ""]
+    for item in items:
+        text_lines.append(f"  - {item.get('filename')}  (id {item.get('upload_id')})")
+    text_lines += ["", path]
+    if rejected:
+        text_lines += ["", "Not accepted:"]
+        for name, reason in rejected:
+            text_lines.append(f"  - {name or '(unnamed)'}: {reason}")
+    text_lines += ["", "Processed by the LLM Mailroom agent"]
+    rows_html = "".join(
+        f"<tr><td style=\"padding:2px 12px 2px 0;\"><strong>{_esc(i.get('filename'))}</strong></td>"
+        f"<td style=\"color:#57606a;\">id <code>{_esc(i.get('upload_id'))}</code></td></tr>"
+        for i in items
+    )
+    rejected_html = (
+        "<div style=\"margin-top:8px;color:#9a6700;\">Not accepted: "
+        + ", ".join(f"{_esc(n or '(unnamed)')} ({_esc(r)})" for n, r in rejected)
+        + "</div>"
+        if rejected
+        else ""
+    )
+    html = (
+        '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:640px;color:#1f2328;">'
+        '<div style="padding:10px 14px;border-radius:6px;background:#0969da1a;border:1px solid #0969da;">'
+        f'<strong style="color:#0969da;">Received</strong><span style="color:#57606a;"> &mdash; '
+        f"{len(items)} {noun} queued for processing</span></div>"
+        f'<table style="margin:12px 0;font-size:13px;">{rows_html}</table>'
+        f"<div>{_esc(path)}</div>{rejected_html}"
+        '<div style="margin-top:14px;color:#57606a;font-size:12px;">Processed by the LLM Mailroom agent</div></div>'
+    )
+    return "\n".join(text_lines), html
+
+
+def acks_enabled() -> bool:
+    return str(os.environ.get("MAILROOM_GMAIL_ACKS", "1")).strip().lower() not in ("0", "false", "no", "off")
+
+
+def enqueue_ack_email(
+    cfg: dict,
+    *,
+    message_id: str,
+    sender: str,
+    subject: str,
+    items: list[dict],
+    route: str,
+    rejected: list[tuple[str, str]] | None = None,
+) -> bool:
+    """Queue the acknowledgment (dedup ``ack:<message_id>``). Never raises."""
+    try:
+        from . import mail_outbox
+
+        if not (sender and message_id and items) or not acks_enabled():
+            return False
+        if not mail_guards.reply_allowed(sender, cfg.get("max_replies_per_hour")):
+            logger.warning("gmail_reply_budget_exceeded", to=sender, kind="ack")
+            return False
+        text, html = build_ack_email(subject, items, route, rejected)
+        queued = mail_outbox.enqueue(
+            f"ack:{message_id}",
+            to_addr=sender,
+            subject=_reply_subject(subject),
+            text=text,
+            html=html,
+            headers=_reply_headers(cfg, message_id, "ack"),
+        )
+        if queued:
+            _wake_outbox()
+        return queued
+    except Exception:
+        logger.exception("gmail_ack_failed", message_id=message_id)
+        return False
 
 
 def _fetch_message(client, uid: str) -> bytes | None:
@@ -785,6 +1089,8 @@ def poll_once(
         "skipped_auth": 0,
         "skipped_automated": 0,
         "skipped_no_attachments": 0,
+        "reject_replies": 0,
+        "ack_replies": 0,
         "marked_seen": 0,
         "already_processed": 0,
         "quarantined": 0,
@@ -887,31 +1193,46 @@ def poll_once(
                 subject = str(msg.get("Subject") or "")
                 matter_id = parse_matter_id(subject) or cfg["default_matter_id"]
                 # Single vs bundle routing (HUB-037): count the attachments
-                # that WOULD be delivered (extension + size guards) and route
-                # the message — ONE accepted attachment = single-document
-                # upload (free-triage lane); TWO OR MORE = multi-document
-                # upload (full paid pipeline, triage dropped).
-                from .bins import accepted_extensions
-
-                accepted: list[tuple[str, Path]] = []
-                for filename, content in extract_attachments(msg):
-                    if _extension_of(filename) not in accepted_extensions():
+                # that WOULD be delivered (filename + extension + size guards)
+                # and route the message — ONE accepted attachment = single-
+                # document upload (free-triage lane); TWO OR MORE = multi-
+                # document upload (full paid pipeline, triage dropped).
+                accepted, rejected = _screen_attachments(
+                    extract_attachments(msg), cfg["max_attachment_bytes"]
+                )
+                for _name, reason in rejected:
+                    if reason in ("extension", "filename"):
                         report["skipped_extension"] += 1
-                        continue
-                    if len(content) > cfg["max_attachment_bytes"]:
+                    elif reason == "size":
                         report["skipped_size"] += 1
-                        continue
-                    # Stream to a same-filesystem staging file: avoids holding
-                    # all attachment bytes in memory for multi-attachment
-                    # emails and keeps the move into the inbox atomic.
-                    tmp = _stage_path(_extension_of(filename))
-                    staged.append(tmp)
-                    tmp.write_bytes(content)
-                    accepted.append((filename, tmp))
-                    del content  # free decoded bytes immediately
-                route = "triage" if len(accepted) == 1 else "pipeline"
-                queued = 0
-                for filename, content_path in accepted:
+
+                # Phase 1 — stage EVERY accepted attachment before publishing
+                # any. Staged .part files are never watcher-visible, so an I/O
+                # error here publishes nothing and the message is retried
+                # (counted toward the poison cap) on the next sweep.
+                staged_items: list[tuple[str, Path]] = []
+                for filename, content in accepted:
+                    try:
+                        tmp = _stage_path(_extension_of(filename))
+                        staged.append(tmp)
+                        tmp.write_bytes(content)
+                    except OSError as exc:
+                        raise GmailIntakeError(f"io: staging {filename!r}: {exc}") from exc
+                    staged_items.append((filename, tmp))
+                del accepted  # free decoded bytes before publishing
+
+                # Phase 2 — promote (sidecar, then file). A file already in
+                # the inbox is never unlinked (the watcher may have claimed
+                # it); a part-way failure records the message processed with
+                # the unpromoted files named, so nothing is ever queued twice.
+                route = "triage" if len(staged_items) == 1 else "pipeline"
+                if len(staged_items) > 1:
+                    # Register the bundle BEFORE any file is visible so a fast
+                    # terminal result can never miss its digest group.
+                    _register_group(message_id, len(staged_items), sender, subject)
+                queued_items: list[dict] = []
+                unpromoted: list[str] = []
+                for filename, content_path in staged_items:
                     meta = {
                         "matter_id": matter_id,
                         "source": "gmail",
@@ -920,19 +1241,28 @@ def poll_once(
                         "subject": subject[:200],
                         "received_at": _received_at(msg),
                         "route": route,
+                        "group_size": len(staged_items),
                         "upload_id": uuid.uuid4().hex[:12],
                         "size": content_path.stat().st_size,
                         "original_filename": filename,
                         "_max_attachment_bytes": cfg["max_attachment_bytes"],
                     }
-                    delivered, reject_reason = deliver_attachment(filename, content_path, meta)
+                    try:
+                        delivered, reject_reason = deliver_attachment(filename, content_path, meta)
+                    except Exception as exc:
+                        if not queued_items:
+                            raise  # nothing published: retry the whole message
+                        logger.exception("gmail_attachment_promote_failed", file=filename, uid=uid)
+                        delivered, reject_reason = None, f"io:{type(exc).__name__}"
                     if delivered is None:
-                        if reject_reason == "extension":
-                            report["skipped_extension"] += 1
-                        elif reject_reason == "size":
-                            report["skipped_size"] += 1
+                        if not queued_items and str(reject_reason).startswith("io"):
+                            # Nothing published yet: safe to retry the whole message.
+                            raise GmailIntakeError(f"io: promoting {filename!r}")
+                        unpromoted.append(filename)
                         continue
-                    queued += 1
+                    queued_items.append(
+                        {"filename": delivered, "original_filename": filename, "upload_id": meta["upload_id"]}
+                    )
                     logger.info(
                         "gmail_attachment_queued",
                         file=delivered,
@@ -940,6 +1270,11 @@ def poll_once(
                         sender=sender,
                         message_id=message_id,
                         route=route,
+                    )
+                queued = len(queued_items)
+                if unpromoted:
+                    report["errors"].append(
+                        f"promote_failed:{uid}:{','.join(unpromoted)}"
                     )
                 report["attachments_queued"] += queued
                 if queued == 0:
@@ -949,8 +1284,30 @@ def poll_once(
                         message_id=message_id,
                         sender=sender,
                         subject=subject[:120],
-                        detail="no accepted-extension attachment — message marked seen only",
+                        detail="no accepted attachment — reject reply queued, message marked seen",
                     )
+                    if not unpromoted:
+                        if enqueue_reject_reply(
+                            cfg,
+                            message_id=message_id,
+                            sender=sender,
+                            subject=subject,
+                            rejected=rejected or [("", "none")],
+                        ):
+                            report["reject_replies"] += 1
+                else:
+                    if enqueue_ack_email(
+                        cfg,
+                        message_id=message_id,
+                        sender=sender,
+                        subject=subject,
+                        items=queued_items,
+                        route=route,
+                        rejected=rejected,
+                    ):
+                        report["ack_replies"] += 1
+                    if len(staged_items) > 1 and queued != len(staged_items):
+                        _register_group(message_id, queued, sender, subject)
                 processed_ids.append(message_id)
                 failed_attempts.pop(message_id, None)
                 if _mark_seen(client, uid):
@@ -1684,6 +2041,7 @@ def _enqueue_echo(manifest: dict) -> str | None:
             "In-Reply-To": str(message_id),
             "References": str(message_id),
             "Message-ID": f"<mailroom-echo-{doc_id or uuid.uuid4().hex[:12]}-{stage}@{domain}>",
+            "Auto-Submitted": "auto-replied",
         },
     )
     return dedup_key
