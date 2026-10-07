@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,23 +126,25 @@ def _tags_for(body: str) -> tuple[str, ...]:
     return ordered or ("improvement",)
 
 
+_RELEASE_DATE_RE = re.compile(
+    r"^## \[v?\d+\.\d+\.\d+\] - (\d{4}-\d{2}-\d{2})\s*$", re.MULTILINE
+)
+
+
 def changelog_source_date(path: Path = CHANGELOG_PATH) -> str:
-    """Stable ISO date for the Unreleased card (last CHANGELOG.md commit)."""
+    """Deterministic ISO date for the Unreleased card.
+
+    Uses the newest dated release in ``CHANGELOG.md`` — never the git commit
+    date. The generated GitBook Changelog must regenerate identically from the
+    file alone, so a merge commit (or a skewed clock) can never make the
+    committed pages look stale to ``--check``.
+    """
     try:
-        out = subprocess.run(
-            ["git", "log", "-1", "--format=%cs", "--", str(path.relative_to(REPO_ROOT))],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        stamp = (out.stdout or "").strip()
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", stamp):
-            return stamp
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return _dt.date.today().isoformat()
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return _dt.date.today().isoformat()
+    dates = _RELEASE_DATE_RE.findall(text)
+    return max(dates) if dates else _dt.date.today().isoformat()
 
 
 def parse_changelog(text: str, *, unreleased_date: str) -> list[Release]:
