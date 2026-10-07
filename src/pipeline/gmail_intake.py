@@ -28,7 +28,10 @@ Routing and guards:
   ``.meta`` sidecar never matches and is never claimed.
 - Attachment size is capped (``MAILROOM_GMAIL_MAX_ATTACHMENT_MB``, default 50).
 - Optional sender allowlist (``MAILROOM_GMAIL_ALLOWED_SENDERS`` csv; empty =
-  accept all).
+  accept all). An allowlisted sender must also carry Gmail's own
+  ``dmarc=pass`` verdict (``MAILROOM_GMAIL_REQUIRE_DMARC``, default on), and
+  automated mail (auto-replies, bounces, lists, our own address) is skipped
+  without a reply (``pipeline/mail_guards.py``).
 - **Single vs bundle routing (HUB-037)**: an email carrying exactly ONE
   accepted attachment is a *single document upload* and each sidecar records
   ``route: triage`` — the watcher then dispatches it to the free-triage lane
@@ -66,6 +69,7 @@ from pathlib import Path
 
 import structlog
 
+from . import mail_guards
 from .env import load_env
 
 logger = structlog.get_logger(__name__)
@@ -388,6 +392,8 @@ def load_config() -> dict:
             part.strip().lower() for part in senders_raw.split(",") if part.strip()
         },
         "max_attachment_bytes": max(1, max_mb) * 1024 * 1024,
+        "require_dmarc": mail_guards.require_dmarc(),
+        "max_replies_per_hour": mail_guards.max_replies_per_hour(),
     }
 
 
@@ -776,6 +782,8 @@ def poll_once(
         "skipped_extension": 0,
         "skipped_size": 0,
         "skipped_sender": 0,
+        "skipped_auth": 0,
+        "skipped_automated": 0,
         "skipped_no_attachments": 0,
         "marked_seen": 0,
         "already_processed": 0,
@@ -854,9 +862,24 @@ def poll_once(
                     continue
 
                 sender = _sender_address(msg)
-                if cfg["allowed_senders"] and sender not in cfg["allowed_senders"]:
-                    logger.info("gmail_message_sender_rejected", sender=sender, uid=uid)
-                    report["skipped_sender"] += 1
+                # Loop guard first: automated mail (auto-replies, bounces,
+                # lists, our own messages) is never processed or answered.
+                auto = mail_guards.automated_reason(msg, cfg.get("address", ""))
+                if auto is not None:
+                    logger.info("gmail_message_automated_skipped", sender=sender, uid=uid, reason=auto)
+                    report["skipped_automated"] += 1
+                    processed_ids.append(message_id)
+                    _mark_seen(client, uid)
+                    continue
+                permitted, why = mail_guards.sender_permitted(
+                    cfg.get("allowed_senders") or set(),
+                    sender,
+                    mail_guards.message_auth_verdict(msg),
+                    bool(cfg.get("require_dmarc", mail_guards.require_dmarc())),
+                )
+                if not permitted:
+                    logger.info("gmail_message_sender_rejected", sender=sender, uid=uid, reason=why)
+                    report["skipped_auth" if why == "dmarc" else "skipped_sender"] += 1
                     processed_ids.append(message_id)
                     _mark_seen(client, uid)
                     continue
