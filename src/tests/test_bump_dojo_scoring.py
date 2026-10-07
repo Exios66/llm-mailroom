@@ -191,3 +191,44 @@ def test_apply_pin_includes_new_published_surfaces(tmp_path, relative_path):
     assert historical.read_text(encoding="utf-8") == before
     assert unchanged.read_text(encoding="utf-8") == "No dependency pins here.\n"
     assert {p.relative_to(tmp_path) for p in tmp_path.rglob("*") if p.is_file()} == original_files
+
+
+@pytest.mark.parametrize("old_tag", ["v0.19.1", "v0.20.0-rc.1", "v0.20.0.rc.1"])
+@pytest.mark.parametrize("tag", ["v0.20.0", "0.20.0-rc.2"])
+@pytest.mark.parametrize(
+    "template",
+    [
+        "@git+https://github.com/Exios66/llm-dojo-scoring.git@{version}",
+        "Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/"
+        "llm-dojo-scoring.git@{version}`",
+        '[![Dojo](https://img.shields.io/badge/dojo-{version}-6f42c1)]'
+        '(https://github.com/Exios66/llm-dojo-scoring/releases/tag/{version})',
+        '<a href="https://github.com/Exios66/llm-dojo-scoring/releases/tag/{version}">'
+        '<img src="https://img.shields.io/badge/dojo-{version}-6f42c1" '
+        'alt="llm-dojo-scoring {version}"></a>',
+    ],
+)
+def test_rewrite_replaces_full_pin_in_urls_badges_and_alt_text(old_tag, tag, template):
+    expected = template.format(version=_normalize_tag(tag))
+    assert _rewrite_text(template.format(version=old_tag), tag) == expected
+    assert _rewrite_text(expected, tag) == expected
+
+
+@pytest.mark.parametrize("relative_path", ["README.md", "docs/README.md", "landing/index.html"])
+def test_apply_pin_keeps_badge_and_release_destination_in_sync(tmp_path, relative_path):
+    path = tmp_path / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    template = (
+        '[![Dojo](https://img.shields.io/badge/dojo-{version}-6f42c1)]'
+        '(https://github.com/Exios66/llm-dojo-scoring/releases/tag/{version})\n'
+        '<a href="https://github.com/Exios66/llm-dojo-scoring/releases/tag/{version}">'
+        '<img src="https://img.shields.io/badge/dojo-{version}-6f42c1" '
+        'alt="llm-dojo-scoring {version}"></a>\n'
+        'https://github.com/Exios66/llm-mailroom/releases/tag/v0.7.1\n'
+        'https://github.com/Other/llm-dojo-scoring/releases/tag/v0.19.1\n'
+    )
+    path.write_text(template.format(version="v0.19.1"), encoding="utf-8")
+    for tag in ("v0.20.0-rc.1", "v0.20.0-rc.2", "v0.20.0"):
+        assert apply_pin(tag, root=tmp_path) == [path]
+        assert path.read_text(encoding="utf-8") == template.format(version=tag)
+        assert apply_pin(tag, root=tmp_path) == []

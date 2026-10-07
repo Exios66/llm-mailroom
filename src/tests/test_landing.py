@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from scripts.bump_dojo_scoring import current_pin
+
 REPO = Path(__file__).resolve().parents[2]
 LANDING = REPO / "landing" / "index.html"
 GITBOOK_HOME = REPO / "docs" / "README.md"
@@ -22,7 +24,7 @@ BADGES = (
     "LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2",
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
-    "dojo-v0.19.1-6f42c1",
+    f"dojo-{current_pin(REPO)}-6f42c1",
     "release-v0.7.1-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",
@@ -38,8 +40,6 @@ def _has_badge(haystack: str, badge: str) -> bool:
 @pytest.mark.parametrize("relative_path", ["README.md", "docs/README.md", "landing/index.html"])
 def test_dojo_badge_links_to_the_pinned_release(relative_path):
     """The badge, release destination, and HTML alt text must agree with the pin."""
-    from scripts.bump_dojo_scoring import current_pin
-
     tag = current_pin(REPO)
     badge = f"https://img.shields.io/badge/dojo-{tag}-6f42c1"
     release = f"https://github.com/Exios66/llm-dojo-scoring/releases/tag/{tag}"

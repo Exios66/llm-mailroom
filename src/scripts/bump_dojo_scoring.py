@@ -42,7 +42,7 @@ PIN_RE = re.compile(
 # about honesty gaps — only rewrite explicit pin markers).
 DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
-        re.compile(r"(@git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+)"),
+        re.compile(r"(@git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"),
         r"\g<1>{tag}",
     ),
     (
@@ -71,7 +71,7 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"\g<1>{tag}",
     ),
     (
-        re.compile(r"(Pin: `llm-dojo-scoring @ git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+)(`)"),
+        re.compile(r"(Pin: `llm-dojo-scoring @ git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(`)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
@@ -84,7 +84,7 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     ),
     (
         # test_dojo_v012 pin assertion: "llm-dojo-scoring.git@v0.18.0"
-        re.compile(r"(llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+)"),
+        re.compile(r"(llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"),
         r"\g<1>{tag}",
     ),
     (
@@ -98,8 +98,16 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"\g<1>{tag}\g<3>",
     ),
     (
-        # shields.io dojo pin badge
-        re.compile(r"(badge/dojo-)(v?\d+\.\d+\.\d+)"),
+        # shields.io dojo pin badge; preserve the trailing color segment
+        re.compile(r"(badge/dojo-)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(?=-)"),
+        r"\g<1>{tag}",
+    ),
+    (
+        # Badge destinations must follow the scoring pin, not other releases.
+        re.compile(
+            r"(https://github\.com/Exios66/llm-dojo-scoring/releases/tag/)"
+            r"(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"
+        ),
         r"\g<1>{tag}",
     ),
 ]
@@ -237,8 +245,8 @@ def _rewrite_text(text: str, tag: str) -> str:
     )
     # landing / README badge alt: llm-dojo-scoring v0.19.1
     out = re.sub(
-        r"(alt=\"llm-dojo-scoring v)\d+\.\d+\.\d+(\")",
-        rf"\g<1>{bare}\g<2>",
+        r"(alt=\"llm-dojo-scoring )(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(\")",
+        rf"\g<1>{tag}\g<3>",
         out,
     )
     out = re.sub(

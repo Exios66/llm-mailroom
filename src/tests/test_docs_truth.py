@@ -11,6 +11,8 @@ from pathlib import Path
 
 import yaml
 
+from scripts.bump_dojo_scoring import current_pin
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Markdown links into OTHER repositories (the constellation guides under
@@ -354,10 +356,10 @@ def test_gitbook_agents_honest_gaps_cite_dojo_0191():
         assert "CMS DE-SynPUF source tables" in text
 
 
-def test_current_dojo_pin_is_v0191_outside_changelog():
-    """Live pin surfaces (not Keep-a-Changelog history) must name v0.19.1."""
+def test_current_dojo_pin_outside_changelog():
+    """Live pin surfaces must follow the maintained dependency pin."""
     pin = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert "llm-dojo-scoring.git@v0.19.1" in pin
+    assert f"llm-dojo-scoring.git@{current_pin(REPO_ROOT)}" in pin
     assert "llm-dojo-scoring.git@v0.18.0" not in pin
 
     stale = (
