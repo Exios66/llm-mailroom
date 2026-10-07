@@ -340,3 +340,13 @@ def test_sorter_catalogs_come_from_dojo_without_replacing_hub_extract_tokens():
     text = format_sorter_subclass_catalogs()
     assert "content_topic" in text
     assert "merger_agreement" in text
+
+
+def test_null_communication_type_with_other_subclass_stays_null():
+    # Review Focus 1: the corrected v1 correspondence prompt emits
+    # communication_type: null when no registered form fits; a sorter
+    # subclass of "other" must not refill it.
+    out = enrich_extraction(
+        {"communication_type": None}, doc_type="correspondence", subtype="other"
+    )
+    assert out.get("communication_type") is None

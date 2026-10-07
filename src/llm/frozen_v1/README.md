@@ -24,3 +24,7 @@ from the classify nodes.
 Entity-extraction lineage keys (`contracts_specialist_v1`…`v33`,
 `sorter_v0`…`v14`) remain in `langchain_agents/prompts.py` as frozen
 history for eval loops. They are not the production specialist pin.
+
+> **Note:** the `*.txt` files in this directory are superseded by the
+> `llm-dojo-scoring` `production_prompts` catalog (see `__init__.py`). They are
+> no longer packaged and are slated for removal.

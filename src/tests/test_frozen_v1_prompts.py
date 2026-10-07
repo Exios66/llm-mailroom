@@ -26,6 +26,22 @@ def test_frozen_v1_sha256_matches_lineage_catalog():
         assert specialist_sha256(agent) == catalog[agent]["sha256"]
         text = load_specialist_v1(agent)
         assert text.startswith(catalog[agent]["opening"])
+        assert len(text) == catalog[agent]["chars"]
+
+
+def test_specialists_are_dojo_production_prompts_verbatim():
+    from llm_dojo_scoring.prompts import get_prompt
+
+    for agent in SPECIALIST_AGENTS:
+        assert load_specialist_v1(agent) == get_prompt(agent, family="production_prompts").text
+
+
+def test_corrected_records_are_served():
+    # 2026-10-05 dojo corrections: communication_type -> null (not "other");
+    # filing_number null unless an official number.
+    assert specialist_sha256("corporate_records_specialist").startswith("fe13501f")
+    assert specialist_sha256("correspondence_specialist").startswith("2b0b81ff")
+    assert specialist_sha256("contracts_specialist").startswith("d91de396")
 
 
 def test_production_templates_are_frozen_v1_specialists_and_sorter_v14():
