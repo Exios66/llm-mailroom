@@ -25,6 +25,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 _configs_ensured: set[str] = set()
+_config_ids: dict[str, str] = {}  # wire score name -> Langfuse score-config id
 _last_warmup_attempt: float = 0.0
 _WARMUP_RETRY_SECONDS = 600.0  # sticky-bounded retry (O-1): at most once per 10 min
 
@@ -167,11 +168,11 @@ try:
             f"registry: {_unregistered}. Register them upstream or remove "
             "them here."
         )
-    # dojo 0.19.1: field_presence is catalogued but score_extraction does not
+    # dojo 0.21.0: field_presence is catalogued but score_extraction does not
     # emit it. A missing key is not 0.0.
     if any(c["name"] == "field_presence" for c in SCORE_CONFIGS):
         raise RuntimeError(
-            "field_presence is an unemitted dojo 0.19.1 honesty gap; do not "
+            "field_presence is an unemitted dojo 0.21.0 honesty gap; do not "
             "add it to SCORE_CONFIGS."
         )
     logger.debug(
@@ -235,6 +236,9 @@ def ensure_score_configs() -> list[str]:
         try:
             page = client.api.score_configs.get(limit=100)
             existing = [c.name for c in (page.data or [])]
+            for c in page.data or []:
+                if getattr(c, "id", None):
+                    _config_ids[c.name] = c.id
         except Exception:
             existing = []
         created = list(existing)
@@ -253,7 +257,9 @@ def ensure_score_configs() -> list[str]:
                 kwargs["categories"] = [
                     ConfigCategory(value=c["value"], label=c["label"]) for c in spec["categories"]
                 ]
-            client.api.score_configs.create(**kwargs)
+            made = client.api.score_configs.create(**kwargs)
+            if getattr(made, "id", None):
+                _config_ids[wire_name] = made.id
             created.append(wire_name)
             logger.info("score_config_created", name=wire_name, data_type=spec["data_type"])
     except Exception:
@@ -317,7 +323,7 @@ def score_trace(
             value=value,
             data_type=data_type,
             comment=comment,
-            config_id=config_id,
+            config_id=config_id or _config_ids.get(langfuse_score_name(name)),
             score_id=score_id,
         )
         logger.debug("score_attached", name=name, value=value)
@@ -348,7 +354,7 @@ def create_trace_score(
             value=value,
             data_type=data_type,
             comment=comment,
-            config_id=config_id,
+            config_id=config_id or _config_ids.get(langfuse_score_name(name)),
             score_id=score_id,
             observation_id=observation_id,
         )

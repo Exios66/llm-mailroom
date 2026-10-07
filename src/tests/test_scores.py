@@ -304,3 +304,62 @@ class TestFirstPassSuccess:
         finally:
             os.environ.pop("OBSERVABILITY_PROVIDER", None)
 
+
+
+class _ScoreClient:
+    def __init__(self):
+        self.calls = []
+
+    def score_current_trace(self, **kw):
+        self.calls.append(("current", kw))
+
+    def create_score(self, **kw):
+        self.calls.append(("create", kw))
+
+
+def test_score_trace_defaults_config_id(monkeypatch):
+    from observability import scores
+
+    client = _ScoreClient()
+    monkeypatch.setattr(scores, "_client", lambda: client)
+    monkeypatch.setattr(scores, "_config_ids", {"class_correct": "cfg-1"})
+    scores.score_trace("class_correct", 1, data_type="BOOLEAN")
+    scores.score_trace("class_correct", 1, config_id="explicit")
+    scores.score_trace("unknown_metric", 1)
+    assert client.calls[0][1]["config_id"] == "cfg-1"
+    assert client.calls[1][1]["config_id"] == "explicit"
+    assert client.calls[2][1]["config_id"] is None
+
+
+def test_create_trace_score_defaults_config_id_via_wire_alias(monkeypatch):
+    from observability import scores
+
+    client = _ScoreClient()
+    monkeypatch.setattr(scores, "_client", lambda: client)
+    monkeypatch.setattr(scores, "_config_ids", {"extraction_verified_precision": "cfg-9"})
+    scores.create_trace_score("t1", "extraction_overall_verified_precision", 0.5)
+    assert client.calls[0][1]["config_id"] == "cfg-9"
+
+
+def test_ensure_score_configs_records_ids(monkeypatch):
+    from types import SimpleNamespace as NS
+    from observability import scores
+
+    created = []
+
+    class Configs:
+        def get(self, limit=100):
+            return NS(data=[NS(name="class_correct", id="cfg-1")])
+
+        def create(self, **kw):
+            created.append(kw["name"])
+            return NS(id="new-" + kw["name"])
+
+    client = NS(api=NS(score_configs=Configs()))
+    monkeypatch.setattr(scores, "_client", lambda: client)
+    monkeypatch.setattr(scores, "_configs_ensured", set())
+    monkeypatch.setattr(scores, "_config_ids", {})
+    scores.ensure_score_configs()
+    assert scores._config_ids["class_correct"] == "cfg-1"
+    assert scores._config_ids["stage_correct"] == "new-stage_correct"
+    assert "class_correct" not in created

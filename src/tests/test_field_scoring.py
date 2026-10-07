@@ -443,3 +443,9 @@ class TestJudgeGating:
                 judge_required=None,
             )
         assert len(calls) == 1
+
+
+def test_taxonomy_scores_controlled_intents_as_label():
+    for doc in ("corporate_record", "correspondence", "insurance_claim"):
+        assert get_field_types(doc)["intent"] == "label"
+    assert get_field_types("merger_agreement")["intent"] == "name"
