@@ -167,11 +167,11 @@ try:
             f"registry: {_unregistered}. Register them upstream or remove "
             "them here."
         )
-    # dojo 0.19.1: field_presence is catalogued but score_extraction does not
+    # dojo 0.21.0: field_presence is catalogued but score_extraction does not
     # emit it. A missing key is not 0.0.
     if any(c["name"] == "field_presence" for c in SCORE_CONFIGS):
         raise RuntimeError(
-            "field_presence is an unemitted dojo 0.19.1 honesty gap; do not "
+            "field_presence is an unemitted dojo 0.21.0 honesty gap; do not "
             "add it to SCORE_CONFIGS."
         )
     logger.debug(
