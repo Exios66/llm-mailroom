@@ -44,7 +44,7 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 ## Data
 
-**Blind config / ground-truth config.** The two halves of `mailroom-dataset`. `default` has the document text and no labels; `ground_truth` has the labels. They join on `filename`. Full breakdown: [Mailroom dataset](../mailroom-dataset/).
+**Blind config / ground-truth config.** The two halves of `mailroom-dataset`. `default` has the document text and no labels; `ground_truth` has the labels. They join on `filename`. Full breakdown: [Mailroom dataset](../mailroom-dataset/mailroom-dataset.md).
 
 **Class / subclass.** The two levels of document type. Five classes (`contract`, `merger_agreement`, `corporate_record`, `correspondence`, `insurance_claim`); each has subclasses such as `all_cash` or `bylaws`.
 
@@ -78,7 +78,7 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 **Card.** A task on a board. Prefixes: `DMR-` (monorepo hub), `HUB-` (earlier hub era), `KANBAN-` (entity-extraction and mailroom shared board), `SAND-` (sandbox).
 
-**Dispatch Board.** The served, issue-backed web view of the monorepo board at <https://digital-mailroom-theta.vercel.app>.
+**Dispatch Board.** The served, issue-backed web view of the monorepo board at [https://digital-mailroom-theta.vercel.app](https://digital-mailroom-theta.vercel.app).
 
 **Monorepo.** Digital-Mailroom: every package as a git subtree in one `uv` workspace.
 
