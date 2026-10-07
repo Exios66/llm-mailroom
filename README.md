@@ -14,6 +14,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
+[![Dojo](https://img.shields.io/badge/dojo-v0.19.1-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.19.1)
 [![Release](https://img.shields.io/badge/release-v0.8.0-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.8.0)
 [![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 [![Contributor](https://img.shields.io/badge/contributor-grantmooslin-blue)](https://github.com/grantmooslin)

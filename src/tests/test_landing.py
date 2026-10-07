@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from scripts.bump_dojo_scoring import current_pin
+
 REPO = Path(__file__).resolve().parents[2]
 LANDING = REPO / "landing" / "index.html"
 GITBOOK_HOME = REPO / "docs" / "README.md"
@@ -24,6 +26,7 @@ BADGES = (
     "LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2",
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
+    f"dojo-{current_pin(REPO)}-6f42c1",
     "release-v0.8.0-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",
@@ -34,6 +37,23 @@ BADGES = (
 def _has_badge(haystack: str, badge: str) -> bool:
     """GitBook Git Sync may decode `%7C` back to `|` in shields.io URLs."""
     return badge in haystack or badge.replace("%7C", "|") in haystack
+
+
+@pytest.mark.parametrize("relative_path", ["README.md", "docs/README.md", "landing/index.html"])
+def test_dojo_badge_links_to_the_pinned_release(relative_path):
+    """The badge, release destination, and HTML alt text must agree with the pin."""
+    tag = current_pin(REPO)
+    badge = f"https://img.shields.io/badge/dojo-{tag}-6f42c1"
+    release = f"https://github.com/Exios66/llm-dojo-scoring/releases/tag/{tag}"
+    text = (REPO / relative_path).read_text(encoding="utf-8")
+    if relative_path.endswith(".html"):
+        assert (
+            f'<a href="{release}"><img src="{badge}" '
+            f'alt="llm-dojo-scoring {tag}"></a>'
+        ) in text
+    else:
+        assert f"[![Dojo]({badge})]({release})" in text
+    assert text.count("https://img.shields.io/badge/dojo-") == 1
 
 
 @pytest.mark.parametrize("path", ["README.md", "docs/README.md", "landing/index.html"])
