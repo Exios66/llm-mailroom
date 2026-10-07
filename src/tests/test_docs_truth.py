@@ -368,6 +368,11 @@ def test_current_dojo_pin_is_v0191_outside_changelog():
         "(dojo 0.14.0)",
         "(dojo 0.18.0)",
         "pinned scoring engine, `v0.18.0`",
+        "pinned at **v0.18.0**",
+        "library (v0.18.0",
+        "In the pinned v0.18.0",
+        "Pending PR #87",
+        "@v0.18.0)",
     )
     skip_parts = {"changelog", ".git"}
     hits: list[str] = []
