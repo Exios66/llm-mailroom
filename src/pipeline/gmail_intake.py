@@ -49,15 +49,20 @@ import collections
 import datetime
 import email
 import email.utils
+import errno
 import imaplib
 import json
 import os
 import re
+import shutil
 import smtplib
+import socket
+import ssl
 import tempfile
 import threading
 import time
 import uuid
+from pathlib import Path
 
 import structlog
 
@@ -72,6 +77,21 @@ DEFAULT_POLL_SECONDS = 60.0
 DEFAULT_MAX_ATTACHMENT_MB = 50
 IMAP_TIMEOUT_SECONDS = 30
 _STATE_KEEP_MESSAGE_IDS = 2000
+_STATE_KEEP_FAILED_ATTEMPTS = 2000
+# A message whose handling keeps raising is quarantined (marked \\Seen, labelled,
+# recorded as processed) after this many failed sweeps instead of being
+# retried forever. Override: MAILROOM_GMAIL_MAX_ATTEMPTS.
+MAX_MESSAGE_ATTEMPTS = 3
+FAILED_LABEL = "mailroom/failed"
+_MAX_FILENAME_CHARS = 120
+_MAX_FILENAME_BYTES = 200
+_ORPHAN_MAX_AGE_SECONDS = 3600
+# Filesystems without hard links / cross-device links: fall back to the copy path.
+_LINK_FALLBACK_ERRNOS = frozenset(
+    getattr(errno, name)
+    for name in ("EXDEV", "EPERM", "ENOTSUP", "EOPNOTSUPP", "EMLINK", "ENOSYS")
+    if hasattr(errno, name)
+)
 # The "check" reaction: an emoji-named Gmail label applied to the source
 # message when the watcher picks the attachment up for processing (HUB-037).
 DEFAULT_REACTION_LABEL = "✅"
@@ -82,7 +102,9 @@ DEFAULT_SMTP_PORT = 465
 # under this matter via the inbox meta sidecar).
 _MATTER_TAG_RE = re.compile(r"\[M:([A-Za-z0-9_.-]{1,64})\]")
 
-_FILENAME_UNSAFE_RE = re.compile(r"[\x00-\x1f/]")
+_FILENAME_UNSAFE_RE = re.compile(r"[\x00-\x1f/\\]")
+_DOT_RUN_RE = re.compile(r"\.{2,}")
+_STAGE_EXT_RE = re.compile(r"\.[a-z0-9]{1,10}")
 
 # Maximum size for the reaction/echo dedup sets to prevent unbounded memory
 # growth in long-running watcher processes.
@@ -385,27 +407,58 @@ def _state_path():
     return get_base_dir() / "gmail_intake_state.json"
 
 
+def _max_attempts() -> int:
+    try:
+        value = int(os.environ.get("MAILROOM_GMAIL_MAX_ATTEMPTS", MAX_MESSAGE_ATTEMPTS))
+    except (TypeError, ValueError):
+        return MAX_MESSAGE_ATTEMPTS
+    return value if value >= 1 else MAX_MESSAGE_ATTEMPTS
+
+
 def _load_state() -> dict:
+    state: dict = {"processed_message_ids": [], "failed_attempts": {}}
     try:
         data = json.loads(_state_path().read_text())
         if isinstance(data, dict):
             ids = data.get("processed_message_ids", [])
-            return {"processed_message_ids": [str(i) for i in ids if i]}
-    except Exception:
+            state["processed_message_ids"] = [str(i) for i in ids if i]
+            failed = data.get("failed_attempts", {})
+            if isinstance(failed, dict):
+                state["failed_attempts"] = {
+                    str(k): int(v)
+                    for k, v in failed.items()
+                    if isinstance(v, int) and not isinstance(v, bool)
+                }
+    except FileNotFoundError:
         pass
-    return {"processed_message_ids": []}
+    except Exception:
+        logger.error("gmail_intake_state_unreadable", path=str(_state_path()), exc_info=True)
+    return state
 
 
 def _save_state(state: dict) -> None:
     try:
         ids = state.get("processed_message_ids", [])[-_STATE_KEEP_MESSAGE_IDS:]
+        failed = dict(list(state.get("failed_attempts", {}).items())[-_STATE_KEEP_FAILED_ATTEMPTS:])
         path = _state_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps({"processed_message_ids": ids, "updated_at": _now_iso()})
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+        payload = json.dumps(
+            {
+                "processed_message_ids": ids,
+                "failed_attempts": failed,
+                "updated_at": _now_iso(),
+            }
         )
-        tmp.replace(path)
+        try:
+            with open(tmp, "w") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
     except Exception:
         logger.exception("gmail_intake_state_write_failed")
 
@@ -417,8 +470,162 @@ def _now_iso() -> str:
 def _safe_filename(name: str | None) -> str | None:
     if not name:
         return None
-    name = _FILENAME_UNSAFE_RE.sub("_", name).strip().strip(".")
+    name = _FILENAME_UNSAFE_RE.sub("_", name)
+    name = _DOT_RUN_RE.sub(".", name).strip(" .")
+    if len(name) > _MAX_FILENAME_CHARS or len(name.encode("utf-8")) > _MAX_FILENAME_BYTES:
+        dot = name.rfind(".")
+        suffix = name[dot:] if 0 < dot and len(name) - dot <= 16 else ""
+        if len(suffix.encode("utf-8")) > 40:
+            suffix = ""
+        stem = name[: len(name) - len(suffix)][: _MAX_FILENAME_CHARS - len(suffix)]
+        budget = _MAX_FILENAME_BYTES - len(suffix.encode("utf-8"))
+        stem = stem.encode("utf-8")[:budget].decode("utf-8", "ignore").rstrip(" .")
+        name = stem + suffix if stem else ""
     return name or None
+
+
+def _staging_dir() -> Path:
+    from .bins import inbox_dir
+
+    inbox = inbox_dir()
+    return inbox.with_name(inbox.name + ".staging")
+
+
+def _stage_path(ext: str) -> Path:
+    """Create an empty same-filesystem staging file and return its path.
+
+    Lives next to the inbox (``<inbox>.staging``) so the move into the inbox
+    is a same-device link/rename, and always ends in ``.part`` so the watcher
+    (which claims only accepted extensions) can never pick it up.
+    """
+    staging = _staging_dir()
+    staging.mkdir(parents=True, exist_ok=True)
+    ext = ext.lower() if _STAGE_EXT_RE.fullmatch(ext.lower() if ext else "") else ""
+    # os.open with 0o666 so the umask governs the mode (NamedTemporaryFile
+    # would force 0o600, unreadable by a watcher running as another user).
+    while True:
+        path = staging / f"gmail-{uuid.uuid4().hex[:12]}{ext}.part"
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666))
+            return path
+        except FileExistsError:
+            continue
+
+
+def _sweep_orphans() -> None:
+    """Best-effort removal of stale ``.part`` files left by hard crashes."""
+    try:
+        from .bins import inbox_dir
+
+        cutoff = time.time() - _ORPHAN_MAX_AGE_SECONDS
+        staging = _staging_dir()
+        candidates = []
+        if staging.is_dir():
+            candidates += list(staging.glob("*.part"))
+        inbox = inbox_dir()
+        if inbox.is_dir():
+            candidates += list(inbox.glob(".*.part"))
+        for path in candidates:
+            try:
+                if path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except Exception:
+        logger.exception("gmail_orphan_sweep_failed")
+
+
+def _link_no_clobber(src: Path, dest_dir: Path, name: str) -> Path:
+    """Hard-link ``src`` into ``dest_dir`` under ``name`` (uniquified), no overwrite."""
+    stem, suffix = os.path.splitext(name)
+    counter = 0
+    while True:
+        dest = dest_dir / (name if counter == 0 else f"{stem}-{counter}{suffix}")
+        try:
+            os.link(src, dest)
+            return dest
+        except FileExistsError:
+            counter += 1
+
+
+def _rename_no_clobber(src: Path, dest_dir: Path, name: str) -> Path:
+    """Promote ``src`` by rename after an existence check (no hard-link support).
+
+    The poller is the sole writer of these inbox names (one ``watcher.lock``
+    drain point), so the small check-then-rename window is accepted.
+    """
+    stem, suffix = os.path.splitext(name)
+    counter = 0
+    while True:
+        dest = dest_dir / (name if counter == 0 else f"{stem}-{counter}{suffix}")
+        if not dest.exists():
+            os.rename(src, dest)
+            return dest
+        counter += 1
+
+
+def _place(src: Path, dest_dir: Path, name: str) -> Path:
+    """Atomically place ``src`` in ``dest_dir`` as ``name`` without clobbering.
+
+    Uniquifies on collision. When ``src`` is on another device (``EXDEV``) it
+    is copied to a dest-side ``.part`` file, fsynced, then promoted with the
+    same no-clobber primitive; the final inbox name is never written directly.
+    ``src`` is removed on success.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        dest = _link_no_clobber(src, dest_dir, name)
+    except OSError as exc:
+        if exc.errno not in _LINK_FALLBACK_ERRNOS:
+            raise
+        part = dest_dir / f".{uuid.uuid4().hex}.part"
+        try:
+            with open(src, "rb") as fin, open(part, "xb") as fout:
+                shutil.copyfileobj(fin, fout)
+                fout.flush()
+                os.fsync(fout.fileno())
+            try:
+                dest = _link_no_clobber(part, dest_dir, name)
+            except OSError as link_exc:
+                if link_exc.errno not in _LINK_FALLBACK_ERRNOS:
+                    raise
+                dest = _rename_no_clobber(part, dest_dir, name)
+        finally:
+            part.unlink(missing_ok=True)
+    src.unlink(missing_ok=True)
+    return dest
+
+
+def _quarantine(
+    client, uid: str, message_key: str, reason: str, errors: list | None = None
+) -> None:
+    """Park a poison message: record processed, mark ``\\Seen``, label it failed.
+
+    Best-effort and never raises.
+    """
+    logger.error("gmail_message_quarantined", uid=uid, message_id=message_key, reason=reason)
+    try:
+        state = _load_state()
+        if message_key not in state["processed_message_ids"]:
+            state["processed_message_ids"].append(message_key)
+        state["failed_attempts"].pop(message_key, None)
+        _save_state(state)
+    except Exception:
+        logger.exception("gmail_quarantine_state_failed", uid=uid)
+    _mark_seen(client, uid)
+    try:
+        wire = b'("' + _to_mutf7(FAILED_LABEL) + b'")'
+        try:
+            client.create(b'"' + _to_mutf7(FAILED_LABEL) + b'"')
+        except Exception:
+            pass
+        typ, _ = client.uid("STORE", uid.encode(), "+X-GM-LABELS", wire)
+        if typ != "OK":
+            raise GmailIntakeError(f"label store returned {typ}")
+    except Exception:
+        logger.exception("gmail_quarantine_label_failed", uid=uid)
+        if errors is not None:
+            errors.append(f"quarantine_label_failed:{uid}")
 
 
 def extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes]]:
@@ -494,18 +701,15 @@ def deliver_attachment(filename: str, content: Path | bytes, meta: dict) -> tupl
         return None, "size"
 
     inbox = inbox_dir()
-    inbox.mkdir(parents=True, exist_ok=True)
-    dest = inbox / safe
-    if dest.exists():
-        stem, suffix = dest.stem, dest.suffix
-        counter = 1
-        while dest.exists():
-            dest = inbox / f"{stem}-{counter}{suffix}"
-            counter += 1
     if isinstance(content, _Path):
-        content.rename(dest)
+        dest = _place(content, inbox, safe)
     else:
-        dest.write_bytes(content)
+        staged = _stage_path(_extension_of(safe))
+        try:
+            staged.write_bytes(content)
+            dest = _place(staged, inbox, safe)
+        finally:
+            staged.unlink(missing_ok=True)
     write_inbox_meta(dest, **{k: v for k, v in meta.items() if not k.startswith("_")})
     return dest.name, None
 
@@ -518,6 +722,30 @@ def _fetch_message(client, uid: str) -> bytes | None:
         if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
             return bytes(item[1])
     return None
+
+
+_TRANSPORT_ERRORS = (
+    imaplib.IMAP4.abort,  # NOT IMAP4.error: a BAD/NO for one message is per-message
+    socket.timeout,
+    socket.gaierror,
+    socket.herror,
+    ConnectionError,
+    ssl.SSLError,
+    EOFError,
+)
+
+
+def _uidvalidity(client) -> str:
+    """UIDVALIDITY of the selected folder ("0" when the server does not say)."""
+    try:
+        _, data = client.response("UIDVALIDITY")
+        raw = data[0] if data else None
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("ascii", errors="ignore")
+        raw = str(raw or "").strip()
+        return raw if raw.isdigit() else "0"
+    except Exception:
+        return "0"
 
 
 def _mark_seen(client, uid: str) -> bool:
@@ -551,6 +779,7 @@ def poll_once(
         "skipped_no_attachments": 0,
         "marked_seen": 0,
         "already_processed": 0,
+        "quarantined": 0,
         "errors": [],
     }
     if not cfg.get("address") or not cfg.get("password"):
@@ -558,8 +787,10 @@ def poll_once(
         _record_status(last_error="missing_credentials", last_poll_at=_now_iso())
         return report
 
+    _sweep_orphans()
     state = _load_state()
     processed_ids: list[str] = state.get("processed_message_ids", [])
+    failed_attempts: dict[str, int] = state.get("failed_attempts", {})
 
     factory = (
         imap_factory
@@ -580,16 +811,44 @@ def poll_once(
         uid_list = (uids[0] or b"").split() if uids else []
         report["messages_seen"] = len(uid_list)
 
+        uidvalidity = _uidvalidity(client)
+        max_attempts = _max_attempts()
+
+        def _record_failure(uid, message_key, known_mid, desc):
+            attempts = failed_attempts.get(message_key, 0) + 1
+            failed_attempts[message_key] = attempts
+            if attempts >= max_attempts:
+                _quarantine(client, uid, message_key, desc, errors=report["errors"])
+                for key in (message_key, known_mid):
+                    if key and key not in processed_ids:
+                        processed_ids.append(key)
+                failed_attempts.pop(message_key, None)
+                report["quarantined"] += 1
+                report["errors"].append(f"quarantined:{uid}:{desc}")
+
         for uid in uid_list:
             uid = uid.decode("ascii", errors="ignore")
+            fallback_key = f"uid:{cfg['folder']}:{uidvalidity}:{uid}"
+            message_key = fallback_key
+            known_mid = None
+            staged: list[Path] = []
             try:
                 raw = _fetch_message(client, uid)
                 if raw is None:
                     report["errors"].append(f"fetch_failed:{uid}")
+                    _record_failure(uid, message_key, None, "fetch_failed")
                     continue
                 msg = email.message_from_bytes(raw)
-                message_id = _message_id(msg) or f"uid:{uid}"
+                known_mid = _message_id(msg)
+                message_id = known_mid or fallback_key
+                message_key = message_id
+                if message_id != fallback_key:
+                    carried = failed_attempts.pop(fallback_key, 0)
+                    if carried:
+                        failed_attempts[message_id] = failed_attempts.get(message_id, 0) + carried
                 if message_id in processed_ids:
+                    failed_attempts.pop(message_id, None)
+                    failed_attempts.pop(fallback_key, None)
                     report["already_processed"] += 1
                     _mark_seen(client, uid)
                     continue
@@ -619,9 +878,11 @@ def poll_once(
                     if len(content) > cfg["max_attachment_bytes"]:
                         report["skipped_size"] += 1
                         continue
-                    # Stream to temp file: avoids holding all attachment bytes
-                    # in memory simultaneously for multi-attachment emails.
-                    tmp = Path(tempfile.mktemp(suffix=_extension_of(filename)))
+                    # Stream to a same-filesystem staging file: avoids holding
+                    # all attachment bytes in memory for multi-attachment
+                    # emails and keeps the move into the inbox atomic.
+                    tmp = _stage_path(_extension_of(filename))
+                    staged.append(tmp)
                     tmp.write_bytes(content)
                     accepted.append((filename, tmp))
                     del content  # free decoded bytes immediately
@@ -637,17 +898,11 @@ def poll_once(
                         "received_at": _received_at(msg),
                         "route": route,
                         "upload_id": uuid.uuid4().hex[:12],
-                        "size": content_path.stat().st_size if isinstance(content_path, Path) else len(content_path),
+                        "size": content_path.stat().st_size,
                         "original_filename": filename,
                         "_max_attachment_bytes": cfg["max_attachment_bytes"],
                     }
                     delivered, reject_reason = deliver_attachment(filename, content_path, meta)
-                    # Clean up the temp file (already moved into inbox on
-                    # success; orphaned on rejection or failure).
-                    try:
-                        content_path.unlink(missing_ok=True)
-                    except Exception:
-                        pass
                     if delivered is None:
                         if reject_reason == "extension":
                             report["skipped_extension"] += 1
@@ -674,11 +929,30 @@ def poll_once(
                         detail="no accepted-extension attachment — message marked seen only",
                     )
                 processed_ids.append(message_id)
+                failed_attempts.pop(message_id, None)
                 if _mark_seen(client, uid):
                     report["marked_seen"] += 1
+            except _TRANSPORT_ERRORS:
+                # Connection-level failure: abort the sweep (outer handler
+                # records it) WITHOUT counting against any message.
+                raise
             except Exception as exc:  # one bad message must not stop the sweep
                 logger.exception("gmail_message_failed", uid=uid)
                 report["errors"].append(f"message_failed:{uid}:{type(exc).__name__}")
+                _record_failure(
+                    uid, message_key, known_mid, f"{type(exc).__name__}: {exc}"
+                )
+            finally:
+                for path in staged:
+                    try:
+                        path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                # Persist after EVERY message so a crash mid-sweep cannot
+                # double-queue the messages already handled.
+                _save_state(
+                    {"processed_message_ids": processed_ids, "failed_attempts": failed_attempts}
+                )
     except Exception as exc:
         logger.exception("gmail_poll_failed")
         report["errors"].append(f"poll_failed:{type(exc).__name__}: {exc}")
@@ -689,7 +963,7 @@ def poll_once(
             except Exception:
                 pass
 
-    _save_state({"processed_message_ids": processed_ids})
+    _save_state({"processed_message_ids": processed_ids, "failed_attempts": failed_attempts})
     _record_status(
         last_poll_at=_now_iso(),
         last_error=report["errors"][0] if report["errors"] else None,
@@ -795,8 +1069,6 @@ if __name__ == "__main__":
 # chain. The ✅ reaction proves pickup; the echo proves the pipeline happened.
 # ---------------------------------------------------------------------------
 
-_ECHO_DONE: _BoundedSet = _BoundedSet()
-_ECHO_LOCK = threading.Lock()
 
 
 def echoes_enabled() -> bool:
@@ -1337,109 +1609,125 @@ def _load_audit_rows(doc_id: str) -> tuple[list[dict], bool | None]:
         return [], None
 
 
-def send_intake_echo(manifest: dict) -> bool:
-    """Reply on the source Gmail thread with the terminal-stage report.
+def _retry_reaction(message_id: str) -> None:
+    """Terminal-stage reaction retry (see send_intake_echo). Never raises."""
+    try:
+        if reactions_enabled():
+            react_to_message(str(message_id))
+    except Exception:
+        logger.warning("gmail_echo_reaction_retry_failed", message_id=str(message_id), exc_info=True)
 
-    Called by the graph at every terminal manifest (archived / review /
-    failed). Best-effort: never raises, retried by a later terminal event of
-    the same document if the send fails. Returns True when sent.
-    """
+
+def _echo_gate(manifest: dict):
+    """(doc_id, stage, message_id, sender, intake) when an echo applies, else None."""
     intake = (manifest or {}).get("intake") or {}
     doc_id = str((manifest or {}).get("doc_id") or "")
     stage = str((manifest or {}).get("stage") or "")
     message_id = intake.get("message_id")
     sender = intake.get("sender")
     if not (intake.get("source") == "gmail" and message_id and sender):
-        return False
+        return None
     if not echoes_enabled():
-        return False
-    # Reaction guarantee (HUB-037): the claim-time ✅ reaction is best-effort
-    # and a failed attempt is only retried on a LATER claim — but a
-    # single-document triage-lane document has exactly ONE claim, so a
-    # claim-time failure would leave the sender without the "picked up"
-    # acknowledgement forever. Retry the reaction now that the document has
-    # reached a terminal stage. Deduped per Message-ID: a reaction that
-    # already succeeded (or is still in flight) is never re-sent, and
-    # MAILROOM_GMAIL_REACTIONS=0 stays respected. Best-effort — a failed
-    # retry must never block the completion echo.
+        return None
+    return doc_id, stage, message_id, sender, intake
+
+
+def _enqueue_echo(manifest: dict) -> str | None:
+    """Build the echo and enqueue it durably. Returns its dedup key (None = no echo)."""
+    from . import mail_outbox
+
+    gate = _echo_gate(manifest)
+    if gate is None:
+        return None
+    doc_id, stage, message_id, sender, intake = gate
+    dedup_key = f"echo:{doc_id}:{stage}"
+    if mail_outbox.row_state(dedup_key) is not None:
+        return dedup_key  # already queued/sent/dead: skip the audit read and build
+    cfg = load_config()
+    audit_rows, chain_valid = _load_audit_rows(doc_id)
+    body = build_echo_body(manifest, audit_rows, chain_valid)
+    html = build_echo_html(manifest, audit_rows, chain_valid)
+    original_subject = str(intake.get("subject") or manifest.get("original_filename") or "mailroom intake")
+    address = str(cfg.get("address") or "")
+    domain = address.rpartition("@")[2].strip() if "@" in address else ""
+    domain = domain or "mailroom.local"
+    mail_outbox.enqueue(
+        dedup_key,
+        to_addr=str(sender),
+        subject=f"Re: {original_subject}",
+        text=body,
+        html=html,
+        headers={
+            "In-Reply-To": str(message_id),
+            "References": str(message_id),
+            "Message-ID": f"<mailroom-echo-{doc_id or uuid.uuid4().hex[:12]}-{stage}@{domain}>",
+        },
+    )
+    return dedup_key
+
+
+def send_intake_echo(manifest: dict) -> bool:
+    """Reply on the source Gmail thread with the terminal-stage report.
+
+    Called at every terminal manifest (archived / review / failed). Enqueues
+    the echo in the durable outbox (idempotent per ``echo:<doc>:<stage>``,
+    across restarts), drains inline, and returns True only when the row is
+    ``sent`` (also when it was already sent earlier). Failed sends are retried
+    by the outbox worker with backoff. Never raises.
+    """
     try:
-        if reactions_enabled():
-            react_to_message(str(message_id))
+        gate = _echo_gate(manifest)
+        if gate is None:
+            return False
+        # Reaction guarantee (HUB-037): the claim-time reaction is best-effort
+        # and a single-document triage-lane document has exactly ONE claim, so
+        # retry it now (deduped per Message-ID; REACTIONS=0 respected).
+        _retry_reaction(str(gate[2]))
+        from . import mail_outbox
+
+        dedup_key = _enqueue_echo(manifest)
+        if dedup_key is None:
+            return False
+        if mail_outbox.row_state(dedup_key) != "sent":
+            mail_outbox.drain_once()
+        return mail_outbox.row_state(dedup_key) == "sent"
     except Exception:
-        logger.warning("gmail_echo_reaction_retry_failed", message_id=str(message_id), exc_info=True)
-    dedup_key = (doc_id, stage)
-    with _ECHO_LOCK:
-        if dedup_key in _ECHO_DONE:
-            return True
-        _ECHO_DONE.add(dedup_key)
+        logger.warning("gmail_echo_failed", exc_info=True)
+        return False
 
-    ok = False
-    client = None
+
+def _dispatch_echo_job(manifest: dict, message_id: str) -> None:
+    """Thread target: build + enqueue the echo, wake the worker, retry the reaction."""
     try:
-        cfg = load_config()
-        audit_rows, chain_valid = _load_audit_rows(doc_id)
-        body = build_echo_body(manifest, audit_rows, chain_valid)
-        html = build_echo_html(manifest, audit_rows, chain_valid)
+        _enqueue_echo(manifest)
+        from . import mail_outbox
 
-        msg = email.message.EmailMessage()
-        msg["From"] = cfg["address"]
-        msg["To"] = str(sender)
-        original_subject = str(intake.get("subject") or manifest.get("original_filename") or "mailroom intake")
-        msg["Subject"] = f"Re: {original_subject}"
-        msg["In-Reply-To"] = str(message_id)
-        msg["References"] = str(message_id)
-        msg["Date"] = email.utils.formatdate(localtime=False)
-        msg["Message-ID"] = f"<mailroom-echo-{doc_id or uuid.uuid4().hex[:12]}-{stage}@mailroom.local>"
-        msg.set_content(body)  # text/plain first (preferred fallback)
-        msg.add_alternative(html, subtype="html")  # clean rendering in Gmail
-
-        factory = _INJECTED_SMTP_FACTORY or (
-            lambda: smtplib.SMTP_SSL(cfg["smtp_host"], cfg["smtp_port"], timeout=IMAP_TIMEOUT_SECONDS)
-        )
-        client = factory()
-        client.login(cfg["address"], cfg["password"])
-        client.sendmail(cfg["address"], [str(sender)], msg.as_bytes())
-        ok = True
-        _record_status(echoes_sent=_STATUS["echoes_sent"] + 1)
-        logger.info(
-            "gmail_echo_sent",
-            doc_id=doc_id,
-            stage=stage,
-            to=sender,
-            message_id=message_id,
-        )
-    except Exception as exc:
-        logger.warning(
-            "gmail_echo_failed",
-            doc_id=doc_id,
-            stage=stage,
-            error=f"{type(exc).__name__}: {exc}",
-        )
-    finally:
-        if client is not None:
-            try:
-                client.quit()
-            except Exception:
-                pass
-    if not ok:
-        # A failed echo must be retried by a later terminal event.
-        with _ECHO_LOCK:
-            _ECHO_DONE.discard(dedup_key)
-    return ok
+        worker = mail_outbox.get_worker()
+        if worker is not None:
+            worker.wake()
+    except Exception:
+        logger.exception("gmail_echo_build_failed", message_id=message_id)
+    if reactions_enabled():
+        _retry_reaction(message_id)
 
 
 def dispatch_intake_echo(manifest) -> None:
-    """Fire the completion echo off the document path (daemon thread, never raises)."""
+    """Queue the completion echo off the document path (never raises).
+
+    Starts one daemon thread (not joined) that builds the echo (audit read,
+    chain verification, HTML), enqueues it durably and wakes the outbox worker,
+    which does the sending. The caller never waits on I/O.
+    """
     try:
         if not isinstance(manifest, dict):
             manifest = manifest.model_dump(mode="json") if hasattr(manifest, "model_dump") else dict(manifest)
-        intake = manifest.get("intake") or {}
-        if intake.get("source") != "gmail" or not echoes_enabled():
+        gate = _echo_gate(manifest)
+        if gate is None:
             return
         threading.Thread(
-            target=send_intake_echo,
-            args=(manifest,),
-            name="gmail-echo",
+            target=_dispatch_echo_job,
+            args=(manifest, str(gate[2])),
+            name="gmail-echo-enqueue",
             daemon=True,
         ).start()
     except Exception:
