@@ -6,7 +6,7 @@
 | :--- | :--- |
 | Repository | [Exios66/llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) |
 | Monorepo path | `packages/llm-dojo-scoring` |
-| Latest | v0.19.1 (llm-mailroom pins v0.18.0; entity-extraction and agent-mailroom pin v0.16.0) |
+| Latest | v0.19.1 as of 2026-10-07 (llm-mailroom pins v0.19.1; entity-extraction and agent-mailroom pin v0.16.0) |
 | Used by | llm-mailroom, llm-entity-extraction, eval-environment, local-mailroom-sandbox, agent-mailroom |
 
 ## What it does
