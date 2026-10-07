@@ -19,12 +19,12 @@ Why vendored: the `sorter_v5` / `contracts_specialist_v11` prompts are eval-vali
 | `sorter_agent.py` | `SorterAgent` — `doc_type` + `contract_subtype` + confidence + reasoning. |
 | `specialist_agents.py` | `ContractsSpecialist` — `ContractExtraction`-shaped dicts. |
 | `classifier.py` | Shared classification utilities (subtype normalization, confidence derivation). |
-| `prompts.py` | Versioned prompts (`sorter_v5`, `contracts_specialist_v11`) — bypass `llm/prompts.py:get_managed_prompt` (no Langfuse prompt linking); generations still auto-traced via the `langfuse.openai` patch. |
+| `prompts.py` | Versioned prompt *history* (`sorter_v0…v14`, `contracts_specialist_v1…v33`) for eval pins. Production aliases: `"sorter"` → `sorter_v14`; specialist names rebound to frozen v1. Mailroom wrappers call `get_managed_prompt`. |
 | `env_utils.py` | Environment variable helpers for vendored agents. |
 | `openrouter_utils.py` | OpenRouter-specific model resolution. |
 | `mock.py` | Mock utilities for testing vendored agents. |
 
-The one behavioral difference from native agents: prompts are hardcoded/versioned here instead of Langfuse-managed (`mailroom-<agent>`). Structured output, tracing, and retry behavior otherwise match the native path — see `agents/README.md` and `docs/agents.md` for the full architecture.
+The one behavioral difference from native agents: eval versions are keyed in `PROMPT_VERSIONS`. Production classify/extract goes through mailroom wrappers + `get_managed_prompt` (`mailroom-<agent>`). Structured output, tracing, and retry behavior otherwise match the native path — see `agents/README.md` and `docs/agents.md` for the full architecture.
 
 ## Adding a New Vendored Agent
 

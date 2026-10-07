@@ -104,10 +104,11 @@ reach this pipeline:
 - Measures how well prompt versions classify legal documents and extract
   entities — every run produces one append-only record in its
   `reports/experiment_log.jsonl`.
-- Its champion prompts are vendored into this repo under
+- Its champion *history* is vendored into this repo under
   `langchain_agents/` (`sorter`, `contracts_specialist`) with the full
-  version lineage (`PROMPT_VERSIONS`) carried along so evaluation can pin
-  exact versions.
+  version lineage (`PROMPT_VERSIONS`) so evaluation can pin exact versions.
+  Production extract specialists pin the sandbox / eval-environment frozen
+  v1 stems (`src/llm/frozen_v1/`); classify stays on `sorter_v14`.
 - **Governance:** one shared kanban board (`board/MESSAGE_BOARD.md` +
   discussion log in that repo) tracks cards for BOTH repos. Cross-repo work
   = one card, one issue, both changelogs. Never create a mailroom-side board.
