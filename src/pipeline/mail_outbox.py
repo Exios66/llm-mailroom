@@ -8,11 +8,18 @@ background by ``OutboxWorker``. A failed send is retried with exponential
 backoff (``min(3600, 30 * 2**attempts)`` seconds) and goes ``dead`` after
 ``MAX_ATTEMPTS``.
 
+Delivery is AT-LEAST-ONCE: a crash between SMTP success and the ``sent``
+mark can resend one echo after the lease expires (same Message-ID, which Gmail
+typically collapses).
+
 Concurrency model: one connection per call (WAL + ``timeout=``), every DB
-access under ``_DB_LOCK``, and a whole-drain ``_DRAIN_LOCK`` so the single
-background worker and an inline drain never pick the same row. Rows are NOT
-marked ``sending``: serialized drains make that unnecessary. SMTP I/O happens
-under the drain lock only, never under the DB lock.
+access under ``_DB_LOCK`` (in-process), and a whole-drain ``_DRAIN_LOCK`` so
+the background worker and an inline drain in one process never overlap.
+Across processes (two drainers on one DB) a row is claimed with a lease:
+``UPDATE ... SET state='sending', lease_until=now+LEASE_SECONDS WHERE
+dedup_key=? AND (state='pending' OR (state='sending' AND lease_until<now))``
+and sent only when rowcount == 1; an expired lease is retried. SMTP I/O never
+happens under the DB lock.
 """
 
 from __future__ import annotations
@@ -34,6 +41,8 @@ logger = structlog.get_logger(__name__)
 
 MAX_ATTEMPTS = 8
 POLL_SECONDS = 30.0
+LEASE_SECONDS = 300.0
+MAX_DRAIN_ROUNDS = 20
 _DB_TIMEOUT = 15.0
 
 _DB_LOCK = threading.RLock()
@@ -52,7 +61,8 @@ CREATE TABLE IF NOT EXISTS outbox (
     next_attempt_at REAL NOT NULL DEFAULT 0,
     last_error TEXT,
     created_at REAL NOT NULL,
-    sent_at REAL
+    sent_at REAL,
+    lease_until REAL
 )
 """
 
@@ -85,6 +95,10 @@ def _db():
             except sqlite3.Error:
                 pass
             conn.execute(_SCHEMA)
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(outbox)")}
+            if "lease_until" not in cols:  # DB created before the lease column existed
+                conn.execute("ALTER TABLE outbox ADD COLUMN lease_until REAL")
+            conn.execute("PRAGMA user_version=2")
             with conn:
                 yield conn
         finally:
@@ -174,8 +188,9 @@ def _drain_locked(result: dict, smtp_factory, now: float, limit: int) -> None:
     with _db() as conn:
         due = conn.execute(
             "SELECT dedup_key, to_addr, subject, headers_json, text, html, attempts FROM outbox"
-            " WHERE state='pending' AND next_attempt_at<=? ORDER BY created_at LIMIT ?",
-            (now, limit),
+            " WHERE (state='pending' AND next_attempt_at<=?)"
+            " OR (state='sending' AND lease_until<?) ORDER BY created_at LIMIT ?",
+            (now, now, limit),
         ).fetchall()
     if not due:
         return
@@ -201,12 +216,25 @@ def _drain_locked(result: dict, smtp_factory, now: float, limit: int) -> None:
 
     try:
         for row in rows:
+            try:
+                if not _claim(row.dedup_key, now):
+                    continue  # another drainer holds a live lease
+            except Exception:
+                logger.exception("mail_outbox_claim_failed", dedup_key=row.dedup_key)
+                result["failed"] += 1
+                continue
             err = conn_error
             if err is None:
                 try:
                     if client is None:  # reconnect after a mid-batch failure
-                        client = factory()
-                        client.login(cfg["address"], cfg["password"])
+                        try:
+                            client = factory()
+                            client.login(cfg["address"], cfg["password"])
+                        except Exception as exc:
+                            conn_error = exc  # do not retry connects for the rest of the batch
+                            _quit(client)
+                            client = None
+                            raise
                     client.sendmail(
                         cfg["address"], [row.to_addr], _build_message(row, cfg["address"]).as_bytes()
                     )
@@ -215,14 +243,26 @@ def _drain_locked(result: dict, smtp_factory, now: float, limit: int) -> None:
                     _quit(client)
                     client = None
             if err is None:
-                _mark_sent(row.dedup_key, now)
+                try:
+                    _mark_sent(row.dedup_key, now)
+                except Exception:
+                    # Mail is out: never abort the batch or resend in this drain.
+                    logger.exception("gmail_echo_sent_unmarked", dedup_key=row.dedup_key)
                 result["sent"] += 1
                 with contextlib.suppress(Exception):
                     gmail_intake._record_status(echoes_sent=gmail_intake._STATUS["echoes_sent"] + 1)
                 logger.info("gmail_echo_sent", dedup_key=row.dedup_key, to=row.to_addr)
             else:
-                dead = _mark_failed(row, now, f"{type(err).__name__}: {err}")
+                try:
+                    dead = _mark_failed(row, now, f"{type(err).__name__}: {err}")
+                except Exception:
+                    logger.exception("mail_outbox_mark_failed_error", dedup_key=row.dedup_key)
+                    dead = False
                 result["dead" if dead else "failed"] += 1
+                if dead:
+                    logger.warning("gmail_echo_dead", dedup_key=row.dedup_key, to=row.to_addr)
+                    with contextlib.suppress(Exception):
+                        gmail_intake._record_status(echoes_dead=gmail_intake._STATUS.get("echoes_dead", 0) + 1)
                 logger.warning(
                     "gmail_echo_failed", dedup_key=row.dedup_key, attempts=row.attempts + 1,
                     dead=dead, error=f"{type(err).__name__}: {err}",
@@ -231,10 +271,20 @@ def _drain_locked(result: dict, smtp_factory, now: float, limit: int) -> None:
         _quit(client)
 
 
+def _claim(key: str, now: float) -> bool:
+    with _db() as conn:
+        cur = conn.execute(
+            "UPDATE outbox SET state='sending', lease_until=? WHERE dedup_key=?"
+            " AND (state='pending' OR (state='sending' AND lease_until<?))",
+            (now + LEASE_SECONDS, key, now),
+        )
+        return cur.rowcount == 1
+
+
 def _mark_sent(key: str, now: float) -> None:
     with _db() as conn:
         conn.execute(
-            "UPDATE outbox SET state='sent', sent_at=?, last_error=NULL WHERE dedup_key=?", (now, key)
+            "UPDATE outbox SET state='sent', sent_at=?, last_error=NULL, lease_until=NULL WHERE dedup_key=?", (now, key)
         )
 
 
@@ -243,7 +293,7 @@ def _mark_failed(row: OutboxRow, now: float, error: str) -> bool:
     dead = attempts >= MAX_ATTEMPTS
     with _db() as conn:
         conn.execute(
-            "UPDATE outbox SET attempts=?, next_attempt_at=?, last_error=?, state=? WHERE dedup_key=?",
+            "UPDATE outbox SET attempts=?, next_attempt_at=?, last_error=?, state=?, lease_until=NULL WHERE dedup_key=?",
             (attempts, now + min(3600, 30 * 2**attempts), error[:500], "dead" if dead else "pending", row.dedup_key),
         )
     return dead
@@ -274,7 +324,10 @@ class OutboxWorker(threading.Thread):
             if self._stop_flag:
                 break
             try:
-                drain_once()
+                for _ in range(MAX_DRAIN_ROUNDS):  # work off a backlog > limit
+                    r = drain_once()
+                    if self._stop_flag or not (r["sent"] or r["dead"]):
+                        break
             except Exception:  # drain_once never raises; belt and braces
                 logger.exception("mail_outbox_worker_error")
 
@@ -290,6 +343,8 @@ def start_outbox_worker() -> OutboxWorker | None:
     """Start the worker (no-op when the echo channel is disabled; never raises)."""
     global _WORKER
     try:
+        if _WORKER is not None and _WORKER.is_alive():
+            return _WORKER
         from .gmail_intake import echoes_enabled
 
         if not echoes_enabled():

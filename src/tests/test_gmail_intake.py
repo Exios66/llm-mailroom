@@ -613,7 +613,11 @@ def test_send_intake_echo_replies_on_source_thread(temp_base_dir, monkeypatch):
 
 
 def test_echo_not_resent_after_restart(temp_base_dir, monkeypatch, mocker):
-    """The outbox row is durable: a fresh process (no in-memory state) never re-sends."""
+    """The outbox row is durable: a fresh module state + new connections never re-send."""
+    import importlib
+
+    from pipeline import mail_outbox
+
     monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
     monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
     monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
@@ -622,12 +626,105 @@ def test_echo_not_resent_after_restart(temp_base_dir, monkeypatch, mocker):
     gmail_intake.set_smtp_factory(lambda: fake)
     try:
         assert gmail_intake.send_intake_echo(_echo_manifest()) is True
-        with gmail_intake._REACTION_LOCK:
-            gmail_intake._REACTION_ATTEMPTED.clear()  # simulate a restart
+        importlib.reload(mail_outbox)  # restart: all module state (locks, worker) is fresh
+        assert mail_outbox.row_state("echo:d-echo-1:archived") == "sent"
         assert gmail_intake.send_intake_echo(_echo_manifest()) is True
         assert len(fake.sent) == 1
     finally:
         gmail_intake.set_smtp_factory(None)
+
+
+def test_send_intake_echo_false_for_dead_row(temp_base_dir, monkeypatch, mocker):
+    import sqlite3
+
+    from pipeline import mail_outbox
+
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    mocker.patch("pipeline.gmail_intake.react_to_message", return_value=True)
+    fake = FakeSMTP()
+    gmail_intake.set_smtp_factory(lambda: fake)
+    try:
+        mail_outbox.enqueue("echo:d-echo-1:archived", to_addr="x@y.z", subject="s", text="t", html=None)
+        c = sqlite3.connect(str(mail_outbox.db_path()))
+        c.execute("UPDATE outbox SET state='dead'")
+        c.commit()
+        c.close()
+        assert gmail_intake.send_intake_echo(_echo_manifest()) is False
+        assert fake.sent == []
+    finally:
+        gmail_intake.set_smtp_factory(None)
+
+
+def test_dispatch_returns_immediately_when_build_blocks(temp_base_dir, monkeypatch):
+    import threading
+
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    monkeypatch.setenv("MAILROOM_GMAIL_REACTIONS", "0")
+    gate, entered = threading.Event(), threading.Event()
+
+    def slow(manifest):
+        entered.set()
+        gate.wait(10)
+
+    monkeypatch.setattr(gmail_intake, "_enqueue_echo", slow)
+    t0 = time.monotonic()
+    gmail_intake.dispatch_intake_echo(_echo_manifest())
+    assert time.monotonic() - t0 < 1.0
+    assert entered.wait(5)
+    gate.set()
+
+
+def test_dispatch_build_failure_is_logged(temp_base_dir, monkeypatch):
+    import threading
+
+    import structlog
+
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    monkeypatch.setenv("MAILROOM_GMAIL_REACTIONS", "0")
+    done = threading.Event()
+
+    def boom(manifest):
+        try:
+            raise RuntimeError("build blew up")
+        finally:
+            done.set()
+
+    monkeypatch.setattr(gmail_intake, "_enqueue_echo", boom)
+    with structlog.testing.capture_logs() as logs:
+        gmail_intake.dispatch_intake_echo(_echo_manifest())
+        assert done.wait(5)
+        for _ in range(100):
+            if any(l.get("event") == "gmail_echo_build_failed" for l in logs):
+                break
+            time.sleep(0.05)
+    assert any(l.get("event") == "gmail_echo_build_failed" for l in logs)
+
+
+def test_dispatch_enqueues_and_wakes_worker(temp_base_dir, monkeypatch, mocker):
+    import threading
+
+    from pipeline import mail_outbox
+
+    monkeypatch.setenv("MAILROOM_GMAIL_ENABLED", "1")
+    monkeypatch.setenv("GMAIL_ADDRESS", "llmmailroom@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "apppassword1234")
+    monkeypatch.setenv("MAILROOM_GMAIL_REACTIONS", "0")
+    woke = threading.Event()
+
+    class W:
+        def wake(self):
+            woke.set()
+
+    monkeypatch.setattr(mail_outbox, "get_worker", lambda: W())
+    gmail_intake.dispatch_intake_echo(_echo_manifest())
+    assert woke.wait(10)
+    assert mail_outbox.row_state("echo:d-echo-1:archived") == "pending"
 
 
 def test_echo_skips_non_gmail_and_disabled_channel(temp_base_dir, monkeypatch):
