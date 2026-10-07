@@ -65,6 +65,7 @@ import tempfile
 import threading
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
@@ -1025,13 +1026,255 @@ def enqueue_ack_email(
 
 
 def _fetch_message(client, uid: str) -> bytes | None:
-    typ, data = client.uid("fetch", uid.encode(), "(RFC822)")
+    """Full message bytes via ``BODY.PEEK[]`` (does NOT set ``\\Seen``).
+
+    ``RFC822`` would mark the message seen at fetch time, so a crash before
+    delivery would silently drop it; the poller marks seen only once handled.
+    """
+    typ, data = client.uid("fetch", uid.encode(), "(BODY.PEEK[])")
     if typ != "OK" or not data:
         return None
     for item in data:
         if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
             return bytes(item[1])
     return None
+
+
+def _fetch_headers(client, uid: str) -> bytes | None:
+    """Header block only via ``BODY.PEEK[HEADER]`` (pre-filtered messages)."""
+    typ, data = client.uid("fetch", uid.encode(), "(BODY.PEEK[HEADER])")
+    if typ != "OK" or not data:
+        return None
+    for item in data:
+        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+            return bytes(item[1])
+    return None
+
+
+# ---------------------------------------------------------------------------
+# BODYSTRUCTURE pre-filter: decide from the MIME structure alone whether any
+# attachment could be accepted, so an oversize-only or wrong-type-only email
+# never downloads its body. Unparseable structure → [] → full-fetch fallback.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PartInfo:
+    name: str | None
+    size: int
+    maintype: str
+    encoding: str = ""
+
+    @property
+    def decoded_size(self) -> int:
+        """Estimated decoded bytes (BODYSTRUCTURE sizes are transfer-encoded)."""
+        if self.encoding.lower() == "base64":
+            return (self.size * 3) // 4
+        return self.size
+
+
+class _BSParseError(ValueError):
+    pass
+
+
+def _bs_tokens(raw: bytes):
+    """Parse an IMAP parenthesized list into nested Python lists.
+
+    Atoms → str (``NIL`` → None), quoted strings → str, literals ``{n}\\r\\n``
+    → str. Returns the first complete top-level list.
+    """
+    i = 0
+    n = len(raw)
+
+    def parse_list():
+        nonlocal i
+        if raw[i : i + 1] != b"(":
+            raise _BSParseError("expected list")
+        i += 1
+        out = []
+        while True:
+            while i < n and raw[i : i + 1] in (b" ", b"\r", b"\n"):
+                i += 1
+            if i >= n:
+                raise _BSParseError("unterminated list")
+            ch = raw[i : i + 1]
+            if ch == b")":
+                i += 1
+                return out
+            if ch == b"(":
+                out.append(parse_list())
+            elif ch == b'"':
+                i += 1
+                buf = bytearray()
+                while i < n and raw[i : i + 1] != b'"':
+                    if raw[i : i + 1] == b"\\" and i + 1 < n:
+                        i += 1
+                    buf += raw[i : i + 1]
+                    i += 1
+                if i >= n:
+                    raise _BSParseError("unterminated string")
+                i += 1
+                out.append(buf.decode("utf-8", "replace"))
+            elif ch == b"{":
+                end = raw.index(b"}", i)
+                length = int(raw[i + 1 : end])
+                i = end + 1
+                while i < n and raw[i : i + 1] in (b"\r", b"\n"):
+                    i += 1
+                out.append(raw[i : i + length].decode("utf-8", "replace"))
+                i += length
+            else:
+                start = i
+                while i < n and raw[i : i + 1] not in (b" ", b"(", b")", b"\r", b"\n"):
+                    i += 1
+                atom = raw[start:i].decode("ascii", "replace")
+                out.append(None if atom.upper() == "NIL" else atom)
+
+    start = raw.find(b"(")
+    if start < 0:
+        raise _BSParseError("no list")
+    i = start
+    return parse_list()
+
+
+def _bs_params(value) -> dict[str, str]:
+    if not isinstance(value, list):
+        return {}
+    out = {}
+    for k, v in zip(value[0::2], value[1::2]):
+        if isinstance(k, str) and isinstance(v, str):
+            out[k.lower()] = v
+    return out
+
+
+def _bs_filename(params: dict[str, str], disposition) -> str | None:
+    disp = {}
+    if isinstance(disposition, list) and len(disposition) >= 2:
+        disp = _bs_params(disposition[1])
+    for source in (disp, params):
+        for key in ("filename", "name"):
+            if source.get(key):
+                return _decode_header_value(source[key])
+        for key in ("filename*", "name*"):
+            if source.get(key):
+                return _decode_rfc2231(source[key])
+    return None
+
+
+def _decode_rfc2231(value: str) -> str:
+    """``charset'lang'percent-encoded`` → text (RFC 2231 extended parameter)."""
+    import urllib.parse
+
+    charset, sep1, rest = value.partition("'")
+    _lang, sep2, encoded = rest.partition("'")
+    if not (sep1 and sep2):
+        return urllib.parse.unquote(value)
+    try:
+        return urllib.parse.unquote(encoded, encoding=charset or "utf-8", errors="replace")
+    except LookupError:
+        return urllib.parse.unquote(encoded)
+
+
+def _decode_header_value(value: str) -> str:
+    if "=?" not in value:
+        return value
+    try:
+        import email.header
+
+        return str(email.header.make_header(email.header.decode_header(value)))
+    except Exception:
+        return value
+
+
+def _bs_walk(node, out: list[PartInfo]) -> None:
+    if not isinstance(node, list) or not node:
+        raise _BSParseError("bad body")
+    if isinstance(node[0], list):  # multipart: (part)(part)... "SUBTYPE" ...
+        for child in node:
+            if isinstance(child, list):
+                _bs_walk(child, out)
+            else:
+                break
+        return
+    if len(node) < 7:
+        raise _BSParseError("short body")
+    maintype = str(node[0] or "").lower()
+    subtype = str(node[1] or "").lower()
+    params = _bs_params(node[2])
+    encoding = str(node[5] or "")
+    try:
+        size = int(node[6] or 0)
+    except (TypeError, ValueError):
+        raise _BSParseError("bad size")
+    if maintype == "message" and subtype == "rfc822" and len(node) > 8:
+        _bs_walk(node[8], out)  # attachments inside a forwarded message
+        return
+    disposition = None
+    for extra in node[7:]:
+        if (
+            isinstance(extra, list)
+            and len(extra) >= 2
+            and isinstance(extra[0], str)
+            and extra[0].lower() in ("attachment", "inline")
+        ):
+            disposition = extra
+            break
+    out.append(PartInfo(name=_bs_filename(params, disposition), size=size, maintype=maintype, encoding=encoding))
+
+
+def parse_bodystructure(raw: bytes) -> list[PartInfo]:
+    """Leaf parts from a FETCH ``BODYSTRUCTURE`` response ([] when unparseable)."""
+    try:
+        if isinstance(raw, str):
+            raw = raw.encode("utf-8")
+        idx = raw.upper().find(b"BODYSTRUCTURE")
+        if idx >= 0:
+            raw = raw[idx + len(b"BODYSTRUCTURE") :]
+        parts: list[PartInfo] = []
+        _bs_walk(_bs_tokens(raw), parts)
+        return parts
+    except Exception:
+        return []
+
+
+def _fetch_structure(client, uid: str) -> list[PartInfo]:
+    """Parsed BODYSTRUCTURE for ``uid`` ([] on any failure → full fetch)."""
+    try:
+        typ, data = client.uid("fetch", uid.encode(), "(BODYSTRUCTURE)")
+        if typ != "OK" or not data:
+            return []
+        buf = bytearray()
+        for item in data:
+            if isinstance(item, tuple):
+                buf += bytes(item[0]) + b"\r\n" + bytes(item[1] or b"")
+            elif isinstance(item, (bytes, bytearray)):
+                buf += bytes(item)
+        return parse_bodystructure(bytes(buf))
+    except _TRANSPORT_ERRORS:
+        raise
+    except Exception:
+        logger.warning("gmail_bodystructure_failed", uid=uid, exc_info=True)
+        return []
+
+
+def _structure_rejects(parts: list[PartInfo], max_bytes: int) -> list[tuple[str, str]] | None:
+    """Rejections when NO named part could be accepted, else None (fetch body)."""
+    from .bins import accepted_extensions
+
+    rejected: list[tuple[str, str]] = []
+    for part in parts:
+        if not part.name:
+            continue
+        safe = _safe_filename(part.name)
+        if safe is None:
+            rejected.append((part.name, "filename"))
+        elif _extension_of(safe) not in accepted_extensions():
+            rejected.append((part.name, "extension"))
+        elif part.decoded_size > max_bytes:
+            rejected.append((part.name, "size"))
+        else:
+            return None  # at least one candidate: download the body
+    return rejected
 
 
 _TRANSPORT_ERRORS = (
@@ -1091,6 +1334,7 @@ def poll_once(
         "skipped_no_attachments": 0,
         "reject_replies": 0,
         "ack_replies": 0,
+        "prefiltered": 0,
         "marked_seen": 0,
         "already_processed": 0,
         "quarantined": 0,
@@ -1147,7 +1391,15 @@ def poll_once(
             known_mid = None
             staged: list[Path] = []
             try:
-                raw = _fetch_message(client, uid)
+                structure_rejects = None
+                parts = _fetch_structure(client, uid)
+                if parts:
+                    structure_rejects = _structure_rejects(parts, cfg["max_attachment_bytes"])
+                if structure_rejects is not None:
+                    # Nothing acceptable by structure: headers only, no body.
+                    raw = _fetch_headers(client, uid)
+                else:
+                    raw = _fetch_message(client, uid)
                 if raw is None:
                     report["errors"].append(f"fetch_failed:{uid}")
                     _record_failure(uid, message_key, None, "fetch_failed")
@@ -1197,9 +1449,13 @@ def poll_once(
                 # and route the message — ONE accepted attachment = single-
                 # document upload (free-triage lane); TWO OR MORE = multi-
                 # document upload (full paid pipeline, triage dropped).
-                accepted, rejected = _screen_attachments(
-                    extract_attachments(msg), cfg["max_attachment_bytes"]
-                )
+                if structure_rejects is not None:
+                    accepted, rejected = [], structure_rejects
+                    report["prefiltered"] += 1
+                else:
+                    accepted, rejected = _screen_attachments(
+                        extract_attachments(msg), cfg["max_attachment_bytes"]
+                    )
                 for _name, reason in rejected:
                     if reason in ("extension", "filename"):
                         report["skipped_extension"] += 1
@@ -1355,23 +1611,122 @@ def poll_once(
     return report
 
 
-class GmailIntakePoller(threading.Thread):
-    """Background poll loop; daemon thread, one sweep per ``poll_seconds``."""
+IDLE_MAX_SECONDS = 300.0
 
-    def __init__(self, poll_seconds: float | None = None):
+
+def idle_enabled() -> bool:
+    """Opt-in IMAP IDLE push (``MAILROOM_GMAIL_IDLE=1``; default off until
+    verified live with ``gmail_smoke_test.py --real``)."""
+    return str(os.environ.get("MAILROOM_GMAIL_IDLE", "0")).strip().lower() in ("1", "true", "yes", "on")
+
+
+def idle_wait(client, timeout_s: float) -> bool:
+    """Block in IMAP IDLE (RFC 2177) for up to ``timeout_s`` (≤ 5 min).
+
+    Returns True when the server pushed new mail (``EXISTS``/``RECENT``),
+    False on timeout. Raw IDLE over imaplib's ``send``/``readline`` (stdlib
+    has no IDLE before 3.14); any protocol surprise raises so the caller
+    falls back to plain polling.
+    """
+    timeout_s = max(1.0, min(float(timeout_s), IDLE_MAX_SECONDS))
+    tag = client._new_tag()
+    client.send(tag + b" IDLE\r\n")
+    line = client.readline()
+    if not line.startswith(b"+"):
+        raise GmailIntakeError(f"IDLE refused: {line[:80]!r}")
+    sock = client.socket()
+    previous = sock.gettimeout()
+    pushed = False
+    deadline = time.monotonic() + timeout_s
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            sock.settimeout(remaining)
+            try:
+                line = client.readline()
+            except (socket.timeout, TimeoutError):
+                break
+            if not line:
+                raise GmailIntakeError("IDLE connection closed")
+            upper = line.upper()
+            if b"EXISTS" in upper or b"RECENT" in upper:
+                pushed = True
+                break
+    finally:
+        sock.settimeout(previous)
+    client.send(b"DONE\r\n")
+    while True:
+        line = client.readline()
+        if not line:
+            raise GmailIntakeError("IDLE connection closed after DONE")
+        if line.startswith(tag):
+            if b" OK" not in line.upper():
+                raise GmailIntakeError(f"IDLE ended badly: {line[:80]!r}")
+            return pushed
+
+
+class GmailIntakePoller(threading.Thread):
+    """Background poll loop; daemon thread, one sweep per ``poll_seconds``.
+
+    With ``MAILROOM_GMAIL_IDLE=1`` the wait between sweeps is an IMAP IDLE on
+    a dedicated connection, so new mail is swept as soon as Gmail pushes it;
+    any IDLE failure drops that connection and falls back to the plain wait.
+    """
+
+    def __init__(self, poll_seconds: float | None = None, use_idle: bool | None = None):
         super().__init__(name="gmail-intake", daemon=True)
         cfg = load_config()
         self.poll_seconds = poll_seconds or cfg["poll_seconds"]
+        self.use_idle = idle_enabled() if use_idle is None else use_idle
         self._stop_event = threading.Event()
+        self._idle_client = None
+
+    def _open_idle_client(self):
+        cfg = load_config()
+        factory = _INJECTED_IMAP_FACTORY or (
+            lambda: imaplib.IMAP4_SSL(cfg["imap_host"], cfg["imap_port"], timeout=IMAP_TIMEOUT_SECONDS)
+        )
+        client = factory()
+        client.login(cfg["address"], cfg["password"])
+        typ, _ = client.select(cfg["folder"], readonly=True)
+        if typ != "OK":
+            raise GmailIntakeError(f"cannot select folder {cfg['folder']!r}")
+        return client
+
+    def _close_idle_client(self) -> None:
+        client, self._idle_client = self._idle_client, None
+        if client is not None:
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+    def _wait_for_mail(self) -> None:
+        if self.use_idle and not self._stop_event.is_set():
+            try:
+                if self._idle_client is None:
+                    self._idle_client = self._open_idle_client()
+                pushed = idle_wait(self._idle_client, self.poll_seconds)
+                logger.debug("gmail_idle_wake", pushed=pushed)
+                return
+            except Exception as exc:
+                logger.warning("gmail_idle_failed", error=f"{type(exc).__name__}: {exc}")
+                self._close_idle_client()
+        self._stop_event.wait(self.poll_seconds)
 
     def run(self) -> None:
         _record_status(running=True, enabled=True)
-        logger.info("gmail_poller_started", poll_seconds=self.poll_seconds)
+        logger.info("gmail_poller_started", poll_seconds=self.poll_seconds, idle=self.use_idle)
         try:
             while not self._stop_event.is_set():
                 poll_once()
-                self._stop_event.wait(self.poll_seconds)
+                if self._stop_event.is_set():
+                    break
+                self._wait_for_mail()
         finally:
+            self._close_idle_client()
             _record_status(running=False)
             logger.info("gmail_poller_stopped")
 

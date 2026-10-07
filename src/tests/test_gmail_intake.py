@@ -52,8 +52,15 @@ def _message(
 class FakeIMAP:
     """Minimal imaplib.IMAP4_SSL stand-in (uid commands only, as used by the poller)."""
 
-    def __init__(self, messages: dict[str, bytes], ignore_store: bool = False):
+    def __init__(
+        self,
+        messages: dict[str, bytes],
+        ignore_store: bool = False,
+        structures: dict[str, bytes] | None = None,
+    ):
         self._messages = messages
+        self._structures = structures or {}
+        self.fetch_specs: list[str] = []
         self._ignore_store = ignore_store
         self.seen: set[str] = set()
         self.labels: dict[str, list[str]] = {}
@@ -99,9 +106,17 @@ class FakeIMAP:
             return ("OK", [unseen.encode()])
         if command == "FETCH":
             uid = self._arg(args[0])
+            spec = self._arg(args[1]).upper() if len(args) > 1 else ""
+            self.fetch_specs.append(spec)
+            if spec == "(BODYSTRUCTURE)":
+                if uid in self._structures:
+                    return ("OK", [self._structures[uid]])
+                return ("OK", [None])  # unsupported → poller falls back to a full fetch
             data = self._messages.get(uid)
             if data is None:
                 return ("OK", [None])
+            if spec == "(BODY.PEEK[HEADER])":
+                data = data.split(b"\n\n", 1)[0] + b"\n\n"
             header = b"1 (UID " + uid.encode() + b" RFC822 {" + str(len(data)).encode() + b"}"
             return ("OK", [(header, data), b")"])
         if command == "STORE":
@@ -1464,3 +1479,198 @@ def test_deliver_attachment_returns_io_on_oserror(temp_base_dir, monkeypatch):
         "a.pdf", b"%PDF", {"_max_attachment_bytes": 1024}
     )
     assert (delivered, reason) == (None, "io")
+
+
+# ── BODYSTRUCTURE pre-filter + PEEK fetch (hardening T6) ──────────────────
+
+
+def _fixture_structure() -> bytes:
+    from pathlib import Path
+
+    return (Path(__file__).parent / "fixtures" / "gmail" / "bodystructure_two_attachments.txt").read_bytes()
+
+
+def test_parse_bodystructure_real_gmail_sample():
+    parts = gmail_intake.parse_bodystructure(_fixture_structure())
+    named = [(p.name, p.size, p.maintype) for p in parts if p.name]
+    assert named == [
+        ("Master Services Agreement.pdf", 2873450, "application"),
+        ("étiquette.png", 70140, "image"),
+    ]
+    assert [p.maintype for p in parts if not p.name] == ["text", "text"]
+    pdf = parts[2]
+    assert pdf.decoded_size == 2873450 * 3 // 4
+
+
+def test_parse_bodystructure_literal_and_rfc2231_and_garbage():
+    raw = (
+        b'(UID 9 BODYSTRUCTURE (("text" "plain" NIL NIL NIL "7bit" 10 1 NIL NIL NIL NIL)'
+        b'("application" "pdf" NIL NIL NIL "base64" 400 NIL ("attachment" ("filename*" '
+        b"\"utf-8''r%C3%A9sum%C3%A9.pdf\")) NIL NIL) \"mixed\" NIL NIL NIL))"
+    )
+    parts = gmail_intake.parse_bodystructure(raw)
+    assert parts[1].name == "résumé.pdf"
+    lit = b'(UID 9 BODYSTRUCTURE ("application" "pdf" ("name" {7}\r\nx y.pdf) NIL NIL "base64" 8 NIL NIL NIL NIL))'
+    assert gmail_intake.parse_bodystructure(lit)[0].name == "x y.pdf"
+    assert gmail_intake.parse_bodystructure(b"garbage (((") == []
+    assert gmail_intake.parse_bodystructure(b"") == []
+
+
+def test_oversize_only_message_never_downloads_body(temp_base_dir):
+    structure = (
+        b'1 (UID 1 BODYSTRUCTURE (("text" "plain" NIL NIL NIL "7bit" 10 1 NIL NIL NIL NIL)'
+        b'("application" "pdf" ("name" "big.pdf") NIL NIL "base64" 99999999 NIL '
+        b'("attachment" ("filename" "big.pdf")) NIL NIL) "mixed" NIL NIL NIL))'
+    )
+    client = FakeIMAP(
+        {"1": _message("Big", attachments={"big.pdf": b"%PDF"}, message_id="<big@x>")},
+        structures={"1": structure},
+    )
+    report = gmail_intake.poll_once(config=_cfg(max_attachment_bytes=1024), imap_factory=lambda: client)
+    assert "(BODY.PEEK[])" not in client.fetch_specs
+    assert "(BODY.PEEK[HEADER])" in client.fetch_specs
+    assert report["prefiltered"] == 1
+    assert report["skipped_size"] == 1
+    assert report["reject_replies"] == 1
+    assert "1" in client.seen
+    (row,) = _outbox_rows()
+    assert row[0] == "reject:<big@x>" and "big.pdf" in row[3]
+
+
+def test_acceptable_structure_downloads_body(temp_base_dir):
+    structure = (
+        b'1 (UID 1 BODYSTRUCTURE ("application" "pdf" ("name" "c.pdf") NIL NIL "base64" 40 NIL '
+        b'("attachment" ("filename" "c.pdf")) NIL NIL))'
+    )
+    client = FakeIMAP(
+        {"1": _message("ok", attachments={"c.pdf": _pdf_bytes()}, message_id="<ok@x>")},
+        structures={"1": structure},
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert "(BODY.PEEK[])" in client.fetch_specs
+    assert report["attachments_queued"] == 1
+
+
+def test_fetch_uses_peek_and_does_not_mark_seen_until_handled(temp_base_dir, monkeypatch):
+    client = FakeIMAP({"1": _message("x", attachments={"c.pdf": _pdf_bytes()}, message_id="<pk@x>")})
+
+    def boom(*a, **kw):
+        raise RuntimeError("deliver failed")
+
+    monkeypatch.setattr(gmail_intake, "deliver_attachment", boom)
+    gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert "(RFC822)" not in client.fetch_specs
+    assert "(BODY.PEEK[])" in client.fetch_specs
+    assert "1" not in client.seen
+
+
+def test_unparseable_structure_falls_back_to_full_fetch(temp_base_dir):
+    client = FakeIMAP(
+        {"1": _message("x", attachments={"c.pdf": _pdf_bytes()}, message_id="<up@x>")},
+        structures={"1": b"1 (UID 1 BODYSTRUCTURE (garbage"},
+    )
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert "(BODY.PEEK[])" in client.fetch_specs
+    assert report["attachments_queued"] == 1
+    assert report["prefiltered"] == 0
+
+
+class _FakeSock:
+    def __init__(self):
+        self.timeout = 30.0
+
+    def gettimeout(self):
+        return self.timeout
+
+    def settimeout(self, value):
+        self.timeout = value
+
+
+class _IdleClient:
+    def __init__(self, lines):
+        self.lines = list(lines)
+        self.sent = []
+        self.sock = _FakeSock()
+
+    def _new_tag(self):
+        return b"A001"
+
+    def send(self, data):
+        self.sent.append(data)
+
+    def readline(self):
+        item = self.lines.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    def socket(self):
+        return self.sock
+
+
+def test_idle_wait_returns_true_on_exists_push():
+    import socket as _socket
+
+    client = _IdleClient([b"+ idling\r\n", b"* 5 EXISTS\r\n", b"A001 OK IDLE terminated\r\n"])
+    assert gmail_intake.idle_wait(client, 60) is True
+    assert client.sent == [b"A001 IDLE\r\n", b"DONE\r\n"]
+    assert client.sock.timeout == 30.0  # restored
+
+    client = _IdleClient([b"+ idling\r\n", _socket.timeout(), b"A001 OK done\r\n"])
+    assert gmail_intake.idle_wait(client, 1) is False
+
+
+def test_idle_wait_raises_when_refused():
+    client = _IdleClient([b"A001 BAD unknown command\r\n"])
+    with pytest.raises(gmail_intake.GmailIntakeError):
+        gmail_intake.idle_wait(client, 5)
+
+
+def test_poller_uses_idle_when_enabled_and_falls_back_on_error(monkeypatch):
+    events = []
+    poller = gmail_intake.GmailIntakePoller(poll_seconds=0.01, use_idle=True)
+    monkeypatch.setattr(poller, "_open_idle_client", lambda: object())
+
+    calls = {"n": 0}
+
+    def fake_idle(client, timeout_s):
+        calls["n"] += 1
+        events.append("idle")
+        if calls["n"] == 2:
+            raise OSError("connection dropped")
+        return True
+
+    def fake_poll(**kw):
+        events.append("poll")
+        if events.count("poll") >= 4:
+            poller.stop()
+        return {}
+
+    real_wait = poller._stop_event.wait
+
+    def spy_wait(timeout=None):
+        events.append("sleep")
+        return real_wait(0)
+
+    monkeypatch.setattr(gmail_intake, "idle_wait", fake_idle)
+    monkeypatch.setattr(gmail_intake, "poll_once", fake_poll)
+    monkeypatch.setattr(poller._stop_event, "wait", spy_wait)
+    poller.run()
+    assert events[:6] == ["poll", "idle", "poll", "idle", "sleep", "poll"]
+    assert poller._idle_client is None  # closed on stop
+
+
+def test_poller_without_idle_sleeps(monkeypatch):
+    poller = gmail_intake.GmailIntakePoller(poll_seconds=0.01, use_idle=False)
+    monkeypatch.setattr(gmail_intake, "idle_wait", lambda *a: pytest.fail("idle used while disabled"))
+    n = {"polls": 0}
+
+    def fake_poll(**kw):
+        n["polls"] += 1
+        if n["polls"] >= 2:
+            poller.stop()
+        return {}
+
+    monkeypatch.setattr(gmail_intake, "poll_once", fake_poll)
+    poller.run()
+    assert n["polls"] == 2
