@@ -10,13 +10,13 @@ Mailroom is a multi-agent legal document processing pipeline built on LangGraph.
 
 ```mermaid
 flowchart TD
-    START([START]) --> INGEST
+    START([START]) --> INTAKE
     START -. "resume: manifest shows extraction done" .-> EXTRACT
 
     INTAKE["intake-document<br/>ingest specialist: claim, transcribe, clean, prepare"]
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
-    REVIEW_CLASS["classify-document (reviewer)<br/>SorterReviewAgent second opinion<br/>(KANBAN-062 Lane A)"]
+    REVIEW_CLASS["classify-document (reviewer)<br/>SorterReviewerAgent second opinion<br/>(KANBAN-062 Lane A)"]
     EXTRACT["extract-fields<br/>specialist dispatch"]
     RETRY_EXTRACT["extract-fields (retry)<br/>specialist re-extraction"]
     JUDGE["judge-verify<br/>gated completeness verification<br/>(KANBAN-063 Lane B)"]
@@ -26,21 +26,21 @@ flowchart TD
     REPORT["compile-report<br/>(procedural)"]
     CATALOG["write-catalog<br/>SQLite documents + matters"]
     ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
-    RELATIONS["relations scan<br/>post-archive association clerk"]
+    RELATIONS["relations scan<br/>daemon thread, off the graph"]
     FAILED["FAILED"]
     ENDX([END])
 
-    INGEST --> CLASSIFY
+    INTAKE --> CLASSIFY
 
     CLASSIFY -- "confidence >= high" --> EXTRACT
     CLASSIFY -- "GT class miss (even at 0.99)" --> REVIEW_CLASS
-    CLASSIFY -- "low <= confidence < high" --> REVIEW
-    CLASSIFY -- "confidence < low, attempts <= retry_max" --> RETRY_CLASS
+    CLASSIFY -- "confidence < high, attempts <= retry_max" --> RETRY_CLASS
     CLASSIFY -- "unknown type / still low after retries" --> REVIEW
     CLASSIFY -. "transient error, per-node budget left" .-> CLASSIFY
     RETRY_CLASS -- "confidence >= high" --> EXTRACT
-    RETRY_CLASS -- "medium band exhausted (agent review)" --> REVIEW_CLASS
-    RETRY_CLASS -- "medium or still low confidence" --> REVIEW
+    RETRY_CLASS -- "low <= confidence < high, or GT class miss (agent review)" --> REVIEW_CLASS
+    RETRY_CLASS -- "unknown type / still below low" --> REVIEW
+    RETRY_CLASS -. "transient error, per-node budget left" .-> RETRY_CLASS
     REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
     REVIEW_CLASS -- "reviewer still wrong vs GT / anything else" --> REVIEW
 
@@ -50,8 +50,12 @@ flowchart TD
     EXTRACT -- "judge gate fires (ambiguous band)" --> JUDGE
     EXTRACT -- "still low confidence" --> REVIEW
     EXTRACT -. "transient error, per-node budget left" .-> EXTRACT
-    RETRY_EXTRACT -- "confidence >= low" --> REPORT
-    RETRY_EXTRACT -- "still low confidence" --> REVIEW
+    RETRY_EXTRACT -- "confidence >= low, judge gate off/skip" --> REPORT
+    RETRY_EXTRACT -- "conflict detected" --> BOSS
+    RETRY_EXTRACT -- "judge gate fires (ambiguous band)" --> JUDGE
+    RETRY_EXTRACT -- "still failing, attempts <= retry_max" --> RETRY_EXTRACT
+    RETRY_EXTRACT -- "retry budget spent" --> REVIEW
+    RETRY_EXTRACT -. "transient error, per-node budget left" .-> RETRY_EXTRACT
 
     JUDGE -- "complete or skipped" --> REPORT
     JUDGE -- "partial / incomplete" --> ARBITER
@@ -60,14 +64,15 @@ flowchart TD
     ARBITER -- "unresolvable" --> REVIEW
     BOSS -- "approved" --> REPORT
     BOSS -- "review" --> REVIEW
-    REVIEW -- "approved" --> REPORT
+    REVIEW -- "approved (fresh extraction)" --> EXTRACT
     REVIEW -- "rejected" --> FAILED --> ENDX
 
-    REPORT -- "ok" --> CATALOG --> ARCHIVE --> RELATIONS --> ENDX
+    REPORT -- "ok" --> CATALOG --> ARCHIVE --> ENDX
     REPORT -- "compile failed" --> REVIEW
+    ARCHIVE -. "dispatch (also from review park and aborts)" .-> RELATIONS
 
-    GMAIL([Gmail triage<br/>free model swarm]) -.->|single-doc emails| CLASSIFY
-    GMAIL -.->|multi-doc or over-budget| INGEST
+    GMAIL([Gmail triage lane<br/>free model swarm, outside the graph]) -.->|"single-doc emails: archives or parks for review itself"| TRIAGE_END([archive / review bin])
+    GMAIL -.->|multi-doc or capability handoff| START
 ```
 
 ### Hierarchical organization
@@ -89,15 +94,15 @@ flowchart LR
         INTAKE["IntakeAgent<br/>(ingest specialist)"]
         GMAIL_AGENT["GmailTriageAgent<br/>(free model swarm)"]
         SORTER["SorterAgent"]
-        SPEC["4 specialists + merger via contracts<br/>corporate, correspondence,<br/>insurance"]
+        SPEC["5 specialists<br/>contracts, merger agreement, corporate,<br/>correspondence, insurance"]
         BOSS["BossAgent"]
         REPORTER["compile_report<br/>(procedural)"]
         PDF["PDFTranscriber / ImageExtractor<br/>(procedural)"]
-        JUDGE["JudgeAgent<br/>(offline evaluators)"]
+        JUDGE["CompletenessJudge<br/>(judge_verify in-graph + offline evaluators)"]
     end
 
     subgraph POST["Post-archive"]
-        RELATIONS["Relations Clerk<br/>(association scanning)"]
+        RELATIONS["Relations Clerk<br/>(daemon-thread association scan)"]
     end
 
     subgraph LLM["LLM layer (llm/)"]
@@ -119,7 +124,7 @@ flowchart LR
     end
 
     INBOX --> NODES
-    GMAIL_INBOX -.->|free lane| NODES
+    GMAIL_INBOX -.->|multi-doc or handoff| NODES
     NODES --> SORTER & SPEC & BOSS & REPORTER & PDF
     SORTER & SPEC & BOSS & REPORTER --> CLI
     CLI --> RETRY --> PROMPTS --> P
@@ -143,7 +148,7 @@ flowchart LR
 
 * One graph execution per document
 * **13 nodes** forming a directed state machine: `intake` (ingest specialist), `classify`, `retry_classify`, `review_classify` (agent second opinion on exhausted medium-band classifications — KANBAN-062 Lane A), `extract`, `retry_extract`, `judge_verify` + `arbiter` (gated completeness verification + arbitration — KANBAN-063 Lane B), `human_review`, `boss_escalation`, `compile_report`, `catalog_write`, `archive`
-* Two auxiliary flows operate **outside** the graph: the Gmail triage lane (free model swarm for single-document emails) and the relations clerk (post-archive association scanning)
+* Two auxiliary flows operate **outside** the graph: the Gmail triage lane (free model swarm for single-document emails, run by `pipeline/watcher.py:_run_triage_lane`, which archives or parks for review itself and never enters `classify`) and the relations clerk (association scanning, dispatched on a daemon thread from `archive`, `human_review`, `_finalize_aborted` and the triage lane). The full chart, with every edge, is in [Pipeline flowchart](../the-pipeline-in-depth/flowchart.md)
 * MemorySaver by default, held on a **process-level compiled graph** so `interrupt()` HITL can `Command(resume=...)` in the same process (the API embeds the watcher). The filesystem review bin remains the durable park across process restart; `resume_from_review` falls back to a fresh extract invoke when the checkpoint is gone. Opt into on-disk `SqliteSaver` (`data/checkpoints.db`) via `MAILROOM_CHECKPOINTER=sqlite`.
 
 ### LLM Client (`llm/client.py`, `llm/providers.py`, `llm/retry.py`, `llm/prompts.py`)
@@ -197,7 +202,8 @@ Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `
 
 * **Unknown / retired / empty `doc_type`**: human review immediately (never extract)
 * **Confidence >= `high` (0.97 global; per-class `by_class` overrides — e.g. contract/merger/insurance 0.98, correspondence 0.95)** on a live class: straight to extraction
-* **`low` (0.88 global) <= Confidence < `high`**: one `retry_classify`, then Lane A (`review_classify`) if still medium
+* **Ground-truth class miss** (pilot runs with labels): Lane A (`review_classify`) even at high stated confidence
+* **`low` (0.88 global) <= Confidence < `high`**: `retry_classify` (while `attempts <= retry_max`), then Lane A (`review_classify`) if still medium
 * **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`, then human review
 * **Lane A reviewer** may also emit `unknown`; `after_review_classify` only extracts a live taxonomy class at high confidence
 
@@ -211,13 +217,14 @@ Same three-way branch as classification, plus:
 
 * **Unsupported / non-taxonomy type**: human review, no retry
 * **Conflict with existing matter data**: route to Boss escalation
-* **Schema invalid**: retry once, then human review
+* **Schema invalid**: retry (`retry_extract`) while `attempts <= retry_max` (2), then human review
 * **Low confidence**: retry → still low → human review
-* **High confidence**: proceed to report compilation
+* **High confidence**: proceed to report compilation (via `judge_verify` when the judge gate fires)
+* `retry_extract` uses the same router: it can loop on itself (transient errors or another quality retry), or go to `judge_verify`, `boss_escalation`, `compile_report` or human review
 
 ### 6. Compile Report (Reporter)
 
-LLM call: compiles all extracted data into a clean matter-record summary.
+Procedural (no LLM call; the reporter LLM is retired): `compile_matter_record` assembles the extracted data into a structured matter record. A failed assembly routes to human review.
 
 ### 7. Catalog Write
 
@@ -244,23 +251,25 @@ Writes document and matter records to the database (best-effort — pipeline con
 | `arbiter`         | Arbiter                                                     | Adjudicate partial/incomplete judge verdicts (KANBAN-063)                                                        |
 | `human_review`    | —                                                           | Pause for human decision                                                                                         |
 | `boss_escalation` | Boss (in-graph)                                             | Adjudicate conflicts                                                                                             |
-| `compile_report`  | Reporter                                                    | Synthesize matter-record entry                                                                                   |
+| `compile_report`  | Reporter (procedural)                                       | Assemble matter-record entry                                                                                     |
 | `catalog_write`   | —                                                           | Write to database catalog                                                                                        |
 | `archive`         | Archivist                                                   | Move to archive, write audit log                                                                                 |
 
 ## Conditional Edges
 
 ```
-classify ─┬─ unknown / retired type ──▶ human_review
+classify ─┬─ transient (budget left) ─▶ classify
+          ├─ unknown / retired type ──▶ human_review
+          ├─ GT class miss ───────────▶ review_classify
           ├─ confidence >= high ──────▶ extract
-          ├─ low <= conf < high ─────▶ retry_classify
+          ├─ low <= conf < high ─────▶ retry_classify (attempts <= retry_max)
           ├─ attempts <= retry_max ──▶ retry_classify
           └─ otherwise ──────────────▶ human_review
 
 retry_classify ─┬─ transient (budget left) ───────▶ retry_classify
                 ├─ unknown / retired type ────────▶ human_review
                 ├─ confidence >= high ────────────▶ extract
-                ├─ medium band exhausted (Lane A) ─▶ review_classify
+                ├─ GT class miss / medium (Lane A) ─▶ review_classify
                 └─ still low ─────────────────────▶ human_review
 
 review_classify ─┬─ high-confidence live class ─▶ extract
@@ -272,6 +281,9 @@ extract ─┬─ unsupported / non-taxonomy type ─▶ human_review (no retry)
          ├─ judge gate fires (ambiguous band) ─▶ judge_verify
          ├─ attempts <= retry_max ─────────────▶ retry_extract
          └─ otherwise ─────────────────────────▶ human_review
+
+retry_extract ─┬─ transient (budget left) ──▶ retry_extract
+               └─ otherwise: same branches as extract (incl. another retry_extract)
 
 judge_verify ─┬─ complete or skipped ────▶ compile_report
               ├─ partial / incomplete ───▶ arbiter
@@ -309,13 +321,13 @@ Every state transition writes an `AuditLogEntry` to the database. Each entry:
 
 ### Deterministic field scoring (issues #4/#5)
 
-Before any LLM judge runs, grounded extractions are scored deterministically by `observability/field_scoring.py` — a field-type-aware scorer that is cheap, reproducible, and costs no API calls. Each field is compared according to its type (`doc_classes[].field_types` in `taxonomy.yaml`): `id`/`date`/`money` are parsed and normalized then exact-matched (a one-day-off date scores 0, not 0.95); `name` uses Jaro-Winkler + token-set ratio over normalized text (uppercase, punctuation/suffix-stripped); `free_text` uses SQuAD-style token F1; `entity_list` fields use optimal bipartite matching (scipy Hungarian) with precision/recall/F1, so reordered lists score correctly. An optional sentence-transformers embedding cosine similarity rescues lexically-distant-but-semantically-equal name/free-text fields below `embedding_rescue_below`.
+Before any LLM judge runs, grounded extractions are scored deterministically by the `field_scoring` module of the pinned [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) library (v0.18.0, wired in through `observability/suite_scoring.py` and `observability/langfuse_field_scoring.py`) — a field-type-aware scorer that is cheap, reproducible, and costs no API calls. Each field is compared according to its type (`doc_classes[].field_types` in `taxonomy.yaml`): `id`/`money` are parsed and normalized then exact-matched (money within one cent); `date` gives partial credit (same date 1.0, same year and month or within 45 days 0.67, same year or month only 0.33, so a one-day-off date scores 0.67); `name` uses Jaro-Winkler + token-set ratio over normalized text (uppercase, punctuation/suffix-stripped); `free_text` uses SQuAD-style token F1; `entity_list` fields use optimal bipartite matching (scipy Hungarian) with precision/recall/F1, so reordered lists score correctly. An optional sentence-transformers embedding cosine similarity rescues lexically-distant-but-semantically-equal name/free-text fields below `embedding_rescue_below`.
 
-Judge escalation is gated by **per-field-type bands** (`field_scoring.type_bands`), calibrated by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are `never` (decisive both ways), money/free\_text have calibrated numeric cutoffs, and name/entity-list trust only perfect scores (`[0.5, 1.0]`) — near-misses escalate to the LLM judge because Jaro-Winkler/token-set are typo-tolerant by design. `observability/langfuse_field_scoring.py` attaches `extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, `entity_list_recall`, and — when CUAD presence ground truth is available on the run — `extraction_category_presence` to the document trace. Presence expectations are derived from Hub `cuad_clause_labels` or flattened `expected_fields.cuad_clauses`; the score is omitted (not emitted as 0.0) when there is no CUAD presence GT. On grounded runs `graph/build_graph.py` suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both LLM-as-judge evaluator calls.
+`taxonomy.yaml` defines **per-field-type bands** (`field_scoring.type_bands`), calibrated by `scripts/calibrate_field_scoring.py` against labeled ground truth: date/id are `never` (decisive both ways), money/free\_text have calibrated numeric cutoffs, and name/entity-list trust only perfect scores (`[0.5, 1.0]`). In the pinned v0.18.0, however, `score_extraction` flags fields with the global `ambiguous_band` only; the type bands are read only by the library's `field_is_ambiguous`, which the pipeline does not call. Full rules: [Scoring and performance](../the-pipeline-in-depth/scoring-and-metrics.md). `observability/langfuse_field_scoring.py` attaches `extraction_field_score`, `extraction_overall_score`, `extraction_needs_judge_review`, `entity_list_precision`, `entity_list_recall`, and — when CUAD presence ground truth is available on the run — `extraction_category_presence` to the document trace. Presence expectations are derived from Hub `cuad_clause_labels` or flattened `expected_fields.cuad_clauses`; the score is omitted (not emitted as 0.0) when there is no CUAD presence GT. On grounded runs `graph/build_graph.py` suppresses the `pipeline-result` generation entirely when the verdict is unambiguous — saving both LLM-as-judge evaluator calls.
 
 ### LLM-as-judge
 
-The `judge` agent (`agents/judge.py`, offline — not in the document graph) audits pipeline output against the task specification. `scripts/run_quality_judges.py` runs it over a pilot report and attaches scores to each sample's trace:
+The `judge` agent (`agents/judge.py`) audits pipeline output against the task specification. `scripts/run_quality_judges.py` runs it offline over a pilot report and attaches scores to each sample's trace. Its `CompletenessJudge` also runs in the document graph as the `judge_verify` node (Lane B, see above). The offline judges are:
 
 | Judge            | Measures                                                                                     | Scores                                                   |
 | ---------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------- |

@@ -28,5 +28,7 @@ def test_score_exact_does_not_use_dojo_align_alias():
         ["merger_agreement", "contract"],
         ["contract", "contract"],
     )
-    assert aliased["aligned_accuracy"] == 1.0
+    # dojo <0.19 aliased MAUD ≡ CUAD here (aligned 1.0); 0.19 retired the
+    # alias, so dojo's aligned score now agrees with mailroom's exact match.
+    assert aliased["aligned_accuracy"] == 0.5
     assert aliased["exact_accuracy"] == 0.5

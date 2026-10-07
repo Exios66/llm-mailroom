@@ -227,10 +227,11 @@ class TestDeployContracts:
         assert "v1.104.0-stable" not in image
 
     def test_compose_documents_the_litellm_image_pin(self):
-        readme = (REPO / "deploy" / "README.md").read_text(encoding="utf-8")
+        # docs/ is the single source of truth; deploy/README.md is a file index.
+        guide = (REPO / "docs" / "docker-deployment.md").read_text(encoding="utf-8")
         example = (REPO / ".env.example").read_text(encoding="utf-8")
-        assert "ghcr.io/berriai/litellm:v1.104.0" in readme
-        assert "Do not use `main-stable`" in readme
+        assert "ghcr.io/berriai/litellm:v1.104.0" in guide
+        assert "Do **not** use `main-stable`" in guide
         assert "LITELLM_IMAGE=ghcr.io/berriai/litellm:v1.104.0" in example
         assert "do not use main-stable" in example
 
