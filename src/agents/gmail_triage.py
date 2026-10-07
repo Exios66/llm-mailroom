@@ -426,11 +426,15 @@ class GmailTriageAgent(BaseAgent):
         )
 
         # Result cache (llm/result_cache.py): an identical document under the
-        # same model + prompt reuses the validated read with no LLM call.
+        # same model + full request (system prompt with json note and skills,
+        # user message with schema and boilerplate) reuses the validated read.
         from llm import result_cache
 
         system_text = self.system_prompt()
-        cache_key = result_cache.cache_key(str(getattr(self, "model", "") or ""), system_text, user)
+        sent_system, sent_user = self._structured_messages(user, TRIAGE_SCHEMA, system_text)
+        cache_key = result_cache.cache_key(
+            str(getattr(self, "model", "") or ""), self.system_prompt_with_skills(sent_system), sent_user
+        )
         cached = result_cache.get(cache_key)
         if cached is not None:
             logger.info("triage_cache_hit", agent=self.agent_name, filename=filename)

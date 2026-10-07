@@ -22,6 +22,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 TTL_SECONDS = 30 * 24 * 3600
+SWEEP_LIMIT = 100  # expired rows removed per write
 _LOCK = threading.Lock()
 
 
@@ -87,6 +88,12 @@ def put(key: str, value: dict, now: float | None = None) -> None:
         with _LOCK, _db() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO results (key, value, created_at) VALUES (?,?,?)", (key, payload, now)
+            )
+            # Bounded sweep so entries that are never read again still expire.
+            conn.execute(
+                "DELETE FROM results WHERE rowid IN"
+                " (SELECT rowid FROM results WHERE created_at < ? LIMIT ?)",
+                (now - TTL_SECONDS, SWEEP_LIMIT),
             )
     except Exception:
         logger.warning("llm_result_cache_write_failed", exc_info=True)

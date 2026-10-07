@@ -57,6 +57,7 @@ import imaplib
 import json
 import os
 import re
+import select
 import shutil
 import smtplib
 import socket
@@ -543,7 +544,12 @@ def _sweep_orphans() -> None:
 
 
 def _write_sidecar(dest: Path, meta: dict) -> Path:
-    """Write ``<dest>.meta`` atomically (temp + replace), fsynced."""
+    """Create ``<dest>.meta`` atomically and exclusively, fsynced.
+
+    Raises ``FileExistsError`` when a sidecar already exists: the watcher reads
+    the sidecar AFTER claiming its file, so replacing one could hand another
+    document's intake metadata (matter, sender, route) to a pending claim.
+    """
     from .bins import inbox_meta_path
 
     side = inbox_meta_path(dest)
@@ -553,7 +559,15 @@ def _write_sidecar(dest: Path, meta: dict) -> Path:
             fh.write(json.dumps(meta, default=str))
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, side)
+        try:
+            os.link(tmp, side)  # fails if the sidecar exists
+        except FileExistsError:
+            raise
+        except OSError:
+            # No hard-link support: check-then-rename (sole-writer names).
+            if os.path.lexists(side):
+                raise FileExistsError(str(side)) from None
+            os.rename(tmp, side)
     finally:
         tmp.unlink(missing_ok=True)
     return side
@@ -565,9 +579,12 @@ def _publish_no_clobber(publish, dest_dir: Path, name: str, meta: dict | None) -
     ``publish`` raises ``FileExistsError`` when the name is taken. When
     ``meta`` is given the ``<dest>.meta`` sidecar is written BEFORE the file
     appears, so the watcher can never claim a Gmail file without its intake
-    metadata. A name whose file exists is skipped up front; a stale sidecar
-    (the watcher leaves sidecars behind after a claim) is simply replaced.
+    metadata. A name whose file OR sidecar exists is treated as taken: an
+    existing sidecar may still belong to a claim in flight, so it is never
+    overwritten.
     """
+    from .bins import inbox_meta_path
+
     stem, suffix = os.path.splitext(name)
     counter = 0
     while True:
@@ -575,7 +592,12 @@ def _publish_no_clobber(publish, dest_dir: Path, name: str, meta: dict | None) -
         counter += 1
         if os.path.lexists(dest):
             continue
-        side = _write_sidecar(dest, meta) if meta is not None else None
+        if meta is not None and os.path.lexists(inbox_meta_path(dest)):
+            continue
+        try:
+            side = _write_sidecar(dest, meta) if meta is not None else None
+        except FileExistsError:
+            continue
         try:
             publish(dest)
             return dest
@@ -798,6 +820,26 @@ def _register_group(message_id: str, expected: int, sender: str, subject: str) -
         mail_outbox.register_group(message_id, expected=expected, sender=sender, subject=subject)
     except Exception:
         logger.exception("gmail_group_register_failed", message_id=message_id)
+
+
+def _close_group_if_complete(message_id: str) -> str | None:
+    """Close the group and queue its full digest when every result is in."""
+    try:
+        from . import mail_outbox
+
+        info = mail_outbox.group_info(message_id)
+        if info is None or info.get("closed_at") is not None:
+            return None
+        expected = int(info.get("expected") or 0)
+        have = len(mail_outbox.group_results(message_id))
+        if expected and have >= expected and mail_outbox.close_group(message_id):
+            key = _enqueue_digest(message_id, incomplete=False)
+            if key:
+                _wake_outbox()
+            return key
+    except Exception:
+        logger.exception("gmail_group_recheck_failed", message_id=message_id)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1069,7 +1111,8 @@ class PartInfo:
     def decoded_size(self) -> int:
         """Estimated decoded bytes (BODYSTRUCTURE sizes are transfer-encoded)."""
         if self.encoding.lower() == "base64":
-            return (self.size * 3) // 4
+            # 76-char lines + CRLF: 57 decoded bytes per 78 encoded bytes.
+            return (self.size * 57) // 78
         return self.size
 
 
@@ -1566,6 +1609,9 @@ def poll_once(
                         report["ack_replies"] += 1
                     if len(staged_items) > 1 and queued != len(staged_items):
                         _register_group(message_id, queued, sender, subject)
+                        # Results may already have arrived for the queued
+                        # files while ``expected`` was still the staged count.
+                        _close_group_if_complete(message_id)
                 processed_ids.append(message_id)
                 failed_attempts.pop(message_id, None)
                 if _mark_seen(client, uid):
@@ -1636,28 +1682,29 @@ def idle_wait(client, timeout_s: float) -> bool:
     line = client.readline()
     if not line.startswith(b"+"):
         raise GmailIntakeError(f"IDLE refused: {line[:80]!r}")
+    # Wait with select() rather than a socket timeout: a timeout raised inside
+    # imaplib's buffered makefile reader leaves it unusable, so DONE could not
+    # be read back. A line already buffered behind a keepalive at worst waits
+    # out this IDLE window; the next sweep still picks the mail up.
     sock = client.socket()
-    previous = sock.gettimeout()
     pushed = False
     deadline = time.monotonic() + timeout_s
-    try:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        pending = getattr(sock, "pending", None)
+        if not (callable(pending) and pending() > 0):
+            readable, _, _ = select.select([sock], [], [], remaining)
+            if not readable:
                 break
-            sock.settimeout(remaining)
-            try:
-                line = client.readline()
-            except (socket.timeout, TimeoutError):
-                break
-            if not line:
-                raise GmailIntakeError("IDLE connection closed")
-            upper = line.upper()
-            if b"EXISTS" in upper or b"RECENT" in upper:
-                pushed = True
-                break
-    finally:
-        sock.settimeout(previous)
+        line = client.readline()
+        if not line:
+            raise GmailIntakeError("IDLE connection closed")
+        upper = line.upper()
+        if b"EXISTS" in upper or b"RECENT" in upper:
+            pushed = True
+            break
     client.send(b"DONE\r\n")
     while True:
         line = client.readline()

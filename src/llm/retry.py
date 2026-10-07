@@ -261,8 +261,9 @@ def retry_chat_completion(
             # Server-side fallback: OpenRouter tries `models` in order and
             # only routes to providers supporting every request parameter,
             # so the client-side rotation below is not needed.
+            # `model` stays the primary; `models` carries only the fallbacks.
             extra = dict(kwargs.get("extra_body") or {})
-            extra["models"] = chain
+            extra["models"] = chain[1:]
             provider = dict(extra.get("provider") or {})
             provider["require_parameters"] = True
             extra["provider"] = provider
@@ -288,6 +289,15 @@ def retry_chat_completion(
                 isinstance(exc, RateLimitError) or _status_code(exc) == 429
             ):
                 breaker.note_rate_limit(_retry_after_seconds(exc))
+                if breaker.is_open():
+                    # Raised even on the final attempt, so callers always see
+                    # the breaker (and degrade) rather than a bare 429.
+                    from .quota import FreeQuotaExhausted
+
+                    logger.warning(
+                        "llm_free_quota_open", model=kwargs.get("model"), open_until=breaker.open_until
+                    )
+                    raise FreeQuotaExhausted(breaker.open_until) from exc
             # A model-capability 400 is not "retryable" in place, but it IS a
             # failover trigger — the next swarm entry may support the feature.
             # With no failover model left, retrying the same model is futile.

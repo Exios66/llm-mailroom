@@ -90,7 +90,8 @@ def test_openrouter_free_call_sends_models_array(monkeypatch, no_sleep):
         client, model="a:free", messages=[], extra_body={"reasoning": {"effort": "low"}}
     )
     body = client.kwargs[0]["extra_body"]
-    assert body["models"] == ["a:free", "b:free"]
+    assert client.kwargs[0]["model"] == "a:free"
+    assert body["models"] == ["b:free"]  # fallbacks only, never the primary
     assert body["provider"]["require_parameters"] is True
     assert body["reasoning"] == {"effort": "low"}
 
@@ -148,3 +149,14 @@ def test_free_success_closes_breaker_count(monkeypatch, no_sleep):
     retry.retry_chat_completion(client, model="a:free", messages=[], max_attempts=5)
     assert quota.get_breaker().is_open() is False
     assert quota.get_breaker()._consecutive == 0
+
+
+def test_breaker_opening_on_final_attempt_raises_quota_exhausted(monkeypatch, no_sleep):
+    import llm.retry as retry
+
+    monkeypatch.setattr(retry, "_free_swarm", lambda: [])
+    client = _Client(fail=5)
+    with pytest.raises(FreeQuotaExhausted) as info:
+        retry.retry_chat_completion(client, model="a:free", messages=[], max_attempts=3)
+    assert len(client.kwargs) == 3  # the third 429 opened it on the last attempt
+    assert info.value.__cause__ is not None

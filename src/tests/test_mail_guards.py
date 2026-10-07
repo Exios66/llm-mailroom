@@ -42,6 +42,19 @@ def test_parse_reads_all_methods_and_folded_header():
     assert mail_guards.parse_authentication_results([]).dmarc is None
 
 
+def test_method_only_recognised_at_segment_start():
+    # A property value that looks like a method result must not win over the
+    # real dmarc result later in the header.
+    v = mail_guards.parse_authentication_results(
+        ["mx.google.com; spf=pass smtp.mailfrom=dmarc=pass@evil.example; dmarc=fail header.from=evil.example"]
+    )
+    assert (v.spf, v.dmarc) == ("pass", "fail")
+    v = mail_guards.parse_authentication_results(
+        ['mx.google.com; spf=pass (comment; dmarc=pass) smtp.mailfrom="x;dmarc=pass"; dmarc=fail']
+    )
+    assert v.dmarc == "fail"
+
+
 def test_allowlist_requires_dmarc_pass():
     allowed = {"a@firm.example"}
     fail = mail_guards.AuthVerdict(dmarc="fail")

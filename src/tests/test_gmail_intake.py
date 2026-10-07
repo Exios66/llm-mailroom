@@ -1449,7 +1449,8 @@ def test_sidecar_written_before_file_is_visible(temp_base_dir, monkeypatch):
     real_link = gmail_intake.os.link
 
     def spy_link(src, dest):
-        seen_meta.append(inbox_meta_path(gmail_intake.Path(dest)).exists())
+        if not str(dest).endswith(".meta"):  # the sidecar itself is linked too
+            seen_meta.append(inbox_meta_path(gmail_intake.Path(dest)).exists())
         return real_link(src, dest)
 
     monkeypatch.setattr(gmail_intake.os, "link", spy_link)
@@ -1459,15 +1460,17 @@ def test_sidecar_written_before_file_is_visible(temp_base_dir, monkeypatch):
     assert seen_meta == [True]
 
 
-def test_stale_sidecar_does_not_force_renaming(temp_base_dir):
-    """The watcher leaves `<file>.meta` behind after a claim; the name stays usable."""
+def test_existing_sidecar_is_never_overwritten(temp_base_dir):
+    """An existing `<file>.meta` may belong to a claim in flight: take a new name."""
     from pipeline.bins import inbox_dir, read_inbox_meta
 
     inbox_dir().mkdir(parents=True, exist_ok=True)
     (inbox_dir() / "scan.pdf.meta").write_text('{"matter_id": "OLD"}')
     client = FakeIMAP({"1": _message("[M:NEW]", attachments={"scan.pdf": _pdf_bytes()}, message_id="<st-1@x>")})
     gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
-    assert read_inbox_meta(inbox_dir() / "scan.pdf")["matter_id"] == "NEW"
+    assert read_inbox_meta(inbox_dir() / "scan.pdf")["matter_id"] == "OLD"
+    assert not (inbox_dir() / "scan.pdf").exists()
+    assert read_inbox_meta(inbox_dir() / "scan-1.pdf")["matter_id"] == "NEW"
 
 
 def test_deliver_attachment_returns_io_on_oserror(temp_base_dir, monkeypatch):
@@ -1490,7 +1493,7 @@ def _fixture_structure() -> bytes:
     return (Path(__file__).parent / "fixtures" / "gmail" / "bodystructure_two_attachments.txt").read_bytes()
 
 
-def test_parse_bodystructure_real_gmail_sample():
+def test_parse_bodystructure_gmail_format_sample():
     parts = gmail_intake.parse_bodystructure(_fixture_structure())
     named = [(p.name, p.size, p.maintype) for p in parts if p.name]
     assert named == [
@@ -1499,7 +1502,7 @@ def test_parse_bodystructure_real_gmail_sample():
     ]
     assert [p.maintype for p in parts if not p.name] == ["text", "text"]
     pdf = parts[2]
-    assert pdf.decoded_size == 2873450 * 3 // 4
+    assert pdf.decoded_size == 2873450 * 57 // 78
 
 
 def test_parse_bodystructure_literal_and_rfc2231_and_garbage():
@@ -1608,16 +1611,27 @@ class _IdleClient:
         return self.sock
 
 
-def test_idle_wait_returns_true_on_exists_push():
-    import socket as _socket
+def test_idle_wait_returns_true_on_exists_push(monkeypatch):
+    selects = []
 
+    def fake_select(r, w, x, timeout):
+        selects.append(timeout)
+        return (r, [], [])
+
+    monkeypatch.setattr(gmail_intake.select, "select", fake_select)
     client = _IdleClient([b"+ idling\r\n", b"* 5 EXISTS\r\n", b"A001 OK IDLE terminated\r\n"])
     assert gmail_intake.idle_wait(client, 60) is True
     assert client.sent == [b"A001 IDLE\r\n", b"DONE\r\n"]
-    assert client.sock.timeout == 30.0  # restored
+    assert len(selects) == 1 and 0 < selects[0] <= 60
+    assert client.sock.timeout == 30.0  # the socket timeout is never touched
 
-    client = _IdleClient([b"+ idling\r\n", _socket.timeout(), b"A001 OK done\r\n"])
+
+def test_idle_wait_timeout_uses_select_and_still_reads_done(monkeypatch):
+    monkeypatch.setattr(gmail_intake.select, "select", lambda r, w, x, t: ([], [], []))
+    client = _IdleClient([b"+ idling\r\n", b"A001 OK done\r\n"])
     assert gmail_intake.idle_wait(client, 1) is False
+    assert client.sent == [b"A001 IDLE\r\n", b"DONE\r\n"]
+    assert client.lines == []  # tagged OK consumed through the same reader
 
 
 def test_idle_wait_raises_when_refused():
@@ -1789,6 +1803,21 @@ def test_duplicate_terminal_manifest_is_idempotent(echo_env):
     gmail_intake._enqueue_echo(_bundle_manifest("d2", group_size=2))
     assert _keys().count("digest:<bundle@x>") == 1
     assert [k for k in _keys() if k.startswith("echo:")] == []
+
+
+def test_lowered_group_expected_closes_when_results_already_in(echo_env):
+    """A promote failure lowers `expected` after the queued files finished."""
+    from pipeline import mail_outbox
+
+    mail_outbox.register_group("<bundle@x>", expected=3, sender="sender@example.com", subject="Bundle")
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d1")) is None
+    assert gmail_intake._enqueue_echo(_bundle_manifest("d2")) is None
+    gmail_intake._register_group("<bundle@x>", 2, "sender@example.com", "Bundle")
+    assert gmail_intake._close_group_if_complete("<bundle@x>") == "digest:<bundle@x>"
+    assert mail_outbox.group_info("<bundle@x>")["closed_at"] is not None
+    assert gmail_intake._close_group_if_complete("<bundle@x>") is None  # once only
+    assert _keys().count("digest:<bundle@x>") == 1
+    assert "INCOMPLETE" not in [r for r in _outbox_rows() if r[0].startswith("digest:")][0][3]
 
 
 def test_unknown_group_falls_back_to_per_document_echo(echo_env):
