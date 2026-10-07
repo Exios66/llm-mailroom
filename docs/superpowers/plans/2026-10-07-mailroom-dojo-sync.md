@@ -506,7 +506,7 @@ needs). Task numbering continues; Task 12 keeps its slot. Repos per task header.
 
 - GitBook docs now live in `Exios66/mailroom-documentation`. Mailroom keeps only: `AGENTS.md`, `README.md`, `CHANGELOG.md`, the flat operator pages under `docs/` (agents, architecture, api, configuration, deployment, docker-deployment, modal-vllm, local-models, testing, gmail-intake, operational-procedure, sister-repos), `docs/wiki/**`, `docs/superpowers/plans/**`, `docs/reports/**`, `landing/**`, `.cursor/skills/**`, `.opencode/skills/**`. Redefining `docs/` as no longer the source of truth is a **human decision**, out of scope here.
 - Never hand-edit prompt text; dojo `production_prompts` stays the prompt authority (Global Constraints above still bind).
-- Langfuse work implements from **fresh docs** (`curl -s https://langfuse.com/llms.txt`, pages via `.md` suffix); SDK floor `langfuse>=4.6,<5`.
+- Langfuse work implements from **fresh docs** (`curl -s https://langfuse.com/llms.txt`, pages via `.md` suffix); SDK floor `langfuse>=4.9,<5` (`mask_otel_spans` first ships in 4.9.0).
 - Every new Langfuse score name must exist in the dojo registry (KANBAN-061 import-time check in `observability/scores.py`).
 - Outward-facing steps (push to another repo, tag, release, emem writes) are human gates, as in Task 7 Step 6.
 - emem is **never** on the pipeline path and never decides a score; checkpoints are verified data (signature + pinned hashes) before use.
@@ -567,7 +567,7 @@ Invoke the project `langfuse` skill and fetch current docs before each task. Tas
 
 ### Task 17: SDK floor, triage trace tagging, daemon-thread flush [llm-mailroom]
 
-**Files:** `pyproject.toml` (`langfuse>=4.6,<5`), `src/pipeline/watcher.py` (the two duplicated triage-trace blocks near L1035 and L1264), `src/observability/langfuse_setup.py`, `AGENTS.md` (drop the claim that `on_dropped` detects drops on v4).
+**Files:** `pyproject.toml` (`langfuse>=4.9,<5`), `src/pipeline/watcher.py` (the two duplicated triage-trace blocks near L1035 and L1264), `src/observability/langfuse_setup.py`, `AGENTS.md` (drop the claim that `on_dropped` detects drops on v4).
 
 **Interfaces:** Produces `_triage_trace_kwargs(claimed: Path, intake_meta: dict) -> dict` in `pipeline/watcher.py` returning `tags=["mailroom", <env>, "source-gmail", "route-triage"]`, `environment=default_environment()`, curated `input` (filename, size — never raw text), used by both sites.
 
@@ -579,7 +579,7 @@ Invoke the project `langfuse` skill and fetch current docs before each task. Tas
 
 **Files:** `src/observability/langfuse_setup.py` (`client_kwargs()`), new `src/observability/masking.py`, `src/tests/test_trace_masking.py`.
 
-**Interfaces:** Produces `mask_otel_spans(span) -> span` (signature per the fetched masking docs) redacting email addresses everywhere and dropping `gen_ai.prompt.*` / completion bodies on generations **only when** `MAILROOM_TRACE_REDACT=1`; `intake_meta` reaches trace metadata through an allowlist (`source`, `route`, `message_id_hash`).
+**Interfaces:** Produces `mask_otel_spans(*, params: MaskOtelSpansParams) -> MaskOtelSpansResult | None` (the SDK passes a keyword-only batch and expects span patches, or None, not a mutated span) redacting email addresses everywhere and dropping `gen_ai.prompt.*` / completion bodies on generations **only when** `MAILROOM_TRACE_REDACT=1`; `intake_meta` reaches trace metadata through an allowlist (`source`, `route`, `message_id_hash`).
 
 - [ ] **Step 1: Failing tests:** `test_emails_redacted_in_generation_input`, `test_pipeline_result_judge_input_untouched` (Review Focus 2), `test_intake_meta_allowlist_drops_sender`. **Step 2:** FAIL. **Step 3:** Implement. **Step 4:** PASS + full suite. **Step 5:** commit `feat(tracing): redact PII from exported spans`.
 
@@ -611,7 +611,7 @@ Depends on Task 24's registry names for the triage score; do the intent half now
 
 **Files:** create `.github/workflows/langfuse-experiment.yml`, `docs/superpowers/baselines/experiment-baseline.json` (committed approved baseline).
 
-- [ ] **Step 1:** Workflow on `pull_request` runs Task 21's script with `--mock` against the baseline using `langfuse/experiment-action` (needs SDK ≥ 4.6, Task 17). **Step 2:** Verify with `actionlint` if available, else a dry local run → exit 0 on baseline, exit 1 after a hand-degraded copy. **Step 3: HUMAN GATE** — repository secrets (`LANGFUSE_*`) are the human's to add. **Step 4:** commit `ci: gate PRs on Langfuse experiment regression`.
+- [ ] **Step 1:** Workflow on `pull_request` runs Task 21's script with `--mock` against the baseline using `langfuse/experiment-action` (needs SDK ≥ 4.6; the repo floor is 4.9 via Task 17). The script keeps its local CLI and exposes `experiment(context: RunnerContext)` as the action entry point (`experiments/mailroom_gate.py`). Fork PRs get no repository secrets: keep a secret-free hermetic `--mock` gate job and run the credentialed action only when secrets exist. **Step 2:** Verify with `actionlint` if available, else a dry local run → exit 0 on baseline, exit 1 after a hand-degraded copy. **Step 3: HUMAN GATE** — repository secrets (`LANGFUSE_*`) are the human's to add. **Step 4:** commit `ci: gate PRs on Langfuse experiment regression`.
 
 ## Phase 7 — dojo expansion for mailroom's needs (repo: `llm-dojo-scoring` unless noted)
 
