@@ -3,6 +3,8 @@
 import json
 import os
 
+import pytest
+
 from scripts.run_hf_pilot import (
     ALIGN,
     DATASET_ID,
@@ -14,6 +16,28 @@ from scripts.run_hf_pilot import (
     _inbox_filename,
     _safe_filename,
 )
+
+
+@pytest.mark.parametrize("include_honesty", [False, True], ids=["default-metadata", "saved-metadata"])
+def test_metrics_markdown_uses_current_dojo_honesty_heading(mocker, include_honesty):
+    from scripts.run_hf_pilot import render_metrics_markdown
+
+    honesty = {"insurance_claim": {"honest_gap": "CMS GT is homogeneous."}}
+    load_honesty = mocker.patch("scripts.run_hf_pilot.hf_corpus_honesty", return_value=honesty)
+    report = {"samples": []}
+    if include_honesty:
+        report["honesty"] = honesty
+
+    markdown = render_metrics_markdown(report)
+
+    assert [line for line in markdown.splitlines() if line.startswith("## Corpus honesty")] == [
+        "## Corpus honesty (dojo 0.19.1)"
+    ]
+    assert "CMS GT is homogeneous." in markdown
+    if include_honesty:
+        load_honesty.assert_not_called()
+    else:
+        load_honesty.assert_called_once_with()
 
 
 def test_pipeline_class_keeps_merger_agreement_distinct():

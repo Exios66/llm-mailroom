@@ -17,7 +17,7 @@ Examples::
 
     PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check
     PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply
-    PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.14.0
+    PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.19.1
     PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --dry-run
 """
 
@@ -42,7 +42,7 @@ PIN_RE = re.compile(
 # about honesty gaps — only rewrite explicit pin markers).
 DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
-        re.compile(r"(@git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+)"),
+        re.compile(r"(@git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"),
         r"\g<1>{tag}",
     ),
     (
@@ -71,7 +71,7 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"\g<1>{tag}",
     ),
     (
-        re.compile(r"(Pin: `llm-dojo-scoring @ git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+)(`)"),
+        re.compile(r"(Pin: `llm-dojo-scoring @ git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(`)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
@@ -82,17 +82,58 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"(description: llm-dojo-scoring pin and mailroom scoring suites \()(v?\d+\.\d+\.\d+)(\))"),
         r"\g<1>{tag}\g<3>",
     ),
+    (
+        # test_dojo_v012 pin assertion: "llm-dojo-scoring.git@v0.18.0"
+        re.compile(r"(llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"),
+        r"\g<1>{tag}",
+    ),
+    (
+        # GitBook Overview / repo guide: "llm-mailroom pins v0.18.0"
+        re.compile(r"(llm-mailroom pins )(v?\d+\.\d+\.\d+)"),
+        r"\g<1>{tag}",
+    ),
+    (
+        # architecture dependency table mailroom row only
+        re.compile(r"(git pin `@)(v?\d+\.\d+\.\d+)(`, auto-bumped)"),
+        r"\g<1>{tag}\g<3>",
+    ),
+    (
+        # shields.io dojo pin badge; preserve the trailing color segment
+        re.compile(r"(badge/dojo-)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(?=-)"),
+        r"\g<1>{tag}",
+    ),
+    (
+        # Badge destinations must follow the scoring pin, not other releases.
+        re.compile(
+            r"(https://github\.com/Exios66/llm-dojo-scoring/releases/tag/)"
+            r"(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"
+        ),
+        r"\g<1>{tag}",
+    ),
 ]
 
 PIN_FILES = (
     "pyproject.toml",
     "README.md",
+    "docs/README.md",
     "docs/sister-repos.md",
     "docs/wiki/Home.md",
+    "docs/start-here/overview.md",
+    "docs/how-it-fits-together/architecture.md",
+    "docs/repository-guides/repos/llm-dojo-scoring.md",
+    "docs/pipeline-reference-llm-mailroom/sister-repos.md",
+    "docs/constellation/overview.md",
+    "docs/constellation/architecture.md",
+    "docs/constellation/repos/llm-dojo-scoring.md",
     "src/observability/README.md",
     ".cursor/skills/dojo-scoring/SKILL.md",
     ".cursor/skills/mailroom-tool-router/SKILL.md",
     "src/tests/test_dojo_v012.py",
+    "docs/the-pipeline-in-depth/scoring-and-metrics.md",
+    "docs/the-pipeline-in-depth/running.md",
+    "docs/pipeline-reference-llm-mailroom/architecture.md",
+    "docs/architecture.md",
+    "landing/index.html",
 )
 
 
@@ -159,6 +200,12 @@ def release_exists(tag: str, repo: str = DOJO_REPO) -> bool:
 
 
 def _rewrite_text(text: str, tag: str) -> str:
+    """Return text with recognized dojo pins, badges, and test references updated.
+
+    Strip surrounding whitespace from ``tag`` and add a missing ``v`` prefix;
+    raise ValueError if it is empty or does not match the accepted version format.
+    Text without recognized patterns is returned unchanged. No files are written.
+    """
     tag = _normalize_tag(tag)
     bare = _bare(tag)
     out = PIN_RE.sub(rf"\g<1>{tag}", text)
@@ -193,6 +240,12 @@ def _rewrite_text(text: str, tag: str) -> str:
     # wiki Home: (the pinned scoring engine, `@v0.12.1`)
     out = re.sub(
         r"(the pinned scoring engine, `)(@?v?\d+\.\d+\.\d+)(`)",
+        rf"\g<1>{tag}\g<3>",
+        out,
+    )
+    # landing / README badge alt: llm-dojo-scoring v0.19.1
+    out = re.sub(
+        r"(alt=\"llm-dojo-scoring )(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(\")",
         rf"\g<1>{tag}\g<3>",
         out,
     )

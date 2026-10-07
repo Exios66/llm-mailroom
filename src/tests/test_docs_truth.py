@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from scripts.bump_dojo_scoring import current_pin
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Markdown links into OTHER repositories (the constellation guides under
@@ -347,6 +349,99 @@ def test_gitbook_changelog_space_mirrors_repo_changelog():
     assert "tag: feature" in tags
     assert "tag: improvement" in tags
     assert "tag: fix" in tags
+
+
+def test_gitbook_site_structure_imports_and_publishes_changelog():
+    """A site ``gitbook-docs.yaml`` whose structure carries a literal
+    ``undefined`` path fails GitBook's site import. The published site then
+    silently keeps the previous structure and the Changelog space never
+    appears (``…/changelog`` 404s). Pin the shipped structure so that
+    regression cannot return."""
+    site_cfg = yaml.safe_load((_DOCS / "gitbook-docs.yaml").read_text(encoding="utf-8"))
+
+    def _nodes(items):
+        for node in items:
+            yield node
+            yield from _nodes(node.get("children") or [])
+
+    nodes = list(_nodes(site_cfg["site"]["structure"]))
+
+    # No node may carry an undefined/null path (the GitBook-editor regression).
+    undefined = [
+        node.get("key")
+        for node in nodes
+        if node.get("path") is None or node.get("path") == "undefined"
+    ]
+    assert not undefined, f"site nodes with an undefined path: {undefined}"
+
+    # Keys are unique across the whole file (GitBook's identity contract).
+    keys = [node.get("key") for node in nodes]
+    assert len(keys) == len(set(keys)), f"duplicate site keys: {keys}"
+
+    # The docs home is mounted at the site root.
+    home = next(node for node in nodes if node.get("key") == "mailroom-docs")
+    assert home["path"] == "/"
+    assert home["content"]["directory"] == "./"
+
+    # The Changelog space is published (present, mapped, not a draft).
+    changelog = next(node for node in nodes if node.get("key") == "space-1")
+    assert changelog["title"] == "Changelog"
+    assert changelog["path"] == "changelog"
+    assert changelog["content"]["directory"] == "./changelog"
+    assert changelog.get("draft") not in (True, "true")
+
+
+def test_gitbook_agents_honest_gaps_cite_dojo_0191():
+    """GitBook Agents page must name the current scoring-dojo release, not a
+    frozen 0.14.0 snapshot. Canonical docs/agents.md stays in lockstep."""
+    published = (
+        _DOCS / "pipeline-reference-llm-mailroom" / "agents.md"
+    ).read_text(encoding="utf-8")
+    canonical = (_DOCS / "agents.md").read_text(encoding="utf-8")
+    for text in (published, canonical):
+        assert text.count("**Honest gap (dojo 0.19.1):**") == 2
+        assert "Honest gap (dojo 0.14.0)" not in text
+        assert "CMS DE-SynPUF source tables" in text
+
+
+def test_current_dojo_pin_outside_changelog():
+    """Live pin surfaces must follow the maintained dependency pin."""
+    pin = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert f"llm-dojo-scoring.git@{current_pin(REPO_ROOT)}" in pin
+    assert "llm-dojo-scoring.git@v0.18.0" not in pin
+
+    stale = (
+        "pins v0.18.0",
+        "pinned `@v0.18.0`",
+        "git pin `@v0.18.0`",
+        "dojo-v0.18.0",
+        "(dojo 0.14.0)",
+        "(dojo 0.18.0)",
+        "pinned scoring engine, `v0.18.0`",
+        "pinned at **v0.18.0**",
+        "library (v0.18.0",
+        "In the pinned v0.18.0",
+        "Pending PR #87",
+        "@v0.18.0)",
+    )
+    skip_parts = {"changelog", ".git"}
+    hits: list[str] = []
+    for path in (
+        list(REPO_ROOT.glob("*.md"))
+        + list(_DOCS.rglob("*.md"))
+        + [REPO_ROOT / "README.md", REPO_ROOT / "landing" / "index.html"]
+    ):
+        if not path.is_file():
+            continue
+        if path.name == "CHANGELOG.md":
+            continue
+        if any(part in skip_parts for part in path.parts):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for needle in stale:
+            if needle in text:
+                hits.append(f"{path.relative_to(REPO_ROOT)}: {needle}")
+    assert not hits, f"stale dojo pin copy: {hits}"
 
 
 @pytest.fixture
