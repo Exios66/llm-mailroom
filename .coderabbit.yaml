@@ -27,8 +27,9 @@ reviews:
         repeats a changed fact):
         1. Links. Check that every relative link resolves to a file in this repository
            and that every #anchor matches a heading on the target page. Check that
-           GitHub links point at a path that exists on the default branch of the
-           target repository.
+           GitHub links point at a path that exists at the ref named in the URL
+           (tag, commit or branch). Use the default branch only when the link
+           names no ref.
         2. References. Check that every file path, command, flag, environment
            variable, class, function, config key and version named in the text exists
            in the source it describes. If the source is not in this review, say that
