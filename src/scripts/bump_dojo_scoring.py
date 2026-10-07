@@ -82,17 +82,46 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"(description: llm-dojo-scoring pin and mailroom scoring suites \()(v?\d+\.\d+\.\d+)(\))"),
         r"\g<1>{tag}\g<3>",
     ),
+    (
+        # test_dojo_v012 pin assertion: "llm-dojo-scoring.git@v0.18.0"
+        re.compile(r"(llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+)"),
+        r"\g<1>{tag}",
+    ),
+    (
+        # GitBook Overview / repo guide: "llm-mailroom pins v0.18.0"
+        re.compile(r"(llm-mailroom pins )(v?\d+\.\d+\.\d+)"),
+        r"\g<1>{tag}",
+    ),
+    (
+        # architecture dependency table mailroom row only
+        re.compile(r"(git pin `@)(v?\d+\.\d+\.\d+)(`, auto-bumped)"),
+        r"\g<1>{tag}\g<3>",
+    ),
+    (
+        # shields.io dojo pin badge
+        re.compile(r"(badge/dojo-)(v?\d+\.\d+\.\d+)"),
+        r"\g<1>{tag}",
+    ),
 ]
 
 PIN_FILES = (
     "pyproject.toml",
     "README.md",
+    "docs/README.md",
     "docs/sister-repos.md",
     "docs/wiki/Home.md",
+    "docs/start-here/overview.md",
+    "docs/how-it-fits-together/architecture.md",
+    "docs/repository-guides/repos/llm-dojo-scoring.md",
+    "docs/pipeline-reference-llm-mailroom/sister-repos.md",
+    "docs/constellation/overview.md",
+    "docs/constellation/architecture.md",
+    "docs/constellation/repos/llm-dojo-scoring.md",
     "src/observability/README.md",
     ".cursor/skills/dojo-scoring/SKILL.md",
     ".cursor/skills/mailroom-tool-router/SKILL.md",
     "src/tests/test_dojo_v012.py",
+    "landing/index.html",
 )
 
 
@@ -194,6 +223,12 @@ def _rewrite_text(text: str, tag: str) -> str:
     out = re.sub(
         r"(the pinned scoring engine, `)(@?v?\d+\.\d+\.\d+)(`)",
         rf"\g<1>{tag}\g<3>",
+        out,
+    )
+    # landing / README badge alt: llm-dojo-scoring v0.19.1
+    out = re.sub(
+        r"(alt=\"llm-dojo-scoring v)\d+\.\d+\.\d+(\")",
+        rf"\g<1>{bare}\g<2>",
         out,
     )
     out = re.sub(

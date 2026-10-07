@@ -22,6 +22,7 @@ BADGES = (
     "LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2",
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
+    "dojo-v0.19.1-6f42c1",
     "release-v0.7.1-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",

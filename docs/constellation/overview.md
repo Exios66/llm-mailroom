@@ -75,7 +75,7 @@ Snapshot taken 2026-10-06 from each repository's README and pins. Check the repo
 | Item | Version |
 | :--- | :--- |
 | llm-mailroom | v0.7.1 (unreleased work on `main`) |
-| llm-dojo-scoring | v0.19.1 latest; llm-mailroom pins v0.18.0 |
+| llm-dojo-scoring | v0.19.1 |
 | The-Mailroom | v0.5.0 |
 | agent-mailroom | 0.3.0 |
 | mailroom-dataset | schema v9, revision `ed7576b6` (v9.1), 3,302 documents |

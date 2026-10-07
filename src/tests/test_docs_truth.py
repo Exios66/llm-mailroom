@@ -275,3 +275,38 @@ def test_gitbook_agents_honest_gaps_cite_dojo_0191():
         assert text.count("**Honest gap (dojo 0.19.1):**") == 2
         assert "Honest gap (dojo 0.14.0)" not in text
         assert "CMS DE-SynPUF source tables" in text
+
+
+def test_current_dojo_pin_is_v0191_outside_changelog():
+    """Live pin surfaces (not Keep-a-Changelog history) must name v0.19.1."""
+    pin = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "llm-dojo-scoring.git@v0.19.1" in pin
+    assert "llm-dojo-scoring.git@v0.18.0" not in pin
+
+    stale = (
+        "pins v0.18.0",
+        "pinned `@v0.18.0`",
+        "git pin `@v0.18.0`",
+        "dojo-v0.18.0",
+        "(dojo 0.14.0)",
+        "(dojo 0.18.0)",
+        "pinned scoring engine, `v0.18.0`",
+    )
+    skip_parts = {"changelog", ".git"}
+    hits: list[str] = []
+    for path in (
+        list(REPO_ROOT.glob("*.md"))
+        + list(_DOCS.rglob("*.md"))
+        + [REPO_ROOT / "README.md", REPO_ROOT / "landing" / "index.html"]
+    ):
+        if not path.is_file():
+            continue
+        if path.name == "CHANGELOG.md":
+            continue
+        if any(part in skip_parts for part in path.parts):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for needle in stale:
+            if needle in text:
+                hits.append(f"{path.relative_to(REPO_ROOT)}: {needle}")
+    assert not hits, f"stale dojo pin copy: {hits}"

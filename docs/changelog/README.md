@@ -54,6 +54,7 @@ Work landed on `main` since the last tagged release.
 ### Changed
 
 - **GitBook Agents honest-gap labels cite dojo 0.19.1** (not 0.14.0): the Insurance Claims Specialist excerpt (and the matching Corporate Records gap) on the pipeline Agents page now names the current scoring-dojo release. The GitHub-canonical `docs/agents.md` copy, HF-pilot honesty heading, and observability README heading match.
+- **llm-dojo-scoring pin bumped `v0.18.0` → `v0.19.1`**: [llm-dojo-scoring@v0.19.1](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.19.1) (frozen `production_prompts` v1 lineage). `pyproject.toml`, skills, GitBook Overview / architecture / sister-repo tables, wiki, and README / landing / GitBook-home **dojo v0.19.1** badges all match the current release.
 - **The shoulder owl is Hermes** (was Hoot). The GitBook Meet caption is character copy only — it no longer tells readers to upload the favicon in Customize.
 - **GitBook home header is a centered The LLM-Mailroom wordmark.** The header-corner Fumi is gone; a full-width centered `# The LLM-Mailroom` heading fills that slot. The name and 文 translation move onto the on-duty caption: **Postal Worker Fumi (文, "letter") on duty.**
 - **LiteLLM gateway image pinned to `ghcr.io/berriai/litellm:v1.104.0`** (`deploy/docker-compose.full.yml` default; override with `LITELLM_IMAGE`). `main-stable` floats; `main-v1.104.0-stable` is not a published GHCR tag. This is the release exercised with the Mode G stub-backend tests.
