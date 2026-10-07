@@ -22,7 +22,7 @@ site:
           path: changelog
           default: true
           content:
-            directory: ./changelog
+            directory: null
             language: en
     - type: space
       key: mailroom-docs
