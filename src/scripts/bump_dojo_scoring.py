@@ -192,6 +192,12 @@ def release_exists(tag: str, repo: str = DOJO_REPO) -> bool:
 
 
 def _rewrite_text(text: str, tag: str) -> str:
+    """Return text with recognized dojo pins, badges, and test references updated.
+
+    Strip surrounding whitespace from ``tag`` and add a missing ``v`` prefix;
+    raise ValueError if it is empty or does not match the accepted version format.
+    Text without recognized patterns is returned unchanged. No files are written.
+    """
     tag = _normalize_tag(tag)
     bare = _bare(tag)
     out = PIN_RE.sub(rf"\g<1>{tag}", text)
