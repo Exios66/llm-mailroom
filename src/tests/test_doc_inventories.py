@@ -350,3 +350,14 @@ def test_null_communication_type_with_other_subclass_stays_null():
         {"communication_type": None}, doc_type="correspondence", subtype="other"
     )
     assert out.get("communication_type") is None
+
+
+def test_intent_vocabulary_is_the_dojos():
+    import llm_dojo_scoring.intents as dojo_intents
+
+    from langchain_agents import doc_inventories as inv
+
+    assert inv.INTENT_LABELS is dojo_intents.INTENT_LABELS
+    assert inv.INTENT_DESCRIPTIONS is dojo_intents.INTENT_DESCRIPTIONS
+    assert inv._INTENT_ALIASES is dojo_intents.INTENT_ALIASES
+    assert inv.normalize_intent is dojo_intents.normalize_intent

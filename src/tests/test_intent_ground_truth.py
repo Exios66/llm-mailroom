@@ -60,7 +60,7 @@ def test_taxonomy_field_types_include_purpose_gist():
     classes = {c["key"]: c for c in tax["doc_classes"]}
     for key in LABELED:
         ft = classes[key]["field_types"]
-        assert ft["intent"] == "name"
+        assert ft["intent"] == "label"
         assert ft["subject_matter"] == "free_text"
         assert ft["keywords"] in ("entity_list:name", "entity_list:free_text")
 
