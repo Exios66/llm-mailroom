@@ -27,13 +27,19 @@ def _message(
     sender: str = "sender@example.com",
     attachments=(),
     message_id: str = "<msg-1@example.com>",
+    extra_headers=None,
+    auth_results: str | None = "mx.google.com; dkim=pass; spf=pass; dmarc=pass",
 ) -> bytes:
     msg = email.message.EmailMessage()
+    if auth_results is not None:
+        msg["Authentication-Results"] = auth_results
     msg["From"] = sender
     msg["To"] = "llmmailroom@gmail.com"
     msg["Subject"] = subject
     msg["Message-ID"] = message_id
     msg["Date"] = "Tue, 01 Sep 2026 12:00:00 +0000"
+    for name, value in dict(extra_headers or {}).items():
+        msg[name] = value
     msg.set_content("please process the attached documents")
     for filename, payload in dict(attachments).items():
         subtype = "pdf" if filename.endswith(".pdf") else "octet-stream"
