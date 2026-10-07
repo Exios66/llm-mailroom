@@ -34,7 +34,7 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-10-06" tags="feature,improvement" %}
+{% update date="2026-10-07" tags="feature,improvement" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.

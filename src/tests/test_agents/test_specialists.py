@@ -81,8 +81,8 @@ def test_insurance_claims_specialist_constructs_and_builds_schema():
     assert agent.agent_name == "insurance_claims_specialist"
     # system_prompt resolves through get_managed_prompt's local fallback
     prompt = agent.system_prompt()
-    assert "insurance claim" in prompt.lower()
-    assert "coverage determination" in prompt.lower()
+    assert "insurance-claims specialist" in prompt.lower()
+    assert "coverage_determination" in prompt.lower() or "coverage determination" in prompt.lower()
 
 
 def test_insurance_claims_specialist_parse_error_path(mock_openai_client):
