@@ -56,9 +56,9 @@ DOC_SUBCLASS = (
 FIVE_CLASSES = (
     "The mailroom taxonomy has five primary classes: contract, "
     "corporate_record, correspondence, insurance_claim, "
-    "merger_agreement. merger_agreement is the MAUD class (agreement and "
-    "plan of merger); contract is the CUAD commercial-contract class — "
-    "they are not interchangeable. A demand letter about a contract is "
+    "merger_agreement. merger_agreement is an agreement and plan of merger "
+    "(including amended/restated forms); contract is a commercial contract "
+    "(services, license, supply, hosting, …) — they are not interchangeable. A demand letter about a contract is "
     "correspondence; an insurance policy is contract; FNOL/adjuster/"
     "coverage-denial paperwork is insurance_claim. A court opinion or "
     "due-diligence checklist/memo is not a mailroom class — set doc_type "
