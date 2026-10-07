@@ -17,7 +17,7 @@ Status snapshot: 2026-10-06. "Mirror" and "earlier monorepo" labels below are in
 | [Exios66/The-Mailroom](https://github.com/Exios66/The-Mailroom) | Visualizer | monorepo `packages/The-Mailroom` | [guide](repos/the-mailroom.md) |
 | [Exios66/agent-mailroom](https://github.com/Exios66/agent-mailroom) | Walking floor | monorepo `packages/agent-mailroom` | [guide](repos/agent-mailroom.md) |
 | [Exios66/llm-mailroom-graph](https://github.com/Exios66/llm-mailroom-graph) | Knowledge graph | monorepo `packages/llm-mailroom-graph` | [guide](repos/llm-mailroom-graph.md) |
-| [Exios66/Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA) | Corpus EDA + Hub | monorepo `packages/mailroom-corpus-eda` | [guide](repos/mailroom-corpus-eda.md) |
+| [Exios66/Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA) | Corpus EDA + Hub | monorepo `packages/mailroom-corpus-eda` | [guide](repos/mailroom-corpus-eda.md) · [visuals](../mailroom-dataset/visualizations.md) |
 | [Exios66/Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | Corpus feed | monorepo `packages/Enron-Evaluation-Environment` | [guide](repos/enron-evaluation-environment.md) |
 | [Exios66/claims-data-eda](https://github.com/Exios66/claims-data-eda) | Corpus feed | monorepo `packages/claims-data-eda` | [guide](repos/claims-data-eda.md) |
 | [LLM-Mailroom-Services/eval-environment](https://github.com/LLM-Mailroom-Services/eval-environment) | Evaluation | here | [guide](repos/eval-environment.md) |
