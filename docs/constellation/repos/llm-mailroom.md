@@ -6,7 +6,7 @@
 | :--- | :--- |
 | Repository | [Exios66/llm-mailroom](https://github.com/Exios66/llm-mailroom) |
 | Monorepo path | `packages/llm-mailroom` (Python package name `mailroom`) |
-| Release | v0.7.1 |
+| Release | v0.8.0 |
 | Depends on | llm-dojo-scoring (pinned), mailroom-ml (optional) |
 
 ## What it does

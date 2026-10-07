@@ -22,7 +22,7 @@ BADGES = (
     "LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2",
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
-    "release-v0.7.1-2EA043",
+    "release-v0.8.0-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",
     "org-LLM--Mailroom--Services-24292F",
@@ -106,7 +106,7 @@ def test_gitbook_home_ports_the_enhanced_landing():
     assert 'Postal Worker Fumi (文, "letter") on duty' in home
     assert "Read the docs" in home
     assert "[Architecture](pipeline-reference-llm-mailroom/architecture.md)" in home
-    assert "**release** · v0.7.1" in home
+    assert "**release** · v0.8.0" in home
     assert ".gitbook/assets/hoot-icon.png" in home
     assert "Pixelify" not in home
     assert "font-family" not in home

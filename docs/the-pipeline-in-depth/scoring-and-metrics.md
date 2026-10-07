@@ -5,12 +5,12 @@ This page explains two things:
 1. **How the pipeline scores its own work.** How each document specialist's extraction is compared with ground truth field by field, how those field scores become a document score and a per-specialist suite score, how classification is scored, how the LLM judges and the arbiter are asked to grade, and how confidence and scores decide whether a document is archived automatically or sent for review.
 2. **What has actually been measured.** The recorded accuracy, F1, latency and cost numbers that exist today, each with its source file, run id, date and model. It also lists the metrics the pipeline emits at runtime and where to look at them.
 
-Short version: the scoring logic is well defined and lives mostly in the [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) package. Measured results are **thin**. Most numbers come from isolated per-agent runs in the sibling [eval-environment](https://github.com/LLM-Mailroom-Services/eval-environment) repo (20 to 100 documents per run, late September 2026). This repo has no recorded end-to-end scorecard for the current release (0.7.1).
+Short version: the scoring logic is well defined and lives mostly in the [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) package. Measured results are **thin**. Most numbers come from isolated per-agent runs in the sibling [eval-environment](https://github.com/LLM-Mailroom-Services/eval-environment) repo (20 to 100 documents per run, late September 2026). This repo has no recorded end-to-end scorecard for the current release (0.8.0).
 
 For the pipeline stages referenced below, see [Pipeline flowchart](flowchart.md) and [Architecture](../pipeline-reference-llm-mailroom/architecture.md). For the fields each specialist extracts, see [Extraction schemas](extraction-schemas.md).
 
 {% hint style="warning" %}
-**Pending PR #87.** [PR #87](https://github.com/Exios66/llm-mailroom/pull/87) (draft) moves the `llm-dojo-scoring` pin to v0.19.1 and routes all specialist scoring through the library's per-document scorer. Once it merges, scoring adds field-level precision, recall, F1 and F2, class-specific extras, a `metric_id` and provenance, and a document with nothing scorable gets `overall_score = None` instead of a number. This page describes the current v0.18.0 behaviour and will be updated when #87 lands.
+**Scoring in this release.** Specialist scoring now goes through the dojo's per-document scorer (`suite.score_document`, [PR #87](https://github.com/Exios66/llm-mailroom/pull/87)): field-level precision, recall, F1 and F2, class-specific extras, a `metric_id` and provenance. A document with nothing scorable gets `overall_score = None` instead of a number.
 {% endhint %}
 
 ---
@@ -21,7 +21,7 @@ For the pipeline stages referenced below, see [Pipeline flowchart](flowchart.md)
 
 | Layer | What it does | Code |
 |---|---|---|
-| Scoring library | Per-field matchers, document score, specialist suites, metric registry | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring), pinned at **v0.18.0** in `pyproject.toml` (`llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.18.0`) |
+| Scoring library | Per-field matchers, document score, specialist suites, metric registry | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring), pinned at **v0.19.1** in `pyproject.toml` (`llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.19.1`) |
 | Wiring | Loads `taxonomy.yaml` into the library's settings at import time | [`observability/scoring_wiring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/scoring_wiring.py) |
 | Specialist suites | One suite per live extract class, mapped to its specialist | [`observability/specialist_suites.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/specialist_suites.py), [`observability/suite_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/suite_scoring.py) |
 | Trace wiring | Pushes field and document scores to Langfuse | [`observability/langfuse_field_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/langfuse_field_scoring.py), [`observability/scores.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/scores.py) |
@@ -32,7 +32,7 @@ For the pipeline stages referenced below, see [Pipeline flowchart](flowchart.md)
 | LLM judges | Completeness, classification and correctness rubrics | [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), [`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py), [`agents/sorter_reviewer.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/sorter_reviewer.py) |
 | Routing | Confidence bands, judge gate, arbiter bounds | [`graph/routing.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/routing.py) |
 
-> **Version note.** The library's `main` branch is at v0.19.1 (2026-10-05). The pipeline pins v0.18.0, so everything below describes v0.18.0 behaviour. The eval-environment repo, where most measured numbers come from, resolved the library at **v0.15.0** (its `pyproject.toml` comment). Scores from different library versions are not guaranteed to be comparable.
+> **Version note.** The pipeline pins llm-dojo-scoring **v0.19.1**. The eval-environment repo, where most measured numbers come from, resolved the library at **v0.15.0** (its `pyproject.toml` comment). Scores from different library versions are not guaranteed to be comparable.
 
 ### Field types
 
@@ -260,7 +260,7 @@ For the full graph, see [Pipeline flowchart](flowchart.md) and [Operational proc
 | eval-environment `reports/api-comparisons/` | Per-specialist and sorter runs on four OpenRouter models | Main source, 2026-09-26 to 2026-09-28 |
 | mailroom-ml `reports/` | ModernBERT intake classifier on a 323-document held-out test | Classifier only, not the LLM pipeline |
 
-Nothing in this repo records a full-pipeline accuracy for release 0.7.1. Treat every number below as a per-agent or experimental result, not a production scorecard.
+Nothing in this repo records a full-pipeline accuracy for release 0.8.0. Treat every number below as a per-agent or experimental result, not a production scorecard.
 
 ### Specialist extraction: production model `qwen/qwen3.7-flash`
 
@@ -334,11 +334,11 @@ The vision report it mentions (`pilot-vision-tradeoff.md`) is not in this repo; 
 
 ### Gaps in the record
 
-- No end-to-end pipeline scorecard (class accuracy, field score, STP rate, judge verdicts) is stored for release 0.7.1.
+- No end-to-end pipeline scorecard (class accuracy, field score, STP rate, judge verdicts) is stored for release 0.8.0.
 - No recorded run of `calibrate_field_scoring.py`; only the resulting band values in `taxonomy.yaml`.
 - No recorded output of `run_quality_judges.py` (judge completeness, correctness, classification means).
 - The LegalBench log has only a placeholder entry.
-- Specialist runs are small (20 to 100 documents) and use library v0.15.0, while the pipeline pins v0.18.0.
+- Specialist runs are small (20 to 100 documents) and use library v0.15.0, while the pipeline pins v0.19.1.
 
 ---
 

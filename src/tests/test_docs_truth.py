@@ -291,6 +291,7 @@ def test_gitbook_changelog_space_mirrors_repo_changelog():
     changelog_text = changelog.read_text(encoding="utf-8")
     headings = re.findall(r"^## \[([^\]]+)\]", changelog_text, re.MULTILINE)
     assert "Unreleased" in headings
+    assert "v0.8.0" in headings
     assert "v0.7.1" in headings
     assert "v0.7.0" in headings
 
@@ -298,14 +299,19 @@ def test_gitbook_changelog_space_mirrors_repo_changelog():
     feed = (space / "README.md").read_text(encoding="utf-8")
     summary = (space / "SUMMARY.md").read_text(encoding="utf-8")
     unreleased = (space / "unreleased.md").read_text(encoding="utf-8")
+    v080 = (space / "2026" / "v0-8-0.md").read_text(encoding="utf-8")
     v071 = (space / "2026" / "v0-7-1.md").read_text(encoding="utf-8")
 
     assert "{% updates format=\"full\" %}" in feed
     assert "## Unreleased" in feed
+    assert "## v0.8.0" in feed
     assert "## v0.7.1" in feed
     assert "* [Unreleased](unreleased.md)" in summary
+    assert "* [v0.8.0](2026/v0-8-0.md)" in summary
     assert "* [v0.7.1](2026/v0-7-1.md)" in summary
-    assert "GitBook Changelog space" in unreleased
+    assert "Unreleased work on `main`" in unreleased
+    assert "Mode G — LiteLLM gateway + Modal GPU tiers" in v080
+    assert "GitBook Changelog space" in v080
     assert "Corpus revision re-pinned to the GT-closure tip" in v071
     assert "Feature description" not in feed
     assert "Product improvement" not in feed
