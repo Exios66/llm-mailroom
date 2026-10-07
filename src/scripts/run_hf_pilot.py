@@ -860,7 +860,7 @@ def render_metrics_markdown(report: dict) -> str:
     honesty = report.get("honesty") or hf_corpus_honesty()
     lines += [
         "",
-        "## Corpus honesty (dojo 0.19.1)",
+        "## Corpus honesty (dojo 0.21.0)",
         "",
         "Gaps are suite metadata, not invented accuracy. "
         "`court_opinion` / `due_diligence` are retired. "
