@@ -9,7 +9,7 @@ All commands run from the repository root. Most scripts need `PYTHONPATH=src` be
 | Need | Value | Source |
 | --- | --- | --- |
 | Python | 3.11 or newer (`requires-python = ">=3.11"`) | `pyproject.toml` |
-| Package name / version | `mailroom` 0.7.1 | `pyproject.toml` |
+| Package name / version | `mailroom` 0.8.0 | `pyproject.toml` |
 | Database | None to install. SQLite file is created at `{MAILROOM_BASE_DIR}/mailroom.db` on first use | `.env.example` |
 | Docker | Only for the optional Langfuse stack or container deploys | `README.md` |
 

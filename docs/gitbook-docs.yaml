@@ -1,32 +1,29 @@
+# GitBook Site Git Sync. The Git Sync Project directory is docs/ (GITBOOK-SITE
+# commits write this file here). Two top-level spaces: the docs home mounted at
+# "/" (content.directory: ./) and the generated Changelog at "changelog"
+# (content.directory: ./changelog). Every space needs a real, non-empty `path`.
+# A section-wrapped structure that GitBook's editor once wrote set the home
+# space path to the literal `undefined` (and gave a section and its child space
+# the same "changelog" path) — that fails the site import, so the Changelog
+# section silently never publishes (mailroom-inc.gitbook.io/…/changelog 404s).
+# Keep the keys stable; changing a key replaces that space. See
+# docs/about-this-site/maintaining.md.
 $schema: https://api.gitbook.com/gitbook-docs.yaml
 site:
   title: Mailroom Inc. Docs
   structure:
-    - type: section
-      key: section-1
+    - type: space
+      key: mailroom-docs
       title: Mailroom Inc. Docs
-      path: mailroom-inc.-docs
+      path: /
       default: true
-      children:
-        - type: space
-          key: mailroom-docs
-          title: Mailroom Inc. Docs
-          path: undefined
-          default: true
-          content:
-            directory: ./
-            language: en
-    - type: section
-      key: section-2
+      content:
+        directory: ./
+        language: en
+    - type: space
+      key: space-1
       title: Changelog
       path: changelog
-      icon: pen-to-square
-      children:
-        - type: space
-          key: space-1
-          title: Changelog
-          path: changelog
-          default: true
-          content:
-            directory: ./changelog
-            language: en
+      content:
+        directory: ./changelog
+        language: en
