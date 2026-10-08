@@ -32,6 +32,7 @@ Thumbs.db
 htmlcov/
 *.log
 .ipynb_checkpoints/
+.pytest_cache
 
 # Environment / runtime
 .venv/
