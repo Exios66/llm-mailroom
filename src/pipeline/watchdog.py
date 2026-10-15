@@ -165,7 +165,12 @@ def main() -> None:
         remind_minutes=remind_min,
     )
     state: dict = {"down_alerted": False, "stale_streak": 0, "last_alert": None}
+    from .pager import Pager
+    from .pager_core import Alert
+
+    pager = Pager()  # operator SMS pings: digests + alerts survive a dead watcher (inactive unless enabled)
     while True:
+        pager.tick()
         try:
             hb = read_heartbeat()
             pid_alive = _pid_alive(hb.get("pid") if hb else None)
@@ -181,6 +186,8 @@ def main() -> None:
                     else "watcher is STILL DOWN — no heartbeat"
                 )
                 sent = send_status_email(kind, title, _down_rows(hb, pid_alive, age), note=_DOWN_NOTE)
+                pager.page_now(Alert("watcher_down", "critical", "Watcher DOWN — heartbeat lost",
+                                     next_step="relaunch: python -m pipeline.watcher"))
                 if not sent:
                     # The human must not silently lose the alert because SMTP
                     # hiccuped: revert the latch so the NEXT poll re-fires the

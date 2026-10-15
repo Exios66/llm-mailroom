@@ -507,3 +507,10 @@ def test_render_alert_and_recovered_direct():
     assert r.kind == "resolved" and "after 5 min" in r.text
     p = build_payload("alert", snap(), cfg(), PagerState(), at("14:20"), ref="P-1420-0000", alerts_new=[a])
     assert p["alerts"]["new"][0]["key"] == "outbox_dead" and p["status"] == "watch"
+
+
+def test_empty_window_has_no_metrics_line():
+    empty = {"minutes": 10, "received": 0, "archived": 0, "review": 0, "failed": 0, "p50_latency_s": None,
+             "cost_usd": 0.0, "first_pass_rate": None}
+    text = render_digest(snap(window=empty), cfg(), PagerState(), at("14:20")).text
+    assert "$0.00." not in text.splitlines()[3] and "Last 10 min: 0 received" in text

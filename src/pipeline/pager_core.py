@@ -675,7 +675,8 @@ def render_digest(snap: RunSnapshot, cfg: PagerConfig, state: PagerState, now: f
             lines.append((4, f"Last {w.get('minutes', 10)} min: {w.get('received', 0)} received, "
                              f"{w.get('archived', 0)} archived, {w.get('review', 0)} to review, {w.get('failed', 0)} failed."))
             parts = ([f"{round(w['p50_latency_s'])}s/doc (median)"] if w.get("p50_latency_s") is not None else []) + \
-                ([f"${w['cost_usd']:.2f}"] if w.get("cost_usd") is not None else []) + \
+                ([f"${w['cost_usd']:.2f}"] if w.get("cost_usd") is not None and
+                 (w.get("archived") or w.get("review") or w.get("failed")) else []) + \
                 ([f"{_pct(w['first_pass_rate'])} first-pass"] if w.get("first_pass_rate") is not None else [])
             lines += [(4, " · ".join(parts) + ".")] if parts else []
         if t:

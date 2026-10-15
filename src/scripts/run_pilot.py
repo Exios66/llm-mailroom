@@ -768,7 +768,23 @@ def print_summary(summary: dict) -> None:
               f"avg_time_s={s['avg_time_s']:<8} avg_calls={s['avg_llm_calls']:<4} avg_cost_usd={s['avg_cost_usd']}")
 
 
-def main() -> int:
+def _page_progress(run_id: str, label: str, total: int, rows: list[dict], finished: bool = False) -> None:
+    """Operator SMS pager: publish run progress (pipeline/pager.py reads it)."""
+    from pipeline.pager import report_run_progress
+
+    ok = [r for r in rows if r.get("status") != "error"]
+    lat = sorted(r["wall_time_s"] for r in ok if r.get("wall_time_s") is not None)
+    n = len(rows)
+    report_run_progress(run_id, label=label, total=total, done=n, finished=finished, metrics={
+        "acc": round(sum(1 for r in ok if r.get("class_match")) / n, 4) if n else None,
+        "review_rate": round(sum(1 for r in ok if r.get("stage") == "review") / n, 4) if n else None,
+        "failed": sum(1 for r in rows if r.get("status") == "error" or r.get("stage") == "failed"),
+        "cost_usd": round(sum(r.get("llm_cost_usd", 0.0) for r in ok), 4),
+        "p50_latency_s": lat[len(lat) // 2] if lat else None,
+    })
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the pilot sample set through the pipeline.")
     parser.add_argument("--mock", action="store_true", help="Use a deterministic fake LLM (no API key).")
     parser.add_argument("--real", action="store_true", help="Use the real LLM (needs OPENROUTER_API_KEY).")
@@ -785,7 +801,8 @@ def main() -> int:
         default=None,
         help="Attach ground-truth scores to Langfuse traces (default: on for --real, off for --mock).",
     )
-    args = parser.parse_args()
+    parser.add_argument("--page", action="store_true", help="Text run progress to the operator (pager must be ON).")
+    args = parser.parse_args(argv)
 
     from observability.tracing import ensure_process_tracing
 
@@ -857,7 +874,13 @@ def main() -> int:
     # L-22: one failing sample (or the cost watchdog) must not discard all
     # collected rows — per-sample try/except records {"status": "error"}, and
     # the report is written in a finally so partial runs still produce one.
+    if args.page:
+        from pipeline.pager import Pager, load_pager_config
+
+        Pager(load_pager_config({**os.environ, "MAILROOM_PAGER_MODE": "research"})).start_background()
+    label = f"run_pilot --{'mock' if mock_mode else 'real'}"
     rows = []
+    _page_progress(session_id, label, len(manifest), rows)
     for m in manifest:
         try:
             rows.append(run_sample(m, mock_mode, session_id=session_id, run_id=run_id))
@@ -869,6 +892,8 @@ def main() -> int:
                 "status": "error",
                 "error": f"{type(exc).__name__}: {exc}",
             })
+        _page_progress(session_id, label, len(manifest), rows)
+    _page_progress(session_id, label, len(manifest), rows, finished=True)
 
     if scores_enabled:
         for m, r in zip(manifest, rows):
