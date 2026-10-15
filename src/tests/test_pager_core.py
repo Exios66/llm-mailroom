@@ -514,3 +514,10 @@ def test_empty_window_has_no_metrics_line():
              "cost_usd": 0.0, "first_pass_rate": None}
     text = render_digest(snap(window=empty), cfg(), PagerState(), at("14:20")).text
     assert "$0.00." not in text.splitlines()[3] and "Last 10 min: 0 received" in text
+
+
+def test_watcher_down_without_heartbeat_has_no_unknown_age():
+    s = snap(watcher_alive=False, heartbeat_age_s=None, repo="mailroom-reloaded")
+    [a] = [a for a in evaluate_rules(s, cfg(), {}) if a.key == "watcher_down"]
+    assert a.title == "the watcher has stopped (no watcher process is running)"
+    assert "mailroom watch" in a.next_step
