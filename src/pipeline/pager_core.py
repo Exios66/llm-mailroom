@@ -10,9 +10,10 @@ import copy
 import hashlib
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields
-from datetime import datetime, time, timezone
-from typing import Literal, Mapping
+from datetime import UTC, datetime, time
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 SCHEMA = "mailroom.pager/v1"
@@ -108,15 +109,15 @@ def _coerce(default, v):
         raise ValueError(v)
     if isinstance(default, (int, float)):
         if isinstance(v, bool) or not isinstance(v, (int, float, str)):
-            raise ValueError(v)
+            raise ValueError(v)  # noqa: TRY004 — callers catch ValueError as "invalid value"
         return float(v) if isinstance(v, str) and "." in v else (int(v) if isinstance(v, str) else v)
     if isinstance(default, list):
         items = v.split(",") if isinstance(v, str) else v
         if not isinstance(items, (list, tuple)):
-            raise ValueError(v)
+            raise ValueError(v)  # noqa: TRY004
         return [str(x).strip() for x in items if str(x).strip()]
     if not isinstance(v, str):
-        raise ValueError(v)
+        raise ValueError(v)  # noqa: TRY004
     return v.strip()
 
 
@@ -163,7 +164,7 @@ class PagerConfig:
 
     @classmethod
     def resolve(cls, block: Mapping | None, env: Mapping[str, str], *, environment: str,
-                settings: Mapping | None = None) -> "PagerConfig":
+                settings: Mapping | None = None) -> PagerConfig:
         defaults, warn = _flat(DEFAULTS), []
         vals, sources = dict(defaults), {k: "default" for k in defaults}
         layers = [("taxonomy", _flat(block or {})),
@@ -183,7 +184,7 @@ class PagerConfig:
                     continue
                 if k in FLOORS:
                     v = max(FLOORS[k], v)
-                elif k.endswith("minutes") or k.endswith("_scans"):
+                elif k.endswith(("minutes", "_scans")):
                     v = max(0, v)
                 vals[k], sources[k] = v, src
         recips = []
@@ -287,7 +288,7 @@ class PagerState:
         return asdict(self)
 
     @classmethod
-    def from_json(cls, d: Mapping) -> "PagerState":
+    def from_json(cls, d: Mapping) -> PagerState:
         names = {f.name for f in fields(cls)}
         return cls(**copy.deepcopy({k: v for k, v in (d or {}).items() if k in names}))
 
@@ -672,19 +673,20 @@ def render_digest(snap: RunSnapshot, cfg: PagerConfig, state: PagerState, now: f
     else:
         w, t, q = snap.window or {}, snap.today, snap.queues or {}
         if w:
-            lines.append((4, f"Last {w.get('minutes', 10)} min: {w.get('received', 0)} received, "
-                             f"{w.get('archived', 0)} archived, {w.get('review', 0)} to review, {w.get('failed', 0)} failed."))
-            parts = ([f"{round(w['p50_latency_s'])}s/doc (median)"] if w.get("p50_latency_s") is not None else []) + \
-                ([f"${w['cost_usd']:.2f}"] if w.get("cost_usd") is not None and
-                 (w.get("archived") or w.get("review") or w.get("failed")) else []) + \
-                ([f"{_pct(w['first_pass_rate'])} first-pass"] if w.get("first_pass_rate") is not None else [])
+            lines.append((4, (f"Last {w.get('minutes', 10)} min: {w.get('received', 0)} received, "
+                              f"{w.get('archived', 0)} archived, {w.get('review', 0)} to review, "
+                              f"{w.get('failed', 0)} failed.")))
+            parts = (([f"{round(w['p50_latency_s'])}s/doc (median)"] if w.get("p50_latency_s") is not None else [])
+                     + ([f"${w['cost_usd']:.2f}"] if w.get("cost_usd") is not None
+                        and (w.get("archived") or w.get("review") or w.get("failed")) else [])
+                     + ([f"{_pct(w['first_pass_rate'])} first-pass"] if w.get("first_pass_rate") is not None else []))
             lines += [(4, " · ".join(parts) + ".")] if parts else []
         if t:
-            lines.append((3, f"Today: {t.get('processed', 0)} processed · {t.get('review', 0)} to review · "
-                             f"{t.get('failed', 0)} failed · ${t.get('cost_usd') or 0:.2f}."))
+            lines.append((3, (f"Today: {t.get('processed', 0)} processed · {t.get('review', 0)} to review · "
+                              f"{t.get('failed', 0)} failed · ${t.get('cost_usd') or 0:.2f}.")))
         if q:
-            lines.append((2, f"Queues: {q.get('inbox', 0)} waiting, {q.get('processing', 0)} in progress, "
-                             f"{q.get('review', 0)} awaiting review."))
+            lines.append((2, (f"Queues: {q.get('inbox', 0)} waiting, {q.get('processing', 0)} in progress, "
+                              f"{q.get('review', 0)} awaiting review.")))
     models = _models(snap)
     lines += [(1, models)] if models else []
     return _finish("digest", lines, snap, cfg, state, now)
@@ -732,7 +734,7 @@ def render_run_event(run: RunProgress, event: Literal["started", "finished"], sn
 
 
 def _iso(ts: float | None) -> str | None:
-    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
+    return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if ts is not None else None
 
 
 def _alert_json(a: Alert) -> dict:
