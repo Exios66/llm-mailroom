@@ -10,6 +10,7 @@ the money fields tolerant of the currency phrases the prompts allow.
 import typing
 
 import pytest
+from pydantic import ValidationError
 
 from schemas.documents import (
     EXTRACTION_SCHEMAS,
@@ -35,7 +36,7 @@ def test_every_scalar_field_accepts_null(doc_class):
     for name in _scalar_fields(model):
         try:
             model.model_validate({name: None})
-        except Exception:
+        except ValidationError:
             rejected.append(name)
     assert not rejected, f"{doc_class}: null rejected by {rejected}"
 
@@ -65,5 +66,7 @@ def test_money_fields_accept_currency_phrases(raw, expected):
 
 
 def test_money_fields_still_reject_prose():
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         InsuranceClaimExtraction.model_validate({"claimed_amount": "about five grand"})
+    with pytest.raises(ValidationError):
+        CorrespondenceExtraction.model_validate({"demand_amount": "about five grand"})
