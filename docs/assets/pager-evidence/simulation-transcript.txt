@@ -1,0 +1,73 @@
+2026-10-15 23:47:29 [info     ] pager_sent                     kind=digest ok=2 ref=P-1410-7663 to=2
+2026-10-15 23:47:29 [info     ] pager_sent                     kind=digest ok=2 ref=P-1420-a8c6 to=2
+2026-10-15 23:47:29 [info     ] pager_sent                     kind=alert ok=2 ref=P-1423-9d1c to=2
+2026-10-15 23:47:29 [info     ] pager_sent                     kind=alert ok=2 ref=P-1424-22ed to=2
+2026-10-15 23:47:29 [info     ] pager_sent                     kind=digest ok=2 ref=P-1430-2039 to=2
+2026-10-15 23:47:29 [info     ] pager_sent                     kind=resolved ok=2 ref=P-1437-2da3 to=2
+2026-10-15 23:47:29 [info     ] pager_sent                     kind=digest ok=2 ref=P-1440-122d to=2
+ticks=135 texts_delivered=14 distinct_messages=7 log_entries=7
+
+[2:10:05 PM] → 2 recipients
+Mailroom LIVE · 2:10 PM CDT
+🟢 All clear — no action needed.
+Last 10 min: 14 received, 11 archived, 2 to review, 0 failed.
+48s/doc (median) · $0.21 · 79% first-pass.
+Today: 306 processed · 9 to review · 4 failed · $4.86.
+Queues: 2 waiting, 1 in progress, 6 awaiting review.
+Models: Modal fast and extract up; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.
+Ref P-1410-7663
+
+[2:20:05 PM] → 2 recipients
+Mailroom LIVE · 2:20 PM CDT
+🟢 All clear — no action needed.
+Last 10 min: 14 received, 11 archived, 2 to review, 0 failed.
+48s/doc (median) · $0.21 · 79% first-pass.
+Today: 316 processed · 9 to review · 4 failed · $4.86.
+Queues: 2 waiting, 1 in progress, 6 awaiting review.
+Models: Modal fast and extract up; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.
+Ref P-1420-a8c6
+
+[2:23:05 PM] → 2 recipients
+Mailroom ALERT · 2:23 PM CDT
+🔴 Action needed: Modal extract tier is down.
+Since 2:23 PM: 6 of 6 calls failed (HTTP 502).
+Latest: claim_1842.pdf — extraction timed out.
+Next: check `modal app logs mailroom-vllm`.
+Also: 3 documents failed since 2:22 PM.
+Ref P-1423-9d1c
+
+[2:24:05 PM] → 2 recipients
+Mailroom ALERT · 2:24 PM CDT
+🟠 Watch: 3 documents failed since 2:22 PM.
+Latest: claim_1842.pdf — extraction timed out.
+Next: inspect data/failed/ and the latest error above.
+Also: Modal extract tier is down.
+Ref P-1424-22ed
+
+[2:30:05 PM] → 2 recipients
+Mailroom LIVE · 2:30 PM CDT
+🔴 Action needed: Modal extract tier is down.
+Since 2:23 PM: 6 of 6 calls failed (HTTP 502).
+Next: check `modal app logs mailroom-vllm`.
+Also: 3 documents failed since 2:22 PM.
+Last 10 min: 9 received, 4 archived, 1 to review, 3 failed.
+61s/doc (median) · $0.12 · 44% first-pass.
+Today: 326 processed · 9 to review · 7 failed · $4.86.
+Queues: 7 waiting, 1 in progress, 6 awaiting review.
+Models: Modal fast up; extract DOWN; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.
+Ref P-1430-2039
+
+[2:37:05 PM] → 2 recipients
+Mailroom RESOLVED · 2:37 PM CDT
+✅ Resolved: Modal extract tier is back up after 14 min; document failures have stopped after 14 min. No action needed.
+Ref P-1437-2da3
+
+[2:40:05 PM] → 2 recipients
+Mailroom LIVE · 2:40 PM CDT
+🟢 All clear — no action needed.
+Last 10 min: 14 received, 11 archived, 2 to review, 0 failed.
+48s/doc (median) · $0.21 · 79% first-pass.
+Today: 336 processed · 9 to review · 4 failed · $4.86.
+Queues: 2 waiting, 1 in progress, 6 awaiting review.
+Models: Modal fast and extract up; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.
+Ref P-1440-122d
