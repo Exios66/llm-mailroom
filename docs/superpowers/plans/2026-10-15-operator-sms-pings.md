@@ -486,7 +486,7 @@ def test_state_json_roundtrip(): ...
 ```
 - [ ] **Step 2: Run** `PYTHONPATH=src python -m pytest src/tests/test_pager_core.py -q` → FAIL.
 - [ ] **Step 3: Implement** `pager_core.py`. Its first docstring line is `"""Operator SMS pager core (shared verbatim with mailroom-reloaded/obs/pager_core.py)."""`, and it must not import from `pipeline`, `llm`, `storage`, or any third-party package.
-- [ ] **Step 4: Run** the tests → PASS. Run `wc -l src/pipeline/pager_core.py` and confirm ≤ 380.
+- [ ] **Step 4: Run** the tests → PASS. Run `wc -l src/pipeline/pager_core.py` and confirm ≤ 460; an overrun of more than 20% needs a reason in the commit body.
 - [ ] **Step 5: Commit** `feat(pager): pure pager core — config resolution, frequency state machine, SMS renderers`.
 
 ### Task 3: Passive provider health

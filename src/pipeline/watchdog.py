@@ -187,8 +187,7 @@ def main() -> None:
                         else "watcher is STILL DOWN — no heartbeat"
                     )
                     sent = send_status_email(kind, title, _down_rows(hb, pid_alive, age), note=_DOWN_NOTE)
-                    pager.page_now(Alert("watcher_down", "critical", "Watcher DOWN — heartbeat lost",
-                                         next_step="relaunch: python -m pipeline.watcher"))
+                    pager.page_now(Alert("watcher_down", "critical"))
                     if not sent:
                         # The human must not silently lose the alert because SMTP
                         # hiccuped: revert the latch so the NEXT poll re-fires the
