@@ -186,12 +186,17 @@ _TAG_RE = re.compile(r"v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?")
 
 
 def is_sha(ref: str) -> bool:
-    """True for a full 40-hex commit SHA (an interim, unreleased pin)."""
+    """True for exactly 40 lowercase hex characters (an interim commit pin)."""
     return bool(_SHA_RE.fullmatch(str(ref or "")))
 
 
 def _normalize_tag(tag: str) -> str:
-    """Normalize a dojo ref: a semver tag (``v`` added) or a full commit SHA."""
+    """Strip whitespace and return a dojo tag or lowercase full commit SHA.
+
+    Add a missing ``v`` prefix to version tags. Accept uppercase SHA input,
+    but reject abbreviated SHAs. Raise ValueError for an empty ref or one
+    that matches neither the accepted version format nor a 40-hex SHA.
+    """
     tag = str(tag or "").strip()
     if not tag:
         raise ValueError("empty tag")
@@ -209,13 +214,19 @@ def _bare(tag: str) -> str:
 
 
 def pin_label(ref: str) -> str:
-    """Badge / alt-text label for a pin: the tag, or a SHA's 7-char form."""
+    """Badge / alt-text label for a pin: the tag, or a SHA's 7-char form.
+
+    Normalize ``ref`` and raise ValueError if it is not a valid tag or full SHA.
+    """
     ref = _normalize_tag(ref)
     return ref[:7] if is_sha(ref) else ref
 
 
 def pin_release_path(ref: str) -> str:
-    """GitHub path a pin links to: its release page, or its commit for a SHA."""
+    """GitHub path a pin links to: its release page, or its commit for a SHA.
+
+    Normalize ``ref`` and raise ValueError if it is not a valid tag or full SHA.
+    """
     ref = _normalize_tag(ref)
     return f"commit/{ref}" if is_sha(ref) else f"releases/tag/{ref}"
 
@@ -273,6 +284,10 @@ def tag_contains_commit(sha: str, tag: str, repo: str = DOJO_REPO) -> bool:
     Guards the auto-bump against DOWNGRADING an interim SHA pin to an older
     release: ``compare/<sha>...<tag>`` is ``ahead`` or ``identical`` only when
     the tag contains the pinned commit.
+
+    ``repo`` is the GitHub ``owner/name``. Return False for other comparison
+    statuses or a missing status. Invalid refs raise ValueError; HTTP errors
+    become RuntimeError. Other network and response-decoding errors propagate.
     """
     sha, tag = _normalize_tag(sha), _normalize_tag(tag)
     url = f"https://api.github.com/repos/{repo}/compare/{sha}...{tag}"
@@ -288,8 +303,11 @@ def tag_contains_commit(sha: str, tag: str, repo: str = DOJO_REPO) -> bool:
 def _rewrite_text(text: str, tag: str) -> str:
     """Return text with recognized dojo pins, badges, and test references updated.
 
-    Strip surrounding whitespace from ``tag`` and add a missing ``v`` prefix;
-    raise ValueError if it is empty or does not match the accepted version format.
+    ``tag`` accepts a version tag or full commit SHA. Strip surrounding
+    whitespace, add a missing ``v`` prefix to tags, and lowercase SHAs;
+    raise ValueError for an empty or invalid ref. SHA pins use seven-character
+    badge labels and commit links, leaving version assertions and test names
+    unchanged; release tags also update those version references.
     Text without recognized patterns is returned unchanged. No files are written.
     """
     tag = _normalize_tag(tag)
@@ -374,6 +392,19 @@ def apply_pin(tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False) -> lis
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Check or apply a scoring pin using CLI arguments (default: sys.argv).
+
+    Print the current and desired refs and check results or updated paths.
+    ``--check`` returns 0 for a matching pin or an interim SHA not contained
+    in the target release, and 2 when an update is needed. ``--apply`` writes
+    recognized pin files unless ``--dry-run`` is set. Return 1 for a missing
+    release, a refused SHA downgrade, or no changes when the pins differ;
+    otherwise return 0. ``--allow-missing-release`` skips the release-existence check
+    and the SHA ancestry guard.
+
+    Argument parsing may raise SystemExit. Invalid refs raise ValueError;
+    file I/O and GitHub lookup errors propagate.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument(
