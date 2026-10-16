@@ -41,8 +41,11 @@ class MergerAgreementExtraction(BaseModel):
 
 
 class CorporateRecordExtraction(BaseModel):
-    entity_name: str = ""
-    record_type: str = ""  # articles_of_incorporation, bylaws, powers_of_attorney, rights_instrument, other
+    # Empty-field contract (dojo schema_contract, SAND-042): an unstated scalar
+    # is null, never "" — the specialist prompts teach null and the harness's
+    # "" -> None normalizer would otherwise fail validation.
+    entity_name: str | None = None
+    record_type: str | None = None  # articles_of_incorporation, bylaws, powers_of_attorney, rights_instrument, other
     effective_date: str | None = None
     signatories: list[str] = Field(default_factory=list)
     jurisdiction: str | None = None
@@ -56,7 +59,7 @@ class CorrespondenceExtraction(BaseModel):
     sender: str | None = None
     recipient: str | None = None
     additional_recipients: list[str] = Field(default_factory=list)
-    communication_type: str = ""  # email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request
+    communication_type: str | None = None  # email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request
     communication_date: str | None = None
     demand_amount: float | None = None
     action_items: list[str] = Field(default_factory=list)  # capped ≤3
@@ -70,17 +73,20 @@ class CorrespondenceExtraction(BaseModel):
 class InsuranceClaimExtraction(BaseModel):
     claim_number: str | None = None
     policy_number: str | None = None
-    insurer: str = ""
-    insured_party: str = ""
-    claim_type: str = ""  # pde, inpatient, outpatient, carrier, auto, property, liability, health, life, workers_comp, other
+    # Empty-field contract (dojo schema_contract, SAND-042): unstated scalar ->
+    # null. These five were `str = ""`, so a prompt-faithful null failed
+    # validation (schema-valid 26-34 % on the sandbox SAND-042 run).
+    insurer: str | None = None
+    insured_party: str | None = None
+    claim_type: str | None = None  # pde, inpatient, outpatient, carrier, auto, property, liability, health, life, workers_comp, other
     date_of_loss: str | None = None
     date_filed: str | None = None
     claimed_amount: float | None = None
     # CMS / DE-SynPUF rows often have no named adjuster — null must validate
     # (production HF pilot parked REVIEW when this field was a required str).
     adjuster: str | None = None
-    damages_description: str = ""
-    coverage_determination: str = ""  # approved, denied, partial, pending
+    damages_description: str | None = None
+    coverage_determination: str | None = None  # approved, denied, partial, pending
     denial_reasons: list[str] = Field(default_factory=list)
     supporting_documents: list[str] = Field(default_factory=list)
     intent: str | None = None
