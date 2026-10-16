@@ -379,6 +379,12 @@ class Pager:
         except OSError:
             return None
 
+    def _can_deliver(self) -> bool:
+        """True if an injected transport/override exists or the configured transport has its credentials."""
+        from pipeline import sms_notify
+
+        return bool(self.transport or sms_notify._OVERRIDE is not None or not _missing_env(self.cfg))
+
     def acquire(self) -> bool:
         import fcntl
 
@@ -435,6 +441,9 @@ class Pager:
         if sig != self._settings_sig:  # `pager on/off/number` reach every host, explicit cfg or not
             self._settings_sig = sig
             self.cfg = load_pager_config() if self._own_cfg else self.cfg.apply_settings(read_settings())
+        if self.cfg.active and not self._can_deliver():
+            self.release()  # a sender that can't deliver must not hold the lock from one that can
+            return []
         if not self.cfg.active or not self.acquire():
             return []
         self.state.muted_until = load_state().muted_until  # only `mute` writes state from outside
@@ -524,7 +533,7 @@ class Pager:
         """Tick on a daemon thread. `idle_ok` keeps an inactive (or lock-blocked) pager polling so `pager on` or the lock holder exiting takes effect."""
         if not self.cfg.active and not idle_ok:
             return None
-        if self.cfg.active and not self.acquire():
+        if self.cfg.active and self._can_deliver() and not self.acquire():
             logger.info("pager_passive", reason="another process holds pager.lock")
             if not idle_ok:
                 return None  # idle_ok hosts keep polling: _tick retries the lock if its holder exits
