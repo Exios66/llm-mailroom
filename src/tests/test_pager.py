@@ -682,7 +682,7 @@ def test_rate_limits_and_bad_requests_are_not_outages(monkeypatch, tmp_path):
 
     monkeypatch.setenv("MAILROOM_PROVIDER_HEALTH", "1")
     monkeypatch.setattr(ph, "_path", lambda: tmp_path / "provider_health.json")
-    ph._BUF.events.clear()
+    monkeypatch.setattr(ph, "_BUF", ph._Buffer())
     url = "https://openrouter.ai/api/v1"
     for status in (429, 429, 400, 429):
         ph.record_llm_outcome(url, "m", ok=False, status=status, latency_s=0.1, now=1000.0)
@@ -692,4 +692,3 @@ def test_rate_limits_and_bad_requests_are_not_outages(monkeypatch, tmp_path):
         ph.record_llm_outcome(url, "m", ok=False, status=status, latency_s=0.1, now=1002.0)
     h = ph.read_provider_health(now=1003.0)["openrouter"]
     assert h["errors"] == 3 and h["consecutive_errors"] == 3
-    ph._BUF.events.clear()

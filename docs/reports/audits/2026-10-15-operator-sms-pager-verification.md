@@ -7,7 +7,7 @@
 ## Scope
 
 The operator SMS pager (`pipeline/pager.py`, `pipeline/pager_core.py`, `pipeline/sms_notify.py`,
-`pipeline/provider_health.py`):
+`llm/provider_health.py`):
 - 10-minute digests during live production runs;
 - 60-second scans that stay silent while healthy and text only on failures;
 - resolution texts;
