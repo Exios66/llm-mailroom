@@ -186,6 +186,7 @@ def test_release_docs_match_package_version(release_project, path, pattern):
     ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(__REF__)"),
 ])
 def test_release_docs_match_declared_dojo_pin(release_project, path, pattern):
+    """Require published pin references to match the declared scoring dependency."""
     dependency, = [dep for dep in release_project["dependencies"]
                    if dep.startswith("llm-dojo-scoring @")]
     pin = dependency.rsplit("@", 1)[1]

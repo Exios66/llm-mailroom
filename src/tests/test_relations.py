@@ -471,6 +471,7 @@ def test_embed_uses_public_dojo_embed_texts(temp_base_dir, monkeypatch):
     seen = []
 
     def fake_embed_texts(texts):
+        """Record each batch and return deterministic vectors for the public API stub."""
         seen.append(list(texts))
         return [[0.1, 0.2, 0.3] for _ in texts]
 
@@ -488,6 +489,7 @@ def test_embed_degrades_when_dojo_has_no_backend(temp_base_dir, monkeypatch):
     assert P._embed(["text"]) is None
 
     def boom(texts):
+        """Simulate a backend exception to exercise the embedding fallback."""
         raise RuntimeError("backend exploded")
 
     monkeypatch.setattr("llm_dojo_scoring.embed_texts", boom)
@@ -495,10 +497,12 @@ def test_embed_degrades_when_dojo_has_no_backend(temp_base_dir, monkeypatch):
 
 
 def test_embed_kill_switch_never_reaches_dojo(temp_base_dir, monkeypatch):
+    """Skip the dojo embedding call when relation embeddings are disabled."""
     monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "0")
     P.set_embedder(None)
 
     def forbidden(texts):
+        """Fail if the disabled embedding path invokes the dojo backend."""
         raise AssertionError("embeddings are disabled; dojo must not be called")
 
     monkeypatch.setattr("llm_dojo_scoring.embed_texts", forbidden)
@@ -515,12 +519,15 @@ def test_embed_end_to_end_through_real_dojo_embed_texts(temp_base_dir, monkeypat
 
     class StubMatcher:
         def __init__(self):
+            """Initialize the vector cache expected by the dojo embedding helper."""
             self._vectors = {}
 
         def _load_local(self):
+            """Skip model loading so the matcher stub stays offline."""
             pass
 
         def _embed(self, text):
+            """Return a deterministic NumPy vector derived from the text length."""
             return np.array([float(len(text)), 1.0])
 
     monkeypatch.setattr("llm_dojo_scoring.field_scoring._get_embedding", StubMatcher)

@@ -42,6 +42,7 @@ FORMER_VIOLATIONS: dict[str, tuple[str, ...]] = {
 
 
 def test_live_classes_match_taxonomy_and_dojo():
+    """Keep live document classes aligned across taxonomy, schemas, and dojo."""
     taxonomy = {c["key"] for c in load_config()["doc_classes"]}
     assert set(LIVE_DOC_TYPES) == taxonomy == set(EXTRACTION_SCHEMAS)
     assert set(LIVE_DOC_TYPES) == set(CORPUS_DOC_TYPES)
@@ -49,6 +50,7 @@ def test_live_classes_match_taxonomy_and_dojo():
 
 @pytest.mark.parametrize("doc_type", LIVE_DOC_TYPES)
 def test_extraction_schema_has_zero_contract_violations(doc_type):
+    """Require each extraction schema to satisfy the dojo empty-field contract."""
     assert contract_violations(doc_type, EXTRACTION_SCHEMAS[doc_type]) == []
 
 
@@ -62,6 +64,7 @@ def test_every_dojo_scored_field_exists_on_the_schema(doc_type):
 
 @pytest.mark.parametrize("doc_type", LIVE_DOC_TYPES)
 def test_fully_unstated_payload_is_schema_valid(doc_type):
+    """Accept the canonical empty payload for every live document class."""
     payload = contract_empty_payload(doc_type)
     assert validate_extraction(doc_type, payload)["schema_valid"] is True
 
@@ -71,6 +74,7 @@ def test_fully_unstated_payload_is_schema_valid(doc_type):
     [(doc, field) for doc, fields in FORMER_VIOLATIONS.items() for field in fields],
 )
 def test_former_violations_accept_null_and_still_accept_text(doc_type, field):
+    """Accept null and text for corrected scalar fields and default them to null."""
     model = EXTRACTION_SCHEMAS[doc_type]
     assert model.model_validate({field: None}).model_dump()[field] is None
     assert model.model_validate({field: "stated"}).model_dump()[field] == "stated"

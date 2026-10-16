@@ -24,6 +24,7 @@ LIVE_DOC_TYPES: tuple[str, ...] = (
 
 
 def test_live_specialists_equal_dojo_production():
+    """Match live specialist prompts to both dojo production lookup paths."""
     live = prompt_templates()
     for agent in SPECIALIST_AGENTS:
         assert (
@@ -34,6 +35,7 @@ def test_live_specialists_equal_dojo_production():
 
 
 def test_taxonomy_field_types_equal_dojo_defaults_for_live_classes():
+    """Require live taxonomy field types to match the pinned dojo defaults."""
     # Strict parity (plan Task 12): the dojo re-pinned DEFAULT_FIELD_TYPES to
     # the mailroom taxonomy (``intent: label`` for the three controlled
     # classes), so any drift on either side fails here.
