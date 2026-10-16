@@ -496,17 +496,65 @@ def test_embed_degrades_when_dojo_has_no_backend(temp_base_dir, monkeypatch):
     assert P._embed(["text"]) is None
 
 
-def test_embed_kill_switch_never_reaches_dojo(temp_base_dir, monkeypatch):
+@pytest.mark.parametrize("disabled", ["0", "false", "no", "off", ""])
+def test_embed_kill_switch_never_reaches_dojo(temp_base_dir, monkeypatch, mocker, disabled):
     """Skip the dojo embedding call when relation embeddings are disabled."""
-    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "0")
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", disabled)
     P.set_embedder(None)
-
-    def forbidden(texts):
-        """Fail if the disabled embedding path invokes the dojo backend."""
-        raise AssertionError("embeddings are disabled; dojo must not be called")
-
-    monkeypatch.setattr("llm_dojo_scoring.embed_texts", forbidden)
+    embed = mocker.patch("llm_dojo_scoring.embed_texts")
     assert P._embed(["text"]) is None
+    embed.assert_not_called()
+
+
+def test_injected_embedder_takes_priority_over_public_api(monkeypatch, mocker):
+    """The hermetic injection seam also works with real embeddings disabled."""
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "0")
+    backend = mocker.patch("llm_dojo_scoring.embed_texts")
+    injected = mocker.Mock(return_value=[[1.0, 0.0], [0.0, 1.0]])
+    P.set_embedder(injected)
+    assert P._embed(["first", "second"]) == [[1.0, 0.0], [0.0, 1.0]]
+    injected.assert_called_once_with(["first", "second"])
+    backend.assert_not_called()
+
+
+def test_embed_missing_public_api_fails_soft(monkeypatch):
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
+    monkeypatch.delattr("llm_dojo_scoring.embed_texts")
+    assert P._embed(["text"]) is None
+
+
+@pytest.mark.parametrize("failure", ["unavailable", "exception"])
+def test_public_embedding_failure_preserves_other_signals_and_can_recover(
+    temp_base_dir, monkeypatch, mocker, failure,
+):
+    """An outage must neither stop associations nor poison the embedding cache."""
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
+    backend = mocker.patch("llm_dojo_scoring.embed_texts", return_value=None)
+    if failure == "exception":
+        backend.side_effect = RuntimeError("backend unavailable")
+    _seed(HAIL_ROWS)
+
+    report = P.scan_document("docA")
+    assert report["ok"] is True
+    assert report["edges_new"] == 2
+    edges = asyncio_run(R.all_edges())
+    assert {
+        (edge["source_doc_id"], edge["target_doc_id"], edge["relation_type"])
+        for edge in edges
+    } == {("docA", "docB", "same_matter"), ("docA", "docB", "topic_overlap")}
+    assert backend.call_count == 1
+    assert asyncio_run(R.get_embedding("docA", P.embedding_model_name())) is None
+
+    backend.side_effect = None
+    backend.return_value = [[0.9, 0.1, 0.0]]
+    assert P.scan_document("docA")["ok"] is True
+    assert asyncio_run(R.get_embedding("docA", P.embedding_model_name())) == pytest.approx(
+        [0.9, 0.1, 0.0], abs=1e-5
+    )
+    assert backend.call_count == 2  # failed vectors were not cached
+    assert P.scan_document("docA")["ok"] is True
+    assert backend.call_count == 2  # recovered vectors are cached
+    assert P.verify_ledger()[0] is True
 
 
 def test_embed_end_to_end_through_real_dojo_embed_texts(temp_base_dir, monkeypatch):
