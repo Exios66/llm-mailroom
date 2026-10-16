@@ -269,6 +269,9 @@ def retry_chat_completion(
             extra["provider"] = provider
             kwargs = {**kwargs, "extra_body": extra}
             failover = []
+    from .provider_health import record_llm_outcome
+
+    health_url = str(getattr(client, "base_url", "") or "")
     attempt = 0
     while True:
         attempt += 1
@@ -279,12 +282,17 @@ def retry_chat_completion(
 
             logger.warning("llm_free_quota_open", model=kwargs.get("model"), open_until=breaker.open_until)
             raise FreeQuotaExhausted(breaker.open_until)
+        started = time.monotonic()
         try:
             response = client.chat.completions.create(**kwargs, timeout=timeout)
+            record_llm_outcome(health_url, kwargs.get("model"), ok=True, status=200,
+                               latency_s=time.monotonic() - started)
             if breaker is not None:
                 breaker.note_success()
             return response
         except Exception as exc:  # noqa: BLE001 — we inspect and re-raise below
+            record_llm_outcome(health_url, kwargs.get("model"), ok=False, status=_status_code(exc),
+                               latency_s=time.monotonic() - started)
             if breaker is not None and (
                 isinstance(exc, RateLimitError) or _status_code(exc) == 429
             ):

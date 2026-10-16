@@ -1318,8 +1318,17 @@ class Watcher:
 
 
 if __name__ == "__main__":
-    from observability.tracing import ensure_process_tracing
+    import argparse
 
+    from observability.tracing import ensure_process_tracing
+    from pipeline.pager import Pager, load_pager_config, prompt_on_start
+
+    _ap = argparse.ArgumentParser(description="Run the mailroom watcher.")
+    _ap.add_argument("--pager", action=argparse.BooleanOptionalAction, default=None,
+                     help="Turn operator text alerts on/off without the start prompt.")
+    _pager_cfg = prompt_on_start(load_pager_config(), flag=_ap.parse_args().pager)
+    if _pager_cfg.active:
+        Pager(_pager_cfg).start_background()
     watcher = Watcher()
     _shutdown = threading.Event()
 
