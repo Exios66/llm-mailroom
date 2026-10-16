@@ -263,6 +263,14 @@ def test_noncritical_sends_still_consume_quota(kind, keys):
     assert mark_sent(st, kind, keys, at("14:20"), True).sent_log == [at("14:20")]
 
 
+def test_each_successful_send_counts_toward_the_cap_but_criticals_do_not():
+    st = PagerState(open={"review_backlog": {"severity": "warning"}, "watcher_down": {"severity": "critical"}})
+    part = mark_sent(st, "alert", ("review_backlog",), at("14:20"), False, sends=1)  # partial: counted, not acked
+    assert part.sent_log == [at("14:20")] and part.pending == ["review_backlog"]
+    assert mark_sent(st, "alert", ("review_backlog",), at("14:20"), True, sends=2).sent_log == [at("14:20")] * 2
+    assert mark_sent(st, "alert", ("watcher_down",), at("14:20"), True, sends=2).sent_log == []
+
+
 def test_digest_aligned_to_clock_and_custom_cadence():
     assert next_digest_at(cfg(), "production", at("14:13")) == at("14:20")
     assert next_digest_at(cfg(), "production", at("14:20")) == at("14:30")
