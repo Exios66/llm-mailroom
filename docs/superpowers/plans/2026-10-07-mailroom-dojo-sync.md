@@ -473,8 +473,10 @@ Closes D5. Needs Task 9 merged on mailroom `main`.
 
 ### Task 12: Mailroom adopts v0.20.1; parity guard goes strict-green [llm-mailroom]
 
+> **Status (2026-10-16):** Step 2 is done on an interim commit pin (`8c7b7f1c9c3b18a7036ee58addcfaa35d816177d`, dojo `[Unreleased]`). The `bump_dojo_scoring.py --apply --tag <vX.Y.Z>` step still stands: re-pin to the dojo tag (`v0.22.0`) once the human cuts it.
+
 - [ ] **Step 1:** `PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.20.1 && pip install -e ".[dev]"`
-- [ ] **Step 2:** Run `pytest -q src/tests/test_dojo_parity.py` → the strict xfail now **XPASS-fails**; remove the `xfail` marker.
+- [x] **Step 2:** Run `pytest -q src/tests/test_dojo_parity.py` → the strict xfail now **XPASS-fails**; remove the `xfail` marker. *(Done against the unreleased dojo `8c7b7f1`, whose `DEFAULT_FIELD_TYPES` carries `intent: label`; the marker is gone and the test is a normal passing guard.)*
 - [ ] **Step 3:** `pytest -q -p no:cacheprovider` → `0 failed`; `bump_dojo_scoring.py --check` and `sync_gitbook_changelog.py --check` exit 0.
 - [ ] **Step 4: Commit** — `git commit -am "chore: pin llm-dojo-scoring v0.20.1; dojo parity guard is strict"`
 
@@ -485,7 +487,7 @@ Closes D5. Needs Task 9 merged on mailroom `main`.
 ## Appendix — Mailroom import surface (must survive every dojo release)
 
 From `grep -rhoE "from llm_dojo_scoring…"` over mailroom `src/` + `notebooks/` at `bee7f46`:
-`get_suite`, `list_suites`, `load_registry`, `get_field_types`, `score_extraction`, `ExtractionScoreResult`, `warm_embedding_model`, `score_category_presence`, `normalize_text`, `is_entity_list`, `parse_date`, `parse_money`, `configure`, `configure_from_taxonomy`, `field_scoring` (module, incl. private `_get_embedding`), `mailroom.score_aligned_classification`, `intake.{looks_messy, INTAKE_SPAN_KEYS, …}`, `serving.compare_serving`, `registry.MetricTier`, `pruning.headline_metrics`, `prompts.{get_prompt, list_prompts}`, `corpus.{normalize_corpus_subclass, DOC_TYPE_SUBCLASSES}`, `content_scoring.peel_non_extraction_fields`, `archive.archive_entry_hash`. Phase 3 adds `intents.{INTENT_LABELS, INTENT_ALIASES, INTENT_DESCRIPTIONS, normalize_intent}`.
+`get_suite`, `list_suites`, `load_registry`, `get_field_types`, `score_extraction`, `ExtractionScoreResult`, `warm_embedding_model`, `score_category_presence`, `normalize_text`, `is_entity_list`, `parse_date`, `parse_money`, `configure`, `configure_from_taxonomy`, `field_scoring` (module; the private `_get_embedding()._embed` use is replaced by the public `embed_texts`), `mailroom.score_aligned_classification`, `intake.{looks_messy, INTAKE_SPAN_KEYS, …}`, `serving.compare_serving`, `registry.MetricTier`, `pruning.headline_metrics`, `prompts.{get_prompt, list_prompts}`, `corpus.{normalize_corpus_subclass, DOC_TYPE_SUBCLASSES}`, `content_scoring.peel_non_extraction_fields`, `archive.archive_entry_hash`. Phase 3 adds `intents.{INTENT_LABELS, INTENT_ALIASES, INTENT_DESCRIPTIONS, normalize_intent}`.
 
 ## Out of scope (tracked, not done here)
 
