@@ -33,7 +33,8 @@ def test_window_counts_and_consecutive(ph):
     for i, (ok, st) in enumerate([(True, 200), (False, 503), (False, 502), (True, 200), (False, 503), (False, 503)]):
         ph.record_llm_outcome(url, "m", ok=ok, status=st, latency_s=1.0 + i, now=t + i)
     h = ph.read_provider_health(now=t + 10)["openrouter"]
-    assert h["calls"] == 6 and h["errors"] == 4 and h["consecutive_errors"] == 2
+    # 503 is a Modal cold start, not an outage: only the 502 counts as an error
+    assert h["calls"] == 6 and h["errors"] == 1 and h["consecutive_errors"] == 0 and h["ok_calls"] == 2
     assert h["count_503"] == 3 and h["last_status"] == 503 and h["last_ok_at"] == t + 3
     assert h["p50_latency_s"] == 3.5
 
