@@ -22,8 +22,8 @@ Deterministic signal mix (all free — no LLM):
 - ``topic_overlap`` — keyword Jaccard over the extracted_data keywords.
 - ``party_overlap`` — shared party-ish extracted fields (parties, sender,
   recipient, insured_party, entity_name, ...).
-- ``semantic_similarity`` — embedding cosine via the dojo's
-  ``get_embedding_model`` (sentence-transformers, local); embeddings are
+- ``semantic_similarity`` — embedding cosine via the dojo's public
+  fail-soft ``embed_texts`` (sentence-transformers, local); embeddings are
   cached per (doc, model) in ``relation_embeddings`` so a document is
   embedded exactly once. Unavailable model ⇒ the cosine signal is skipped
   and the other signals still flow (fail-soft).
@@ -200,13 +200,13 @@ def _embed(texts: list[str]) -> list[list[float]] | None:
     """Embed texts via the injected seam or the dojo model. Returns None when
     embeddings are unavailable (fail-soft — the cosine signal just skips).
 
-    HUB-051 fix: the dojo's public ``get_embedding_model()`` returns the model
-    NAME (a string), so the previous ``model.encode(...)`` call died with a
-    TypeError on every real run (``relations_embed_failed``; the cosine signal
-    never worked outside the injected test seam). The shared
-    ``_EmbeddingMatcher`` singleton (``_get_embedding``) is the real model
-    handle — local SentenceTransformer with remote-embedding fallback, one
-    instance per process, exactly the dojo's own compute-once philosophy."""
+    The dojo's public ``get_embedding_model()`` returns the model NAME (a
+    string), so never ``.encode()`` it (HUB-051). The real path calls the
+    dojo's public, fail-soft ``llm_dojo_scoring.embed_texts`` (the scorer's own
+    backend: local SentenceTransformer with remote fallback, one cached
+    instance per process); it returns None when no backend is available or any
+    text fails to embed, and the private ``_get_embedding()._embed`` seam that
+    HUB-051 reached into is no longer touched."""
     with _EMBEDDER_LOCK:
         embedder = _EMBEDDER
     if embedder is None:
@@ -214,26 +214,9 @@ def _embed(texts: list[str]) -> list[list[float]] | None:
             return None
         try:
             import observability.scoring_wiring  # noqa: F401 — import-time taxonomy→dojo wiring (embedding_enabled/model); without it the dojo defaults (embedding_enabled=False) starve the cosine signal
-            from llm_dojo_scoring.field_scoring import _get_embedding
+            from llm_dojo_scoring import embed_texts
 
-            matcher = _get_embedding()
-            if matcher is None:
-                return None
-            embed = getattr(matcher, "_embed", None)
-            load_local = getattr(matcher, "_load_local", None)
-            if embed is None:
-                return None
-            if callable(load_local):
-                load_local()  # the matcher only loads its local model lazily
-                # inside similarity(); _embed alone would fall through to the
-                # remote backend
-            out: list[list[float]] = []
-            for text in texts:
-                vector = embed(text)
-                if vector is None:
-                    return None
-                out.append([float(x) for x in vector])
-            return out
+            return embed_texts(texts)
         except Exception:
             logger.debug("relations_embedder_unavailable")
             return None
