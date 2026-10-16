@@ -409,11 +409,35 @@ def test_webhook_posts_payload_with_signature(host, monkeypatch):
     p.http = httpx.Client(transport=httpx.MockTransport(handler))
     p.tick(at("14:01"))
     (req,) = seen
+    assert not p.http.is_closed
     body = req.content
     assert json.loads(body)["kind"] == "alert"
     assert req.headers["X-Mailroom-Signature"] == "sha256=" + hmac.new(b"s3cret", body, hashlib.sha256).hexdigest()
     p.http = httpx.Client(transport=httpx.MockTransport(lambda r: (_ for _ in ()).throw(httpx.ConnectError("x"))))
     p.tick(at("14:20"))                                       # soft failure
+    assert not p.http.is_closed
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_webhook_closes_owned_client(host, monkeypatch, fail):
+    pager, rec, _ = host
+    client_type, clients, seen = httpx.Client, [], []
+
+    def handler(request):
+        seen.append(request)
+        if fail:
+            raise httpx.ConnectError("offline", request=request)
+        return httpx.Response(204)
+
+    def factory(**kwargs):
+        client = client_type(transport=httpx.MockTransport(handler), **kwargs)
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(pager.httpx, "Client", factory)
+    p = make(pager, rec, machine={"webhook_url": "https://hooks.example/pager"})
+    p._webhook({"kind": "test"})
+    assert len(seen) == len(clients) == 1 and clients[0].is_closed
 
 
 def test_cli_log_human_and_json(host, capsys):
