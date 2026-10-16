@@ -100,14 +100,15 @@ class TwilioTransport:
                  service_sid: str | None, client: httpx.Client | None = None) -> None:
         self._sid, self._token = sid, token
         self._sender = {"MessagingServiceSid": service_sid} if service_sid else {"From": from_number or ""}
-        self._client = client or httpx.Client()
+        self._client = client
 
     def send(self, to: str, body: str) -> SendResult:
         segments = count_segments(body)[1]
         try:
-            resp = self._client.post(TWILIO_URL.format(sid=self._sid), timeout=10.0,
-                                     data={"To": to, "Body": body, **self._sender},
-                                     auth=(self._sid, self._token))
+            with contextlib.nullcontext(self._client) if self._client is not None else httpx.Client() as client:
+                resp = client.post(TWILIO_URL.format(sid=self._sid), timeout=10.0,
+                                   data={"To": to, "Body": body, **self._sender},
+                                   auth=(self._sid, self._token))
         except Exception as exc:  # fail-soft: a send never raises into the pager
             return _failed(self.name, to, segments, type(exc).__name__)
         data = _json(resp)
@@ -170,7 +171,7 @@ def build_transport(name: str, env: Mapping[str, str] | None = None) -> Transpor
         cfg = status_notify._smtp_config()
         if cfg:
             return EmailGatewayTransport(cfg)
-        missing = [k for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if not os.environ.get(k)]
+        missing = [k for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if not env.get(k)]
     elif name == "twilio":
         missing = [k for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN") if not env.get(k)]
         if not (env.get("TWILIO_FROM_NUMBER") or env.get("TWILIO_MESSAGING_SERVICE_SID")):

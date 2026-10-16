@@ -16,6 +16,7 @@ import socket
 import subprocess
 import threading
 import time
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -472,8 +473,8 @@ class Pager:
         if secret:
             headers["X-Mailroom-Signature"] = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         try:
-            (self.http or httpx.Client(timeout=5.0)).post(self.cfg.machine.webhook_url, content=body,
-                                                          headers=headers, timeout=5.0)
+            with nullcontext(self.http) if self.http is not None else httpx.Client(timeout=5.0) as client:
+                client.post(self.cfg.machine.webhook_url, content=body, headers=headers, timeout=5.0)
         except Exception as exc:  # noqa: BLE001 — fail-soft, no retries
             logger.warning("pager_webhook_failed", error=type(exc).__name__)
 

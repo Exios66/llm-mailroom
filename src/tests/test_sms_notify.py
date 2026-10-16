@@ -90,6 +90,32 @@ def test_twilio_posts_form_and_reports_sid():
     assert seen["timeout"] == 10.0
 
 
+@pytest.mark.parametrize("injected", [False, True])
+@pytest.mark.parametrize("outcome", ["ok", "rejected", "timeout"])
+def test_twilio_client_ownership(monkeypatch, injected, outcome):
+    def handler(request):
+        if outcome == "timeout":
+            raise httpx.ReadTimeout("timed out", request=request)
+        return httpx.Response(201 if outcome == "ok" else 400, json={})
+
+    client_type, clients = httpx.Client, []
+
+    def factory():
+        client = client_type(transport=httpx.MockTransport(handler))
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(sms_notify.httpx, "Client", factory)
+    transport = TwilioTransport("AC123", "tok", from_number="+15550001111", service_sid=None,
+                                client=factory() if injected else None)
+    for _ in range(2):
+        assert transport.send("+16085551234", "hello").ok == (outcome == "ok")
+    assert len(clients) == (1 if injected else 2)
+    assert all(client.is_closed == (not injected) for client in clients)
+    for client in clients:
+        client.close()
+
+
 def test_twilio_uses_messaging_service_when_set():
     seen = {}
 
@@ -220,6 +246,15 @@ def test_build_transport_builds_configured_transports(monkeypatch):
     assert isinstance(build_transport("email_gateway", {}), EmailGatewayTransport)
     monkeypatch.setattr(sms_notify.status_notify, "_smtp_config", lambda: None)
     assert build_transport("email_gateway", {}) is None
+
+
+def test_email_gateway_missing_credentials_uses_injected_env(monkeypatch, fresh_logger):
+    monkeypatch.setattr(sms_notify.status_notify, "_smtp_config", lambda: None)
+    monkeypatch.setenv("GMAIL_ADDRESS", "process@example.com")
+    monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
+    with capture_logs() as logs:
+        assert build_transport("email_gateway", {"GMAIL_APP_PASSWORD": "injected"}) is None
+    assert logs[0]["missing"] == ["GMAIL_ADDRESS"]
 
 
 def test_override_wins():
