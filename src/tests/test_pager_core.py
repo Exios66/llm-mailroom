@@ -659,3 +659,12 @@ def test_plan_digest_takes_snapshot_only_when_rendering():
     assert calls == []
     out, _ = plan_digest(lazy, c, PagerState(next_digest=at("14:10")), at("14:20"))
     assert calls == [1] and len(out.messages) == 1
+
+
+def test_cap_of_one_still_lets_one_warning_through():
+    c = cfg(alerts={"max_texts_per_hour": 1})
+    w = snap(at("14:20"), queues={"inbox": 0, "processing": 0, "review": 50, "failed": 0}, providers=[])
+    st = PagerState()
+    _, st = plan_scan(w, c, st, at("14:19"))
+    out, st = plan_scan(w, c, st, at("14:20"))
+    assert [k for m in out.messages for k in m.alert_keys] == ["review_backlog"] and st.held == []
