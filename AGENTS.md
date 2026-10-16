@@ -66,6 +66,10 @@ PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py # regenerate the Git
 PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check # fail if docs/changelog/ is stale vs CHANGELOG.md
 PYTHONPATH=src python src/scripts/probe_hosted_spaces.py  # live Lucius-Morningstar Observatory + producer pair
 PYTHONPATH=src python -m pipeline.ops_monitor  # scheduled Boss sweep (optional)
+PYTHONPATH=src python -m pipeline.pager status    # operator SMS pings: ON/OFF, masked numbers, deliverability (--full: every key + source)
+PYTHONPATH=src python -m pipeline.pager on --to +16085551234   # enable texts (mobile or Google Voice); `pager off` keeps the number
+PYTHONPATH=src python -m pipeline.pager test      # send a test text (works while OFF); `preview` prints a digest without sending
+PYTHONPATH=src python -m pipeline.pager run       # foreground sender (normally hosted by the watchdog)
 docker compose -f deploy/docker-compose.full.yml --env-file .env up -d --build  # FULL single-host stack: app + ops-monitor + watchdog + postgres + LiteLLM gateway (+ --profile phoenix) → Modal GPU tiers
 PYTHONPATH=src python src/scripts/smoke_modal_tiers.py --check   # network-free tier-routing contract (taxonomy tier: ↔ LiteLLM aliases ↔ Modal tiers); --warm / --run [--source snapshot] for one doc per class end-to-end + Langfuse tier attribution
 PYTHONPATH=src python -m pipeline.relations_mode status      # relations clerk live/pilot posture + knobs

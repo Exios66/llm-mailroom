@@ -1,0 +1,62 @@
+{
+ "ticks": 135,
+ "texts_delivered": 14,
+ "messages": [
+  {
+   "at": "2:10:05 PM",
+   "body": "Mailroom LIVE · 2:10 PM CDT\n🟢 All clear — no action needed.\nLast 10 min: 14 received, 11 archived, 2 to review, 0 failed.\n48s/doc (median) · $0.21 · 79% first-pass.\nToday: 306 processed · 9 to review · 4 failed · $4.86.\nQueues: 2 waiting, 1 in progress, 6 awaiting review.\nModels: Modal fast and extract up; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.\nRef P-1410-7663",
+   "recipients": [
+    "+1•••••9876",
+    "+1•••••1234"
+   ]
+  },
+  {
+   "at": "2:20:05 PM",
+   "body": "Mailroom LIVE · 2:20 PM CDT\n🟢 All clear — no action needed.\nLast 10 min: 14 received, 11 archived, 2 to review, 0 failed.\n48s/doc (median) · $0.21 · 79% first-pass.\nToday: 316 processed · 9 to review · 4 failed · $4.86.\nQueues: 2 waiting, 1 in progress, 6 awaiting review.\nModels: Modal fast and extract up; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.\nRef P-1420-a8c6",
+   "recipients": [
+    "+1•••••9876",
+    "+1•••••1234"
+   ]
+  },
+  {
+   "at": "2:23:05 PM",
+   "body": "Mailroom ALERT · 2:23 PM CDT\n🔴 Action needed: Modal extract tier is down.\nSince 2:23 PM: 6 of 6 calls failed (HTTP 502).\nLatest: claim_1842.pdf — extraction timed out.\nNext: check `modal app logs mailroom-vllm`.\nAlso: 3 documents failed since 2:22 PM.\nRef P-1423-9d1c",
+   "recipients": [
+    "+1•••••9876",
+    "+1•••••1234"
+   ]
+  },
+  {
+   "at": "2:24:05 PM",
+   "body": "Mailroom ALERT · 2:24 PM CDT\n🟠 Watch: 3 documents failed since 2:22 PM.\nLatest: claim_1842.pdf — extraction timed out.\nNext: inspect data/failed/ and the latest error above.\nAlso: Modal extract tier is down.\nRef P-1424-22ed",
+   "recipients": [
+    "+1•••••9876",
+    "+1•••••1234"
+   ]
+  },
+  {
+   "at": "2:30:05 PM",
+   "body": "Mailroom LIVE · 2:30 PM CDT\n🔴 Action needed: Modal extract tier is down.\nSince 2:23 PM: 6 of 6 calls failed (HTTP 502).\nNext: check `modal app logs mailroom-vllm`.\nAlso: 3 documents failed since 2:22 PM.\nLast 10 min: 9 received, 4 archived, 1 to review, 3 failed.\n61s/doc (median) · $0.12 · 44% first-pass.\nToday: 326 processed · 9 to review · 7 failed · $4.86.\nQueues: 7 waiting, 1 in progress, 6 awaiting review.\nModels: Modal fast up; extract DOWN; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.\nRef P-1430-2039",
+   "recipients": [
+    "+1•••••9876",
+    "+1•••••1234"
+   ]
+  },
+  {
+   "at": "2:37:05 PM",
+   "body": "Mailroom RESOLVED · 2:37 PM CDT\n✅ Resolved: Modal extract tier is back up after 14 min; document failures have stopped after 14 min. No action needed.\nRef P-1437-2da3",
+   "recipients": [
+    "+1•••••9876",
+    "+1•••••1234"
+   ]
+  },
+  {
+   "at": "2:40:05 PM",
+   "body": "Mailroom LIVE · 2:40 PM CDT\n🟢 All clear — no action needed.\nLast 10 min: 14 received, 11 archived, 2 to review, 0 failed.\n48s/doc (median) · $0.21 · 79% first-pass.\nToday: 336 processed · 9 to review · 4 failed · $4.86.\nQueues: 2 waiting, 1 in progress, 6 awaiting review.\nModels: Modal fast and extract up; vision idle (scaled to zero). OpenRouter OK, $4.12 credit left.\nRef P-1440-122d",
+   "recipients": [
+    "+1•••••9876",
+    "+1•••••1234"
+   ]
+  }
+ ]
+}

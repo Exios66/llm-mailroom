@@ -327,3 +327,58 @@ async def get_error_rate_by_doc_type() -> dict[str, dict]:
             elif stage == "review":
                 stats[doc_type]["review"] += 1
         return stats
+
+
+async def window_stats(since: datetime, run_id: str | None = None) -> dict:
+    """Operator-pager window counts: ``received`` (created since), terminal
+    ``archived``/``review``/``failed`` (current stage, updated since), plus the
+    window's cost, median latency and first-pass rate (None when empty)."""
+    ensure_schema()
+    q = select(DocumentRecord).where(
+        (DocumentRecord.created_at >= since) | (DocumentRecord.updated_at >= since)
+    )
+    if run_id:
+        q = q.where(DocumentRecord.run_id == run_id)
+    async with async_session() as session:
+        rows = list((await session.execute(q)).scalars().all())
+    since_naive = since.replace(tzinfo=None)
+
+    def after(ts):
+        return ts is not None and ts.replace(tzinfo=None) >= since_naive
+
+    done = [r for r in rows if after(r.updated_at)]
+    by = {s: [r for r in done if r.stage == s] for s in ("archived", "review", "failed")}
+    lats = sorted(r.latency_s for r in done if r.latency_s is not None)
+    scored = [r for r in by["archived"] if (r.scores or {}).get("success_rate") is not None]
+    mid = len(lats) // 2
+    return {
+        "received": sum(1 for r in rows if after(r.created_at)),
+        **{s: len(v) for s, v in by.items()},
+        "cost_usd": round(sum(r.cost_usd or 0.0 for r in done), 4),
+        "p50_latency_s": (lats[mid] if len(lats) % 2 else (lats[mid - 1] + lats[mid]) / 2) if lats else None,
+        "first_pass_rate": (sum(1 for r in scored if float(r.scores["success_rate"]) >= 0.5) / len(scored))
+        if scored else None,
+    }
+
+
+async def recent_failures(since: datetime, limit: int = 3) -> list[dict]:
+    """Newest failed documents updated since ``since``, for the pager's
+    ``Latest:`` line: filename, stage, a ≤60-char reason and the update time."""
+    ensure_schema()
+    async with async_session() as session:
+        rows = (await session.execute(
+            select(DocumentRecord).where(DocumentRecord.stage == "failed", DocumentRecord.updated_at >= since)
+            .order_by(DocumentRecord.updated_at.desc()).limit(limit)
+        )).scalars().all()
+    out = []
+    for r in rows:
+        reason = r.escalation_reason or "unknown error"
+        try:
+            from pipeline.gmail_intake import friendly_reason
+
+            reason = (friendly_reason(reason) or (reason,))[0]
+        except Exception:
+            pass
+        ts = r.updated_at.replace(tzinfo=r.updated_at.tzinfo or timezone.utc).timestamp()
+        out.append({"filename": r.original_filename, "stage": r.stage, "reason": reason[:60], "at": ts})
+    return out

@@ -491,3 +491,9 @@ def stop_outbox_worker(worker: OutboxWorker | None) -> None:
             worker.stop()
     if _WORKER is worker:
         _WORKER = None
+
+
+def count_dead() -> int:
+    """Echo emails that exhausted their retries (operator pager ``outbox_dead`` rule)."""
+    with _db() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM outbox WHERE state='dead'").fetchone()[0])

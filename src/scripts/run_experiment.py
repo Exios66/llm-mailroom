@@ -163,8 +163,20 @@ def _row_for(item: Any, output: dict | None) -> dict:
     }
 
 
-def run_local(items: list[dict], task: Callable, evaluators: list[Callable] | None = None) -> dict:
-    """Offline experiment loop with the SDK's evaluator contract and error isolation."""
+def _report_progress(run_id: str, label: str, total: int, rows: list[dict], errors: int, finished: bool) -> None:
+    """Operator SMS pager: publish run progress (pipeline/pager.py reads it)."""
+    from pipeline.pager import report_run_progress
+
+    acc = compute_metrics(rows).get("class_accuracy") if rows else None
+    report_run_progress(run_id, label=label, total=total, done=len(rows), finished=finished,
+                        metrics={"acc": acc, "failed": errors})
+
+
+def run_local(items: list[dict], task: Callable, evaluators: list[Callable] | None = None,
+              on_progress: Callable | None = None) -> dict:
+    """Offline experiment loop with the SDK's evaluator contract and error isolation.
+
+    ``on_progress(rows, n_errors, finished)`` runs after every item and once at the end."""
     evaluators = ITEM_EVALUATORS if evaluators is None else evaluators
     results, rows, n_errors = [], [], 0
     for item in items:
@@ -189,6 +201,10 @@ def run_local(items: list[dict], task: Callable, evaluators: list[Callable] | No
             evals.append(Evaluation(name="class_correct", value=0, data_type="BOOLEAN"))
         rows.append(_row_for(item, output))
         results.append({"input": _get(item, "input"), "error": error, "evaluations": evals})
+        if on_progress:
+            on_progress(rows, n_errors, False)
+    if on_progress:
+        on_progress(rows, n_errors, True)
     return {
         "n_items": len(items),
         "n_errors": n_errors,
@@ -352,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write-baseline", help="Write this run's summary as a baseline JSON.")
     parser.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
     parser.add_argument("--langfuse", action="store_true", help="Run via the hosted SDK experiment runner.")
+    parser.add_argument("--page", action="store_true", help="Text run progress to the operator (pager must be ON).")
     args = parser.parse_args(argv)
 
     if args.real:
@@ -381,7 +398,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.langfuse:
         summary = run_langfuse(args.dataset, items, task, f"{args.dataset}-{run_id}")
     else:
-        summary = run_local(items, task)
+        if args.page:
+            from pipeline.pager import Pager, load_pager_config
+
+            Pager(load_pager_config({**os.environ, "MAILROOM_PAGER_MODE": "research"})).start_background()
+        label = f"run_experiment {args.dataset} --{'mock' if args.mock else 'real'}"
+        summary = run_local(items, task, on_progress=lambda rows, errors, finished: _report_progress(
+            f"{args.dataset}-{run_id}", label, len(items), rows, errors, finished))
 
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     problems = check_regression(summary, baseline, args.tolerance)
