@@ -44,6 +44,35 @@ def test_corrected_records_are_served():
     assert specialist_sha256("contracts_specialist").startswith("d91de396")
 
 
+def test_corrected_roles_record_their_eval_environment_mutation_keys():
+    """Corrected bytes are eval-environment mutations (never ``_v1``/``_v2``);
+    ``derived_from`` pins the uncorrected v1 digest the legacy .txt files hold."""
+    import hashlib
+    from pathlib import Path
+
+    import llm.frozen_v1 as F
+
+    expected = {
+        "correspondence_specialist": "correspondence_specialist_v7",
+        "corporate_records_specialist": "corporate_records_specialist_v6",
+    }
+    catalog = lineage()["specialists"]
+    for agent in SPECIALIST_AGENTS:
+        row = catalog[agent]
+        if agent not in expected:
+            assert row["eval_environment_key"] == f"{agent}_v1"
+            assert "derived_from" not in row
+            continue
+        assert row["eval_environment_key"] == expected[agent]
+        derived = row["derived_from"]
+        assert derived["eval_environment_key"] == f"{agent}_v1"
+        assert derived["sha256"] != row["sha256"]
+        legacy = Path(F.__file__).parent / derived["legacy_file"]
+        if legacy.is_file():
+            assert hashlib.sha256(legacy.read_bytes()).hexdigest() == derived["sha256"]
+    assert not any(row["eval_environment_key"].endswith("_v2") for row in catalog.values())
+
+
 def test_production_templates_are_frozen_v1_specialists_and_sorter_v14():
     templates = prompt_templates()
     assert templates["sorter"] == LP.SORTER_PROMPT_V14
