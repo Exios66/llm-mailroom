@@ -1322,9 +1322,18 @@ def assert_bind_allowed(host: str | None = None) -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+
     import uvicorn
     from observability.tracing import ensure_process_tracing
+    from pipeline.pager import Pager, load_pager_config, prompt_on_start
 
+    _ap = argparse.ArgumentParser(description="Serve the mailroom API.")
+    _ap.add_argument("--pager", action=argparse.BooleanOptionalAction, default=None,
+                     help="Turn operator text alerts on/off without the start prompt.")
+    _pager_cfg = prompt_on_start(load_pager_config(), flag=_ap.parse_args().pager)
+    if _pager_cfg.active:
+        Pager(_pager_cfg).start_background()
     host = listen_host()
     port = listen_port()
     assert_bind_allowed(host)

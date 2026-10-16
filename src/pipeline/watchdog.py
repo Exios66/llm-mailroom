@@ -165,39 +165,48 @@ def main() -> None:
         remind_minutes=remind_min,
     )
     state: dict = {"down_alerted": False, "stale_streak": 0, "last_alert": None}
-    while True:
-        try:
-            hb = read_heartbeat()
-            pid_alive = _pid_alive(hb.get("pid") if hb else None)
-            action, state = evaluate(
-                hb, pid_alive, state, time.time(), stale_s=stale_s, remind_min=remind_min
-            )
-            if action in ("down", "remind"):
-                age = watcher_heartbeat_age()
-                kind = "down" if action == "down" else "still_down"
-                title = (
-                    "watcher is DOWN — heartbeat lost"
-                    if action == "down"
-                    else "watcher is STILL DOWN — no heartbeat"
+    from .pager import Pager
+    from .pager_core import Alert
+
+    pager = Pager()  # operator SMS pings: digests + alerts survive a dead watcher (inactive unless enabled)
+    pager.start_background(idle_ok=True)  # own thread: a slow snapshot or SMS never delays the DOWN email
+    try:
+        while True:
+            try:
+                hb = read_heartbeat()
+                pid_alive = _pid_alive(hb.get("pid") if hb else None)
+                action, state = evaluate(
+                    hb, pid_alive, state, time.time(), stale_s=stale_s, remind_min=remind_min
                 )
-                sent = send_status_email(kind, title, _down_rows(hb, pid_alive, age), note=_DOWN_NOTE)
-                if not sent:
-                    # The human must not silently lose the alert because SMTP
-                    # hiccuped: revert the latch so the NEXT poll re-fires the
-                    # 🔴 `down` alert instead of waiting out the reminder
-                    # cadence. Worst case (outage AND broken SMTP) is a
-                    # log-only retry every poll — never inbox spam.
-                    state["down_alerted"] = False
-                    state["last_alert"] = None
-                logger.warning(
-                    "watchdog_alerted" if action == "down" else "watchdog_reminded",
-                    sent=sent,
-                    pid_alive=pid_alive,
-                    heartbeat_age=age,
-                )
-        except Exception:
-            logger.exception("watchdog_loop_error")
-        time.sleep(poll)
+                if action in ("down", "remind"):
+                    age = watcher_heartbeat_age()
+                    kind = "down" if action == "down" else "still_down"
+                    title = (
+                        "watcher is DOWN — heartbeat lost"
+                        if action == "down"
+                        else "watcher is STILL DOWN — no heartbeat"
+                    )
+                    sent = send_status_email(kind, title, _down_rows(hb, pid_alive, age), note=_DOWN_NOTE)
+                    pager.page_now(Alert("watcher_down", "critical"))
+                    if not sent:
+                        # The human must not silently lose the alert because SMTP
+                        # hiccuped: revert the latch so the NEXT poll re-fires the
+                        # 🔴 `down` alert instead of waiting out the reminder
+                        # cadence. Worst case (outage AND broken SMTP) is a
+                        # log-only retry every poll — never inbox spam.
+                        state["down_alerted"] = False
+                        state["last_alert"] = None
+                    logger.warning(
+                        "watchdog_alerted" if action == "down" else "watchdog_reminded",
+                        sent=sent,
+                        pid_alive=pid_alive,
+                        heartbeat_age=age,
+                    )
+            except Exception:
+                logger.exception("watchdog_loop_error")
+            time.sleep(poll)
+    finally:
+        pager.stop()
 
 
 if __name__ == "__main__":
