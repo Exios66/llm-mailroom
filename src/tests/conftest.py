@@ -31,6 +31,9 @@ def _set_test_env():
     # LLM-assisted intake (HUB-038) is also opt-in-able; tests stay on the
     # deterministic clerk unless a case opts in (patched gate + mock client).
     os.environ["MAILROOM_LLM_INTAKE"] = "0"
+    # Passive provider health (pager input) writes <base_dir>/provider_health.json
+    # on every LLM attempt; test_provider_health.py opts back in.
+    os.environ["MAILROOM_PROVIDER_HEALTH"] = "0"
     # #85 M6a (#98): ModernBERT intake is opt-in; tests stay on the
     # deterministic clerk unless a case injects the fake mailroom_ml module
     # (test_bert_intake.py) — models + Hub bundles are a network hazard.
