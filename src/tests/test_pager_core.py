@@ -239,6 +239,30 @@ def test_cap_lets_criticals_through_and_holds_rest():
     assert "🟠 Watch: review queue at 22 (limit 20); +1 held." in render_digest(snap(), c, held, at("14:30")).text
 
 
+def test_critical_sends_do_not_consume_digest_quota():
+    c = cfg(alerts={"max_texts_per_hour": 2})
+    st = PagerState(sent_log=[at("13:00"), at("14:00")], next_digest=at("14:20"))
+    out, st = scan(c, down_snap(at("14:19")), st, at("14:19"))
+    assert out.messages and st.sent_log == [at("14:00")]
+    assert st.open["provider_down:modal:extract"]["last_sent"] == at("14:19")
+    st = PagerState.from_json(json.loads(json.dumps(st.to_json())))
+    out, st = plan_digest(snap(), c, st, at("14:20"))
+    assert len(out.messages) == 1
+    msg = out.messages[0]
+    st = mark_sent(st, msg.kind, msg.alert_keys, at("14:20"), True)
+    assert st.sent_log == [at("14:00"), at("14:20")]
+    out, _ = plan_digest(snap(), c, st, at("14:30"))
+    assert out.messages == []
+
+
+@pytest.mark.parametrize("kind,keys", [("alert", ("review_backlog",)), ("resolved", ("watcher_down",)),
+                                        ("digest", ()), ("run_started", ("run:r1",))])
+def test_noncritical_sends_still_consume_quota(kind, keys):
+    st = PagerState(open={"review_backlog": {"severity": "warning"}, "watcher_down": {"severity": "critical"}})
+    assert mark_sent(st, kind, keys, at("14:20"), False).sent_log == []
+    assert mark_sent(st, kind, keys, at("14:20"), True).sent_log == [at("14:20")]
+
+
 def test_digest_aligned_to_clock_and_custom_cadence():
     assert next_digest_at(cfg(), "production", at("14:13")) == at("14:20")
     assert next_digest_at(cfg(), "production", at("14:20")) == at("14:30")
