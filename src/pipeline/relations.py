@@ -200,6 +200,10 @@ def _embed(texts: list[str]) -> list[list[float]] | None:
     """Embed texts via the injected seam or the dojo model. Returns None when
     embeddings are unavailable (fail-soft — the cosine signal just skips).
 
+    With no injected callable, disabled ``MAILROOM_RELATIONS_EMBEDDINGS``
+    returns None without calling dojo. An injected callable bypasses that
+    switch. Exceptions from either embedding path are caught and return None.
+
     The dojo's public ``get_embedding_model()`` returns the model NAME (a
     string), so never ``.encode()`` it (HUB-051). The real path calls the
     dojo's public, fail-soft ``llm_dojo_scoring.embed_texts`` (the scorer's own
