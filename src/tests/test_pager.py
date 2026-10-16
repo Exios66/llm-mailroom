@@ -749,3 +749,59 @@ def test_preview_mode_research_collects_research_stats(host, monkeypatch):
                         lambda cfg, window_minutes, now=None: seen.append(cfg.run_mode) or feed["fn"](now or time.time()))
     assert pager.main(["preview", "--mode", "research"]) == 0
     assert seen == ["research"]
+
+
+def test_preview_digest_reflects_active_failures(host, capsys):
+    pager, _, feed = host
+    feed["fn"] = broken
+    assert pager.main(["preview"]) == 0
+    assert "All clear" not in capsys.readouterr().out
+
+
+def test_partial_delivery_retries_only_failed_recipients(host):
+    pager, _, feed = host
+
+    class Flaky(Rec):
+        def __init__(self):
+            super().__init__()
+            self.down = {GV}
+
+        def send(self, to, body):
+            self.ok = to not in self.down
+            return super().send(to, body)
+
+    feed["fn"] = broken
+    t = Flaky()
+    cfg = PagerConfig.resolve({"enabled": True, "recipients": [MOBILE, GV], "timezone": "America/Chicago"},
+                              {}, environment="live")
+    p = pager.Pager(cfg, transport=t)
+    p.tick(at("14:01"))
+    assert [to for to, _ in t.sent] == [MOBILE, GV]
+    assert all(not e.get("last_sent") for e in p.state.open.values())  # not acked: GV still owed
+    entry = json.loads((get_base() / "pager_log.jsonl").read_text().splitlines()[0])
+    assert entry["delivery_partial"] is True
+    t.down, t.sent = set(), []
+    p.tick(at("14:01") + 90)
+    assert [to for to, _ in t.sent] == [GV]  # MOBILE is not texted twice
+    assert all(e.get("last_sent") for e in p.state.open.values())
+    assert p.state.delivered == {}
+    p.tick(at("14:01") + 180)
+    assert [to for to, _ in t.sent] == [GV]  # acked: no further retry
+
+
+def test_idle_ok_pager_keeps_polling_when_another_sender_holds_the_lock(host):
+    pager, rec, _ = host
+    first, second = make(pager, rec), make(pager, rec)
+    assert first.acquire()
+    thread = None
+    try:
+        thread = second.start_background(idle_ok=True)
+        assert thread is not None and second._lock is None  # passive, but still polling
+        assert make(pager, rec).start_background() is None  # batch hosts still stand down
+        first.release()
+        second.tick(at("14:00") + 5)
+        assert second._lock is not None  # took over once the owner left
+    finally:
+        second.stop()
+        second.release()
+        first.release()
