@@ -72,15 +72,22 @@ class _Buffer:
             self.last_flush = time.time() if now is None else now
         if not pending:
             return
-        path = _path()
-        with open(path.with_suffix(".lock"), "w") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            data = _load(path)
-            for key, evs in pending.items():
-                data[key] = sorted(data.get(key, []) + evs, key=lambda e: e[0])[-CAP:]
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data))
-            os.replace(tmp, path)
+        try:
+            path = _path()
+            with open(path.with_suffix(".lock"), "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                data = _load(path)
+                for key, evs in pending.items():
+                    data[key] = sorted(data.get(key, []) + evs, key=lambda e: e[0])[-CAP:]
+                tmp = path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(data))
+                os.replace(tmp, path)
+        except Exception:
+            # Put the events back (ahead of any recorded meanwhile) so the next flush retries them.
+            with self.lock:
+                for key, evs in pending.items():
+                    self.events[key] = evs + self.events.get(key, [])
+            raise
 
 
 _BUF = _Buffer()
