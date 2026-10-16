@@ -716,3 +716,36 @@ def test_rate_limits_and_bad_requests_are_not_outages(monkeypatch, tmp_path):
         ph.record_llm_outcome(url, "m", ok=False, status=status, latency_s=0.1, now=1002.0)
     h = ph.read_provider_health(now=1003.0)["openrouter"]
     assert h["errors"] == 3 and h["consecutive_errors"] == 3
+
+
+def test_openrouter_info_refuses_plain_http_for_remote_hosts(host, monkeypatch):
+    pager, *_ = host
+    import langchain_agents.openrouter_utils as oru
+
+    cfg = pager.load_pager_config()
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-real")
+    pager._OR_CACHE.clear()
+    sent = []
+
+    class C:
+        def get(self, url, **kw):
+            sent.append(url)
+            return type("R", (), {"status_code": 200, "json": lambda self: {"data": {}}})()
+
+    monkeypatch.setattr(oru, "openrouter_base_url", lambda: "http://proxy.example.com/v1")
+    assert pager.openrouter_info(cfg, client=C()) == {"error": "insecure base URL"}
+    assert sent == []
+    pager._OR_CACHE.clear()
+    monkeypatch.setattr(oru, "openrouter_base_url", lambda: "http://localhost:4000/v1")
+    assert "error" not in pager.openrouter_info(cfg, client=C())
+    assert sent == ["http://localhost:4000/v1/key"]
+    pager._OR_CACHE.clear()
+
+
+def test_preview_mode_research_collects_research_stats(host, monkeypatch):
+    pager, _, feed = host
+    seen = []
+    monkeypatch.setattr(pager, "collect_snapshot",
+                        lambda cfg, window_minutes, now=None: seen.append(cfg.run_mode) or feed["fn"](now or time.time()))
+    assert pager.main(["preview", "--mode", "research"]) == 0
+    assert seen == ["research"]
