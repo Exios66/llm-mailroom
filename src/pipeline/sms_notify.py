@@ -170,7 +170,7 @@ def build_transport(name: str, env: Mapping[str, str] | None = None) -> Transpor
         cfg = status_notify._smtp_config()
         if cfg:
             return EmailGatewayTransport(cfg)
-        missing = [k for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if not os.environ.get(k)]
+        missing = [k for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if not env.get(k)]
     elif name == "twilio":
         missing = [k for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN") if not env.get(k)]
         if not (env.get("TWILIO_FROM_NUMBER") or env.get("TWILIO_MESSAGING_SERVICE_SID")):

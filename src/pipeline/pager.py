@@ -472,8 +472,11 @@ class Pager:
         if secret:
             headers["X-Mailroom-Signature"] = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         try:
-            (self.http or httpx.Client(timeout=5.0)).post(self.cfg.machine.webhook_url, content=body,
-                                                          headers=headers, timeout=5.0)
+            if self.http is not None:
+                self.http.post(self.cfg.machine.webhook_url, content=body, headers=headers, timeout=5.0)
+            else:
+                with httpx.Client(timeout=5.0) as c:
+                    c.post(self.cfg.machine.webhook_url, content=body, headers=headers)
         except Exception as exc:  # noqa: BLE001 — fail-soft, no retries
             logger.warning("pager_webhook_failed", error=type(exc).__name__)
 
