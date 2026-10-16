@@ -93,6 +93,7 @@ def test_hf_pilot_row_unscorable_keeps_reason():
 
 
 def test_dojo_archive_hash_matches_mailroom_audit_chain():
+    """Match dojo and mailroom audit hashes for string and datetime timestamps."""
     ts = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
     detail = {"stage": "archived", "scoring": {"overall_score": 0.9, "note": "é"}}
     kwargs = dict(
@@ -130,6 +131,7 @@ def test_dojo_canonical_json_is_mailroom_audit_serialization(detail):
 
 @pytest.mark.parametrize("detail", _TRICKY_DETAILS)
 def test_dojo_archive_hash_parity_on_tricky_details(detail):
+    """Preserve audit hash parity for nested, Unicode, and non-JSON details."""
     ts = datetime(2026, 10, 6, 12, 0, 0, 123456, tzinfo=timezone.utc)
     kwargs = dict(
         prev_hash="a" * 64,
@@ -146,6 +148,7 @@ def test_dojo_archive_hash_parity_on_tricky_details(detail):
 
 
 def test_mailroom_built_entry_verifies_under_dojo():
+    """Verify a mailroom audit entry with dojo and detect subsequent tampering."""
     entry = build_audit_entry(
         "doc-1", "m-1", "archived", "archivist", {"stage": "archived", "n": 1}
     )

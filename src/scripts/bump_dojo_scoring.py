@@ -210,6 +210,7 @@ def _normalize_tag(tag: str) -> str:
 
 
 def _bare(tag: str) -> str:
+    """Return the normalized pin without a leading version prefix."""
     return _normalize_tag(tag).lstrip("v")
 
 
@@ -232,6 +233,7 @@ def pin_release_path(ref: str) -> str:
 
 
 def current_pin(root: Path = REPO_ROOT) -> str:
+    """Read and normalize the scoring dependency pin from pyproject.toml."""
     text = (root / "pyproject.toml").read_text(encoding="utf-8")
     match = PIN_RE.search(text)
     if not match:
@@ -266,6 +268,7 @@ def latest_release_tag(repo: str = DOJO_REPO) -> str:
 
 
 def release_exists(tag: str, repo: str = DOJO_REPO) -> bool:
+    """Check for a published GitHub release, raising on errors other than 404."""
     tag = _normalize_tag(tag)
     url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
     req = urllib.request.Request(url, headers=_github_headers())

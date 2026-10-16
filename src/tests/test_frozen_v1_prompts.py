@@ -37,6 +37,7 @@ def test_specialists_are_dojo_production_prompts_verbatim():
 
 
 def test_corrected_records_are_served():
+    """Pin the corrected specialist prompt bytes by their known hash prefixes."""
     # 2026-10-05 dojo corrections: communication_type -> null (not "other");
     # filing_number null unless an official number.
     assert specialist_sha256("corporate_records_specialist").startswith("fe13501f")
@@ -74,6 +75,7 @@ def test_corrected_roles_record_their_eval_environment_mutation_keys():
 
 
 def test_production_templates_are_frozen_v1_specialists_and_sorter_v14():
+    """Bind production templates and version labels to their frozen prompts."""
     templates = prompt_templates()
     assert templates["sorter"] == LP.SORTER_PROMPT_V14
     for agent in SPECIALIST_AGENTS:

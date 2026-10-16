@@ -81,6 +81,7 @@ def test_router_repo_anchor_paths_resolve():
 
 
 def test_router_dojo_pin_matches_pyproject():
+    """Require the tool router to document the declared scoring dependency pin."""
     from scripts.bump_dojo_scoring import REF
 
     # The pin is a release tag or, while a fix is unreleased, a commit SHA.

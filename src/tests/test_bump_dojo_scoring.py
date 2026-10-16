@@ -223,6 +223,7 @@ def test_rewrite_replaces_full_pin_in_urls_badges_and_alt_text(old_tag, tag, tem
 
 @pytest.mark.parametrize("relative_path", ["README.md", "docs/README.md", "landing/index.html"])
 def test_apply_pin_keeps_badge_and_release_destination_in_sync(tmp_path, relative_path):
+    """Keep badge labels and release links in sync without changing unrelated links."""
     path = tmp_path / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     template = (
@@ -247,6 +248,7 @@ SHA = "8c7b7f1c9c3b18a7036ee58addcfaa35d816177d"
 
 
 def test_normalize_accepts_full_sha_only():
+    """Normalize full commit SHAs and reject abbreviated or malformed values."""
     assert _normalize_tag(SHA) == SHA
     assert _normalize_tag(SHA.upper()) == SHA
     for bad in (SHA[:7], SHA + "0", "g" * 40):
@@ -255,6 +257,7 @@ def test_normalize_accepts_full_sha_only():
 
 
 def test_pin_re_and_current_pin_read_a_sha(tmp_path: Path):
+    """Read a full commit pin through both the regex and pyproject reader."""
     line = f'    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@{SHA}",'
     assert PIN_RE.search(line).group(2) == SHA
     (tmp_path / "pyproject.toml").write_text(f"dependencies = [\n{line}\n]\n", encoding="utf-8")
@@ -263,6 +266,7 @@ def test_pin_re_and_current_pin_read_a_sha(tmp_path: Path):
 
 @pytest.mark.parametrize("old", ["v0.21.0", SHA])
 def test_rewrite_to_sha_and_back_to_tag_is_lossless(old):
+    """Round-trip recognized pins through a SHA while preserving sibling pins."""
     template = (
         "dependency: llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@{ref}\n"
         "| llm-mailroom pins {ref}; entity-extraction pin v0.16.0 |\n"
@@ -281,6 +285,7 @@ def test_rewrite_to_sha_and_back_to_tag_is_lossless(old):
 
 
 def test_sha_badge_uses_short_label_and_commit_link_and_back():
+    """Switch badge labels and destinations between release tags and commit pins."""
     badge = (
         '<a href="https://github.com/Exios66/llm-dojo-scoring/{path}">'
         '<img src="https://img.shields.io/badge/dojo-{label}-6f42c1" '
@@ -296,6 +301,7 @@ def test_sha_badge_uses_short_label_and_commit_link_and_back():
 
 
 def test_main_never_downgrades_an_interim_sha_pin(monkeypatch, capsys):
+    """Treat an older release as up to date for checks and refuse to apply it."""
     from scripts import bump_dojo_scoring as B
 
     monkeypatch.setattr(B, "current_pin", lambda root=B.REPO_ROOT: SHA)
