@@ -5,7 +5,6 @@ Guards (1) the live specialist prompts against the dojo ``production`` /
 against the dojo ``DEFAULT_FIELD_TYPES`` for the live document classes.
 """
 
-import pytest
 from llm_dojo_scoring.prompts import get_prompt
 from llm_dojo_scoring.suites import DEFAULT_FIELD_TYPES
 
@@ -34,11 +33,6 @@ def test_live_specialists_equal_dojo_production():
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="dojo v0.21.0 DEFAULT_FIELD_TYPES still has intent: name; mailroom taxonomy uses label (plan Task 11 re-pins the fixture)",
-)
 def test_taxonomy_field_types_equal_dojo_defaults_for_live_classes():
     tax = {c["key"]: c["field_types"] for c in load_config()["doc_classes"]}
     for doc in LIVE_DOC_TYPES:

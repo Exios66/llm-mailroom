@@ -45,7 +45,7 @@ typed endpoints required.
 - `GET /audit/{doc_id}` returns the hash chain from `storage/audit_log.py` plus a `chain_valid` bool from `schemas/audit.py:verify_chain`.
 - `POST /ops/resume` — clear the ingestion-pause flag (there is no `/ops/pause` endpoint; the pause flag is written by the ops monitor / operator); `GET /ops/status` reports `paused_ingestion` and pipeline-wide metrics.
 - Full endpoint docs (request/response shapes): `docs/api.md`.
-- Railway: root `railway.json` + [docs/deployment.md](../../docs/deployment.md) § Railway.
+- Railway: root `railway.json` + [docs/deployment.md](../../docs/pipeline-reference-llm-mailroom/deployment/README.md) § Railway.
 
 ### Wiring notes
 

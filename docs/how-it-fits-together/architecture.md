@@ -14,7 +14,6 @@ flowchart TD
     end
 
     subgraph LOOP["Prompts, scores, evals"]
-        ENTITY["llm-entity-extraction<br/>prompt experiment loop"]
         DOJO["llm-dojo-scoring<br/>shared scoring library"]
         EVALS["eval-environment<br/>per-node evals + calibration"]
         ML["mailroom-ml<br/>ModernBERT fast-path classifier"]
@@ -25,21 +24,16 @@ flowchart TD
 
     subgraph SURF["Surfaces"]
         VIS["The-Mailroom<br/>visualizer + Observatory"]
-        AGENT["agent-mailroom<br/>walking office floor"]
         SAND["local-mailroom-sandbox<br/>offline + Modal runs"]
-        GRAPH["llm-mailroom-graph<br/>code knowledge graph"]
     end
 
     ENRON --> HF
     CLAIMS --> HF
     EDA --> HF
-    HF --> ENTITY
     HF --> EVALS
     HF --> ML
     HF --> PIPE
-    ENTITY -- "champion prompts (vendored)" --> PIPE
     DOJO -- "pinned dependency" --> PIPE
-    DOJO --> ENTITY
     DOJO --> EVALS
     PIPE -- "imported as path source" --> EVALS
     ML -. "optional intake fast path" .-> PIPE
@@ -48,8 +42,6 @@ flowchart TD
     VIS -- "Inbox + REVIEW proxied to /v1" --> PIPE
     PIPE -- "vendored snapshot" --> SAND
     DOJO -- "vendored snapshot" --> SAND
-    PIPE -- "AST extraction" --> GRAPH
-    PIPE -. "same doctrine, mirrored taxonomy" .-> AGENT
 ```
 
 All of these packages also live together in the [Digital-Mailroom](../repository-guides/repos/digital-mailroom.md) monorepo, which is where cross-repo changes are made. The diagram shows how the packages relate at runtime and release time, not where their code sits.
@@ -66,7 +58,7 @@ Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroo
 
 ### Prompts: from experiment to production
 
-1. **llm-entity-extraction** tests one prompt version at a time across models and logs every run to an append-only experiment log.
+1. Prompt versions are tested one at a time across models and every run is logged to an append-only experiment log (historically in the standalone `llm-entity-extraction` repo, which left the core constellation in DMR-079).
 2. When a prompt wins, it is **vendored** into llm-mailroom (`langchain_agents/`) along with its full version lineage, so evaluations can pin the exact version.
 3. **eval-environment** holds the frozen v1 prompt lineage (`mailroom-evals-v1`) and the GEPA mutation loop that proposes new candidates; mailroom-issues keeps the frozen v1 reference copies.
 4. In production, each agent's prompt is managed in Langfuse as `mailroom-<agent_name>` with a `production` label, and every LLM call links the prompt version it used.
@@ -76,7 +68,7 @@ Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroo
 `llm-dojo-scoring` is the only place metrics are defined. It scores fields by type (dates are normalized before comparison, names use Jaro-Winkler, lists use Hungarian matching, free text uses token F1) rather than exact-matching everything.
 
 * llm-mailroom pins it as a git dependency and keeps the pin current with an auto-bump workflow (`.github/workflows/bump-dojo-scoring.yml`).
-* llm-entity-extraction and eval-environment use it for their experiment scoring.
+* eval-environment uses it for its experiment scoring.
 * local-mailroom-sandbox carries a vendored snapshot so it works offline.
 
 ### Runtime: from document to archive
@@ -115,11 +107,8 @@ flowchart LR
 
 | Consumer               | Depends on                                | How                                                                          |
 | ---------------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
-| llm-mailroom           | llm-dojo-scoring                          | git pin `@v0.21.0`, auto-bumped                                              |
+| llm-mailroom           | llm-dojo-scoring                          | git pin `@v0.22.0`, auto-bumped                                              |
 | llm-mailroom           | mailroom-ml                               | optional, lazily imported at intake                                          |
-| llm-entity-extraction  | llm-dojo-scoring                          | git pin `@v0.16.0` (workspace source in the monorepo)                        |
 | eval-environment       | llm-mailroom (and dojo through it)        | editable path source to a sibling checkout, set in `[tool.uv.sources]`       |
 | local-mailroom-sandbox | llm-mailroom, llm-dojo-scoring            | tracked snapshots under `vendor/`                                            |
 | The-Mailroom           | llm-mailroom                              | Langfuse traces + HTTP API; optional `[pipeline]` extra pins a `main` commit |
-| agent-mailroom         | llm-dojo-scoring; llm-mailroom (doctrine) | git pin `@v0.16.0`; mirrored taxonomy and producer API shape                 |
-| llm-mailroom-graph     | llm-mailroom                              | rebuilt from source with graphify                                            |

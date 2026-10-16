@@ -43,7 +43,7 @@ Mermaid diagrams render on GitHub; in GitBook they need the Mermaid integration 
 
 `path` is a URL slug, not a folder name. `directory: ./docs` inside a Project directory of `docs/` would look for `docs/docs/` (that folder does not exist). Leave the GitBook UI Project directory at `docs/`. GitBook never publishes `landing/index.html`; that page is static HTML.
 
-GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. Keep that link as `* [LLM-MAILROOM](README.md)` so the GitBook page header reads **LLM-MAILROOM** and matches the `# LLM-MAILROOM` heading in `docs/README.md` (the previous `* [Welcome](README.md)` title is why the live home used to read **Welcome**).
+GitBook also replaces the markdown H1 with the `SUMMARY.md` link title. Keep that link as `* [LLM-MAILROOM](../README.md)` so the GitBook page header reads **LLM-MAILROOM** and matches the `# LLM-MAILROOM` heading in `docs/README.md` (the previous `* [Welcome](../README.md)` title is why the live home used to read **Welcome**).
 
 GitBook's published favicon is the site icon in **Customize** ([icons, colors, and themes](https://gitbook.com/docs/manage-your-site/customization/icons-colors-and-themes)). Git Sync cannot set it: `gitbook-docs.yaml` has no favicon field. Upload `docs/assets/mascot/hoot-icon.png` (Hermes, the pixel owl). The static `landing/` page uses that same file as `<link rel="icon">`.
 

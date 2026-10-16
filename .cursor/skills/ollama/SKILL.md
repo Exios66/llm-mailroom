@@ -44,4 +44,4 @@ Rewrite models via cutover / taxonomy — never send OpenRouter ids
 ## Related
 
 - Router: [mailroom-tool-router](../mailroom-tool-router/SKILL.md)
-- Docs: `src/config/docker/README.md`, `docs/configuration.md`
+- Docs: `src/config/docker/README.md`, `docs/pipeline-reference-llm-mailroom/configuration.md`

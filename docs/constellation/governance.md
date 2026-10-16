@@ -16,7 +16,7 @@ The constellation runs on a small set of shared rules. They exist so that severa
 | Work | Where it is tracked | Card prefix |
 | :--- | :--- | :--- |
 | Cross-package work in the monorepo (wiring, sync, hub docs, releases) | [`Digital-Mailroom/governance/TASKS.md`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/governance/TASKS.md), served live at the [Dispatch Board](https://digital-mailroom-theta.vercel.app) | `DMR-0NN` |
-| llm-entity-extraction and llm-mailroom package work | `llm-entity-extraction/governance/MESSAGE_BOARD.md` (one shared board for both repos) | `KANBAN-0NN` |
+| llm-mailroom package work | `Digital-Mailroom/governance/TASKS.md`; the former shared `llm-entity-extraction` board left the core in DMR-079 | `DMR-0NN` (older `KANBAN-0NN` cards remain in history) |
 | local-mailroom-sandbox | `local-mailroom-sandbox/governance/TASKS.md` | `SAND-NN` |
 | mailroom-ml | `mailroom-ml/governance/TASKS.md` (light tracking) | — |
 | Anything spanning several repos, or needing an org decision | [mailroom-issues](https://github.com/LLM-Mailroom-Services/mailroom-issues) issues, epics and RFCs | issue number |

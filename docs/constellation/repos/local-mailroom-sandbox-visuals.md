@@ -85,4 +85,4 @@ Captured operator UI from [`docs/assets/watch/`](https://github.com/Exios66/loca
 - [Run reports](local-mailroom-sandbox-reports.md)
 - [Documentation](local-mailroom-sandbox-docs.md)
 - [mailroom-issues reports/viz](https://github.com/LLM-Mailroom-Services/mailroom-issues/tree/main/reports/viz) (exported 2× PNGs for slides)
-- Pipeline [Modal + vLLM](../../modal-vllm.md)
+- Pipeline [Modal + vLLM](../../pipeline-reference-llm-mailroom/deployment/modal-vllm.md)

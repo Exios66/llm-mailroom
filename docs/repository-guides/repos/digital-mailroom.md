@@ -11,7 +11,7 @@
 
 ## What it does
 
-Digital-Mailroom holds all ten constellation packages under `packages/` as git subtrees, each with its own history, wired into a single `uv` workspace with one `uv.lock`. A contributor clones one repository, runs `uv sync`, and has every package installed editable with no cross-repo import juggling.
+Digital-Mailroom holds all seven constellation packages under `packages/` as git subtrees, each with its own history, wired into a single `uv` workspace with one `uv.lock`. A contributor clones one repository, runs `uv sync`, and has every package installed editable with no cross-repo import juggling.
 
 It also carries the governance tooling for the whole family: the cross-repo task board, the served Dispatch Board, label and taxonomy drift checks, and the hub release chain.
 
@@ -33,13 +33,13 @@ Digital-Mailroom/
 ├── board-site/          the served Dispatch Board (Vercel)
 ├── docs/                v7 taxonomy contract, docclass contract, wiki source
 ├── scripts/             board_state, sync_packages, taxonomy_parity, release_chain, ...
-└── packages/            the ten packages
+└── packages/            the seven packages
 ```
 
 | Package | Installed? |
 | :--- | :--- |
-| `llm-mailroom`, `llm-dojo-scoring`, `llm-entity-extraction`, `The-Mailroom`, `agent-mailroom`, `local-mailroom-sandbox` | Yes, editable |
-| `Enron-Evaluation-Environment`, `claims-data-eda`, `llm-mailroom-graph`, `mailroom-corpus-eda` | No: virtual members (`package = false`) |
+| `llm-mailroom`, `llm-dojo-scoring`, `The-Mailroom`, `local-mailroom-sandbox` | Yes, editable |
+| `Enron-Evaluation-Environment`, `claims-data-eda`, `mailroom-corpus-eda` | No: virtual members (`package = false`) |
 
 ## Key tools
 

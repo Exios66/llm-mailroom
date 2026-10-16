@@ -41,7 +41,7 @@ python -m legalbench.cli --task contract_qa --n 10 --no-trace --no-log
    (`observability/scores.py`). All no-op when observability is disabled.
 3. **Experiment log** — one JSON record appended to the shared append-only
    log (default: the sibling repo's `reports/experiment_log.jsonl` when
-   `../llm-entity-extraction` exists, else `src/legalbench/reports/`). The
+   `../llm-entity-extraction` exists — an optional standalone checkout since DMR-079 pruned the package from the monorepo — else `src/legalbench/reports/`). The
    record uses the upstream schema, so it renders in the markdown log and
    the experiment-log site like every other run.
 4. **Log + site regeneration** — the upstream `render_experiment_log.py`
@@ -57,7 +57,7 @@ steps — the runner only writes files.
 | Knob | Default |
 |---|---|
 | `LEGALBENCH_EXPERIMENT_LOG` | sibling `reports/experiment_log.jsonl`, else `src/legalbench/reports/experiment_log.jsonl` |
-| `LEGALBENCH_SIBLING_REPO` | `<repo>/../llm-entity-extraction` |
+| `LEGALBENCH_SIBLING_REPO` | `<repo>/../llm-entity-extraction` (optional standalone checkout; unset in the monorepo) |
 
 The sibling rebuild only runs when the log path is **inside** the sibling
 repo — a throwaway/partial log never clobbers the real site data.

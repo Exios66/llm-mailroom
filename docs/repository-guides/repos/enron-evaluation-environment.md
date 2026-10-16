@@ -34,7 +34,7 @@ pytest tests/ -v
 
 ## Handoff
 
-The repo's position is "artifacts flow downstream; nothing flows back without a versioned handoff". llm-mailroom owns the taxonomy it labels against; llm-entity-extraction consumes the pipeline sample. The handoff contract is in [`reports/pipeline/README.md`](https://github.com/Exios66/Enron-Evaluation-Environment/blob/main/reports/pipeline/README.md).
+The repo's position is "artifacts flow downstream; nothing flows back without a versioned handoff". llm-mailroom owns the taxonomy it labels against; the pipeline sample is consumed by the core packages (the standalone llm-entity-extraction repo, retired in DMR-079, also consumed it). The handoff contract is in [`reports/pipeline/README.md`](https://github.com/Exios66/Enron-Evaluation-Environment/blob/main/reports/pipeline/README.md).
 
 ## Its documentation
 

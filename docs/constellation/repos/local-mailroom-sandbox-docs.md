@@ -1,6 +1,6 @@
 # local-mailroom-sandbox documentation
 
-Dedicated operator manuals for the offline sandbox ([Exios66/local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox)). Canonical files live in that repository's `docs/`; this page is the GitBook map so every dedicated sandbox doc is on the site TOC. Run results: [Run reports](local-mailroom-sandbox-reports.md). Charts and `sandbox watch` stills: [Visuals](local-mailroom-sandbox-visuals.md). Pipeline GPU serve (this repo): [Modal + vLLM](../../modal-vllm.md).
+Dedicated operator manuals for the offline sandbox ([Exios66/local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox)). Canonical files live in that repository's `docs/`; this page is the GitBook map so every dedicated sandbox doc is on the site TOC. Run results: [Run reports](local-mailroom-sandbox-reports.md). Charts and `sandbox watch` stills: [Visuals](local-mailroom-sandbox-visuals.md). Pipeline GPU serve (this repo): [Modal + vLLM](../../pipeline-reference-llm-mailroom/deployment/modal-vllm.md).
 
 Parent guide: [local-mailroom-sandbox](local-mailroom-sandbox.md).
 
@@ -51,4 +51,4 @@ Parent guide: [local-mailroom-sandbox](local-mailroom-sandbox.md).
 - [Run reports](local-mailroom-sandbox-reports.md)
 - [Visuals](local-mailroom-sandbox-visuals.md)
 - [local-mailroom-sandbox](local-mailroom-sandbox.md)
-- Pipeline [Docker](../../docker-deployment.md) and [Modal + vLLM](../../modal-vllm.md)
+- Pipeline [Docker](../../pipeline-reference-llm-mailroom/deployment/docker-deployment.md) and [Modal + vLLM](../../pipeline-reference-llm-mailroom/deployment/modal-vllm.md)

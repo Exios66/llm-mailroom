@@ -55,6 +55,22 @@ def test_referenced_docs_exist_or_annotated():
         target = REPO_ROOT / ref
         if target.exists():
             continue
+        # Upstream moved the flat docs/<name>.md reference set under
+        # docs/pipeline-reference-llm-mailroom/ (deployment pages under
+        # deployment/; deployment.md became deployment/README.md) but left the
+        # legacy paths in prose/changelogs. Accept a legacy path whose moved
+        # counterpart exists.
+        _moved = REPO_ROOT / "docs" / "pipeline-reference-llm-mailroom"
+        _name = Path(ref).name
+        if ref == f"docs/{_name}" and any(
+            c.exists()
+            for c in (
+                _moved / _name,
+                _moved / "deployment" / _name,
+                _moved / "deployment" / "README.md" if _name == "deployment.md" else _moved / "_nope",
+            )
+        ):
+            continue
         # docs/reports/* is deliberately pruned (heavy report archives live in
         # the upstream Exios66/llm-mailroom repo; the standalone repo tracks a
         # docs/reports/README.md annotation, the monorepo gitignores the dir —
@@ -180,7 +196,6 @@ def test_release_docs_match_package_version(release_project, path, pattern):
     ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
     ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
     ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
-    ("docs/sister-repos.md", r"`@(v[\d.]+)`"),
     ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+)`"),
     ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+)`"),
     ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+)"),

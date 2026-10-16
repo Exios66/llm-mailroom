@@ -18,7 +18,7 @@ It exposes a FastAPI service (port 8000) that embeds the inbox watcher, accepts 
 ## Key ideas
 
 - **The taxonomy is the single source of truth.** Document classes, thresholds, agent-to-model mapping and token caps all live in `config/taxonomy.yaml`. Nothing is hardcoded.
-- **Provider-agnostic.** Every LLM call goes through `get_llm(agent_name)`. OpenRouter is the default; local providers are a configuration change (see [Local models](../../local-models.md)).
+- **Provider-agnostic.** Every LLM call goes through `get_llm(agent_name)`. OpenRouter is the default; local providers are a configuration change (see [Local models](../../pipeline-reference-llm-mailroom/local-models.md)).
 - **SQLite first.** The catalog, audit log and optional checkpoints are plain SQLite files. Postgres is opt-in.
 - **Traced end to end.** Langfuse, Braintrust or Arize Phoenix, chosen automatically from available keys. Tracing never silently turns off.
 - **No truncation.** Long documents are read in overlapping windows, never cut.
@@ -31,17 +31,17 @@ See [Getting started, path 2](../getting-started.md#2-run-the-pipeline-and-push-
 
 The pipeline reference pages are part of this site:
 
-- [Pipeline architecture](../../architecture.md)
+- [Pipeline architecture](../../pipeline-reference-llm-mailroom/architecture.md)
 - [Agents](../../agents.md)
-- [Configuration](../../configuration.md)
-- [API](../../api.md)
+- [Configuration](../../pipeline-reference-llm-mailroom/configuration.md)
+- [API](../../pipeline-reference-llm-mailroom/api.md)
 - [Gmail intake](../../gmail-intake.md)
-- [Deployment](../../deployment.md)
-- [Docker](../../docker-deployment.md)
-- [Modal + vLLM](../../modal-vllm.md)
-- [Operational procedure](../../operational-procedure.md)
-- [Local models](../../local-models.md)
+- [Deployment](../../pipeline-reference-llm-mailroom/deployment/README.md)
+- [Docker](../../pipeline-reference-llm-mailroom/deployment/docker-deployment.md)
+- [Modal + vLLM](../../pipeline-reference-llm-mailroom/deployment/modal-vllm.md)
+- [Operational procedure](../../pipeline-reference-llm-mailroom/operational-procedure.md)
+- [Local models](../../pipeline-reference-llm-mailroom/local-models.md)
 - [Testing](../../testing.md)
-- [Sister repositories](../../sister-repos.md)
+- [Sister repositories](../../pipeline-reference-llm-mailroom/sister-repos.md)
 
 Also in the repository: the [README](https://github.com/Exios66/llm-mailroom/blob/main/README.md), [AGENTS.md](https://github.com/Exios66/llm-mailroom/blob/main/AGENTS.md) (the contributor and agent manual, including every script command), [CHANGELOG.md](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md) (the GitBook [Changelog](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/changelog) section is a generated mirror of that file), the [notebooks](https://github.com/Exios66/llm-mailroom/tree/main/notebooks) (00 to 14, from pipeline anatomy to the Gmail pilot), and [deploy/](https://github.com/Exios66/llm-mailroom/tree/main/deploy) (compose files, Modal app, Space payload — operator guides are the Docker and Modal pages above).
