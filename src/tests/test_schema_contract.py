@@ -10,7 +10,10 @@ every live class.
 
 from __future__ import annotations
 
+import json
+
 import pytest
+from pydantic import ValidationError
 from llm_dojo_scoring import contract_empty_payload, contract_violations
 from llm_dojo_scoring.corpus import CORPUS_DOC_TYPES
 from llm_dojo_scoring.suites import DEFAULT_FIELD_TYPES
@@ -80,3 +83,56 @@ def test_former_violations_accept_null_and_still_accept_text(doc_type, field):
     assert model.model_validate({field: "stated"}).model_dump()[field] == "stated"
     # An unstated scalar defaults to null, not "".
     assert model.model_fields[field].default is None
+
+
+@pytest.mark.parametrize("doc_type", FORMER_VIOLATIONS)
+@pytest.mark.parametrize("explicit_nulls", [False, True], ids=["omitted", "explicit-null"])
+def test_corrected_scalars_remain_null_after_json_round_trip(doc_type, explicit_nulls):
+    model = EXTRACTION_SCHEMAS[doc_type]
+    fields = FORMER_VIOLATIONS[doc_type]
+    payload = dict.fromkeys(fields) if explicit_nulls else {}
+
+    extracted = model.model_validate_json(json.dumps(payload))
+    serialized = json.loads(extracted.model_dump_json())
+    assert {field: serialized[field] for field in fields} == dict.fromkeys(fields)
+    assert model.model_validate_json(extracted.model_dump_json()) == extracted
+
+
+@pytest.mark.parametrize(
+    ("doc_type", "field"),
+    [(doc, field) for doc, fields in FORMER_VIOLATIONS.items() for field in fields],
+)
+@pytest.mark.parametrize("value", ["", "Acme — café"])
+def test_corrected_scalars_preserve_legacy_empty_and_unicode_strings(doc_type, field, value):
+    model = EXTRACTION_SCHEMAS[doc_type]
+    payload = {field: value}
+    extracted = model.model_validate_json(json.dumps(payload))
+    assert json.loads(extracted.model_dump_json())[field] == value
+    assert validate_extraction(doc_type, payload) == {"parse_error": False, "schema_valid": True}
+
+
+@pytest.mark.parametrize(
+    ("doc_type", "field"),
+    [(doc, field) for doc, fields in FORMER_VIOLATIONS.items() for field in fields],
+)
+@pytest.mark.parametrize("value", [0, False, [], {}], ids=["number", "bool", "list", "object"])
+def test_nullable_scalars_still_reject_non_string_values(doc_type, field, value):
+    """Accepting null must not let structured or numeric LLM output through."""
+    payload = {field: value}
+    with pytest.raises(ValidationError) as exc:
+        EXTRACTION_SCHEMAS[doc_type].model_validate(payload)
+    assert any(error["loc"] == (field,) for error in exc.value.errors())
+    assert validate_extraction(doc_type, payload) == {"parse_error": False, "schema_valid": False}
+
+
+@pytest.mark.parametrize(
+    ("doc_type", "field"),
+    [(doc, field) for doc, fields in FORMER_VIOLATIONS.items() for field in fields],
+)
+def test_specialist_json_schema_advertises_nullable_scalars(doc_type, field):
+    """The schema sent to the LLM must describe the same empty value we accept."""
+    schema = EXTRACTION_SCHEMAS[doc_type].model_json_schema()
+    property_schema = schema["properties"][field]
+    assert {option["type"] for option in property_schema["anyOf"]} == {"string", "null"}
+    assert property_schema["default"] is None
+    assert field not in schema.get("required", [])

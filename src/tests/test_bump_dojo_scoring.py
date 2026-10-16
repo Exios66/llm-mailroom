@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 import pytest
 
+from scripts import bump_dojo_scoring as B
 from scripts.bump_dojo_scoring import (
     PIN_RE,
     _normalize_tag,
@@ -315,3 +318,200 @@ def test_main_never_downgrades_an_interim_sha_pin(monkeypatch, capsys):
     # A tag that contains the commit is a normal bump.
     monkeypatch.setattr(B, "tag_contains_commit", lambda sha, tag, repo=B.DOJO_REPO: True)
     assert B.main(["--check", "--tag", "v0.22.0"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("ref", "expected"),
+    [(SHA, True), ("0" * 40, True), (SHA.upper(), False),
+     (SHA[:39], False), (SHA + "0", False), ("g" * 40, False),
+     ("v0.22.0", False), (None, False)],
+)
+def test_is_sha_requires_exactly_40_lowercase_hex_characters(ref, expected):
+    assert B.is_sha(ref) is expected
+
+
+@pytest.mark.parametrize(
+    ("ref", "label", "path"),
+    [
+        (f"  {SHA.upper()}\n", SHA[:7], f"commit/{SHA}"),
+        ("0" * 40, "0" * 7, "commit/" + "0" * 40),
+        (" 0.22.0-rc.1 ", "v0.22.0-rc.1", "releases/tag/v0.22.0-rc.1"),
+    ],
+)
+def test_pin_presentation_normalizes_refs(ref, label, path):
+    assert B.pin_label(ref) == label
+    assert B.pin_release_path(ref) == path
+
+
+@pytest.mark.parametrize("ref", [SHA[:7], SHA + "0", "main", " "])
+def test_invalid_target_ref_never_writes_files(tmp_path, ref):
+    path = tmp_path / "README.md"
+    before = "llm-mailroom pins v0.21.0\n"
+    path.write_text(before, encoding="utf-8")
+    with pytest.raises(ValueError):
+        apply_pin(ref, root=tmp_path)
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_rewrite_to_sha_preserves_package_version_assertions():
+    """A commit identifies source bytes, not a new installed package version."""
+    version_checks = (
+        '"""llm-dojo-scoring v0.21.0 pin"""\n'
+        'assert llm_dojo_scoring.__version__ == "0.21.0"\n'
+        "def test_installed_dojo_is_v0210():\n    pass\n"
+    )
+    before = f"llm-mailroom pins v0.21.0\n{version_checks}"
+    assert _rewrite_text(before, SHA) == f"llm-mailroom pins {SHA}\n{version_checks}"
+
+
+@pytest.mark.parametrize(
+    ("template", "short_label"),
+    [
+        ("[`llm-dojo-scoring`](https://example.test/scoring) ({ref}).", True),
+        ("`llm-dojo-scoring` ({ref}).", True),
+        ("llm-dojo-scoring `field_scoring.py` ({ref})", True),
+        ("the pinned scoring engine, `{ref}`", False),
+        ("Pinned as a git dependency (`@{ref}`)", False),
+        ("bump_dojo_scoring.py --apply --tag {ref}", False),
+        ("pinned `@{ref}`", False),
+        ("llm-dojo-scoring pin and mailroom scoring suites ({ref})", False),
+    ],
+)
+def test_rewrite_documented_sha_surfaces_and_restore_release(template, short_label):
+    before = template.format(ref="v0.21.0")
+    expected = template.format(ref=SHA[:7] if short_label else SHA)
+    assert _rewrite_text(before, SHA) == expected
+    assert _rewrite_text(expected, SHA) == expected
+    assert _rewrite_text(expected, "v0.22.0") == template.format(ref="v0.22.0")
+
+
+@pytest.fixture
+def github_urlopen(mocker):
+    """Stub the HTTP boundary; the request and response parsing stay real."""
+    urlopen = mocker.patch.object(B.urllib.request, "urlopen")
+    urlopen.return_value.__enter__.return_value.status = 200
+    return urlopen
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [({"status": "ahead"}, True), ({"status": "identical"}, True),
+     ({"status": "behind"}, False), ({"status": "diverged"}, False),
+     ({"status": "unknown"}, False), ({"status": None}, False), ({}, False)],
+)
+def test_tag_contains_commit_checks_ancestry_and_normalizes_request(
+    github_urlopen, payload, expected,
+):
+    github_urlopen.return_value.__enter__.return_value.read.return_value = (
+        json.dumps(payload).encode("utf-8")
+    )
+    assert B.tag_contains_commit(SHA.upper(), "0.22.0", repo="example/scoring") is expected
+    request = github_urlopen.call_args.args[0]
+    assert request.full_url == (
+        f"https://api.github.com/repos/example/scoring/compare/{SHA}...v0.22.0"
+    )
+    assert github_urlopen.call_args.kwargs == {"timeout": 30}
+    assert github_urlopen.call_count == 1
+
+
+@pytest.mark.parametrize("code", [404, 403, 500])
+def test_tag_contains_commit_http_errors_are_not_treated_as_ancestry(github_urlopen, code):
+    error = HTTPError("https://example.test/compare", code, "lookup failed", None, None)
+    github_urlopen.side_effect = error
+    with pytest.raises(RuntimeError, match=f"GitHub compare failed: {code}") as exc:
+        B.tag_contains_commit(SHA, "v0.22.0")
+    assert exc.value.__cause__ is error
+
+
+def test_tag_contains_commit_propagates_network_and_json_failures(github_urlopen):
+    github_urlopen.side_effect = URLError("offline")
+    with pytest.raises(URLError, match="offline"):
+        B.tag_contains_commit(SHA, "v0.22.0")
+    github_urlopen.side_effect = None
+    github_urlopen.return_value.__enter__.return_value.read.return_value = b"not JSON"
+    with pytest.raises(json.JSONDecodeError):
+        B.tag_contains_commit(SHA, "v0.22.0")
+
+
+@pytest.mark.parametrize(("sha", "tag"), [(SHA[:7], "v0.22.0"), (SHA, "latest")])
+def test_tag_contains_commit_rejects_invalid_refs_before_http(github_urlopen, sha, tag):
+    with pytest.raises(ValueError):
+        B.tag_contains_commit(sha, tag)
+    github_urlopen.assert_not_called()
+
+
+@pytest.fixture
+def interim_pin_cli(tmp_path, monkeypatch, mocker):
+    """Run the real CLI rewrites in a tiny repo with all GitHub calls mocked."""
+    (tmp_path / "pyproject.toml").write_text(
+        'dependencies = ["llm-dojo-scoring @ '
+        f'git+https://github.com/Exios66/llm-dojo-scoring.git@{SHA}"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text(f"llm-mailroom pins {SHA}\n", encoding="utf-8")
+    monkeypatch.setattr(B, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(B, "current_pin", lambda: current_pin(tmp_path))
+    mocker.patch.object(
+        B, "apply_pin", side_effect=lambda tag, **kw: apply_pin(tag, root=tmp_path, **kw)
+    )
+    mocker.patch.object(B, "latest_release_tag", return_value="v0.22.0")
+    mocker.patch.object(B, "release_exists", return_value=True)
+    mocker.patch.object(B, "tag_contains_commit", return_value=True)
+    return tmp_path
+
+
+@pytest.mark.parametrize("dry_run", [False, True], ids=["apply", "dry-run"])
+def test_main_promotes_interim_pin_to_containing_release(interim_pin_cli, dry_run, capsys):
+    args = ["--apply", "--tag", "0.22.0"] + (["--dry-run"] if dry_run else [])
+    assert B.main(args) == 0
+    expected_pin = SHA if dry_run else "v0.22.0"
+    assert current_pin(interim_pin_cli) == expected_pin
+    assert (interim_pin_cli / "README.md").read_text() == f"llm-mailroom pins {expected_pin}\n"
+    B.release_exists.assert_called_once_with("v0.22.0")
+    B.tag_contains_commit.assert_called_once_with(SHA, "v0.22.0")
+    B.latest_release_tag.assert_not_called()
+    assert f"changed=2 dry_run={dry_run}" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("mode", "expected"), [("--check", 0), ("--apply", 1)])
+def test_main_latest_release_cannot_downgrade_interim_pin(interim_pin_cli, mode, expected):
+    B.tag_contains_commit.return_value = False
+    assert B.main([mode]) == expected
+    B.latest_release_tag.assert_called_once_with()
+    B.tag_contains_commit.assert_called_once_with(SHA, "v0.22.0")
+    B.apply_pin.assert_not_called()
+    assert current_pin(interim_pin_cli) == SHA
+
+
+@pytest.mark.parametrize("mode", ["--check", "--apply"])
+def test_main_missing_release_leaves_interim_pin_untouched(interim_pin_cli, mode, capsys):
+    B.release_exists.return_value = False
+    assert B.main([mode, "--tag", "v0.22.0"]) == 1
+    B.tag_contains_commit.assert_not_called()
+    B.apply_pin.assert_not_called()
+    assert current_pin(interim_pin_cli) == SHA
+    assert "no GitHub release for v0.22.0" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("target", ["v0.22.0", "a" * 40])
+def test_main_offline_override_bypasses_both_github_guards(interim_pin_cli, target):
+    assert B.main(["--apply", "--tag", target, "--allow-missing-release"]) == 0
+    B.release_exists.assert_not_called()
+    B.tag_contains_commit.assert_not_called()
+    B.latest_release_tag.assert_not_called()
+    assert current_pin(interim_pin_cli) == target
+
+
+def test_main_same_sha_is_up_to_date_without_ancestry_lookup(interim_pin_cli, capsys):
+    assert B.main(["--check", "--tag", SHA.upper(), "--allow-missing-release"]) == 0
+    B.tag_contains_commit.assert_not_called()
+    B.apply_pin.assert_not_called()
+    assert "up_to_date=true" in capsys.readouterr().out
+
+
+def test_main_compare_failure_never_writes_pin(interim_pin_cli):
+    B.tag_contains_commit.side_effect = RuntimeError("GitHub compare failed: 403")
+    with pytest.raises(RuntimeError, match="GitHub compare failed: 403"):
+        B.main(["--apply", "--tag", "v0.22.0"])
+    B.apply_pin.assert_not_called()
+    assert current_pin(interim_pin_cli) == SHA
