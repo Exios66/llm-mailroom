@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.bump_dojo_scoring import current_pin
+from scripts.bump_dojo_scoring import REF, current_pin
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -174,23 +174,24 @@ def test_release_docs_match_package_version(release_project, path, pattern):
 
 
 @pytest.mark.parametrize("path,pattern", [
-    ("docs/constellation/overview.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/start-here/overview.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
-    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
-    ("docs/sister-repos.md", r"`@(v[\d.]+)`"),
-    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+)`"),
-    ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+)`"),
-    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+)"),
+    ("docs/constellation/overview.md", r"llm-mailroom pins (__REF__)"),
+    ("docs/start-here/overview.md", r"llm-mailroom pins (__REF__)"),
+    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (__REF__)"),
+    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (__REF__)"),
+    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(__REF__)`"),
+    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(__REF__)`"),
+    ("docs/sister-repos.md", r"`@(__REF__)`"),
+    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(__REF__)`"),
+    ("docs/the-pipeline-in-depth/running.md", r"`@(__REF__)`"),
+    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(__REF__)"),
 ])
 def test_release_docs_match_declared_dojo_pin(release_project, path, pattern):
     dependency, = [dep for dep in release_project["dependencies"]
                    if dep.startswith("llm-dojo-scoring @")]
     pin = dependency.rsplit("@", 1)[1]
     text = (REPO_ROOT / path).read_text(encoding="utf-8")
-    pins = re.findall(pattern, text)
+    # The pin is a release tag or, while a fix is unreleased, a commit SHA.
+    pins = re.findall(pattern.replace("__REF__", REF), text)
     assert pins, f"{path}: missing pipeline dependency pin"
     assert set(pins) == {pin}, f"{path}: documented pins disagree with pyproject.toml"
 

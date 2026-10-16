@@ -1,13 +1,15 @@
 ---
 name: dojo-scoring
-description: llm-dojo-scoring pin and mailroom scoring suites (v0.21.0). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
+description: llm-dojo-scoring pin and mailroom scoring suites (8c7b7f1c9c3b18a7036ee58addcfaa35d816177d). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
 ---
 
 # llm-dojo-scoring (pinned engine)
 
 **When:** Extraction/classification KPIs, specialist suites, field types,
 honesty gaps, Langfuse score configs.  
-Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.21.0`
+Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@8c7b7f1c9c3b18a7036ee58addcfaa35d816177d`
+
+> Interim commit pin (unreleased dojo fixes). When the dojo tags `v0.22.0`, run `PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.22.0`. For embeddings use the public `llm_dojo_scoring.embed_texts` (fail-soft, returns `None`); for schema checks use `contract_violations` (`src/tests/test_schema_contract.py`).
 
 ## Rules
 
