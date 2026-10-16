@@ -23,7 +23,7 @@ already fits.
 | Hosted experiment / auto-improve loop | Braintrust | [braintrust](../braintrust/SKILL.md) | Braintrust as the default live sink |
 | Hub class/subtype corpora | `run_hf_pilot.py` + `hf_corpora.py` | [huggingface](../huggingface/SKILL.md) | Invented stand-in class texts; loading all 247k Enron rows by default |
 | Graph nodes, routing, HITL | LangGraph in `graph/` | [langgraph](../langgraph/SKILL.md) | A second orchestrator |
-| Extraction / class KPIs | `llm-dojo-scoring @v0.21.0` | [dojo-scoring](../dojo-scoring/SKILL.md) | Inventing `SCORE_CONFIG` names not in the registry |
+| Extraction / class KPIs | `llm-dojo-scoring @v0.22.0` | [dojo-scoring](../dojo-scoring/SKILL.md) | Inventing `SCORE_CONFIG` names not in the registry |
 | LegalBench QA / family class | `python -m legalbench.cli` | [legalbench](../legalbench/SKILL.md) | Treating `legalbench-full` as pipeline ingest |
 
 ## Observability precedence (`OBSERVABILITY_PROVIDER`)
@@ -54,7 +54,7 @@ No agent code names a provider/model. `taxonomy.yaml` `agents:` + `get_llm(agent
 | --- | --- |
 | Taxonomy / models | `src/config/taxonomy.yaml` |
 | Env template | `.env.example` |
-| Providers | `src/llm/providers.py`, `docs/configuration.md` |
+| Providers | `src/llm/providers.py`, `docs/pipeline-reference-llm-mailroom/configuration.md` |
 | Compose | `src/config/docker/docker-compose.yml` |
 | REVIEW producer image | root `Dockerfile`, `deploy/docker-compose.producer.yml`, `src/scripts/publish_space.py` |
 | Modal app | `deploy/modal_vllm.py` |

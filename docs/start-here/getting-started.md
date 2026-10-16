@@ -92,12 +92,11 @@ cp .env.example .env    # LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY
 mailroom-web            # http://127.0.0.1:8001
 ```
 
-For a self-contained alternative with no Langfuse at all, run [agent-mailroom](../repository-guides/repos/agent-mailroom.md): `pip install -e ".[dev]" && python -m agent_mailroom`.
 
 ## 6. Score extraction output
 
 ```bash
-pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.21.0"
+pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.22.0"
 ```
 
 ```python
@@ -125,9 +124,9 @@ docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 
 | Key                                                             | Used by                                                       | Needed for                                            |
 | --------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------- |
-| `OPENROUTER_API_KEY`                                            | pipeline, entity-extraction, eval-environment, agent-mailroom | Real LLM runs (the primary provider)                  |
+| `OPENROUTER_API_KEY`                                            | pipeline, eval-environment                                   | Real LLM runs (the primary provider)                  |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | pipeline, The-Mailroom, sandbox                               | Tracing, and anything The-Mailroom displays           |
-| `BRAINTRUST_API_KEY`                                            | entity-extraction, eval-environment                           | Eval datasets and optional experiment logging         |
+| `BRAINTRUST_API_KEY`                                            | eval-environment                                              | Eval datasets and optional experiment logging         |
 | `HF_TOKEN`                                                      | corpus repos, mailroom-ml                                     | Publishing datasets or models to `Lucius-Morningstar` |
 
-Most repos have a mock mode for working without keys (`--mock` flags, or agent-mailroom's automatic `mock` fallback). The pipeline itself is stricter: outside mock runs, `get_llm` raises if `OPENROUTER_API_KEY` is missing.
+Most repos have a mock mode for working without keys (`--mock` flags). The pipeline itself is stricter: outside mock runs, `get_llm` raises if `OPENROUTER_API_KEY` is missing.

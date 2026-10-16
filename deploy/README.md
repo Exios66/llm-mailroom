@@ -12,9 +12,9 @@ Operator manuals for this folder are published on the GitBook site (pages listed
 
 | Guide | Covers |
 |:---|:---|
-| [Docker deployment](../docs/docker-deployment.md) | Compose matrix (Modes B / Mixed / A-ollama / A-llamafile / M / G), producer image, BERT build args |
-| [Modal + vLLM](../docs/modal-vllm.md) | `mailroom-vllm` serve, pipeline cutover, multi-tier Mode G GPUs |
-| [Deployment](../docs/deployment.md) | Laptop Python install, Railway, Hugging Face Spaces, backup |
+| [Docker deployment](../docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md) | Compose matrix (Modes B / Mixed / A-ollama / A-llamafile / M / G), producer image, BERT build args |
+| [Modal + vLLM](../docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) | `mailroom-vllm` serve, pipeline cutover, multi-tier Mode G GPUs |
+| [Deployment](../docs/pipeline-reference-llm-mailroom/deployment/README.md) | Laptop Python install, Railway, Hugging Face Spaces, backup |
 
 This README is an index of files in `deploy/`. Keep the operator recipes on the GitBook pages so they stay in sync.
 
@@ -34,7 +34,7 @@ This README is an index of files in `deploy/`. Keep the operator recipes on the 
 
 `MAILROOM_API_TOKEN` is **required** on every compose `app` service (the container binds `0.0.0.0`; audit L-2 refuses an off-loopback bind without a live bearer token). Secrets come from the host `.env` via `--env-file`. Never bake tokens into images.
 
-Quick start (Mode B / Mixed): see [Docker deployment](../docs/docker-deployment.md). GPU serve: see [Modal + vLLM](../docs/modal-vllm.md).
+Quick start (Mode B / Mixed): see [Docker deployment](../docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md). GPU serve: see [Modal + vLLM](../docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md).
 
 ## Configuration Files
 
@@ -84,7 +84,7 @@ Quick start:
 
 ## Related Files
 
-- [`docs/docker-deployment.md`](../docs/docker-deployment.md)
-- [`docs/modal-vllm.md`](../docs/modal-vllm.md)
-- [`docs/deployment.md`](../docs/deployment.md)
+- [`docs/docker-deployment.md`](../docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md)
+- [`docs/modal-vllm.md`](../docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md)
+- [`docs/deployment.md`](../docs/pipeline-reference-llm-mailroom/deployment/README.md)
 - `src/` — Source code

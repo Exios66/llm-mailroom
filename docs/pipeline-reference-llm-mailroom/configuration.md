@@ -431,7 +431,7 @@ See [Local Models](local-models.md) for the full cutover guide.
 
 ## Environment variables
 
-The committed template [`.env.example`](../../.env.example) is the authoritative knob list (copy to `.env` at the repo root). The full per-provider / per-trace-sink configuration guide — covering THIS repo and llm-entity-extraction together, including the Modal-vLLM flip and the shared cross-repo contract — lives in the sibling repo: [`docs/configuration.md`](https://github.com/Exios66/llm-entity-extraction/blob/main/docs/configuration.md).
+The committed template [`.env.example`](../../.env.example) is the authoritative knob list (copy to `.env` at the repo root). The full per-provider / per-trace-sink configuration guide — covering THIS repo and llm-entity-extraction together, including the Modal-vLLM flip and the shared cross-repo contract — lives in the standalone `llm-entity-extraction` repo (retired from the monorepo, DMR-079): [`docs/configuration.md`](https://github.com/Exios66/llm-entity-extraction/blob/main/docs/configuration.md).
 
 Quick orientation:
 

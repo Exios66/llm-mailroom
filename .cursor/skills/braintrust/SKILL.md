@@ -25,7 +25,7 @@ Pytest forces `OBSERVABILITY_PROVIDER=none` and pops `BRAINTRUST_API_KEY`.
 ## What this repo uses Braintrust for
 
 - Optional trace backend (`observability/braintrust_setup.py`)
-- Eval discipline aligned with `llm-entity-extraction` (datasets, Eval
+- Eval discipline aligned with the standalone `llm-entity-extraction` repo (retired from the monorepo, DMR-079; datasets, Eval
   loops, experiment log)
 
 The-Mailroom does **not** read Braintrust.

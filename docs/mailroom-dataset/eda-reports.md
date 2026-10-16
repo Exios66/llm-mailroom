@@ -145,4 +145,4 @@ These are analysis notes from Mailroom-Corpus-EDA, not pipeline work items:
 
 ## Hub helpers (this repo owns publish)
 
-Upload tooling that used to live in llm-entity-extraction is centralized in Mailroom-Corpus-EDA: `hf_interface.py`, `dataset_export.py`, `docclass_uploader.py` (blind-label strip + leak guard), `intent_backfill.py`, `token_budget.py`. Frozen v8 scripts are under `scripts/archive/v8/`.
+Upload tooling that used to live in llm-entity-extraction (standalone since DMR-079) is centralized in Mailroom-Corpus-EDA: `hf_interface.py`, `dataset_export.py`, `docclass_uploader.py` (blind-label strip + leak guard), `intent_backfill.py`, `token_budget.py`. Frozen v8 scripts are under `scripts/archive/v8/`.
