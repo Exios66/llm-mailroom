@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.bump_dojo_scoring import current_pin
+from scripts.bump_dojo_scoring import current_pin, pin_label, pin_release_path
 
 REPO = Path(__file__).resolve().parents[2]
 LANDING = REPO / "landing" / "index.html"
@@ -24,7 +24,7 @@ BADGES = (
     "LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2",
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
-    f"dojo-{current_pin(REPO)}-6f42c1",
+    f"dojo-{pin_label(current_pin(REPO))}-6f42c1",
     "release-v0.8.0-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",
@@ -35,9 +35,10 @@ BADGES = (
 @pytest.mark.parametrize("relative_path", ["README.md", "landing/index.html"])
 def test_dojo_badge_links_to_the_pinned_release(relative_path):
     """The badge, release destination, and HTML alt text must agree with the pin."""
-    tag = current_pin(REPO)
+    pin = current_pin(REPO)
+    tag = pin_label(pin)  # the tag, or a SHA pin's 7-char form
     badge = f"https://img.shields.io/badge/dojo-{tag}-6f42c1"
-    release = f"https://github.com/Exios66/llm-dojo-scoring/releases/tag/{tag}"
+    release = f"https://github.com/Exios66/llm-dojo-scoring/{pin_release_path(pin)}"
     text = (REPO / relative_path).read_text(encoding="utf-8")
     if relative_path.endswith(".html"):
         assert (

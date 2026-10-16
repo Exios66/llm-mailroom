@@ -1,4 +1,4 @@
-"""Dedicated specialist scoring suites from llm-dojo-scoring (0.21.0 pin).
+"""Dedicated specialist scoring suites from llm-dojo-scoring (version pinned in pyproject.toml).
 
 ``get_suite(doc_class)`` returns the specialist suite (merger_agreement
 rebinds the MAUD catalog rather than inheriting CUAD families). Extraction
