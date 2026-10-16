@@ -81,7 +81,8 @@ def test_progress_roundtrip_and_stale(temp_base_dir):
 @pytest.mark.parametrize("name,health,or_info,warm,state,detail", [
     ("modal:extract", {"calls": 5, "errors": 5, "consecutive_errors": 5, "last_status": 502}, None, {}, "down", "HTTP 502"),
     ("modal:extract", {"calls": 8, "errors": 2, "consecutive_errors": 0, "count_503": 0}, None, {}, "degraded", ""),
-    ("modal:extract", {"calls": 3, "errors": 1, "consecutive_errors": 0, "count_503": 1}, None, {}, "degraded", "cold-start 503s 1"),
+    ("modal:extract", {"calls": 3, "errors": 0, "consecutive_errors": 0, "count_503": 1, "ok_calls": 2}, None, {}, "up", "cold start: 1× 503"),
+    ("modal:extract", {"calls": 5, "errors": 0, "consecutive_errors": 0, "count_503": 5, "ok_calls": 0}, None, {}, "degraded", "cold start: 5× 503, no success yet"),
     ("modal:extract", None, None, {"extract": 1}, "warm", "1 container"),
     ("modal:extract", None, None, {}, "idle", ""),
     ("modal:extract", {"calls": 4, "errors": 0, "consecutive_errors": 0, "count_503": 0}, None, {}, "up", ""),
@@ -567,3 +568,128 @@ def test_modal_tiers_skip_gateway_api_tier():
     from pipeline.pager import _modal_tiers
 
     assert "api" not in _modal_tiers()
+
+
+# ── final-review fixes ───────────────────────────────────────────────
+
+
+def test_explicit_config_pager_honors_cli_off_and_number_changes(host):
+    pager, rec, feed = host
+    feed["fn"] = broken
+    p = make(pager, rec)  # hosts (watcher, API, --page) pass an explicit cfg
+    p.tick(at("14:01"))
+    assert len(rec.sent) == 1
+    assert pager.main(["off"]) == 0
+    for m in range(2, 50):
+        p.tick(at("14:00") + m * 60)
+    assert len(rec.sent) == 1
+    assert pager.main(["number", "set", GV]) == 0 and pager.main(["on"]) == 0
+    p.tick(at("14:51"))
+    assert rec.sent[-1][0] == GV
+
+
+def test_state_save_failure_does_not_resend_alerts(host, monkeypatch):
+    pager, rec, feed = host
+    feed["fn"] = broken
+    p = make(pager, rec)
+
+    def full(_):
+        raise OSError("No space left on device")
+    monkeypatch.setattr(pager, "save_state", full)
+    for m in range(1, 7):
+        p.tick(at("14:00") + m * 60)
+    assert sum(b.startswith("Mailroom ALERT") for _, b in rec.sent) == 1
+
+
+def test_cli_mute_reaches_running_pager_without_clobbering_its_state(host):
+    pager, rec, feed = host
+    feed["fn"] = broken
+    p = make(pager, rec)
+    p.tick(at("14:01"))
+    sent_at = p.state.open["provider_down:modal:extract"]["last_sent"]
+    (get_base() / "pager_state.json").write_text("{}")  # a CLI read-modify-write from a stale copy
+    assert pager.main(["mute", "2h"]) == 0
+    p.tick(at("14:02"))
+    assert p.state.muted_until and p.state.open["provider_down:modal:extract"]["last_sent"] == sent_at
+    assert sum(b.startswith("Mailroom ALERT") for _, b in rec.sent) == 1
+
+
+def test_flush_sends_run_finished_before_exit(host):
+    pager, rec, feed = host
+    from pipeline.pager_core import RunProgress
+
+    run = RunProgress("r1", "run_pilot --mock", 3, 0, at("14:00"), at("14:00"), False, {})
+    feed["fn"] = lambda now: healthy(now, mode="research", runs=[run])
+    p = make(pager, rec, mode="research")
+    p.tick(at("14:00"))
+    done = RunProgress("r1", "run_pilot --mock", 3, 3, at("14:00"), at("14:00") + 20, True, {"failed": 0})
+    feed["fn"] = lambda now: healthy(now, mode="research", runs=[done])
+    p.flush(at("14:00") + 21)  # well inside the 60 s scan interval
+    assert [b.splitlines()[1][:14] for _, b in rec.sent] == ["▶ Run started:", "✅ Run finished"]
+
+
+def test_research_background_pager_flushes_at_exit(host, monkeypatch):
+    pager, rec, _ = host
+    registered = []
+    monkeypatch.setattr("atexit.register", lambda fn, *a, **k: registered.append(fn))
+    p = make(pager, rec, mode="research")
+    try:
+        assert p.start_background() is not None
+        assert p.flush in registered
+    finally:
+        p.stop()
+
+
+def test_digest_snapshot_only_taken_when_due(host, monkeypatch):
+    pager, rec, feed = host
+    calls = []
+    feed["fn"] = lambda now: calls.append(now) or healthy(now)
+    p = make(pager, rec, digest={"production_minutes": 0})
+    ticks(p, at("14:00") + 5, 3, step=15)  # 12 host ticks, 3 scans
+    assert len(calls) == 3
+    calls.clear()
+    p.release()
+    q = make(pager, rec, quiet_hours={"window": "22:00-07:00"})
+    ticks(q, at("23:00") + 5, 3, step=15)
+    assert len(calls) == 3
+
+
+def test_watchdog_runs_pager_off_its_poll_loop(host, monkeypatch):
+    pager, rec, _ = host
+    from pipeline import watchdog
+
+    started = []
+    monkeypatch.setenv("MAILROOM_WATCHDOG", "1")
+    monkeypatch.setattr(watchdog, "read_heartbeat", lambda: {"ts": time.time(), "pid": os.getpid()})
+    monkeypatch.setattr(watchdog, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(pager.Pager, "start_background", lambda self, **k: started.append(k) or None)
+    monkeypatch.setattr(pager.Pager, "tick", lambda self, now=None: pytest.fail("pager ticked inline"))
+    monkeypatch.setattr(watchdog.time, "sleep", lambda s: (_ for _ in ()).throw(KeyboardInterrupt))
+    with pytest.raises(KeyboardInterrupt):
+        watchdog.main()
+    assert started == [{"idle_ok": True}]
+
+
+def test_cli_accepts_gateway_address_with_email_gateway_transport(host, monkeypatch):
+    pager, *_ = host
+    monkeypatch.setenv("MAILROOM_PAGER_TRANSPORT", "email_gateway")
+    assert pager.main(["on", "--to", "6085551234@vtext.com"]) == 0
+    assert pager.load_pager_config().recipients == ("6085551234@vtext.com",)
+
+
+def test_rate_limits_and_bad_requests_are_not_outages(monkeypatch, tmp_path):
+    from llm import provider_health as ph
+
+    monkeypatch.setenv("MAILROOM_PROVIDER_HEALTH", "1")
+    monkeypatch.setattr(ph, "_path", lambda: tmp_path / "provider_health.json")
+    ph._BUF.events.clear()
+    url = "https://openrouter.ai/api/v1"
+    for status in (429, 429, 400, 429):
+        ph.record_llm_outcome(url, "m", ok=False, status=status, latency_s=0.1, now=1000.0)
+    h = ph.read_provider_health(now=1001.0)["openrouter"]
+    assert h["errors"] == 0 and h["consecutive_errors"] == 0
+    for status in (502, None, 500):
+        ph.record_llm_outcome(url, "m", ok=False, status=status, latency_s=0.1, now=1002.0)
+    h = ph.read_provider_health(now=1003.0)["openrouter"]
+    assert h["errors"] == 3 and h["consecutive_errors"] == 3
+    ph._BUF.events.clear()

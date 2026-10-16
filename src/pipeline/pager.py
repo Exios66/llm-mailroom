@@ -36,7 +36,7 @@ def _runs_dir() -> Path:
 
 def _atomic_write(path: Path, data) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp = path.with_suffix(f"{path.suffix}.{os.getpid()}.{threading.get_ident()}.tmp")  # CLI and pager never share
     tmp.write_text(json.dumps(data, indent=1))
     os.replace(tmp, path)
 
@@ -149,8 +149,10 @@ def provider_statuses(cfg: PagerConfig, health: dict, or_info: dict | None, warm
             st, det = "down", f"HTTP {h.get('last_status')}" if h.get("last_status") else "no response"
         elif calls >= rd["min_calls"] and errs / calls >= rd["error_rate"]:
             st, det = "degraded", ""
+        elif h.get("count_503", 0) >= rd["min_calls"] and not h.get("ok_calls"):
+            st, det = "degraded", f"cold start: {h['count_503']}× 503, no success yet"
         elif h.get("count_503"):
-            st, det = "degraded", f"cold-start 503s {h['count_503']}"
+            st, det = "up", f"cold start: {h['count_503']}× 503"
         elif not calls:
             st, det = ("warm", _n_containers(warm[t])) if warm.get(t) else ("idle", "")
         else:
@@ -358,7 +360,8 @@ class Pager:
         self.cfg = cfg or load_pager_config()
         self.transport, self.http, self._lock, self._last_scan = transport, None, None, None
         self._settings_sig = self._sig()
-        self.state = load_state()
+        self.state = load_state()  # in memory from here on: the disk copy only feeds `mute` back in
+        self._mutex, self._stop = threading.Lock(), threading.Event()
 
     @staticmethod
     def _sig():
@@ -387,12 +390,20 @@ class Pager:
             self._lock.close()
             self._lock = None
 
-    def tick(self, now: float | None = None) -> list:
+    def tick(self, now: float | None = None, *, force_scan: bool = False) -> list:
         try:
-            return self._tick(time.time() if now is None else now)
+            with self._mutex:
+                return self._tick(time.time() if now is None else now, force_scan=force_scan)
         except Exception as exc:  # noqa: BLE001 — never raise into the watchdog/watcher/API
             logger.warning("pager_tick_failed", error=f"{type(exc).__name__}: {str(exc)[:200]}")
             return []
+
+    def flush(self, now: float | None = None) -> list:
+        """One forced scan now (end of a `--page` run), so a finished run's text is not left unsent."""
+        return self.tick(now, force_scan=True)
+
+    def stop(self) -> None:
+        self._stop.set()
 
     def page_now(self, alert, now: float | None = None) -> list:
         """Page an alert the host already knows about (watchdog: watcher DOWN), through the normal gates."""
@@ -401,7 +412,8 @@ class Pager:
         try:
             now = time.time() if now is None else now
             override = {"watcher_alive": False} if alert.key == "watcher_down" else {}
-            return self._tick(now, force_scan=True, override=override)
+            with self._mutex:
+                return self._tick(now, force_scan=True, override=override)
         except Exception as exc:  # noqa: BLE001
             logger.warning("pager_page_now_failed", error=f"{type(exc).__name__}: {str(exc)[:200]}")
             return []
@@ -412,11 +424,13 @@ class Pager:
         from pipeline.pager_core import plan_digest, plan_scan
 
         sig = self._sig()
-        if self._own_cfg and sig != self._settings_sig:
-            self.cfg, self._settings_sig = load_pager_config(), sig
+        if sig != self._settings_sig:  # `pager on/off/number` reach every host, explicit cfg or not
+            self._settings_sig = sig
+            self.cfg = load_pager_config() if self._own_cfg else self.cfg.apply_settings(read_settings())
         if not self.cfg.active or not self.acquire():
             return []
-        cfg, self.state, msgs, snap = self.cfg, load_state(), [], None
+        self.state.muted_until = load_state().muted_until  # only `mute` writes state from outside
+        cfg, msgs, snap = self.cfg, [], None
         window = cfg.digest_minutes(cfg.run_mode)
 
         def snapshot():
@@ -426,12 +440,10 @@ class Pager:
             snap, self._last_scan = snapshot(), now
             out, self.state = plan_scan(snap, cfg, self.state, now)
             msgs += out.messages
-        st = self.state
-        if st.next_digest is None or now >= st.next_digest or st.in_quiet:
-            out, self.state = plan_digest(snap or snapshot(), cfg, self.state, now)
-            msgs += out.messages
+        out, self.state = plan_digest(lambda: snap or snapshot(), cfg, self.state, now)  # snapshots only if due
+        msgs += out.messages
         results = [r for m in msgs for r in self._deliver(m, now)]
-        save_state(self.state)
+        _source("pager_state", lambda: save_state(self.state), None)
         return results
 
     def _deliver(self, msg, now: float) -> list:
@@ -465,19 +477,24 @@ class Pager:
         except Exception as exc:  # noqa: BLE001 — fail-soft, no retries
             logger.warning("pager_webhook_failed", error=type(exc).__name__)
 
-    def start_background(self) -> threading.Thread | None:
-        if not self.cfg.active:
+    def start_background(self, *, idle_ok: bool = False) -> threading.Thread | None:
+        """Tick on a daemon thread. `idle_ok` keeps an inactive pager polling so a later `pager on` takes effect."""
+        if not self.cfg.active and not idle_ok:
             return None
-        if not self.acquire():
+        if self.cfg.active and not self.acquire():
             logger.info("pager_passive", reason="another process holds pager.lock")
             return None
 
         def loop():
-            while True:
+            while not self._stop.is_set():
                 self.tick()
-                time.sleep(min(self.cfg.scan.seconds, 15))
+                self._stop.wait(min(self.cfg.scan.seconds, 15))
         t = threading.Thread(target=loop, name="mailroom-pager", daemon=True)
         t.start()
+        if self.cfg.run_mode == "research":
+            import atexit
+
+            atexit.register(self.flush)
         logger.info("pager_started", recipients=[_mask(r) for r in self.cfg.recipients], transport=self.cfg.transport)
         return t
 
@@ -536,7 +553,7 @@ def prompt_on_start(cfg: PagerConfig, *, flag: bool | None, input_fn=input, isat
     """Live-production start: ask whether to text alerts (default: leave as is)."""
     import sys
 
-    from pipeline.pager_core import normalize_number
+    from pipeline.pager_core import normalize_recipient
 
     if flag is not None:
         if flag and not cfg.recipients:
@@ -559,8 +576,8 @@ def prompt_on_start(cfg: PagerConfig, *, flag: bool | None, input_fn=input, isat
         return cfg
     recips = list(cfg.recipients)
     if not recips:
-        n = normalize_number(_ask(input_fn, "   Number to text (mobile or Google Voice, e.g. +16085551234): ",
-                                  timeout_s) or "")
+        n = normalize_recipient(_ask(input_fn, "   Number to text (mobile or Google Voice, e.g. +16085551234): ",
+                                     timeout_s) or "", cfg.transport)
         if not n:
             print(f"   {BAD_NUMBER} — text alerts stay OFF.")
             return cfg
@@ -620,7 +637,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import sys
 
-    from pipeline.pager_core import evaluate_rules, normalize_number, render_alert, render_digest
+    from pipeline.pager_core import evaluate_rules, normalize_recipient, render_alert, render_digest
 
     ap = argparse.ArgumentParser(prog="python -m pipeline.pager", description="Operator SMS pager (text alerts).")
     sub = ap.add_subparsers(dest="verb", required=True)
@@ -646,7 +663,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_pager_config()
 
     def number(raw):
-        n = normalize_number(raw)
+        n = normalize_recipient(raw, cfg.transport)
         if not n:
             print(BAD_NUMBER, file=sys.stderr)
         return n
