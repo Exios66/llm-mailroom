@@ -27,17 +27,14 @@ In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which
 | [Digital-Mailroom](repos/digital-mailroom.md) | The monorepo. Every package below lives in `packages/`. Holds the cross-repo task board (`governance/TASKS.md`) and the served Dispatch Board. |
 | [mailroom-issues](repos/mailroom-issues.md) | The issue hub for anything that spans more than one repository: epics, RFCs, and the label taxonomy. No code. |
 
-### The ten packages (monorepo members)
+### The seven packages (monorepo members)
 
 | Package | Layer | What it is |
 | :--- | :--- | :--- |
 | [llm-mailroom](repos/llm-mailroom.md) | Pipeline | The 13-node LangGraph pipeline and FastAPI producer. The center of everything. |
 | [llm-dojo-scoring](repos/llm-dojo-scoring.md) | Scoring | The shared, deterministic, field-type-aware scoring library every other repo imports. |
-| [llm-entity-extraction](repos/llm-entity-extraction.md) | Prompt experiments | Where sorter and specialist prompts are bred and measured before they reach the pipeline. |
 | [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) | Surface | Runs the full pipeline offline on Ollama, vLLM, llama.cpp or LM Studio, plus Modal GPU studies. GitBook: [docs](repos/local-mailroom-sandbox-docs.md), [run reports](repos/local-mailroom-sandbox-reports.md), [visuals](repos/local-mailroom-sandbox-visuals.md). |
 | [The-Mailroom](repos/the-mailroom.md) | Surface | Pixel-art visualizer and hosted Observatory, driven entirely by the pipeline's Langfuse traces. |
-| [agent-mailroom](repos/agent-mailroom.md) | Surface | A self-contained mailroom on a walking office floor, same doctrine, independent release train. |
-| [llm-mailroom-graph](repos/llm-mailroom-graph.md) | Surface | Interactive knowledge-graph site of the pipeline's code. |
 | [Mailroom-Corpus-EDA](repos/mailroom-corpus-eda.md) | Data | EDA of the canonical `mailroom-dataset` and the central Hugging Face upload helpers. GitBook: [Mailroom dataset](../mailroom-dataset/), [visualizations](../mailroom-dataset/visualizations.md). |
 | [Enron-Evaluation-Environment](repos/enron-evaluation-environment.md) | Data | Builds the `correspondence` corpus from the CMU Enron emails. |
 | [claims-data-eda](repos/claims-data-eda.md) | Data | Builds the `insurance_claim` corpus from CMS DE-SynPUF Medicare claims. |
@@ -55,7 +52,7 @@ In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which
 | :--- | :--- |
 | [atticus-investigation](repos/atticus-investigation.md) | LegalBench classification prompt-engineering pipeline. Same methodology, separate focus. |
 
-Older copies, forks and earlier monorepo attempts also exist. They are listed with their status in the [Repository index](repo-index.md) so nobody develops in the wrong place.
+Older copies, forks, earlier monorepo attempts and the repositories retired from the core in DMR-079 (llm-entity-extraction, agent-mailroom, llm-mailroom-graph) also exist. They are listed with their status in the [Repository index](repo-index.md) so nobody develops in the wrong place.
 
 ## Where the truth lives
 
@@ -75,7 +72,6 @@ Snapshot taken 2026-10-07 from each repository's README and pins. Check the repo
 | Item | Version |
 | :--- | :--- |
 | llm-mailroom | v0.8.0 |
-| llm-dojo-scoring | v0.21.0 latest; llm-mailroom pins 8c7b7f1c9c3b18a7036ee58addcfaa35d816177d |
+| llm-dojo-scoring | v0.22.0 latest; llm-mailroom pins v0.22.0 |
 | The-Mailroom | v0.5.0 |
-| agent-mailroom | 0.3.0 |
 | mailroom-dataset | schema v9, revision `ed7576b6` (v9.1), 3,302 documents |

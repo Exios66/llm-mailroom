@@ -47,7 +47,7 @@ curl http://localhost:8000/status/{doc_id}
 curl http://localhost:8000/audit/{doc_id}
 ```
 
-Next: [Pipeline architecture](../architecture.md), [Configuration](../configuration.md), [API](../api.md).
+Next: [Pipeline architecture](../pipeline-reference-llm-mailroom/architecture.md), [Configuration](../pipeline-reference-llm-mailroom/configuration.md), [API](../pipeline-reference-llm-mailroom/api.md).
 
 ## 3. Run everything offline on local models
 
@@ -92,12 +92,11 @@ cp .env.example .env    # LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY
 mailroom-web            # http://127.0.0.1:8001
 ```
 
-For a self-contained alternative with no Langfuse at all, run [agent-mailroom](repos/agent-mailroom.md): `pip install -e ".[dev]" && python -m agent_mailroom`.
 
 ## 6. Score extraction output
 
 ```bash
-pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@8c7b7f1c9c3b18a7036ee58addcfaa35d816177d"
+pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.22.0"
 ```
 
 ```python
@@ -112,9 +111,9 @@ Next: [llm-dojo-scoring guide](repos/llm-dojo-scoring.md).
 
 The GitBook pipeline reference publishes the full operator manuals (they are listed in `SUMMARY.md`):
 
-- [Docker deployment](../docker-deployment.md) — compose matrix (OpenRouter, Ollama, llamafile, Mode G LiteLLM + Modal GPU tiers) and the The-Mailroom producer image
-- [Modal + vLLM](../modal-vllm.md) — `mailroom-vllm` serve, pipeline cutover, multi-tier GPUs
-- [Deployment](../deployment.md) — laptop Python install, Railway, Hugging Face Spaces, backup
+- [Docker deployment](../pipeline-reference-llm-mailroom/deployment/docker-deployment.md) — compose matrix (OpenRouter, Ollama, llamafile, Mode G LiteLLM + Modal GPU tiers) and the The-Mailroom producer image
+- [Modal + vLLM](../pipeline-reference-llm-mailroom/deployment/modal-vllm.md) — `mailroom-vllm` serve, pipeline cutover, multi-tier GPUs
+- [Deployment](../pipeline-reference-llm-mailroom/deployment/README.md) — laptop Python install, Railway, Hugging Face Spaces, backup
 
 ```bash
 cp .env.example .env   # MAILROOM_API_TOKEN is required on every compose app
@@ -125,9 +124,9 @@ docker compose -f deploy/docker-compose.yml --env-file .env up -d --build
 
 | Key | Used by | Needed for |
 | :--- | :--- | :--- |
-| `OPENROUTER_API_KEY` | pipeline, entity-extraction, eval-environment, agent-mailroom | Real LLM runs (the primary provider) |
+| `OPENROUTER_API_KEY` | pipeline, eval-environment                                   | Real LLM runs (the primary provider) |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | pipeline, The-Mailroom, sandbox | Tracing, and anything The-Mailroom displays |
 | `BRAINTRUST_API_KEY` | entity-extraction, eval-environment | Eval datasets and optional experiment logging |
 | `HF_TOKEN` | corpus repos, mailroom-ml | Publishing datasets or models to `Lucius-Morningstar` |
 
-Most repos have a mock mode for working without keys (`--mock` flags, or agent-mailroom's automatic `mock` fallback). The pipeline itself is stricter: outside mock runs, `get_llm` raises if `OPENROUTER_API_KEY` is missing.
+Most repos have a mock mode for working without keys (`--mock` flags). The pipeline itself is stricter: outside mock runs, `get_llm` raises if `OPENROUTER_API_KEY` is missing.

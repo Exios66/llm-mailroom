@@ -90,4 +90,4 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 **Vendored snapshot.** A tracked copy of another package's code inside a repo (local-mailroom-sandbox's `vendor/`), so it runs without network access.
 
-**Virtual member.** A monorepo package with `package = false`. Its code and data sit in the checkout but nothing installs from it (Enron-Evaluation-Environment, claims-data-eda, llm-mailroom-graph, mailroom-corpus-eda).
+**Virtual member.** A monorepo package with `package = false`. Its code and data sit in the checkout but nothing installs from it (Enron-Evaluation-Environment, claims-data-eda, mailroom-corpus-eda).

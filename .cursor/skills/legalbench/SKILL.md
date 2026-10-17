@@ -18,8 +18,8 @@ LegalBench task pack — do not feed it to `run_hf_pilot.py`.
 | `family_classification` | 200 contracts → 25 families + `other` | strict + equiv accuracy, macro-F1 |
 
 Deterministic local scoring — no LLM judge. Traces as `legalbench-<task>`
-with `legalbench_*` scores. Appends the shared experiment log (sibling
-`llm-entity-extraction` site data when `LEGALBENCH_SIBLING_REPO` points there).
+with `legalbench_*` scores. Appends the shared experiment log (optional standalone
+`llm-entity-extraction` site data — no longer in the monorepo, DMR-079 — when `LEGALBENCH_SIBLING_REPO` points there).
 
 ```bash
 PYTHONPATH=src python -m legalbench.cli --list-tasks

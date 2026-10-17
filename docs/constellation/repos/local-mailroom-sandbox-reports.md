@@ -86,4 +86,4 @@ python reports/dashboard/build_hub.py --check   # fail if stale
 
 - [Visuals](local-mailroom-sandbox-visuals.md)
 - [Documentation](local-mailroom-sandbox-docs.md)
-- Pipeline [Modal + vLLM](../../modal-vllm.md) (`mailroom-vllm`, not the sandbox study app)
+- Pipeline [Modal + vLLM](../../pipeline-reference-llm-mailroom/deployment/modal-vllm.md) (`mailroom-vllm`, not the sandbox study app)

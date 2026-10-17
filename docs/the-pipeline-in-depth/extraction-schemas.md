@@ -404,7 +404,7 @@ The inventory fields (`cuad_family`, `merger_consideration`, `cuad_clauses`, `ma
 
 ## Where the schemas come from
 
-`src/langchain_agents/specialist_agents.py` is vendored from [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction/blob/main/agents/specialist_agents.py) (header: re-vendored 2026-08-15, local changes marked `MAILROOM PATCH`). The [Entity-Extraction-Experiments](https://github.com/LLM-Mailroom-Services/Entity-Extraction-Experiments/blob/main/agents/specialist_agents.py) repo has a file at the same path. The mailroom runs its own vendored copy, so changes in either sibling repo do not reach the pipeline until they are re-vendored. See [Sister repos](../pipeline-reference-llm-mailroom/sister-repos.md).
+`src/langchain_agents/specialist_agents.py` is vendored from the standalone [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction/blob/main/agents/specialist_agents.py) (header: re-vendored 2026-08-15, local changes marked `MAILROOM PATCH`). The [Entity-Extraction-Experiments](https://github.com/LLM-Mailroom-Services/Entity-Extraction-Experiments/blob/main/agents/specialist_agents.py) repo has a file at the same path. The mailroom runs its own vendored copy, so changes in either sibling repo do not reach the pipeline until they are re-vendored. See [Sister repos](../pipeline-reference-llm-mailroom/sister-repos.md).
 
 ## Sources
 

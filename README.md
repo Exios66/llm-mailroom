@@ -14,7 +14,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
-[![Dojo](https://img.shields.io/badge/dojo-8c7b7f1-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/8c7b7f1c9c3b18a7036ee58addcfaa35d816177d)
+[![Dojo](https://img.shields.io/badge/dojo-v0.22.0-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.22.0)
 [![Release](https://img.shields.io/badge/release-v0.8.0-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.8.0)
 [![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 [![Contributor](https://img.shields.io/badge/contributor-grantmooslin-blue)](https://github.com/grantmooslin)
@@ -124,7 +124,7 @@ pip install -e ".[embeddings]"   # etc.
 > editable) from one `uv.lock`. Release/deploy images still `pip install .`
 > from this (or the subtree) directory, where the published pins in
 > `pyproject.toml` keep their standalone meaning (see
-> [`docs/sister-repos.md`](docs/sister-repos.md)).
+> [`docs/pipeline-reference-llm-mailroom/sister-repos.md`](docs/pipeline-reference-llm-mailroom/sister-repos.md)).
 
 ---
 
@@ -278,7 +278,7 @@ tooling files. Everything else is nested:
 mailroom/
 ├── src/             # ALL Python code
 │   ├── agents/          # Specialist agents (Sorter, Contract, Corp Records, Judge, …)
-│   ├── langchain_agents/# Vendored LangChain agents (Sorter, Contracts Specialist) from llm-entity-extraction
+│   ├── langchain_agents/# Vendored LangChain agents (Sorter, Contracts Specialist) originally from llm-entity-extraction (now standalone)
 │   ├── graph/           # LangGraph state machine: nodes, routing, state
 │   ├── llm/             # Provider-agnostic LLM client, retry, Langfuse-managed prompts
 │   ├── schemas/         # Pydantic models: manifest, matter, documents, audit
@@ -294,9 +294,9 @@ mailroom/
 ├── notebooks/        # docile-style dataset browser (thin notebook + tool module)
 ├── deploy/           # Modal+vLLM serving app (optional local-model cutover)
 ├── data/             # runtime state: inbox/processing/archive bins, mailroom.db, cuad/ corpus, manifests/
-└── docs/             # canonical user docs (agents, architecture, configuration, deployment, local-models)
+└── docs/             # canonical docs (pipeline reference under pipeline-reference-llm-mailroom/: agents, architecture, configuration, deployment, local-models)
     ├── assets/       # README banner + images
-    ├── reports/      # evaluation write-ups: audits/, pilots/, evaluations/ (see docs/reports/README.md)
+    ├── reports/      # evaluation write-ups: audits/, pilots/, evaluations/ (see docs/reports/)
     ├── examples/     # sample documents + manifest ground truth (samples/, sources/, external/)
     └── wiki/         # GitHub-wiki-only pages, pushed to the GitHub wiki via docs/wiki/sync-wiki.sh (NOT a docs/ mirror)
 ```
@@ -626,19 +626,16 @@ The build auto-detects `docs/`, generates navigation from the file tree, and emi
 
 ### The Mailroom Umbrella
 
-Mailroom is the pipeline at the center of a small constellation of governed repositories — full map in [`docs/sister-repos.md`](docs/sister-repos.md):
+Mailroom is the pipeline at the center of a small constellation of governed repositories (seven monorepo members after DMR-079; `llm-entity-extraction`, `agent-mailroom` and the `llm-mailroom-graph` sites were retired from the core and live only as standalone `Exios66/*` repos) — full map in [`docs/pipeline-reference-llm-mailroom/sister-repos.md`](docs/pipeline-reference-llm-mailroom/sister-repos.md):
 
 | Repository | Role | Relationship |
 | --- | --- | --- |
 | [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (DMR-era cards); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
-| [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) | Prompt-experiment loop (prompt versions × models over CUAD/LegalBench/MAUD) | **Sister repo** — source of the vendored sorter/contracts prompts; shares ONE kanban board with this repo |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@8c7b7f1c9c3b18a7036ee58addcfaa35d816177d` in `pyproject.toml` |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.22.0` in `pyproject.toml` |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |
 | [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine + hosted Observatory Space — Langfuse floor, Inbox enqueue, REVIEW resolve (web + TUI) | **Downstream visualizer** — Langfuse-only display; proxies Inbox / REVIEW to this API (`MAILROOM_PIPELINE_URL`) |
-| [llm-mailroom-graph](https://exios66.github.io/llm-mailroom-graph/) | Interactive knowledge graph of this codebase | **Derived site** (graphify build artifact) |
-| [llm-entity-extraction-graph](https://exios66.github.io/llm-entity-extraction-graph/) | Knowledge graph of the sister loop | **Derived site** |
 | [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
 
 **Developing in the monorepo:** cross-repository work happens in
@@ -646,7 +643,7 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 in its root installs every family member (`packages/llm-mailroom` included,
 editable) against a single shared `uv.lock`. Branch/subtree discipline,
 sync commands, and the monorepo task board (`governance/TASKS.md`) are
-documented in `docs/sister-repos.md` § Digital-Mailroom. This repo remains the
+documented in `docs/pipeline-reference-llm-mailroom/sister-repos.md` § Digital-Mailroom. This repo remains the
 standalone mirror + deploy source (Docker/Railway/HF Space build from here
 or from the subtree copy — both are the same tree).
 
@@ -680,7 +677,7 @@ PYTHONPATH=src python -m api.main &
 #    optionally put [M:<matter_id>] in the subject to route the matter. No
 #    subject keyword is required. Full guide (upload best practices, subject-
 #    line contract, single-doc free-triage vs multi-doc full-pipeline
-#    pathways, echoes, troubleshooting): docs/gmail-intake.md
+#    pathways, echoes, troubleshooting): docs/pipeline-reference-llm-mailroom/gmail-intake.md
 
 # 7. (Optional) Run the ops monitor
 PYTHONPATH=src python -m pipeline.ops_monitor &
@@ -693,7 +690,7 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 
 The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) needs this API reachable as `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1` (Inbox **Queue a document** → `POST /v1/upload`; REVIEW → `POST /v1/review/{doc_id}/resolve`). Local: `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`. Hosted pair (producer Space + Observatory floor): [`deploy/space/PAIRING.md`](deploy/space/PAIRING.md). Live Observatory: [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory). A Space floor cannot use `127.0.0.1`.
 
-For fully local/offline serving, see [Docker deployment](docs/docker-deployment.md), [Modal + vLLM](docs/modal-vllm.md), and [Local Model Cutover](#local-model-cutover).
+For fully local/offline serving, see [Docker deployment](docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md), [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md), and [Local Model Cutover](#local-model-cutover).
 
 ### Security
 
@@ -704,16 +701,16 @@ For fully local/offline serving, see [Docker deployment](docs/docker-deployment.
 
 ## Further Documentation
 
-- [Architecture](docs/architecture.md) — full architectural details
-- [Configuration](docs/configuration.md) — config reference
+- [Architecture](docs/pipeline-reference-llm-mailroom/architecture.md) — full architectural details
+- [Configuration](docs/pipeline-reference-llm-mailroom/configuration.md) — config reference
 - [Agents](docs/agents.md) — agent specifications and personalities
-- [API Reference](docs/api.md) — complete API documentation
-- [Deployment](docs/deployment.md) — laptop install, Railway, Spaces, backup
-- [Docker deployment](docs/docker-deployment.md) — compose matrix (Modes B / Mixed / A / M / G)
-- [Modal + vLLM](docs/modal-vllm.md) — `mailroom-vllm` serve and GPU-tier cutover
+- [API Reference](docs/pipeline-reference-llm-mailroom/api.md) — complete API documentation
+- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Railway, Spaces, backup
+- [Docker deployment](docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md) — compose matrix (Modes B / Mixed / A / M / G)
+- [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) — `mailroom-vllm` serve and GPU-tier cutover
 - [Testing](docs/testing.md) — testing strategy and fixtures
-- [Local Models](docs/local-models.md) — local model cutover guide
-- [Sister Repositories](docs/sister-repos.md) — the llm-mailroom umbrella: entity-extraction, llm-dojo-scoring, corpus feeds, derived sites
+- [Local Models](docs/pipeline-reference-llm-mailroom/local-models.md) — local model cutover guide
+- [Sister Repositories](docs/pipeline-reference-llm-mailroom/sister-repos.md) — the llm-mailroom umbrella: llm-dojo-scoring, The-Mailroom, local-mailroom-sandbox, corpus feeds, and the DMR-079 retired repos
 - [Visualizer pairing](deploy/space/PAIRING.md) — Observatory Space + this producer (`MAILROOM_PIPELINE_URL` / token / `/v1`)
-- [Reports](docs/reports/README.md) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
+- [Reports](docs/reports/) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
 - [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `docs/wiki/` via `docs/wiki/sync-wiki.sh`)

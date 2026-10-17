@@ -228,7 +228,7 @@ class TestDeployContracts:
 
     def test_compose_documents_the_litellm_image_pin(self):
         # docs/ is the single source of truth; deploy/README.md is a file index.
-        guide = (REPO / "docs" / "docker-deployment.md").read_text(encoding="utf-8")
+        guide = (REPO / "docs" / "pipeline-reference-llm-mailroom" / "deployment" / "docker-deployment.md").read_text(encoding="utf-8")
         example = (REPO / ".env.example").read_text(encoding="utf-8")
         assert "ghcr.io/berriai/litellm:v1.104.0" in guide
         assert "Do **not** use `main-stable`" in guide

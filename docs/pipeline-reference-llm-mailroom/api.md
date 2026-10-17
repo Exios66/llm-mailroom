@@ -17,7 +17,7 @@ docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --bui
 # hosted: PYTHONPATH=src python src/scripts/publish_space.py --check
 ```
 
-Full compose matrix: [Docker deployment](../../docker-deployment.md).
+Full compose matrix: [Docker deployment](deployment/docker-deployment.md).
 
 ***
 

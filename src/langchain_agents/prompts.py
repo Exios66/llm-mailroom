@@ -1,4 +1,5 @@
-# VENDORED from github.com/Exios66/llm-entity-extraction (re-vendored to the
+# VENDORED from github.com/Exios66/llm-entity-extraction (standalone repo; no longer
+# part of the monorepo since DMR-079 — provenance only; re-vendored to the
 # sibling's current HEAD, 2026-08-15 — sorter_v6..v12 and
 # contracts_specialist_v12..v31 added since the 3a03d5c pin).
 # Imported verbatim (import paths rewritten to ``langchain_agents.*``) so the
