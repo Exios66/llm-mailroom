@@ -458,47 +458,106 @@ def test_relations_scan_cli_module_exists_and_verifies_ledger(temp_base_dir, cap
     assert "relations ledger: OK" in out
 
 
-def test_embed_uses_dojo_matcher_singleton(temp_base_dir, monkeypatch):
-    """HUB-051: the REAL embedding path drives the dojo's shared matcher.
+def test_embed_uses_public_dojo_embed_texts(temp_base_dir, monkeypatch):
+    """The REAL embedding path calls the dojo's public ``embed_texts``.
 
-    The dojo's public ``get_embedding_model()`` returns the model NAME string
-    — the old ``model.encode(vals, show_progress_bar=False)`` call was a
-    TypeError on every real run (``relations_embed_failed``; the cosine
-    signal only ever worked through the injected test seam). The fix routes
-    through the ``_EmbeddingMatcher`` singleton with its local-model load.
+    The dojo's ``get_embedding_model()`` returns the model NAME string (never
+    ``.encode()`` it, HUB-051); ``embed_texts`` is the supported, fail-soft
+    handle on the scorer's own backend, so relations no longer reaches into
+    ``_get_embedding()._embed``.
     """
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
+    P.set_embedder(None)
+    seen = []
+
+    def fake_embed_texts(texts):
+        """Record each batch and return deterministic vectors for the public API stub."""
+        seen.append(list(texts))
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    monkeypatch.setattr("llm_dojo_scoring.embed_texts", fake_embed_texts)
+    assert P._embed(["some document text", "another"]) == [[0.1, 0.2, 0.3]] * 2
+    assert seen == [["some document text", "another"]]
+
+
+def test_embed_degrades_when_dojo_has_no_backend(temp_base_dir, monkeypatch):
+    """``embed_texts`` returning None (no backend / a text failed) or raising
+    ⇒ None (the cosine signal skips; other signals flow) — never a crash."""
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
+    P.set_embedder(None)
+    monkeypatch.setattr("llm_dojo_scoring.embed_texts", lambda texts: None)
+    assert P._embed(["text"]) is None
+
+    def boom(texts):
+        """Simulate a backend exception to exercise the embedding fallback."""
+        raise RuntimeError("backend exploded")
+
+    monkeypatch.setattr("llm_dojo_scoring.embed_texts", boom)
+    assert P._embed(["text"]) is None
+
+
+def test_embed_kill_switch_never_reaches_dojo(temp_base_dir, monkeypatch):
+    """Skip the dojo embedding call when relation embeddings are disabled."""
+    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "0")
+    P.set_embedder(None)
+
+    def forbidden(texts):
+        """Fail if the disabled embedding path invokes the dojo backend."""
+        raise AssertionError("embeddings are disabled; dojo must not be called")
+
+    monkeypatch.setattr("llm_dojo_scoring.embed_texts", forbidden)
+    assert P._embed(["text"]) is None
+
+
+def test_embed_end_to_end_through_real_dojo_embed_texts(temp_base_dir, monkeypatch):
+    """Drive the REAL ``embed_texts`` with a stub matcher: vectors come back as
+    plain float lists, and a missing matcher yields None (the fallback)."""
     import numpy as np
 
     monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
     P.set_embedder(None)
 
-    class FakeMatcher:
+    class StubMatcher:
         def __init__(self):
-            self.local_loaded = False
-            self.calls = []
+            """Initialize the vector cache expected by the dojo embedding helper."""
+            self._vectors = {}
 
         def _load_local(self):
-            self.local_loaded = True
+            """Skip model loading so the matcher stub stays offline."""
+            pass
 
         def _embed(self, text):
-            self.calls.append(text)
-            return np.array([0.1, 0.2, 0.3])
+            """Return a deterministic NumPy vector derived from the text length."""
+            return np.array([float(len(text)), 1.0])
 
-    fake = FakeMatcher()
-    monkeypatch.setattr("llm_dojo_scoring.field_scoring._get_embedding", lambda: fake)
-    vectors = P._embed(["some document text"])
-    assert vectors == [[0.1, 0.2, 0.3]]
-    assert fake.local_loaded is True
-    assert fake.calls == ["some document text"]
+    monkeypatch.setattr("llm_dojo_scoring.field_scoring._get_embedding", StubMatcher)
+    assert P._embed(["ab", "abc"]) == [[2.0, 1.0], [3.0, 1.0]]
 
-
-def test_embed_degrades_when_dojo_matcher_missing(temp_base_dir, monkeypatch):
-    """HUB-051: no matcher ⇒ None (the cosine signal skips; other signals
-    flow) — never a crash."""
-    monkeypatch.setenv("MAILROOM_RELATIONS_EMBEDDINGS", "1")
-    P.set_embedder(None)
     monkeypatch.setattr("llm_dojo_scoring.field_scoring._get_embedding", lambda: None)
     assert P._embed(["text"]) is None
+
+
+def test_relations_does_not_touch_private_dojo_internals():
+    """AST guard: no private (underscore) dojo imports or matcher attributes."""
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(P.__file__).read_text(encoding="utf-8"))
+    private_imports = [
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and (node.module or "").startswith("llm_dojo_scoring")
+        for alias in node.names
+        if alias.name.startswith("_")
+    ]
+    private_attrs = [
+        node.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute) and node.attr in {"_embed", "_load_local", "_vectors"}
+    ]
+    assert private_imports == []
+    assert private_attrs == []
 
 
 # ---------------------------------------------------------------------------

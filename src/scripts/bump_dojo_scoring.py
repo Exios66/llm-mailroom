@@ -13,6 +13,14 @@ The companion auto-bump workflow is inert inside the monorepo (nested
 ``.github/`` is not read by GitHub); run this script manually at release
 time.
 
+The pin may be a release tag (``v0.21.0``) or, while a fix is unreleased, a
+40-hex commit SHA (an INTERIM pin). Everything here treats both as a "ref":
+a SHA pin renders as its 7-char short form on badges and links to the commit,
+and ``--apply --tag vX.Y.Z`` replaces a SHA pin everywhere it is documented.
+The auto-bump never downgrades an interim SHA pin to an older release: when
+the current pin is a SHA that the target tag does not contain, ``--check``
+reports it up to date and ``--apply`` refuses (see ``tag_contains_commit``).
+
 Examples::
 
     PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check
@@ -34,81 +42,115 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOJO_REPO = "Exios66/llm-dojo-scoring"
+_TAG = r"v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?"
+_SHA = r"[0-9a-f]{40}(?![0-9A-Za-z])"
+# A dojo "ref": a release tag or a full commit SHA (interim pin).
+REF = rf"(?:{_SHA}|{_TAG})"
+# Badge labels / alt text show a SHA pin as its 7-char short form.
+_LABEL = rf"(?:[0-9a-f]{{7}}(?![0-9A-Za-z.])|{_TAG})"
 PIN_RE = re.compile(
     r"(llm-dojo-scoring\s*@\s*git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)"
-    r"(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"
+    rf"({REF})"
 )
+
+
+def _c(pattern: str) -> re.Pattern[str]:
+    """Compile a doc-pin pattern, expanding ``__REF__`` / ``__LABEL__``."""
+    return re.compile(pattern.replace("__REF__", REF).replace("__LABEL__", _LABEL))
+
+
 # Standalone version tokens that document the pin (avoid bare 0.12.1 in prose
 # about honesty gaps — only rewrite explicit pin markers).
 DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
-        re.compile(r"(@git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"),
+        _c(r"(@git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(__REF__)"),
         r"\g<1>{tag}",
     ),
     (
-        re.compile(r"(llm-dojo-scoring @ )(v?\d+\.\d+\.\d+)"),
+        _c(r"(llm-dojo-scoring @ )(__REF__)"),
         r"\g<1>{tag}",
     ),
     (
         # tool-router table: `llm-dojo-scoring @v0.12.1`
-        re.compile(r"(llm-dojo-scoring @)(v?\d+\.\d+\.\d+)"),
+        _c(r"(llm-dojo-scoring @)(__REF__)"),
         r"\g<1>{tag}",
     ),
     (
-        re.compile(r"(pinned `@)(v?\d+\.\d+\.\d+)(`)"),
+        _c(r"(pinned `@)(__REF__)(`)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
-        re.compile(r"(pinned in `pyproject\.toml` \(`@)(v?\d+\.\d+\.\d+)(`)"),
+        _c(r"(pinned in `pyproject\.toml` \(`@)(__REF__)(`)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
-        re.compile(r"(dependency `@)(v?\d+\.\d+\.\d+)(`)"),
+        _c(r"(dependency `@)(__REF__)(`)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
-        re.compile(r"(pinned dependency @)(v?\d+\.\d+\.\d+)"),
+        _c(r"(pinned dependency @)(__REF__)"),
         r"\g<1>{tag}",
     ),
     (
-        re.compile(r"(Pin: `llm-dojo-scoring @ git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(`)"),
+        _c(r"(Pin: `llm-dojo-scoring @ git\+https://github\.com/Exios66/llm-dojo-scoring\.git@)(__REF__)(`)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
-        re.compile(r"(llm-dojo-scoring pin and mailroom scoring suites \()(v?\d+\.\d+\.\d+)(\))"),
+        _c(r"(llm-dojo-scoring pin and mailroom scoring suites \()(__REF__)(\))"),
         r"\g<1>{tag}\g<3>",
     ),
     (
-        re.compile(r"(description: llm-dojo-scoring pin and mailroom scoring suites \()(v?\d+\.\d+\.\d+)(\))"),
+        _c(r"(description: llm-dojo-scoring pin and mailroom scoring suites \()(__REF__)(\))"),
         r"\g<1>{tag}\g<3>",
     ),
     (
         # test_dojo_v012 pin assertion: "llm-dojo-scoring.git@v0.18.0"
-        re.compile(r"(llm-dojo-scoring\.git@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"),
+        _c(r"(llm-dojo-scoring\.git@)(__REF__)"),
         r"\g<1>{tag}",
     ),
     (
         # GitBook Overview / repo guide: "llm-mailroom pins v0.18.0"
-        re.compile(r"(llm-mailroom pins )(v?\d+\.\d+\.\d+)"),
+        _c(r"(llm-mailroom pins )(__REF__)"),
         r"\g<1>{tag}",
     ),
     (
         # architecture dependency table mailroom row only
-        re.compile(r"(git pin `@)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(`(?: as of \d{4}-\d{2}-\d{2})?, auto-bumped)"),
+        _c(r"(git pin `@)(__REF__)(`(?: as of \d{4}-\d{2}-\d{2})?, auto-bumped)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
         # shields.io dojo pin badge; preserve the trailing color segment
-        re.compile(r"(badge/dojo-)(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(?=-)"),
+        _c(r"(badge/dojo-)(__LABEL__)(?=-)"),
+        r"\g<1>{label}",
+    ),
+    (
+        # Badge destinations must follow the scoring pin, not other releases:
+        # a tag links to its release page, an interim SHA pin to its commit.
+        _c(
+            r"(https://github\.com/Exios66/llm-dojo-scoring/)"
+            r"(?:releases/tag|commit)/(__REF__)"
+        ),
+        r"\g<1>{release_path}",
+    ),
+    (
+        # scoring-and-metrics: "pinned at **v0.21.0** in `pyproject.toml`"
+        _c(r"(pinned at \*\*)(__REF__)(\*\* in `pyproject\.toml`)"),
+        r"\g<1>{tag}\g<3>",
+    ),
+    (
+        # scoring-and-metrics: "the pipeline pins llm-dojo-scoring **v0.21.0**"
+        _c(r"(pipeline pins (?:llm-dojo-scoring \*\*)?)(__REF__)"),
         r"\g<1>{tag}",
     ),
     (
-        # Badge destinations must follow the scoring pin, not other releases.
-        re.compile(
-            r"(https://github\.com/Exios66/llm-dojo-scoring/releases/tag/)"
-            r"(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)"
-        ),
-        r"\g<1>{tag}",
+        # scoring-and-metrics reference link text: "`field_scoring.py` (v0.21.0)"
+        _c(r"(llm-dojo-scoring `field_scoring\.py` \()(__LABEL__)(\))"),
+        r"\g<1>{label}\g<3>",
+    ),
+    (
+        # Source links into the pinned library: blob/<ref>/llm_dojo_scoring/...
+        _c(r"(https://github\.com/Exios66/llm-dojo-scoring/blob/)(__REF__)(/)"),
+        r"\g<1>{tag}\g<3>",
     ),
 ]
 
@@ -139,22 +181,59 @@ PIN_FILES = (
 )
 
 
+_SHA_RE = re.compile(r"[0-9a-f]{40}")
+_TAG_RE = re.compile(r"v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?")
+
+
+def is_sha(ref: str) -> bool:
+    """True for exactly 40 lowercase hex characters (an interim commit pin)."""
+    return bool(_SHA_RE.fullmatch(str(ref or "")))
+
+
 def _normalize_tag(tag: str) -> str:
+    """Strip whitespace and return a dojo tag or lowercase full commit SHA.
+
+    Add a missing ``v`` prefix to version tags. Accept uppercase SHA input,
+    but reject abbreviated SHAs. Raise ValueError for an empty ref or one
+    that matches neither the accepted version format nor a 40-hex SHA.
+    """
     tag = str(tag or "").strip()
     if not tag:
         raise ValueError("empty tag")
+    if is_sha(tag.lower()):
+        return tag.lower()
     if not tag.startswith("v"):
         tag = f"v{tag}"
-    if not re.fullmatch(r"v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?", tag):
+    if not _TAG_RE.fullmatch(tag):
         raise ValueError(f"refusing non-semver dojo tag: {tag!r}")
     return tag
 
 
 def _bare(tag: str) -> str:
+    """Return the normalized pin without a leading version prefix."""
     return _normalize_tag(tag).lstrip("v")
 
 
+def pin_label(ref: str) -> str:
+    """Badge / alt-text label for a pin: the tag, or a SHA's 7-char form.
+
+    Normalize ``ref`` and raise ValueError if it is not a valid tag or full SHA.
+    """
+    ref = _normalize_tag(ref)
+    return ref[:7] if is_sha(ref) else ref
+
+
+def pin_release_path(ref: str) -> str:
+    """GitHub path a pin links to: its release page, or its commit for a SHA.
+
+    Normalize ``ref`` and raise ValueError if it is not a valid tag or full SHA.
+    """
+    ref = _normalize_tag(ref)
+    return f"commit/{ref}" if is_sha(ref) else f"releases/tag/{ref}"
+
+
 def current_pin(root: Path = REPO_ROOT) -> str:
+    """Read and normalize the scoring dependency pin from pyproject.toml."""
     text = (root / "pyproject.toml").read_text(encoding="utf-8")
     match = PIN_RE.search(text)
     if not match:
@@ -189,6 +268,7 @@ def latest_release_tag(repo: str = DOJO_REPO) -> str:
 
 
 def release_exists(tag: str, repo: str = DOJO_REPO) -> bool:
+    """Check for a published GitHub release, raising on errors other than 404."""
     tag = _normalize_tag(tag)
     url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
     req = urllib.request.Request(url, headers=_github_headers())
@@ -201,69 +281,93 @@ def release_exists(tag: str, repo: str = DOJO_REPO) -> bool:
         raise RuntimeError(f"GitHub release lookup failed: {exc.code} {exc.reason}") from exc
 
 
+def tag_contains_commit(sha: str, tag: str, repo: str = DOJO_REPO) -> bool:
+    """True when ``tag`` is at or after commit ``sha`` (GitHub compare API).
+
+    Guards the auto-bump against DOWNGRADING an interim SHA pin to an older
+    release: ``compare/<sha>...<tag>`` is ``ahead`` or ``identical`` only when
+    the tag contains the pinned commit.
+
+    ``repo`` is the GitHub ``owner/name``. Return False for other comparison
+    statuses or a missing status. Invalid refs raise ValueError; HTTP errors
+    become RuntimeError. Other network and response-decoding errors propagate.
+    """
+    sha, tag = _normalize_tag(sha), _normalize_tag(tag)
+    url = f"https://api.github.com/repos/{repo}/compare/{sha}...{tag}"
+    req = urllib.request.Request(url, headers=_github_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"GitHub compare failed: {exc.code} {exc.reason}") from exc
+    return payload.get("status") in ("ahead", "identical")
+
+
 def _rewrite_text(text: str, tag: str) -> str:
     """Return text with recognized dojo pins, badges, and test references updated.
 
-    Strip surrounding whitespace from ``tag`` and add a missing ``v`` prefix;
-    raise ValueError if it is empty or does not match the accepted version format.
+    ``tag`` accepts a version tag or full commit SHA. Strip surrounding
+    whitespace, add a missing ``v`` prefix to tags, and lowercase SHAs;
+    raise ValueError for an empty or invalid ref. SHA pins use seven-character
+    badge labels and commit links, leaving version assertions and test names
+    unchanged; release tags also update those version references.
     Text without recognized patterns is returned unchanged. No files are written.
     """
     tag = _normalize_tag(tag)
-    bare = _bare(tag)
     out = PIN_RE.sub(rf"\g<1>{tag}", text)
-    # test module docstring + version assertion
-    out = re.sub(
-        r'(llm-dojo-scoring v)\d+\.\d+\.\d+( pin)',
-        rf"\g<1>{bare}\g<2>",
-        out,
-    )
-    out = re.sub(
-        r'(assert llm_dojo_scoring\.__version__ == ")(\d+\.\d+\.\d+)(")',
-        rf"\g<1>{bare}\g<3>",
-        out,
-    )
-    out = re.sub(
-        r'(def test_installed_dojo_is_v)\d+',
-        f"def test_installed_dojo_is_v{bare.replace('.', '')}",
-        out,
-        count=1,
-    )
-    out = re.sub(
-        r"(`llm-dojo-scoring` \(v)\d+\.\d+\.\d+(\)\.)",
-        rf"\g<1>{bare}\g<2>",
-        out,
-    )
+    if not is_sha(tag):
+        # Version-number rewrites (docstring, __version__ assertion, test name)
+        # only make sense for a release; a SHA pin has no version number.
+        bare = _bare(tag)
+        out = re.sub(
+            r'(llm-dojo-scoring v)\d+\.\d+\.\d+( pin)',
+            rf"\g<1>{bare}\g<2>",
+            out,
+        )
+        out = re.sub(
+            r'(assert llm_dojo_scoring\.__version__ == ")(\d+\.\d+\.\d+)(")',
+            rf"\g<1>{bare}\g<3>",
+            out,
+        )
+        out = re.sub(
+            r'(def test_installed_dojo_is_v)\d+',
+            f"def test_installed_dojo_is_v{bare.replace('.', '')}",
+            out,
+            count=1,
+        )
+        out = re.sub(
+            r"(`llm-dojo-scoring` \(v)\d+\.\d+\.\d+(\)\.)",
+            rf"\g<1>{bare}\g<2>",
+            out,
+        )
+    label = pin_label(tag)
+    release_path = pin_release_path(tag)
     # observability README link form: [`llm-dojo-scoring`](url) (v0.12.1).
-    out = re.sub(
-        r"(\[`llm-dojo-scoring`\]\([^)]+\) \(v)\d+\.\d+\.\d+(\)\.)",
-        rf"\g<1>{bare}\g<2>",
-        out,
+    out = _c(r"(\[`llm-dojo-scoring`\]\([^)]+\) \()(__LABEL__)(\)\.)").sub(
+        rf"\g<1>{label}\g<3>", out
+    )
+    out = _c(r"(`llm-dojo-scoring` \()(__LABEL__)(\)\.)").sub(
+        rf"\g<1>{label}\g<3>", out
     )
     # wiki Home: (the pinned scoring engine, `@v0.12.1`)
-    out = re.sub(
-        r"(the pinned scoring engine, `)(@?v?\d+\.\d+\.\d+)(`)",
-        rf"\g<1>{tag}\g<3>",
-        out,
+    out = _c(r"(the pinned scoring engine, `)(@?__REF__)(`)").sub(
+        rf"\g<1>{tag}\g<3>", out
     )
     # landing / README badge alt: llm-dojo-scoring v0.19.1
-    out = re.sub(
-        r"(alt=\"llm-dojo-scoring )(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)(\")",
-        rf"\g<1>{tag}\g<3>",
-        out,
+    out = _c(r"(alt=\"llm-dojo-scoring )(__LABEL__)(\")").sub(
+        rf"\g<1>{label}\g<3>", out
     )
-    out = re.sub(
-        r"([Pp]inned as a git dependency \(`@)(v?\d+\.\d+\.\d+)(`)",
-        rf"\g<1>{tag}\g<3>",
-        out,
+    out = _c(r"([Pp]inned as a git dependency \(`@)(__REF__)(`)").sub(
+        rf"\g<1>{tag}\g<3>", out
     )
     # Documented invocation of this script in docs/sister-repos.md.
-    out = re.sub(
-        r"(bump_dojo_scoring\.py --apply --tag )(v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?)",
-        rf"\g<1>{tag}",
-        out,
+    out = _c(r"(bump_dojo_scoring\.py --apply --tag )(__REF__)").sub(
+        rf"\g<1>{tag}", out
     )
     for pattern, repl in DOC_PIN_PATTERNS:
-        out = pattern.sub(repl.format(tag=tag, tag_bare=bare), out)
+        out = pattern.sub(
+            repl.format(tag=tag, label=label, release_path=release_path), out
+        )
     # skill body "v0.12.1 is additive" style
     out = re.sub(
         r"\bv\d+\.\d+\.\d+ is additive on 0\.\d+\.\d+ formulas",
@@ -291,6 +395,19 @@ def apply_pin(tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False) -> lis
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Check or apply a scoring pin using CLI arguments (default: sys.argv).
+
+    Print the current and desired refs and check results or updated paths.
+    ``--check`` returns 0 for a matching pin or an interim SHA not contained
+    in the target release, and 2 when an update is needed. ``--apply`` writes
+    recognized pin files unless ``--dry-run`` is set. Return 1 for a missing
+    release, a refused SHA downgrade, or no changes when the pins differ;
+    otherwise return 0. ``--allow-missing-release`` skips the release-existence check
+    and the SHA ancestry guard.
+
+    Argument parsing may raise SystemExit. Invalid refs raise ValueError;
+    file I/O and GitHub lookup errors propagate.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument(
@@ -324,6 +441,18 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"current={current}")
     print(f"desired={desired}")
+
+    if is_sha(current) and current != desired and not args.allow_missing_release:
+        if not tag_contains_commit(current, desired):
+            # Interim SHA pin that the target release does not contain: moving
+            # to it would downgrade the pin (e.g. the daily backstop resolving
+            # releases/latest to a tag older than the unreleased fix).
+            print(f"pin_ahead_of_release=true ({desired} does not contain {current})")
+            if args.check:
+                print("up_to_date=true")
+                return 0
+            print("error: refusing to downgrade an interim SHA pin", file=sys.stderr)
+            return 1
 
     if args.check:
         if current == desired:

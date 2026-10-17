@@ -223,6 +223,7 @@ def test_rewrite_replaces_full_pin_in_urls_badges_and_alt_text(old_tag, tag, tem
 
 @pytest.mark.parametrize("relative_path", ["README.md", "docs/README.md", "landing/index.html"])
 def test_apply_pin_keeps_badge_and_release_destination_in_sync(tmp_path, relative_path):
+    """Keep badge labels and release links in sync without changing unrelated links."""
     path = tmp_path / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     template = (
@@ -239,3 +240,78 @@ def test_apply_pin_keeps_badge_and_release_destination_in_sync(tmp_path, relativ
         assert apply_pin(tag, root=tmp_path) == [path]
         assert path.read_text(encoding="utf-8") == template.format(version=tag)
         assert apply_pin(tag, root=tmp_path) == []
+
+
+# --- interim commit-SHA pins -------------------------------------------------
+
+SHA = "8c7b7f1c9c3b18a7036ee58addcfaa35d816177d"
+
+
+def test_normalize_accepts_full_sha_only():
+    """Normalize full commit SHAs and reject abbreviated or malformed values."""
+    assert _normalize_tag(SHA) == SHA
+    assert _normalize_tag(SHA.upper()) == SHA
+    for bad in (SHA[:7], SHA + "0", "g" * 40):
+        with pytest.raises(ValueError):
+            _normalize_tag(bad)
+
+
+def test_pin_re_and_current_pin_read_a_sha(tmp_path: Path):
+    """Read a full commit pin through both the regex and pyproject reader."""
+    line = f'    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@{SHA}",'
+    assert PIN_RE.search(line).group(2) == SHA
+    (tmp_path / "pyproject.toml").write_text(f"dependencies = [\n{line}\n]\n", encoding="utf-8")
+    assert current_pin(tmp_path) == SHA
+
+
+@pytest.mark.parametrize("old", ["v0.21.0", SHA])
+def test_rewrite_to_sha_and_back_to_tag_is_lossless(old):
+    """Round-trip recognized pins through a SHA while preserving sibling pins."""
+    template = (
+        "dependency: llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@{ref}\n"
+        "| llm-mailroom pins {ref}; entity-extraction pin v0.16.0 |\n"
+        "| llm-mailroom | llm-dojo-scoring | git pin `@{ref}`, auto-bumped |\n"
+        "pinned at **{ref}** in `pyproject.toml`\n"
+        "the pipeline pins llm-dojo-scoring **{ref}**.\n"
+        "[src](https://github.com/Exios66/llm-dojo-scoring/blob/{ref}/llm_dojo_scoring/config.py)\n"
+        "assert \"llm-dojo-scoring.git@{ref}\" in pin\n"
+    )
+    to_sha = _rewrite_text(template.format(ref=old), SHA)
+    assert to_sha == template.format(ref=SHA)
+    assert _rewrite_text(to_sha, SHA) == to_sha
+    to_tag = _rewrite_text(to_sha, "v0.22.0")
+    assert to_tag == template.format(ref="v0.22.0")
+    assert "v0.16.0" in to_tag  # sibling pins untouched
+
+
+def test_sha_badge_uses_short_label_and_commit_link_and_back():
+    """Switch badge labels and destinations between release tags and commit pins."""
+    badge = (
+        '<a href="https://github.com/Exios66/llm-dojo-scoring/{path}">'
+        '<img src="https://img.shields.io/badge/dojo-{label}-6f42c1" '
+        'alt="llm-dojo-scoring {label}"></a>'
+    )
+    tag_form = badge.format(path="releases/tag/v0.21.0", label="v0.21.0")
+    sha_form = badge.format(path=f"commit/{SHA}", label=SHA[:7])
+    assert _rewrite_text(tag_form, SHA) == sha_form
+    assert _rewrite_text(sha_form, SHA) == sha_form
+    assert _rewrite_text(sha_form, "v0.22.0") == badge.format(
+        path="releases/tag/v0.22.0", label="v0.22.0"
+    )
+
+
+def test_main_never_downgrades_an_interim_sha_pin(monkeypatch, capsys):
+    """Treat an older release as up to date for checks and refuse to apply it."""
+    from scripts import bump_dojo_scoring as B
+
+    monkeypatch.setattr(B, "current_pin", lambda root=B.REPO_ROOT: SHA)
+    monkeypatch.setattr(B, "release_exists", lambda tag, repo=B.DOJO_REPO: True)
+    monkeypatch.setattr(B, "tag_contains_commit", lambda sha, tag, repo=B.DOJO_REPO: False)
+    # The workflow's backstop (--check) must read "nothing to bump", not exit 2 ...
+    assert B.main(["--check", "--tag", "v0.21.0"]) == 0
+    # ... and an explicit --apply must refuse, writing nothing.
+    monkeypatch.setattr(B, "apply_pin", lambda *a, **k: pytest.fail("must not write"))
+    assert B.main(["--apply", "--tag", "v0.21.0"]) == 1
+    # A tag that contains the commit is a normal bump.
+    monkeypatch.setattr(B, "tag_contains_commit", lambda sha, tag, repo=B.DOJO_REPO: True)
+    assert B.main(["--check", "--tag", "v0.22.0"]) == 2
