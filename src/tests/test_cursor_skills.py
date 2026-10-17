@@ -81,9 +81,13 @@ def test_router_repo_anchor_paths_resolve():
 
 
 def test_router_dojo_pin_matches_pyproject():
-    router_pin = re.search(r"llm-dojo-scoring @(v\d+(?:\.\d+)*)", _ROUTER.read_text(encoding="utf-8"))
-    assert router_pin, "router has no llm-dojo-scoring @vX.Y.Z pin"
+    """Require the tool router to document the declared scoring dependency pin."""
+    from scripts.bump_dojo_scoring import REF
+
+    # The pin is a release tag or, while a fix is unreleased, a commit SHA.
+    router_pin = re.search(rf"llm-dojo-scoring @({REF})", _ROUTER.read_text(encoding="utf-8"))
+    assert router_pin, "router has no llm-dojo-scoring @<tag-or-sha> pin"
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    git_pin = re.search(r"llm-dojo-scoring\.git@(v[\d.]+)", pyproject)
+    git_pin = re.search(rf"llm-dojo-scoring\.git@({REF})", pyproject)
     assert git_pin, "pyproject.toml has no llm-dojo-scoring git pin"
     assert router_pin.group(1) == git_pin.group(1)
