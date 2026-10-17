@@ -39,11 +39,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.20",
     # Unified scoring engine (KANBAN-061): observability.field_scoring is a
     # deprecated shim over this package since v0.5.0.
-    # INTERIM pin: an unreleased dojo commit (empty-field schema contract,
-    # public embed_texts, strict metric ids, `label` intent defaults). Replace
-    # with the release tag once cut:
-    #   PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.22.0
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@8c7b7f1c9c3b18a7036ee58addcfaa35d816177d",
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.22.0",
 ]
 
 [project.optional-dependencies]
@@ -65,7 +61,7 @@ postgres = [
 # only — the runtime pipeline never imports modal. Install with:
 #   pip install -e ".[deploy]"
 deploy = [
-    "modal==1.5.5",
+    "modal==1.6.1",
 ]
 # BERT intake fast-path runtime (agents/bert_intake.py + the sibling
 # mailroom-ml package, #85 M6a): ONNX int8 inference ONLY — deliberately no

@@ -11,7 +11,6 @@ One page per repository: what it does, where it fits, how to start, and where it
 
 - [llm-mailroom](llm-mailroom.md) — the 13-node document pipeline
 - [llm-dojo-scoring](llm-dojo-scoring.md) — the shared scoring library
-- [llm-entity-extraction](llm-entity-extraction.md) — the prompt experiment loop
 - [eval-environment](eval-environment.md) — per-node evals and calibration
 - [mailroom-ml](mailroom-ml.md) — the ModernBERT intake classifier
 
@@ -19,8 +18,6 @@ One page per repository: what it does, where it fits, how to start, and where it
 
 - [local-mailroom-sandbox](local-mailroom-sandbox.md) — offline and Modal runs ([docs](local-mailroom-sandbox-docs.md), [run reports](local-mailroom-sandbox-reports.md), [visuals](local-mailroom-sandbox-visuals.md))
 - [The-Mailroom](the-mailroom.md) — pixel-art visualizer and Observatory
-- [agent-mailroom](agent-mailroom.md) — the walking office floor
-- [llm-mailroom-graph](llm-mailroom-graph.md) — code knowledge graph
 
 ## Data
 
@@ -32,4 +29,4 @@ One page per repository: what it does, where it fits, how to start, and where it
 
 - [atticus-investigation](atticus-investigation.md) — LegalBench prompt engineering
 
-For mirrors, forks and retired repositories, see the [Repository index](../repo-index.md).
+For mirrors, forks and retired repositories (including the DMR-079 prune), see the [Repository index](../repo-index.md).

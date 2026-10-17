@@ -33,7 +33,7 @@ VLLM_API_KEY=<same as MODAL_VLLM_API_TOKEN>
 
 Every agent still goes through `get_llm()`. A `503` from a `*.modal.run` endpoint is a Modal cold start — `llm/retry.py` applies a long bounded backoff (DMR-052). Flip back with `DEFAULT_PROVIDER=openrouter`.
 
-The sibling `llm-entity-extraction` pipeline can share the **same** server through its `OPENROUTER_BASE_URL` seam, so one Modal workspace can back both pipelines.
+The standalone `llm-entity-extraction` pipeline (retired from the monorepo in DMR-079) can still share the **same** server through its `OPENROUTER_BASE_URL` seam, so one Modal workspace can back both pipelines.
 
 Then run the compose `app` (Mode M) from [Docker deployment](docker-deployment.md), or a local `PYTHONPATH=src python -m api.main`.
 

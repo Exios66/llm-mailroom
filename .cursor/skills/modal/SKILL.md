@@ -52,12 +52,12 @@ Every agent still goes through `get_llm()`. Flip back with
 
 - Do not use Modal for pytest or `--mock`.
 - Do not rename the app to the sandbox name.
-- Sibling `llm-entity-extraction` can share the same server via its
+- The standalone `llm-entity-extraction` repo (retired from the monorepo, DMR-079) can still share the same server via its
   `OPENROUTER_BASE_URL` seam.
 
 ## Related
 
 - Production default: [openrouter](../openrouter/SKILL.md)
 - Hub weights: [huggingface](../huggingface/SKILL.md)
-- Docs: `docs/modal-vllm.md` (GitBook; listed in `docs/SUMMARY.md`)
-- Host compose: `docs/docker-deployment.md`
+- Docs: `docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md` (GitBook; listed in `docs/SUMMARY.md`)
+- Host compose: `docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md`

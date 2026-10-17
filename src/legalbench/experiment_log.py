@@ -12,9 +12,14 @@ the dedicated experiment-log site is built from) and regenerates:
 Everything is local file work — committing/pushing the sibling repo is a
 separate, explicit step (``LEGALBENCH_SIBLING_REPO`` overrides the path).
 
+DMR-079: ``llm-entity-extraction`` left the monorepo and is now a standalone
+``Exios66/llm-entity-extraction`` repo (no longer synced). The sibling is
+therefore an OPTIONAL external checkout: point ``LEGALBENCH_SIBLING_REPO`` at
+it, or place it next to this repo; otherwise records go to the local log.
+
 Path resolution order (each knob is an env var):
 - JSONL log:     ``LEGALBENCH_EXPERIMENT_LOG`` > sibling ``reports/experiment_log.jsonl`` > local ``legalbench/reports/experiment_log.jsonl``
-- Sibling repo:  ``LEGALBENCH_SIBLING_REPO`` > ``<this repo>/../llm-entity-extraction``
+- Sibling repo:  ``LEGALBENCH_SIBLING_REPO`` > ``<this repo>/../llm-entity-extraction`` (optional standalone checkout, if present)
 """
 
 from __future__ import annotations

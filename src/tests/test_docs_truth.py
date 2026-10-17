@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.bump_dojo_scoring import REF, current_pin
+from scripts.bump_dojo_scoring import current_pin
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -54,6 +54,22 @@ def test_referenced_docs_exist_or_annotated():
     for ref in sorted(_referenced_doc_paths()):
         target = REPO_ROOT / ref
         if target.exists():
+            continue
+        # Upstream moved the flat docs/<name>.md reference set under
+        # docs/pipeline-reference-llm-mailroom/ (deployment pages under
+        # deployment/; deployment.md became deployment/README.md) but left the
+        # legacy paths in prose/changelogs. Accept a legacy path whose moved
+        # counterpart exists.
+        _moved = REPO_ROOT / "docs" / "pipeline-reference-llm-mailroom"
+        _name = Path(ref).name
+        if ref == f"docs/{_name}" and any(
+            c.exists()
+            for c in (
+                _moved / _name,
+                _moved / "deployment" / _name,
+                _moved / "deployment" / "README.md" if _name == "deployment.md" else _moved / "_nope",
+            )
+        ):
             continue
         # docs/reports/* is deliberately pruned (heavy report archives live in
         # the upstream Exios66/llm-mailroom repo; the standalone repo tracks a
@@ -174,25 +190,22 @@ def test_release_docs_match_package_version(release_project, path, pattern):
 
 
 @pytest.mark.parametrize("path,pattern", [
-    ("docs/constellation/overview.md", r"llm-mailroom pins (__REF__)"),
-    ("docs/start-here/overview.md", r"llm-mailroom pins (__REF__)"),
-    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (__REF__)"),
-    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (__REF__)"),
-    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(__REF__)`"),
-    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(__REF__)`"),
-    ("docs/sister-repos.md", r"`@(__REF__)`"),
-    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(__REF__)`"),
-    ("docs/the-pipeline-in-depth/running.md", r"`@(__REF__)`"),
-    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(__REF__)"),
+    ("docs/constellation/overview.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/start-here/overview.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
+    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
+    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
+    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+)`"),
+    ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+)`"),
+    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+)"),
 ])
 def test_release_docs_match_declared_dojo_pin(release_project, path, pattern):
-    """Require published pin references to match the declared scoring dependency."""
     dependency, = [dep for dep in release_project["dependencies"]
                    if dep.startswith("llm-dojo-scoring @")]
     pin = dependency.rsplit("@", 1)[1]
     text = (REPO_ROOT / path).read_text(encoding="utf-8")
-    # The pin is a release tag or, while a fix is unreleased, a commit SHA.
-    pins = re.findall(pattern.replace("__REF__", REF), text)
+    pins = re.findall(pattern, text)
     assert pins, f"{path}: missing pipeline dependency pin"
     assert set(pins) == {pin}, f"{path}: documented pins disagree with pyproject.toml"
 
