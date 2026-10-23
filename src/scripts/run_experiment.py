@@ -32,7 +32,6 @@ import csv
 import json
 import os
 import sys
-from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -110,39 +109,9 @@ def compute_metrics(rows: list[dict]) -> dict[str, float]:
 
     ``got`` is None for errored items (counted as incorrect for every class).
     """
-    if not rows:
-        return {}
-    from observability.classification_scoring import classes_match
+    from llm_dojo_scoring.pipeline_scoring import score_experiment_rows
 
-    n = len(rows)
-    correct = [bool(r["expected"]) and classes_match(r["expected"], r["got"]) for r in rows]
-    per_class: dict[str, list[bool]] = defaultdict(list)
-    for r, ok in zip(rows, correct):
-        per_class[r["expected"]].append(ok)
-    tp: dict[str, int] = defaultdict(int)
-    fp: dict[str, int] = defaultdict(int)
-    fn: dict[str, int] = defaultdict(int)
-    for r, ok in zip(rows, correct):
-        if ok:
-            tp[r["expected"]] += 1
-        else:
-            fn[r["expected"]] += 1
-            if r["got"]:
-                fp[str(r["got"])] += 1
-    f1s = []
-    for cls in set(per_class) | set(fp):
-        p = tp[cls] / (tp[cls] + fp[cls]) if (tp[cls] + fp[cls]) else 0.0
-        r_ = tp[cls] / (tp[cls] + fn[cls]) if (tp[cls] + fn[cls]) else 0.0
-        f1s.append(2 * p * r_ / (p + r_) if (p + r_) else 0.0)
-    metrics = {
-        "class_accuracy": round(sum(correct) / n, 4),
-        "macro_class_accuracy": round(sum(sum(v) / len(v) for v in per_class.values()) / len(per_class), 4),
-        "macro_f1": round(sum(f1s) / len(f1s), 4),
-    }
-    staged = [r for r in rows if r.get("has_stage")]
-    if staged:
-        metrics["stage_accuracy"] = round(sum(1 for r in staged if r["stage_ok"]) / len(staged), 4)
-    return metrics
+    return score_experiment_rows(rows)
 
 
 def run_evaluators_from_rows(rows: list[dict]) -> list[Evaluation]:

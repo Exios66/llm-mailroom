@@ -1,7 +1,9 @@
+import errno
 import os
 import json
 import hashlib
 import shutil
+import tempfile
 import uuid
 from pathlib import Path, PureWindowsPath
 from typing import Optional
@@ -286,20 +288,45 @@ def review_file_path(manifest) -> Path:
         return owned
     # Older releases used bare names. Never assign an ambiguous legacy file
     # to another document merely because its basename happens to match.
+    # A sibling's owned copy does not establish who owns a leftover bare name.
     for path in manifests_dir().glob("*.json"):
         try:
             other = load_manifest(path.stem)
+            if other is not None:
+                _review_name(other)  # Validate sibling identifiers before fallback.
+            if (other is not None and other.doc_id != manifest.doc_id
+                    and other.original_filename == manifest.original_filename
+                    and str(getattr(other.stage, "value", other.stage)) == "review"):
+                return owned
         except (OSError, ValueError):
             logger.warning("manifest_unreadable_legacy_ownership", path=str(path))
             # Unknown ownership cannot authorize exposing the bare-name file.
             # The document-ID path remains usable without scanning manifests.
             return owned
-        if (other is not None and other.doc_id != manifest.doc_id
-                and other.original_filename == manifest.original_filename
-                and str(getattr(other.stage, "value", other.stage)) == "review"
-                and not (base / _review_name(other)).is_file()):
-            return owned
     return legacy
+
+
+def _move_review_file_no_clobber(src: Path, dest: Path) -> None:
+    """Publish complete bytes with an atomic link, then retire the source.
+
+    Cross-device sources are copied to a private destination-side staging
+    file first. A destination filesystem without hard links fails loudly;
+    never fall back to a rename/copy that could overwrite another worker.
+    """
+    try:
+        os.link(src, dest)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        fd, name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=dest.parent)
+        os.close(fd)
+        temporary = Path(name)
+        try:
+            shutil.copy2(src, temporary)
+            os.link(temporary, dest)
+        finally:
+            temporary.unlink(missing_ok=True)
+    src.unlink()
 
 
 def park_for_review(file_path: Path, manifest) -> tuple[Path, bool]:
@@ -327,8 +354,14 @@ def park_for_review(file_path: Path, manifest) -> tuple[Path, bool]:
             raise FileExistsError(f"Different bytes already parked for document {manifest.doc_id}")
         newly = False
     elif src_exists:
-        shutil.move(str(src), str(dest))
-        newly = True
+        try:
+            _move_review_file_no_clobber(src, dest)
+            newly = True
+        except FileExistsError:
+            if not _same_file_bytes(src, dest):
+                raise FileExistsError(
+                    f"Different bytes already parked for document {manifest.doc_id}"
+                ) from None
     else:
         legacy = review_file_path(manifest)
         if legacy.is_file():

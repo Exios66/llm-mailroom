@@ -498,39 +498,13 @@ def _validate_manifest_ground_truth(manifest: list[dict]) -> None:
 
 
 def _ground_truth_scores(row: dict, expected_fields: dict | None = None) -> dict:
-    """Ground-truth scores for one pilot sample (attached to its trace).
+    """Adapt the selected pilot row to canonical GT presence/calibration policies."""
+    from llm_dojo_scoring.field_support import pilot_ground_truth_scores
 
-    `expected_field_presence` is the fraction of required (non-empty) expected
-    fields that the extractor surfaced with a non-empty value — a cheap
-    deterministic field-coverage signal. Value-level correctness is left to
-    the LLM-as-a-Judge verdict.
-    """
-    scores = {
-        "class_correct": int(row["class_match"]),
-        "stage_correct": int(row["stage_expected"]),
-    }
-    if expected_fields:
-        extracted = row.get("extracted_data") or {}
-        required = {
-            key: value for key, value in expected_fields.items() if value not in (None, "")
-        }
-        if required:
-            present = 0
-            for key, expected_value in required.items():
-                value = extracted.get(key)
-                if isinstance(value, list):
-                    ok = len(value) > 0
-                else:
-                    ok = bool(value)
-                present += int(ok)
-            scores["expected_field_presence"] = round(present / len(required), 3)
-    conf = row.get("classification_confidence")
-    if isinstance(conf, (int, float)) and not isinstance(conf, bool):
-        conf = float(conf)
-        # How far the model's stated confidence is from the (binary) truth —
-        # the calibration error. 0 means perfectly calibrated.
-        scores["confidence_calibration_error"] = round(abs(conf - scores["class_correct"]), 3)
-    return scores
+    return pilot_ground_truth_scores(
+        row["class_match"], row["stage_expected"], row.get("extracted_data") or {},
+        expected_fields, row.get("classification_confidence"),
+    )
 
 
 def _ingest_scores(sample: dict, row: dict) -> None:
@@ -632,9 +606,9 @@ def summarize(rows: list[dict]) -> dict:
         if isinstance(r.get("classification_confidence"), (int, float))
         and not isinstance(r["classification_confidence"], bool)
     ]
-    mean_calibration_error = (
-        round(sum(abs(c - m) for c, m in conf_rows) / len(conf_rows), 3) if conf_rows else None
-    )
+    from llm_dojo_scoring.pilot_summary import pilot_calibration_error
+
+    mean_calibration_error = pilot_calibration_error(conf_rows)
     total_cost = round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 6)
     total_tokens = sum(r.get("llm_tokens", 0) for r in rows)
 
