@@ -606,9 +606,9 @@ def summarize(rows: list[dict]) -> dict:
         if isinstance(r.get("classification_confidence"), (int, float))
         and not isinstance(r["classification_confidence"], bool)
     ]
-    mean_calibration_error = (
-        round(sum(abs(c - m) for c, m in conf_rows) / len(conf_rows), 3) if conf_rows else None
-    )
+    from llm_dojo_scoring.pilot_summary import pilot_calibration_error
+
+    mean_calibration_error = pilot_calibration_error(conf_rows)
     total_cost = round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 6)
     total_tokens = sum(r.get("llm_tokens", 0) for r in rows)
 

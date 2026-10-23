@@ -4,6 +4,7 @@ import json
 import os
 
 import pytest
+from llm_dojo_scoring import __version__ as DOJO_VERSION
 
 from scripts.run_hf_pilot import (
     ALIGN,
@@ -31,7 +32,7 @@ def test_metrics_markdown_uses_current_dojo_honesty_heading(mocker, include_hone
     markdown = render_metrics_markdown(report)
 
     assert [line for line in markdown.splitlines() if line.startswith("## Corpus honesty")] == [
-        "## Corpus honesty (dojo 0.22.0)"
+        f"## Corpus honesty (dojo {DOJO_VERSION})"
     ]
     assert "CMS GT is homogeneous." in markdown
     if include_honesty:
