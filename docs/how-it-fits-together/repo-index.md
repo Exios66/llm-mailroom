@@ -1,6 +1,6 @@
 # Repository index
 
-Every repository connected to the Mailroom, including copies and earlier attempts, with where to do work. Develop implementation and documentation in the owning standalone repository, test and merge to its own `main`, then import the committed source into Digital-Mailroom. Hub wiring and governance are authored in the hub.
+Every repository connected to the Mailroom, including copies and earlier attempts, with where to do work. For imported core packages, develop implementation and documentation in the owning standalone repository, test and merge to its own `main`, then import the committed source into Digital-Mailroom. Issue, evaluation, and external-feeder repositories follow their own workflows. Hub wiring and governance are authored in the hub.
 
 Status snapshot: 2026-10-06 (retired section added DMR-079). "Mirror" and "earlier monorepo" labels below are inferred from each repository's README and commit history; confirm with the owner before archiving anything.
 

@@ -39,26 +39,19 @@ class RunResult:
 
 
 def _tokens_summary(rows_with_usage: list[dict[str, Any]]) -> dict[str, Any]:
-    prompt = completion = total = rows = 0
-    cost_values: list[float] = []
-    for usage in rows_with_usage:
-        if not isinstance(usage, dict) or not usage:
-            continue
-        prompt += int(usage.get("prompt_tokens") or 0)
-        completion += int(usage.get("completion_tokens") or 0)
-        total += int(usage.get("total_tokens") or 0)
-        cost = usage.get("cost")
-        if isinstance(cost, (int, float)):
-            cost_values.append(float(cost))
-        rows += 1
-    return {
-        "prompt_tokens": prompt,
-        "completion_tokens": completion,
-        "total_tokens": total,
-        "cost_usd": round(sum(cost_values) / len(cost_values), 6) if cost_values else 0.0,
-        "cost_total_usd": round(sum(cost_values), 6),
-        "rows_with_usage": rows,
-    }
+    """Select the six legacy keys from the canonical usage reducer.
+
+    Usage facts are projected to the historical shape before delegation: this
+    report never consumed cost_basis labels or model price estimates.
+    """
+    from llm_dojo_scoring.cost import tokens_summary
+
+    usages = [{k: usage.get(k) for k in ("prompt_tokens", "completion_tokens", "total_tokens", "cost")}
+              for usage in rows_with_usage if isinstance(usage, dict) and usage]
+    summary = tokens_summary(usages)
+    return {k: summary[k] for k in (
+        "prompt_tokens", "completion_tokens", "total_tokens", "cost_usd", "cost_total_usd", "rows_with_usage",
+    )}
 
 
 def _model_name(model: Any, fallback: str) -> str:
@@ -135,9 +128,10 @@ def run_task(
                 "document": row.get("contract_title") or row.get("title"),
             }
             try:
-                with _tracing.question_observation(
+                question_context = _tracing.question_observation(
                     i, task.id, input_data=obs_input, metadata={"run_id": run_id}
-                ):
+                ) if trace_enabled else nullcontext()
+                with question_context:
                     prediction = task.call(agent, row)
                 predicted, conf, support = task.extract(row, prediction)
                 parse_error = isinstance(prediction, dict) and bool(prediction.get("_parse_error"))

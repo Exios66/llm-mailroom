@@ -47,20 +47,8 @@ SPECIALIST_FOR_CLASS: dict[str, str] = {
 _LIVE_FIXTURE_CLASSES = frozenset(SPECIALIST_FOR_CLASS)
 
 
-def token_overlap(predicted: str, expected: str) -> float:
-    """SQuAD-style token F1 on two strings (transcription / report checks)."""
-    pred = {t for t in (predicted or "").lower().split() if t}
-    exp = {t for t in (expected or "").lower().split() if t}
-    if not pred and not exp:
-        return 1.0
-    if not pred or not exp:
-        return 0.0
-    both = pred & exp
-    precision = len(both) / len(pred)
-    recall = len(both) / len(exp)
-    if precision + recall == 0:
-        return 0.0
-    return 2 * precision * recall / (precision + recall)
+# Historical public name; real engine lives in Dojo (token SET, not SQuAD).
+from llm_dojo_scoring.agent_rubrics import token_set_f1 as token_overlap
 
 
 def _read_text(path: Path) -> str:
@@ -351,24 +339,24 @@ def score_case(agent_name: str, case: dict[str, Any], prediction: dict[str, Any]
     if agent_name == "reporter":
         blob = json.dumps(prediction, default=str)
         expected_keys = list((case.get("expected_fields") or {}).keys())
-        present = sum(1 for k in expected_keys if k in blob)
-        scored["key_presence"] = (
-            None if not expected_keys else round(present / len(expected_keys), 4)
-        )
+        from llm_dojo_scoring.agent_rubrics import key_presence
+
+        scored["key_presence"] = key_presence(blob, expected_keys)
         return scored
     if agent_name in ("pdf_transcriber", "image_extractor"):
         predicted_text = prediction.get("markdown") or prediction.get("text") or ""
         scored["token_overlap"] = round(token_overlap(predicted_text, case.get("text") or ""), 4)
         return scored
+    from llm_dojo_scoring.agent_rubrics import decision_valid
+
     if agent_name == "boss":
         scored["decision"] = prediction.get("decision")
-        scored["decision_valid"] = int(prediction.get("decision") in ("approved", "review"))
+        scored["decision_valid"] = decision_valid(prediction.get("decision"), ("approved", "review"))
         return scored
     if agent_name == "arbiter":
         scored["decision"] = prediction.get("decision")
-        scored["decision_valid"] = int(
-            prediction.get("decision")
-            in ("accept_with_caveats", "retry_extraction", "human_review")
+        scored["decision_valid"] = decision_valid(
+            prediction.get("decision"), ("accept_with_caveats", "retry_extraction", "human_review")
         )
         return scored
     if agent_name == "judge":

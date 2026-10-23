@@ -227,12 +227,12 @@ def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     releases = parse_changelog(text, unreleased_date="2026-10-07")
     titles = [release.title for release in releases]
-    assert titles[:3] == ["Unreleased", f"v{release_project['version']}", "v0.7.1"]
+    assert titles[:3] == ["Unreleased", f"v{release_project['version']}", "v0.8.0"]
     assert len(titles) == len(set(titles)), "duplicate changelog release headings"
     current = releases[1]
-    assert current.date == "2026-10-07"
+    assert current.date == "2026-10-23"
     assert current.tags == ("feature", "improvement", "fix")
-    assert current.page_rel == "2026/v0-8-0.md"
+    assert current.page_rel == "2026/v0-8-1.md"
     # Allow future Unreleased work, but don't duplicate notes already shipped.
     released_notes = set(re.findall(r"^- .+$", current.body, re.MULTILINE))
     unreleased_notes = set(re.findall(r"^- .+$", releases[0].body, re.MULTILINE))
@@ -241,7 +241,8 @@ def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
 
 
 @pytest.mark.parametrize("label,comparison", [
-    ("Unreleased", "v0.8.0...HEAD"),
+    ("Unreleased", "v0.8.1...HEAD"),
+    ("v0.8.1", "v0.8.0...v0.8.1"),
     ("v0.8.0", "v0.7.1...v0.8.0"),
     ("v0.7.1", "v0.7.0...v0.7.1"),
     ("v0.7.0", "v0.6.0...v0.7.0"),
@@ -269,9 +270,9 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     feed = (_DOCS / "changelog" / "README.md").read_text(encoding="utf-8")
     cards = re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
     titles = [re.search(r"^## (.+)$", body, re.MULTILINE).group(1) for _, body in cards]
-    assert titles[:3] == ["Unreleased", "v0.8.0", "v0.7.1"]
+    assert titles[:4] == ["Unreleased", "v0.8.1", "v0.8.0", "v0.7.1"]
     assert titles.count("v0.8.0") == 1
-    attrs, body = cards[1]
+    attrs, body = next((attrs, body) for attrs, body in cards if "## v0.8.0\n" in body)
     assert 'date="2026-10-07"' in attrs
     assert 'tags="feature,improvement,fix"' in attrs
     assert release.body in body
@@ -281,7 +282,7 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     assert released_notes.isdisjoint(unreleased_notes)
 
     listed = _summary_targets(_DOCS / "changelog" / "SUMMARY.md")
-    assert listed[:4] == ["README.md", "unreleased.md", "2026/v0-8-0.md", "2026/v0-7-1.md"]
+    assert listed[:5] == ["README.md", "unreleased.md", "2026/v0-8-1.md", "2026/v0-8-0.md", "2026/v0-7-1.md"]
     assert listed.count("2026/v0-8-0.md") == 1
 
 
@@ -295,3 +296,21 @@ def test_unreleased_page_sections_follow_title_without_changing_feed():
     assert "\n### Documentation\n" not in files["unreleased.md"]
     assert "\n## Unreleased\n" in files["README.md"]
     assert "\n### Documentation\n\n- Clarify ownership.\n" in files["README.md"]
+
+
+@pytest.mark.parametrize("path", [
+    "docs/how-it-fits-together/repo-index.md",
+    "docs/constellation/repo-index.md",
+])
+def test_repository_index_scopes_hub_imports_to_core_packages(path):
+    """PR117 CodeAnt: the wider repo inventory is not a hub import list."""
+    text = (REPO_ROOT / path).read_text(encoding="utf-8")
+    introduction = text.split("\n\n", 2)[1]
+    import_instructions = [
+        sentence for sentence in introduction.split(". ")
+        if "import the committed source into Digital-Mailroom" in sentence
+    ]
+    assert len(import_instructions) == 1, "expected one scoped hub-import instruction"
+    assert import_instructions[0].startswith("For imported core packages, ")
+    assert "Issue, evaluation, and external-feeder repositories follow their own workflows." in introduction
+    assert "Hub wiring and governance are authored in the hub." in introduction

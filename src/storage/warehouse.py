@@ -12,9 +12,11 @@ Full/incremental backfill: ``scripts/export_warehouse.py``.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import threading
+import time
 from uuid import uuid4
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
@@ -43,7 +45,16 @@ def _publication_lock(directory: Path):
                 handle.write(b"\0")
                 handle.flush()
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            # LK_LOCK gives up after ten retries. Match flock's indefinite
+            # contention wait without swallowing invalid-handle/I/O errors.
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno != errno.EACCES:
+                        raise
+                    time.sleep(0.1)
         else:
             import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)

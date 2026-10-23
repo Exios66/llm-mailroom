@@ -168,11 +168,11 @@ try:
             f"registry: {_unregistered}. Register them upstream or remove "
             "them here."
         )
-    # dojo 0.22.0: field_presence is catalogued but score_extraction does not
+    # The Dojo registry: field_presence is catalogued but score_extraction does not
     # emit it. A missing key is not 0.0.
     if any(c["name"] == "field_presence" for c in SCORE_CONFIGS):
         raise RuntimeError(
-            "field_presence is an unemitted dojo 0.22.0 honesty gap; do not "
+            "field_presence is an unemitted Dojo honesty gap; do not "
             "add it to SCORE_CONFIGS."
         )
     logger.debug(
@@ -375,25 +375,22 @@ def deterministic_verdict_label(
     still leaves a verdict on the trace. Ambiguous-band fields are PARTIAL;
     class mismatch is always MISS.
     """
-    if class_mismatch:
-        return "MISS"
-    if needs_judge_review:
-        return "PARTIAL"
-    if overall_score is None:
-        return "PARTIAL"
-    try:
-        from pipeline.config import load_config
+    from llm_dojo_scoring.pipeline_verdict import deterministic_verdict_label as verdict
 
-        band = (load_config().get("field_scoring") or {}).get("ambiguous_band") or [0.5, 0.85]
-        low, high = float(band[0]), float(band[1])
-    except Exception:
-        low, high = 0.5, 0.85
-    score = float(overall_score)
-    if score >= high:
-        return "CORRECT"
-    if score <= low:
-        return "MISS"
-    return "PARTIAL"
+    band = None
+    if not class_mismatch and not needs_judge_review and overall_score is not None:
+        try:
+            from pipeline.config import load_config
+
+            band = (load_config().get("field_scoring") or {}).get("ambiguous_band")
+        except Exception:
+            pass
+    return verdict(
+        overall_score,
+        needs_judge_review=needs_judge_review,
+        class_mismatch=class_mismatch,
+        ambiguous_band=band,
+    )
 
 
 def emit_in_pipeline_judge_scores(state: dict) -> None:
