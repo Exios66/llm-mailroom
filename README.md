@@ -14,8 +14,8 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 [![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
 [![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
 [![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
-[![Dojo](https://img.shields.io/badge/dojo-v0.22.0-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.22.0)
-[![Release](https://img.shields.io/badge/release-v0.8.0-2EA043)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.8.0)
+[![Dojo](https://img.shields.io/badge/dojo-v0.23.0-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.23.0)
+[![Release](https://img.shields.io/badge/release-v0.8.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
 [![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 [![Contributor](https://img.shields.io/badge/contributor-grantmooslin-blue)](https://github.com/grantmooslin)
 [![Organization](https://img.shields.io/badge/org-LLM--Mailroom--Services-24292F)](https://github.com/LLM-Mailroom-Services)
@@ -28,7 +28,7 @@ Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
 
 | At a glance | |
 | --- | --- |
-| **Release** | [`v0.8.0`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/v0.8.0) — see [CHANGELOG.md](CHANGELOG.md) |
+| **Release** | [`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1) — see [CHANGELOG.md](CHANGELOG.md) |
 | **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
 | **Agents** | LLM + procedural agents across 5 document classes (happy path: classify + extract only) |
 | **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
@@ -631,7 +631,7 @@ Mailroom is the pipeline at the center of a small constellation of governed repo
 | Repository | Role | Relationship |
 | --- | --- | --- |
 | [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (DMR-era cards); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.22.0` in `pyproject.toml` |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.23.0` in `pyproject.toml` |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |

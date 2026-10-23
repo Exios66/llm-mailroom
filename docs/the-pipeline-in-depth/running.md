@@ -9,7 +9,7 @@ All commands run from the repository root. Most scripts need `PYTHONPATH=src` be
 | Need | Value | Source |
 | --- | --- | --- |
 | Python | 3.11 or newer (`requires-python = ">=3.11"`) | `pyproject.toml` |
-| Package name / version | `mailroom` 0.8.0 | `pyproject.toml` |
+| Package name / version | `mailroom` 0.8.1 | `pyproject.toml` |
 | Database | None to install. SQLite file is created at `{MAILROOM_BASE_DIR}/mailroom.db` on first use | `.env.example` |
 | Docker | Only for the optional Langfuse stack or container deploys | `README.md` |
 
@@ -22,7 +22,7 @@ cp .env.example .env              # add OPENROUTER_API_KEY for real runs
 pip install -e ".[dev]"
 ```
 
-The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@v0.22.0`), so `pip` needs `git` and network access on first install.
+The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@v0.23.0`), so `pip` needs `git` and network access on first install.
 
 ### Optional extras
 

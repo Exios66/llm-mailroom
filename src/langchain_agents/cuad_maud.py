@@ -143,39 +143,10 @@ _MAUD_CONSIDERATION_ANSWERS = {
 
 
 def normalize_consideration(value) -> str:
-    """Map MAUD merger-consideration labels to the Hub token set."""
-    raw = str(value or "").strip()
-    if not raw:
-        return ""
-    key = re.sub(r"[^a-z0-9]", "", raw.lower())
-    aliases = {
-        "allcash": "all_cash",
-        "cash": "all_cash",
-        "cashonly": "all_cash",
-        "allstock": "all_stock",
-        "stock": "all_stock",
-        "stockonly": "all_stock",
-        "mixedcashstockelection": "mixed_cash_stock_election",
-        "mixedelection": "mixed_cash_stock_election",
-        "mixedcashstock": "mixed_cash_stock",
-        "mixed": "mixed_cash_stock",
-        "cashandstock": "mixed_cash_stock",
-        "cashstock": "mixed_cash_stock",
-        "other": "other",
-        **_MAUD_CONSIDERATION_ANSWERS,
-    }
-    if key in aliases:
-        return aliases[key]
-    lower = raw.lower()
-    if "election" in lower and "cash" in lower and "stock" in lower:
-        return "mixed_cash_stock_election"
-    if "cash" in lower and "stock" in lower:
-        return "mixed_cash_stock"
-    if "all cash" in lower or "cash consideration" in lower or "per share in cash" in lower:
-        return "all_cash"
-    if "all stock" in lower or "stock consideration" in lower:
-        return "all_stock"
-    return ""
+    """Canonical pilot MAUD normalization (unknown remains blank)."""
+    from llm_dojo_scoring.pilot_labels import normalize_pilot_consideration
+
+    return normalize_pilot_consideration(value)
 
 
 def infer_merger_consideration(extracted: dict | None) -> str:
