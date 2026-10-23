@@ -263,7 +263,8 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     assert yaml.safe_load(frontmatter)["tags"] == ["feature", "improvement", "fix"]
     assert content.count("# v0.8.0\n") == 1
     assert "Released 2026-10-07." in content
-    assert content.split("### Added", 1)[1].strip() == release.body.split("### Added", 1)[1].strip()
+    rendered_body = re.sub(r"^### ", "## ", release.body, flags=re.MULTILINE)
+    assert content.split("## Added", 1)[1].strip() == rendered_body.split("## Added", 1)[1].strip()
 
     feed = (_DOCS / "changelog" / "README.md").read_text(encoding="utf-8")
     cards = re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
@@ -282,3 +283,15 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     listed = _summary_targets(_DOCS / "changelog" / "SUMMARY.md")
     assert listed[:4] == ["README.md", "unreleased.md", "2026/v0-8-0.md", "2026/v0-7-1.md"]
     assert listed.count("2026/v0-8-0.md") == 1
+
+
+def test_unreleased_page_sections_follow_title_without_changing_feed():
+    from scripts.sync_gitbook_changelog import expected_files
+
+    source = "## [Unreleased]\n\n### Documentation\n\n- Clarify ownership.\n"
+    files = expected_files(source, unreleased_date="2026-10-07")
+    assert "# Unreleased\n" in files["unreleased.md"]
+    assert "\n## Documentation\n\n- Clarify ownership.\n" in files["unreleased.md"]
+    assert "\n### Documentation\n" not in files["unreleased.md"]
+    assert "\n## Unreleased\n" in files["README.md"]
+    assert "\n### Documentation\n\n- Clarify ownership.\n" in files["README.md"]
