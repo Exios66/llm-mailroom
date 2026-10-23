@@ -7,6 +7,7 @@ ever touched.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -871,7 +872,7 @@ def test_watcher_triage_low_confidence_routes_to_review(temp_base_dir, mocker):
     assert manifest["doc_type"] == "insurance_claim"
     assert "triage_low_confidence" in (manifest["escalation_reason"] or "")
     # The file is parked in the review bin.
-    parked = [p for p in review_dir().iterdir() if p.name == inbox_file.name]
+    parked = [p for p in review_dir().iterdir() if p.name == f"{inbox_file.stem}--{manifest['doc_id']}{inbox_file.suffix}"]
     assert len(parked) == 1
 
 
@@ -903,7 +904,7 @@ def test_watcher_triage_low_confidence_review_audit_and_echo(temp_base_dir, mock
     rows = asyncio.run(get_audit_chain(manifest["doc_id"]))
     events = [r["event"] for r in rows]
     assert events == ["triage_ingested", "triage_classified", "triage_reviewed"]
-    assert rows[-1]["detail"]["review_path"].endswith("fnol_review_audit.txt")
+    assert Path(rows[-1]["detail"]["review_path"]).name == f"fnol_review_audit--{manifest['doc_id']}.txt"
     echo_spy.assert_called_once()
     echoed = echo_spy.call_args.args[0]
     assert echoed["stage"] == "review"
@@ -1070,7 +1071,7 @@ def test_triage_lane_llm_failure_parks_in_review(temp_base_dir, mocker):
     assert manifest["stage"] == "review"
     assert manifest["doc_type"] == "unknown"
     assert (manifest["escalation_reason"] or "").startswith("triage_llm_unavailable")
-    parked = [p for p in review_dir().iterdir() if p.name == inbox_file.name]
+    parked = [p for p in review_dir().iterdir() if p.name == f"{inbox_file.stem}--{manifest['doc_id']}{inbox_file.suffix}"]
     assert len(parked) == 1
     # Audit: ingested + reviewed, and NEVER classified (the read never ran).
     rows = asyncio.run(get_audit_chain(manifest["doc_id"]))

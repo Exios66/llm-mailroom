@@ -890,15 +890,13 @@ def run_to_review(lab, text: str, *, matter_id: str = "LAB-MATTER",
 def resume_review(lab, doc_id: str, filename: str) -> dict[str, Any]:
     """Human approved — resume via the REAL ``resume_from_review`` with step
     capture. Mirrors test_review_resume.test_resume_approved_archives."""
-    from pipeline.bins import load_manifest, review_dir
+    from pipeline.bins import load_manifest, review_file_path
     from graph.build_graph import resume_from_review
 
     manifest = load_manifest(doc_id)
     if manifest is None:
         raise RuntimeError(f"no manifest for {doc_id}")
-    review_file = review_dir() / manifest.original_filename
-    if not review_file.exists():
-        review_file = review_dir() / filename
+    review_file = review_file_path(manifest)
 
     store: dict[str, Any] = {"steps": []}
     _install_step_recorder(store)
