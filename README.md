@@ -626,26 +626,21 @@ The build auto-detects `docs/`, generates navigation from the file tree, and emi
 
 ### The Mailroom Umbrella
 
-Mailroom is the pipeline at the center of a small constellation of governed repositories (seven monorepo members after DMR-079; `llm-entity-extraction`, `agent-mailroom` and the `llm-mailroom-graph` sites were retired from the core and live only as standalone `Exios66/*` repos) — full map in [`docs/pipeline-reference-llm-mailroom/sister-repos.md`](docs/pipeline-reference-llm-mailroom/sister-repos.md):
+Mailroom is the pipeline at the center of a constellation of independent, governed repositories — full map in [`docs/pipeline-reference-llm-mailroom/sister-repos.md`](docs/pipeline-reference-llm-mailroom/sister-repos.md). [DMR-093](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/issues/165) defines a **five-package core** for Digital-Mailroom: `llm-dojo-scoring`, `llm-mailroom`, `local-mailroom-sandbox`, `The-Mailroom`, and `mailroom-corpus-eda`. This is the target layout until the separate hub pruning PR lands after [#162](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/pull/162); hub `main` retains the seven-member layout left by DMR-079 in the meantime. DMR-079 retired `llm-entity-extraction`, `agent-mailroom` and the `llm-mailroom-graph` sites from the core; their standalone repositories remain available.
 
 | Repository | Role | Relationship |
 | --- | --- | --- |
-| [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (DMR-era cards); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
+| [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Integration monorepo** — committed core source imported into one uv workspace (`packages/llm-mailroom` consumes this repo), plus the sync driver and `governance/TASKS.md` | **Hub-owned integration and governance** — package implementation and docs originate in their standalone repos, merge to their own `main`, then enter the hub through `scripts/sync_packages.py pull` |
 | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.22.0` in `pyproject.toml` |
-| [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
-| [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
+| [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **External corpus feed in the DMR-093 target** for `correspondence`; [preserved feature branch](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/tree/feature/enron-evaluation-environment/packages/Enron-Evaluation-Environment) |
+| [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **External corpus feed (candidate) in the DMR-093 target** for `insurance_claim`; [preserved feature branch](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/tree/feature/claims-data-eda/packages/claims-data-eda) |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |
 | [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine + hosted Observatory Space — Langfuse floor, Inbox enqueue, REVIEW resolve (web + TUI) | **Downstream visualizer** — Langfuse-only display; proxies Inbox / REVIEW to this API (`MAILROOM_PIPELINE_URL`) |
+| [local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox) | Local/offline harness and Modal/vLLM test interface | **Core test interface** — consumes committed pipeline and dojo source |
+| [Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA) | Canonical corpus EDA and centralized HF upload helpers | **Core corpus member** — the target workspace's sole virtual member (`package = false`) |
 | [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
 
-**Developing in the monorepo:** cross-repository work happens in
-[`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) — one `uv sync`
-in its root installs every family member (`packages/llm-mailroom` included,
-editable) against a single shared `uv.lock`. Branch/subtree discipline,
-sync commands, and the monorepo task board (`governance/TASKS.md`) are
-documented in `docs/pipeline-reference-llm-mailroom/sister-repos.md` § Digital-Mailroom. This repo remains the
-standalone mirror + deploy source (Docker/Railway/HF Space build from here
-or from the subtree copy — both are the same tree).
+**Source-first development and integration:** Author and test package implementation and documentation in the owning standalone repository first, then commit and merge to its own `main` before Digital-Mailroom imports the committed source with `scripts/sync_packages.py pull`. The hub owns integration wiring, governance, and generated vendor snapshots. In the target workspace, one `uv sync` installs the four built packages editable against one shared `uv.lock`; `mailroom-corpus-eda` is the one virtual member. The two feeder preservation branches above were published at hub commit `59c879d9` before pruning; final PR162 must retain their exact package trees. Their standalone repositories, dataset provenance, and guides remain available.
 
 ### Deployment
 

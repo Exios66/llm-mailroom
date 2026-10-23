@@ -15,6 +15,9 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 
 Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md).
 
+### Documentation
+
+- DMR-093: document the pending five-package Digital-Mailroom core, source-first ownership, and published Enron/claims preservation branches. External feeder guides and provenance remain available; hub pruning lands separately after PR162.
 ### Changed
 
 - **Corrected specialist prompts get their eval-environment lineage keys (plan D2):** mailroom already serves the 2026-10-05 dojo-corrected `correspondence_specialist` (`2b0b81ff…`) and `corporate_records_specialist` (`fe13501f…`) bytes (via the dojo `production_prompts` catalog, so no prompt text changed). `src/llm/frozen_v1/lineage.json` now records them as the eval-environment mutations `correspondence_specialist_v7` / `corporate_records_specialist_v6` with the uncorrected `_v1` digests under `derived_from`; the legacy `*.txt` files (never loaded) still hold the uncorrected v1 bytes.

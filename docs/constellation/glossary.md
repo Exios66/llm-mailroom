@@ -80,7 +80,7 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 **Dispatch Board.** The served, issue-backed web view of the monorepo board at <https://digital-mailroom-theta.vercel.app>.
 
-**Monorepo.** Digital-Mailroom: every package as a git subtree in one `uv` workspace.
+**Monorepo.** Digital-Mailroom: an integration workspace of committed standalone packages imported as git subtrees. [DMR-093](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/issues/165) targets five core packages: `llm-dojo-scoring`, `llm-mailroom`, `local-mailroom-sandbox`, `The-Mailroom`, and `mailroom-corpus-eda`. Until the hub pruning PR lands after [#162](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/pull/162), hub `main` retains the seven-member DMR-079 layout. Source implementation and docs are authored, tested, committed, and merged to the owning standalone `main` before hub import.
 
 **Observatory.** The hosted, public operations view of The-Mailroom.
 
@@ -90,4 +90,4 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 **Vendored snapshot.** A tracked copy of another package's code inside a repo (local-mailroom-sandbox's `vendor/`), so it runs without network access.
 
-**Virtual member.** A monorepo package with `package = false`. Its code and data sit in the checkout but nothing installs from it (Enron-Evaluation-Environment, claims-data-eda, mailroom-corpus-eda).
+**Virtual member.** A monorepo package with `package = false`. Its code and data sit in the checkout but nothing installs from it. In the DMR-093 five-package target, `mailroom-corpus-eda` is the one virtual member. Enron-Evaluation-Environment and claims-data-eda were also virtual members in the seven-package DMR-079 layout; DMR-093 keeps their standalone feeds and preserves their existing hub trees on feature branches before removing their hub membership.
