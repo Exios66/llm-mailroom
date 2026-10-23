@@ -207,11 +207,10 @@ class BaseAgent(ABC):
                 api_key=(
                     self.api_key
                     or (os.environ.get(provider.api_key_env) if provider.api_key_env else None)
-                    # DMR-076 keyless parity: ollama/llamafile have
-                    # api_key_env=None — send the same "not-needed"
-                    # placeholder the native path (llm/client.get_llm) uses,
-                    # because langchain-openai raises without any api_key.
-                    or ("not-needed" if provider.api_key_env is None else None)
+                    # Always pass an explicit placeholder when the selected
+                    # provider has no key, matching the native client. None
+                    # lets the SDK inherit an unrelated OPENAI_API_KEY.
+                    or "not-needed"
                 ),
                 base_url=provider.base_url,
                 temperature=self._temperature,
