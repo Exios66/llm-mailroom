@@ -202,43 +202,16 @@ def valid_sorter_subclasses(doc_type: str | None) -> frozenset[str]:
 
 
 def normalize_sorter_subclass(doc_type: str | None, value: Any) -> str | None:
-    """Canonical subclass for ``doc_type``, or None when empty/uncatalogued."""
+    """Canonical scoped normalization over the producer's accepted tokens."""
+    from llm_dojo_scoring.pilot_labels import normalize_sorter_token
+
     kind = str(doc_type or "")
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    catalog = valid_sorter_subclasses(kind)
-    if not catalog:
-        return None
+    token = None
     if kind == "contract":
         from langchain_agents.sorter_agent import normalize_subtype
 
-        token = normalize_subtype(text)
-        return token if token in catalog else None
-    try:
-        from llm_dojo_scoring.corpus import normalize_corpus_subclass
-
-        token = normalize_corpus_subclass(kind, text)
-    except ImportError:
-        token = None
-        compact = re.sub(r"[^a-z0-9]", "", text.lower())
-        for key in catalog:
-            if re.sub(r"[^a-z0-9]", "", key.lower()) == compact:
-                token = key
-                break
-        if token is None and kind == "insurance_claim":
-            token = normalize_claim_type(text) or None
-        elif token is None and kind == "corporate_record":
-            token = normalize_record_type(text) or None
-        elif token is None and kind == "correspondence":
-            token = normalize_communication_type(text) or None
-    if token in catalog:
-        return token
-    if text in catalog:
-        return text
-    return None
+        token = normalize_subtype(value)
+    return normalize_sorter_token(kind, value, valid_sorter_subclasses(kind), contract_token=token)
 
 
 def format_sorter_subclass_catalogs() -> str:
@@ -361,48 +334,17 @@ _INSURANCE_ALIASES = {
 
 
 def _compact(value: Any) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+    """Compatibility alias for the canonical compact-label policy."""
+    from llm_dojo_scoring.pilot_labels import compact_label
+
+    return compact_label(value)
 
 
 def _normalize(value: Any, keys: tuple[str, ...], aliases: dict[str, str]) -> str:
-    """Map a free-text label onto a canonical inventory token.
+    """Canonical inventory matching over the unchanged producer catalog."""
+    from llm_dojo_scoring.pilot_labels import normalize_inventory_label
 
-    Longest canonical key wins so ``attorney_demand`` is not swallowed by
-    ``demand``, and ``articles_of_incorporation`` is not swallowed by a
-    short alias collision.
-    """
-    key = _compact(value)
-    if not key:
-        return ""
-    compact_keys = {_compact(k): k for k in keys}
-    if key in compact_keys:
-        return compact_keys[key]
-    alias_norm = {_compact(k): v for k, v in aliases.items()}
-    if key in alias_norm:
-        return alias_norm[key]
-    ranked_aliases = sorted(aliases.items(), key=lambda kv: -len(_compact(kv[0])))
-    for alias, canonical in ranked_aliases:
-        ak = _compact(alias)
-        if len(ak) >= 8 and (key.startswith(ak) or ak in key):
-            return canonical
-    ranked = sorted(keys, key=lambda item: -len(_compact(item)))
-    for canonical in ranked:
-        ck = _compact(canonical)
-        if not ck or canonical == "other":
-            continue
-        if key.startswith(ck):
-            return canonical
-    for canonical in ranked:
-        ck = _compact(canonical)
-        if not ck or canonical == "other":
-            continue
-        if len(ck) >= 4 and ck in key:
-            return canonical
-        if len(ck) >= 3 and ck[:1].isdigit() and ck in key:
-            return canonical
-    if key == "other":
-        return "other"
-    return ""
+    return normalize_inventory_label(value, keys, aliases)
 
 
 def normalize_record_type(value: Any) -> str:

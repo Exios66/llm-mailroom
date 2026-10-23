@@ -226,24 +226,20 @@ def score_and_log_extraction(
             **common_kwargs,
         )
 
-    # Factuality audit: mean verified_precision / hallucination_rate over every
-    # audited content field (list items + scalars the model actually reported).
-    if result.overall_verified_precision is not None:
+    # Both factuality scores consume the suite result's canonical field support.
+    audit = result.audit_support
+    if audit["verified_precision"] is not None:
         create_trace_score(
             name="extraction_overall_verified_precision",
-            value=result.overall_verified_precision,
-            comment=f"doc_class={doc_class} n_audited={sum(1 for a in result.entity_list_audit.values() if a.get('n_predicted'))}",
+            value=audit["verified_precision"],
+            comment=f"doc_class={doc_class} n_audited={audit['n_audited']}",
             **common_kwargs,
         )
-    audited = [
-        a["hallucination_rate"] for a in result.entity_list_audit.values()
-        if a.get("n_predicted")
-    ]
-    if audited:
+    if audit["hallucination_rate"] is not None:
         create_trace_score(
             name="extraction_hallucination_rate",
-            value=round(sum(audited) / len(audited), 4),
-            comment=f"doc_class={doc_class} n_audited={len(audited)}",
+            value=audit["hallucination_rate"],
+            comment=f"doc_class={doc_class} n_audited={audit['n_audited']}",
             **common_kwargs,
         )
 
