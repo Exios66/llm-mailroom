@@ -2,7 +2,7 @@
 
 Production extraction uses these stems, not the llm-entity-extraction
 contracts/sorter lineage. The text is served from the ``llm-dojo-scoring``
-``production_prompts`` catalog (pinned in pyproject.toml); ``lineage.json``
+``production`` catalog (pinned in pyproject.toml); ``lineage.json``
 records the sha256 and length of each prompt. The legacy ``*.txt`` files in
 this directory are superseded and no longer packaged.
 """
@@ -33,12 +33,12 @@ def lineage() -> dict:
 
 @lru_cache(maxsize=None)
 def load_specialist_v1(agent_name: str) -> str:
-    """Return the frozen v1 prompt text from the dojo ``production_prompts`` catalog."""
+    """Return the frozen v1 prompt text from the dojo ``production`` catalog."""
     if agent_name not in SPECIALIST_AGENTS:
         raise KeyError(f"no frozen-v1 stem for {agent_name!r}")
     from llm_dojo_scoring.prompts import get_prompt
 
-    return get_prompt(agent_name, family="production_prompts").text
+    return get_prompt(agent_name, family="production").text
 
 
 def specialist_sha256(agent_name: str) -> str:

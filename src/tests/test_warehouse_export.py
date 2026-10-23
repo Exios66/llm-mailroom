@@ -18,7 +18,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 def warehouse_env(monkeypatch, temp_base_dir):
     monkeypatch.setenv("MAILROOM_WAREHOUSE_EXPORT", "1")
     monkeypatch.setenv("MAILROOM_BASE_DIR", str(temp_base_dir))
-    for mod in ("storage.db", "storage.catalog", "storage.audit_log", "storage.warehouse"):
+    for mod in ("storage.warehouse",):
         if mod in sys.modules:
             importlib.reload(sys.modules[mod])
     pyarrow = pytest.importorskip("pyarrow")

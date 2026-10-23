@@ -16,7 +16,7 @@ Every step is traced (Langfuse, Braintrust or Arize Phoenix), every prompt is ve
 
 The pipeline is only one part of the work. Around it sit the things a production LLM system needs: datasets with ground truth, a scoring library everyone agrees on, an experiment loop for prompts, an evaluation harness for each node, a cheaper ML classifier for easy documents, a way to run everything offline, and tools to watch it run. Each of those grew up as its own repository with its own release train.
 
-In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which holds every package as a git subtree inside a single `uv` workspace. The monorepo is now where cross-repo development happens; the individual `Exios66/*` repositories remain the release vehicles that deployments install from.
+In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which holds every package as a git subtree inside a single `uv` workspace. Each standalone repository remains authoritative for its implementation and release train. Develop, test, and commit source-owned changes there first; Digital-Mailroom imports those commits and refreshes vendor snapshots. Hub package trees and patches do not flow back into feeder development.
 
 ## The constellation at a glance
 
@@ -24,7 +24,7 @@ In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which
 
 | Repository | What it is |
 | :--- | :--- |
-| [Digital-Mailroom](repos/digital-mailroom.md) | The monorepo. Every package below lives in `packages/`. Holds the cross-repo task board (`governance/TASKS.md`) and the served Dispatch Board. |
+| [Digital-Mailroom](repos/digital-mailroom.md) | The integration hub. Imports committed standalone source into `packages/` and refreshes vendor snapshots. Holds the cross-repo task board (`governance/TASKS.md`) and the served Dispatch Board. |
 | [mailroom-issues](repos/mailroom-issues.md) | The issue hub for anything that spans more than one repository: epics, RFCs, and the label taxonomy. No code. |
 
 ### The seven packages (monorepo members)
@@ -32,9 +32,9 @@ In August 2026 they were gathered into one monorepo, **Digital-Mailroom**, which
 | Package | Layer | What it is |
 | :--- | :--- | :--- |
 | [llm-mailroom](repos/llm-mailroom.md) | Pipeline | The 13-node LangGraph pipeline and FastAPI producer. The center of everything. |
-| [llm-dojo-scoring](repos/llm-dojo-scoring.md) | Scoring | The shared, deterministic, field-type-aware scoring library every other repo imports. |
-| [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) | Surface | Runs the full pipeline offline on Ollama, vLLM, llama.cpp or LM Studio, plus Modal GPU studies. GitBook: [docs](repos/local-mailroom-sandbox-docs.md), [run reports](repos/local-mailroom-sandbox-reports.md), [visuals](repos/local-mailroom-sandbox-visuals.md). |
-| [The-Mailroom](repos/the-mailroom.md) | Surface | Pixel-art visualizer and hosted Observatory, driven entirely by the pipeline's Langfuse traces. |
+| [llm-dojo-scoring](repos/llm-dojo-scoring.md) | Scoring | The sole owner of all metrics, scoring formulas, normalization rules, and suites; consumers import its APIs. |
+| [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) | Surface | Owns the local/offline harness on Ollama, vLLM, llama.cpp or LM Studio and the Modal/vLLM test interface; consumes committed pipeline and dojo source. GitBook: [docs](repos/local-mailroom-sandbox-docs.md), [run reports](repos/local-mailroom-sandbox-reports.md), [visuals](repos/local-mailroom-sandbox-visuals.md). |
+| [The-Mailroom](repos/the-mailroom.md) | Surface | The visualizer and hosted Observatory used by both pipeline and sandbox, through compatible producer and trace contracts. |
 | [Mailroom-Corpus-EDA](repos/mailroom-corpus-eda.md) | Data | EDA of the canonical `mailroom-dataset` and the central Hugging Face upload helpers. GitBook: [Mailroom dataset](../mailroom-dataset/), [visualizations](../mailroom-dataset/visualizations.md). |
 | [Enron-Evaluation-Environment](repos/enron-evaluation-environment.md) | Data | Builds the `correspondence` corpus from the CMU Enron emails. |
 | [claims-data-eda](repos/claims-data-eda.md) | Data | Builds the `insurance_claim` corpus from CMS DE-SynPUF Medicare claims. |
@@ -58,7 +58,7 @@ Older copies, forks, earlier monorepo attempts and the repositories retired from
 
 | Question | Canonical answer |
 | :--- | :--- |
-| What code is current? | `Digital-Mailroom/packages/<name>` for development; `Exios66/<name>` for releases. |
+| What code is current? | The owning standalone `Exios66/<name>` repository; Digital-Mailroom imports committed source for integration. |
 | Which document classes and thresholds exist? | `llm-mailroom`'s `config/taxonomy.yaml`. |
 | What is the dataset? | [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) on Hugging Face, pinned by revision. See [Mailroom dataset](../mailroom-dataset/) (strata, EDA, figures) and [Data and corpora](data-and-corpora.md) (rules). |
 | How is quality scored? | `llm-dojo-scoring`. Nobody re-implements a metric locally. |

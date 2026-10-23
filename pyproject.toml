@@ -61,7 +61,7 @@ postgres = [
 # only — the runtime pipeline never imports modal. Install with:
 #   pip install -e ".[deploy]"
 deploy = [
-    "modal==1.6.1",
+    "modal==1.6.2",
 ]
 # BERT intake fast-path runtime (agents/bert_intake.py + the sibling
 # mailroom-ml package, #85 M6a): ONNX int8 inference ONLY — deliberately no
