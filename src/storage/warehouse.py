@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import threading
+from uuid import uuid4
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -61,9 +61,11 @@ def _publication_lock(directory: Path):
 def _replacement_path(path: Path):
     """Publish a complete sibling temporary file; failed writes keep old bytes."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    temporary = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+    # Let the kernel apply the process umask without changing process-global
+    # state. mkstemp's fixed 0600 would remove first-publish reader access.
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
     os.close(fd)
-    temporary = Path(name)
     try:
         yield temporary
         if path.exists():
