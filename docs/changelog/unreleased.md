@@ -27,6 +27,10 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
 ### Fixed
 
+- DMR-091 postfix: keyless providers receive an explicit placeholder rather
+  than unrelated SDK credentials; Arrow readers retain one open snapshot, and
+  small-batch audit exports retain their document join keys.
+
 - **DMR-091 independent runtime audit:** review files use durable document-ID
   names and collision-safe lookup, including replay and legacy fallback; upload
   matter IDs and archive destinations reject path traversal. LangChain agents

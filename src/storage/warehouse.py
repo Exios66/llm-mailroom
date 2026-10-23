@@ -227,7 +227,10 @@ def _read_parquet_rows(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     _, pq = _require_pyarrow()
-    return pq.read_table(path).to_pylist()
+    # Pin one inode for Arrow's metadata and page reads while another process
+    # atomically replaces the published path with a newer complete snapshot.
+    with path.open("rb") as snapshot:
+        return pq.read_table(snapshot).to_pylist()
 
 
 def _merge_rows(
@@ -307,7 +310,7 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
     # Per-doc chain preserves seq order; batch read for large sets.
     if len(doc_ids) <= 50:
         for doc_id in doc_ids:
-            rows.extend(await get_audit_chain(doc_id))
+            rows.extend({**row, "doc_id": doc_id} for row in await get_audit_chain(doc_id))
         return rows
     async with async_session() as session:
         result = await session.execute(
