@@ -91,7 +91,9 @@ class BaseAgent(ABC):
         callbacks: list | None = None,
     ):
         self.model = model or "qwen/qwen3.7-flash"
-        self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+        # Only an explicit caller override belongs here. Environment keys
+        # are selected after the provider is resolved, never across providers.
+        self.api_key = api_key
         # Optional LangChain callback handlers (e.g. the Langfuse
         # CallbackHandler) attached to every invoke; None keeps the default
         # (langfuse.openai auto-tracing) path unchanged. Upstream feature,
