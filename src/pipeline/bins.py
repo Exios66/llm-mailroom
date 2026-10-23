@@ -288,14 +288,15 @@ def review_file_path(manifest) -> Path:
         return owned
     # Older releases used bare names. Never assign an ambiguous legacy file
     # to another document merely because its basename happens to match.
+    # A sibling's owned copy does not establish who owns a leftover bare name.
     for path in manifests_dir().glob("*.json"):
         try:
             other = load_manifest(path.stem)
-            other_owned = base / _review_name(other) if other is not None else None
+            if other is not None:
+                _review_name(other)  # Validate sibling identifiers before fallback.
             if (other is not None and other.doc_id != manifest.doc_id
                     and other.original_filename == manifest.original_filename
-                    and str(getattr(other.stage, "value", other.stage)) == "review"
-                    and not other_owned.is_file()):
+                    and str(getattr(other.stage, "value", other.stage)) == "review"):
                 return owned
         except (OSError, ValueError):
             logger.warning("manifest_unreadable_legacy_ownership", path=str(path))

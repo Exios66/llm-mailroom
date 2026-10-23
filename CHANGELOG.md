@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject ambiguous legacy review filenames even when a same-name sibling has
+  an ID-qualified copy. Requested owned paths retain priority; unsafe IDs,
+  unique legacy fallback and atomic no-clobber publication retain their guards.
+
 - **Installed runtime taxonomy:** include `config/taxonomy.yaml` in built wheels so `pipeline.config` and all 18 managed prompt templates load from the installed payload without a source-checkout fallback. Source-only scripts and LegalBench packaging remain unchanged.
 - **Offline LegalBench tracing:** `trace_enabled=False` now skips per-question observations as well as the root trace, so ambient tracing credentials cannot enable question spans in notebook fixture runs.
 - **Consumer policy compatibility:** bind LegalBench to the pipeline's established subtype groups without changing global Dojo settings, delegate raw round-last pilot calibration to Dojo, and retain the five public diagnostic helper imports. Generated corpus-honesty headings report the loaded scoring version.
