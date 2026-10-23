@@ -95,10 +95,12 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["agents*", "langchain_agents*", "graph*", "llm*", "schemas*", "pipeline*", "storage*", "api*", "observability*"]
+include = ["agents*", "langchain_agents*", "graph*", "llm*", "schemas*", "pipeline*", "storage*", "api*", "observability*", "config"]
+namespaces = true
 
 [tool.setuptools.package-data]
 "llm.frozen_v1" = ["lineage.json", "README.md"]
+"config" = ["taxonomy.yaml"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

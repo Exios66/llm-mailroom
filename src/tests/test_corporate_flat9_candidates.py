@@ -249,9 +249,12 @@ def test_schema_types_alone_cannot_detect_an_individual_in_entity_name():
     assert parsed.entity_name == "Jane Doe"
 
 
-def test_unlabeled_poa_entity_is_not_fabricated_accuracy():
+def test_unlabeled_poa_entity_is_not_fabricated_accuracy(monkeypatch):
+    """Unlabeled name support stays absent under an explicit offline posture."""
+    from llm_dojo_scoring.config import get_settings
     from llm_dojo_scoring.field_scoring import embedding_enabled
 
+    monkeypatch.setattr(get_settings().field_scoring, "embedding_enabled", False)
     assert embedding_enabled() is False
     out = get_suite("corporate_records_specialist").score(
         {"intent": "authority_delegation"},

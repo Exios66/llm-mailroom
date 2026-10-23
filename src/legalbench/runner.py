@@ -128,9 +128,10 @@ def run_task(
                 "document": row.get("contract_title") or row.get("title"),
             }
             try:
-                with _tracing.question_observation(
+                question_context = _tracing.question_observation(
                     i, task.id, input_data=obs_input, metadata={"run_id": run_id}
-                ):
+                ) if trace_enabled else nullcontext()
+                with question_context:
                     prediction = task.call(agent, row)
                 predicted, conf, support = task.extract(row, prediction)
                 parse_error = isinstance(prediction, dict) and bool(prediction.get("_parse_error"))
