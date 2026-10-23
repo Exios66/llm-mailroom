@@ -88,6 +88,18 @@ class TestUploadMetadata:
         assert r.json()["file"] == "dup-1.txt"
 
 
+@pytest.mark.parametrize("matter, status", [("", 202), (" ", 400)])
+def test_blank_upload_matter_form_contract(client, matter, status):
+    """FastAPI defaults empty form fields; whitespace reaches the path validator."""
+    response = client.post(
+        "/upload", files={"file": ("blank-matter.txt", b"document", "text/plain")},
+        data={"matter_id": matter}, headers=_auth(),
+    )
+    assert response.status_code == status
+    if status == 202:
+        assert response.json()["matter_id"] == "DEFAULT"
+
+
 class TestQueue:
     def test_queue_lists_uploaded_file(self, client):
         headers = _auth()

@@ -287,7 +287,13 @@ def review_file_path(manifest) -> Path:
     # Older releases used bare names. Never assign an ambiguous legacy file
     # to another document merely because its basename happens to match.
     for path in manifests_dir().glob("*.json"):
-        other = load_manifest(path.stem)
+        try:
+            other = load_manifest(path.stem)
+        except (OSError, ValueError):
+            logger.warning("manifest_unreadable_legacy_ownership", path=str(path))
+            # Unknown ownership cannot authorize exposing the bare-name file.
+            # The document-ID path remains usable without scanning manifests.
+            return owned
         if (other is not None and other.doc_id != manifest.doc_id
                 and other.original_filename == manifest.original_filename
                 and str(getattr(other.stage, "value", other.stage)) == "review"
@@ -297,11 +303,14 @@ def review_file_path(manifest) -> Path:
 
 
 def park_for_review(file_path: Path, manifest) -> tuple[Path, bool]:
-    """Move ``file_path`` into the review bin. Idempotent if already parked.
+    """Move into the document-ID review path, replaying only identical bytes.
 
     LangGraph ``interrupt()`` restarts the node from the beginning on resume,
     so this must be an upsert: a second call with a missing processing-path
-    source still succeeds when the review dest already exists.
+    source still succeeds when the review dest already exists. A distinct
+    existing source with different bytes raises FileExistsError. If both
+    source and owned destination are absent, an unambiguous legacy basename
+    may be returned; unverifiable ownership fails closed.
 
     Returns ``(dest, newly_parked)``.
     """
