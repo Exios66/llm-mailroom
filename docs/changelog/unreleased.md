@@ -13,4 +13,4 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 
 Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md).
 
-
+No unreleased changes.

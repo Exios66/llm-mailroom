@@ -39,7 +39,7 @@ Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged Gi
 
 Work landed on `main` since the last tagged release.
 
-
+No unreleased changes.
 
 <a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}
