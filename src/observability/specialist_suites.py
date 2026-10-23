@@ -172,18 +172,8 @@ def score_dedicated_suite(
 
 
 def gt_schema_coverage(doc_class: str, expected: dict | None) -> dict[str, Any]:
-    """How many specialist schema fields have a scorable GT label."""
-    names = schema_fields(doc_class)
-    data = expected or {}
-    present = [
-        name for name in names
-        if data.get(name) not in (None, "", [], {})
-    ]
-    return {
-        "doc_class": doc_class,
-        "specialist": specialist_for_class(doc_class),
-        "n_schema": len(names),
-        "n_labeled": len(present),
-        "labeled_fields": present,
-        "coverage": round(len(present) / len(names), 3) if names else None,
-    }
+    """Attach producer class/schema identity to canonical labeled-GT support."""
+    from llm_dojo_scoring.field_support import schema_gt_support
+
+    return {"doc_class": doc_class, "specialist": specialist_for_class(doc_class),
+            **schema_gt_support(schema_fields(doc_class), expected)}

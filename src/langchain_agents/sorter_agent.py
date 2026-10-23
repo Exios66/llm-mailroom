@@ -221,34 +221,20 @@ SUBTYPE_EQUIVALENCES: list[frozenset[str]] = [
 
 
 def equivalent_subtypes(a: str, b: str) -> bool:
-    """Return True when two subtype keys are the same family or members of
-    the same interchangeable family class (see ``SUBTYPE_EQUIVALENCES``)."""
-    a, b = str(a), str(b)
-    if a == b:
-        return True
-    return any(a in cls and b in cls for cls in SUBTYPE_EQUIVALENCES)
+    """Canonical Dojo CUAD family equivalence."""
+    from llm_dojo_scoring.pilot_labels import catalog_subtypes_equivalent as score
+
+    return score(a, b, SUBTYPE_EQUIVALENCES)
 
 
 def normalize_subtype(value) -> str:
-    """Coerce a raw sorter subtype output (or a CUAD folder name) to a
-    canonical subtype key; unknown/non-contract values become ``other``."""
-    if value is None:
-        return SUBTYPE_UNKNOWN
-    key = re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
-    if not key:
-        return SUBTYPE_UNKNOWN
-    compact = {re.sub(r"[^a-z0-9]", "", k): k for k in CONTRACT_SUBTYPE_KEYS}
-    if key in compact:
-        return compact[key]
-    alias_norm = {re.sub(r"[^a-z0-9]", "", k): v for k, v in _SUBTYPE_ALIASES.items()}
-    if key in alias_norm:
-        return alias_norm[key]
-    # "License Agreement" -> "license"; "Non-Compete" -> non_compete_no_solicit.
-    for subtype in CONTRACT_SUBTYPES:
-        norm_label = re.sub(r"[^a-z0-9]", "", subtype["label"].lower())
-        if key == norm_label or key.startswith(norm_label[:8]):
-            return subtype["key"]
-    return SUBTYPE_UNKNOWN
+    """Canonical policy over this producer's unchanged CUAD catalog."""
+    from llm_dojo_scoring.pilot_labels import normalize_pipeline_subtype
+
+    return normalize_pipeline_subtype(
+        value, keys=CONTRACT_SUBTYPE_KEYS, aliases=_SUBTYPE_ALIASES,
+        subtypes=CONTRACT_SUBTYPES,
+    )
 
 
 def finalize_sorter_result(result: dict) -> dict:

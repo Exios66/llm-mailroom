@@ -25,7 +25,7 @@ BADGES = (
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
     f"dojo-{pin_label(current_pin(REPO))}-6f42c1",
-    "release-v0.8.0-2EA043",
+    "release-v0.8.1-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",
     "org-LLM--Mailroom--Services-24292F",
@@ -56,7 +56,7 @@ def test_release_badge_label_and_destination_match_package(path):
     version = f"v{project['version']}"
     text = (REPO / path).read_text(encoding="utf-8")
     badge = f"https://img.shields.io/badge/release-{version}-2EA043"
-    destination = f"https://github.com/LLM-Mailroom-Services/Digital-Mailroom/releases/tag/{version}"
+    destination = f"https://github.com/Exios66/llm-mailroom/releases/tag/{version}"
     if path.endswith(".html"):
         badges = re.findall(
             r'<a\s+href="([^"]+)"[^>]*>\s*<img\s+src="(https://img.shields.io/badge/release-[^"]+)"\s+alt="([^"]+)"[^>]*>\s*</a>',
