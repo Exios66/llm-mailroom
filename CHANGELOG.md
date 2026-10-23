@@ -6,7 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Changed
 
 - **Corrected specialist prompts get their eval-environment lineage keys (plan D2):** mailroom already serves the 2026-10-05 dojo-corrected `correspondence_specialist` (`2b0b81ff…`) and `corporate_records_specialist` (`fe13501f…`) bytes (via the dojo `production_prompts` catalog, so no prompt text changed). `src/llm/frozen_v1/lineage.json` now records them as the eval-environment mutations `correspondence_specialist_v7` / `corporate_records_specialist_v6` with the uncorrected `_v1` digests under `derived_from`; the legacy `*.txt` files (never loaded) still hold the uncorrected v1 bytes.
@@ -18,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **llm-dojo-scoring pin bumped `v0.19.1` → `v0.21.0`** ([llm-dojo-scoring@v0.21.0](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.21.0), tip `6a3053cc`): the dojo `production` family was re-vendored verbatim from a live mailroom checkout (five specialists now equal the frozen `production_prompts` v1 bytes, `reporter` is `kind: deterministic`, every row records `source_commit`), `llm_dojo_scoring.intents` added the controlled `intent` vocabularies, the exact-match `label` field type landed, and the six `production` classification prompts were re-synced from mailroom `6ddde73` (llm-mailroom#102 — the five-class doctrine no longer names the MAUD/CUAD corpora). Scoring semantics for the pinned behaviour are unchanged, so no pipeline code change is required; pins, badges, skills, wiki, README / landing, current-state GitBook pages (Overview, repos guides, architecture, Agents honest gaps, Scoring and performance, Running), the observability README, and the `## Corpus honesty` heading in generated HF-pilot reports now all cite `v0.21.0`. The pin was moved only via `PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.21.0`.
 
 ### Fixed
+
+- **Loop-bound database connections** (DMR-091): asynchronous SQLite and
+  PostgreSQL engines use `NullPool`; sessions close their connections rather
+  than retaining idle pools after the owning event loop closes. Serialized
+  schema creation and per-loop engine/session state protect concurrent writers.
 
 - **Extraction schemas honour the empty-field contract (SAND-042 RCA)** (`schemas/documents.py`): `InsuranceClaimExtraction.insurer`, `insured_party`, `claim_type`, `damages_description` and `coverage_determination`, `CorporateRecordExtraction.entity_name` and `record_type`, and `CorrespondenceExtraction.communication_type` and `urgency` were `str = ""`, so a prompt-faithful `null` failed validation (insurance schema-valid 26–34 % on SAND-042). They are now `str | None = None`. `claimed_amount` and `demand_amount` accept the currency phrases the prompts allow (`"$18,530.00"`, `"1,250"`, `"USD 99.5"`, `"($40.00)"`; blank → `null`) and still reject prose. `src/tests/test_schema_null_contract.py` pins every scalar field of every extraction schema as nullable.
 - **`test_dojo_v019_wiring.py` no longer hardcodes the `0.19` series**: the two `scorer_version` assertions (per-document provenance payload, HF-pilot scorecard row) demanded `startswith("0.19")` and so failed the moment the pin moved. They now assert the payload value equals `SCORER_VERSION == llm_dojo_scoring.__version__`, i.e. the installed library's own version, so the check follows the pin instead of needing a hand edit per bump.
