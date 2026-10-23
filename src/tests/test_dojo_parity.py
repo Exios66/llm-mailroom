@@ -24,14 +24,15 @@ LIVE_DOC_TYPES: tuple[str, ...] = (
 
 
 def test_live_specialists_equal_dojo_production():
-    """Match live specialist prompts to both dojo production lookup paths."""
+    """Live prompts use production; corporate evaluation v7 is unpromoted."""
     live = prompt_templates()
     for agent in SPECIALIST_AGENTS:
-        assert (
-            live[agent]
-            == get_prompt(agent).text
-            == get_prompt(agent, family="production_prompts").text
-        )
+        assert live[agent] == get_prompt(agent, family="production").text
+        evaluation = get_prompt(agent, family="production_prompts").text
+        if agent == "corporate_records_specialist":
+            assert live[agent] != evaluation
+        else:
+            assert live[agent] == evaluation
 
 
 def test_taxonomy_field_types_equal_dojo_defaults_for_live_classes():

@@ -4,7 +4,7 @@
   "source_repo": "LLM-Mailroom-Services/eval-environment",
   "source_path": "prompts/manifest.json",
   "frozen_at": "2026-09-26T05:09:29+00:00",
-  "notes": "eval-environment frozen v1 specialist stems (issues #4–#8). Sandbox Modal/vLLM specialist evals must inject these exact bytes. source_key is the sandbox stem at commit 303e7f0. Two roles (correspondence, corporate_records) serve the 2026-10-05 dojo-corrected bytes, recorded in eval-environment as correspondence_specialist_v7 / corporate_records_specialist_v6 (mutations; _v1 untouched and still the eval-environment default). `derived_from` names the uncorrected v1 bytes that the legacy, unpackaged *.txt files still hold.",
+  "notes": "eval-environment frozen v1 specialist stems (issues #4–#8). Sandbox Modal/vLLM specialist evals must inject these exact bytes. source_key is the sandbox stem at commit 303e7f0. Two roles (correspondence, corporate_records) serve the 2026-10-05 dojo-corrected bytes, recorded in eval-environment as correspondence_specialist_v7 / corporate_records_specialist_v6 (mutations; _v1 untouched and still the eval-environment default). Runtime resolution uses the dojo production family; production_prompts now serves an unpromoted corporate v7 eval candidate (253559fc…, 5462 chars), while production preserves corporate v6 (fe13501f…, 5865 chars). `derived_from` names the uncorrected v1 bytes that the legacy, unpackaged *.txt files still hold.",
   "specialists": {
     "contracts_specialist": {
       "eval_environment_key": "contracts_specialist_v1",
@@ -25,7 +25,7 @@
       "sha256": "fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399",
       "chars": 5865,
       "opening": "You are the corporate-records specialist.",
-      "source": "llm-dojo-scoring production_prompts",
+      "source": "llm-dojo-scoring production",
       "refrozen_at": "2026-10-05"
     },
     "correspondence_specialist": {
@@ -40,7 +40,7 @@
       "sha256": "2b0b81ff98920b9207627707443e2b023db39212fda5bdcba7bfbded39fa38b6",
       "chars": 6113,
       "opening": "You are the correspondence specialist.",
-      "source": "llm-dojo-scoring production_prompts",
+      "source": "llm-dojo-scoring production",
       "refrozen_at": "2026-10-05"
     },
     "insurance_claims_specialist": {
