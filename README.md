@@ -626,26 +626,9 @@ The build auto-detects `docs/`, generates navigation from the file tree, and emi
 
 ### The Mailroom Umbrella
 
-Mailroom is the pipeline at the center of a small constellation of governed repositories (seven monorepo members after DMR-079; `llm-entity-extraction`, `agent-mailroom` and the `llm-mailroom-graph` sites were retired from the core and live only as standalone `Exios66/*` repos) — full map in [`docs/pipeline-reference-llm-mailroom/sister-repos.md`](docs/pipeline-reference-llm-mailroom/sister-repos.md):
+Mailroom is the pipeline at the center of a constellation of independent repositories. [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) is the integration hub and imports this repository into `packages/llm-mailroom`.
 
-| Repository | Role | Relationship |
-| --- | --- | --- |
-| [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Monorepo** — one uv workspace holding every constellation repo as a git-subtree package (`packages/llm-mailroom` ⇄ this repo), with the sub-package sync driver + `governance/TASKS.md` cross-repo task board | **Development home** — the monorepo is the source of truth for active development (DMR-era cards); standalone-repo work ships through `scripts/sync_packages.py` (`pull`/`push`) |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic field-type-aware scoring engine | **Upstream dependency**, pinned `@v0.22.0` in `pyproject.toml` |
-| [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + correspondence dataset from the CMU Enron corpus | **Corpus feed** for the `correspondence` doc class |
-| [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF) | **Corpus feed (candidate)** for `insurance_claim` |
-| [atticus-investigation](https://github.com/Exios66/atticus-investigation) | LegalBench classification prompt-engineering pipeline | **Eval sibling** — same methodology |
-| [The-Mailroom](https://github.com/Exios66/The-Mailroom) | Pixel-art visual engine + hosted Observatory Space — Langfuse floor, Inbox enqueue, REVIEW resolve (web + TUI) | **Downstream visualizer** — Langfuse-only display; proxies Inbox / REVIEW to this API (`MAILROOM_PIPELINE_URL`) |
-| [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) (HF) | Published eval/corpus dataset family | **Dataset surface** |
-
-**Developing in the monorepo:** cross-repository work happens in
-[`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) — one `uv sync`
-in its root installs every family member (`packages/llm-mailroom` included,
-editable) against a single shared `uv.lock`. Branch/subtree discipline,
-sync commands, and the monorepo task board (`governance/TASKS.md`) are
-documented in `docs/pipeline-reference-llm-mailroom/sister-repos.md` § Digital-Mailroom. This repo remains the
-standalone mirror + deploy source (Docker/Railway/HF Space build from here
-or from the subtree copy — both are the same tree).
+See the [constellation overview](docs/start-here/overview.md) for the core layout and corpus feeders, the [hub guide](docs/repository-guides/repos/digital-mailroom.md) for integration and ownership, and the [sister-repository guide](docs/pipeline-reference-llm-mailroom/sister-repos.md) for pipeline relationships.
 
 ### Deployment
 

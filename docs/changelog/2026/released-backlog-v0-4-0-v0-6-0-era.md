@@ -15,7 +15,7 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 
 Released 2026-08-18. Canonical source: [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md).
 
-### Added
+## Added
 - **Braintrust + OpenRouter skills for all agents**: `braintrust`
   (github.com/braintrustdata/braintrust-skills — the agent-auto-improvement
   loop: production traces -> failure taxonomy -> dataset -> scorers ->
@@ -56,7 +56,7 @@ Released 2026-08-18. Canonical source: [`CHANGELOG.md`](https://github.com/Exios
   project skills under `.opencode/skills/`, alongside the existing langfuse
   skill. AGENTS.md documents the set.
 
-### Changed
+## Changed
 
 - **Repository root restructured to the essentials**: all Python code now
   lives under `src/` (agents, api, config, graph, langchain_agents,
@@ -77,7 +77,7 @@ Released 2026-08-18. Canonical source: [`CHANGELOG.md`](https://github.com/Exios
   `src/config/taxonomy.yaml`. No functionality changed — the full suite
   passes under the new layout.
 
-### Added
+## Added
 
 - **LegalBench evaluation suite (`legalbench/`)**: a self-contained submodule that evaluates models through the LegalBench task families on the locally-mirrored corpora — `contract_qa` (**binary answer**: the full CUAD annotations, 510 contracts × 41 clause categories = 20,910 yes/no questions with evidence spans) and `family_classification` (**multiclass classification**: 200 labeled CUAD contract texts into the 25 contract families + `other`). Each run: deterministic local scoring (accuracy, macro per-category accuracy, yes-class F1, ECE calibration; strict + equiv family accuracy, macro-F1), one Langfuse trace per run with per-question spans and run-level scores (new `legalbench_*` score configs in `observability/scores.py`, 29 → 34), and an automatic experiment-log record appended to the shared JSONL on completion — which also regenerates the markdown log, the experiment-log site data, and the synced copy at `docs/reports/experiments/experiment_log.md`. Run via `python -m legalbench.cli --task contract_qa|family_classification --n 30 [--mock]`. The sibling repo's `scripts/site/build_site.py` gained `legalbench_binary_answer` / `legalbench_multiclass_classification` headline + breakdown + scoring-guide handlers so the site renders the new runs. Tests: `tests/test_legalbench.py` (18, synthetic corpora, network-free).
 - **Full CUAD corpus support (issue #9)**: `scripts/fetch_full_cuad.py` now downloads the complete 510-contract CUAD v1 dataset (annotations, txt, PDFs, master clauses) and produces an EDA (`data/cuad/EDA.md` + `subtype_distribution.json`) that validates the mailroom 25-family `CONTRACT_SUBTYPES` taxonomy against the corpus. Subtype mapping is folder-authoritative where the CUAD PDF tree exists (198 contracts, 100% alias coverage) and title-derived elsewhere, with a delta table vs the CUAD paper's canonical counts (21/25 families exact; residual deltas are compound-title artifacts documented in the EDA).
@@ -85,21 +85,21 @@ Released 2026-08-18. Canonical source: [`CHANGELOG.md`](https://github.com/Exios
 - **Field-scoring threshold calibration (issues #4/#5)**: `scripts/calibrate_field_scoring.py` builds a labeled sample from `examples/samples/manifest.csv` ground truth — exact/format variants labeled correct, controlled perturbations (off-by-one dates, dropped list items, typo'd names, contradictory paraphrases) labeled incorrect — and reports per-field-type separation (correct vs incorrect score distributions, calibrated cutoffs, verdicts). Calibration showed date/id/money/free_text are deterministically decisive, while name and entity-list scores overlap for real errors (Jaro-Winkler/token-set are typo-tolerant by design), so those types must escalate to the LLM judge. The verdicts are encoded as new per-type `field_scoring.type_bands` overrides in `taxonomy.yaml` (`never` / calibrated `[low, high]` cutoffs / trust-only-perfect `[0.5, 1.0]`), replacing the single global `ambiguous_band` for judge gating (`field_is_ambiguous()` in `observability/field_scoring.py`).
 - **Tailored Langfuse dimension dashboards (issue #2)**: `scripts/sync_dashboards.py` now syncs a third dashboard — **Mailroom Quality — Completion / Correctness / Accuracy / Latency** — with dedicated widgets for completion (stage_completed rate, expected_field_presence, judge completeness), correctness (deterministic extraction_overall_score, judge extraction_correctness, class_correct rate, guardrail rate), accuracy by doc class, duration/latency (run_duration_seconds avg + p95), cost, and LLM-call volume. Scoped to pilot runs where ground-truth scores exist.
 
-### Changed
+## Changed
 
 - **Catalog now tracks the true conveyor position of every document** (was: only happy-path runs got a record, and always with the stale `classified` stage): `ingest_node` upserts a `processing` row (so stuck-doc detection and `/ops/status` see in-flight documents), `human_review_node` upserts `review` (so `/ops/status` review_queue and error-rate stats are accurate instead of permanently 0), `catalog_write_node` writes the pre-archive row, and `archive_node` finalizes it to `archived`. `storage/catalog.py` needs no changes — the graph now writes the right rows at the right time. Regression tests in `tests/test_conveyor_stages.py`.
 - **Extraction conflict adjudication is now live** (was: `conflict_detected` was never set anywhere, so the Boss in-graph escalation path was unreachable dead code and `boss_escalation_node` never passed matter context): `graph/build_graph.py:_detect_conflict` compares a fresh extraction against archived records of the same matter (normalized field comparison, list-aware) and escalates to the Boss when a populated schema field differs; `boss_escalation_node` now fetches and passes the archived matter context to `BossAgent.adjudicate` so the decision is grounded in the actual conflicting records. The mock Boss safely defaults to `review` on parse failure (never archives a conflict silently).
 - **Watcher pauses cleanly and resumes automatically**: the ingestion-pause check moved inside the try/finally (the old early return leaked the file in `_active_files` forever), and a periodic inbox rescan (`WATCHER_POLL_INTERVAL_SECONDS`, default 5s) re-attempts files left in the inbox while paused once `/ops/resume` clears the flag.
 - `retry_classify_node` now runs the same `guard_classification` as the first pass (out-of-range confidence / unknown doc type / invalid contract subtype from a retry previously bypassed the guard and could route straight to extraction).
 
-### Fixed
+## Fixed
 
 - Empty-but-schema-valid extractions could be archived: `guard_extraction` now also fails when the extraction has no substantive content (all fields null/empty/`[]`, `_`-prefixed keys ignored), clamping confidence so routing sends the document to retry → review instead of archiving an empty extraction with high stated confidence.
 - `classification_guardrail` is now recorded on state by `classify_node`/`retry_classify_node` (was never set), so `guardrail_triggered` scoring and traces reflect classification guardrail events, not just extraction ones.
 - A run that crashed/aborted after ingest minted a second doc_id: `_finalize_aborted` now reuses the in-flight processing manifest's doc_id (via `_existing_processing_doc_id`), so the failed manifest/catalog record supersede the same document instead of orphaning the ingest manifest.
 - `score_and_log_extraction` no longer attaches `extraction_overall_score` when no field was scored (`overall_score` is None) — Langfuse rejects null score values.
 
-### Fixed (audit sweep 2)
+## Fixed (audit sweep 2)
 
 - **Audit hash chaining is now wired end-to-end**: `archive_node` fetches the previous entry's hash via the (previously dead) `get_latest_audit_hash` and links the archived entry to it, so any second event for the same doc_id (review-resume re-archive, re-runs) forms a verifiable chain instead of a broken `prev_hash=""` link. Human review decisions are now audited: `POST /review/{doc_id}/resolve` appends hash-chained `review_approved` / `review_rejected` entries (actor `human_reviewer`). Verified: multi-entry chains return `chain_valid: true`.
 - **DB↔Langfuse correlation fixed**: `_execute_run` captures `tracing.get_trace_id()` inside the trace block and threads it through the state so ingest/archive/review manifests and catalog records all carry the trace id (previously the column was always `NULL`).
@@ -153,7 +153,7 @@ Released 2026-08-18. Canonical source: [`CHANGELOG.md`](https://github.com/Exios
 - Reporter completion starvation fixed: `reporter` now uses `reasoning_effort: none` and a 3072-token cap, and `agents/reporter.py` propagates that setting into its manually constructed OpenRouter request. A real smoke test produced a 2506-character report with zero reasoning tokens; the prior failure produced 2 visible tokens and 2048 reasoning tokens.
 - All 13 managed prompts completed another evidence-driven iteration and were synced to Langfuse production: structured-output completion/grounding rules were added across the agent prompts, court-opinion and correspondence tie-break/absence rules were tightened, and the PDF transcriber contract was corrected to request markdown only. Triggered real runs covered the original specialist paths plus the judge paths; due-diligence and judge reasoning budgets were separately changed to `none`/2048 after observed truncation, yielding 2/2 due-diligence archived results and 2/2 clean judge dimensions on the follow-up run.
 
-### Fixed
+## Fixed
 
 - Langfuse generation costs stayed null for every mailroom trace even after model registry entries were added: the Langfuse worker's Redis model-match cache holds a 24-hour "model not found" token per model string (`LANGFUSE_CACHE_MODEL_MATCH_TTL_SECONDS` defaults to 86400), and runs that used `qwen/qwen3.7-flash` before the registry entry existed had poisoned it. Re-syncing via `scripts/sync_models.py --force` (delete + create invokes Langfuse's `clearModelCacheForProject`) purged the stale token; cost inference now works and Langfuse backfilled `cost_details` for all historical generations. Verified: all 184 generations across the 12 pilot traces carry cost (~$0.063 total; price math confirmed token-exact). Note for future tooling: cost must be read from the observation `cost_details` field — `usage.input_cost`/`output_cost` are always null in API v2 responses.
 - Run token budget enforced the wrong metric: `check_token_budget()` compared the `run_limits.max_total_output_tokens` cap against cumulative prompt+completion tokens, so large documents (e.g. a 52-page contract with ~28k input tokens per specialist call) tripped the 20k cap at the `compile-report` node boundary and aborted as failed. The cap now counts **completion tokens only**, matching its documented purpose (stuck/overly-verbose model guard); regression tests added in `tests/test_run_limits.py`.
