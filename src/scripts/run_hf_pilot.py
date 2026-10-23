@@ -304,88 +304,60 @@ def _unique_name(desired: str, used: set[str]) -> str:
 
 
 def _alnum(value) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+    """Compatibility alias for the canonical compact label policy."""
+    from llm_dojo_scoring.pilot_labels import compact_label
+
+    return compact_label(value)
 
 
 def _loose_label_match(predicted, expected) -> bool:
-    a, b = _alnum(predicted), _alnum(expected)
-    if not a or not b:
-        return False
-    return a == b or a.startswith(b) or b.startswith(a) or b in a or a in b
+    """Canonical pilot loose label comparison."""
+    from llm_dojo_scoring.pilot_labels import loose_label_match
+
+    return loose_label_match(predicted, expected)
 
 
 def subclass_ok(expected_class: str, expected_subclass: str, *, predicted_subtype: str = "", extracted: dict | None = None) -> bool | None:
-    """Score Hub ``expected_subclass`` against sorter ``doc_subclass`` / extraction.
+    """Adapt producer fields to the canonical pilot subclass policy."""
+    from langchain_agents.doc_inventories import normalize_sorter_subclass
+    from langchain_agents.sorter_agent import SUBTYPE_EQUIVALENCES, normalize_subtype
+    from llm_dojo_scoring.pilot_labels import pilot_subclass_match
 
-    Returns None when there is no subclass ground truth to score.
-    """
     want = str(expected_subclass or "").strip()
     if not want:
         return None
-    extracted = extracted or {}
-    hf_class = str(expected_class or "")
-    # Sorter doc_subclass is the primary predicted token; extraction fields
-    # remain a fallback for older reports that only stored contract_subtype.
-    predicted = predicted_subtype or ""
-    if hf_class == "contract":
-        from langchain_agents.sorter_agent import equivalent_subtypes, normalize_subtype
-
-        got = normalize_subtype(predicted or extracted.get("cuad_family") or extracted.get("contract_subtype"))
-        need = normalize_subtype(want)
-        return equivalent_subtypes(got, need)
-    if hf_class == "merger_agreement":
-        from langchain_agents.doc_inventories import normalize_sorter_subclass
-
-        got = (
-            normalize_sorter_subclass("merger_agreement", predicted)
-            or normalize_consideration(extracted.get("merger_consideration"))
-            or infer_merger_consideration(extracted)
-            or normalize_consideration(predicted)
-        )
-        need = normalize_sorter_subclass("merger_agreement", want) or normalize_consideration(want)
-        if not got or not need:
-            return False
-        return got == need
-    if hf_class == "corporate_record":
-        from langchain_agents.doc_inventories import normalize_sorter_subclass
-
-        got = (
-            normalize_sorter_subclass(hf_class, predicted)
-            or normalize_record_type(extracted.get("record_type") or predicted)
-        )
-        need = normalize_sorter_subclass(hf_class, want) or normalize_record_type(want)
-        if got and need:
-            return got == need
-        return _loose_label_match(extracted.get("record_type") or predicted, want)
-    if hf_class == "insurance_claim":
-        from langchain_agents.doc_inventories import normalize_sorter_subclass
-
-        got = (
-            normalize_sorter_subclass(hf_class, predicted)
-            or normalize_claim_type(
-                extracted.get("claim_type") or predicted or extracted.get("record_type")
-            )
-        )
-        need = normalize_sorter_subclass(hf_class, want) or normalize_claim_type(want)
-        if got and need:
-            return got == need
-        return _loose_label_match(extracted.get("claim_type") or predicted, want)
-    if hf_class == "correspondence":
-        from langchain_agents.doc_inventories import normalize_sorter_subclass
-
-        got = (
-            normalize_sorter_subclass(hf_class, predicted)
-            or normalize_communication_type(
-                extracted.get("communication_type") or predicted
-            )
-        )
-        need = normalize_sorter_subclass(hf_class, want) or normalize_communication_type(want)
-        if got and need:
-            return got == need
-        return _loose_label_match(
-            extracted.get("communication_type") or predicted, want
-        )
-    return _loose_label_match(predicted, want)
+    data = extracted or {}
+    kind = str(expected_class or "")
+    pred = predicted_subtype or ""
+    if kind == "contract":
+        return pilot_subclass_match(kind, want,
+            sorter_token=normalize_subtype(pred or data.get("cuad_family") or data.get("contract_subtype")),
+            expected_token=normalize_subtype(want), contract_equivalences=SUBTYPE_EQUIVALENCES)
+    sorter = normalize_sorter_subclass(kind, pred)
+    need = normalize_sorter_subclass(kind, want)
+    fallback = inferred = consideration = None
+    loose = pred
+    if kind == "merger_agreement":
+        # Lazy fallbacks preserve the old short-circuit field selection.
+        fallback = normalize_consideration(data.get("merger_consideration")) if not sorter else None
+        inferred = infer_merger_consideration(data) if not (sorter or fallback) else None
+        consideration = normalize_consideration(pred) if not (sorter or fallback or inferred) else None
+        need = need or normalize_consideration(want)
+    elif kind == "corporate_record":
+        loose = data.get("record_type") or pred
+        fallback = normalize_record_type(loose) if not sorter else None
+        need = need or normalize_record_type(want)
+    elif kind == "insurance_claim":
+        loose = data.get("claim_type") or pred
+        fallback = normalize_claim_type(data.get("claim_type") or pred or data.get("record_type")) if not sorter else None
+        need = need or normalize_claim_type(want)
+    elif kind == "correspondence":
+        loose = data.get("communication_type") or pred
+        fallback = normalize_communication_type(loose) if not sorter else None
+        need = need or normalize_communication_type(want)
+    return pilot_subclass_match(kind, want, sorter_token=sorter, fallback_token=fallback,
+        inferred_token=inferred, predicted_consideration=consideration,
+        expected_token=need, loose_predicted=loose)
 
 
 def _public_extracted(data) -> dict:
@@ -415,50 +387,28 @@ def summarize_rows(rows: list[dict]) -> dict:
     """
     from collections import Counter
 
-    from observability.classification_scoring import classes_match, score_exact_classification
+    from llm_dojo_scoring.pilot_summary import pilot_classification_summary
 
-    def _row_exact(row: dict) -> bool:
-        if row.get("predicted") not in (None, ""):
-            return classes_match(row.get("expected"), row.get("predicted"))
-        return bool(row.get("exact_ok"))
-
+    quality = pilot_classification_summary(rows)
     n = len(rows)
-    class_scores = score_exact_classification(
-        [r.get("expected") for r in rows],
-        [
-            r.get("predicted") if r.get("predicted") not in (None, "") else (
-                r.get("expected") if r.get("exact_ok") else ""
-            )
-            for r in rows
-        ],
-    )
-    subclass_scored = [r for r in rows if r.get("subclass_ok") is not None]
-    subclass_n = sum(1 for r in subclass_scored if r.get("subclass_ok"))
     costs = [float(r["llm_cost_usd"]) for r in rows if isinstance(r.get("llm_cost_usd"), (int, float))]
     tokens = [int(r["llm_tokens"]) for r in rows if isinstance(r.get("llm_tokens"), (int, float))]
     calls = [int(r["llm_calls"]) for r in rows if isinstance(r.get("llm_calls"), (int, float))]
     walls = [float(r["wall_time_s"]) for r in rows if isinstance(r.get("wall_time_s"), (int, float))]
     per_class: dict[str, dict] = {}
     per_specialist: dict[str, dict] = {}
-    per_subclass: dict[tuple[str, str], dict] = {}
     from observability.specialist_suites import specialist_for_class
 
     for row in rows:
         cls = row.get("expected") or "unknown"
         specialist = row.get("specialist") or specialist_for_class(cls) or "unknown"
-        sub = str(row.get("expected_subclass") or "").strip() or "_"
-        exact = _row_exact(row)
         bucket = per_class.setdefault(cls, {
-            "n": 0, "exact": 0, "subclass": 0, "subclass_n": 0,
+            "n": 0,
             "cost_usd": 0.0, "tokens": 0, "tokens_known": False, "stages": Counter(),
             "extract_scores": [], "extract_f1": [], "gt_fields": [],
             "specialist": specialist,
         })
         bucket["n"] += 1
-        bucket["exact"] += int(exact)
-        if row.get("subclass_ok") is not None:
-            bucket["subclass_n"] += 1
-            bucket["subclass"] += int(bool(row.get("subclass_ok")))
         bucket["cost_usd"] += float(row.get("llm_cost_usd") or 0)
         if isinstance(row.get("llm_tokens"), (int, float)):
             bucket["tokens"] += int(row.get("llm_tokens") or 0)
@@ -482,14 +432,6 @@ def summarize_rows(rows: list[dict]) -> dict:
             spec["extract_f1"].append(float(row["extraction_f1"]))
         if isinstance(row.get("extraction_gt_n_fields"), (int, float)):
             spec["gt_fields"].append(int(row["extraction_gt_n_fields"]))
-        stratum = per_subclass.setdefault((cls, sub), {
-            "n": 0, "exact": 0, "subclass": 0, "subclass_n": 0,
-        })
-        stratum["n"] += 1
-        stratum["exact"] += int(exact)
-        if row.get("subclass_ok") is not None:
-            stratum["subclass_n"] += 1
-            stratum["subclass"] += int(bool(row.get("subclass_ok")))
     scores = [
         float(r["extraction_overall_score"])
         for r in rows
@@ -529,14 +471,7 @@ def summarize_rows(rows: list[dict]) -> dict:
             extra_means[f"{key}_n"] = len(vals)
     out = {
         "n": n,
-        "exact_n": class_scores["exact_n"],
-        "aligned_n": class_scores["aligned_n"],
-        "exact_accuracy": class_scores["exact_accuracy"],
-        "aligned_accuracy": class_scores["aligned_accuracy"],
-        "aligned_equals_exact": True,
-        "subclass_n": len(subclass_scored),
-        "subclass_correct": subclass_n,
-        "subclass_accuracy": round(subclass_n / len(subclass_scored), 3) if subclass_scored else None,
+        **{k: v for k, v in quality.items() if k not in ("n", "per_class", "per_subclass")},
         "total_cost_usd": round(sum(costs), 6),
         "avg_cost_usd": round(sum(costs) / len(costs), 6) if costs else 0.0,
         "total_tokens": int(sum(tokens)) if tokens else None,
@@ -546,13 +481,11 @@ def summarize_rows(rows: list[dict]) -> dict:
         "per_class": {
             cls: {
                 "n": v["n"],
-                "exact": v["exact"],
-                "aligned": v["exact"],
-                "exact_accuracy": round(v["exact"] / v["n"], 3) if v["n"] else 0.0,
-                "aligned_accuracy": round(v["exact"] / v["n"], 3) if v["n"] else 0.0,
-                "subclass_accuracy": (
-                    round(v["subclass"] / v["subclass_n"], 3) if v["subclass_n"] else None
-                ),
+                "exact": quality["per_class"][cls]["exact"],
+                "aligned": quality["per_class"][cls]["exact"],
+                "exact_accuracy": quality["per_class"][cls]["exact_accuracy"],
+                "aligned_accuracy": quality["per_class"][cls]["exact_accuracy"],
+                "subclass_accuracy": quality["per_class"][cls]["subclass_accuracy"],
                 "cost_usd": round(v["cost_usd"], 6),
                 "tokens": v["tokens"] if v["tokens_known"] else None,
                 "stages": dict(v["stages"]),
@@ -594,14 +527,8 @@ def summarize_rows(rows: list[dict]) -> dict:
             for name, v in sorted(per_specialist.items())
         },
         "per_subclass": {
-            f"{cls}/{sub}": {
-                "n": v["n"],
-                "exact_accuracy": round(v["exact"] / v["n"], 3) if v["n"] else 0.0,
-                "subclass_accuracy": (
-                    round(v["subclass"] / v["subclass_n"], 3) if v["subclass_n"] else None
-                ),
-            }
-            for (cls, sub), v in sorted(per_subclass.items())
+            f"{cls}/{sub}": {k: v[k] for k in ("n", "exact_accuracy", "subclass_accuracy")}
+            for (cls, sub), v in sorted(quality["per_subclass"].items())
         },
     }
     if scores:
