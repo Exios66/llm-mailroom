@@ -456,9 +456,9 @@ class TestReviewRejectionFinalizes:
         assert result["stage"] == "review"
         doc_id = result["doc_id"]
 
-        from pipeline.bins import load_manifest, review_dir, failed_dir
+        from pipeline.bins import load_manifest, review_file_path, failed_dir
         manifest = load_manifest(doc_id)
-        review_file = review_dir() / manifest.original_filename
+        review_file = review_file_path(manifest)
         assert review_file.exists()
 
         # Simulate the API's reject path (via the endpoint helpers).
@@ -467,7 +467,7 @@ class TestReviewRejectionFinalizes:
         asyncio.run(_move_rejected_to_failed(doc_id, manifest))
 
         assert not review_file.exists()
-        assert (failed_dir() / manifest.original_filename).exists()
+        assert (failed_dir() / review_file.name).exists()
         doc = asyncio.run(get_document(doc_id))
         assert doc is not None
         assert doc.stage == "failed"

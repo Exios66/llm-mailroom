@@ -85,7 +85,7 @@ class TestPipelineE2E:
         result = graph.invoke(initial_state, config)
         assert result.get("__interrupt__") or result.get("stage") == "review"
         from pipeline.bins import review_dir
-        assert (review_dir() / "ambiguous.txt").exists()
+        assert (review_dir() / f"ambiguous--{result['doc_id']}.txt").exists()
 
     def test_graph_routes_medium_confidence_to_review(
         self, temp_base_dir, mock_openai_client, mock_langchain_llm

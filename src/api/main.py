@@ -286,7 +286,12 @@ async def upload_document(
     ``POST /v1/upload``. Returns 202; the embedded watcher drains the file.
     """
     from pipeline.config import load_config
-    from pipeline.bins import is_ingestion_paused, write_inbox_meta
+    from pipeline.bins import is_ingestion_paused, write_inbox_meta, validate_matter_id
+
+    try:
+        validate_matter_id(matter_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
     # Pause gate (audit L-18): refuse new work while ingestion is paused.
     if is_ingestion_paused():
@@ -776,9 +781,9 @@ async def resolve_review(doc_id: str, request: Request):
                 extracted = validate_operator_extraction(manifest.doc_type, extracted)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
-        from pipeline.bins import review_dir
+        from pipeline.bins import review_file_path
 
-        review_file = review_dir() / manifest.original_filename
+        review_file = review_file_path(manifest)
         if not review_file.exists():
             raise HTTPException(404, f"File not found in review bin: {review_file}")
         try:
@@ -860,10 +865,10 @@ async def resolve_review(doc_id: str, request: Request):
             "(or override_doc_type) or requeue to the inbox instead.",
         )
 
-    from pipeline.bins import review_dir
+    from pipeline.bins import review_file_path
     from graph.build_graph import resume_from_review
 
-    review_file = review_dir() / manifest.original_filename
+    review_file = review_file_path(manifest)
     if not review_file.exists():
         raise HTTPException(404, f"File not found in review bin: {review_file}")
 
@@ -984,10 +989,10 @@ async def _move_rejected_to_failed(doc_id: str, manifest) -> None:
     Best-effort: never fails the API call.
     """
     try:
-        from pipeline.bins import review_dir, move_to_failed
+        from pipeline.bins import review_file_path, move_to_failed
         from storage.catalog import write_document_record
 
-        review_file = review_dir() / manifest.original_filename
+        review_file = review_file_path(manifest)
         if review_file.exists():
             move_to_failed(review_file)
 

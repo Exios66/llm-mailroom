@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **DMR-091 independent runtime audit:** review files use durable document-ID
+  names and collision-safe lookup, including replay and legacy fallback; upload
+  matter IDs and archive destinations reject path traversal. LangChain agents
+  select environment credentials only after resolving their provider. Warehouse
+  exports serialize complete read/merge/write transactions across threads and
+  processes, publish files atomically, merge fresh daily manifests and preserve
+  advancing watermarks. Same-PR regressions exercise real files and Parquet.
+
 - **Loop-bound database connections** (DMR-091): asynchronous SQLite and
   PostgreSQL engines use `NullPool`; sessions close their connections rather
   than retaining idle pools after the owning event loop closes. Serialized

@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,6 +28,51 @@ logger = structlog.get_logger(__name__)
 WAREHOUSE_SCHEMA_VERSION = "1"
 TERMINAL_STAGES = frozenset({"archived", "failed"})
 _MANIFEST_NAME = "manifest.json"
+_EXPORT_LOCK = threading.RLock()
+
+
+@contextmanager
+def _publication_lock(directory: Path):
+    """Serialize complete read/merge/publication transactions across workers."""
+    directory.mkdir(parents=True, exist_ok=True)
+    with _EXPORT_LOCK, (directory / ".warehouse-export.lock").open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _replacement_path(path: Path):
+    """Publish a complete sibling temporary file; failed writes keep old bytes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    os.close(fd)
+    temporary = Path(name)
+    try:
+        yield temporary
+        if path.exists():
+            temporary.chmod(path.stat().st_mode & 0o777)
+        with temporary.open("rb") as handle:
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def warehouse_export_enabled() -> bool:
@@ -97,7 +145,8 @@ def load_warehouse_manifest() -> dict[str, Any]:
 def save_warehouse_manifest(manifest: dict[str, Any]) -> None:
     warehouse_dir().mkdir(parents=True, exist_ok=True)
     manifest["schema_version"] = WAREHOUSE_SCHEMA_VERSION
-    manifest_file().write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+    with _replacement_path(manifest_file()) as temporary:
+        temporary.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
 
 
 def document_to_row(record) -> dict[str, Any]:
@@ -198,11 +247,20 @@ def write_parquet_rows(path: Path, rows: list[dict[str, Any]], *, merge_key: str
     """Upsert ``rows`` into ``path`` (create or merge by ``merge_key``)."""
     if not rows:
         return 0
+    with _publication_lock(path.parent):
+        return _write_parquet_rows_unlocked(path, rows, merge_key=merge_key)
+
+
+def _write_parquet_rows_unlocked(path: Path, rows: list[dict[str, Any]], *, merge_key: str) -> int:
+    """Write under the caller's directory transaction lock, without nesting it."""
+    if not rows:
+        return 0
     pa, pq = _require_pyarrow()
     path.parent.mkdir(parents=True, exist_ok=True)
     merged = _merge_rows(_read_parquet_rows(path), rows, merge_key)
     table = pa.Table.from_pylist(merged)
-    pq.write_table(table, path, compression="snappy")
+    with _replacement_path(path) as temporary:
+        pq.write_table(table, temporary, compression="snappy")
     return len(merged)
 
 
@@ -315,28 +373,13 @@ async def export_to_warehouse(
 
     doc_path = daily_documents_path(stamp)
     audit_path = daily_audit_path(stamp)
-    n_docs = write_parquet_rows(doc_path, doc_rows, merge_key="doc_id")
-    n_audit = write_parquet_rows(audit_path, audit_rows, merge_key="entry_id")
-
     latest_updated = max(
         (r.updated_at for r in records if r.updated_at is not None),
         default=None,
     )
-    now = datetime.now(timezone.utc).isoformat()
-    wh_manifest["last_export_at"] = now
-    if latest_updated is not None:
-        wh_manifest["last_doc_updated_at"] = _utc_iso(latest_updated)
-    daily = wh_manifest.setdefault("daily_files", {})
-    daily[stamp.isoformat()] = {
-        "documents": doc_path.name,
-        "audit": audit_path.name,
-        "document_count": n_docs,
-        "audit_count": n_audit,
-        "last_batch_at": now,
-        "batch_documents": len(doc_rows),
-        "batch_audit_entries": len(audit_rows),
-    }
-    save_warehouse_manifest(wh_manifest)
+    n_docs, n_audit, wh_manifest = _publish_export(
+        stamp, doc_rows, audit_rows, latest_updated
+    )
 
     logger.info(
         "warehouse_export_complete",
@@ -356,6 +399,41 @@ async def export_to_warehouse(
         "total_audit_in_file": n_audit,
         "manifest": wh_manifest,
     }
+
+
+def _publish_export(stamp, doc_rows, audit_rows, latest_updated):
+    """Commit both daily upserts and fresh manifest state without an await."""
+    with _publication_lock(warehouse_dir()):
+        doc_path = daily_documents_path(stamp)
+        audit_path = daily_audit_path(stamp)
+        n_docs = _write_parquet_rows_unlocked(doc_path, doc_rows, merge_key="doc_id")
+        n_audit = _write_parquet_rows_unlocked(audit_path, audit_rows, merge_key="entry_id")
+        # Load after acquiring the lock: a concurrent exporter may have
+        # committed another day or advanced the watermark while DB rows loaded.
+        manifest = load_warehouse_manifest()
+        now = datetime.now(timezone.utc).isoformat()
+        manifest["last_export_at"] = now
+        if latest_updated is not None:
+            latest = _utc_iso(latest_updated)
+            previous = manifest.get("last_doc_updated_at")
+            if previous:
+                try:
+                    old = datetime.fromisoformat(str(previous).replace("Z", "+00:00"))
+                    if old.tzinfo is None:
+                        old = old.replace(tzinfo=timezone.utc)
+                    if old > datetime.fromisoformat(latest):
+                        latest = str(previous)
+                except ValueError:
+                    logger.warning("warehouse_invalid_previous_watermark")
+            manifest["last_doc_updated_at"] = latest
+        manifest.setdefault("daily_files", {})[stamp.isoformat()] = {
+            "documents": doc_path.name, "audit": audit_path.name,
+            "document_count": n_docs, "audit_count": n_audit,
+            "last_batch_at": now, "batch_documents": len(doc_rows),
+            "batch_audit_entries": len(audit_rows),
+        }
+        save_warehouse_manifest(manifest)
+        return n_docs, n_audit, manifest
 
 
 def _run_async(coro):
