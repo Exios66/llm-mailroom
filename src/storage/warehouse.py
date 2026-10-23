@@ -61,16 +61,20 @@ def _publication_lock(directory: Path):
 def _replacement_path(path: Path):
     """Publish a complete sibling temporary file; failed writes keep old bytes."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Query kernel-applied creation permissions on an always-empty inode.
+    # A reader may retain a descriptor before unlink/chmod, so that inode
+    # must never receive payload bytes. Do not change the global umask.
+    probe = path.parent / f".{path.name}.{uuid4().hex}.mode.tmp"
+    fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    try:
+        creation_mode = os.fstat(fd).st_mode & 0o777
+    finally:
+        os.close(fd)
+        probe.unlink(missing_ok=True)
     temporary = path.parent / f".{path.name}.{uuid4().hex}.tmp"
-    # Let the kernel apply the process umask without changing process-global
-    # state. mkstemp's fixed 0600 would remove first-publish reader access.
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
-    creation_mode = os.fstat(fd).st_mode & 0o777
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     os.close(fd)
     try:
-        # Keep partial/replacement contents private, even if the directory and
-        # process umask allow more readers than an existing private target.
-        temporary.chmod(0o600)
         yield temporary
         temporary.chmod(path.stat().st_mode & 0o777 if path.exists() else creation_mode)
         with temporary.open("rb") as handle:
