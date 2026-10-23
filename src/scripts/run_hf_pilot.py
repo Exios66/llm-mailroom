@@ -45,6 +45,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from llm_dojo_scoring import __version__ as DOJO_VERSION
+
 SRC_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = SRC_DIR.parent
 sys.path.insert(0, str(SRC_DIR))
@@ -787,7 +789,7 @@ def render_metrics_markdown(report: dict) -> str:
     honesty = report.get("honesty") or hf_corpus_honesty()
     lines += [
         "",
-        "## Corpus honesty (dojo 0.22.0)",
+        f"## Corpus honesty (dojo {DOJO_VERSION})",
         "",
         "Gaps are suite metadata, not invented accuracy. "
         "`court_opinion` / `due_diligence` are retired. "

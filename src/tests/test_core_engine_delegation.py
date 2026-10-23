@@ -42,11 +42,14 @@ def test_legalbench_facade_identity_and_actual_engine_calls():
     from legalbench import scoring as c
     from llm_dojo_scoring import legalbench_scoring as engine
     assert c.score_binary is engine.score_binary
-    assert c.score_multiclass is engine.score_multiclass
     with calls_to("llm_dojo_scoring") as calls:
         score = c.score_binary([{"status": "ok", "expected": "yes", "predicted": "yes", "correct": False, "confidence": 0.5}])
     assert score["accuracy"] == 0.0 and score["calibration_error"] == 0.5
     assert {"score_binary", "raw_classification_stats", "expected_calibration_error"} <= calls
+    with calls_to("llm_dojo_scoring") as calls:
+        multi = c.score_multiclass([{"status": "ok", "expected": "license", "predicted": "maintenance", "correct": False}])
+    assert multi["accuracy"] == 0.0 and multi["accuracy_equiv"] == 1.0
+    assert "score_multiclass" in calls
 
 
 def test_experiment_delegates_union_class_and_selected_stage_metrics():
