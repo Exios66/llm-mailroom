@@ -61,6 +61,19 @@ class TestAuth:
         )
         assert r.status_code == 202
 
+    @pytest.mark.parametrize("matter_id", ["../escape", "a/b", "a\\b", "C:\\escape"])
+    def test_upload_refuses_path_bearing_matter_before_writing(self, client, matter_id):
+        from pipeline.bins import inbox_dir
+
+        before = set(inbox_dir().iterdir()) if inbox_dir().is_dir() else set()
+        result = client.post("/upload", files={"file": ("guard.txt", b"legal document", "text/plain")},
+                             data={"matter_id": matter_id},
+                             headers={"Authorization": "Bearer test-token-123"})
+        assert result.status_code == 400
+        assert "matter_id" in result.json()["detail"]
+        after = set(inbox_dir().iterdir()) if inbox_dir().is_dir() else set()
+        assert after == before
+
     def test_wrong_token_rejected(self, client):
         r = client.post(
             "/upload",

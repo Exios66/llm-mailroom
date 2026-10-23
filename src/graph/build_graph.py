@@ -2216,12 +2216,11 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     file_path = Path(file_path_str)
     if not file_path.exists():
         processing_root = processing_dir()
-        candidates = list(processing_root.rglob(state.get("original_filename", "*.txt")))
-        if not candidates:
-            review_candidate = review_dir() / state.get("original_filename", "")
-            if review_candidate.is_file():
-                candidates = [review_candidate]
-        if candidates:
+        from pipeline.bins import review_file_path
+        review_candidate = review_file_path(manifest)
+        candidates = ([review_candidate] if review_candidate.is_file() else
+                      list(processing_root.rglob(state.get("original_filename", "*.txt"))))
+        if len(candidates) == 1:
             file_path = candidates[0]
         else:
             logger.error("archive_file_not_found", doc_id=manifest.doc_id, path=file_path_str)
@@ -3379,7 +3378,7 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         )
 
     worker_id = get_worker_id()
-    queued = requeue_from_review(review_file, worker_id)
+    queued = requeue_from_review(review_file, worker_id, original_filename=manifest.original_filename)
     doc_text, text_ok = _read_file_text(queued)
     from agents.intake import apply_intake
 
