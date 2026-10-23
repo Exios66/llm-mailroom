@@ -12,12 +12,19 @@ for the LangGraph `extract` / `retry_extract` nodes.
 | `insurance_claims_specialist` | `insurance_claims_specialist_simplified` | `insurance_claims_specialist_v1` |
 | `merger_agreement_specialist` | `merger_agreement_specialist_simplified` | `merger_agreement_specialist_v1` |
 
-Source: the `llm-dojo-scoring` `production_prompts` catalog (the dojo
-`production` family vendors the same bytes from this repo and records
-`source_commit`). Originally frozen from `Exios66/local-mailroom-sandbox`
-`config/prompts/` on 2026-09-26 (sha256-locked in `lineage.json`) and
-re-frozen 2026-10-05. Do not edit the `.txt` files in place — a sanctioned
-re-freeze updates `lineage.json` and the stems together.
+Source: the `llm-dojo-scoring` `production` catalog, which records
+`source_commit` for the pipeline-owned production snapshot. Originally frozen
+from `Exios66/local-mailroom-sandbox` `config/prompts/` on 2026-09-26
+(sha256-locked in `lineage.json`) and re-frozen 2026-10-05.
+
+The dojo's `production_prompts` family tracks evaluation candidates separately.
+Its corporate-records v7 (`253559fcb7ac6b36878453821a4fab0aa94228ad5add77d5aeabb06bb265134c`,
+5,462 characters) has not been promoted to this pipeline's production freeze:
+corporate-records v6 remains `fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399`
+(5,865 characters). The other four specialist stems match across those dojo
+families. All five production hashes and lengths remain unchanged. A sanctioned
+re-freeze must update the lineage record explicitly; selecting a newer eval
+candidate is not a re-freeze.
 
 **Corrected roles.** `corporate_records_specialist` (sha256 `fe13501f…`) and
 `correspondence_specialist` (sha256 `2b0b81ff…`) serve the 2026-10-05
@@ -39,5 +46,5 @@ Entity-extraction lineage keys (`contracts_specialist_v1`…`v33`,
 history for eval loops. They are not the production specialist pin.
 
 > **Note:** the `*.txt` files in this directory are superseded by the
-> `llm-dojo-scoring` `production_prompts` catalog (see `__init__.py`). They are
+> `llm-dojo-scoring` `production` catalog (see `__init__.py`). They are
 > no longer packaged and are slated for removal.

@@ -1,5 +1,7 @@
 import asyncio
 import os
+import threading
+from weakref import WeakKeyDictionary
 import structlog
 from pathlib import Path
 from sqlalchemy import text
@@ -27,13 +29,11 @@ def _resolve_url() -> str:
 
 
 def _engine_kwargs(url: str) -> dict:
-    kwargs = {"echo": False}
+    # Every async driver can retain loop-bound pooled connections, including
+    # asyncpg. Sessions close their own connection; expired loop states therefore
+    # have no idle pool to dispose after their owning event loop has closed.
+    kwargs = {"echo": False, "poolclass": NullPool}
     if url.startswith("sqlite"):
-        # NullPool: one fresh connection per session. aiosqlite connections are
-        # tied to the event loop that created them, so pooling across loops (the
-        # graph runs sync nodes that spawn asyncio.run()/threadsafe coroutines)
-        # would break. A fresh connection per session avoids cross-loop reuse.
-        kwargs["poolclass"] = NullPool
         try:
             Path(url.split("///", 1)[1]).parent.mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -58,40 +58,59 @@ def _apply_sqlite_pragmas(dbapi_conn, _connection_record=None) -> None:
         logger.warning("sqlite_pragma_apply_failed")
 
 
-_engine = None
-_engine_url: str | None = None
-_sessionmaker = None
+# Engines and their session factories must travel together. NullPool prevents
+# connection reuse, but an AsyncEngine itself may retain loop-bound state.
+# Weak loop objects avoid integer-id reuse; prune closed loops even if a
+# caller still holds a reference to them. The lock also covers sync callers
+# and creation on distinct threads.
+_loop_states = WeakKeyDictionary()
+_engine_lock = threading.RLock()
+_unbound_state = None
+
+
+def _get_engine_state():
+    global _unbound_state
+    url = _resolve_url()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    with _engine_lock:
+        for old_loop in list(_loop_states):
+            if old_loop.is_closed():
+                del _loop_states[old_loop]
+        state = _loop_states.get(loop) if loop is not None else _unbound_state
+        if state is None or state[0] != url:
+            engine = create_async_engine(url, **_engine_kwargs(url))
+            if url.startswith("sqlite"):
+                from sqlalchemy import event
+
+                event.listen(engine.sync_engine, "connect", _apply_sqlite_pragmas)
+            factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+            state = (url, engine, factory)
+            if loop is None:
+                # Preserve synchronous engine inspection without sharing its
+                # engine with any later running event loop.
+                _unbound_state = state
+            else:
+                _loop_states[loop] = state
+        return state
 
 
 def get_engine():
-    """Lazily-built async engine, keyed by the current resolved URL."""
-    global _engine, _engine_url, _sessionmaker
-    url = _resolve_url()
-    if _engine is None or _engine_url != url:
-        _engine = create_async_engine(url, **_engine_kwargs(url))
-        if url.startswith("sqlite"):
-            # A-15/A-5: WAL + busy_timeout + FK enforcement per connection.
-            from sqlalchemy import event
-
-            event.listen(_engine.sync_engine, "connect", _apply_sqlite_pragmas)
-        _engine_url = url
-        _sessionmaker = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
-    return _engine
+    """Return the engine for this event loop and the current resolved URL."""
+    return _get_engine_state()[1]
 
 
 def async_session():
-    """Return a new AsyncSession bound to the current URL's engine.
-
-    Replaces the module-level sessionmaker so the engine follows
-    MAILROOM_BASE_DIR/DATABASE_URL changes made after import. Call sites stay
-    identical (`async with async_session() as session`).
-    """
+    """Return a session bound to this loop's current database engine."""
     return _get_sessionmaker()()
 
 
 def _get_sessionmaker():
-    get_engine()
-    return _sessionmaker
+    # Read the factory from the same captured state as the engine, never from
+    # a global that another thread can replace between the two operations.
+    return _get_engine_state()[2]
 
 
 async def acquire_write_lock(session: AsyncSession, key: str) -> None:
@@ -126,6 +145,7 @@ def _ensure_models_imported():
 
 
 _schema_checked_url: str | None = None
+_schema_lock = threading.RLock()
 
 
 def ensure_schema() -> bool:
@@ -139,34 +159,37 @@ def ensure_schema() -> bool:
     MAILROOM_BASE_DIR (e.g. per-test temp dirs) creates the schema in the
     right database.
     """
-    global _schema_checked_url
-    url = _resolve_url()
-    if _schema_checked_url == url:
-        return True
-    _ensure_models_imported()
-    try:
-        if url.startswith("sqlite"):
-            from sqlalchemy import create_engine, event
+    with _schema_lock:
+        global _schema_checked_url
+        url = _resolve_url()
+        if _schema_checked_url == url:
+            return True
+        _ensure_models_imported()
+        try:
+            if url.startswith("sqlite"):
+                from sqlalchemy import create_engine, event
 
-            # Sync sqlite driver (stdlib) — no event loop involvement, so this
-            # is safe to call from graph nodes, watcher threads, or the API.
-            sync_url = url.replace("+aiosqlite", "")
-            sync_engine = create_engine(sync_url)
-            event.listen(sync_engine, "connect", _apply_sqlite_pragmas)
-            Base.metadata.create_all(sync_engine)  # checkfirst=True by default
-            _migrate_sqlite_columns(sync_engine)
-            sync_engine.dispose()
-        else:
-            # Postgres: async driver. ensure_schema() is mostly called from
-            # inside a running loop (API handlers, audit writes), where
-            # asyncio.run() raises — so run the create on a private loop.
-            _run_on_private_loop(lambda: _create_schema_async(url))
-        _schema_checked_url = url
-        logger.info("schema_ready", url=url)
-        return True
-    except Exception:
-        logger.exception("schema_creation_failed")
-        return False
+                # Sync sqlite driver (stdlib) — no event loop involvement, so this
+                # is safe to call from graph nodes, watcher threads, or the API.
+                sync_url = url.replace("+aiosqlite", "")
+                sync_engine = create_engine(sync_url)
+                event.listen(sync_engine, "connect", _apply_sqlite_pragmas)
+                try:
+                    Base.metadata.create_all(sync_engine)  # checkfirst=True by default
+                    _migrate_sqlite_columns(sync_engine)
+                finally:
+                    sync_engine.dispose()
+            else:
+                # Postgres: async driver. ensure_schema() is mostly called from
+                # inside a running loop (API handlers, audit writes), where
+                # asyncio.run() raises — so run the create on a private loop.
+                _run_on_private_loop(lambda: _create_schema_async(url))
+            _schema_checked_url = url
+            logger.info("schema_ready", url=url)
+            return True
+        except Exception:
+            logger.exception("schema_creation_failed")
+            return False
 
 
 async def _create_schema_async(url: str) -> None:

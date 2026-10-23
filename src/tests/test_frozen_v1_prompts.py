@@ -21,7 +21,15 @@ from llm.prompts import _bound_prompt_versions, prompt_templates
 
 def test_frozen_v1_sha256_matches_lineage_catalog():
     catalog = lineage()["specialists"]
-    assert set(catalog) == set(SPECIALIST_AGENTS)
+    expected = {
+        "contracts_specialist": ("d91de3967cc3b12cbd222cc5a4ae167b39578125abc83be7422498dc5024fd24", 9882),
+        "corporate_records_specialist": ("fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399", 5865),
+        "correspondence_specialist": ("2b0b81ff98920b9207627707443e2b023db39212fda5bdcba7bfbded39fa38b6", 6113),
+        "insurance_claims_specialist": ("6c2776bcbe00091200aecbcfd21c99f197398d929143dd0c7c722811fa100034", 6277),
+        "merger_agreement_specialist": ("003232584d6890054d956398135f439b86692a1123683f58914c0393b5e1a00b", 6116),
+    }
+    assert set(catalog) == set(SPECIALIST_AGENTS) == set(expected)
+    assert {agent: (row["sha256"], row["chars"]) for agent, row in catalog.items()} == expected
     for agent in SPECIALIST_AGENTS:
         assert specialist_sha256(agent) == catalog[agent]["sha256"]
         text = load_specialist_v1(agent)
@@ -29,11 +37,31 @@ def test_frozen_v1_sha256_matches_lineage_catalog():
         assert len(text) == catalog[agent]["chars"]
 
 
-def test_specialists_are_dojo_production_prompts_verbatim():
+def test_specialists_are_dojo_production_verbatim():
     from llm_dojo_scoring.prompts import get_prompt
 
     for agent in SPECIALIST_AGENTS:
-        assert load_specialist_v1(agent) == get_prompt(agent, family="production_prompts").text
+        assert load_specialist_v1(agent) == get_prompt(agent, family="production").text
+
+
+def test_eval_catalog_only_diverges_for_the_unpromoted_corporate_v7():
+    import hashlib
+    from llm_dojo_scoring.prompts import get_prompt, get_prompt_version
+
+    digest = lambda text: hashlib.sha256(text.encode("utf-8")).hexdigest()
+    for agent in SPECIALIST_AGENTS:
+        production = get_prompt(agent, family="production").text
+        evaluation = get_prompt(agent, family="production_prompts").text
+        if agent != "corporate_records_specialist":
+            assert production == evaluation
+        else:
+            assert production != evaluation
+            assert digest(production) == "fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399"
+            assert digest(evaluation) == "253559fcb7ac6b36878453821a4fab0aa94228ad5add77d5aeabb06bb265134c"
+            assert len(production) == 5865
+            assert len(evaluation) == 5462
+            assert get_prompt_version("corporate_records_specialist_v6").sha256 == digest(production)
+            assert get_prompt_version("corporate_records_specialist_v7").sha256 == digest(evaluation)
 
 
 def test_corrected_records_are_served():
