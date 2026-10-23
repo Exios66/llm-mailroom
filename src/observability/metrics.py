@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from llm_dojo_scoring import EntityListScore
 from llm_dojo_scoring import diagnostics as _dojo_diagnostics
-from llm_dojo_scoring.diagnostics import parse_duration_days
+from llm_dojo_scoring.diagnostics import (
+    DATE_FIELDS, DURATION_FIELDS, is_entity_list, parse_date,
+    parse_duration_days, parse_money,
+)
 
 
 def extraction_diagnostics(

@@ -3027,6 +3027,15 @@ from llm.frozen_v1 import bind_production_specialists  # noqa: E402
 
 bind_production_specialists(PROMPT_VERSIONS)
 
+# DMR-091: local offline candidates require their exact experiment keys.
+# Production aliases above and llm.prompts.prompt_templates()/managed sync stay
+# frozen. These literal heads are unmeasured; registration is not adoption.
+from langchain_agents.prompt_candidates.corporate_flat9 import (  # noqa: E402
+    CANDIDATE_PROMPTS as _CORPORATE_FLAT9_CANDIDATES,
+)
+
+PROMPT_VERSIONS.update(_CORPORATE_FLAT9_CANDIDATES)
+
 DEFAULT_PROMPT_VERSION = "sorter"
 
 
