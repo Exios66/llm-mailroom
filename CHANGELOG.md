@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Final runtime review: unreadable manifests fail closed for unverifiable legacy
+  review files while document-ID files remain available. New atomic warehouse
+  files honor the process umask and replacements retain existing permissions.
+  Upload documentation and real multipart tests distinguish empty form defaults
+  from rejected whitespace-only identifiers.
+
 - DMR-091 postfix: keyless providers receive an explicit placeholder rather
   than unrelated SDK credentials; Arrow readers retain one open snapshot, and
   small-batch audit exports retain their document join keys.
