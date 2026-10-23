@@ -390,12 +390,15 @@ def save_manifest(manifest) -> Path:
 
 
 def load_manifest(doc_id: str):
+    """Read an object-root manifest, rejecting other decoded JSON shapes."""
     from schemas.manifest import DocumentManifest
 
     path = manifests_dir() / f"{doc_id}.json"
     if not path.exists():
         return None
     data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError("Document manifest root must be a JSON object")
     return DocumentManifest(**data)
 
 
