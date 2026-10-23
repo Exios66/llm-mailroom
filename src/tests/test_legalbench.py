@@ -204,6 +204,26 @@ class TestPromptsAndTasks:
 
 
 class TestRunner:
+    def test_disabled_tracing_never_opens_question_observations(self, contracts_dir: Path, monkeypatch):
+        """Offline runs must not open transport spans under ambient tracing config."""
+        from contextlib import nullcontext
+        from legalbench import runner
+
+        observations = []
+
+        def observation(*args, **kwargs):
+            """Observe only the transport boundary; the actual scorer still runs."""
+            observations.append((args, kwargs))
+            return nullcontext()
+
+        monkeypatch.setattr(runner._tracing, "question_observation", observation)
+        rows = lb_data.load_family_rows(2, seed=3, contracts_dir=contracts_dir)
+        result = run_task("family_classification", n=2, seed=3, rows=rows,
+                          mock=True, trace_enabled=False)
+        assert result.scores["n_documents"] == 2
+        assert all(row["status"] == "ok" for row in result.results)
+        assert observations == []
+
     def test_binary_mock_run(self, cuad_file: Path):
         rows = lb_data.load_cuad_qa(6, seed=1, cuad_path=cuad_file, min_text_chars=10)
         result = run_task("contract_qa", n=6, seed=1, rows=rows, mock=True,
