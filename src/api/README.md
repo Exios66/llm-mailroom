@@ -6,7 +6,7 @@ This is the **front door** to Mailroom. It's a small web server (FastAPI) that l
 
 You use it to:
 
-- Upload a document (`POST /upload`) — drops it in the inbox for the watcher to process. The upload carries a tracking `upload_id` and honors the submitted `matter_id` via a `<file>.meta` sidecar the watcher reads.
+- Upload a document (`POST /upload`) — drops it in the inbox for the watcher to process. The upload carries a tracking `upload_id` and honors the submitted `matter_id` via a `<file>.meta` sidecar the watcher reads. FastAPI defaults omitted or empty multipart `matter_id` fields to `DEFAULT`; whitespace-only and path-bearing identifiers are rejected with HTTP 400. Direct adapter calls also reject an empty identifier.
 - See the live inbox → processing queue (`GET /queue`) — queued uploads (with their metadata), in-flight worker claims, and recent documents.
 - Check where a document is in the pipeline (`GET /status/{doc_id}`).
 - Approve/reject/record/requeue/complete documents on human review (`POST /review/{doc_id}/resolve`, dispositions from The-Mailroom PR #18/#20 — `doc_type` / `doc_subclass` class correction); list the tray (`GET /review/queue`), look up by trace/filename (`GET /lookup`), and read the parked file (`GET /documents/{doc_id}/source`, `?download=1` for original bytes).
