@@ -80,7 +80,7 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 **Dispatch Board.** The served, issue-backed web view of the monorepo board at <https://digital-mailroom-theta.vercel.app>.
 
-**Monorepo.** Digital-Mailroom: an integration workspace of committed standalone packages imported as git subtrees. [DMR-093](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/issues/165) targets five core packages: `llm-dojo-scoring`, `llm-mailroom`, `local-mailroom-sandbox`, `The-Mailroom`, and `mailroom-corpus-eda`. Until the hub pruning PR lands after [#162](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/pull/162), hub `main` retains the seven-member DMR-079 layout. Source implementation and docs are authored, tested, committed, and merged to the owning standalone `main` before hub import.
+**Monorepo.** Digital-Mailroom: an integration workspace of committed standalone packages imported as git subtrees. [DMR-093](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/issues/165) targets five core packages: `llm-dojo-scoring`, `llm-mailroom`, `local-mailroom-sandbox`, `The-Mailroom`, and `mailroom-corpus-eda`. Until the hub pruning PR lands after [#162](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/pull/162), hub `main` retains the seven-member DMR-079 layout. Package source and package documentation are authored, tested, committed, and merged to the owning standalone `main` before hub import. Hub-owned constellation documentation is maintained in Digital-Mailroom.
 
 **Observatory.** The hosted, public operations view of The-Mailroom.
 
