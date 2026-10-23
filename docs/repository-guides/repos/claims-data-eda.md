@@ -5,9 +5,12 @@
 | | |
 | :--- | :--- |
 | Repository | [Exios66/claims-data-eda](https://github.com/Exios66/claims-data-eda) |
-| Monorepo path | `packages/claims-data-eda` (virtual member) |
+| Hub status | External corpus feeder in the DMR-093 target |
+| Hub preservation | [`feature/claims-data-eda: packages/claims-data-eda`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/tree/feature/claims-data-eda/packages/claims-data-eda) |
 | Site | [exios66.github.io/claims-data-eda](https://exios66.github.io/claims-data-eda/) |
 | Feeds | the `insurance_claim` class |
+
+[DMR-093](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/issues/165) removes this feeder from the active hub workspace in a separate pruning PR after [#162](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/pull/162). Until that PR lands, hub `main` retains it in the seven-member DMR-079 layout. The linked preservation branch is published at hub commit `59c879d9`; final PR162 must retain its exact feeder package tree before pruning. This standalone repository, its data provenance, site, and handoff remain active; author and test source changes here first.
 
 ## What it does
 

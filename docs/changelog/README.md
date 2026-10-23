@@ -39,7 +39,10 @@ Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged Gi
 
 Work landed on `main` since the last tagged release.
 
-No unreleased changes.
+### Documentation
+
+- DMR-093: document the pending five-package Digital-Mailroom core, source-first ownership, and published Enron/claims preservation branches. External feeder guides and provenance remain available; hub pruning lands separately after PR162.
+- CodeAnt review: scope the repository-index import instructions to imported core packages; issue, evaluation, and external-feeder repositories retain their own workflows.
 
 <a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}
