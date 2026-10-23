@@ -3,7 +3,7 @@ import json
 import hashlib
 import shutil
 import uuid
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 import structlog
@@ -195,10 +195,31 @@ def failed_dir() -> Path:
     return _resolve(cfg["pipeline"]["bins"]["failed"])
 
 
+def _safe_bin_component(value: str, label: str, *, allow_empty: bool = False) -> str:
+    """Accept an identifier, never a relative/absolute filesystem path."""
+    if value == "" and allow_empty:
+        return value
+    if (not isinstance(value, str) or not value.strip() or value in (".", "..")
+            or any(char in value for char in ("/", "\\", "\0"))
+            or PureWindowsPath(value).drive):
+        raise ValueError(f"Invalid {label}: expected a single path-free identifier")
+    return value
+
+
+def validate_matter_id(value: str) -> str:
+    """Validate upload metadata before accepting any document bytes."""
+    return _safe_bin_component(value, "matter_id")
+
+
 def archive_dir(matter_id: str = "", doc_type: str = "") -> Path:
     cfg = _get_config()
     base = _resolve(cfg["pipeline"]["bins"]["archive"])
-    return base / matter_id / doc_type
+    _safe_bin_component(matter_id, "matter_id", allow_empty=True)
+    _safe_bin_component(doc_type, "doc_type", allow_empty=True)
+    dest = base / matter_id / doc_type
+    if not dest.resolve().is_relative_to(base.resolve()):
+        raise ValueError("Invalid matter_id/doc_type: archive path escapes archive root")
+    return dest
 
 
 def manifests_dir() -> Path:
@@ -231,7 +252,7 @@ def move_to_classified(file_path: Path, doc_type: str) -> Path:
     return dest
 
 
-def requeue_from_review(file_path: Path, worker_id: str) -> Path:
+def requeue_from_review(file_path: Path, worker_id: str, *, original_filename: str | None = None) -> Path:
     """Move a review-bin file back into a worker's processing dir (resume flow).
 
     Used by the review-resume path: a human-approved document leaves the review
@@ -240,36 +261,82 @@ def requeue_from_review(file_path: Path, worker_id: str) -> Path:
     """
     processing = processing_dir(worker_id)
     processing.mkdir(parents=True, exist_ok=True)
-    dest = processing / file_path.name
+    name = _safe_bin_component(original_filename or file_path.name, "original_filename")
+    dest = processing / name
     shutil.move(str(file_path), str(dest))
     return dest
 
 
+def _review_name(manifest) -> str:
+    """Stable per-document bin identity while preserving the original label."""
+    name = _safe_bin_component(manifest.original_filename, "original_filename")
+    doc_id = _safe_bin_component(manifest.doc_id, "doc_id")
+    path = Path(name)
+    return f"{path.stem}--{doc_id}{path.suffix}"
+
+
+def review_file_path(manifest) -> Path:
+    """Resolve the owned file, with a fail-closed legacy basename fallback."""
+    base = review_dir()
+    owned = base / _review_name(manifest)
+    if owned.is_file():
+        return owned
+    legacy = base / manifest.original_filename
+    if not legacy.is_file():
+        return owned
+    # Older releases used bare names. Never assign an ambiguous legacy file
+    # to another document merely because its basename happens to match.
+    for path in manifests_dir().glob("*.json"):
+        try:
+            other = load_manifest(path.stem)
+        except (OSError, ValueError):
+            logger.warning("manifest_unreadable_legacy_ownership", path=str(path))
+            # Unknown ownership cannot authorize exposing the bare-name file.
+            # The document-ID path remains usable without scanning manifests.
+            return owned
+        if (other is not None and other.doc_id != manifest.doc_id
+                and other.original_filename == manifest.original_filename
+                and str(getattr(other.stage, "value", other.stage)) == "review"
+                and not (base / _review_name(other)).is_file()):
+            return owned
+    return legacy
+
+
 def park_for_review(file_path: Path, manifest) -> tuple[Path, bool]:
-    """Move ``file_path`` into the review bin. Idempotent if already parked.
+    """Move into the document-ID review path, replaying only identical bytes.
 
     LangGraph ``interrupt()`` restarts the node from the beginning on resume,
     so this must be an upsert: a second call with a missing processing-path
-    source still succeeds when the review dest already exists.
+    source still succeeds when the review dest already exists. A distinct
+    existing source with different bytes raises FileExistsError. If both
+    source and owned destination are absent, an unambiguous legacy basename
+    may be returned; unverifiable ownership fails closed.
 
     Returns ``(dest, newly_parked)``.
     """
     dest_dir = review_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
     src = Path(file_path)
-    dest = dest_dir / src.name
+    dest = dest_dir / _review_name(manifest)
     dest_exists = dest.is_file()
     src_exists = src.exists()
     newly = False
     if dest_exists:
+        if (src_exists and src.resolve() != dest.resolve()
+                and not _same_file_bytes(src, dest)):
+            raise FileExistsError(f"Different bytes already parked for document {manifest.doc_id}")
         newly = False
     elif src_exists:
         shutil.move(str(src), str(dest))
         newly = True
     else:
-        raise FileNotFoundError(
-            f"Cannot park for review: source {src} and dest {dest} are both missing"
-        )
+        legacy = review_file_path(manifest)
+        if legacy.is_file():
+            dest = legacy
+        else:
+            raise FileNotFoundError(
+                f"Cannot park for review: source {src} and dest {dest} are both missing"
+            )
     _save_manifest(manifest)
     return dest, newly
 
@@ -323,12 +390,15 @@ def save_manifest(manifest) -> Path:
 
 
 def load_manifest(doc_id: str):
+    """Read an object-root manifest, rejecting other decoded JSON shapes."""
     from schemas.manifest import DocumentManifest
 
     path = manifests_dir() / f"{doc_id}.json"
     if not path.exists():
         return None
     data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError("Document manifest root must be a JSON object")
     return DocumentManifest(**data)
 
 

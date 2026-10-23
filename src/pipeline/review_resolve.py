@@ -180,21 +180,21 @@ def locate_document_file(manifest: DocumentManifest) -> Path | None:
         archive_dir,
         failed_dir,
         processing_dir,
-        review_dir,
+        review_file_path,
     )
 
     name = manifest.original_filename
     if not name:
         return None
     candidates: list[Path] = [
-        review_dir() / name,
-        failed_dir() / name,
+        review_file_path(manifest),
     ]
+    stem, suffix = Path(name).stem, Path(name).suffix
+    candidates.extend([failed_dir() / f"{stem}--{manifest.doc_id}{suffix}", failed_dir() / name])
     if manifest.doc_type:
         arch = archive_dir(manifest.matter_id, manifest.doc_type)
-        candidates.append(arch / name)
-        stem, suffix = Path(name).stem, Path(name).suffix
         candidates.append(arch / f"{stem}--{manifest.doc_id}{suffix}")
+        candidates.append(arch / name)
     proc = processing_dir()
     if proc.exists():
         for worker in proc.iterdir():

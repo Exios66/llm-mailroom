@@ -92,7 +92,7 @@ class TestReviewResume:
     def test_resume_approved_archives_with_fresh_extraction(
         self, temp_base_dir, phased_client
     ):
-        from pipeline.bins import review_dir, load_manifest, manifests_dir, archive_dir
+        from pipeline.bins import review_dir, review_file_path, load_manifest, manifests_dir, archive_dir
         from graph.build_graph import resume_from_review
 
         # Phase 1: low confidence → review (classify + retry use the first two
@@ -102,7 +102,7 @@ class TestReviewResume:
         manifest = load_manifest(doc_id)
         assert manifest is not None
         assert manifest.doc_type == "contract"
-        review_file = review_dir() / manifest.original_filename
+        review_file = review_file_path(manifest)
         assert review_file.exists()
 
         # Phase 2: approve → fresh extraction (procedural assemble → archive).
@@ -117,7 +117,8 @@ class TestReviewResume:
 
         # The review bin file moved to the archive under the original doc_id.
         assert not review_file.exists()
-        archived = archive_dir("MATTER-RESUME", "contract") / manifest.original_filename
+        original = Path(manifest.original_filename)
+        archived = archive_dir("MATTER-RESUME", "contract") / f"{original.stem}--{manifest.doc_id}{original.suffix}"
         assert archived.exists()
 
         # Manifest updated to ARCHIVED (same doc_id — audit chain intact).
@@ -130,7 +131,7 @@ class TestReviewResume:
     ):
         """Post-HITL extract that still misses tight gates returns to review,
         never auto-failed solely because the doc once needed a human."""
-        from pipeline.bins import review_dir, load_manifest, failed_dir
+        from pipeline.bins import review_dir, review_file_path, load_manifest, failed_dir
         from graph.build_graph import resume_from_review
 
         mock_langchain_llm.classification = {
@@ -166,11 +167,11 @@ class TestReviewResume:
         result = _run_to_review(temp_base_dir, client)
         doc_id = result["doc_id"]
         manifest = load_manifest(doc_id)
-        review_file = review_dir() / manifest.original_filename
+        review_file = review_file_path(manifest)
         resumed = resume_from_review(manifest, review_file)
         assert resumed.get("stage") == "review"
         assert not (failed_dir() / manifest.original_filename).exists()
-        assert (review_dir() / manifest.original_filename).exists()
+        assert review_file_path(manifest).exists()
 
     def test_resume_requires_classification(self, temp_base_dir):
         from graph.build_graph import resume_from_review
@@ -188,7 +189,7 @@ class TestReviewResume:
     def test_park_pauses_via_interrupt_and_stores_thread_id(
         self, temp_base_dir, phased_client
     ):
-        from pipeline.bins import review_dir, load_manifest
+        from pipeline.bins import review_dir, review_file_path, load_manifest
         from graph.build_graph import get_compiled_graph, _thread_is_interrupted
 
         result = _run_to_review(temp_base_dir, phased_client)
@@ -198,7 +199,7 @@ class TestReviewResume:
         assert thread_id
         manifest = load_manifest(result["doc_id"])
         assert manifest.checkpoint_thread_id == thread_id
-        assert (review_dir() / manifest.original_filename).exists()
+        assert review_file_path(manifest).exists()
         graph = get_compiled_graph()
         assert _thread_is_interrupted(graph, thread_id)
 
@@ -218,7 +219,7 @@ class TestReviewResume:
         )
         dest, newly = park_for_review(f, manifest)
         assert newly is True
-        assert dest == review_dir() / "park.txt"
+        assert dest == review_dir() / "park--park-1.txt"
         assert dest.exists()
         assert not f.exists()
         dest2, newly2 = park_for_review(f, manifest)

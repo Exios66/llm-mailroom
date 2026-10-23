@@ -51,6 +51,24 @@ Work landed on `main` since the last tagged release.
 
 ### Fixed
 
+- Final runtime review: unreadable manifests fail closed for unverifiable legacy
+  review files while document-ID files remain available. New atomic warehouse
+  files honor the process umask and replacements retain existing permissions.
+  Upload documentation and real multipart tests distinguish empty form defaults
+  from rejected whitespace-only identifiers.
+
+- DMR-091 postfix: keyless providers receive an explicit placeholder rather
+  than unrelated SDK credentials; Arrow readers retain one open snapshot, and
+  small-batch audit exports retain their document join keys.
+
+- **DMR-091 independent runtime audit:** review files use durable document-ID
+  names and collision-safe lookup, including replay and legacy fallback; upload
+  matter IDs and archive destinations reject path traversal. LangChain agents
+  select environment credentials only after resolving their provider. Warehouse
+  exports serialize complete read/merge/write transactions across threads and
+  processes, publish files atomically, merge fresh daily manifests and preserve
+  advancing watermarks. Same-PR regressions exercise real files and Parquet.
+
 - **Loop-bound database connections** (DMR-091): asynchronous SQLite and
   PostgreSQL engines use `NullPool`; sessions close their connections rather
   than retaining idle pools after the owning event loop closes. Serialized
