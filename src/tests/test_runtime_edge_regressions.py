@@ -115,3 +115,30 @@ def test_public_warehouse_export_retains_audit_document_join_key(temp_base_dir, 
     audit = warehouse._read_parquet_rows(warehouse.daily_audit_path(date(2026, 10, 23)))
     assert docs[0]["doc_id"] == audit[0]["doc_id"] == "AUDIT-DOC"
     assert audit[0]["entry_id"] == str(entry.entry_id)
+
+
+def test_short_lived_arrow_snapshot_readers_exit_cleanly(tmp_path):
+    """Actual reader subprocesses must return rows and complete interpreter exit."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    import pyarrow
+
+    source = Path(__file__).resolve().parents[1]
+    dependencies = Path(pyarrow.__file__).resolve().parents[1]
+    program = '''
+import pathlib, sys
+sys.path[:0] = [sys.argv[1], sys.argv[2]]
+from storage import warehouse
+assert pathlib.Path(warehouse.__file__).resolve().is_relative_to(pathlib.Path(sys.argv[1]))
+p = pathlib.Path(sys.argv[3])
+warehouse.write_parquet_rows(p, [{"doc_id": "A"}], merge_key="doc_id")
+assert warehouse._read_parquet_rows(p) == [{"doc_id": "A"}]
+print("reader-completed", flush=True)
+'''
+    for trial in range(12):
+        result = subprocess.run([sys.executable, "-I", "-S", "-c", program,
+            str(source), str(dependencies), str(tmp_path / f"rows-{trial}.parquet")],
+            capture_output=True, text=True, timeout=10)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.strip().endswith("reader-completed")
