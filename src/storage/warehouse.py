@@ -226,10 +226,10 @@ def _require_pyarrow():
 def _read_parquet_rows(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
-    _, pq = _require_pyarrow()
-    # Pin one inode for Arrow's metadata and page reads while another process
-    # atomically replaces the published path with a newer complete snapshot.
-    with path.open("rb") as snapshot:
+    pa, pq = _require_pyarrow()
+    # Pin one native handle for metadata and pages across atomic replacement.
+    # Python file ownership can deadlock Arrow workers during interpreter exit.
+    with pa.OSFile(str(path), "rb") as snapshot:
         return pq.read_table(snapshot).to_pylist()
 
 
