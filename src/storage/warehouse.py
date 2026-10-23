@@ -65,11 +65,14 @@ def _replacement_path(path: Path):
     # Let the kernel apply the process umask without changing process-global
     # state. mkstemp's fixed 0600 would remove first-publish reader access.
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    creation_mode = os.fstat(fd).st_mode & 0o777
     os.close(fd)
     try:
+        # Keep partial/replacement contents private, even if the directory and
+        # process umask allow more readers than an existing private target.
+        temporary.chmod(0o600)
         yield temporary
-        if path.exists():
-            temporary.chmod(path.stat().st_mode & 0o777)
+        temporary.chmod(path.stat().st_mode & 0o777 if path.exists() else creation_mode)
         with temporary.open("rb") as handle:
             os.fsync(handle.fileno())
         os.replace(temporary, path)
