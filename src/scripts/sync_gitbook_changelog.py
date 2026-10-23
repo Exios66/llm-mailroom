@@ -198,6 +198,8 @@ def _page_href(release: Release) -> str:
 
 def render_release_page(release: Release) -> str:
     heading = release.title
+    # Standalone pages use H1 for the release; its sections belong at H2.
+    body = re.sub(r"^### ", "## ", release.body.strip(), flags=re.MULTILINE)
     dated = (
         "Unreleased work on `main`."
         if release.is_unreleased
@@ -208,7 +210,7 @@ def render_release_page(release: Release) -> str:
         f"# {heading}\n\n"
         f"{HINT}\n"
         f"{dated} Canonical source: [`CHANGELOG.md`]({CANONICAL_URL}).\n\n"
-        f"{release.body.strip()}\n"
+        f"{body}\n"
     )
 
 
