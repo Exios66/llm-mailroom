@@ -19,7 +19,7 @@ def client(monkeypatch, temp_base_dir):
     monkeypatch.setenv("MAILROOM_API_TOKEN", "test-token-123")
     monkeypatch.setenv("MAILROOM_BASE_DIR", str(temp_base_dir))
     monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
-    for mod in ("api.main", "storage.db", "storage.catalog", "storage.audit_log"):
+    for mod in ("api.main",):
         if mod in sys.modules:
             importlib.reload(sys.modules[mod])
     from api.main import app

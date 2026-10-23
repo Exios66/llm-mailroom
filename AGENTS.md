@@ -194,40 +194,34 @@ PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mo
 - Tests run without Docker: conftest auto-sets `OPENROUTER_API_KEY` and `MAILROOM_BASE_DIR` to a tmpdir (`temp_base_dir` fixture). E2E tests build the full graph with mocked LLM and the SQLite checkpointer.
 - `asyncio_mode = "auto"` is set; graph nodes are sync. Fixtures are plain-text files in `src/tests/fixtures/<doc_type>/`.
 
-## Monorepo development (Digital-Mailroom)
+## Source ownership and Digital-Mailroom integration
 
-This repo is also `packages/llm-mailroom` inside the [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
-monorepo — a single `uv` workspace that holds every constellation repo as a
-git-subtree package (the monorepo is the source of truth for cross-repo
-development; see `docs/sister-repos.md` § Digital-Mailroom).
+This standalone repository is the authoritative source for the pipeline:
+its 13-node graph, agents, storage, API, and production prompt selection.
+Develop and validate changes here, then commit them upstream before importing
+that committed source into Digital-Mailroom. Do not copy hub package trees or
+export hub patches into this repository.
 
-- **One workspace, no cross-repo imports**: `uv sync` at the monorepo root
-  installs this package editable from `packages/llm-mailroom`. Cross-package
-  deps resolve via `[tool.uv.sources]` tables (`llm-dojo-scoring` is
-  redirected to the workspace) — published git pins in `pyproject.toml` stay
-  untouched for release/deploy builds (`pip install .` unchanged).
-- **Sync contract**: `python scripts/sync_packages.py {status|pull|push}` at
-  the monorepo root reconciles subtree mirrors with `Exios66/*`.
-  Standalone-repo work flows monorepo-ward via `pull --squash`; monorepo
-  fixes flow out via `push`. The monorepo is the dev source of truth —
-  imported monorepo-side fixes win unless the upstream supersedes them.
-- **Monorepo-side adaptations** that live ONLY there (re-apply on conflict
-  when pulling): the `[tool.uv.sources]` block in `pyproject.toml`,
-  pruned-heavy-asset test skips (e.g. `docs/examples/samples/` guard),
-  import-shadow `__init__.py` markers, and CWD/UTC anchoring fixes.
-  Nested `.github/` workflows are inert in the monorepo (release-time only).
-- **Hub task board**: cross-repo work is claimed on
-  `governance/TASKS.md` (cards `DMR-0NN`) BEFORE editing; commits reference
-  the card (`DMR-0NN: <summary>`). Package-scoped work uses this repo's own
-  board discipline.
-- **Docs currency applies to both sides**: when this section's behavior
-  changes, the standalone repo docs are edited and committed here, then
-  carried into the monorepo by the same sync pass (and the HUB card is
-  completed with evidence). Never hand-edit `packages/llm-mailroom/docs/` in
-  the monorepo when the standalone repo is upstream of it.
-- **Test gates in the monorepo**: run `uv run pytest packages/llm-mailroom/src/tests`
-  — one package per pytest invocation (several packages ship colliding
-  top-level `tests` packages).
+- **Pipeline:** `Exios66/llm-mailroom` owns pipeline behavior and compatibility.
+- **Scoring:** `Exios66/llm-dojo-scoring` owns every metric, scoring formula,
+  normalization rule, and scoring suite. Pipeline adapters consume dojo APIs;
+  scoring fixes are authored and tested in dojo first.
+- **Test interface:** `Exios66/local-mailroom-sandbox` owns the local/offline
+  harness and Modal/vLLM test interface. Its vendor snapshots consume committed
+  pipeline and dojo source; they are not alternate implementations.
+- **Visualizer:** `Exios66/The-Mailroom` owns the visualizer used by both the
+  pipeline and sandbox. Keep their producer/trace contracts compatible.
+- **Integration:** Digital-Mailroom coordinates the board, imports committed
+  standalone changes, and refreshes vendor snapshots. It is not the development
+  source for feeder repositories. Never use hub-to-feeder development pushes.
+
+The hub's `[tool.uv.sources]` workspace redirects and shared lockfile are
+integration concerns. Preserve standalone published dependency pins until an
+explicit release or dependency-adoption task authorizes changing them.
+Cross-repository work is tracked on `governance/TASKS.md` in Digital-Mailroom;
+package-scoped implementation and tests stay in the owning standalone repo.
+Hub integration uses `scripts/sync_packages.py pull` followed by the appropriate
+vendor refresh and validation; nested package workflows remain inert in the hub.
 
 ## Experiment-log sync (mirror of the extraction-pipeline repo)
 

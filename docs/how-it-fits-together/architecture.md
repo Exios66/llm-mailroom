@@ -14,7 +14,7 @@ flowchart TD
     end
 
     subgraph LOOP["Prompts, scores, evals"]
-        DOJO["llm-dojo-scoring<br/>shared scoring library"]
+        DOJO["llm-dojo-scoring<br/>sole scoring owner"]
         EVALS["eval-environment<br/>per-node evals + calibration"]
         ML["mailroom-ml<br/>ModernBERT fast-path classifier"]
     end
@@ -24,7 +24,7 @@ flowchart TD
 
     subgraph SURF["Surfaces"]
         VIS["The-Mailroom<br/>visualizer + Observatory"]
-        SAND["local-mailroom-sandbox<br/>offline + Modal runs"]
+        SAND["local-mailroom-sandbox<br/>local/offline + Modal/vLLM test interface"]
     end
 
     ENRON --> HF
@@ -44,7 +44,11 @@ flowchart TD
     DOJO -- "vendored snapshot" --> SAND
 ```
 
-All of these packages also live together in the [Digital-Mailroom](../repository-guides/repos/digital-mailroom.md) monorepo, which is where cross-repo changes are made. The diagram shows how the packages relate at runtime and release time, not where their code sits.
+The standalone repositories own their implementations. [Digital-Mailroom](../repository-guides/repos/digital-mailroom.md)
+imports their committed source into one workspace and refreshes vendor snapshots.
+Cross-repository changes are authored and tested in each owning repository first;
+the hub integrates them afterward.
+
 
 ## The flows, one by one
 
@@ -65,7 +69,7 @@ Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroo
 
 ### Scoring: one definition of "correct"
 
-`llm-dojo-scoring` is the only place metrics are defined. It scores fields by type (dates are normalized before comparison, names use Jaro-Winkler, lists use Hungarian matching, free text uses token F1) rather than exact-matching everything.
+`llm-dojo-scoring` owns all metrics, scoring formulas, normalization rules, and suites. Consumers call its APIs and report its results; scoring fixes are implemented in dojo first. It scores fields by type (dates are normalized before comparison, names use Jaro-Winkler, lists use Hungarian matching, free text uses token F1) rather than exact-matching everything.
 
 * llm-mailroom pins it as a git dependency and keeps the pin current with an auto-bump workflow (`.github/workflows/bump-dojo-scoring.yml`).
 * eval-environment uses it for its experiment scoring.
@@ -73,7 +77,12 @@ Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroo
 
 ### Runtime: from document to archive
 
-The pipeline runs one LangGraph state machine per document: intake, classify (with retry and a second-opinion reviewer), extract (with retry, judge, arbiter and boss escalation), compile report, write catalog, archive. Files move through filesystem bins (`inbox → processing → archive | review | failed`). Two auxiliary flows sit outside the graph: the free-model Gmail triage lane and the post-archive relations clerk.
+`llm-mailroom` owns the pipeline and runs one LangGraph state machine per document: intake, classify (with retry and a second-opinion reviewer), extract (with retry, judge, arbiter and boss escalation), compile report, write catalog, archive. Files move through filesystem bins (`inbox → processing → archive | review | failed`). Two auxiliary flows sit outside the graph: the free-model Gmail triage lane and the post-archive relations clerk.
+
+`local-mailroom-sandbox` owns the local/offline harness and the Modal/vLLM
+test interface. It consumes committed pipeline and dojo source rather than
+forking their behavior. The-Mailroom is the shared visualizer for pipeline and
+sandbox runs, using their compatible producer and trace contracts.
 
 An optional **ModernBERT fast path** from mailroom-ml can run at intake (`MAILROOM_BERT_INTAKE`, off by default). It is fail-open: if the flag is off, the package is missing or the model errors, intake carries on with the deterministic clerk.
 
@@ -89,19 +98,20 @@ The-Mailroom's Inbox and REVIEW desk call back into the pipeline API (`MAILROOM_
 
 eval-environment deliberately does **not** trace to Langfuse; it uses Braintrust or a local Arize Phoenix sink so eval runs never mix with production traces.
 
-### Code: monorepo and release repos
+### Code: standalone sources and integration hub
 
 ```mermaid
 flowchart LR
-    DEV["Digital-Mailroom<br/>packages/&lt;name&gt;<br/>(development)"] -- "sync_packages.py push" --> UP["Exios66/&lt;name&gt;<br/>(release vehicle)"]
-    UP -- "sync_packages.py pull" --> DEV
+    UP["Standalone package<br/>author, test, commit"] -- "sync_packages.py pull" --> HUB["Digital-Mailroom<br/>integrate committed source"]
+    HUB -- "sync_vendor.py" --> VENDOR["Integration vendor snapshots"]
+    UP -- "committed source snapshots" --> SAND["local-mailroom-sandbox<br/>local/offline + Modal/vLLM tests"]
     UP -- "pip install @tag" --> DEPLOY["Docker / Railway / HF Spaces"]
 ```
 
-* Development happens in the monorepo. Cross-package imports resolve to workspace sources through `[tool.uv.sources]`.
-* Each package keeps its published git pins in `pyproject.toml`, so `pip install .` inside a package directory still builds exactly what a release would.
-* `scripts/sync_packages.py {status|pull|push|snapshot}` keeps the monorepo subtrees and the `Exios66/*` repositories reconciled.
-* Workflows under nested `.github/` folders do not run inside the monorepo; only the hub's own workflows do.
+* Develop pipeline changes in llm-mailroom and scoring changes in dojo. Commit source-owned work before hub imports or vendor refreshes.
+* Digital-Mailroom owns integration and coordination. Do not export hub patches or package trees into feeder repositories, or use hub-to-feeder development pushes.
+* Hub workspace redirects resolve imported packages through `[tool.uv.sources]`; standalone published dependency pins change only through an explicit release or adoption task.
+* `scripts/sync_packages.py pull` imports committed upstream source; vendor refreshes follow the same source ownership. Nested package workflows do not run inside the hub.
 
 ## Dependency summary
 
