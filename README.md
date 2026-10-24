@@ -1,97 +1,109 @@
 <div align="center">
 
-<img src="docs/assets/banner.png" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight" width="100%">
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/hero-mobile.svg"/>
+  <img src="docs/assets/readme/hero.svg" alt="Documents pass intake, classification and specialist extraction; quality or human review handles exceptions before compilation and archival." width="100%"/>
+</picture>
 
 # The LLM-Mailroom
 
-**A multi-agent pipeline that ingests, classifies, extracts, and archives legal documents — with a full audit trail.**
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge)](pyproject.toml)
+[![LangGraph 13 nodes](https://img.shields.io/badge/LangGraph-13_nodes-6C63FF?style=for-the-badge)](src/graph/build_graph.py)
+[![SQLite first](https://img.shields.io/badge/storage-SQLite_first-22C55E?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
 
-One LangGraph state machine per document. Specialist LLM agents per document class.
-Hash-chained audit log. Provider-agnostic LLM layer. Traced end-to-end.
-
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Pipeline](https://img.shields.io/badge/LangGraph-13--node%20state%20machine-4C8CBF)](https://langchain-ai.github.io/langgraph/)
-[![LLM layer](https://img.shields.io/badge/LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2)](#llm-providers)
-[![Tracing](https://img.shields.io/badge/tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623)](#observability)
-[![Storage](https://img.shields.io/badge/storage-SQLite--first-lightgrey)](#quick-start)
-[![Dojo](https://img.shields.io/badge/dojo-v0.23.1-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.23.1)
 [![Release](https://img.shields.io/badge/release-v0.8.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
-[![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
-[![Contributor](https://img.shields.io/badge/contributor-grantmooslin-blue)](https://github.com/grantmooslin)
-[![Organization](https://img.shields.io/badge/org-LLM--Mailroom--Services-24292F)](https://github.com/LLM-Mailroom-Services)
+[![Dojo](https://img.shields.io/badge/dojo-v0.23.1-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.23.1)
 
-<img src="docs/assets/mascot/fumi.svg" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform (postal-blue shirt, navy skirt with a red and white hem stripe, a mini carrier cap on her frilled headdress) with a mail satchel and a little owl on her shoulder" width="192" height="232">
 
-<sub>Say hi to <b>Fumi</b> (文, "letter"), the mailroom's head maid, and Hermes the owl. Static landing: <a href="landing/">landing/</a>. Published docs home: GitBook via <a href="docs/README.md">docs/README.md</a>.</sub>
+**[Quickstart](#quickstart)** · **[How it works](#how-it-works)** · **[Operations](#operations)** · **[Testing](#testing)** · **[Docs](#documentation)**
 
 </div>
 
-| At a glance | |
-| --- | --- |
-| **Release** | [`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1) — see [CHANGELOG.md](CHANGELOG.md) |
-| **Runtime** | Python 3.11+ · LangGraph state machine (13 nodes) · FastAPI |
-| **Agents** | LLM + procedural agents across 5 document classes (happy path: classify + extract only) |
-| **Storage** | SQLite-first (zero-config), Postgres optional · hash-chained audit log |
-| **Observability** | Langfuse · Braintrust · Arize Phoenix — optional; the pipeline runs fine without any of them |
-| **Docs** | Canonical under [`docs/`](docs/) · browsable locally via [docmd](https://github.com/docmd-io/docmd) |
-| **License** | Not yet published — no LICENSE file in the repository yet |
-
 ---
 
-This repository consists of:
+## What this does
 
-- A **python library + pipeline** (`src/`) — a LangGraph state machine that moves each document through classification, specialist extraction, quality gates, reporting, and archival.
-- **LLM + procedural agents across 5 document classes** — a sorter, five extraction specialists (contracts also covers MAUD `merger_agreement`), a judge/arbiter quality lane, a boss escalation agent, a **procedural** report assembler (no reporter LLM), and procedural PDF/image/archivist workers (see [Agent Organization](#agent-organization)). Happy-path archive uses **two** LLM generations (classify + extract).
-- An **evaluation suite** — a 23-sample pilot with ground truth (including three synthetic `insurance_claim` letters), deterministic field scoring, LLM-as-a-judge evaluators, per-agent isolation eval, and a self-contained [LegalBench](https://github.com/HuggingFaceH4/legalbench) harness.
-- **Canonical documentation** (`docs/`) — browsable locally with [docmd](https://github.com/docmd-io/docmd) (see [Browsing the Docs Locally](#browsing-the-docs-locally)).
-- A **dataset browser notebook** (`notebooks/`) — docile-style thin notebook over a reusable tool module.
-- A **Modal+vLLM deploy app** (`deploy/`) — optional local-model serving, flip-the-switch cutover.
-- **Project Agent Skills** (`.cursor/skills/`) — Cursor-discoverable router + dedicated skills for every serving/tracing/data/scoring stack this repo uses (companion to the offline [local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox) skills).
+Source release: [`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1).
+The Dojo badge shows the consuming pin, **v0.23.1**.
 
-## Contents
+A **LangGraph pipeline for legal documents**: ingest a file, classify it,
+extract structured facts with the matching specialist, apply quality gates,
+and compile an auditable matter record. FastAPI accepts uploads; the embedded
+watcher moves files through processing, review, archive or failure bins.
 
-- [Getting started](#getting-started) — [Quick Start](#quick-start) · [Installation](#installation)
-- [Architecture](#architecture) — [Agent Organization](#agent-organization) · [Design Principles](#design-principles) · [Project Structure](#project-structure)
-- [Operations](#operations) — [Configuration](#configuration) · [LLM Providers](#llm-providers) · [Prompt Management](#prompt-management) · [Observability](#observability) · [Evaluators & Quality](#evaluators--quality) · [Guardrails](#guardrails) · [Logging](#logging) · [Local Model Cutover](#local-model-cutover) · [API Endpoints](#api-endpoints) · [Pipeline Bins](#pipeline-bins)
-- [Evaluation & ecosystem](#evaluation--ecosystem) — [Testing](#testing) · [Pilot Testing & Evaluation](#pilot-testing--evaluation) · [Full CUAD Corpus](#full-cuad-corpus-issue-9) · [Browsing the Docs Locally](#browsing-the-docs-locally) · [The Mailroom Umbrella](#the-mailroom-umbrella) · [Deployment](#deployment) · [Security](#security)
+Five classes have dedicated schemas and specialists: `contract`,
+`merger_agreement`, `corporate_record`, `correspondence`, and `insurance_claim`.
+MAUD merger agreements have their own specialist. The high-confidence happy
+path uses classification and extraction LLM generations; Judge, Arbiter,
+Boss and human review handle the cases that need more scrutiny. Compilation
+is procedural.
 
-## Getting started
+This standalone repository owns the pipeline source. The
+[Digital-Mailroom hub](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
+imports committed revisions; the [sandbox](https://github.com/Exios66/local-mailroom-sandbox)
+executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
+and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
+Langfuse traces.
 
-### Quick Start
+<details>
+<summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
+
+<img src="docs/assets/banner.png" alt="A horned owl postal worker sorting wax-sealed legal documents by lamplight" width="100%"/>
+<img src="docs/assets/mascot/fumi.svg" alt="Fumi, the postal maid mascot, with a mail satchel and Hermes the owl" width="192" height="232"/>
+
+Fumi (文, “letter”) is the mailroom's head maid. See the [static landing](landing/)
+and [documentation home](docs/README.md).
+
+</details>
+
+
+<div align="center">
+<img src="docs/assets/readme/stats.svg" alt="13 graph nodes, five classes with dedicated specialists, SQLite default catalog, and a hash-chained audit trail." width="100%"/>
+</div>
+
+## Quickstart
+
+<a id="getting-started"></a>
+<a id="quick-start"></a>
 
 > [!NOTE]
-> **No database server needed.** Mailroom stores everything (catalog + audit log + crash-resume checkpoints) in a plain **SQLite file** inside your data folder. If you don't already use Docker, you can ignore it entirely.
+> **No database server needed.** Catalog and audit entries use SQLite in your data folder. Graph checkpoints use in-memory `MemorySaver` by default; opt into persistent checkpoints with `MAILROOM_CHECKPOINTER=sqlite`. Docker is optional.
+
+Use Python 3.11+ and a dedicated virtual environment:
 
 ```bash
-# 1. Configure
+git clone https://github.com/Exios66/llm-mailroom.git
+cd llm-mailroom
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 cp .env.example .env
-# Edit .env — add your OPENROUTER_API_KEY (and LANGFUSE_* keys for tracing)
+# Add OPENROUTER_API_KEY to .env for live inference.
+```
 
-# 2. Install
-pip install -e ".[dev]"
+Start the API; its embedded watcher drains uploads:
 
-# 3. (Optional) Start Langfuse for trace viewing — needs Docker
-docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
-
-# 4. (Optional) Sync the agent prompts into Langfuse prompt management
-PYTHONPATH=src python src/scripts/sync_prompts.py
-
-# 5. Start the API (embeds the inbox watcher — uploads drain without a second process)
+```bash
 PYTHONPATH=src python -m api.main
+```
 
-# 6. Upload a document
+In a second terminal at the repository root, submit the committed test fixture:
+
+```bash
 curl -X POST http://localhost:8000/upload \
   -F "file=@src/tests/fixtures/contract/sample_msa.txt" \
   -F "matter_id=MATTER-001"
-
-# 7. Check pipeline status
-curl http://localhost:8000/status/{doc_id}
-
-# 8. View full audit trail
-curl http://localhost:8000/audit/{doc_id}
+# Use the returned doc_id in these URLs:
+curl http://localhost:8000/status/YOUR_DOC_ID
+curl http://localhost:8000/audit/YOUR_DOC_ID
 ```
 
-When a document is processed, you'll get two files under `data/`:
+The fixture exercises the live pipeline; it is not an accuracy benchmark.
+For an offline first check, run `python -m pytest src/tests/test_routing.py`.
+Langfuse and the other tracing backends are optional; setup is in
+[Observability](#observability).
+
+Runtime state is stored under `data/` (or `MAILROOM_BASE_DIR`):
 
 - `data/mailroom.db` — the SQLite database (matters, documents, audit_log tables)
 - `data/checkpoints.db` — optional on-disk LangGraph state (only when `MAILROOM_CHECKPOINTER=sqlite`; MemorySaver is the default)
@@ -112,6 +124,7 @@ Optional install profiles — take only what you need:
 | `[embeddings]` | scipy, sentence-transformers | embedding-rescue second signal + Hungarian matcher in field scoring (degrades gracefully without) |
 | `[postgres]` | psycopg | Postgres storage engine (SQLite is the default) |
 | `[deploy]` | modal | the Modal+vLLM deploy app in `deploy/` (deploy-time only, never imported by the pipeline) |
+| `[bert]` | mailroom-ml inference dependencies | optional ModernBERT intake classifier |
 | `[notebooks]` | ipywidgets, jupyterlab | interactive `notebooks/dataset_browser.ipynb` (plain-text mode works without) |
 
 ```bash
@@ -128,7 +141,9 @@ pip install -e ".[embeddings]"   # etc.
 
 ---
 
-## Architecture
+## How it works
+
+<a id="architecture"></a>
 
 One **LangGraph state machine run per document** — 13 nodes, MemorySaver-checkpointed by default (opt-in `SqliteSaver` for resume-across-restart experiments), crash-safe via manifest-driven re-invocation. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in the configured observability backend.
 
@@ -218,7 +233,8 @@ flowchart TB
     end
 
     subgraph SPECIALISTS["Extraction Specialists — one per document class"]
-        CONTRACTS["Contracts<br/>Specialist<br/>(incl. merger_agreement)"]
+        CONTRACTS["Contracts<br/>Specialist"]
+        MERGER["Merger Agreement<br/>Specialist"]
         CORP["Corporate Records<br/>Specialist"]
         CORR["Correspondence<br/>Specialist"]
         INS["Insurance Claims<br/>Specialist"]
@@ -297,7 +313,6 @@ mailroom/
 └── docs/             # canonical docs (pipeline reference under pipeline-reference-llm-mailroom/: agents, architecture, configuration, deployment, local-models)
     ├── assets/       # README banner + images
     ├── reports/      # evaluation write-ups: audits/, pilots/, evaluations/ (see docs/reports/)
-    ├── examples/     # sample documents + manifest ground truth (samples/, sources/, external/)
     └── wiki/         # GitHub-wiki-only pages, pushed to the GitHub wiki via docs/wiki/sync-wiki.sh (NOT a docs/ mirror)
 ```
 
@@ -307,6 +322,10 @@ imports keep their plain package names (`from pipeline import …`).
 ---
 
 ## Operations
+
+<details>
+<summary><b>Configuration, providers, prompts, scoring, guardrails and API reference</b></summary>
+
 
 ### Configuration
 
@@ -400,7 +419,7 @@ Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14
 ```bash
 PYTHONPATH=src python src/scripts/sync_langfuse_logs.py                    # last 24h
 PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 7d --limit 100
-PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --trace-id <id>
+PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --trace-id YOUR_TRACE_ID
 # → data/langfuse_logs/<run>/<trace_id>.json + index.json
 ```
 
@@ -549,11 +568,13 @@ data/
   manifests/
     <doc_id>.json        # Mirror of DocumentManifest
   mailroom.db            # SQLite: matters, documents, audit_log
-  checkpoints.db         # LangGraph crash-resume state
+  checkpoints.db         # only with MAILROOM_CHECKPOINTER=sqlite
   langfuse_logs/         # Mirrored run logs (scripts/sync_langfuse_logs.py)
 ```
 
 ---
+
+</details>
 
 ## Evaluation & ecosystem
 
@@ -577,7 +598,15 @@ Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mo
 
 ### Pilot Testing & Evaluation
 
-A ready-made set of **25 pilot samples** lives in `docs/examples/samples/` (real SEC-exhibit contracts from the CC-BY-4.0 [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) dataset, LegalBench MAUD merger agreements, public-domain Pile of Law court opinions, plus original text for the other doc classes — see `docs/examples/README.md`). Use them to pilot the pipeline and **measure the effect of procedural changes** on accuracy, efficiency, and quality:
+The pilot drivers support mock/real execution, baseline diffs and
+LLM-as-a-judge evaluation. **Their historical sample corpus is not included
+in the current source checkout**: `prepare_samples.py` expects
+`docs/examples/samples/manifest.csv` and its source documents. Restore that
+fixture set before using the commands below ([tracked in #120](https://github.com/Exios66/llm-mailroom/issues/120)). The committed upload fixture in
+[Quickstart](#quickstart) and the mocked unit tests work from a fresh clone.
+
+<details>
+<summary><b>Pilot commands — require the historical sample corpus</b></summary>
 
 ```bash
 # Build the sample PDFs into data/samples/ (gitignored)
@@ -596,7 +625,9 @@ PYTHONPATH=src python src/scripts/run_pilot.py --mock --baseline data/pilot_repo
 PYTHONPATH=src python src/scripts/run_quality_judges.py --real
 ```
 
-The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `docs/examples/samples/manifest.csv`. See `docs/examples/samples/README.md`.
+The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `docs/examples/samples/manifest.csv`. The required manifest defines that ground truth.
+
+</details>
 
 ### Full CUAD Corpus (issue #9)
 
@@ -641,7 +672,8 @@ docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse
 
 # 2. Set environment
 export OPENROUTER_API_KEY=sk-or-v1-...
-# MAILROOM_BASE_DIR defaults to ./data; mailroom.db + checkpoints.db are created there automatically
+# MAILROOM_BASE_DIR defaults to ./data; mailroom.db is created there
+# checkpoints.db is created only with MAILROOM_CHECKPOINTER=sqlite
 
 # 3. Sync prompts into Langfuse (once, and after prompt edits)
 PYTHONPATH=src python src/scripts/sync_prompts.py
@@ -682,7 +714,9 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - Back up `/archive` and the audit log table independently
 - Treat retention policy as an open decision — not assumed by this system
 
-## Further Documentation
+## Documentation
+
+<a id="further-documentation"></a>
 
 - [Architecture](docs/pipeline-reference-llm-mailroom/architecture.md) — full architectural details
 - [Configuration](docs/pipeline-reference-llm-mailroom/configuration.md) — config reference
@@ -697,3 +731,23 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - [Visualizer pairing](deploy/space/PAIRING.md) — Observatory Space + this producer (`MAILROOM_PIPELINE_URL` / token / `/v1`)
 - [Reports](docs/reports/) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
 - [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `docs/wiki/` via `docs/wiki/sync-wiki.sh`)
+
+---
+
+<div align="center">
+
+**[Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)** ·
+**[llm-mailroom](https://github.com/Exios66/llm-mailroom)** ·
+**[llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring)** ·
+**[The-Mailroom](https://github.com/Exios66/The-Mailroom)** ·
+**[local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox)** ·
+**[Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA)** ·
+**[mailroom-ml](https://github.com/LLM-Mailroom-Services/mailroom-ml)**
+
+<sub>The Mailroom constellation · independent source repositories, shared interfaces.</sub>
+<br/>
+<sub>Core packages integrate in Digital-Mailroom; mailroom-ml is a standalone contractor.</sub>
+<br/>
+<sub>Local artwork: <a href="docs/assets/readme/README.md">design and regeneration</a>.</sub>
+
+</div>
