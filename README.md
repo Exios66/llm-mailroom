@@ -24,6 +24,28 @@
 
 ---
 
+<!-- readme-v2.1 -->
+<details>
+<summary><b>📑 Contents</b></summary>
+
+- [📬 What is this?](#what-this-does)
+- [🤔 When to reach for it](#when-to-reach-for-it)
+- [🏭 One document, start to receipt](#-one-document-start-to-receipt)
+- [📟 At a glance](#at-a-glance)
+- [🌌 Where it fits](#where-it-fits)
+- [🚀 Quickstart](#quickstart)
+- [🧭 How it works](#how-it-works)
+- [🧱 Design principles](#design-principles)
+- [🗂️ Project structure](#project-structure)
+- [🛠️ Operations](#operations)
+- [🔬 Evaluation & ecosystem](#evaluation--ecosystem)
+- [📚 Documentation](#documentation)
+- [❓ FAQ](#faq)
+- [🙏 Built on](#built-on)
+- [🤝 Contributing, security and license](#contributing-security-and-license)
+
+</details>
+
 <a id="what-this-does"></a>
 
 ## 📬 What is this?
@@ -71,6 +93,16 @@ and [documentation home](docs/README.md).
   <img src="docs/assets/readme/stats.svg" alt="By the numbers: 13 graph nodes, five document classes, a SQLite default catalog with no database server, a hash-chained audit trail and a FastAPI upload, status and audit API" width="100%"/>
 </picture>
 </div>
+
+<a id="when-to-reach-for-it"></a>
+
+## 🤔 When to reach for it
+
+| ✅ Reach for it when… | ↪️ Look elsewhere when… |
+| :--- | :--- |
+| You need legal documents sorted into five classes and turned into validated, structured matter records | You want a free-form chat agent. Orchestration here is an explicit 13-node state machine, and agents do not negotiate |
+| Every decision must be auditable: a trace per document and a SHA-256 hash-chained audit trail per archive | Your documents fall outside the five classes. Court opinions and due-diligence memos classify as `unknown` and go to human review |
+| You want to run on OpenRouter today and move agents to local models later with a config change | You only need scoring or a viewer. Use [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) or [The-Mailroom](https://github.com/Exios66/The-Mailroom) on their own |
 
 ## 🏭 One document, start to receipt
 
@@ -824,6 +856,78 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - [Visualizer pairing](deploy/space/PAIRING.md) — Observatory Space + this producer (`MAILROOM_PIPELINE_URL` / token / `/v1`)
 - [Reports](docs/reports/) — audit/pilot/evaluation write-ups (created via `scripts/new_report.py`)
 - [Wiki](https://github.com/Exios66/llm-mailroom/wiki) — GitHub wiki (synced from `docs/wiki/` via `docs/wiki/sync-wiki.sh`)
+
+<a id="faq"></a>
+
+## ❓ FAQ
+
+<details>
+<summary><b>Do I need a database server or Docker?</b></summary>
+
+No. The catalog and audit log live in SQLite under `data/`, graph checkpoints use in-memory `MemorySaver` unless you set `MAILROOM_CHECKPOINTER=sqlite`, and Docker is optional. Postgres is available through the `[postgres]` extra.
+
+</details>
+
+<details>
+<summary><b>How many LLM calls does one document cost?</b></summary>
+
+On the high-confidence happy path, two: classification and extraction. The Judge, Arbiter, Boss and human review only engage for documents that need more scrutiny, and compilation is procedural with no LLM call.
+
+</details>
+
+<details>
+<summary><b>Can I run it fully offline on local models?</b></summary>
+
+Yes. `src/scripts/cutover.py` moves agents to Ollama one at a time (`--recommend` prints the suggested order) or all at once, and the [local-mailroom-sandbox](https://github.com/Exios66/local-mailroom-sandbox) runs the whole graph offline. For remote GPU serving instead, see the [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) guide.
+
+</details>
+
+<details>
+<summary><b>Do the tests call a real LLM?</b></summary>
+
+No. The OpenAI client and `BaseAgent.__init__` are mocked in `src/tests/conftest.py`, so `pytest src/tests/` runs from a fresh clone with no API key.
+
+</details>
+
+<details>
+<summary><b>What happens when an agent returns junk?</b></summary>
+
+`pipeline/guards.py` validates every classification and extraction. An unknown type routes to human review, and a parse failure or schema violation clamps confidence below the routing threshold, forcing a retry and then human review. Triggered guards are logged and scored as `guardrail_triggered`.
+
+</details>
+
+<details>
+<summary><b>How do I protect the API?</b></summary>
+
+Set `MAILROOM_API_TOKEN`: every endpoint except the health checks then requires it as a bearer token. See [Security](#security) for archive encryption, access control and backups.
+
+</details>
+
+<a id="built-on"></a>
+
+## 🙏 Built on
+
+The pipeline is assembled from these open-source projects:
+
+| Project | What it does here |
+| :--- | :--- |
+| [LangGraph](https://github.com/langchain-ai/langgraph) · [LangChain](https://github.com/langchain-ai/langchain) | The 13-node state machine, checkpoints and the vendored agents |
+| [Pydantic](https://github.com/pydantic/pydantic) | Extraction schemas, manifests and matter records |
+| [FastAPI](https://github.com/fastapi/fastapi) · [Uvicorn](https://github.com/encode/uvicorn) · [watchdog](https://github.com/gorakhargosh/watchdog) | The upload, review, status and audit API and the inbox watcher |
+| [SQLAlchemy](https://www.sqlalchemy.org/) · SQLite | The async ORM over the default SQLite store: catalog, hash-chained audit log and the relations clerk |
+| [pypdf](https://github.com/py-pdf/pypdf) · [pdfplumber](https://github.com/jsvine/pdfplumber) · [PyMuPDF](https://github.com/pymupdf/PyMuPDF) · [python-docx](https://github.com/python-openxml/python-docx) | Document transcription at intake |
+| [Langfuse](https://langfuse.com/) · [Arize Phoenix](https://phoenix.arize.com/) · [OpenTelemetry](https://opentelemetry.io/) | Traces, managed prompts and live evaluators |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) | Deterministic, field-type-aware scoring |
+
+<a id="contributing-security-and-license"></a>
+
+## 🤝 Contributing, security and license
+
+| | |
+| :--- | :--- |
+| **Contributing** | This repository owns the pipeline source; read [`AGENTS.md`](AGENTS.md) before changing code. The hub [contributing guide](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/CONTRIBUTING.md) covers the card workflow and how merged revisions are imported into Digital-Mailroom. |
+| **Security** | Report vulnerabilities privately as described in the hub [security policy](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/SECURITY.md), which covers this package. Deployment hardening is in [Security](#security). |
+| **License** | No license file is published yet. |
 
 ---
 
