@@ -2,48 +2,56 @@
 
 <picture>
   <source media="(max-width: 640px)" srcset="docs/assets/readme/hero-mobile.svg"/>
-  <img src="docs/assets/readme/hero.svg" alt="Documents pass intake, classification and specialist extraction; quality or human review handles exceptions before compilation and archival." width="100%"/>
+  <img src="docs/assets/readme/hero.svg" alt="The LLM-Mailroom: envelopes ride a conveyor through intake, classify, extract, quality, compile and archive gates; a flagged envelope drops into a human-review bin" width="100%"/>
 </picture>
 
-# The LLM-Mailroom
+<br/>
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge)](pyproject.toml)
-[![LangGraph 13 nodes](https://img.shields.io/badge/LangGraph-13_nodes-6C63FF?style=for-the-badge)](src/graph/build_graph.py)
-[![SQLite first](https://img.shields.io/badge/storage-SQLite_first-22C55E?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
+[![LangGraph 13 nodes](https://img.shields.io/badge/LangGraph-13_nodes-22C55E?style=for-the-badge)](src/graph/build_graph.py)
+[![SQLite first](https://img.shields.io/badge/storage-SQLite_first-6C63FF?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
-[![Release](https://img.shields.io/badge/release-v0.8.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
-[![Dojo](https://img.shields.io/badge/dojo-v0.23.1-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.23.1)
+[![Release v0.8.1](https://img.shields.io/badge/release-v0.8.1-2EA043?style=flat-square)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
+[![Dojo pin v0.23.1](https://img.shields.io/badge/dojo_pin-v0.23.1-6f42c1?style=flat-square)](https://github.com/Exios66/llm-dojo-scoring/releases/tag/v0.23.1)
+[![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
+[![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
+[![Wiki](https://img.shields.io/badge/📖_wiki-deep_dives-555?style=flat-square)](https://github.com/Exios66/llm-mailroom/wiki)
 
-
-**[Quickstart](#quickstart)** · **[How it works](#how-it-works)** · **[Operations](#operations)** · **[Testing](#testing)** · **[Docs](#documentation)**
+**[Quickstart](#quickstart)** · **[How it works](#how-it-works)** · **[Operations](#operations)** · **[Testing](#testing)** · **[Where it fits](#where-it-fits)** · **[Docs](#documentation)**
 
 </div>
 
 ---
 
-## What this does
+<a id="what-this-does"></a>
 
-Source release: [`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1).
-The Dojo badge shows the consuming pin, **v0.23.1**.
+## 📬 What is this?
 
-A **LangGraph pipeline for legal documents**: ingest a file, classify it,
-extract structured facts with the matching specialist, apply quality gates,
-and compile an auditable matter record. FastAPI accepts uploads; the embedded
-watcher moves files through processing, review, archive or failure bins.
+Every legal document that lands in a transactional practice needs the same
+four things: someone to **sort** it, someone to **read** it, someone to
+**check the work**, and a **receipt** proving it all happened. The
+LLM-Mailroom is that whole shift, staffed by agents. It is a **LangGraph
+pipeline for legal documents**: ingest a file, classify it, extract
+structured facts with the matching specialist, apply quality gates, and compile
+an auditable matter record. FastAPI accepts uploads, and the embedded watcher
+moves each file through the processing, review, archive or failure bins.
 
 Five classes have dedicated schemas and specialists: `contract`,
-`merger_agreement`, `corporate_record`, `correspondence`, and `insurance_claim`.
-MAUD merger agreements have their own specialist. The high-confidence happy
-path uses classification and extraction LLM generations; Judge, Arbiter,
-Boss and human review handle the cases that need more scrutiny. Compilation
-is procedural.
+`merger_agreement`, `corporate_record`, `correspondence` and
+`insurance_claim`. MAUD merger agreements have their own specialist. The
+high-confidence happy path uses two LLM generations (classification and
+extraction). Judge, Arbiter, Boss and human review handle the documents that
+need more scrutiny, and compilation is procedural, with no LLM call.
 
 This standalone repository owns the pipeline source. The
 [Digital-Mailroom hub](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
-imports committed revisions; the [sandbox](https://github.com/Exios66/local-mailroom-sandbox)
+imports committed revisions, the [sandbox](https://github.com/Exios66/local-mailroom-sandbox)
 executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
-Langfuse traces.
+Langfuse traces. The source release is
+[`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1); the
+Dojo badge shows the pin this release consumes, **v0.23.1**.
 
 <details>
 <summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
@@ -58,13 +66,72 @@ and [documentation home](docs/README.md).
 
 
 <div align="center">
-<img src="docs/assets/readme/stats.svg" alt="13 graph nodes, five classes with dedicated specialists, SQLite default catalog, and a hash-chained audit trail." width="100%"/>
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/stats-mobile.svg"/>
+  <img src="docs/assets/readme/stats.svg" alt="By the numbers: 13 graph nodes, five document classes, a SQLite default catalog with no database server, a hash-chained audit trail and a FastAPI upload, status and audit API" width="100%"/>
+</picture>
 </div>
 
-## Quickstart
+## 🏭 One document, start to receipt
 
+<div align="center">
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/flow-mobile.svg"/>
+  <img src="docs/assets/readme/flow.svg" alt="Six main stages (intake, classify, extract, compile, catalog, archive) and the five exception paths: retry, reviewer, judge and arbiter, boss, human review" width="100%"/>
+</picture>
+</div>
+
+<br/>
+
+| | Phase | Graph node(s) | What happens |
+| :---: | :--- | :--- | :--- |
+| 📥 | **Intake** | `intake-document` | The ingest specialist claims the file, transcribes it, cleans it and writes its manifest |
+| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction, medium confidence gets a retry and a reviewer's second opinion, and low or unknown confidence goes to a human |
+| 🔍 | **Extract** | `extract-fields`, `(retry)` | The class specialist fills a Pydantic schema, gated on schema validity, confidence, factuality and completeness |
+| ⚖️ | **Quality** | `judge-verify`, `arbitrate-verdict`, `adjudicate-conflict` | The Judge checks ambiguous completeness. The Arbiter lets the verdict stand, orders a re-extraction or escalates. The Boss adjudicates matter conflicts |
+| 🧑‍⚖️ | **Human review** | `route-for-review` | The governance boundary: a person approves, rejects or requeues. A rejection ends in `FAILED` |
+| 🗂️ | **Compile → Catalog → Archive** | `compile-report`, `write-catalog`, `archive-document` | Procedural matter-record assembly, SQLite persistence, and a SHA-256 hash-chained audit archive |
+
+That is **13 nodes** in all. Two auxiliary flows run outside the graph: the
+Gmail triage lane and the post-archive relations clerk (details below).
+
+<a id="at-a-glance"></a>
+
+## 📟 At a glance
+
+<div align="center">
+<img src="docs/assets/readme/tui.svg" alt="Terminal dashboard: 13 graph nodes, MemorySaver checkpoints, SQLite first, a hash-chained audit trail and FastAPI, with routing notes: the review band 0.88 to 0.97 and unknown types go to the human review bin" width="90%"/>
+</div>
+
+<a id="where-it-fits"></a>
+
+## 🌌 Where it fits
+
+<div align="center">
+<picture>
+  <source media="(max-width: 640px)" srcset="docs/assets/readme/constellation-mobile.svg"/>
+  <img src="docs/assets/readme/constellation.svg" alt="Data-flow map of the Mailroom constellation with llm-mailroom highlighted: it pulls the pinned dataset, is executed by the sandbox, is scored by llm-dojo-scoring, sends traces to Langfuse which feeds The-Mailroom, and can use the mailroom-ml fast path" width="100%"/>
+</picture>
+</div>
+
+| | Neighbour | Relationship |
+| :---: | :--- | :--- |
+| 🏛️ | [`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | The integration hub. It imports this repository into `packages/llm-mailroom`; changes are authored here first |
+| 🧪 | [`local-mailroom-sandbox`](https://github.com/Exios66/local-mailroom-sandbox) | Executes the pipeline offline or on Modal/vLLM GPUs |
+| 🥋 | [`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) | Scores every run; the pipeline pins a Dojo release |
+| 👾 | [`The-Mailroom`](https://github.com/Exios66/The-Mailroom) | Visualizes the pipeline's Langfuse traces, and its Observatory floor talks to this API |
+| 📊 | [`Mailroom-Corpus-EDA`](https://github.com/Exios66/Mailroom-Corpus-EDA) | Publishes the `mailroom-dataset` corpus the evals pull |
+| 🧠 | [`mailroom-ml`](https://github.com/LLM-Mailroom-Services/mailroom-ml) | Standalone contractor: the optional ModernBERT intake fast path (`[bert]` extra) |
+
+<a id="quickstart"></a>
 <a id="getting-started"></a>
 <a id="quick-start"></a>
+
+## 🚀 Quickstart
+
+<div align="center">
+<img src="docs/assets/readme/terminal.svg" alt="Animated terminal: clone, install, run the offline routing test, start the API and check its health endpoint" width="90%"/>
+</div>
 
 > [!NOTE]
 > **No database server needed.** Catalog and audit entries use SQLite in your data folder. Graph checkpoints use in-memory `MemorySaver` by default; opt into persistent checkpoints with `MAILROOM_CHECKPOINTER=sqlite`. Docker is optional.
@@ -141,7 +208,9 @@ pip install -e ".[embeddings]"   # etc.
 
 ---
 
-## How it works
+<a id="how-it-works"></a>
+
+## 🧭 How it works
 
 <a id="architecture"></a>
 
@@ -151,9 +220,12 @@ One **LangGraph state machine run per document** — 13 nodes, MemorySaver-check
 
 The core pipeline is a **13-node LangGraph state machine** executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning).
 
+<details>
+<summary><b>🗺️ The full 13-node state machine (Mermaid)</b></summary>
+
 ```mermaid
 flowchart TD
-    START([START]) --> INGEST
+    START([START]) --> INTAKE
 
     INTAKE["intake-document<br/>ingest specialist: claim, transcribe, clean, prepare"]
     CLASSIFY["classify-document<br/>SorterAgent"]
@@ -172,8 +244,8 @@ flowchart TD
     FAILED["FAILED"]
     ENDX([END])
 
-    START --> INGEST
-    INGEST --> CLASSIFY
+    START --> INTAKE
+    INTAKE --> CLASSIFY
 
     CLASSIFY -- "confidence >= high (0.97)" --> EXTRACT
     CLASSIFY -- "low <= confidence < high (0.88–0.97)" --> REVIEW
@@ -206,8 +278,10 @@ flowchart TD
     REPORT --> CATALOG --> ARCHIVE --> RELATIONS --> ENDX
 
     GMAIL([Gmail triage<br/>free model swarm]) -.->|single-doc emails| CLASSIFY
-    GMAIL -.->|multi-doc or over-budget| INGEST
+    GMAIL -.->|multi-doc or over-budget| INTAKE
 ```
+
+</details>
 
 Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
 
@@ -219,6 +293,9 @@ Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `con
 ### Agent Organization
 
 The agent roster as declared in `config/taxonomy.yaml` — every LLM agent resolves its provider/model/prompt through `get_llm(agent_name)`; nothing is hardcoded:
+
+<details>
+<summary><b>🧑‍💼 The agent roster (Mermaid)</b></summary>
 
 ```mermaid
 flowchart TB
@@ -273,9 +350,13 @@ flowchart TB
     ARCHIVIST --> RELATIONS
 ```
 
+</details>
+
 Document classes (5): `contract`, `corporate_record`, `correspondence`, `merger_agreement`, `insurance_claim` — each with its own extraction schema and specialist. Court opinions and due-diligence memos classify as `unknown` (human review), not as a nearby class. The compliance class was removed from `taxonomy.yaml` on 2026-09-15 (commit `59c47401`) — the five-class roster plus `unknown` is final. The two vendored agents (Sorter, Contracts Specialist) come from the sister repo [llm-entity-extraction](https://github.com/Exios66/llm-entity-extraction) with their full append-only prompt lineage; all other agents are mailroom-native `BaseAgent` subclasses with Langfuse-managed prompts.
 
-## Design Principles
+<a id="design-principles"></a>
+
+## 🧱 Design principles
 
 1. **Auditability over cleverness.** Every classification, extraction, and routing decision is traceable (Langfuse trace per document, hash-chained audit log per archive).
 2. **Explicit over emergent.** Orchestration is a defined state machine — agents don't freely negotiate.
@@ -284,11 +365,16 @@ Document classes (5): `contract`, `corporate_record`, `correspondence`, `merger_
 5. **Redundant record-keeping.** Audit trail doesn't depend on any single tool staying alive.
 6. **Config over code.** Taxonomy, thresholds, model mappings, retry tuning, and per-agent token caps all live in `config/taxonomy.yaml`.
 
-## Project Structure
+<a id="project-structure"></a>
+
+## 🗂️ Project structure
 
 The repository root holds only the essentials — `src/` (all code), `data/`
 (runtime state), `docs/` (documentation + reference material), plus the
 tooling files. Everything else is nested:
+
+<details>
+<summary><b>The directory tree</b></summary>
 
 ```
 mailroom/
@@ -319,9 +405,13 @@ mailroom/
 All code runs with `src/` on the import path (`PYTHONPATH=src`), so intra-repo
 imports keep their plain package names (`from pipeline import …`).
 
+</details>
+
 ---
 
-## Operations
+<a id="operations"></a>
+
+## 🛠️ Operations
 
 <details>
 <summary><b>Configuration, providers, prompts, scoring, guardrails and API reference</b></summary>
@@ -576,7 +666,9 @@ data/
 
 </details>
 
-## Evaluation & ecosystem
+<a id="evaluation--ecosystem"></a>
+
+## 🔬 Evaluation & ecosystem
 
 ### Testing
 
@@ -714,9 +806,10 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - Back up `/archive` and the audit log table independently
 - Treat retention policy as an open decision — not assumed by this system
 
-## Documentation
-
+<a id="documentation"></a>
 <a id="further-documentation"></a>
+
+## 📚 Documentation
 
 - [Architecture](docs/pipeline-reference-llm-mailroom/architecture.md) — full architectural details
 - [Configuration](docs/pipeline-reference-llm-mailroom/configuration.md) — config reference
@@ -744,10 +837,10 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 **[Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA)** ·
 **[mailroom-ml](https://github.com/LLM-Mailroom-Services/mailroom-ml)**
 
-<sub>The Mailroom constellation · independent source repositories, shared interfaces.</sub>
+<sub>The LLM-Mailroom · one of the Mailroom constellation's independent source repositories, with shared interfaces.</sub>
 <br/>
 <sub>Core packages integrate in Digital-Mailroom; mailroom-ml is a standalone contractor.</sub>
 <br/>
-<sub>Local artwork: <a href="docs/assets/readme/README.md">design and regeneration</a>.</sub>
+<sub>📮 <i>Sorted, read, checked, filed, receipted.</i> · Artwork: <a href="docs/assets/readme/README.md">design and regeneration</a></sub>
 
 </div>
