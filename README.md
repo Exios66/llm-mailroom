@@ -73,7 +73,7 @@ executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
 [`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1). The
-dependency badge reflects this checkout's Dojo pin, **4740d76** (Dojo v0.24.2).
+dependency badge reflects this checkout's Dojo pin, **718e326** (Dojo v0.24.2 plus the interim zero-token fix).
 
 <details>
 <summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
@@ -192,7 +192,9 @@ In a second terminal at the repository root, submit the committed test fixture:
 curl -X POST http://localhost:8000/upload \
   -F "file=@src/tests/fixtures/contract/sample_msa.txt" \
   -F "matter_id=MATTER-001"
-# Use the returned doc_id in these URLs:
+# /upload returns upload_id; poll /queue until the document appears in recent,
+# then use its doc_id in these URLs:
+curl http://localhost:8000/queue
 curl http://localhost:8000/status/YOUR_DOC_ID
 curl http://localhost:8000/audit/YOUR_DOC_ID
 ```
@@ -892,14 +894,14 @@ No. The OpenAI client and `BaseAgent.__init__` are mocked in `src/tests/conftest
 <details>
 <summary><b>What happens when an agent returns junk?</b></summary>
 
-`pipeline/guards.py` validates every classification and extraction. An unknown type routes to human review, and a parse failure or schema violation clamps confidence below the routing threshold, forcing a retry and then human review. Triggered guards are logged and scored as `guardrail_triggered`.
+`pipeline/guards.py` validates every classification and extraction. An unknown type routes to human review, and a parse failure or schema violation clamps confidence below the routing threshold, forcing a retry; a valid retry proceeds, and only a still-failing retry goes to human review. Triggered guards are logged and scored as `guardrail_triggered`.
 
 </details>
 
 <details>
 <summary><b>How do I protect the API?</b></summary>
 
-Set `MAILROOM_API_TOKEN`: every endpoint except the health checks then requires it as a bearer token. See [Security](#security) for archive encryption, access control and backups.
+Set `MAILROOM_API_TOKEN`: every API endpoint except the health checks and FastAPI's built-in docs routes (`/docs`, `/redoc`, `/openapi.json`) then requires it as a bearer token. See [Security](#security) for archive encryption, access control and backups.
 
 </details>
 
