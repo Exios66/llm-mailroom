@@ -45,11 +45,20 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llm_dojo_scoring import __version__ as DOJO_VERSION
-
 SRC_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = SRC_DIR.parent
+# The sandbox vendors the scoring package beside the pipeline tree instead of
+# installing it. Prefer that sibling on a direct run; installed environments
+# keep using the resolved dependency.
+for _dojo_candidate in (
+    REPO_ROOT.parent / "llm-dojo-scoring" / "src",
+    REPO_ROOT / "vendor" / "llm-dojo-scoring" / "src",
+):
+    if _dojo_candidate.is_dir():
+        sys.path.insert(0, str(_dojo_candidate))
 sys.path.insert(0, str(SRC_DIR))
+
+from llm_dojo_scoring import __version__ as DOJO_VERSION  # noqa: E402
 
 from langchain_agents.cuad_maud import (  # noqa: E402
     flatten_cuad_clause_labels,

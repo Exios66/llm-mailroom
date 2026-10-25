@@ -316,6 +316,12 @@ def test_sha_badge_uses_short_label_and_commit_link_and_back():
     )
 
 
+def test_interim_sha_relabels_pinned_release_as_commit_and_back():
+    """A SHA target must not present an unreleased commit as a release."""
+    assert _rewrite_text("pinned release `v0.18.0`", SHA) == f"pinned commit `{SHA}`"
+    assert _rewrite_text(f"pinned commit `{SHA}`", "v0.20.0") == "pinned release `v0.20.0`"
+
+
 def test_main_never_downgrades_an_interim_sha_pin(monkeypatch, capsys):
     """Treat an older release as up to date for checks and refuse to apply it."""
     from scripts import bump_dojo_scoring as B
@@ -371,6 +377,24 @@ def test_main_keeps_sha_pin_that_is_the_release_commit(monkeypatch, capsys):
     assert B.main(["--check", "--tag", "v0.24.2"]) == 0
     assert B.main(["--apply", "--tag", "v0.24.2"]) == 0
     assert "immutable_pin=true" in capsys.readouterr().out
+
+
+def test_allow_missing_release_cannot_replace_immutable_sha_with_tag(monkeypatch, capsys):
+    """Offline mode must not trade an immutable pin for a movable tag.
+
+    ``--allow-missing-release`` skips the release verification that proves the
+    tag names the current commit. Without that proof, rewriting the SHA would
+    silently change the install contract.
+    """
+    monkeypatch.setattr(B, "current_pin", lambda root=B.REPO_ROOT: SHA)
+    monkeypatch.setattr(
+        B,
+        "apply_pin",
+        lambda *a, **k: pytest.fail("must not rewrite an immutable SHA pin to a tag"),
+    )
+
+    assert B.main(["--apply", "--tag", "v0.24.2", "--allow-missing-release"]) == 1
+    assert "refusing to replace an immutable SHA pin" in capsys.readouterr().err
 
 
 def test_main_accepts_sha_target_contained_in_latest_release(monkeypatch):
@@ -579,13 +603,20 @@ def test_main_missing_release_leaves_interim_pin_untouched(interim_pin_cli, mode
     assert "no GitHub release for v0.22.0" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("target", ["v0.22.0", "a" * 40])
-def test_main_offline_override_bypasses_both_github_guards(interim_pin_cli, target):
+def test_main_offline_override_bypasses_github_guards_for_sha_target(interim_pin_cli):
+    target = "a" * 40
     assert B.main(["--apply", "--tag", target, "--allow-missing-release"]) == 0
     B.release_exists.assert_not_called()
     B.tag_contains_commit.assert_not_called()
     B.latest_release_tag.assert_not_called()
     assert current_pin(interim_pin_cli) == target
+
+
+def test_main_offline_override_refuses_tag_target_from_sha_pin(interim_pin_cli, capsys):
+    assert B.main(["--apply", "--tag", "v0.22.0", "--allow-missing-release"]) == 1
+    B.apply_pin.assert_not_called()
+    assert current_pin(interim_pin_cli) == SHA
+    assert "refusing to replace an immutable SHA pin" in capsys.readouterr().err
 
 
 def test_main_same_sha_is_up_to_date_without_ancestry_lookup(interim_pin_cli, capsys):

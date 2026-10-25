@@ -675,6 +675,9 @@ async def resolve_review(doc_id: str, request: Request):
     manifest = load_manifest(doc_id)
     if not manifest:
         raise HTTPException(404, f"Manifest not found for doc_id: {doc_id}")
+    # Archive paths are keyed by doc_type; keep the pre-override identity so a
+    # requeue can still find a file archived under the old class.
+    original_manifest = manifest.model_copy(deep=True)
 
     try:
         class_override = apply_classification_override(
@@ -723,6 +726,10 @@ async def resolve_review(doc_id: str, request: Request):
     # --- requeue: copy source → inbox ----------------------------------------
     if disposition == "requeue":
         source = locate_document_file(manifest)
+        if source is None and class_override.get("doc_type"):
+            # The override may have moved the manifest's archive key before
+            # lookup; fall back to the class the document was archived under.
+            source = locate_document_file(original_manifest)
         if source is None:
             raise HTTPException(404, "Source file not found for requeue")
         try:

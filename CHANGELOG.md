@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- DMR-113: keep archived documents requeueable after a doc-type override, treat
+  an unreadable processing root as a missing source candidate instead of a 500,
+  refuse offline SHA-to-tag rewrites in the Dojo bump tool, reject malformed
+  40-hex prefixes in the docs-truth pin guard, and resolve the vendored Dojo
+  sibling on a direct `run_hf_pilot` run. Correct the current Dojo version and
+  field-scoring module references.
+
 - DMR-111: refuse ambiguous legacy basename reads after failed moves or metadata
   changes. Current stage, matter or class does not prove historical file ownership;
   document-ID paths and genuinely unique basenames remain available.
