@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Adopt the published Dojo v0.24.0 scoring release for standalone installs and
+- DMR-111: preserve document bytes when a worker processing filename already
+  exists, including review resume; require unambiguous ownership for legacy
+  failed/archive/processing basename lookups; and prevent delayed warehouse
+  snapshots from replacing newer document revisions. Malformed revision data
+  fails before publication instead of silently discarding evidence.
+
+- Adopt the published Dojo v0.24.1 scoring release for standalone installs and
   deployment builds, matching the scoring engine already used by Digital-Mailroom.
   Refresh documented dependency pins and the installed-version regression together
   (DMR-111); this does not change production prompt selection.

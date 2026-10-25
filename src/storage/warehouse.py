@@ -258,12 +258,30 @@ def _merge_rows(
     incoming: list[dict[str, Any]],
     key: str,
 ) -> list[dict[str, Any]]:
-    merged = {str(r[key]): r for r in existing if r.get(key) is not None}
-    for row in incoming:
+    merged = {}
+    for row in [*existing, *incoming]:
         k = row.get(key)
         if k is not None:
+            previous = merged.get(str(k))
+            # A snapshot loaded before another exporter can acquire the
+            # publication lock later. Keep the newest known catalog revision.
+            # Unknown revisions cannot supersede known ones. Malformed
+            # revisions raise before publication, preserving corrupt evidence.
+            if key == "doc_id":
+                new = _row_updated_at(row)
+                old = _row_updated_at(previous) if previous is not None else None
+                if old is not None and (new is None or new < old):
+                    continue
             merged[str(k)] = row
     return list(merged.values())
+
+
+def _row_updated_at(row: dict[str, Any]) -> datetime | None:
+    raw = row.get("updated_at")
+    if raw is None:
+        return None
+    value = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
 def write_parquet_rows(path: Path, rows: list[dict[str, Any]], *, merge_key: str) -> int:
