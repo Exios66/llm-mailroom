@@ -5,7 +5,7 @@ Tracing, scoring, and evaluation plumbing for the mailroom pipeline.
 ## Where things live (post KANBAN-061)
 
 The field-scoring implementation is **owned by the shared package**
-[`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) (4740d76).
+[`llm-dojo-scoring`](https://github.com/Exios66/llm-dojo-scoring) (718e326).
 This repo keeps only a backward-compatibility shim.
 
 | Module | Status |
@@ -91,7 +91,7 @@ stay out of Hub `--real` entirely.
 from `get_suite(doc_class)` and attaches a slim block as **trace metadata**
 (never tags — tags are immutable/upfront). Registered extras
 (`determination_consistency`, field-micro F1/F2) are SCORE_CONFIGS names
-that exist in the current dojo registry (pinned release `4740d76825217e746c645864c8510f12869db965`; these extras have
+that exist in the current dojo registry (pinned commit `718e326c1fe5a49b3f1cfd43a3ac10c73e7e01a4`; these extras have
 been registered since v0.14.0). v0.14.0 added `citation` / `inclusion` /
 `ground_truth` on T0/T1 `MetricDef`s and an importable prompt catalog
 (`llm_dojo_scoring.prompts`). `field_presence` is documented as unemitted —
