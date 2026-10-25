@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- DMR-113: consume the interim post-v0.24.2 Dojo commit `718e326` (explicit
+  `total_tokens: 0` zero-usage fix); the immutable pin is identified as interim
+  and will move to the next released commit.
+
 - DMR-113: keep archived documents requeueable after a doc-type override, treat
   an unreadable processing root as a missing source candidate instead of a 500,
   refuse offline SHA-to-tag rewrites in the Dojo bump tool, reject malformed

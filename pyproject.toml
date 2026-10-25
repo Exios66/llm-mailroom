@@ -37,9 +37,11 @@ dependencies = [
     "arize-phoenix>=4.0",
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp-proto-http>=1.20",
-    # Unified scoring engine (KANBAN-061): observability.field_scoring is a
-    # deprecated shim over this package since v0.5.0.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@4740d76825217e746c645864c8510f12869db965",
+    # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
+    # the canonical engine since v0.5.0.
+    # Interim post-v0.24.2 commit (explicit total_tokens: 0 zero-usage fix);
+    # replace with the released commit when Dojo v0.24.3 is published.
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@718e326c1fe5a49b3f1cfd43a3ac10c73e7e01a4",
 ]
 
 [project.optional-dependencies]
