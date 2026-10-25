@@ -190,15 +190,15 @@ def test_release_docs_match_package_version(release_project, path, pattern):
 
 
 @pytest.mark.parametrize("path,pattern", [
-    ("docs/constellation/overview.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/start-here/overview.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+)"),
-    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
-    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+)`"),
-    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+)`"),
-    ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+)`"),
-    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+)"),
+    ("docs/constellation/overview.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
+    ("docs/start-here/overview.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
+    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
+    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
+    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+|[0-9a-f]{40})`"),
+    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+|[0-9a-f]{40})`"),
+    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+|[0-9a-f]{40})`"),
+    ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+|[0-9a-f]{40})`"),
+    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+|[0-9a-f]{40})"),
 ])
 def test_release_docs_match_declared_dojo_pin(release_project, path, pattern):
     dependency, = [dep for dep in release_project["dependencies"]
