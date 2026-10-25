@@ -92,6 +92,9 @@ TERMINAL_STAGES = ("archived", "failed", "review")
 # Stale-claim cutoff for startup reconciliation (L-1/A-18): claims older than
 # this are presumed orphaned by a crashed process and re-queued.
 STALE_CLAIM_MINUTES = int(os.environ.get("WATCHER_STALE_CLAIM_MINUTES", "60"))
+# A stranded same-name claim must not block the inbox until the next restart.
+# Re-run the stale-claim reconciliation periodically while the watcher drains.
+STALE_RECONCILE_INTERVAL_SECONDS = 60.0
 
 WATCHER_LOCK_NAME = "watcher.lock"
 
@@ -1209,6 +1212,7 @@ class Watcher:
         import time as _time
 
         poll = float(os.environ.get("WATCHER_POLL_INTERVAL_SECONDS", str(DEFAULT_POLL_INTERVAL_SECONDS)))
+        last_stale_check = _time.monotonic()
         while self._running:
             _time.sleep(poll)
             # Liveness beacon for /health + the HUB-050 watchdog: proves the
@@ -1221,6 +1225,12 @@ class Watcher:
             _get_manifest_index()
             if is_ingestion_paused():
                 continue
+            now = _time.monotonic()
+            if now - last_stale_check >= STALE_RECONCILE_INTERVAL_SECONDS:
+                # Startup-only reconciliation leaves a dead worker's same-name
+                # claim blocking new inbox uploads until the next restart.
+                self._reconcile_stale_claims()
+                last_stale_check = now
             for f in list_inbox_files():
                 if f.name in _active_files:
                     continue

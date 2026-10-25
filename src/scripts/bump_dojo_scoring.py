@@ -125,7 +125,7 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"\g<1>{tag}\g<3>",
     ),
     (
-        _c(r"(pinned release `)(__REF__)(`)"),
+        _c(r"(pinned (?:release|commit) `)(__REF__)(`)"),
         r"\g<1>{tag}\g<3>",
     ),
     (
@@ -404,6 +404,11 @@ def _rewrite_text(text: str, tag: str) -> str:
     out = _c(r"(bump_dojo_scoring\.py --apply --tag )(__REF__)").sub(
         rf"\g<1>{tag}", out
     )
+    # A SHA is an interim commit, never a published release label.
+    if is_sha(tag):
+        out = out.replace("pinned release `", "pinned commit `")
+    else:
+        out = out.replace("pinned commit `", "pinned release `")
     for pattern, repl in DOC_PIN_PATTERNS:
         out = pattern.sub(
             repl.format(tag=tag, label=label, release_path=release_path), out
@@ -442,8 +447,9 @@ def main(argv: list[str] | None = None) -> int:
     in the target release, and 2 when an update is needed. ``--apply`` writes
     recognized pin files unless ``--dry-run`` is set. Return 1 for a missing
     release, a refused SHA downgrade, or no changes when the pins differ;
-    otherwise return 0. ``--allow-missing-release`` skips the release-existence check
-    and the SHA ancestry guard.
+    otherwise return 0. ``--allow-missing-release`` skips the release-existence
+    check and the SHA ancestry guard, but refuses to replace an immutable SHA
+    pin with a movable tag because it cannot verify the tag's commit offline.
 
     Argument parsing may raise SystemExit. Invalid refs raise ValueError;
     file I/O and GitHub lookup errors propagate.
@@ -495,8 +501,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"current={current}")
     print(f"desired={desired}")
 
-    if is_sha(current) and current != desired and not args.allow_missing_release:
-        if not is_sha(desired) and release_commit(desired) == current:
+    if is_sha(current) and current != desired and not is_sha(desired):
+        if args.allow_missing_release:
+            # Offline mode cannot prove the tag names the current commit.
+            # Rewriting an immutable SHA pin to a movable tag would silently
+            # change the install contract, so require the release SHA instead.
+            print(
+                "error: refusing to replace an immutable SHA pin with tag "
+                f"{desired} while --allow-missing-release skips release "
+                "verification; pass the release commit SHA instead",
+                file=sys.stderr,
+            )
+            return 1
+        if release_commit(desired) == current:
             # The pin already IS the release's exact commit. Rewriting it to
             # the tag name would trade an immutable install contract for a
             # movable ref, so both --check and --apply leave it alone.

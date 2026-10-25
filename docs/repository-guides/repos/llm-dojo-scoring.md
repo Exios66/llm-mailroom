@@ -6,7 +6,7 @@
 | :--- | :--- |
 | Repository | [Exios66/llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) |
 | Monorepo path | `packages/llm-dojo-scoring` |
-| Latest | v0.24.0 as of 2026-10-25 (llm-mailroom pins 4740d76825217e746c645864c8510f12869db965) |
+| Latest | v0.24.2 as of 2026-10-25 (llm-mailroom pins 4740d76825217e746c645864c8510f12869db965) |
 | Used by | llm-mailroom, eval-environment, local-mailroom-sandbox |
 
 ## What it does
