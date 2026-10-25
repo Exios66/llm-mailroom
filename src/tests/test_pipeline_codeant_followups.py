@@ -235,13 +235,14 @@ def test_unique_legacy_archive_and_processing_files_stay_available(temp_base_dir
 
 
 @pytest.mark.parametrize("other_scope", [{"matter_id": "OTHER"}, {"doc_type": "correspondence"}])
-def test_archive_legacy_ownership_is_scoped_to_its_directory(temp_base_dir, other_scope):
+def test_archive_current_metadata_cannot_prove_legacy_ownership(temp_base_dir, other_scope):
     from pipeline.bins import save_manifest
     from pipeline.review_resolve import locate_document_file
 
     requested, sibling, legacy = _legacy_candidate("archive")
     save_manifest(sibling.model_copy(update=other_scope))
-    assert locate_document_file(requested) == legacy
+    assert locate_document_file(requested) is None
+    assert legacy.read_bytes() == b"SIBLING confidential document"
 
 
 def test_processing_legacy_cannot_choose_between_workers(temp_base_dir):
