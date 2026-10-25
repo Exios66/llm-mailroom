@@ -321,6 +321,28 @@ def tag_contains_commit(sha: str, tag: str, repo: str = DOJO_REPO) -> bool:
     return payload.get("status") in ("ahead", "identical")
 
 
+def release_commit(tag: str, repo: str = DOJO_REPO) -> str:
+    """Return the exact commit a published release tag currently points at.
+
+    The ``commits/{ref}`` endpoint peels annotated tags and resolves the
+    ref to a commit, unlike ``releases/tags`` metadata. Comparing this SHA
+    with an immutable commit pin is what proves the pin still identifies
+    the published release rather than a movable tag name.
+    """
+    tag = _normalize_tag(tag)
+    url = f"https://api.github.com/repos/{repo}/commits/{tag}"
+    req = urllib.request.Request(url, headers=_github_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"GitHub commit lookup failed: {exc.code} {exc.reason}") from exc
+    sha = payload.get("sha")
+    if not sha:
+        raise RuntimeError(f"commits/{tag} returned no sha")
+    return sha
+
+
 def _rewrite_text(text: str, tag: str) -> str:
     """Return text with recognized dojo pins, badges, and test references updated.
 
@@ -453,7 +475,20 @@ def main(argv: list[str] | None = None) -> int:
 
     current = current_pin()
     desired = _normalize_tag(args.tag) if args.tag else latest_release_tag()
-    if not args.allow_missing_release and not release_exists(desired):
+    if is_sha(desired):
+        # A commit SHA is not a release tag: prove a published release
+        # contains it instead of querying releases/tags/<sha> (always 404).
+        published = args.allow_missing_release or tag_contains_commit(
+            desired, latest_release_tag()
+        )
+        if not published:
+            print(
+                f"error: commit {desired} is not contained in the latest "
+                f"release on {DOJO_REPO}",
+                file=sys.stderr,
+            )
+            return 1
+    elif not args.allow_missing_release and not release_exists(desired):
         print(f"error: no GitHub release for {desired} on {DOJO_REPO}", file=sys.stderr)
         return 1
 
@@ -461,6 +496,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"desired={desired}")
 
     if is_sha(current) and current != desired and not args.allow_missing_release:
+        if not is_sha(desired) and release_commit(desired) == current:
+            # The pin already IS the release's exact commit. Rewriting it to
+            # the tag name would trade an immutable install contract for a
+            # movable ref, so both --check and --apply leave it alone.
+            print("immutable_pin=true")
+            print("up_to_date=true")
+            return 0
         if not tag_contains_commit(current, desired):
             # Interim SHA pin that the target release does not contain: moving
             # to it would downgrade the pin (e.g. the daily backstop resolving
