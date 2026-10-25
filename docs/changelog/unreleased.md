@@ -1,6 +1,6 @@
 ---
 tags:
-  - improvement
+  - fix
 ---
 
 # Unreleased
@@ -12,6 +12,13 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 {% endhint %}
 
 Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md).
+
+## Fixed
+
+- Adopt the published Dojo v0.24.0 scoring release for standalone installs and
+  deployment builds, matching the scoring engine already used by Digital-Mailroom.
+  Refresh documented dependency pins and the installed-version regression together
+  (DMR-111); this does not change production prompt selection.
 
 ## Documentation
 
