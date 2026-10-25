@@ -190,15 +190,15 @@ def test_release_docs_match_package_version(release_project, path, pattern):
 
 
 @pytest.mark.parametrize("path,pattern", [
-    ("docs/constellation/overview.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
-    ("docs/start-here/overview.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
-    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
-    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+|[0-9a-f]{40})"),
-    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+|[0-9a-f]{40})`"),
-    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+|[0-9a-f]{40})`"),
-    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+|[0-9a-f]{40})`"),
-    ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+|[0-9a-f]{40})`"),
-    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+|[0-9a-f]{40})"),
+    ("docs/constellation/overview.md", r"llm-mailroom pins (v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))"),
+    ("docs/start-here/overview.md", r"llm-mailroom pins (v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))"),
+    ("docs/constellation/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))"),
+    ("docs/repository-guides/repos/llm-dojo-scoring.md", r"llm-mailroom pins (v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))"),
+    ("docs/constellation/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))`"),
+    ("docs/how-it-fits-together/architecture.md", r"\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@(v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))`"),
+    ("docs/pipeline-reference-llm-mailroom/sister-repos.md", r"`@(v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))`"),
+    ("docs/the-pipeline-in-depth/running.md", r"`@(v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))`"),
+    ("docs/the-pipeline-in-depth/scoring-and-metrics.md", r"pipeline pins (?:llm-dojo-scoring \*\*)?(v\d+\.\d+\.\d+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))"),
 ])
 def test_release_docs_match_declared_dojo_pin(release_project, path, pattern):
     dependency, = [dep for dep in release_project["dependencies"]
@@ -314,3 +314,14 @@ def test_repository_index_scopes_hub_imports_to_core_packages(path):
     assert import_instructions[0].startswith("For imported core packages, ")
     assert "Issue, evaluation, and external-feeder repositories follow their own workflows." in introduction
     assert "Hub wiring and governance are authored in the hub." in introduction
+
+
+def test_documented_pin_pattern_rejects_longer_hex_refs():
+    """A 40-hex prefix of a longer alphanumeric ref is not a pin.
+
+    Without the trailing boundary, ``a * 41`` yields a 40-character match
+    equal to a valid pin and the docs test passes on a malformed reference.
+    """
+    pattern = r"llm-mailroom pins (v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))"
+    assert re.findall(pattern, "llm-mailroom pins " + "a" * 41) == []
+    assert re.findall(pattern, "llm-mailroom pins " + "a" * 40) == ["a" * 40]

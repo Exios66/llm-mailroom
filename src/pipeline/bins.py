@@ -294,21 +294,31 @@ def archived_file_path(manifest) -> Path:
 
 
 def processing_file_path(manifest) -> Path | None:
-    """A bare processing filename has no worker identity in its manifest."""
+    """A bare processing filename has no worker identity in its manifest.
+
+    Source lookup is best-effort: a transient unreadable processing root must
+    not turn an API download/requeue into a 500 while another bin still holds
+    the document. Only the directory listing is guarded; document identity
+    validation still raises for unsafe manifest fields.
+    """
     root = processing_dir()
-    if not root.is_dir():
-        return None
     name = _review_name(manifest)
-    workers = [path for path in root.iterdir() if path.is_dir()]
-    for worker in workers:
-        owned = worker / name
-        if owned.is_file():
-            return owned
-    legacy = [worker for worker in workers if (worker / manifest.original_filename).is_file()]
-    if len(legacy) != 1:
+    try:
+        if not root.is_dir():
+            return None
+        workers = [path for path in root.iterdir() if path.is_dir()]
+        for worker in workers:
+            owned = worker / name
+            if owned.is_file():
+                return owned
+        legacy = [worker for worker in workers if (worker / manifest.original_filename).is_file()]
+        if len(legacy) != 1:
+            return None
+        candidate = _owned_bin_file_path(manifest, legacy[0])
+        return candidate if candidate.is_file() else None
+    except OSError:
+        logger.warning("processing_listing_failed", doc_id=manifest.doc_id, exc_info=True)
         return None
-    candidate = _owned_bin_file_path(manifest, legacy[0])
-    return candidate if candidate.is_file() else None
 
 
 def _owned_bin_file_path(manifest, base: Path) -> Path:
