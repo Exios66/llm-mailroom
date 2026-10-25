@@ -86,6 +86,19 @@ def test_apply_pin_dry_run_and_write(tmp_path: Path):
             id="dated-dependency-table",
         ),
         pytest.param(
+            "| llm-mailroom | llm-dojo-scoring | git pin `@{version}`; "
+            "changed through explicit release adoption |\n",
+            id="explicit-adoption-table",
+        ),
+        pytest.param(
+            "| llm-mailroom | llm-dojo-scoring | git pin `@{version}` "
+            "as of 2026-10-23; changed through explicit release adoption |\n",
+            id="dated-explicit-adoption-table",
+        ),
+        pytest.param("pinned release `{version}`", id="pinned-release-prose"),
+        pytest.param("In the pinned {version}, bands are read", id="pinned-library-prose"),
+        pytest.param("Dojo pin, **{version}**.", id="checkout-pin-prose"),
+        pytest.param(
             "![Dojo](https://img.shields.io/badge/dojo-{version}-6f42c1)\n",
             id="markdown-badge",
         ),

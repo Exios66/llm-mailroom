@@ -119,6 +119,24 @@ DOC_PIN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"\g<1>{tag}\g<3>",
     ),
     (
+        # Source-owned dependency-adoption prose replaced the old auto-bump
+        # wording; restrict this matcher to the pipeline's dependency row.
+        _c(r"(\| llm-mailroom\s*\| llm-dojo-scoring\s*\| git pin `@)(__REF__)(`)"),
+        r"\g<1>{tag}\g<3>",
+    ),
+    (
+        _c(r"(pinned release `)(__REF__)(`)"),
+        r"\g<1>{tag}\g<3>",
+    ),
+    (
+        _c(r"(In the pinned )(__REF__)(,)"),
+        r"\g<1>{tag}\g<3>",
+    ),
+    (
+        _c(r"(Dojo pin, \*\*)(__REF__)(\*\*)"),
+        r"\g<1>{tag}\g<3>",
+    ),
+    (
         # shields.io dojo pin badge; preserve the trailing color segment
         _c(r"(badge/dojo-)(__LABEL__)(?=-)"),
         r"\g<1>{label}",
