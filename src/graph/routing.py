@@ -418,7 +418,22 @@ def after_review_classify(state: dict) -> Literal["review_classify", "extract", 
     # Decision-model reviewer: the node already applied decide_review; only a
     # literal "extract" continues, any other value parks.
     if state.get("review_route") is not None:
-        return "extract" if state["review_route"] == "extract" else "human_review"
+        if state["review_route"] != "extract":
+            return "human_review"
+        # Same ground-truth gate as the LLM accept arm below: a label both
+        # opinions share can still miss the grounded class.
+        from pipeline.reconsideration import class_misses_ground_truth
+
+        if class_misses_ground_truth(state, reviewer=True):
+            logger.info(
+                "gt_class_miss_after_reviewer",
+                verdict=state.get("review_verdict"),
+                confidence=state.get("reviewer_confidence"),
+                doc_type=state.get("reviewer_doc_type"),
+                doc_id=state.get("doc_id"),
+            )
+            return "human_review"
+        return "extract"
     verdict = state.get("review_verdict")
     confidence = state.get("reviewer_confidence")
     doc_type = state.get("reviewer_doc_type")

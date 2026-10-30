@@ -338,3 +338,32 @@ def test_router_unknown_route_value_parks():
 
 def test_router_without_route_keeps_llm_behavior():
     assert after_review_classify({"review_verdict": "reviewer_conflicts"}) == "human_review"
+
+
+def test_accept_with_ground_truth_class_miss_parks(decision_config, no_llm_reviewer):
+    # Model agrees with a wrong sorter label at/above cutoff: the LLM accept
+    # arm would park this on a ground-truth miss, so the decision arm must too.
+    register_decision_backend(Spy(answer=answer(conf=0.99)))
+    st = state(ground_truth={"expected_doc_class": "corporate_record"})
+    updates = review_classify_node(st)
+    assert updates["review_route"] == "extract"
+    assert route_after(st, updates) == "human_review"
+
+
+def test_accept_with_matching_ground_truth_extracts(decision_config, no_llm_reviewer):
+    register_decision_backend(Spy(answer=answer(conf=0.99)))
+    st = state(ground_truth={"expected_doc_class": "insurance_claim"})
+    updates = review_classify_node(st)
+    assert route_after(st, updates) == "extract"
+
+
+def test_accept_without_ground_truth_is_unchanged(decision_config, no_llm_reviewer):
+    register_decision_backend(Spy(answer=answer(conf=0.99)))
+    for gt in (None, {}, {"expected_doc_class": ""}):
+        st = state() if gt is None else state(ground_truth=gt)
+        updates = review_classify_node(st)
+        assert route_after(st, updates) == "extract"
+
+
+def test_router_route_extract_without_ground_truth_extracts():
+    assert after_review_classify({"review_route": "extract", "reviewer_doc_type": "insurance_claim"}) == "extract"
