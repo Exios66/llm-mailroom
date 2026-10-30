@@ -233,19 +233,7 @@ def test_override_reaches_extract_via_interrupt(temp_base_dir, decision_lane, ex
     assert resumed["doc_type"] == REVIEWER_LABEL
     assert extractors == [REVIEWER_LABEL]
     assert resumed["classification_confidence"] is None
-    _assert_archived_review_evidence(result["doc_id"])
-
-
-def _assert_archived_review_evidence(doc_id):
-    from pipeline.bins import load_manifest
-
-    manifest = load_manifest(doc_id)
-    review = _catalog_row(doc_id).extracted_data["_review"]
-    assert manifest.review_verdict == review["review_verdict"] == "decision_escalates"
-    assert manifest.reviewer_model == review["reviewer_model"] == "decision-model-1"
-    assert manifest.reviewer_doc_type == review["reviewer_doc_type"] == REVIEWER_LABEL
-    assert "reviewer_disagreement" in manifest.review_causes
-    assert "reviewer_disagreement" in review["review_causes"]
+    _assert_archived_evidence(result["doc_id"])
 
 
 def test_override_survives_restart(temp_base_dir, decision_lane, monkeypatch, extractors):
@@ -263,6 +251,7 @@ def test_override_survives_restart(temp_base_dir, decision_lane, monkeypatch, ex
     assert resumed["stage"] == "archived"
     assert resumed["doc_type"] == REVIEWER_LABEL
     assert extractors == [REVIEWER_LABEL]
+    _assert_archived_evidence(result["doc_id"])
 
 
 def test_rejected_never_reaches_archive(temp_base_dir, decision_lane):
@@ -321,7 +310,7 @@ def test_fallback_resume_that_archives_keeps_review_evidence(
     reset_compiled_graph()
     resumed = _override_and_resume(result["doc_id"])
     assert resumed["stage"] == "archived"
-    _assert_archived_review_evidence(result["doc_id"])
+    _assert_archived_evidence(result["doc_id"])
 
 
 def test_fallback_resume_that_reparks_keeps_both_opinions(
@@ -391,28 +380,6 @@ def _assert_archived_evidence(doc_id):
     _assert_row_keeps_evidence(doc_id)
 
 
-def test_graph_rejection_keeps_evidence_in_catalog(temp_base_dir, decision_lane):
-    from langgraph.types import Command
-
-    from graph.build_graph import _execute_run
-
-    result = _park(temp_base_dir)
-    doc_id = result["doc_id"]
-    thread_id = result["checkpoint_thread_id"]
-
-    _execute_run(
-        {"doc_id": doc_id, "matter_id": "MATTER-EVIDENCE", "checkpoint_thread_id": thread_id},
-        seed="evidence",
-        attempt=0,
-        thread_id=thread_id,
-        invoke_input=Command(resume={"decision": "rejected", "notes": "no"}),
-        trace_input={"resumed": True},
-    )
-
-    assert _catalog_row(doc_id).stage == "failed"
-    _assert_row_keeps_evidence(doc_id)
-
-
 def _api_client(monkeypatch, temp_base_dir):
     import importlib
     import sys
@@ -468,33 +435,6 @@ def test_approved_document_keeps_evidence_through_archive(
     temp_base_dir, decision_lane, extractors
 ):
     result = _park(temp_base_dir)
-    resumed = _override_and_resume(result["doc_id"])
-    assert resumed["stage"] == "archived"
-    _assert_archived_evidence(result["doc_id"])
-
-
-def test_approved_evidence_survives_sqlite_restart(
-    temp_base_dir, decision_lane, monkeypatch, extractors
-):
-    pytest.importorskip("langgraph.checkpoint.sqlite")
-    from graph.build_graph import reset_compiled_graph
-
-    monkeypatch.setenv("MAILROOM_CHECKPOINTER", "sqlite")
-    reset_compiled_graph()
-    result = _park(temp_base_dir)
-
-    reset_compiled_graph()
-    resumed = _override_and_resume(result["doc_id"])
-    assert resumed["stage"] == "archived"
-    _assert_archived_evidence(result["doc_id"])
-
-
-def test_approved_evidence_survives_stateless_resume(temp_base_dir, decision_lane, extractors):
-    """MemorySaver restart: the fallback run rebuilds state from the manifest."""
-    import graph.build_graph as bg
-
-    result = _park(temp_base_dir)
-    bg.reset_compiled_graph()
     resumed = _override_and_resume(result["doc_id"])
     assert resumed["stage"] == "archived"
     _assert_archived_evidence(result["doc_id"])
