@@ -366,7 +366,7 @@ def _assert_row_keeps_evidence(doc_id):
     assert "reviewer_disagreement" in review["review_causes"]
 
 
-def _assert_archived_evidence(doc_id):
+def _assert_archived_evidence(doc_id, field="entity_name", value="Acme Corp"):
     from pipeline.bins import load_manifest
 
     manifest = load_manifest(doc_id)
@@ -377,7 +377,7 @@ def _assert_archived_evidence(doc_id):
     assert "reviewer_disagreement" in manifest.review_causes
     row = _catalog_row(doc_id)
     assert row.stage == "archived"
-    assert row.extracted_data["entity_name"] == "Acme Corp"
+    assert row.extracted_data[field] == value
     _assert_row_keeps_evidence(doc_id)
 
 
@@ -430,6 +430,21 @@ def test_operator_completion_keeps_evidence_in_catalog(temp_base_dir, decision_l
 
     assert response.status_code == 200, response.text
     _assert_archived_evidence(doc_id)
+
+
+def test_plain_approval_keeps_evidence_through_archive(temp_base_dir, decision_lane, extractors):
+    from graph.build_graph import resume_from_review
+    from pipeline.bins import load_manifest, review_file_path
+
+    result = _park(temp_base_dir)
+    manifest = load_manifest(result["doc_id"])
+
+    resumed = resume_from_review(manifest, review_file_path(manifest))
+
+    assert resumed["stage"] == "archived"
+    assert resumed["doc_type"] == SORTER_LABEL
+    assert extractors == [SORTER_LABEL]
+    _assert_archived_evidence(result["doc_id"], field="claim_number", value="C-1")
 
 
 def test_auto_accepted_document_keeps_verdict_through_archive(
