@@ -72,8 +72,9 @@ def _review_evidence(doc) -> dict[str, Any]:
 def with_review_evidence(extracted: Any, manifest) -> Any:
     """Catalog ``extracted_data`` carrying the manifest's reviewer evidence.
 
-    Archive and rejection replace the row's parked payload, so ``_review`` is
-    copied forward. Without evidence ``extracted`` is returned unchanged.
+    Archive, operator completion, rejection and run aborts replace the row's
+    parked payload, so ``_review`` is copied forward. Without evidence
+    ``extracted`` is returned unchanged.
     """
     evidence = {name: getattr(manifest, name, None) for name in REVIEW_EVIDENCE_FIELDS}
     if all(value is None for value in evidence.values()):

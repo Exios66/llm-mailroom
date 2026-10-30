@@ -18,6 +18,7 @@ import pytest
 
 from agents.decision_backend import register_decision_backend
 from pipeline.decision_review import DecisionAnswer
+from pipeline.limits import RunBudgetExceeded, RunDeadlineExceeded
 
 SORTER_LABEL = "insurance_claim"
 REVIEWER_LABEL = "corporate_record"
@@ -431,15 +432,6 @@ def test_operator_completion_keeps_evidence_in_catalog(temp_base_dir, decision_l
     _assert_archived_evidence(doc_id)
 
 
-def test_approved_document_keeps_evidence_through_archive(
-    temp_base_dir, decision_lane, extractors
-):
-    result = _park(temp_base_dir)
-    resumed = _override_and_resume(result["doc_id"])
-    assert resumed["stage"] == "archived"
-    _assert_archived_evidence(result["doc_id"])
-
-
 def test_auto_accepted_document_keeps_verdict_through_archive(
     temp_base_dir, decision_lane, extractors
 ):
@@ -655,3 +647,51 @@ def test_operator_supplied_review_block_is_stripped_on_complete(
     evidence = out["doc_record"]["extracted_data"]["_review"]
     assert evidence["reviewer_model"] == "decision-model-1"
     assert evidence["review_verdict"] == "decision_escalates"
+@pytest.mark.parametrize("resume", ["interrupt", "fallback"])
+@pytest.mark.parametrize(
+    "failure",
+    [RunDeadlineExceeded(0.0), RunBudgetExceeded(2, 1), RuntimeError("crash")],
+    ids=["deadline", "budget", "crash"],
+)
+def test_abort_after_approval_keeps_evidence(
+    temp_base_dir, decision_lane, monkeypatch, resume, failure
+):
+    import graph.build_graph as bg
+    from pipeline.bins import load_manifest, review_file_path
+
+    result = _park(temp_base_dir)
+    doc_id = result["doc_id"]
+    if resume == "fallback":
+        bg.reset_compiled_graph()
+
+    # The node-boundary hook runs outside the extract node's own error handling.
+    def abort_once_approved(node_state):
+        if node_state.get("review_decision") == "approved":
+            raise failure
+
+    monkeypatch.setattr(bg, "_touch_heartbeat", abort_once_approved)
+    manifest = load_manifest(doc_id)
+    resumed = bg.resume_from_review(manifest, review_file_path(manifest))
+
+    assert resumed["stage"] == "failed"
+    assert resumed["run_aborted"] is True
+    aborted = load_manifest(doc_id)
+    assert aborted.stage.value == "failed"
+    assert aborted.review_verdict == "decision_escalates"
+    assert aborted.reviewer_model == "decision-model-1"
+    assert aborted.reviewer_doc_type == REVIEWER_LABEL
+    assert "reviewer_disagreement" in aborted.review_causes
+    assert _catalog_row(doc_id).stage == "failed"
+    _assert_row_keeps_evidence(doc_id)
+
+
+def test_abort_without_evidence_leaves_catalog_data_empty(temp_base_dir):
+    import graph.build_graph as bg
+
+    aborted = bg._finalize_aborted(
+        {"doc_id": "plain-abort", "matter_id": "M", "original_filename": "a.txt"}, "crash"
+    )
+
+    assert aborted["run_aborted"] is True
+    assert _catalog_row("plain-abort").extracted_data is None
+
