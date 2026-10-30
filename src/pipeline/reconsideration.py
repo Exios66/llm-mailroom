@@ -50,7 +50,10 @@ CAUSE_LABELS: dict[str, str] = {
     REVIEWER_NO_TEXT: "document has no usable text for the decision reviewer",
     REVIEWER_INELIGIBLE_LABEL: "sorter or reviewer label is not an eligible class",
     REVIEWER_DISAGREEMENT: "sorter and decision reviewer labels disagree",
-    REVIEWER_LOW_CONFIDENCE: "decision reviewer confidence below the class cutoff or no valid cutoff exists",
+    REVIEWER_LOW_CONFIDENCE: (
+        "decision reviewer confidence missing or below the class cutoff, "
+        "or no valid cutoff for the class"
+    ),
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})

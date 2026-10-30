@@ -74,6 +74,8 @@ def get_reviewer_config() -> dict:
     may contain a ``mode`` and a decision confidence ``cutoff``. A missing
     or non-mapping reviewer block defaults to ``llm`` with no class entries;
     non-mapping class entries are ignored. Loading errors propagate.
+    ``default_mode: decision_only`` selects the lane but cannot accept: a class
+    without its own entry and cutoff always parks for human review.
     """
     block = load_config().get("reviewer")
     if not isinstance(block, dict):

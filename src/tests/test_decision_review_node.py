@@ -20,7 +20,9 @@ from graph.routing import after_review_classify
 from pipeline.config import get_review_mode, get_reviewer_config
 from pipeline.decision_review import DecisionAnswer
 from pipeline.reconsideration import (
+    CAUSE_LABELS,
     REVIEWER_DISAGREEMENT,
+    REVIEWER_INELIGIBLE_LABEL,
     REVIEWER_LOW_CONFIDENCE,
     REVIEWER_NO_TEXT,
     REVIEWER_UNAVAILABLE,
@@ -409,28 +411,6 @@ def test_router_route_extract_without_ground_truth_extracts():
     assert after_review_classify({"review_route": "extract", "reviewer_doc_type": "insurance_claim"}) == "extract"
 
 
-def test_non_numeric_confidence_parks_in_human_review(
-    decision_config, no_llm_reviewer, temp_base_dir, monkeypatch
-):
-    import graph.build_graph as bg
-    from pipeline.bins import load_manifest, review_file_path
-
-    source = temp_base_dir / "invalid-confidence.txt"
-    source.write_text("Claim number 123 for water damage.")
-    register_decision_backend(Spy(answer=answer(conf="invalid")))
-    st = state(file_path=str(source), original_filename=source.name)
-    updates = review_classify_node(st)
-    assert updates["reviewer_confidence"] is None
-    assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
-    payloads = []
-    monkeypatch.setattr(bg, "interrupt", lambda payload: payloads.append(payload) or "approved")
-    bg.human_review_node({**st, **updates})
-    manifest = load_manifest(st["doc_id"])
-    assert review_file_path(manifest).exists()
-    assert manifest.reviewer_confidence is None
-    assert REVIEWER_LOW_CONFIDENCE in payloads[0]["review_causes"]
-
-
 @pytest.mark.parametrize("verdict", ["decision_accepts", "decision_escalates"])
 @pytest.mark.parametrize("model", [None, "", "decision-model-1"])
 def test_decision_model_attribution(verdict, model):
@@ -445,3 +425,57 @@ def test_sorter_reviewer_attribution_still_uses_config():
     from graph.build_graph import _resolved_models
 
     assert "sorter_reviewer=" in _resolved_models({"review_verdict": "reviewer_agrees_high"})
+
+
+def test_default_decision_only_without_entry_parks(decision_config, no_llm_reviewer):
+    # default_mode selects the lane, but acceptance needs a by_class entry
+    # with a tuned cutoff: an untuned class always goes to a person.
+    decision_config["reviewer"] = {"default_mode": "decision_only", "by_class": {}}
+    assert get_review_mode("insurance_claim") == "decision_only"
+    register_decision_backend(Spy(answer=answer(conf=1.0)))
+    st = state()
+    updates = review_classify_node(st)
+    assert updates["review_route"] == "human_review"
+    assert updates["reviewer_causes"] == [REVIEWER_INELIGIBLE_LABEL, REVIEWER_LOW_CONFIDENCE]
+    assert "classification_confidence" not in updates
+    assert route_after(st, updates) == "human_review"
+
+
+def test_decision_only_entry_without_cutoff_parks(decision_config, no_llm_reviewer):
+    del decision_config["reviewer"]["by_class"]["insurance_claim"]["cutoff"]
+    register_decision_backend(Spy(answer=answer(conf=1.0)))
+    st = state()
+    updates = review_classify_node(st)
+    assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
+    assert route_after(st, updates) == "human_review"
+
+
+def test_low_confidence_label_covers_every_way_to_get_it():
+    label = CAUSE_LABELS[REVIEWER_LOW_CONFIDENCE]
+    assert "below the class cutoff" in label
+    assert "no valid cutoff" in label
+    assert "missing" in label
+
+
+@pytest.mark.parametrize(
+    "backend_answer, overrides",
+    [
+        (None, {}),
+        (answer(conf=0.1), {}),
+        (answer(conf=10**400), {}),
+        (answer(subclass="not_a_subclass"), {}),
+        (answer(label="corporate_record", subclass="bylaws"), {}),
+        (answer(), {"doc_text": ""}),
+    ],
+    ids=["no_answer", "low", "oversized", "guard_rejected", "disagreement", "no_text"],
+)
+def test_every_failure_routes_to_human_review(
+    decision_config, no_llm_reviewer, backend_answer, overrides
+):
+    register_decision_backend(Spy(answer=backend_answer))
+    st = state(**overrides)
+    updates = review_classify_node(st)
+    assert updates["review_verdict"] == "decision_escalates"
+    assert updates["reviewer_causes"]
+    assert "classification_confidence" not in updates
+    assert route_after(st, updates) == "human_review"

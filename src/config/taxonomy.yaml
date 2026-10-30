@@ -266,7 +266,8 @@ confidence:
 #   by_class:
 #     insurance_claim: {mode: decision_only, cutoff: 0.9}
 # decision_only classes make no LLM call here: anything short of the accept
-# rule goes to human_review.
+# rule goes to human_review. default_mode: decision_only cannot accept a class
+# with no by_class entry and cutoff; such a class always parks.
 reviewer:
   default_mode: llm
   by_class: {}
