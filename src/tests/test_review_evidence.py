@@ -251,3 +251,47 @@ def test_rejected_never_reaches_archive(temp_base_dir, decision_lane):
     row = _catalog_row(doc_id)
     assert row.stage == "failed"
     assert row.stage != "archived"
+
+
+def test_fallback_resume_that_reparks_keeps_both_opinions(
+    temp_base_dir, decision_lane, extractors, monkeypatch
+):
+    """After a restart with the default MemorySaver the interrupt checkpoint is
+    gone, so resume takes the stateless fallback. If that run parks again, the
+    new manifest and catalog row must still carry both opinions and causes."""
+    import graph.build_graph as bg
+    from pipeline.bins import load_manifest, review_file_path
+    from pipeline.review_resolve import apply_classification_override
+
+    result = _park(temp_base_dir)
+    doc_id = result["doc_id"]
+    parked = load_manifest(doc_id)
+    causes_before = list(parked.review_causes)
+    assert "reviewer_disagreement" in causes_before
+
+    # Restart: the in-memory checkpoint is gone.
+    bg.reset_compiled_graph()
+    assert not bg._thread_is_interrupted(bg.get_compiled_graph(), parked.checkpoint_thread_id)
+
+    # The corrected run still cannot extract, so it parks again.
+    monkeypatch.setattr(
+        bg, "_extract_corporate_records", lambda *a, **k: {"confidence": 0.1}
+    )
+    manifest = load_manifest(doc_id)
+    review_file = review_file_path(manifest)
+    apply_classification_override(manifest, override_doc_type=REVIEWER_LABEL)
+    resumed = bg.resume_from_review(manifest, review_file)
+    assert resumed["stage"] == "review"
+
+    again = load_manifest(doc_id)
+    assert again.doc_type == REVIEWER_LABEL
+    assert again.reviewer_doc_type == REVIEWER_LABEL
+    assert again.reviewer_doc_subclass == "bylaws"
+    assert again.reviewer_confidence == 0.95
+    assert again.reviewer_model == "decision-model-1"
+    assert again.review_verdict == "decision_escalates"
+    assert "reviewer_disagreement" in again.review_causes
+
+    review = _catalog_row(doc_id).extracted_data["_review"]
+    assert review["reviewer_model"] == "decision-model-1"
+    assert "reviewer_disagreement" in review["review_causes"]

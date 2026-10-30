@@ -2360,6 +2360,26 @@ def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
     }
 
 
+def _reviewer_cause_tokens() -> frozenset[str]:
+    from pipeline.reconsideration import (
+        REVIEWER_DISAGREEMENT,
+        REVIEWER_INELIGIBLE_LABEL,
+        REVIEWER_LOW_CONFIDENCE,
+        REVIEWER_NO_TEXT,
+        REVIEWER_UNAVAILABLE,
+    )
+
+    return frozenset(
+        {
+            REVIEWER_UNAVAILABLE,
+            REVIEWER_NO_TEXT,
+            REVIEWER_INELIGIBLE_LABEL,
+            REVIEWER_DISAGREEMENT,
+            REVIEWER_LOW_CONFIDENCE,
+        }
+    )
+
+
 def _review_evidence_fields(
     state: Mapping[str, Any] | dict, causes: list[str] | None
 ) -> dict[str, Any]:
@@ -3612,11 +3632,19 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         "transient_retries_extract": 0,
         # Retain prior Lane B trail from the parked manifest for archive audit;
         # reset attempt counters so the corrected run gets a fair QA budget.
-        "reviewer_doc_type": None,
+        # Reviewer opinion is evidence, not routing state: restore it from the
+        # manifest so a re-park does not overwrite it with None.
+        "reviewer_doc_type": getattr(manifest, "reviewer_doc_type", None),
         "reviewer_contract_subtype": None,
-        "reviewer_doc_subclass": None,
-        "reviewer_confidence": None,
-        "review_verdict": None,
+        "reviewer_doc_subclass": getattr(manifest, "reviewer_doc_subclass", None),
+        "reviewer_confidence": getattr(manifest, "reviewer_confidence", None),
+        "review_verdict": getattr(manifest, "review_verdict", None),
+        "reviewer_model": getattr(manifest, "reviewer_model", None),
+        "reviewer_causes": [
+            t
+            for t in (getattr(manifest, "review_causes", None) or [])
+            if t in _reviewer_cause_tokens()
+        ],
         "judge_verdict": getattr(manifest, "judge_verdict", None),
         "judge_score": getattr(manifest, "judge_score", None),
         "judge_findings": list(getattr(manifest, "judge_findings", None) or []),
