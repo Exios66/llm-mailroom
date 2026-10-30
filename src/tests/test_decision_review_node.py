@@ -308,10 +308,12 @@ def test_out_of_range_confidence_is_not_clamped_into_accept(decision_config, no_
 
 
 def test_guard_rejected_subclass_is_cleared_and_parks(decision_config, no_llm_reviewer):
+    decision_config["reviewer"]["by_class"]["insurance_claim"]["cutoff"] = 0.4
     register_decision_backend(Spy(answer=answer(subclass="not_a_subclass", conf=0.99)))
     st = state()
     updates = review_classify_node(st)
     assert updates["reviewer_doc_subclass"] is None
+    assert updates["reviewer_confidence"] is None
     assert updates["review_route"] == "human_review"
     assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
     assert "doc_subclass" not in updates
@@ -367,3 +369,41 @@ def test_accept_without_ground_truth_is_unchanged(decision_config, no_llm_review
 
 def test_router_route_extract_without_ground_truth_extracts():
     assert after_review_classify({"review_route": "extract", "reviewer_doc_type": "insurance_claim"}) == "extract"
+
+
+def test_non_numeric_confidence_parks_in_human_review(
+    decision_config, no_llm_reviewer, temp_base_dir, monkeypatch
+):
+    import graph.build_graph as bg
+    from pipeline.bins import load_manifest, review_file_path
+
+    source = temp_base_dir / "invalid-confidence.txt"
+    source.write_text("Claim number 123 for water damage.")
+    register_decision_backend(Spy(answer=answer(conf="invalid")))
+    st = state(file_path=str(source), original_filename=source.name)
+    updates = review_classify_node(st)
+    assert updates["reviewer_confidence"] is None
+    assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
+    payloads = []
+    monkeypatch.setattr(bg, "interrupt", lambda payload: payloads.append(payload) or "approved")
+    bg.human_review_node({**st, **updates})
+    manifest = load_manifest(st["doc_id"])
+    assert review_file_path(manifest).exists()
+    assert manifest.reviewer_confidence is None
+    assert REVIEWER_LOW_CONFIDENCE in payloads[0]["review_causes"]
+
+
+@pytest.mark.parametrize("verdict", ["decision_accepts", "decision_escalates"])
+@pytest.mark.parametrize("model", [None, "", "decision-model-1"])
+def test_decision_model_attribution(verdict, model):
+    from graph.build_graph import _resolved_models
+
+    models = _resolved_models({"review_verdict": verdict, "reviewer_model": model})
+    assert "sorter_reviewer=" not in models
+    assert ("decision_reviewer=decision-model-1" in models) == bool(model)
+
+
+def test_sorter_reviewer_attribution_still_uses_config():
+    from graph.build_graph import _resolved_models
+
+    assert "sorter_reviewer=" in _resolved_models({"review_verdict": "reviewer_agrees_high"})

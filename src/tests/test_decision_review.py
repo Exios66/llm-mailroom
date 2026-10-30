@@ -78,7 +78,7 @@ def test_ineligible_sorter_label_parks():
     assert REVIEWER_INELIGIBLE_LABEL in r.causes
 
 
-@pytest.mark.parametrize("conf", [float("nan"), float("inf"), -0.1, 1.1, None])
+@pytest.mark.parametrize("conf", [float("nan"), float("inf"), -0.1, 1.1, None, 10**1000, -(10**1000)])
 def test_invalid_confidence_parks(conf):
     r = route(conf=conf)
     assert r.destination == "human_review"
@@ -126,3 +126,12 @@ def test_every_cause_has_a_label():
         REVIEWER_LOW_CONFIDENCE,
     ):
         assert CAUSE_LABELS[cause]
+
+
+def test_oversized_cutoff_parks():
+    r = decide_review(
+        "insurance_claim", DecisionAnswer("insurance_claim", None, 1.0, "m"),
+        eligible=ELIGIBLE, cutoffs={"insurance_claim": 10**1000}, has_text=True,
+    )
+    assert r.causes == (REVIEWER_LOW_CONFIDENCE,)
+    assert "no valid cutoff" in CAUSE_LABELS[REVIEWER_LOW_CONFIDENCE]

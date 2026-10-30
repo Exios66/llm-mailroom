@@ -46,7 +46,7 @@ def _valid_confidence(value: object) -> bool:
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
-    return math.isfinite(value) and 0.0 <= value <= 1.0
+    return 0.0 <= value <= 1.0 and math.isfinite(value)
 
 
 def _meets_cutoff(confidence: object, cutoff: object) -> bool:

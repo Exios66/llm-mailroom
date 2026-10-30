@@ -1055,7 +1055,7 @@ def _valid_unit_float(value: Any) -> bool:
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
-    return math.isfinite(value) and 0.0 <= value <= 1.0
+    return 0.0 <= value <= 1.0 and math.isfinite(value)
 
 
 def _fmt_conf(value: Any) -> str:
@@ -1150,13 +1150,12 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
                     "doc_subclass": raw.doc_subclass,
                 }
             )
-            # The guard only ever lowers a valid confidence; an invalid one
-            # is kept as-is so decide_review rejects it instead of seeing a
-            # clamp that could pass a low cutoff.
+            # A guard rejection must never pass even a low class cutoff.
+            # Invalid values must also remain safe for the manifest schema.
             confidence = (
                 guarded_confidence
-                if _valid_unit_float(raw.confidence)
-                else raw.confidence
+                if guard["ok"] and _valid_unit_float(raw.confidence)
+                else None
             )
             subclass = raw.doc_subclass
             if any(str(i).startswith("doc_subclass_") for i in guard["issues"]):
@@ -2008,6 +2007,11 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
 
     dest: Path | None = None
     newly_parked = False
+    parked_extracted_data = {
+        **(state.get("extracted_data") if isinstance(state.get("extracted_data"), dict) else {}),
+        "_lane_b": _lane_b_manifest_fields(state),
+        "_review": _review_evidence_fields(state, causes),
+    }
     if file_path_str:
         manifest = DocumentManifest(
             doc_id=doc_id,
@@ -2041,11 +2045,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
                 "doc_subclass": state.get("doc_subclass"),
                 "classification_confidence": state.get("classification_confidence"),
                 "extraction_confidence": state.get("extraction_confidence"),
-                "extracted_data": {
-                    **(state.get("extracted_data") or {} if isinstance(state.get("extracted_data"), dict) else {}),
-                    "_lane_b": _lane_b_manifest_fields(state),
-                    "_review": _review_evidence_fields(state, causes),
-                },
+                "extracted_data": parked_extracted_data,
                 "escalation_reason": esc_reason,
                 "trace_id": state.get("trace_id"),
                 "stage": PipelineStage.REVIEW.value,
@@ -2145,6 +2145,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "original_filename": state.get("original_filename", ""),
             "doc_type": state.get("doc_type"),
             "stage": PipelineStage.FAILED.value,
+            "extracted_data": parked_extracted_data,
             "escalation_reason": esc_reason,
             "trace_id": state.get("trace_id"),
         },
@@ -2431,6 +2432,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         extraction_attempts=state.get("extraction_attempts", 0),
         intake=state.get("intake_meta") or None,
         **_lane_b_manifest_fields(state),
+        **_review_evidence_fields(state, state.get("review_causes")),
     )
 
     file_path_str = state.get("file_path", "")
@@ -2465,6 +2467,10 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
 
     # Final conveyor position: the catalog record (created at intake/catalog
     # write) must show archived, not classified — archive is the terminal stage.
+    review_evidence = _review_evidence_fields(state, state.get("review_causes"))
+    extracted_data = manifest.extracted_data
+    if any(value is not None for value in review_evidence.values()):
+        extracted_data = {**(extracted_data or {}), "_review": review_evidence}
     _catalog_upsert(
         {
             "doc_id": manifest.doc_id,
@@ -2475,7 +2481,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
             "doc_subclass": getattr(manifest, "doc_subclass", None),
             "classification_confidence": manifest.classification_confidence,
             "extraction_confidence": manifest.extraction_confidence,
-            "extracted_data": manifest.extracted_data,
+            "extracted_data": extracted_data,
             "escalation_reason": manifest.escalation_reason,
             "trace_id": manifest.trace_id,
             "stage": PipelineStage.ARCHIVED.value,
@@ -2692,7 +2698,10 @@ def _resolved_models(state: dict) -> str:
         _add("sorter")
         row = get_doc_class(state.get("doc_type") or "") or {}
         _add(str(row.get("specialist") or ""))
-        if state.get("review_verdict"):
+        if state.get("review_verdict") in ("decision_accepts", "decision_escalates"):
+            if state.get("reviewer_model"):
+                names.append(f"decision_reviewer={state['reviewer_model']}")
+        elif state.get("review_verdict"):
             _add("sorter_reviewer")
         if state.get("judge_verdict") and state.get("judge_verdict") != "skipped":
             _add("judge")
@@ -3602,6 +3611,7 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
                     "doc_type": manifest.doc_type,
                     "contract_subtype": manifest.contract_subtype,
                     "doc_subclass": getattr(manifest, "doc_subclass", None),
+                    "classification_confidence": None,
                 },
             ),
             trace_input={
@@ -3657,6 +3667,7 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         "reviewer_confidence": getattr(manifest, "reviewer_confidence", None),
         "review_verdict": getattr(manifest, "review_verdict", None),
         "reviewer_model": getattr(manifest, "reviewer_model", None),
+        "review_causes": list(getattr(manifest, "review_causes", None) or []),
         "reviewer_causes": [
             t
             for t in (getattr(manifest, "review_causes", None) or [])

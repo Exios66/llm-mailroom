@@ -209,6 +209,20 @@ def test_override_reaches_extract_via_interrupt(temp_base_dir, decision_lane, ex
     assert resumed["stage"] == "archived"
     assert resumed["doc_type"] == REVIEWER_LABEL
     assert extractors == [REVIEWER_LABEL]
+    assert resumed["classification_confidence"] is None
+    _assert_archived_review_evidence(result["doc_id"])
+
+
+def _assert_archived_review_evidence(doc_id):
+    from pipeline.bins import load_manifest
+
+    manifest = load_manifest(doc_id)
+    review = _catalog_row(doc_id).extracted_data["_review"]
+    assert manifest.review_verdict == review["review_verdict"] == "decision_escalates"
+    assert manifest.reviewer_model == review["reviewer_model"] == "decision-model-1"
+    assert manifest.reviewer_doc_type == review["reviewer_doc_type"] == REVIEWER_LABEL
+    assert "reviewer_disagreement" in manifest.review_causes
+    assert "reviewer_disagreement" in review["review_causes"]
 
 
 def test_override_survives_restart(temp_base_dir, decision_lane, monkeypatch, extractors):
@@ -251,6 +265,40 @@ def test_rejected_never_reaches_archive(temp_base_dir, decision_lane):
     row = _catalog_row(doc_id)
     assert row.stage == "failed"
     assert row.stage != "archived"
+    assert row.extracted_data["_review"]["reviewer_model"] == "decision-model-1"
+    assert "reviewer_disagreement" in row.extracted_data["_review"]["review_causes"]
+
+
+def test_rejection_preserves_parked_extraction(temp_base_dir, monkeypatch):
+    import graph.build_graph as bg
+
+    source = temp_base_dir / "rejected.txt"
+    source.write_text("document")
+    monkeypatch.setattr(bg, "interrupt", lambda payload: "rejected")
+    result = bg.human_review_node({
+        "doc_id": "rejected-with-extraction", "matter_id": "M",
+        "original_filename": source.name, "file_path": str(source),
+        "doc_type": SORTER_LABEL, "extracted_data": {"claim_number": "C-1"},
+        "review_verdict": "decision_escalates", "reviewer_model": "decision-model-1",
+        "reviewer_causes": ["reviewer_disagreement"],
+    })
+    assert result["stage"] == "failed"
+    extracted = _catalog_row("rejected-with-extraction").extracted_data
+    assert extracted["claim_number"] == "C-1"
+    assert extracted["_review"]["reviewer_model"] == "decision-model-1"
+    assert "reviewer_disagreement" in extracted["_review"]["review_causes"]
+
+
+def test_fallback_resume_that_archives_keeps_review_evidence(
+    temp_base_dir, decision_lane, extractors
+):
+    from graph.build_graph import reset_compiled_graph
+
+    result = _park(temp_base_dir)
+    reset_compiled_graph()
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["stage"] == "archived"
+    _assert_archived_review_evidence(result["doc_id"])
 
 
 def test_fallback_resume_that_reparks_keeps_both_opinions(
