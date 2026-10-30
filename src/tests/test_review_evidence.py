@@ -647,6 +647,45 @@ def test_operator_supplied_review_block_is_stripped_on_complete(
     evidence = out["doc_record"]["extracted_data"]["_review"]
     assert evidence["reviewer_model"] == "decision-model-1"
     assert evidence["review_verdict"] == "decision_escalates"
+def test_class_change_drops_stale_subclass_and_subtype():
+    from pipeline.review_resolve import apply_classification_override
+    from schemas.manifest import DocumentManifest
+
+    def parked():
+        return DocumentManifest(
+            doc_id="o-2",
+            matter_id="M",
+            original_filename="a.txt",
+            doc_type=SORTER_LABEL,
+            contract_subtype="stale",
+            doc_subclass="carrier",
+        )
+
+    changed = parked()
+    apply_classification_override(changed, override_doc_type=REVIEWER_LABEL)
+    assert changed.doc_subclass is None
+    assert changed.contract_subtype is None
+
+    replaced = parked()
+    applied = apply_classification_override(
+        replaced, override_doc_type=REVIEWER_LABEL, doc_subclass="bylaws"
+    )
+    assert replaced.doc_subclass == applied["doc_subclass"] == "bylaws"
+
+    same = parked()
+    apply_classification_override(same, override_doc_type=SORTER_LABEL)
+    assert same.doc_subclass == "carrier"
+    assert same.contract_subtype == "stale"
+
+
+def test_override_hands_extract_no_stale_subclass(temp_base_dir, decision_lane, monkeypatch):
+    handoffs = _capture_handoff(monkeypatch)
+    result = _park(temp_base_dir)
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["doc_subclass"] is None
+    assert "carrier" not in handoffs[0]
+
+
 @pytest.mark.parametrize("resume", ["interrupt", "fallback"])
 @pytest.mark.parametrize(
     "failure",
