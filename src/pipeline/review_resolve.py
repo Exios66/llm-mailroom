@@ -70,7 +70,11 @@ def _review_evidence(doc) -> dict[str, Any]:
 
 
 def serialize_document(doc) -> dict[str, Any]:
-    """Catalog or manifest → JSON-safe lookup/tray payload."""
+    """Catalog or manifest → JSON-safe lookup/tray payload.
+
+    Reviewer evidence comes from attributes or the catalog's ``_review``
+    block. A missing document returns an empty dict.
+    """
     if doc is None:
         return {}
     stage = getattr(doc, "stage", None)

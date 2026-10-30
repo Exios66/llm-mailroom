@@ -403,13 +403,11 @@ def after_human_review(state: dict) -> Literal["extract", "failed"]:
 def after_review_classify(state: dict) -> Literal["review_classify", "extract", "human_review"]:
     """KANBAN-062 (Lane A) outcome router.
 
-    The reviewer's high-confidence label wins (extract — with the reviewer's
-    type applied by the node); anything else (reviewer unsure, labels
-    conflicting at low confidence, or reviewer confirming genuine ambiguity)
-    escalates to human review with BOTH opinions recorded on state. The lane
-    is strictly fail-safe: every path it can take existed before the lane.
-    Transient provider errors self-loop on the review node's OWN per-node
-    budget (L-13) before escalating.
+    Transient provider errors self-loop on the review node's per-node budget
+    (L-13) before escalating. A decision-model route proceeds only for the
+    literal ``extract`` value; other route values go to human review. Without
+    a decision route, a high-confidence, extractable LLM reviewer verdict can
+    proceed. In either case a known ground-truth class miss goes to review.
     """
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="review_classify") == "retry":

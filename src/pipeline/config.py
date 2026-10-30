@@ -70,10 +70,10 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
 def get_reviewer_config() -> dict:
     """Lane A reviewer mode block from taxonomy.yaml ``reviewer:``.
 
-    ``default_mode`` applies to classes with no ``by_class`` entry. Each
-    ``by_class`` entry carries ``mode`` (``llm`` | ``decision_only``) and, for
-    ``decision_only``, the tuned ``cutoff``. Absent or malformed config reads
-    as every class on ``llm``.
+    ``default_mode`` applies to classes with no ``by_class`` entry. Entries
+    may contain a ``mode`` and a decision confidence ``cutoff``. A missing
+    or non-mapping reviewer block defaults to ``llm`` with no class entries;
+    non-mapping class entries are ignored. Loading errors propagate.
     """
     block = load_config().get("reviewer")
     if not isinstance(block, dict):

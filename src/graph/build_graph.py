@@ -1049,28 +1049,40 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
 
 
 def _valid_unit_float(value: Any) -> bool:
+    """Accept finite numeric values in [0, 1], excluding booleans.
+
+    An integer too large to convert to a float raises OverflowError.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
     return math.isfinite(value) and 0.0 <= value <= 1.0
 
 
 def _fmt_conf(value: Any) -> str:
+    """Format valid confidence to two decimals, or return ``n/a``.
+
+    OverflowError from converting an oversized integer propagates.
+    """
     return f"{float(value):.2f}" if _valid_unit_float(value) else "n/a"
 
 
 def _fmt_label(value: Any) -> str:
+    """Return ``none`` for None, otherwise the first 40 characters."""
     return "none" if value is None else str(value)[:40]
 
 
 def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
-    """Decision-model branch of ``review_classify_node`` (strictly fail-safe).
+    """Decision-model branch of ``review_classify_node``.
 
-    Reaches ``extract`` only when ``decide_review`` accepts; every other
-    outcome (no backend, no text, backend error, malformed answer, label
-    disagreement, low confidence) goes to ``human_review``. There is no LLM
-    fallback. The sorter's label and confidence are kept unless the route is
-    ``extract``, and ``escalation_reason`` is built from structured fields
-    only, never from model text.
+    Returns partial state updates. Missing text or backend, non-transient
+    backend errors, malformed answers, and rejected decisions route to human
+    review without an LLM fallback. Transient backend errors instead return a
+    retry flag and increment the review node's retry count. Guard failures are
+    treated as absent answers. The sorter's label and confidence are kept
+    unless the decision accepts, and ``escalation_reason`` uses structured
+    fields rather than model text. Errors outside the backend and guard
+    handling propagate, including configuration loading errors and oversized
+    sorter confidences or cutoffs that cannot be converted to float.
     """
     from agents.decision_backend import get_decision_backend
     from langchain_agents.doc_inventories import sorter_subclass_catalog
@@ -1213,14 +1225,14 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     """KANBAN-062 (Lane A): independent agent second opinion on a medium-band
     classification.
 
-    The reviewer classifies the document BLIND (no hint of the sorter's
-    answer — independence is the point). Agreement/override is computed here
-    in code. The lane never changes the failure surface: reviewer high-
-    confidence → extract with the reviewer's label applied; anything else →
-    human_review with BOTH opinions preserved on state.
-
-    Classes configured ``decision_only`` (taxonomy ``reviewer:``) take the
-    decision-model branch instead and never reach the LLM reviewer below.
+    The reviewer classifies without the sorter's answer. In the LLM branch,
+    a high-confidence agreement or override applies the reviewer's label;
+    other verdicts retain the sorter label for human review. Classes configured
+    ``decision_only`` use the decision-model branch instead, which requires
+    agreement and its class cutoff. Transient errors from reviewer calls return
+    a retry flag; non-transient call errors produce an escalation update.
+    Errors outside those handlers can propagate. The router also checks
+    extractability and ground truth before extraction.
     """
     from pipeline.config import get_review_mode
 
@@ -1971,9 +1983,10 @@ def _paused_review_result(result, initial_state, thread_id: str, trace_id: str) 
 def human_review_node(state: DocumentState) -> dict[str, Any]:
     """Park the document for a human, then ``interrupt()`` until they decide.
 
-    Side effects before ``interrupt()`` are idempotent (park upsert + catalog
-    upsert + manifest overwrite) because LangGraph restarts this node from
-    the beginning on ``Command(resume=...)``.
+    When a file path is present, the parked manifest and catalog retain the
+    reviewer opinion and collected causes. Side effects before ``interrupt()``
+    are idempotent (park upsert + catalog upsert + manifest overwrite) because
+    LangGraph restarts this node from the beginning on ``Command(resume=...)``.
     """
     from pipeline.bins import park_for_review
     from pipeline.reconsideration import collect_review_causes, format_causes
@@ -2361,6 +2374,7 @@ def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
 
 
 def _reviewer_cause_tokens() -> frozenset[str]:
+    """Return decision reviewer causes retained on stateless resume."""
     from pipeline.reconsideration import (
         REVIEWER_DISAGREEMENT,
         REVIEWER_INELIGIBLE_LABEL,
@@ -3544,7 +3558,10 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
     checkpoint (same process, MemorySaver still live). If the checkpoint is
     gone (process restart + MemorySaver), falls back to the stateless
     re-invoke: requeue from the review bin and start at extract under the
-    original ``doc_id``.
+    original ``doc_id``. Both paths use the manifest's classification,
+    including any human override. The fallback retains reviewer evidence if the
+    document parks again. Raises ValueError if the manifest has no class;
+    file requeue errors propagate.
     """
     from pipeline import limits
     from pipeline.bins import requeue_from_review, get_worker_id

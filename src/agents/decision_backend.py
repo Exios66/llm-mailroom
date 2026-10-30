@@ -25,4 +25,5 @@ def register_decision_backend(backend: Optional[DecisionBackend]) -> None:
 
 
 def get_decision_backend() -> Optional[DecisionBackend]:
+    """Return the registered process-wide backend, or None if absent."""
     return _backend

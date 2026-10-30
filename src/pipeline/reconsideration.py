@@ -257,7 +257,11 @@ def collect_review_causes(
     scores: Optional[Mapping[str, Any]] = None,
     verdict: Optional[str] = None,
 ) -> list[str]:
-    """Canonical cause tokens from pipeline state and/or Langfuse scores."""
+    """Return unique cause tokens from pipeline state and/or Langfuse scores.
+
+    Nonempty string reviewer causes from a state list or tuple are included;
+    duplicate tokens retain their first position.
+    """
     data = dict(state or {})
     scores = dict(scores or {})
     causes: list[str] = []
