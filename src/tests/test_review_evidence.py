@@ -549,3 +549,79 @@ def test_review_block_stays_out_of_matter_context(monkeypatch):
     context = bg._fetch_matter_context({"matter_id": "M", "doc_id": "d1"})
 
     assert context[0]["extracted_data"] == {"parties": ["A"]}
+
+
+def _capture_handoff(monkeypatch):
+    import graph.build_graph as bg
+
+    seen = []
+
+    def extract(doc_text, pages=None, handoff_context=None):
+        seen.append(handoff_context)
+        return {"entity_name": "Acme Corp", "record_type": "bylaws", "confidence": 0.99}
+
+    monkeypatch.setattr(bg, "_extract_corporate_records", extract)
+    return seen
+
+
+def _assert_confidence_cleared(doc_id, handoffs):
+    from pipeline.bins import load_manifest
+
+    assert load_manifest(doc_id).classification_confidence is None
+    assert _catalog_row(doc_id).classification_confidence is None
+    assert len(handoffs) == 1
+    assert "confidence=" not in handoffs[0]
+
+
+def test_override_clears_stale_confidence_via_interrupt(temp_base_dir, decision_lane, monkeypatch):
+    handoffs = _capture_handoff(monkeypatch)
+    result = _park(temp_base_dir)
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["stage"] == "archived"
+    _assert_confidence_cleared(result["doc_id"], handoffs)
+
+
+def test_override_clears_stale_confidence_after_restart(temp_base_dir, decision_lane, monkeypatch):
+    import graph.build_graph as bg
+
+    handoffs = _capture_handoff(monkeypatch)
+    result = _park(temp_base_dir)
+    bg.reset_compiled_graph()
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["stage"] == "archived"
+    _assert_confidence_cleared(result["doc_id"], handoffs)
+
+
+def test_plain_approval_keeps_classification_confidence(temp_base_dir, decision_lane, extractors):
+    from graph.build_graph import resume_from_review
+    from pipeline.bins import load_manifest, review_file_path
+
+    result = _park(temp_base_dir)
+    manifest = load_manifest(result["doc_id"])
+    assert manifest.classification_confidence == 0.93
+
+    resumed = resume_from_review(manifest, review_file_path(manifest))
+
+    assert resumed["stage"] == "archived"
+    assert load_manifest(result["doc_id"]).classification_confidence == 0.93
+
+
+def test_override_only_clears_confidence_when_class_changes():
+    from pipeline.review_resolve import apply_classification_override
+    from schemas.manifest import DocumentManifest
+
+    manifest = DocumentManifest(
+        doc_id="o-1",
+        matter_id="M",
+        original_filename="a.txt",
+        doc_type=SORTER_LABEL,
+        classification_confidence=0.93,
+    )
+    apply_classification_override(manifest, override_doc_type=SORTER_LABEL)
+    assert manifest.classification_confidence == 0.93
+    apply_classification_override(manifest, doc_subclass="carrier")
+    assert manifest.classification_confidence == 0.93
+
+    apply_classification_override(manifest, override_doc_type=REVIEWER_LABEL)
+    assert manifest.doc_type == REVIEWER_LABEL
+    assert manifest.classification_confidence is None

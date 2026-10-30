@@ -190,6 +190,9 @@ def apply_classification_override(
             raise ValueError(
                 f"doc_type must be one of {sorted(allowed)}; got {kind!r}"
             )
+        if kind != manifest.doc_type:
+            # That score was for the old class; a person chose this one.
+            manifest.classification_confidence = None
         manifest.doc_type = kind
         applied["doc_type"] = kind
 

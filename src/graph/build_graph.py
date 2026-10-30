@@ -3612,7 +3612,7 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
                     "doc_type": manifest.doc_type,
                     "contract_subtype": manifest.contract_subtype,
                     "doc_subclass": getattr(manifest, "doc_subclass", None),
-                    "classification_confidence": None,
+                    "classification_confidence": manifest.classification_confidence,
                 },
             ),
             trace_input={
