@@ -1,5 +1,7 @@
 """Pure decision-model review routing."""
 
+import math
+
 import pytest
 
 from pipeline.decision_review import DecisionAnswer, ReviewRoute, decide_review
@@ -87,6 +89,41 @@ def test_invalid_confidence_parks(conf):
 
 def test_confidence_at_cutoff_accepts():
     assert route(conf=0.9).destination == "extract"
+
+
+@pytest.mark.parametrize("cutoff", [0.0, 0.9, 1.0])
+def test_cutoff_boundaries(cutoff):
+    def decide(confidence):
+        return decide_review(
+            "insurance_claim", DecisionAnswer("insurance_claim", None, confidence, "m"),
+            eligible=ELIGIBLE, cutoffs={"insurance_claim": cutoff}, has_text=True,
+        )
+
+    assert decide(cutoff).destination == "extract"
+    if cutoff > 0:
+        below = decide(math.nextafter(cutoff, -math.inf))
+        assert below.destination == "human_review"
+        assert below.causes == (REVIEWER_LOW_CONFIDENCE,)
+
+
+@pytest.mark.parametrize(
+    "cutoff", [None, True, False, "0.9", float("nan"), float("inf"), -0.1, 1.1],
+    ids=["missing", "true", "false", "string", "nan", "infinity", "negative", "above-one"],
+)
+def test_invalid_cutoff_never_accepts(cutoff):
+    result = decide_review(
+        "insurance_claim", DecisionAnswer("insurance_claim", None, 1.0, "m"),
+        eligible=ELIGIBLE, cutoffs={"insurance_claim": cutoff}, has_text=True,
+    )
+    assert result.destination == "human_review"
+    assert result.causes == (REVIEWER_LOW_CONFIDENCE,)
+
+
+@pytest.mark.parametrize("confidence", [True, False])
+def test_boolean_confidence_is_not_a_number_for_routing(confidence):
+    result = route(conf=confidence)
+    assert result.destination == "human_review"
+    assert result.causes == (REVIEWER_LOW_CONFIDENCE,)
 
 
 def test_missing_cutoff_parks():

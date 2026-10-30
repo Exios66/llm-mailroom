@@ -474,6 +474,39 @@ def test_document_without_reviewer_gets_no_review_block():
     assert with_review_evidence(None, manifest) is None
 
 
+def test_serialized_evidence_prefers_manifest_values_including_falsy_values():
+    from pipeline.review_resolve import serialize_document
+
+    doc = SimpleNamespace(
+        review_causes=[], reviewer_confidence=0.0, reviewer_model="",
+        extracted_data={"_review": {
+            "review_causes": ["old"], "reviewer_confidence": 0.9,
+            "reviewer_model": "old-model", "review_verdict": "decision_escalates",
+        }},
+    )
+    row = serialize_document(doc)
+    assert row["review_causes"] == []
+    assert row["reviewer_confidence"] == 0.0
+    assert row["reviewer_model"] == ""
+    assert row["review_verdict"] == "decision_escalates"
+
+
+def test_copying_review_evidence_preserves_extraction_without_mutating_it():
+    from pipeline.review_resolve import with_review_evidence
+    from schemas.manifest import DocumentManifest
+
+    manifest = DocumentManifest(
+        doc_id="e-1", matter_id="M", original_filename="a.txt",
+        reviewer_model="current", review_causes=["reviewer_disagreement"],
+    )
+    original = {"claim_number": "C-1", "_review": {"reviewer_model": "old"}}
+    result = with_review_evidence(original, manifest)
+    assert result["claim_number"] == "C-1"
+    assert result["_review"]["reviewer_model"] == "current"
+    assert result["_review"]["review_causes"] == ["reviewer_disagreement"]
+    assert original == {"claim_number": "C-1", "_review": {"reviewer_model": "old"}}
+
+
 def test_review_block_stays_out_of_matter_context(monkeypatch):
     """Archived evidence must not change what the Boss LLM is shown."""
     import graph.build_graph as bg

@@ -123,6 +123,47 @@ def test_by_class_entry_without_decision_only_is_llm(monkeypatch):
     assert get_review_mode("contract") == "llm"
 
 
+@pytest.mark.parametrize("block", [None, [], "decision_only"])
+def test_non_mapping_reviewer_config_defaults_to_llm(monkeypatch, block):
+    import pipeline.config as config
+
+    monkeypatch.setattr(config, "load_config", lambda: {"reviewer": block})
+    assert get_reviewer_config() == {"default_mode": "llm", "by_class": {}}
+    assert get_review_mode("insurance_claim") == "llm"
+
+
+def test_class_entries_override_default_and_ignore_non_mappings(monkeypatch):
+    import pipeline.config as config
+
+    block = {
+        "default_mode": "decision_only",
+        "by_class": {
+            "insurance_claim": {"mode": "llm"},
+            "contract": {"cutoff": 0.9},
+            "corporate_record": "invalid",
+        },
+    }
+    monkeypatch.setattr(config, "load_config", lambda: {"reviewer": block})
+    result = get_reviewer_config()
+    assert "corporate_record" not in result["by_class"]
+    assert get_review_mode("insurance_claim") == "llm"
+    assert get_review_mode("contract") == "llm"
+    assert get_review_mode("corporate_record") == "decision_only"
+    result["by_class"]["insurance_claim"]["mode"] = "decision_only"
+    assert get_review_mode("insurance_claim") == "llm"
+
+
+@pytest.mark.parametrize("entries", [None, [], "invalid"])
+def test_non_mapping_class_entries_use_default_mode(monkeypatch, entries):
+    import pipeline.config as config
+
+    monkeypatch.setattr(config, "load_config", lambda: {
+        "reviewer": {"default_mode": "decision_only", "by_class": entries},
+    })
+    assert get_reviewer_config()["by_class"] == {}
+    assert get_review_mode("insurance_claim") == "decision_only"
+
+
 def test_registry_round_trip():
     assert get_decision_backend() is None
     spy = Spy()
@@ -282,12 +323,30 @@ def test_causes_reach_collect_review_causes(decision_config, no_llm_reviewer):
     assert len(causes) == len(set(causes))
 
 
+@pytest.mark.parametrize("container", [list, tuple])
+def test_review_causes_filter_and_deduplicate_in_order(container):
+    causes = collect_review_causes({
+        "reviewer_causes": container([
+            REVIEWER_DISAGREEMENT, "", None, 4, REVIEWER_LOW_CONFIDENCE,
+            REVIEWER_DISAGREEMENT,
+        ]),
+    })
+    assert causes == [REVIEWER_DISAGREEMENT, REVIEWER_LOW_CONFIDENCE]
+
+
+@pytest.mark.parametrize("causes", [None, REVIEWER_DISAGREEMENT, {REVIEWER_DISAGREEMENT}])
+def test_review_causes_ignore_non_sequence_containers(causes):
+    assert collect_review_causes({"reviewer_causes": causes}) == []
+
+
 @pytest.mark.parametrize(
     "bad",
     [
         "not an answer",
         DecisionAnswer(["insurance_claim"], "carrier", 0.99, "m"),  # type: ignore[arg-type]
         DecisionAnswer(7, "carrier", 0.99, "m"),  # type: ignore[arg-type]
+        DecisionAnswer("insurance_claim", ["carrier"], 0.99, "m"),  # type: ignore[arg-type]
+        DecisionAnswer("insurance_claim", "carrier", 0.99, None),  # type: ignore[arg-type]
     ],
 )
 def test_malformed_answer_is_no_answer(decision_config, no_llm_reviewer, bad):
@@ -295,6 +354,22 @@ def test_malformed_answer_is_no_answer(decision_config, no_llm_reviewer, bad):
     st = state()
     updates = review_classify_node(st)
     assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
+    assert route_after(st, updates) == "human_review"
+
+
+def test_guard_exception_parks_as_unavailable(decision_config, no_llm_reviewer, monkeypatch):
+    import pipeline.guards as guards
+
+    def fail_guard(_state):
+        raise ValueError("cannot inspect answer")
+
+    monkeypatch.setattr(guards, "apply_classification_guard", fail_guard)
+    register_decision_backend(Spy(answer=answer()))
+    st = state()
+    updates = review_classify_node(st)
+    assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
+    assert updates["reviewer_model"] is None
+    assert "doc_type" not in updates
     assert route_after(st, updates) == "human_review"
 
 
