@@ -3021,6 +3021,28 @@ def _existing_processing_doc_id(original_filename: str) -> str | None:
     return None
 
 
+def _abort_review_evidence(state: dict, doc_id: str | None) -> dict[str, Any]:
+    """Reviewer evidence for an aborted run: state, else the parked manifest.
+
+    An interrupt resume aborts with a minimal state, and the abort manifest
+    replaces the parked one, so its evidence is read before that happens.
+    """
+    from pipeline.bins import load_manifest
+    from pipeline.review_resolve import REVIEW_EVIDENCE_FIELDS
+
+    evidence = _review_evidence_fields(state, state.get("review_causes"))
+    parked = None
+    if doc_id and any(value is None for value in evidence.values()):
+        try:
+            parked = load_manifest(doc_id)
+        except Exception:
+            logger.exception("abort_review_evidence_load_failed", doc_id=doc_id)
+    return {
+        name: evidence[name] if evidence[name] is not None else getattr(parked, name, None)
+        for name in REVIEW_EVIDENCE_FIELDS
+    }
+
+
 def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | None = None) -> dict:
     """Turn a run that hit a hard limit (or crashed) into a failed result.
 
@@ -3054,6 +3076,7 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         escalation_reason=f"run aborted: {reason}",
         trace_id=state.get("trace_id"),
         intake=state.get("intake_meta") or None,
+        **_abort_review_evidence(state, aborted_doc_id),
     )
     if aborted_doc_id:
         manifest_kwargs["doc_id"] = aborted_doc_id
@@ -3080,7 +3103,7 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
     except Exception:
         logger.exception("abort_manifest_save_error", doc_id=manifest.doc_id)
     try:
-        _write_catalog_record(state)
+        _write_catalog_record(state, manifest)
     except Exception:
         logger.exception("abort_catalog_write_error", doc_id=manifest.doc_id)
     # A-1: a failed/aborted run is a compliance-record event (previously only
@@ -3109,10 +3132,11 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
     return state
 
 
-def _write_catalog_record(state: dict):
+def _write_catalog_record(state: dict, manifest: DocumentManifest):
     """Persist a minimal catalog record (used for aborted runs that never
     reach the catalog_write node, so they show up in compare_runs)."""
     import asyncio
+    from pipeline.review_resolve import with_review_evidence
     from storage.catalog import write_document_record
 
     doc_record = {
@@ -3123,7 +3147,7 @@ def _write_catalog_record(state: dict):
         "stage": state.get("stage", "failed"),
         "classification_confidence": state.get("classification_confidence"),
         "extraction_confidence": state.get("extraction_confidence"),
-        "extracted_data": state.get("extracted_data"),
+        "extracted_data": with_review_evidence(state.get("extracted_data"), manifest),
         "escalation_reason": state.get("escalation_reason") or state.get("error_message"),
         "trace_id": state.get("trace_id"),
     }
