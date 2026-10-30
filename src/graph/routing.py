@@ -403,18 +403,35 @@ def after_human_review(state: dict) -> Literal["extract", "failed"]:
 def after_review_classify(state: dict) -> Literal["review_classify", "extract", "human_review"]:
     """KANBAN-062 (Lane A) outcome router.
 
-    The reviewer's high-confidence label wins (extract — with the reviewer's
-    type applied by the node); anything else (reviewer unsure, labels
-    conflicting at low confidence, or reviewer confirming genuine ambiguity)
-    escalates to human review with BOTH opinions recorded on state. The lane
-    is strictly fail-safe: every path it can take existed before the lane.
-    Transient provider errors self-loop on the review node's OWN per-node
-    budget (L-13) before escalating.
+    Transient provider errors self-loop on the review node's per-node budget
+    (L-13) before escalating. A decision-model route proceeds only for the
+    literal ``extract`` value; other route values go to human review. Without
+    a decision route, a high-confidence, extractable LLM reviewer verdict can
+    proceed. In either case a known ground-truth class miss goes to review.
     """
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="review_classify") == "retry":
             return "review_classify"
         return "human_review"
+    # Decision-model reviewer: the node already applied decide_review; only a
+    # literal "extract" continues, any other value parks.
+    if state.get("review_route") is not None:
+        if state["review_route"] != "extract":
+            return "human_review"
+        # Same ground-truth gate as the LLM accept arm below: a label both
+        # opinions share can still miss the grounded class.
+        from pipeline.reconsideration import class_misses_ground_truth
+
+        if class_misses_ground_truth(state, reviewer=True):
+            logger.info(
+                "gt_class_miss_after_reviewer",
+                verdict=state.get("review_verdict"),
+                confidence=state.get("reviewer_confidence"),
+                doc_type=state.get("reviewer_doc_type"),
+                doc_id=state.get("doc_id"),
+            )
+            return "human_review"
+        return "extract"
     verdict = state.get("review_verdict")
     confidence = state.get("reviewer_confidence")
     doc_type = state.get("reviewer_doc_type")
