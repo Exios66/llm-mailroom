@@ -45,6 +45,30 @@ def live_doc_types() -> set[str]:
     return {c["key"] for c in load_config().get("doc_classes", []) if c.get("key")}
 
 
+REVIEW_EVIDENCE_FIELDS = (
+    "review_causes",
+    "review_verdict",
+    "reviewer_doc_type",
+    "reviewer_doc_subclass",
+    "reviewer_confidence",
+    "reviewer_model",
+)
+
+
+def _review_evidence(doc) -> dict[str, Any]:
+    """Lane A reviewer evidence: manifest attributes, else the catalog's
+    ``extracted_data["_review"]`` block. Absent evidence reads as None."""
+    extracted = getattr(doc, "extracted_data", None)
+    block = extracted.get("_review") if isinstance(extracted, dict) else None
+    if not isinstance(block, dict):
+        block = {}
+    evidence: dict[str, Any] = {}
+    for name in REVIEW_EVIDENCE_FIELDS:
+        value = getattr(doc, name, None)
+        evidence[name] = value if value is not None else block.get(name)
+    return evidence
+
+
 def serialize_document(doc) -> dict[str, Any]:
     """Catalog or manifest → JSON-safe lookup/tray payload."""
     if doc is None:
@@ -68,6 +92,7 @@ def serialize_document(doc) -> dict[str, Any]:
         "trace_id": getattr(doc, "trace_id", None),
         "review_decision": getattr(doc, "review_decision", None),
         "extracted_data": getattr(doc, "extracted_data", None),
+        **_review_evidence(doc),
         "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
         "updated_at": updated.isoformat() if hasattr(updated, "isoformat") else updated,
     }

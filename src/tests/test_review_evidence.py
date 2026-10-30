@@ -1,0 +1,253 @@
+"""Durable review evidence and human override for parked documents.
+
+A decision model writes no reasoning, so a parked document carries its
+reviewer opinion as structured fields on the manifest and under
+``extracted_data["_review"]`` in the catalog. A human's class override must
+reach extract through the ``interrupt()`` resume, including after a restart.
+
+Network-free: the decision backend is a fake and the sorter is the canned
+LangChain fake from ``conftest``.
+"""
+
+import asyncio
+import copy
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from agents.decision_backend import register_decision_backend
+from pipeline.decision_review import DecisionAnswer
+
+SORTER_LABEL = "insurance_claim"
+REVIEWER_LABEL = "corporate_record"
+DECISION_ONLY = {
+    "insurance_claim": {"mode": "decision_only", "cutoff": 0.9},
+    "corporate_record": {"mode": "decision_only", "cutoff": 0.9},
+}
+REVIEW_FIELDS = (
+    "review_causes",
+    "review_verdict",
+    "reviewer_doc_type",
+    "reviewer_doc_subclass",
+    "reviewer_confidence",
+    "reviewer_model",
+)
+
+
+@pytest.fixture(autouse=True)
+def _clean_backend():
+    register_decision_backend(None)
+    yield
+    register_decision_backend(None)
+
+
+@pytest.fixture
+def decision_lane(monkeypatch, mock_langchain_llm):
+    """Sorter says insurance_claim at medium confidence; the decision model
+    says corporate_record with high confidence, so the document parks."""
+    import pipeline.config as config
+
+    cfg = copy.deepcopy(config.load_config())
+    cfg["reviewer"] = {"default_mode": "llm", "by_class": copy.deepcopy(DECISION_ONLY)}
+    monkeypatch.setattr(config, "load_config", lambda: cfg)
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+
+    mock_langchain_llm.classification = {
+        "doc_type": SORTER_LABEL,
+        "contract_subtype": None,
+        "doc_subclass": "carrier",
+        "confidence": 0.93,
+        "reasoning": "medium",
+    }
+    register_decision_backend(
+        lambda text, doc_types, catalogs: DecisionAnswer(
+            REVIEWER_LABEL, "bylaws", 0.95, "decision-model-1"
+        )
+    )
+    return mock_langchain_llm
+
+
+@pytest.fixture
+def extractors(monkeypatch):
+    """Record which specialist extract dispatches to (no LLM)."""
+    import graph.build_graph as bg
+
+    called = []
+
+    def make(label, payload):
+        def extract(doc_text, pages=None, handoff_context=None):
+            called.append(label)
+            return {**payload, "confidence": 0.99}
+
+        return extract
+
+    monkeypatch.setattr(
+        bg,
+        "_extract_insurance_claims",
+        make("insurance_claim", {"claim_number": "C-1", "insured_party": "Acme Corp"}),
+    )
+    monkeypatch.setattr(
+        bg,
+        "_extract_corporate_records",
+        make("corporate_record", {"entity_name": "Acme Corp", "record_type": "bylaws"}),
+    )
+    return called
+
+
+def _park(temp_base_dir):
+    from graph.build_graph import run_pipeline
+
+    test_file = temp_base_dir / "pipeline" / "inbox" / "evidence.txt"
+    test_file.write_text("Minutes of the board of Acme Corp, annual meeting.")
+    result = run_pipeline(test_file, "MATTER-EVIDENCE")
+    assert result.get("stage") == "review"
+    return result
+
+
+def _archived_files(temp_base_dir):
+    root = temp_base_dir / "pipeline" / "archive"
+    return [p for p in root.rglob("*") if p.is_file()] if root.exists() else []
+
+
+def _catalog_row(doc_id):
+    from storage.catalog import get_document
+    from storage.db import ensure_schema
+
+    ensure_schema()
+    return asyncio.run(get_document(doc_id))
+
+
+def test_parked_manifest_keeps_both_opinions(temp_base_dir, decision_lane):
+    from pipeline.bins import load_manifest
+
+    result = _park(temp_base_dir)
+    manifest = load_manifest(result["doc_id"])
+
+    assert manifest.doc_type == SORTER_LABEL
+    assert manifest.reviewer_doc_type == REVIEWER_LABEL
+    assert manifest.reviewer_doc_subclass == "bylaws"
+    assert manifest.reviewer_confidence == 0.95
+    assert manifest.reviewer_model == "decision-model-1"
+    assert manifest.review_verdict == "decision_escalates"
+    assert "reviewer_disagreement" in manifest.review_causes
+
+    review = _catalog_row(result["doc_id"]).extracted_data["_review"]
+    assert review["reviewer_doc_type"] == REVIEWER_LABEL
+    assert review["reviewer_model"] == "decision-model-1"
+    assert "reviewer_disagreement" in review["review_causes"]
+
+
+def test_old_manifest_without_review_fields_still_loads():
+    from schemas.manifest import DocumentManifest
+
+    old = {"doc_id": "old-1", "matter_id": "M", "original_filename": "a.txt", "stage": "review"}
+    manifest = DocumentManifest.model_validate_json(json.dumps(old))
+    for name in REVIEW_FIELDS:
+        assert getattr(manifest, name) is None
+
+
+def test_queue_row_exposes_review_fields():
+    from pipeline.review_resolve import serialize_document
+    from schemas.manifest import DocumentManifest
+
+    manifest = DocumentManifest(
+        doc_id="q-1",
+        matter_id="M",
+        original_filename="a.txt",
+        doc_type=SORTER_LABEL,
+        review_causes=["reviewer_disagreement"],
+        review_verdict="decision_escalates",
+        reviewer_doc_type=REVIEWER_LABEL,
+        reviewer_doc_subclass="bylaws",
+        reviewer_confidence=0.95,
+        reviewer_model="decision-model-1",
+    )
+    row = serialize_document(manifest)
+    assert row["review_causes"] == ["reviewer_disagreement"]
+    assert row["review_verdict"] == "decision_escalates"
+    assert row["reviewer_doc_type"] == REVIEWER_LABEL
+    assert row["reviewer_doc_subclass"] == "bylaws"
+    assert row["reviewer_confidence"] == 0.95
+    assert row["reviewer_model"] == "decision-model-1"
+
+    # A catalog row carries the same data under extracted_data["_review"].
+    catalog = SimpleNamespace(
+        doc_id="q-2",
+        extracted_data={"_review": {"reviewer_doc_type": REVIEWER_LABEL, "reviewer_model": "m"}},
+    )
+    row = serialize_document(catalog)
+    assert row["reviewer_doc_type"] == REVIEWER_LABEL
+    assert row["reviewer_model"] == "m"
+    assert row["review_causes"] is None
+
+    # Documents with no review evidence serialize the keys as None.
+    bare = serialize_document(SimpleNamespace(doc_id="q-3", extracted_data=None))
+    for name in REVIEW_FIELDS:
+        assert bare[name] is None
+
+
+def _override_and_resume(doc_id):
+    from graph.build_graph import resume_from_review
+    from pipeline.bins import load_manifest, review_file_path
+    from pipeline.review_resolve import apply_classification_override
+
+    manifest = load_manifest(doc_id)
+    review_file = review_file_path(manifest)
+    apply_classification_override(manifest, override_doc_type=REVIEWER_LABEL)
+    return resume_from_review(manifest, review_file)
+
+
+def test_override_reaches_extract_via_interrupt(temp_base_dir, decision_lane, extractors):
+    from graph.build_graph import _thread_is_interrupted, get_compiled_graph
+
+    result = _park(temp_base_dir)
+    assert _thread_is_interrupted(get_compiled_graph(), result["checkpoint_thread_id"])
+
+    resumed = _override_and_resume(result["doc_id"])
+
+    assert resumed["stage"] == "archived"
+    assert resumed["doc_type"] == REVIEWER_LABEL
+    assert extractors == [REVIEWER_LABEL]
+
+
+def test_override_survives_restart(temp_base_dir, decision_lane, monkeypatch, extractors):
+    pytest.importorskip("langgraph.checkpoint.sqlite")
+    from graph.build_graph import reset_compiled_graph
+
+    monkeypatch.setenv("MAILROOM_CHECKPOINTER", "sqlite")
+    reset_compiled_graph()
+    result = _park(temp_base_dir)
+
+    # Restart: a new compiled graph over the same on-disk checkpoints.
+    reset_compiled_graph()
+    resumed = _override_and_resume(result["doc_id"])
+
+    assert resumed["stage"] == "archived"
+    assert resumed["doc_type"] == REVIEWER_LABEL
+    assert extractors == [REVIEWER_LABEL]
+
+
+def test_rejected_never_reaches_archive(temp_base_dir, decision_lane):
+    from langgraph.types import Command
+
+    from graph.build_graph import _execute_run
+
+    result = _park(temp_base_dir)
+    doc_id = result["doc_id"]
+    thread_id = result["checkpoint_thread_id"]
+
+    rejected = _execute_run(
+        {"doc_id": doc_id, "matter_id": "MATTER-EVIDENCE", "checkpoint_thread_id": thread_id},
+        seed="evidence",
+        attempt=0,
+        thread_id=thread_id,
+        invoke_input=Command(resume={"decision": "rejected", "notes": "no"}),
+        trace_input={"resumed": True},
+    )
+
+    assert rejected["stage"] == "failed"
+    assert _archived_files(temp_base_dir) == []
+    row = _catalog_row(doc_id)
+    assert row.stage == "failed"
+    assert row.stage != "archived"

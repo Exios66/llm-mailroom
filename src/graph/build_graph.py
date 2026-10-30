@@ -2015,6 +2015,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             checkpoint_thread_id=thread_id or None,
             intake=state.get("intake_meta") or None,
             **_lane_b_manifest_fields(state),
+            **_review_evidence_fields(state, causes),
         )
         dest, newly_parked = park_for_review(Path(file_path_str), manifest)
         _catalog_upsert(
@@ -2030,6 +2031,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
                 "extracted_data": {
                     **(state.get("extracted_data") or {} if isinstance(state.get("extracted_data"), dict) else {}),
                     "_lane_b": _lane_b_manifest_fields(state),
+                    "_review": _review_evidence_fields(state, causes),
                 },
                 "escalation_reason": esc_reason,
                 "trace_id": state.get("trace_id"),
@@ -2355,6 +2357,24 @@ def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
         "judge_verdict": state.get("judge_verdict"),
         "judge_score": state.get("judge_score"),
         "judge_findings": list(findings) if findings else None,
+    }
+
+
+def _review_evidence_fields(
+    state: Mapping[str, Any] | dict, causes: list[str] | None
+) -> dict[str, Any]:
+    """Copy the Lane A reviewer's structured opinion onto a parked manifest.
+
+    ``causes`` is the full ``collect_review_causes`` result (reviewer causes
+    included), so the manifest records why the document parked.
+    """
+    return {
+        "review_causes": list(causes) if causes else None,
+        "review_verdict": state.get("review_verdict"),
+        "reviewer_doc_type": state.get("reviewer_doc_type"),
+        "reviewer_doc_subclass": state.get("reviewer_doc_subclass"),
+        "reviewer_confidence": state.get("reviewer_confidence"),
+        "reviewer_model": state.get("reviewer_model"),
     }
 
 
@@ -3538,7 +3558,14 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
             thread_id=thread_id,
             invoke_input=Command(
                 resume={"decision": "approved", "notes": notes or ""},
-                update={"run_deadline": deadline},
+                # The manifest holds the operator's class override; replace the
+                # checkpointed sorter label so extract dispatches on it.
+                update={
+                    "run_deadline": deadline,
+                    "doc_type": manifest.doc_type,
+                    "contract_subtype": manifest.contract_subtype,
+                    "doc_subclass": getattr(manifest, "doc_subclass", None),
+                },
             ),
             trace_input={
                 "filename": manifest.original_filename,
