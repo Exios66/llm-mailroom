@@ -321,6 +321,11 @@ def collect_review_causes(
     if _is_true_flag(scores.get("extraction_needs_judge_review")):
         causes.append(NEEDS_JUDGE)
 
+    # Decision-model reviewer causes recorded by review_classify_node.
+    reviewer_causes = data.get("reviewer_causes")
+    if isinstance(reviewer_causes, (list, tuple)):
+        causes.extend(t for t in reviewer_causes if isinstance(t, str) and t)
+
     seen: set[str] = set()
     ordered: list[str] = []
     for token in causes:

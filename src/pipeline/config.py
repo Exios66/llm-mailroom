@@ -1,6 +1,7 @@
 import yaml
 from pathlib import Path
 from functools import lru_cache
+from typing import Literal
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "taxonomy.yaml"
 
@@ -64,6 +65,40 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
                 if value is not None:
                     base[key] = value
     return base
+
+
+def get_reviewer_config() -> dict:
+    """Lane A reviewer mode block from taxonomy.yaml ``reviewer:``.
+
+    ``default_mode`` applies to classes with no ``by_class`` entry. Each
+    ``by_class`` entry carries ``mode`` (``llm`` | ``decision_only``) and, for
+    ``decision_only``, the tuned ``cutoff``. Absent or malformed config reads
+    as every class on ``llm``.
+    """
+    block = load_config().get("reviewer")
+    if not isinstance(block, dict):
+        block = {}
+    by_class = block.get("by_class")
+    if not isinstance(by_class, dict):
+        by_class = {}
+    return {
+        "default_mode": str(block.get("default_mode") or "llm"),
+        "by_class": {
+            str(key): dict(entry)
+            for key, entry in by_class.items()
+            if isinstance(entry, dict)
+        },
+    }
+
+
+def get_review_mode(doc_type: str | None) -> Literal["llm", "decision_only"]:
+    """Reviewer mode for a sorter label; only an explicit ``decision_only``
+    selects the decision lane. A ``by_class`` entry without that mode is
+    ``llm``."""
+    cfg = get_reviewer_config()
+    entry = cfg["by_class"].get(doc_type) if isinstance(doc_type, str) else None
+    mode = entry.get("mode") if entry is not None else cfg["default_mode"]
+    return "decision_only" if mode == "decision_only" else "llm"
 
 
 def get_all_doc_types() -> list[str]:

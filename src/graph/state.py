@@ -94,6 +94,12 @@ class DocumentState(TypedDict, total=False):
     reviewer_doc_subclass: str | None
     reviewer_confidence: float | None
     review_verdict: str | None
+    # Decision-model reviewer (reviewer.by_class mode: decision_only): the
+    # destination decide_review chose, the cause tokens it recorded, and the
+    # pinned model version that answered (None when it gave no answer).
+    review_route: str | None
+    reviewer_causes: list[str]
+    reviewer_model: str | None
     # KANBAN-063 (Lane B): in-pipeline judge verification + arbiter
     # arbitration. The judge fires only when gated in (needs_judge_review /
     # ambiguous-band extraction confidence); the arbiter only on a failed

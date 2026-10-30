@@ -1,4 +1,6 @@
+import dataclasses
 import functools
+import math
 import structlog
 import threading
 import time
@@ -1046,6 +1048,167 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
     }
 
 
+def _valid_unit_float(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value) and 0.0 <= value <= 1.0
+
+
+def _fmt_conf(value: Any) -> str:
+    return f"{float(value):.2f}" if _valid_unit_float(value) else "n/a"
+
+
+def _fmt_label(value: Any) -> str:
+    return "none" if value is None else str(value)[:40]
+
+
+def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
+    """Decision-model branch of ``review_classify_node`` (strictly fail-safe).
+
+    Reaches ``extract`` only when ``decide_review`` accepts; every other
+    outcome (no backend, no text, backend error, malformed answer, label
+    disagreement, low confidence) goes to ``human_review``. There is no LLM
+    fallback. The sorter's label and confidence are kept unless the route is
+    ``extract``, and ``escalation_reason`` is built from structured fields
+    only, never from model text.
+    """
+    from agents.decision_backend import get_decision_backend
+    from langchain_agents.doc_inventories import sorter_subclass_catalog
+    from llm.retry import is_transient_error
+    from pipeline.config import get_reviewer_config, get_sorter_label_set
+    from pipeline.decision_review import DecisionAnswer, decide_review
+    from pipeline.guards import apply_classification_guard
+    from pipeline.reconsideration import REVIEWER_UNAVAILABLE
+
+    doc_text = state.get("doc_text")
+    sorter_type = state.get("doc_type")
+    sorter_confidence = state.get("classification_confidence")
+    has_text = isinstance(doc_text, str) and doc_text.strip() != ""
+
+    by_class = get_reviewer_config()["by_class"]
+    eligible = [k for k, v in by_class.items() if v.get("mode") == "decision_only"]
+    cutoffs = {k: by_class[k]["cutoff"] for k in eligible if "cutoff" in by_class[k]}
+
+    raw = None
+    if has_text:
+        backend = get_decision_backend()
+        if backend is None:
+            logger.warning("decision_review_no_backend", doc_id=state.get("doc_id"))
+        else:
+            try:
+                doc_types = sorted(get_sorter_label_set())
+                catalogs = {t: list(sorter_subclass_catalog(t)) for t in doc_types}
+                raw = backend(doc_text, doc_types, catalogs)
+            except Exception as exc:
+                if is_transient_error(exc):
+                    transient = state.get("transient_retries_review_classify", 0) + 1
+                    logger.warning(
+                        "review_classify_transient_error",
+                        doc_id=state.get("doc_id"),
+                        error=str(exc)[:300],
+                        transient_retries=transient,
+                    )
+                    return {
+                        "transient_error": True,
+                        "transient_retries_review_classify": transient,
+                        "reviewer_causes": [REVIEWER_UNAVAILABLE],
+                        "stage": PipelineStage.CLASSIFIED.value,
+                        "error_message": f"transient provider error: {str(exc)[:200]}",
+                        "escalation_reason": "transient provider error during decision review",
+                    }
+                logger.exception("decision_review_failed", doc_id=state.get("doc_id"))
+                raw = None
+
+    # A malformed answer (wrong type, non-string label or subclass) is no
+    # answer, as is one the guard cannot even inspect.
+    answer = None
+    if (
+        isinstance(raw, DecisionAnswer)
+        and (raw.doc_type is None or isinstance(raw.doc_type, str))
+        and (raw.doc_subclass is None or isinstance(raw.doc_subclass, str))
+        and isinstance(raw.model, str)
+    ):
+        try:
+            subtype = raw.doc_subclass if raw.doc_type == "contract" else None
+            guard, guarded_confidence = apply_classification_guard(
+                {
+                    "doc_type": raw.doc_type,
+                    "classification_confidence": raw.confidence,
+                    "contract_subtype": subtype,
+                    "doc_subclass": raw.doc_subclass,
+                }
+            )
+            # The guard only ever lowers a valid confidence; an invalid one
+            # is kept as-is so decide_review rejects it instead of seeing a
+            # clamp that could pass a low cutoff.
+            confidence = (
+                guarded_confidence
+                if _valid_unit_float(raw.confidence)
+                else raw.confidence
+            )
+            subclass = raw.doc_subclass
+            if any(str(i).startswith("doc_subclass_") for i in guard["issues"]):
+                subclass = None
+            answer = dataclasses.replace(
+                raw, doc_subclass=subclass, confidence=confidence
+            )
+        except Exception:
+            logger.exception("decision_review_guard_failed", doc_id=state.get("doc_id"))
+            answer = None
+
+    route = decide_review(
+        sorter_type,
+        answer,
+        eligible=eligible,
+        cutoffs=cutoffs,
+        has_text=has_text,
+    )
+    cutoff_key = answer.doc_type if answer is not None else sorter_type
+    cutoff = cutoffs.get(cutoff_key) if isinstance(cutoff_key, str) else None
+    reviewer_type = answer.doc_type if answer is not None else None
+    reviewer_confidence = answer.confidence if answer is not None else None
+
+    logger.info(
+        "decision_review_routed",
+        doc_id=state.get("doc_id"),
+        sorter_type=sorter_type,
+        reviewer_type=reviewer_type,
+        destination=route.destination,
+        causes=list(route.causes),
+    )
+    reason = (
+        f"decision review: sorter='{_fmt_label(sorter_type)}' "
+        f"({_fmt_conf(sorter_confidence)}) -> reviewer='{_fmt_label(reviewer_type)}' "
+        f"({_fmt_conf(reviewer_confidence)}, cutoff {_fmt_conf(cutoff)}): "
+        f"{route.verdict}"
+    )
+    if route.causes:
+        reason += f" [{', '.join(route.causes)}] -- routing to human review"
+    updates: dict[str, Any] = {
+        "reviewer_doc_type": reviewer_type,
+        "reviewer_contract_subtype": (
+            (answer.doc_subclass if reviewer_type == "contract" else None)
+            if answer is not None
+            else None
+        ),
+        "reviewer_doc_subclass": answer.doc_subclass if answer is not None else None,
+        "reviewer_confidence": reviewer_confidence,
+        "review_verdict": route.verdict,
+        "review_route": route.destination,
+        "reviewer_causes": list(route.causes),
+        "reviewer_model": answer.model if answer is not None else None,
+        "escalation_reason": reason,
+        "stage": PipelineStage.CLASSIFIED.value,
+        "transient_error": False,
+    }
+    if route.destination == "extract" and answer is not None:
+        updates["doc_type"] = answer.doc_type
+        updates["contract_subtype"] = updates["reviewer_contract_subtype"]
+        updates["doc_subclass"] = answer.doc_subclass
+        updates["classification_confidence"] = answer.confidence
+    return updates
+
+
 def review_classify_node(state: DocumentState) -> dict[str, Any]:
     """KANBAN-062 (Lane A): independent agent second opinion on a medium-band
     classification.
@@ -1055,7 +1218,15 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     in code. The lane never changes the failure surface: reviewer high-
     confidence → extract with the reviewer's label applied; anything else →
     human_review with BOTH opinions preserved on state.
+
+    Classes configured ``decision_only`` (taxonomy ``reviewer:``) take the
+    decision-model branch instead and never reach the LLM reviewer below.
     """
+    from pipeline.config import get_review_mode
+
+    if get_review_mode(state.get("doc_type")) == "decision_only":
+        return _decision_review_classify(state)
+
     from agents.sorter_reviewer import SorterReviewerAgent
     from llm.retry import is_transient_error
     from pipeline.config import get_sorter_label_set

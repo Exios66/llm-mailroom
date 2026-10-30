@@ -260,6 +260,17 @@ confidence:
       low: 0.85
       judge_band_high: 0.92
 
+# Lane A reviewer mode (see pipeline/decision_review.py). Every class keeps
+# the LLM sorter_reviewer unless its by_class entry sets `mode: decision_only`
+# with a tuned `cutoff` (0-1), e.g.
+#   by_class:
+#     insurance_claim: {mode: decision_only, cutoff: 0.9}
+# decision_only classes make no LLM call here: anything short of the accept
+# rule goes to human_review.
+reviewer:
+  default_mode: llm
+  by_class: {}
+
 # Deterministic field-type-aware extraction scoring (issues #4/#5). The scorer
 # normalizes each field by its type (date/money/id exact-after-normalize, name
 # fuzzy match, free-text token F1, entity-list bipartite matching) and, for

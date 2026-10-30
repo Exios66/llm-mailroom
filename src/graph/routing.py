@@ -415,6 +415,10 @@ def after_review_classify(state: dict) -> Literal["review_classify", "extract", 
         if _transient_decision(state, retry_target="review_classify") == "retry":
             return "review_classify"
         return "human_review"
+    # Decision-model reviewer: the node already applied decide_review; only a
+    # literal "extract" continues, any other value parks.
+    if state.get("review_route") is not None:
+        return "extract" if state["review_route"] == "extract" else "human_review"
     verdict = state.get("review_verdict")
     confidence = state.get("reviewer_confidence")
     doc_type = state.get("reviewer_doc_type")
