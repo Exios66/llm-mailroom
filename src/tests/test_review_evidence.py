@@ -366,3 +366,186 @@ def test_fallback_resume_that_reparks_keeps_both_opinions(
     review = _catalog_row(doc_id).extracted_data["_review"]
     assert review["reviewer_model"] == "decision-model-1"
     assert "reviewer_disagreement" in review["review_causes"]
+
+
+def _assert_row_keeps_evidence(doc_id):
+    review = _catalog_row(doc_id).extracted_data["_review"]
+    assert review["reviewer_doc_type"] == REVIEWER_LABEL
+    assert review["reviewer_model"] == "decision-model-1"
+    assert review["review_verdict"] == "decision_escalates"
+    assert "reviewer_disagreement" in review["review_causes"]
+
+
+def _assert_archived_evidence(doc_id):
+    from pipeline.bins import load_manifest
+
+    manifest = load_manifest(doc_id)
+    assert manifest.stage.value == "archived"
+    assert manifest.review_verdict == "decision_escalates"
+    assert manifest.reviewer_model == "decision-model-1"
+    assert manifest.reviewer_doc_type == REVIEWER_LABEL
+    assert "reviewer_disagreement" in manifest.review_causes
+    row = _catalog_row(doc_id)
+    assert row.stage == "archived"
+    assert row.extracted_data["entity_name"] == "Acme Corp"
+    _assert_row_keeps_evidence(doc_id)
+
+
+def test_graph_rejection_keeps_evidence_in_catalog(temp_base_dir, decision_lane):
+    from langgraph.types import Command
+
+    from graph.build_graph import _execute_run
+
+    result = _park(temp_base_dir)
+    doc_id = result["doc_id"]
+    thread_id = result["checkpoint_thread_id"]
+
+    _execute_run(
+        {"doc_id": doc_id, "matter_id": "MATTER-EVIDENCE", "checkpoint_thread_id": thread_id},
+        seed="evidence",
+        attempt=0,
+        thread_id=thread_id,
+        invoke_input=Command(resume={"decision": "rejected", "notes": "no"}),
+        trace_input={"resumed": True},
+    )
+
+    assert _catalog_row(doc_id).stage == "failed"
+    _assert_row_keeps_evidence(doc_id)
+
+
+def _api_client(monkeypatch, temp_base_dir):
+    import importlib
+    import sys
+
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("MAILROOM_API_TOKEN", "test-token-123")
+    monkeypatch.setenv("MAILROOM_BASE_DIR", str(temp_base_dir))
+    if "api.main" in sys.modules:
+        importlib.reload(sys.modules["api.main"])
+    from api.main import app
+
+    return TestClient(app)
+
+
+def test_api_rejection_keeps_evidence_in_catalog(temp_base_dir, decision_lane, monkeypatch):
+    result = _park(temp_base_dir)
+    doc_id = result["doc_id"]
+
+    with _api_client(monkeypatch, temp_base_dir) as client:
+        response = client.post(
+            f"/review/{doc_id}/resolve",
+            headers={"Authorization": "Bearer test-token-123"},
+            json={"decision": "rejected", "disposition": "resume"},
+        )
+
+    assert response.status_code == 200
+    assert _catalog_row(doc_id).stage == "failed"
+    _assert_row_keeps_evidence(doc_id)
+
+
+def test_operator_completion_keeps_evidence_in_catalog(temp_base_dir, decision_lane, monkeypatch):
+    result = _park(temp_base_dir)
+    doc_id = result["doc_id"]
+
+    with _api_client(monkeypatch, temp_base_dir) as client:
+        response = client.post(
+            f"/review/{doc_id}/resolve",
+            headers={"Authorization": "Bearer test-token-123"},
+            json={
+                "decision": "approved",
+                "disposition": "complete",
+                "override_doc_type": REVIEWER_LABEL,
+                "extracted_data": {"entity_name": "Acme Corp", "record_type": "bylaws"},
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    _assert_archived_evidence(doc_id)
+
+
+def test_approved_document_keeps_evidence_through_archive(
+    temp_base_dir, decision_lane, extractors
+):
+    result = _park(temp_base_dir)
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["stage"] == "archived"
+    _assert_archived_evidence(result["doc_id"])
+
+
+def test_approved_evidence_survives_sqlite_restart(
+    temp_base_dir, decision_lane, monkeypatch, extractors
+):
+    pytest.importorskip("langgraph.checkpoint.sqlite")
+    from graph.build_graph import reset_compiled_graph
+
+    monkeypatch.setenv("MAILROOM_CHECKPOINTER", "sqlite")
+    reset_compiled_graph()
+    result = _park(temp_base_dir)
+
+    reset_compiled_graph()
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["stage"] == "archived"
+    _assert_archived_evidence(result["doc_id"])
+
+
+def test_approved_evidence_survives_stateless_resume(temp_base_dir, decision_lane, extractors):
+    """MemorySaver restart: the fallback run rebuilds state from the manifest."""
+    import graph.build_graph as bg
+
+    result = _park(temp_base_dir)
+    bg.reset_compiled_graph()
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["stage"] == "archived"
+    _assert_archived_evidence(result["doc_id"])
+
+
+def test_auto_accepted_document_keeps_verdict_through_archive(
+    temp_base_dir, decision_lane, extractors
+):
+    from graph.build_graph import run_pipeline
+    from pipeline.bins import load_manifest
+
+    register_decision_backend(
+        lambda text, doc_types, catalogs: DecisionAnswer(
+            SORTER_LABEL, "carrier", 0.95, "decision-model-1"
+        )
+    )
+    test_file = temp_base_dir / "pipeline" / "inbox" / "accepted.txt"
+    test_file.write_text("Claim number 123 for water damage.")
+    result = run_pipeline(test_file, "MATTER-EVIDENCE")
+
+    assert result["stage"] == "archived"
+    manifest = load_manifest(result["doc_id"])
+    assert manifest.review_verdict == "decision_accepts"
+    assert manifest.reviewer_model == "decision-model-1"
+    assert manifest.review_causes is None
+    review = _catalog_row(result["doc_id"]).extracted_data["_review"]
+    assert review["review_verdict"] == "decision_accepts"
+
+
+def test_document_without_reviewer_gets_no_review_block():
+    from pipeline.review_resolve import with_review_evidence
+    from schemas.manifest import DocumentManifest
+
+    manifest = DocumentManifest(doc_id="n-1", matter_id="M", original_filename="a.txt")
+    data = {"entity_name": "Acme Corp"}
+    assert with_review_evidence(data, manifest) is data
+    assert with_review_evidence(None, manifest) is None
+
+
+def test_review_block_stays_out_of_matter_context(monkeypatch):
+    """Archived evidence must not change what the Boss LLM is shown."""
+    import graph.build_graph as bg
+
+    row = SimpleNamespace(
+        doc_id="other",
+        doc_type="contract",
+        stage="archived",
+        extracted_data={"parties": ["A"], "_review": {"review_verdict": "decision_accepts"}},
+    )
+    monkeypatch.setattr(bg, "_run_coro", lambda coro: [row])
+
+    context = bg._fetch_matter_context({"matter_id": "M", "doc_id": "d1"})
+
+    assert context[0]["extracted_data"] == {"parties": ["A"]}

@@ -1377,7 +1377,10 @@ def _fetch_matter_context(state: dict) -> list[dict]:
             {
                 "doc_id": r.doc_id,
                 "doc_type": r.doc_type,
-                "extracted_data": r.extracted_data or {},
+                # Reviewer evidence is audit data, not matter content.
+                "extracted_data": {
+                    k: v for k, v in (r.extracted_data or {}).items() if k != "_review"
+                },
                 "stage": r.stage,
             }
             for r in rows
@@ -2414,6 +2417,8 @@ def _review_evidence_fields(
 
 
 def archive_node(state: DocumentState) -> dict[str, Any]:
+    from pipeline.review_resolve import with_review_evidence
+
     manifest = DocumentManifest(
         doc_id=state.get("doc_id", ""),
         matter_id=state.get("matter_id", "DEFAULT"),
@@ -2467,10 +2472,6 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
 
     # Final conveyor position: the catalog record (created at intake/catalog
     # write) must show archived, not classified — archive is the terminal stage.
-    review_evidence = _review_evidence_fields(state, state.get("review_causes"))
-    extracted_data = manifest.extracted_data
-    if any(value is not None for value in review_evidence.values()):
-        extracted_data = {**(extracted_data or {}), "_review": review_evidence}
     _catalog_upsert(
         {
             "doc_id": manifest.doc_id,
@@ -2481,7 +2482,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
             "doc_subclass": getattr(manifest, "doc_subclass", None),
             "classification_confidence": manifest.classification_confidence,
             "extraction_confidence": manifest.extraction_confidence,
-            "extracted_data": extracted_data,
+            "extracted_data": with_review_evidence(manifest.extracted_data, manifest),
             "escalation_reason": manifest.escalation_reason,
             "trace_id": manifest.trace_id,
             "stage": PipelineStage.ARCHIVED.value,
