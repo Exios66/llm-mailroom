@@ -42,17 +42,18 @@ class ReviewRoute:
 def _valid_confidence(value: object) -> bool:
     """Accept finite numeric values in [0, 1], excluding booleans.
 
-    An integer too large to convert to a float raises OverflowError.
+    An oversized integer fails the bounds check and returns False.
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
+    # Bounds first: math.isfinite raises OverflowError on an oversized int.
     return 0.0 <= value <= 1.0 and math.isfinite(value)
 
 
 def _meets_cutoff(confidence: object, cutoff: object) -> bool:
-    """Return whether valid confidence meets or equals a valid cutoff.
+    """Return whether a valid confidence meets a valid cutoff.
 
-    OverflowError from converting an oversized integer propagates.
+    Anything invalid, including an oversized integer, returns False.
     """
     if not _valid_confidence(confidence) or not _valid_confidence(cutoff):
         return False
@@ -82,7 +83,7 @@ def decide_review(
     booleans. Missing or invalid cutoffs and confidence cause escalation.
     An absent answer records unavailability and, if applicable, missing text;
     otherwise all failed conditions are recorded in the spec's table order.
-    Oversized integers that cannot be converted to float raise OverflowError.
+    Oversized integers count as invalid and escalate; they never raise.
     """
     causes: list[str] = []
     if answer is None:

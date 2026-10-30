@@ -138,6 +138,29 @@ def test_parked_manifest_keeps_both_opinions(temp_base_dir, decision_lane):
     assert "reviewer_disagreement" in review["review_causes"]
 
 
+@pytest.mark.parametrize(
+    "bad",
+    ["high", [0.9], float("nan"), True, 10**400],
+    ids=["text", "list", "nan", "bool", "huge"],
+)
+def test_invalid_confidence_parks_for_review(temp_base_dir, decision_lane, bad):
+    """Through human_review_node: the manifest must validate, not fail the run."""
+    from pipeline.bins import load_manifest
+
+    register_decision_backend(
+        lambda text, doc_types, catalogs: DecisionAnswer(
+            SORTER_LABEL, "carrier", bad, "decision-model-1"
+        )
+    )
+    result = _park(temp_base_dir)
+    manifest = load_manifest(result["doc_id"])
+
+    assert manifest.stage.value == "review"
+    assert manifest.reviewer_confidence is None
+    assert manifest.review_verdict == "decision_escalates"
+    assert "reviewer_low_confidence" in manifest.review_causes
+
+
 def test_old_manifest_without_review_fields_still_loads():
     from schemas.manifest import DocumentManifest
 

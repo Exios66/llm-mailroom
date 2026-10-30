@@ -319,6 +319,44 @@ def test_guard_rejected_subclass_is_cleared_and_parks(decision_config, no_llm_re
     assert "doc_subclass" not in updates
 
 
+@pytest.mark.parametrize("cutoff", [0.5, 0.4, 0.0])
+def test_guard_rejected_answer_parks_at_any_cutoff(decision_config, no_llm_reviewer, cutoff):
+    # The guard clamps to 0.5, which would meet these cutoffs; a rejected
+    # answer has no usable confidence at all.
+    decision_config["reviewer"]["by_class"]["insurance_claim"]["cutoff"] = cutoff
+    register_decision_backend(Spy(answer=answer(subclass="not_a_subclass", conf=0.99)))
+    st = state()
+    updates = review_classify_node(st)
+    assert updates["reviewer_confidence"] is None
+    assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
+    assert route_after(st, updates) == "human_review"
+    assert "classification_confidence" not in updates
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["high", [0.9], 7.0, -0.1, float("nan"), float("inf"), True, 10**400],
+    ids=["text", "list", "above", "below", "nan", "inf", "bool", "huge"],
+)
+def test_invalid_confidence_is_none_in_state(decision_config, no_llm_reviewer, bad):
+    decision_config["reviewer"]["by_class"]["insurance_claim"]["cutoff"] = 0.4
+    register_decision_backend(Spy(answer=answer(conf=bad)))
+    st = state()
+    updates = review_classify_node(st)
+    assert updates["reviewer_confidence"] is None
+    assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
+    assert route_after(st, updates) == "human_review"
+
+
+def test_oversized_int_cutoff_parks_through_node(decision_config, no_llm_reviewer):
+    decision_config["reviewer"]["by_class"]["insurance_claim"]["cutoff"] = 10**400
+    register_decision_backend(Spy(answer=answer(conf=0.99)))
+    st = state()
+    updates = review_classify_node(st)
+    assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
+    assert route_after(st, updates) == "human_review"
+
+
 def test_ineligible_sorter_class_never_calls_backend(decision_config, no_llm_reviewer):
     # contract stays on llm in this config, so the LLM path (patched to raise)
     # handles it and the backend is untouched.

@@ -128,10 +128,22 @@ def test_every_cause_has_a_label():
         assert CAUSE_LABELS[cause]
 
 
-def test_oversized_cutoff_parks():
-    r = decide_review(
-        "insurance_claim", DecisionAnswer("insurance_claim", None, 1.0, "m"),
-        eligible=ELIGIBLE, cutoffs={"insurance_claim": 10**1000}, has_text=True,
-    )
+@pytest.mark.parametrize("huge", [10**400, -(10**400)], ids=["positive", "negative"])
+def test_oversized_int_confidence_parks(huge):
+    r = route(conf=huge)
+    assert r.destination == "human_review"
     assert r.causes == (REVIEWER_LOW_CONFIDENCE,)
-    assert "no valid cutoff" in CAUSE_LABELS[REVIEWER_LOW_CONFIDENCE]
+
+
+@pytest.mark.parametrize("huge", [10**400, -(10**400)], ids=["positive", "negative"])
+def test_oversized_int_cutoff_parks(huge):
+    answer = DecisionAnswer("insurance_claim", None, 0.95, "jev-1.13.0")
+    r = decide_review(
+        "insurance_claim",
+        answer,
+        eligible=ELIGIBLE,
+        cutoffs={"insurance_claim": huge},
+        has_text=True,
+    )
+    assert r.destination == "human_review"
+    assert r.causes == (REVIEWER_LOW_CONFIDENCE,)

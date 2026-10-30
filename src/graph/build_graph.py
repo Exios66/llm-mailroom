@@ -1051,18 +1051,16 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
 def _valid_unit_float(value: Any) -> bool:
     """Accept finite numeric values in [0, 1], excluding booleans.
 
-    An integer too large to convert to a float raises OverflowError.
+    An oversized integer fails the bounds check and returns False.
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
+    # Bounds first: math.isfinite raises OverflowError on an oversized int.
     return 0.0 <= value <= 1.0 and math.isfinite(value)
 
 
 def _fmt_conf(value: Any) -> str:
-    """Format valid confidence to two decimals, or return ``n/a``.
-
-    OverflowError from converting an oversized integer propagates.
-    """
+    """Format valid confidence to two decimals, or return ``n/a``."""
     return f"{float(value):.2f}" if _valid_unit_float(value) else "n/a"
 
 
@@ -1077,12 +1075,13 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     Returns partial state updates. Missing text or backend, non-transient
     backend errors, malformed answers, and rejected decisions route to human
     review without an LLM fallback. Transient backend errors instead return a
-    retry flag and increment the review node's retry count. Guard failures are
-    treated as absent answers. The sorter's label and confidence are kept
-    unless the decision accepts, and ``escalation_reason`` uses structured
-    fields rather than model text. Errors outside the backend and guard
-    handling propagate, including configuration loading errors and oversized
-    sorter confidences or cutoffs that cannot be converted to float.
+    retry flag and increment the review node's retry count, then route to
+    human review once that budget is spent. A guard rejection or invalid
+    confidence becomes None, and a guard exception is an absent answer; both
+    park. Oversized confidences and cutoffs also park. The sorter's label and
+    confidence are kept unless the decision accepts, and
+    ``escalation_reason`` uses structured fields rather than model text.
+    Configuration loading errors propagate.
     """
     from agents.decision_backend import get_decision_backend
     from langchain_agents.doc_inventories import sorter_subclass_catalog
@@ -1150,8 +1149,9 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
                     "doc_subclass": raw.doc_subclass,
                 }
             )
-            # A guard rejection must never pass even a low class cutoff.
-            # Invalid values must also remain safe for the manifest schema.
+            # A rejected answer or an invalid confidence becomes None, never
+            # the guard's clamp, which could pass a low cutoff. decide_review
+            # parks None and the manifest accepts it.
             confidence = (
                 guarded_confidence
                 if guard["ok"] and _valid_unit_float(raw.confidence)
