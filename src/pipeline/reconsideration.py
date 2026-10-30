@@ -27,6 +27,12 @@ PARSE_ERROR = "parse_error"
 REPORTING_INCOMPLETE = "reporting_incomplete"
 NEEDS_JUDGE = "needs_judge_review"
 HOLLOW_EXTRACTION = "hollow_extraction"
+# Decision-model reviewer causes (see ``pipeline.decision_review``).
+REVIEWER_UNAVAILABLE = "reviewer_unavailable"
+REVIEWER_NO_TEXT = "reviewer_no_text"
+REVIEWER_INELIGIBLE_LABEL = "reviewer_ineligible_label"
+REVIEWER_DISAGREEMENT = "reviewer_disagreement"
+REVIEWER_LOW_CONFIDENCE = "reviewer_low_confidence"
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -40,6 +46,11 @@ CAUSE_LABELS: dict[str, str] = {
     REPORTING_INCOMPLETE: "report / completeness incomplete",
     NEEDS_JUDGE: "deterministic scorer wanted a judge that the high-conf path skipped",
     HOLLOW_EXTRACTION: "hollow extraction payload (no public fields)",
+    REVIEWER_UNAVAILABLE: "decision reviewer returned no valid answer",
+    REVIEWER_NO_TEXT: "document has no usable text for the decision reviewer",
+    REVIEWER_INELIGIBLE_LABEL: "sorter or reviewer label is not an eligible class",
+    REVIEWER_DISAGREEMENT: "sorter and decision reviewer labels disagree",
+    REVIEWER_LOW_CONFIDENCE: "decision reviewer confidence below the class cutoff",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
