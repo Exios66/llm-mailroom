@@ -374,3 +374,110 @@ class TestLaneBZeroBudgets:
         assert after_arbiter({"arbiter_decision": "retry_extraction", "arbiter_retry_count": 2}) == "retry_extract"
         assert after_judge({"judge_verdict": "partial", "judge_pass_count": 2}) == "arbiter"
         assert after_judge({"judge_verdict": "partial", "judge_pass_count": 3}) == "human_review"
+
+
+class TestUnsureExtractionReachesTheJudge:
+    """Retries spent on a low or missing confidence: judge first, then a person."""
+
+    def _state(self, **overrides):
+        state = {"doc_type": "insurance_claim", "extraction_confidence": None, "extraction_attempts": 3,
+                 "extracted_data": {"claim_number": "CLM-1"}}
+        return {**state, **overrides}
+
+    def test_missing_confidence_goes_to_the_judge(self):
+        assert after_extraction(self._state()) == "judge_verify"
+
+    def test_low_confidence_goes_to_the_judge(self):
+        assert after_extraction(self._state(extraction_confidence=0.2)) == "judge_verify"
+
+    def test_a_guardrail_failure_stays_with_a_person(self):
+        assert after_extraction(self._state(extraction_guardrail=["unsupported"])) == "human_review"
+
+    def test_no_judge_lane_stays_with_a_person(self, monkeypatch):
+        monkeypatch.setenv("MAILROOM_JUDGE_VERIFY", "off")
+        assert after_extraction(self._state()) == "human_review"
+
+
+class TestOnlyConfidenceClearsAnUnsureExtraction:
+    """Completeness is not accuracy: the judge and arbiter can repair, not archive."""
+
+    def test_a_complete_verdict_sends_an_unsure_extraction_to_a_person(self):
+        for confidence in (None, 0.2):
+            state = {"doc_type": "contract", "extraction_confidence": confidence, "judge_verdict": "complete"}
+            assert after_judge(state) == "human_review"
+
+    def test_an_accepted_unsure_extraction_goes_to_a_person(self):
+        state = {"doc_type": "contract", "extraction_confidence": None, "arbiter_decision": "accept_with_caveats"}
+        assert after_arbiter(state) == "human_review"
+
+    def test_a_judge_that_verified_the_whole_source_clears_it(self):
+        state = {"doc_type": "contract", "extraction_confidence": None, "judge_verdict": "complete",
+                 "judge_source_verified": True}
+        assert after_judge(state) == "compile_report"
+
+    def test_the_arbiter_can_still_send_it_back_for_repair(self):
+        state = {"doc_type": "contract", "extraction_confidence": None, "arbiter_decision": "retry_extraction",
+                 "arbiter_retry_count": 1}
+        assert after_arbiter(state) == "retry_extract"
+
+    def test_a_confident_extraction_still_passes(self):
+        state = {"doc_type": "contract", "extraction_confidence": 0.97, "judge_verdict": "complete",
+                 "arbiter_decision": "accept_with_caveats"}
+        assert after_judge(state) == "compile_report"
+        assert after_arbiter(state) == "compile_report"
+
+
+def test_every_specialist_schema_asks_for_confidence():
+    from langchain_agents.specialist_agents import SPECIALIST_SCHEMAS
+
+    for doc_type, schema in SPECIALIST_SCHEMAS.items():
+        assert "confidence" in schema["properties"], doc_type
+        assert "confidence" in schema["required"], doc_type
+
+
+class _Judge:
+    def __init__(self, accuracy):
+        self.accuracy = accuracy
+        self.checked = 0
+
+    def judge_completeness(self, **_):
+        return {"completeness": 1.0, "completeness_label": "complete", "reasoning": ""}
+
+    def judge_extraction_correctness(self, **_):
+        self.checked += 1
+        return {"extraction_correctness": 0.4, "extraction_correctness_label": self.accuracy, "reasoning": "wrong date"}
+
+
+def _judged(monkeypatch, accuracy, text="short source"):
+    import agents.judge
+    import graph.build_graph as bg
+
+    fake = _Judge(accuracy)
+    monkeypatch.setattr(agents.judge, "CompletenessJudge", lambda: fake)
+    monkeypatch.setenv("MAILROOM_JUDGE_VERIFY", "on")
+    return bg.judge_verify_node({"doc_type": "contract", "extraction_confidence": None, "doc_text": text,
+                                 "extracted_data": {"parties": ["A"]}}), fake
+
+
+def test_a_complete_but_inaccurate_extraction_is_not_complete(monkeypatch):
+    result, fake = _judged(monkeypatch, "inaccurate")
+    assert fake.checked == 1
+    assert result["judge_verdict"] == "incomplete" and result["judge_source_verified"] is False
+    assert "wrong date" in result["judge_findings"]
+
+
+def test_a_judge_that_saw_part_of_the_document_verifies_nothing(monkeypatch):
+    from agents.judge import JUDGE_SOURCE_CHARS
+
+    result, _ = _judged(monkeypatch, "accurate", text="x" * (JUDGE_SOURCE_CHARS + 1))
+    assert result["judge_verdict"] == "complete" and result["judge_source_verified"] is False
+
+
+def test_the_arbiter_is_shown_the_source(monkeypatch):
+    from agents.arbiter import ArbiterAgent
+
+    sent = {}
+    monkeypatch.setattr(ArbiterAgent, "_call_structured",
+                        lambda self, message, schema: sent.update(message=message) or {"decision": "human_review"})
+    ArbiterAgent().arbitrate("contract", {}, "partial", [], doc_text="the source text")
+    assert "the source text" in sent["message"]

@@ -107,6 +107,7 @@ class DocumentState(TypedDict, total=False):
     judge_verdict: str | None
     judge_score: float | None
     judge_findings: list[str]
+    judge_source_verified: bool
     arbiter_decision: str | None
     arbiter_reasoning: str | None
     arbiter_handoff: str | None

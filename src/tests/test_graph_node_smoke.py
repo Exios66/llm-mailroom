@@ -279,6 +279,9 @@ class TestJudgeVerifyNode:
             def __init__(self):
                 pass
 
+            def judge_extraction_correctness(self, **kw):
+                return {"extraction_correctness": 1.0, "extraction_correctness_label": "accurate", "reasoning": ""}
+
             def judge_completeness(self, **kw):
                 return {
                     "completeness": 0.99,
