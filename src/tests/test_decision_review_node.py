@@ -717,3 +717,35 @@ def test_low_llm_class_still_parks_once_retries_are_spent(decision_config, route
         "classification_attempts": 9,
     }
     assert router(state) == "human_review"
+
+
+def test_confident_reviewer_corrects_a_low_sorter(decision_config, no_llm_reviewer):
+    register_decision_backend(Spy(answer=answer(label="corporate_record", subclass="bylaws", conf=0.99)))
+    updates = review_classify_node(
+        state(doc_type="insurance_claim", classification_confidence=0.2)
+    )
+    assert updates["review_route"] == "extract"
+    assert updates["doc_type"] == "corporate_record"
+    assert updates["classification_confidence"] == 0.99
+    assert updates["reviewer_causes"] == []
+
+
+def test_unsure_reviewer_still_parks_a_low_sorter(decision_config, no_llm_reviewer):
+    register_decision_backend(Spy(answer=answer(conf=0.1)))
+    updates = review_classify_node(
+        state(doc_type="insurance_claim", classification_confidence=0.2)
+    )
+    assert updates["review_route"] == "human_review"
+    assert REVIEWER_LOW_CONFIDENCE in updates["reviewer_causes"]
+
+
+@pytest.mark.parametrize("confidence", [0.95, 0.99])
+def test_reviewer_cannot_override_a_medium_or_high_sorter(
+    decision_config, no_llm_reviewer, confidence
+):
+    register_decision_backend(Spy(answer=answer(label="corporate_record", subclass="bylaws", conf=0.99)))
+    updates = review_classify_node(
+        state(doc_type="insurance_claim", classification_confidence=confidence)
+    )
+    assert updates["review_route"] == "human_review"
+    assert REVIEWER_DISAGREEMENT in updates["reviewer_causes"]

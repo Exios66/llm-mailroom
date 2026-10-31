@@ -1155,6 +1155,16 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs):
     return box.get("value")
 
 
+def _sorter_is_unsure(state: DocumentState) -> bool:
+    """True when the sorter ended below its class's low band (or gave no score)."""
+    confidence = state.get("classification_confidence")
+    if not _valid_unit_float(confidence):
+        return True
+    return float(confidence) < float(
+        get_confidence_thresholds(state.get("doc_type")).get("low", 0.70)
+    )
+
+
 def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     """Decision-model branch of ``review_classify_node``.
 
@@ -1268,6 +1278,7 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
         eligible=eligible,
         cutoffs=cutoffs,
         has_text=has_text,
+        sorter_unsure=_sorter_is_unsure(state),
     )
     cutoff_key = answer.doc_type if answer is not None else sorter_type
     cutoff = cutoffs.get(cutoff_key) if isinstance(cutoff_key, str) else None
