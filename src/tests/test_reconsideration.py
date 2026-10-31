@@ -350,3 +350,12 @@ def test_classify_graph_has_gt_miss_edge():
     assert ("classify", "review_classify") in edges
     assert ("compile_report", "human_review") in edges
     assert ("compile_report", "catalog_write") in edges
+
+
+def test_low_sorter_confidence_is_named_only_when_nothing_else_explains_the_park():
+    from pipeline.reconsideration import SORTER_LOW_CONFIDENCE, collect_review_causes
+
+    assert collect_review_causes({"classification_confidence": 0.4}) == [SORTER_LOW_CONFIDENCE]
+    assert collect_review_causes({"classification_confidence": 0.95}) == []
+    causes = collect_review_causes({"classification_confidence": 0.4, "judge_verdict": "MISS"})
+    assert SORTER_LOW_CONFIDENCE not in causes
