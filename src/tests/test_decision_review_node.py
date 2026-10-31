@@ -623,3 +623,49 @@ def test_backend_is_bounded_by_the_run_deadline(decision_config, no_llm_reviewer
     assert spy.call_count == 0
     assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
     assert updates["review_route"] == "human_review"
+
+
+def test_readable_text_that_starts_with_marker_words_reaches_backend(
+    decision_config, no_llm_reviewer
+):
+    spy = Spy(answer=answer())
+    register_decision_backend(spy)
+    st = state(doc_text="[Unreadable file: notes] Claim number 123 for water damage.")
+    updates = review_classify_node(st)
+    assert spy.call_count == 1
+    assert REVIEWER_NO_TEXT not in updates["reviewer_causes"]
+
+
+def test_abandoned_backend_threads_are_capped(decision_config, no_llm_reviewer, monkeypatch):
+    import threading
+
+    import graph.build_graph as bg
+    from pipeline import limits
+
+    monkeypatch.setattr(limits, "get_call_timeout_seconds", lambda: 0.05)
+    monkeypatch.setattr(bg, "_MAX_ABANDONED_BACKEND_THREADS", 2)
+    monkeypatch.setattr(bg, "_abandoned_backend_threads", [])
+    release = threading.Event()
+    started = []
+
+    def stalled(doc_text, doc_types, catalogs):
+        started.append(1)
+        release.wait(10)
+        return answer()
+
+    register_decision_backend(stalled)
+    try:
+        for _ in range(5):
+            updates = review_classify_node(state())
+            assert updates["review_route"] == "human_review"
+            assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
+        # Two calls stalled and were tracked; the other three were refused.
+        assert len(started) == 2
+    finally:
+        release.set()
+
+    for thread in list(bg._abandoned_backend_threads):
+        thread.join(2)
+    # Finished threads are pruned, so calls are accepted again.
+    register_decision_backend(Spy(answer=answer()))
+    assert review_classify_node(state())["review_route"] == "extract"

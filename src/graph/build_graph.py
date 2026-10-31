@@ -1,6 +1,7 @@
 import dataclasses
 import functools
 import math
+import re
 import structlog
 import threading
 import time
@@ -1069,21 +1070,30 @@ def _fmt_label(value: Any) -> str:
     return "none" if value is None else str(value)[:40]
 
 
-_UNREADABLE_MARKER = "[Unreadable file:"
+# ``_read_file_text`` failure stubs are a single bracketed line, e.g.
+# "[Unreadable file: a.pdf]". Only a text that is entirely that stub is a
+# failed extraction; a real document that merely starts with those words is not.
+_UNREADABLE_STUB = re.compile(r"\s*\[Unreadable file:[^\]]*\]\s*")
+# Timed-out backend calls leave a daemon thread behind. Past this many live
+# abandoned threads, new backend calls are refused (the document parks).
+_MAX_ABANDONED_BACKEND_THREADS = 4
+_abandoned_backend_threads: list[threading.Thread] = []
+_abandoned_lock = threading.Lock()
 
 
 def _has_readable_text(state: Mapping[str, Any]) -> bool:
     """True when ``doc_text`` is non-blank and is not an extraction-failure stub.
 
-    ``_read_file_text`` returns an ``[Unreadable file: ...]`` marker (with
-    ``text_ok=False``) when extraction fails; the marker is non-blank, so it
+    ``_read_file_text`` returns an ``[Unreadable file: ...]`` stub (with
+    ``text_ok=False``) when extraction fails; the stub is non-blank, so it
     must be rejected explicitly or a confident backend match could send
-    unreadable content on to extraction.
+    unreadable content on to extraction. Only a text that is entirely the
+    stub counts; the seeded ``error_message`` is the second signal.
     """
     doc_text = state.get("doc_text")
     if not isinstance(doc_text, str) or not doc_text.strip():
         return False
-    if doc_text.lstrip().startswith(_UNREADABLE_MARKER):
+    if _UNREADABLE_STUB.fullmatch(doc_text):
         return False
     error = state.get("error_message")
     return not (isinstance(error, str) and error.startswith("Could not extract text"))
@@ -1099,7 +1109,9 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs):
     The timeout is ``llm_call_timeout_seconds``, shortened to the time left on
     the run deadline. The call runs on a daemon thread so a stalled backend
     can neither block the worker nor keep the process alive; on expiry
-    ``DecisionBackendTimeout`` is raised (the stray thread is abandoned).
+    ``DecisionBackendTimeout`` is raised and the stray thread is tracked.
+    At ``_MAX_ABANDONED_BACKEND_THREADS`` live abandoned threads, new calls
+    are refused with ``DecisionBackendTimeout`` instead of starting another.
     Backend exceptions propagate unchanged.
     """
     import contextvars
@@ -1112,6 +1124,14 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs):
         timeout = min(timeout, deadline - time.time())
     if timeout <= 0:
         raise DecisionBackendTimeout("no time left on the run deadline")
+    with _abandoned_lock:
+        _abandoned_backend_threads[:] = [
+            t for t in _abandoned_backend_threads if t.is_alive()
+        ]
+        if len(_abandoned_backend_threads) >= _MAX_ABANDONED_BACKEND_THREADS:
+            raise DecisionBackendTimeout(
+                f"{len(_abandoned_backend_threads)} stalled backend calls still running"
+            )
 
     box: dict[str, Any] = {}
     ctx = contextvars.copy_context()
@@ -1127,6 +1147,8 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs):
     thread.start()
     thread.join(timeout)
     if thread.is_alive():
+        with _abandoned_lock:
+            _abandoned_backend_threads.append(thread)
         raise DecisionBackendTimeout(f"decision backend exceeded {timeout:.0f}s")
     if "error" in box:
         raise box["error"]
