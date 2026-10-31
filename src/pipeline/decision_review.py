@@ -2,8 +2,9 @@
 
 A ``decision_only`` document reaches ``extract`` only when every condition
 holds; each failed condition is recorded (not just the first) and any
-failure routes to ``human_review``. Overrides never auto-accept. The
-function does no I/O and reads no config: eligible classes and cutoffs are
+failure routes to ``human_review``. A reviewer may only correct a sorter
+that stayed below its low band; any other disagreement parks. The function
+does no I/O and reads no config: eligible classes and cutoffs are
 passed in, so the graph and the evals call the same code.
 """
 
@@ -74,11 +75,14 @@ def decide_review(
     eligible: Collection[str],
     cutoffs: Mapping[str, float],
     has_text: bool,
+    sorter_unsure: bool = False,
 ) -> ReviewRoute:
     """Route a decision review and return its destination, causes, and verdict.
 
     Extraction requires text, matching sorter and reviewer labels in
     ``eligible``, and confidence at or above the reviewer's class cutoff.
+    With ``sorter_unsure`` the sorter's label carries no weight, so only the
+    reviewer's label must be eligible and it replaces the sorter's.
     Confidence and cutoff must be finite numbers in [0, 1], excluding
     booleans. Missing or invalid cutoffs and confidence cause escalation.
     An absent answer records unavailability and, if applicable, missing text;
@@ -94,9 +98,9 @@ def decide_review(
 
     if not has_text:
         causes.append(REVIEWER_NO_TEXT)
-    if sorter_type not in eligible or answer.doc_type not in eligible:
+    if answer.doc_type not in eligible or (not sorter_unsure and sorter_type not in eligible):
         causes.append(REVIEWER_INELIGIBLE_LABEL)
-    if sorter_type is None or sorter_type != answer.doc_type:
+    if not sorter_unsure and (sorter_type is None or sorter_type != answer.doc_type):
         causes.append(REVIEWER_DISAGREEMENT)
     cutoff = cutoffs.get(answer.doc_type) if answer.doc_type is not None else None
     if not _meets_cutoff(answer.confidence, cutoff):

@@ -267,6 +267,7 @@ confidence:
 #     insurance_claim: {mode: decision_only, cutoff: 0.9}
 # decision_only classes make no LLM call here: anything short of the accept
 # rule goes to human_review, and they are reviewed at any sorter confidence.
+# Only a sorter below its low band can be corrected by a confident reviewer.
 # default_mode: decision_only cannot accept a class
 # with no by_class entry and cutoff; such a class always parks.
 reviewer:
