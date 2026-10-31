@@ -217,8 +217,39 @@ def _extraction_is_unsupported(state: dict) -> bool:
     return all(str(k).startswith("_") or k == "reasoning" for k in extracted)
 
 
+def _judge_can_review(state: dict) -> bool:
+    """True when an unsure extraction should reach the judge before a person.
+
+    A guardrail failure or an empty extraction is hard evidence, so a judge
+    verdict must not clear it. Without a judge lane the fallback stays human.
+    """
+    import os
+
+    if os.environ.get("MAILROOM_JUDGE_VERIFY", "on").lower() in ("off", "false", "0", "no"):
+        return False
+    return bool(state.get("extracted_data")) and not state.get("extraction_guardrail")
+
+
+def judge_should_run(state: dict) -> bool:
+    """The ambiguous band, or an unsure extraction whose retries are spent."""
+    return judge_gate(state) or (_judge_can_review(state) and _extraction_still_unsure(state))
+
+
+def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
+    """True when the extraction's confidence is missing or below the low band.
+
+    Only a judge that found it complete and accurate against the whole source
+    clears this. Otherwise the judge and arbiter may send it back for a
+    re-extraction, which has to earn its own confidence, or it goes to a person.
+    """
+    if state.get("judge_source_verified"):
+        return False
+    confidence = state.get("extraction_confidence")
+    return confidence is None or confidence < _thresholds_for(state).get("low", 0.70)
+
+
 def after_extraction(state: dict) -> Literal[
-    "extract", "retry_extract", "compile_report", "human_review", "boss_escalation"
+    "extract", "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="extract") == "retry":
@@ -318,12 +349,17 @@ def after_extraction(state: dict) -> Literal[
         logger.info("extraction_retry", confidence=confidence, attempts=attempts)
         return "retry_extract"
 
+    # Retries are spent. The judge, then the arbiter, try to settle it first.
+    if _judge_can_review(state):
+        logger.info("extraction_unsure_judge", confidence=confidence, attempts=attempts)
+        return "judge_verify"
+
     logger.info("extraction_review", confidence=confidence, attempts=attempts)
     return "human_review"
 
 
 def after_retry_extraction(state: dict) -> Literal[
-    "retry_extract", "compile_report", "human_review", "boss_escalation"
+    "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
     if state.get("transient_error"):
         # L-13: retry the SAME node so the re-extraction prompt (and any
@@ -514,7 +550,7 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     if verdict in ("judge_error",):
         return "human_review"
     if verdict in (None, "", "skipped", "complete"):
-        return "compile_report"
+        return "human_review" if _extraction_still_unsure(state) else "compile_report"
     thresholds = _thresholds_for(state)
     raw_max_passes = thresholds.get("judge_max_passes")
     max_passes = int(raw_max_passes) if raw_max_passes is not None else 3
@@ -554,7 +590,7 @@ def after_arbiter(state: dict) -> Literal[
         return "human_review"
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
-        return "compile_report"
+        return "human_review" if _extraction_still_unsure(state) else "compile_report"
     thresholds = _thresholds_for(state)
     raw_retry_max = thresholds.get("arbiter_retry_max")
     arbiter_retry_max = int(raw_retry_max) if raw_retry_max is not None else 2

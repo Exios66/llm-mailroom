@@ -28,6 +28,7 @@ from graph.routing import (
     after_human_review,
     after_report,
     judge_gate,
+    judge_should_run,
 )
 from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
@@ -1837,10 +1838,10 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     `partial`/`incomplete` go to the arbiter, hard failure escalates
     fail-safe). Gated by `_judge_gate` — most documents never see this call.
     """
-    from agents.judge import CompletenessJudge
+    from agents.judge import JUDGE_SOURCE_CHARS, CompletenessJudge
     from llm.retry import is_transient_error
 
-    if not judge_gate(state):
+    if not judge_should_run(state):
         logger.info(
             "judge_skipped",
             doc_id=state.get("doc_id"),
@@ -1856,6 +1857,13 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         result = judge.judge_completeness(
             doc_type=doc_type, extracted=extracted, doc_text=doc_text
         )
+        # Completeness says nothing about accuracy: a complete verdict must also
+        # hold up against the source before it counts.
+        accuracy = None
+        if result.get("completeness_label") == "complete":
+            accuracy = judge.judge_extraction_correctness(
+                doc_type=doc_type, extracted=extracted, doc_text=doc_text
+            )
     except Exception as exc:
         if is_transient_error(exc):
             transient = state.get("transient_retries_judge_verify", 0) + 1
@@ -1882,6 +1890,16 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     label = result.get("completeness_label", "incomplete")
     score = float(result.get("completeness", 0.0))
     findings = [str(result.get("reasoning", ""))] if result.get("reasoning") else []
+    source_verified = False
+    if accuracy is not None:
+        accuracy_label = accuracy.get("extraction_correctness_label")
+        score = min(score, float(accuracy.get("extraction_correctness", 0.0)))
+        if accuracy.get("reasoning"):
+            findings.append(str(accuracy["reasoning"]))
+        if accuracy_label != "accurate":
+            label = "partial" if accuracy_label == "partial" else "incomplete"
+        # A judge that saw only part of the document cannot vouch for all of it.
+        source_verified = label == "complete" and len(doc_text) <= JUDGE_SOURCE_CHARS
     logger.info(
         "judge_verified",
         doc_id=state.get("doc_id"),
@@ -1905,6 +1923,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         "judge_verdict": label,
         "judge_score": score,
         "judge_findings": findings,
+        "judge_source_verified": source_verified,
         "judge_pass_count": int(state.get("judge_pass_count") or 0) + 1,
         "transient_error": False,
     }
@@ -1929,6 +1948,7 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
             judge_verdict=str(state.get("judge_verdict") or ""),
             judge_findings=state.get("judge_findings") or [],
             judge_score=state.get("judge_score"),
+            doc_text=state.get("doc_text", ""),
         )
     except Exception as exc:
         if is_transient_error(exc):
