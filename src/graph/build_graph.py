@@ -1069,6 +1069,69 @@ def _fmt_label(value: Any) -> str:
     return "none" if value is None else str(value)[:40]
 
 
+_UNREADABLE_MARKER = "[Unreadable file:"
+
+
+def _has_readable_text(state: Mapping[str, Any]) -> bool:
+    """True when ``doc_text`` is non-blank and is not an extraction-failure stub.
+
+    ``_read_file_text`` returns an ``[Unreadable file: ...]`` marker (with
+    ``text_ok=False``) when extraction fails; the marker is non-blank, so it
+    must be rejected explicitly or a confident backend match could send
+    unreadable content on to extraction.
+    """
+    doc_text = state.get("doc_text")
+    if not isinstance(doc_text, str) or not doc_text.strip():
+        return False
+    if doc_text.lstrip().startswith(_UNREADABLE_MARKER):
+        return False
+    error = state.get("error_message")
+    return not (isinstance(error, str) and error.startswith("Could not extract text"))
+
+
+class DecisionBackendTimeout(Exception):
+    """The decision backend did not answer within the call/run deadline."""
+
+
+def _call_decision_backend(backend, doc_text, doc_types, catalogs):
+    """Call ``backend`` with a wall-clock bound.
+
+    The timeout is ``llm_call_timeout_seconds``, shortened to the time left on
+    the run deadline. The call runs on a daemon thread so a stalled backend
+    can neither block the worker nor keep the process alive; on expiry
+    ``DecisionBackendTimeout`` is raised (the stray thread is abandoned).
+    Backend exceptions propagate unchanged.
+    """
+    import contextvars
+
+    from pipeline import limits
+
+    timeout = float(limits.get_call_timeout_seconds())
+    deadline = limits.get_run_deadline()
+    if deadline is not None:
+        timeout = min(timeout, deadline - time.time())
+    if timeout <= 0:
+        raise DecisionBackendTimeout("no time left on the run deadline")
+
+    box: dict[str, Any] = {}
+    ctx = contextvars.copy_context()
+
+    def _target() -> None:
+        try:
+            box["value"] = ctx.run(backend, doc_text, doc_types, catalogs)
+        except BaseException as exc:  # re-raised on the caller's thread
+            box["error"] = exc
+
+    thread = threading.Thread(target=_target, name="decision-backend", daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise DecisionBackendTimeout(f"decision backend exceeded {timeout:.0f}s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
 def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     """Decision-model branch of ``review_classify_node``.
 
@@ -1094,7 +1157,7 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     doc_text = state.get("doc_text")
     sorter_type = state.get("doc_type")
     sorter_confidence = state.get("classification_confidence")
-    has_text = isinstance(doc_text, str) and doc_text.strip() != ""
+    has_text = _has_readable_text(state)
 
     by_class = get_reviewer_config()["by_class"]
     eligible = [k for k, v in by_class.items() if v.get("mode") == "decision_only"]
@@ -1109,7 +1172,16 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
             try:
                 doc_types = sorted(get_sorter_label_set())
                 catalogs = {t: list(sorter_subclass_catalog(t)) for t in doc_types}
-                raw = backend(doc_text, doc_types, catalogs)
+                raw = _call_decision_backend(backend, doc_text, doc_types, catalogs)
+            except DecisionBackendTimeout as exc:
+                # A stalled backend is unavailable, not retryable: retrying
+                # would stall again. Park for a person.
+                logger.warning(
+                    "decision_review_timeout",
+                    doc_id=state.get("doc_id"),
+                    error=str(exc),
+                )
+                raw = None
             except Exception as exc:
                 if is_transient_error(exc):
                     transient = state.get("transient_retries_review_classify", 0) + 1

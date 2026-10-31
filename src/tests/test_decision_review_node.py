@@ -554,3 +554,72 @@ def test_every_failure_routes_to_human_review(
     assert updates["reviewer_causes"]
     assert "classification_confidence" not in updates
     assert route_after(st, updates) == "human_review"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[Unreadable file: scan.pdf]",
+        "  [Unreadable file: a.docx — not a valid .docx]",
+    ],
+)
+def test_unreadable_marker_text_skips_backend(decision_config, no_llm_reviewer, text):
+    spy = Spy(answer=answer())
+    register_decision_backend(spy)
+    st = state(doc_text=text)
+    updates = review_classify_node(st)
+    assert spy.call_count == 0
+    assert updates["review_route"] == "human_review"
+    assert REVIEWER_NO_TEXT in updates["reviewer_causes"]
+    assert route_after(st, updates) == "human_review"
+
+
+def test_failed_extraction_error_skips_backend(decision_config, no_llm_reviewer):
+    spy = Spy(answer=answer())
+    register_decision_backend(spy)
+    st = state(error_message="Could not extract text from .pdf file")
+    updates = review_classify_node(st)
+    assert spy.call_count == 0
+    assert REVIEWER_NO_TEXT in updates["reviewer_causes"]
+
+
+def test_stalled_backend_times_out_and_parks(decision_config, no_llm_reviewer, monkeypatch):
+    import threading
+
+    from pipeline import limits
+
+    monkeypatch.setattr(limits, "get_call_timeout_seconds", lambda: 0.2)
+    release = threading.Event()
+
+    def stalled(doc_text, doc_types, catalogs):
+        release.wait(10)
+        return answer()
+
+    register_decision_backend(stalled)
+    st = state()
+    try:
+        updates = review_classify_node(st)
+    finally:
+        release.set()
+    assert updates["review_route"] == "human_review"
+    assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
+    assert updates["transient_error"] is False
+    assert "doc_type" not in updates
+    assert route_after(st, updates) == "human_review"
+
+
+def test_backend_is_bounded_by_the_run_deadline(decision_config, no_llm_reviewer):
+    import time
+
+    from pipeline import limits
+
+    spy = Spy(answer=answer())
+    register_decision_backend(spy)
+    limits.set_run_deadline(time.time() - 1)
+    try:
+        updates = review_classify_node(state())
+    finally:
+        limits.set_run_deadline(None)
+    assert spy.call_count == 0
+    assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
+    assert updates["review_route"] == "human_review"
