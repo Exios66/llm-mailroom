@@ -261,3 +261,15 @@ class TestManifestCorruptionHygiene:
         # the corrupt manifest is skipped, the endpoint still answers
         assert resp.status_code == 200
         assert any(event == "manifest_unreadable" and "corrupt.json" in str(kw) for event, kw in events)
+
+
+def test_discarding_checkpoints_is_fail_soft():
+    from unittest.mock import Mock
+
+    from graph.build_graph import _discard_checkpoints
+
+    graph = Mock()
+    _discard_checkpoints(graph, "thread-1")
+    graph.checkpointer.delete_thread.assert_called_once_with("thread-1")
+    graph.checkpointer.delete_thread.side_effect = RuntimeError("locked")
+    _discard_checkpoints(graph, "thread-1")

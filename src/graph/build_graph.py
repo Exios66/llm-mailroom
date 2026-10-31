@@ -3301,6 +3301,15 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
             gen.update(output=output)
 
 
+def _discard_checkpoints(graph, thread_id: str) -> None:
+    """Drop a finished run's checkpoints: they hold the document text and only
+    a parked run can resume. Fail-soft; a leftover row costs disk, not a run."""
+    try:
+        graph.checkpointer.delete_thread(thread_id)
+    except Exception:
+        logger.warning("checkpoint_discard_failed", thread_id=thread_id, exc_info=True)
+
+
 def _execute_run(
     initial_state: DocumentState,
     seed: str,
@@ -3490,6 +3499,8 @@ def _execute_run(
             )
         if _result_is_interrupted(result):
             result = _paused_review_result(result, initial_state, thread_id, state_trace_id)
+        elif result.get("stage") in {PipelineStage.ARCHIVED.value, PipelineStage.FAILED.value}:
+            _discard_checkpoints(graph, thread_id)
         # Ensure the trace id survives into the final state (intake_node creates
         # the manifest with its own doc_id; the trace id must be attached even
         # when the graph never ran intake, e.g. aborted runs).

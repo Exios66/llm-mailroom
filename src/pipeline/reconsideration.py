@@ -28,6 +28,7 @@ REPORTING_INCOMPLETE = "reporting_incomplete"
 NEEDS_JUDGE = "needs_judge_review"
 HOLLOW_EXTRACTION = "hollow_extraction"
 # Decision-model reviewer causes (see ``pipeline.decision_review``).
+SORTER_LOW_CONFIDENCE = "sorter_low_confidence"
 REVIEWER_UNAVAILABLE = "reviewer_unavailable"
 REVIEWER_NO_TEXT = "reviewer_no_text"
 REVIEWER_INELIGIBLE_LABEL = "reviewer_ineligible_label"
@@ -46,6 +47,7 @@ CAUSE_LABELS: dict[str, str] = {
     REPORTING_INCOMPLETE: "report / completeness incomplete",
     NEEDS_JUDGE: "deterministic scorer wanted a judge that the high-conf path skipped",
     HOLLOW_EXTRACTION: "hollow extraction payload (no public fields)",
+    SORTER_LOW_CONFIDENCE: "sorter confidence below the low threshold",
     REVIEWER_UNAVAILABLE: "decision reviewer returned no valid answer",
     REVIEWER_NO_TEXT: "document has no usable text for the decision reviewer",
     REVIEWER_INELIGIBLE_LABEL: "sorter or reviewer label is not an eligible class",
@@ -347,6 +349,10 @@ def collect_review_causes(
 
     if _is_true_flag(scores.get("extraction_needs_judge_review")):
         causes.append(NEEDS_JUDGE)
+
+    sorter_confidence = _as_float(data.get("classification_confidence"))
+    if not causes and sorter_confidence is not None and sorter_confidence < floor:
+        causes.append(SORTER_LOW_CONFIDENCE)
 
     # Decision-model reviewer causes recorded by review_classify_node.
     reviewer_causes = data.get("reviewer_causes")
