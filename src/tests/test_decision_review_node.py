@@ -694,3 +694,26 @@ def test_high_confidence_llm_class_skips_review(decision_config, router):
         "classification_attempts": 1,
     }
     assert router(state) == "extract"
+
+
+@pytest.mark.parametrize("confidence", [0.2, 0.8])
+@pytest.mark.parametrize("router", [after_classify, after_retry_classify])
+def test_unsure_decision_class_is_reviewed_once_retries_are_spent(
+    decision_config, router, confidence
+):
+    state = {
+        "doc_type": "insurance_claim",
+        "classification_confidence": confidence,
+        "classification_attempts": 9,
+    }
+    assert router(state) == "review_classify"
+
+
+@pytest.mark.parametrize("router", [after_classify, after_retry_classify])
+def test_low_llm_class_still_parks_once_retries_are_spent(decision_config, router):
+    state = {
+        "doc_type": "contract",
+        "classification_confidence": 0.2,
+        "classification_attempts": 9,
+    }
+    assert router(state) == "human_review"
