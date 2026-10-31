@@ -136,6 +136,77 @@ def test_expected_field_coverage_below_floor_retries():
     assert after_extraction({**state, "extraction_attempts": 3}) == "human_review"
 
 
+def test_ground_truth_without_schema_fields_never_gates_coverage():
+    """CUAD/MAUD ground truth carries clause labels, no schema fields.
+
+    With nothing grounded to check, coverage has no opinion: a clean
+    extraction archives instead of failing on eval-only keys.
+    """
+    expected = {
+        "cuad_clause_labels": {"Agreement Date": [{"text": "March 31, 2000"}]},
+        "maud_clause_labels": {"q": "a"},
+        "context_window_band": "<=32k",
+        "gt_presence": {"parties": True},
+        "token_estimate": 1200,
+    }
+    for doc_type in ("contract", "merger_agreement"):
+        assert routing_coverage_expected_fields(expected, doc_type) is None
+        state = {
+            "doc_type": doc_type,
+            "extraction_confidence": 0.99,
+            "extraction_attempts": 1,
+            "extracted_data": {
+                "parties": ["Acme", "Beta"],
+                "governing_law": "Delaware",
+                "confidence": 0.99,
+            },
+            "ground_truth": {"expected_fields": expected},
+        }
+        assert coverage_below_floor(
+            state["extracted_data"], expected, doc_type=doc_type
+        ) is False
+        assert after_extraction(state) == "compile_report"
+        assert EXTRACTION_MISS not in collect_review_causes(state)
+
+
+def test_review_causes_use_the_routing_coverage_scope():
+    """Eval-only keys cannot blame a parked document on its extraction."""
+    expected = {
+        "sender": "Pat",
+        "recipient": "Kim",
+        "communication_type": "email",
+        "content_topic": "legal",
+        "sentiment_label": "neutral",
+        "token_estimate": 900,
+        "context_window_band": "<=32k",
+        "gt_presence": {"sender": True},
+    }
+    clean = {
+        "doc_type": "correspondence",
+        "extracted_data": {
+            "sender": "Pat",
+            "recipient": "Kim",
+            "communication_type": "email",
+        },
+        "ground_truth": {"expected_fields": expected},
+    }
+    assert EXTRACTION_MISS not in collect_review_causes(clean)
+    missed = {**clean, "extracted_data": {"sender": "Pat", "subject_matter": "x"}}
+    assert EXTRACTION_MISS in collect_review_causes(missed)
+
+
+def test_review_causes_skip_posthoc_ground_truth():
+    state = {
+        "doc_type": "insurance_claim",
+        "extracted_data": {"claim_number": "123"},
+        "ground_truth": {
+            "expected_fields": {"claim_number": "123", "claimed_amount": 100.0},
+            "expected_fields_sources": {"claimed_amount": "posthoc"},
+        },
+    }
+    assert EXTRACTION_MISS not in collect_review_causes(state)
+
+
 def test_routing_coverage_excludes_eval_extras_and_posthoc():
     expected = {
         "sender": "Pat",

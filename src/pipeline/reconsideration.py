@@ -168,15 +168,12 @@ def routing_coverage_expected_fields(
 def expected_field_coverage(
     extracted: Mapping[str, Any] | None,
     expected_fields: Mapping[str, Any] | None,
-    *,
-    coverage_fields: Mapping[str, Any] | None = None,
 ) -> float | None:
     """Fraction of non-empty expected fields that the extract surfaced."""
-    expected = coverage_fields if coverage_fields is not None else expected_fields
-    if not expected:
+    if not expected_fields:
         return None
     required = {
-        key: value for key, value in expected.items() if value not in _EMPTY
+        key: value for key, value in expected_fields.items() if value not in _EMPTY
     }
     if not required:
         return None
@@ -192,6 +189,24 @@ def expected_field_coverage(
     return round(present / len(required), 3)
 
 
+def routed_field_coverage(
+    extracted: Mapping[str, Any] | None,
+    expected_fields: Mapping[str, Any] | None,
+    *,
+    doc_type: str | None = None,
+    sources: Mapping[str, str] | None = None,
+) -> float | None:
+    """Coverage over the routing scope; None when no grounded field is in scope.
+
+    CUAD/MAUD ground truth holds clause labels and no schema fields, so it
+    scopes to nothing. That is an absent signal, never a coverage failure.
+    """
+    scoped = routing_coverage_expected_fields(
+        expected_fields, doc_type, sources=sources
+    )
+    return expected_field_coverage(extracted, scoped)
+
+
 def coverage_below_floor(
     extracted: Mapping[str, Any] | None,
     expected_fields: Mapping[str, Any] | None,
@@ -205,10 +220,9 @@ def coverage_below_floor(
         from pipeline.config import get_confidence_thresholds
 
         floor = float(get_confidence_thresholds().get("low", 0.70))
-    scoped = routing_coverage_expected_fields(
-        expected_fields, doc_type, sources=sources
+    coverage = routed_field_coverage(
+        extracted, expected_fields, doc_type=doc_type, sources=sources
     )
-    coverage = expected_field_coverage(extracted, expected_fields, coverage_fields=scoped)
     if coverage is None:
         return False
     return coverage < floor
@@ -292,7 +306,13 @@ def collect_review_causes(
         causes.append(EXTRACTION_MISS)
     presence = _as_float(scores.get("expected_field_presence"))
     if presence is None:
-        presence = expected_field_coverage(extracted, expected_fields)
+        sources = gt.get("expected_fields_sources") if isinstance(gt, dict) else None
+        presence = routed_field_coverage(
+            extracted,
+            expected_fields,
+            doc_type=data.get("doc_type"),
+            sources=sources if isinstance(sources, dict) else None,
+        )
     if presence is not None and presence < floor and EXTRACTION_MISS not in causes:
         causes.append(EXTRACTION_MISS)
     # Missing extracted_data is not hollow (classify-only park). An empty or
