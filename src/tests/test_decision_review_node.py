@@ -669,6 +669,9 @@ def test_abandoned_backend_threads_are_capped(decision_config, no_llm_reviewer, 
     # Finished threads are pruned, so calls are accepted again.
     register_decision_backend(Spy(answer=answer()))
     assert review_classify_node(state())["review_route"] == "extract"
+
+
+@pytest.mark.parametrize(
     "router,attempts", [(after_classify, 1), (after_retry_classify, 2)]
 )
 def test_high_confidence_decision_class_is_still_reviewed(
