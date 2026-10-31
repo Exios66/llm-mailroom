@@ -997,6 +997,7 @@ async def _move_rejected_to_failed(doc_id: str, manifest) -> None:
     """
     try:
         from pipeline.bins import review_file_path, move_to_failed
+        from pipeline.review_resolve import with_review_evidence
         from storage.catalog import write_document_record
 
         review_file = review_file_path(manifest)
@@ -1013,7 +1014,7 @@ async def _move_rejected_to_failed(doc_id: str, manifest) -> None:
             "stage": PipelineStage.FAILED.value,
             "classification_confidence": manifest.classification_confidence,
             "extraction_confidence": manifest.extraction_confidence,
-            "extracted_data": manifest.extracted_data,
+            "extracted_data": with_review_evidence(manifest.extracted_data, manifest),
             "escalation_reason": manifest.escalation_reason,
             "trace_id": manifest.trace_id,
         }

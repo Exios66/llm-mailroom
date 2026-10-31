@@ -27,6 +27,12 @@ PARSE_ERROR = "parse_error"
 REPORTING_INCOMPLETE = "reporting_incomplete"
 NEEDS_JUDGE = "needs_judge_review"
 HOLLOW_EXTRACTION = "hollow_extraction"
+# Decision-model reviewer causes (see ``pipeline.decision_review``).
+REVIEWER_UNAVAILABLE = "reviewer_unavailable"
+REVIEWER_NO_TEXT = "reviewer_no_text"
+REVIEWER_INELIGIBLE_LABEL = "reviewer_ineligible_label"
+REVIEWER_DISAGREEMENT = "reviewer_disagreement"
+REVIEWER_LOW_CONFIDENCE = "reviewer_low_confidence"
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -40,6 +46,14 @@ CAUSE_LABELS: dict[str, str] = {
     REPORTING_INCOMPLETE: "report / completeness incomplete",
     NEEDS_JUDGE: "deterministic scorer wanted a judge that the high-conf path skipped",
     HOLLOW_EXTRACTION: "hollow extraction payload (no public fields)",
+    REVIEWER_UNAVAILABLE: "decision reviewer returned no valid answer",
+    REVIEWER_NO_TEXT: "document has no usable text for the decision reviewer",
+    REVIEWER_INELIGIBLE_LABEL: "sorter or reviewer label is not an eligible class",
+    REVIEWER_DISAGREEMENT: "sorter and decision reviewer labels disagree",
+    REVIEWER_LOW_CONFIDENCE: (
+        "decision reviewer confidence missing or below the class cutoff, "
+        "or no valid cutoff for the class"
+    ),
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -246,7 +260,11 @@ def collect_review_causes(
     scores: Optional[Mapping[str, Any]] = None,
     verdict: Optional[str] = None,
 ) -> list[str]:
-    """Canonical cause tokens from pipeline state and/or Langfuse scores."""
+    """Return unique cause tokens from pipeline state and/or Langfuse scores.
+
+    Nonempty string reviewer causes from a state list or tuple are included;
+    duplicate tokens retain their first position.
+    """
     data = dict(state or {})
     scores = dict(scores or {})
     causes: list[str] = []
@@ -309,6 +327,11 @@ def collect_review_causes(
 
     if _is_true_flag(scores.get("extraction_needs_judge_review")):
         causes.append(NEEDS_JUDGE)
+
+    # Decision-model reviewer causes recorded by review_classify_node.
+    reviewer_causes = data.get("reviewer_causes")
+    if isinstance(reviewer_causes, (list, tuple)):
+        causes.extend(t for t in reviewer_causes if isinstance(t, str) and t)
 
     seen: set[str] = set()
     ordered: list[str] = []
