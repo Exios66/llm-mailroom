@@ -16,7 +16,7 @@ from agents.decision_backend import (
     register_decision_backend,
 )
 from graph.build_graph import review_classify_node
-from graph.routing import after_review_classify
+from graph.routing import after_classify, after_retry_classify, after_review_classify
 from pipeline.config import get_review_mode, get_reviewer_config
 from pipeline.decision_review import DecisionAnswer
 from pipeline.reconsideration import (
@@ -669,3 +669,25 @@ def test_abandoned_backend_threads_are_capped(decision_config, no_llm_reviewer, 
     # Finished threads are pruned, so calls are accepted again.
     register_decision_backend(Spy(answer=answer()))
     assert review_classify_node(state())["review_route"] == "extract"
+    "router,attempts", [(after_classify, 1), (after_retry_classify, 2)]
+)
+def test_high_confidence_decision_class_is_still_reviewed(
+    decision_config, router, attempts
+):
+    """A confident sorter is not a second opinion: disagreement must surface."""
+    state = {
+        "doc_type": "insurance_claim",
+        "classification_confidence": 0.99,
+        "classification_attempts": attempts,
+    }
+    assert router(state) == "review_classify"
+
+
+@pytest.mark.parametrize("router", [after_classify, after_retry_classify])
+def test_high_confidence_llm_class_skips_review(decision_config, router):
+    state = {
+        "doc_type": "contract",
+        "classification_confidence": 0.99,
+        "classification_attempts": 1,
+    }
+    assert router(state) == "extract"

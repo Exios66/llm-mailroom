@@ -1,7 +1,11 @@
 import structlog
 from typing import Any, Literal, Mapping
 
-from pipeline.config import get_confidence_thresholds, is_extractable_doc_type
+from pipeline.config import (
+    get_confidence_thresholds,
+    get_review_mode,
+    is_extractable_doc_type,
+)
 from observability.scores import validate_extraction
 
 logger = structlog.get_logger(__name__)
@@ -50,6 +54,17 @@ def _thresholds_for(state: Mapping[str, Any] | dict) -> dict:
     return get_confidence_thresholds(doc_type if isinstance(doc_type, str) else None)
 
 
+def _after_confident_sorter(state: dict) -> Literal["review_classify", "extract"]:
+    """A ``decision_only`` class always gets its second opinion.
+
+    Skipping the reviewer on a confident sorter would hide every disagreement
+    behind the sorter's own score. Other classes keep the direct path.
+    """
+    if get_review_mode(state.get("doc_type")) == "decision_only":
+        return "review_classify"
+    return "extract"
+
+
 def after_classify(state: dict) -> Literal[
     "classify", "retry_classify", "review_classify", "extract", "human_review"
 ]:
@@ -86,7 +101,7 @@ def after_classify(state: dict) -> Literal[
 
     # High confidence: clearly matches one class -> auto-continue to extraction.
     if confidence is not None and confidence >= high:
-        return "extract"
+        return _after_confident_sorter(state)
 
     # Medium band (low <= confidence < high): classified, but the model is not
     # clearly confident (e.g. multi-topic/ambiguous documents whose form still
@@ -170,7 +185,7 @@ def after_retry_classify(state: dict) -> Literal[
     # whose retry arms are unreachable once the budget is spent): still-low
     # confidence escalates to humans; high confidence proceeds.
     if confidence is not None and confidence >= high:
-        return "extract"
+        return _after_confident_sorter(state)
     return "human_review"
 
 
