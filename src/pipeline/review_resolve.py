@@ -45,8 +45,48 @@ def live_doc_types() -> set[str]:
     return {c["key"] for c in load_config().get("doc_classes", []) if c.get("key")}
 
 
+REVIEW_EVIDENCE_FIELDS = (
+    "review_causes",
+    "review_verdict",
+    "reviewer_doc_type",
+    "reviewer_doc_subclass",
+    "reviewer_confidence",
+    "reviewer_model",
+)
+
+
+def _review_evidence(doc) -> dict[str, Any]:
+    """Lane A reviewer evidence: manifest attributes, else the catalog's
+    ``extracted_data["_review"]`` block. Absent evidence reads as None."""
+    extracted = getattr(doc, "extracted_data", None)
+    block = extracted.get("_review") if isinstance(extracted, dict) else None
+    if not isinstance(block, dict):
+        block = {}
+    evidence: dict[str, Any] = {}
+    for name in REVIEW_EVIDENCE_FIELDS:
+        value = getattr(doc, name, None)
+        evidence[name] = value if value is not None else block.get(name)
+    return evidence
+
+
+def with_review_evidence(extracted: Any, manifest) -> Any:
+    """Catalog ``extracted_data`` carrying the manifest's reviewer evidence.
+
+    Archive and rejection replace the row's parked payload, so ``_review`` is
+    copied forward. Without evidence ``extracted`` is returned unchanged.
+    """
+    evidence = {name: getattr(manifest, name, None) for name in REVIEW_EVIDENCE_FIELDS}
+    if all(value is None for value in evidence.values()):
+        return extracted
+    return {**(extracted if isinstance(extracted, dict) else {}), "_review": evidence}
+
+
 def serialize_document(doc) -> dict[str, Any]:
-    """Catalog or manifest → JSON-safe lookup/tray payload."""
+    """Catalog or manifest → JSON-safe lookup/tray payload.
+
+    Reviewer evidence comes from attributes or the catalog's ``_review``
+    block. A missing document returns an empty dict.
+    """
     if doc is None:
         return {}
     stage = getattr(doc, "stage", None)
@@ -68,6 +108,7 @@ def serialize_document(doc) -> dict[str, Any]:
         "trace_id": getattr(doc, "trace_id", None),
         "review_decision": getattr(doc, "review_decision", None),
         "extracted_data": getattr(doc, "extracted_data", None),
+        **_review_evidence(doc),
         "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
         "updated_at": updated.isoformat() if hasattr(updated, "isoformat") else updated,
     }
@@ -149,6 +190,13 @@ def apply_classification_override(
             raise ValueError(
                 f"doc_type must be one of {sorted(allowed)}; got {kind!r}"
             )
+        if kind != manifest.doc_type:
+            # That score was for the old class; a person chose this one.
+            manifest.classification_confidence = None
+            # The old class's subclass/subtype mean nothing to the new
+            # extractor; explicit values below still apply.
+            manifest.doc_subclass = None
+            manifest.contract_subtype = None
         manifest.doc_type = kind
         applied["doc_type"] = kind
 
@@ -415,6 +463,11 @@ def complete_human_extraction(
         raise ValueError("extracted_data must be a non-empty object for disposition=complete")
     if not manifest.doc_type:
         raise ValueError("Document has no classification to complete; set override_doc_type")
+    # Reviewer evidence comes only from manifest fields; an operator-supplied
+    # ``_review`` would masquerade as it in lookup and queue payloads.
+    extracted_data = {k: v for k, v in extracted_data.items() if k != "_review"}
+    if not extracted_data:
+        raise ValueError("extracted_data must be a non-empty object for disposition=complete")
     extracted_data = validate_operator_extraction(manifest.doc_type, extracted_data)
 
     conf = extracted_data.get("confidence")
@@ -457,7 +510,7 @@ def complete_human_extraction(
             "stage": PipelineStage.ARCHIVED.value,
             "classification_confidence": manifest.classification_confidence,
             "extraction_confidence": extraction_confidence,
-            "extracted_data": extracted_data,
+            "extracted_data": with_review_evidence(extracted_data, manifest),
             "escalation_reason": None,
             "trace_id": manifest.trace_id,
         },

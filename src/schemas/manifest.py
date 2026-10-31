@@ -38,6 +38,16 @@ class DocumentManifest(BaseModel):
     judge_verdict: str | None = None
     judge_score: float | None = None
     judge_findings: list[str] | None = None
+    # Lane A reviewer evidence — durable on the parked manifest so a human sees
+    # both opinions. A decision model writes no reasoning, so these structured
+    # fields are the whole record. None on older manifests and when the
+    # reviewer lane did not run.
+    review_causes: list[str] | None = None
+    review_verdict: str | None = None
+    reviewer_doc_type: str | None = None
+    reviewer_doc_subclass: str | None = None
+    reviewer_confidence: float | None = None
+    reviewer_model: str | None = None
     # LangGraph interrupt() thread id so in-process Command(resume=...) can
     # continue the paused human_review node. Empty on older manifests and
     # when the checkpointer was lost (process restart + MemorySaver) — resume
