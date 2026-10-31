@@ -65,6 +65,16 @@ def _after_confident_sorter(state: dict) -> Literal["review_classify", "extract"
     return "extract"
 
 
+def _after_unsure_sorter(state: dict) -> Literal["review_classify", "human_review"]:
+    """A ``decision_only`` class gets its second opinion at any sorter confidence.
+
+    Its reviewer, not the spent retry budget, decides whether a person is needed.
+    """
+    if get_review_mode(state.get("doc_type")) == "decision_only":
+        return "review_classify"
+    return "human_review"
+
+
 def after_classify(state: dict) -> Literal[
     "classify", "retry_classify", "review_classify", "extract", "human_review"
 ]:
@@ -124,14 +134,14 @@ def after_classify(state: dict) -> Literal[
             attempts=attempts,
             doc_type=doc_type,
         )
-        return "human_review"
+        return _after_unsure_sorter(state)
 
     if attempts <= retry_max:
         logger.info("low_confidence_retry", confidence=confidence, attempts=attempts)
         return "retry_classify"
 
     logger.info("low_confidence_review", confidence=confidence, attempts=attempts)
-    return "human_review"
+    return _after_unsure_sorter(state)
 
 
 def after_retry_classify(state: dict) -> Literal[
@@ -186,7 +196,7 @@ def after_retry_classify(state: dict) -> Literal[
     # confidence escalates to humans; high confidence proceeds.
     if confidence is not None and confidence >= high:
         return _after_confident_sorter(state)
-    return "human_review"
+    return _after_unsure_sorter(state)
 
 
 def _extraction_is_unsupported(state: dict) -> bool:

@@ -359,3 +359,18 @@ def test_low_sorter_confidence_is_named_only_when_nothing_else_explains_the_park
     assert collect_review_causes({"classification_confidence": 0.95}) == []
     causes = collect_review_causes({"classification_confidence": 0.4, "judge_verdict": "MISS"})
     assert SORTER_LOW_CONFIDENCE not in causes
+
+
+def test_sorter_low_confidence_uses_the_class_floor(monkeypatch):
+    import pipeline.config as config
+    from pipeline.reconsideration import SORTER_LOW_CONFIDENCE, collect_review_causes
+
+    real = config.get_confidence_thresholds
+    monkeypatch.setattr(
+        config,
+        "get_confidence_thresholds",
+        lambda doc_type=None: {**real(), "low": 0.9 if doc_type == "contract" else 0.5},
+    )
+    state = {"classification_confidence": 0.7}
+    assert collect_review_causes({**state, "doc_type": "contract"}) == [SORTER_LOW_CONFIDENCE]
+    assert collect_review_causes({**state, "doc_type": "insurance_claim"}) == []

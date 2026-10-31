@@ -351,7 +351,8 @@ def collect_review_causes(
         causes.append(NEEDS_JUDGE)
 
     sorter_confidence = _as_float(data.get("classification_confidence"))
-    if not causes and sorter_confidence is not None and sorter_confidence < floor:
+    sorter_floor = float(get_confidence_thresholds(data.get("doc_type")).get("low", 0.70))
+    if not causes and sorter_confidence is not None and sorter_confidence < sorter_floor:
         causes.append(SORTER_LOW_CONFIDENCE)
 
     # Decision-model reviewer causes recorded by review_classify_node.
