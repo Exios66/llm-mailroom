@@ -1117,6 +1117,7 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs):
     ctx = contextvars.copy_context()
 
     def _target() -> None:
+        """Run the backend on this thread and hand its result or error back."""
         try:
             box["value"] = ctx.run(backend, doc_text, doc_types, catalogs)
         except BaseException as exc:  # re-raised on the caller's thread
@@ -2489,6 +2490,12 @@ def _review_evidence_fields(
 
 
 def archive_node(state: DocumentState) -> dict[str, Any]:
+    """Archive the document: save the manifest, move the file, write the catalog row.
+
+    The manifest and catalog row carry any reviewer evidence from the state
+    (``with_review_evidence``), so an approved or auto-accepted document keeps
+    both reviewers' opinions and causes after it leaves the review bin.
+    """
     from pipeline.review_resolve import with_review_evidence
 
     manifest = DocumentManifest(
