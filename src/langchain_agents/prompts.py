@@ -544,6 +544,40 @@ SORTER_PROMPT_V14 = (
 )
 
 # =============================================================================
+# SORTER PROMPT V15 — class-boundary fix of V14 (FROZEN; the production pin).
+#
+# V14 is byte-identical as the prefix. On the full mailroom-dataset train split (2,979 documents,
+# qwen/qwen3.7-flash) V14 got the class wrong on 122 verified documents, 119 of them two ways:
+#   - 89 indentures and registration/investor-rights instruments called contract, because the
+#     corporate_record description never names them and they are written as agreements;
+#   - 30 mailbox fragments (bare URLs, attachment stubs, one-line notes) called unknown, because
+#     the doctrine's "never substitute correspondence for an unknown" was read as covering them.
+# V14's confidence did not separate these: 117 of the 122 were at 0.95 or above.
+# V15 appends the corpus class boundaries and a confidence rule for them. FROZEN: its sha256 is
+# locked in tests/test_sorter_prompt_freeze.py; a change is a new version that must keep every
+# SORTER_V15_GUARDS clause. V14 is the known-broken variant and may never be the production pin.
+# =============================================================================
+SORTER_V15_CLASS_BOUNDARIES = """CLASS BOUNDARIES (corpus conventions; these override the topic of the text):
+
+B1. SECURITIES AND DEBT INSTRUMENTS ARE CORPORATE RECORDS, NOT CONTRACTS. An indenture or supplemental indenture (issuer and indenture trustee, notes or debentures), a registration rights agreement, an investor rights or stockholders' agreement, a subscription agreement, a preemptive-rights agreement, a warrant or warrant agreement, a unit purchase option, or a specimen stock certificate is doc_type "corporate_record" (subclass indenture or rights_instrument) even though it is written as an agreement between parties, signed by both, and filed as an SEC exhibit. The same holds for any amendment, joinder, waiver, supplement or letter agreement that changes one of these instruments. contract is for commercial dealings (license, supply, services, distribution, hosting and the other contract families).
+
+B2. ALL MAILBOX TEXT IS CORRESPONDENCE. A message from an email mailbox is doc_type "correspondence" however little it says: a bare URL, an attachment stub ("see attached hpl0706.xls"), a one-line note or joke, a forwarded news article or newsletter, an automated notification, a calendar or schedule entry, or a reply chain. Mailbox headers (From:, To:, Subject:, Sent:, X-From:), a forward marker, a signature line or an informal one-line note are enough. unknown is only for a stand-alone document that is plainly not a communication and fits no class (a court opinion, an accounting standard, a due-diligence checklist), or text too garbled to identify any form. Short or empty-looking mail is never unknown.
+
+B3. CONFIDENCE AT THESE BOUNDARIES. When a document is written as an agreement but its title names a securities or debt instrument (B1), or when it is a short mailbox fragment (B2), name the boundary rule in the reasoning. Do not give 0.90 or more to contract for an agreement whose title names an indenture, rights, warrant, subscription or option instrument, and do not give unknown to mailbox text at any confidence."""
+
+SORTER_PROMPT_V15 = SORTER_PROMPT_V14.rstrip() + "\n\n" + SORTER_V15_CLASS_BOUNDARIES
+
+#: Clauses every sorter version after V15 must keep (anti-regression guard).
+SORTER_V15_GUARDS = (
+    "SECURITIES AND DEBT INSTRUMENTS ARE CORPORATE RECORDS, NOT CONTRACTS",
+    "An indenture or supplemental indenture",
+    "a registration rights agreement, an investor rights or stockholders' agreement",
+    "ALL MAILBOX TEXT IS CORRESPONDENCE",
+    "Short or empty-looking mail is never unknown.",
+    "do not give unknown to mailbox text at any confidence",
+)
+
+# =============================================================================
 # SORTER AGENT — Vision Classification (RVL-CDIP-style image pipeline)
 # -----------------------------------------------------------------------------
 # Modeled on the RVL-CDIP classifier repo's v17 prompt structure: an ordered
@@ -2941,7 +2975,7 @@ If the PDF contains clean, selectable text (not scanned images), simply return t
 PROMPT_VERSIONS = {
     # Sorter
     "sorter_v0": SORTER_PROMPT_V0,
-    "sorter": SORTER_PROMPT_V14,  # mailroom production: V12 + pipeline doctrine
+    "sorter": SORTER_PROMPT_V15,  # mailroom production: V14 + class boundaries (frozen)
     "sorter_v1": SORTER_PROMPT_V1,
     "sorter_v2": SORTER_PROMPT_V2,
     "sorter_v3": SORTER_PROMPT_V3,
@@ -2956,6 +2990,7 @@ PROMPT_VERSIONS = {
     "sorter_v12": SORTER_PROMPT_V12,
     "sorter_v13": SORTER_PROMPT_V13,
     "sorter_v14": SORTER_PROMPT_V14,
+    "sorter_v15": SORTER_PROMPT_V15,
 
     # Sorter — vision (RVL-CDIP-style image classification)
     "sorter_vision_v0": SORTER_VISION_PROMPT_V0,
@@ -3022,7 +3057,7 @@ PROMPT_VERSIONS = {
 
 # Production specialist aliases: sandbox / eval-environment frozen v1 stems.
 # Historical entity-extraction keys (contracts_specialist_v1…v33, sorter_v0…v14)
-# stay on this dict for eval loops. Sorter production remains sorter_v14.
+# stay on this dict for eval loops. Sorter production is the frozen sorter_v15.
 from llm.frozen_v1 import bind_production_specialists  # noqa: E402
 
 bind_production_specialists(PROMPT_VERSIONS)
