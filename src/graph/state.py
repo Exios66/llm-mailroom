@@ -100,6 +100,11 @@ class DocumentState(TypedDict, total=False):
     review_route: str | None
     reviewer_causes: list[str]
     reviewer_model: str | None
+    # Classification arbiter on a parked decision review: accept_sorter, accept_reviewer
+    # or human_review (also on failure or below its calibrated cutoff), and its numbers.
+    classification_arbiter_decision: str | None
+    classification_arbiter_confidence: float | None
+    classification_arbiter_reasoning: str | None
     # KANBAN-063 (Lane B): in-pipeline judge verification + arbiter
     # arbitration. The judge fires only when gated in (needs_judge_review /
     # ambiguous-band extraction confidence); the arbiter only on a failed
