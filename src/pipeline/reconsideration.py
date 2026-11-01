@@ -162,7 +162,7 @@ def routing_coverage_expected_fields(
         if str(src.get(key) or "").lower() == "posthoc":
             continue
         filtered[key] = value
-    return filtered or None
+    return filtered
 
 
 def expected_field_coverage(

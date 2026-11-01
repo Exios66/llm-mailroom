@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Routing: `routing_coverage_expected_fields` no longer falls back to checking
+  every ground-truth key (and parking contracts/mergers at human review) when no
+  ground-truth key is a registered schema field for the document type. Returns
+  the scoped (possibly empty) subset instead.
+
 - DMR-113: consume the interim post-v0.24.2 Dojo commit `718e326` (explicit
   `total_tokens: 0` zero-usage fix); the immutable pin is identified as interim
   and will move to the next released commit.
