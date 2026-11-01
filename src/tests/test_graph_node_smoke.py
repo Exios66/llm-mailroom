@@ -521,6 +521,7 @@ def test_all_thirteen_nodes_registered():
         "retry_extract",
         "judge_verify",
         "arbiter",
+        "classification_arbiter",
         "human_review",
         "boss_escalation",
         "compile_report",

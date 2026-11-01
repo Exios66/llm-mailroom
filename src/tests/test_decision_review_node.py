@@ -98,6 +98,11 @@ def no_llm_reviewer(monkeypatch):
     monkeypatch.setattr(mod, "SorterReviewerAgent", Boom)
 
 
+# A parked or failed decision review is escalated: the classification arbiter first, then a
+# person (graph/routing.py _escalate_decision_review). Only a document with no text skips it.
+ESCALATED = "classification_arbiter"
+
+
 def route_after(st, update):
     return after_review_classify({**st, **update})
 
@@ -237,7 +242,7 @@ def test_disagreement_keeps_sorter_label_and_parks(decision_config, no_llm_revie
     assert updates["reviewer_doc_type"] == "corporate_record"
     assert updates["reviewer_confidence"] == 1.0
     assert "reviewer_disagreement" in updates["escalation_reason"]
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_backend_missing_parks_unavailable(decision_config, no_llm_reviewer):
@@ -247,7 +252,7 @@ def test_backend_missing_parks_unavailable(decision_config, no_llm_reviewer):
     assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
     assert updates["reviewer_model"] is None
     assert "doc_type" not in updates
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_permanent_error_parks_unavailable_without_llm(decision_config, no_llm_reviewer):
@@ -259,7 +264,7 @@ def test_permanent_error_parks_unavailable_without_llm(decision_config, no_llm_r
     assert updates["review_route"] == "human_review"
     assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
     assert updates["transient_error"] is False
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def _transient():
@@ -281,7 +286,7 @@ def test_transient_error_uses_node_budget_then_unavailable(decision_config, no_l
     exhausted = state(transient_retries_review_classify=3)
     last = review_classify_node(exhausted)
     assert last["transient_retries_review_classify"] == 4
-    assert route_after(exhausted, last) == "human_review"
+    assert route_after(exhausted, last) == ESCALATED
     assert REVIEWER_UNAVAILABLE in collect_review_causes({**exhausted, **last})
 
 
@@ -354,7 +359,7 @@ def test_malformed_answer_is_no_answer(decision_config, no_llm_reviewer, bad):
     st = state()
     updates = review_classify_node(st)
     assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_guard_exception_parks_as_unavailable(decision_config, no_llm_reviewer, monkeypatch):
@@ -370,7 +375,7 @@ def test_guard_exception_parks_as_unavailable(decision_config, no_llm_reviewer, 
     assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
     assert updates["reviewer_model"] is None
     assert "doc_type" not in updates
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_out_of_range_confidence_is_not_clamped_into_accept(decision_config, no_llm_reviewer):
@@ -381,7 +386,7 @@ def test_out_of_range_confidence_is_not_clamped_into_accept(decision_config, no_
     updates = review_classify_node(st)
     assert updates["review_route"] == "human_review"
     assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_guard_rejected_subclass_is_cleared_and_parks(decision_config, no_llm_reviewer):
@@ -406,7 +411,7 @@ def test_guard_rejected_answer_parks_at_any_cutoff(decision_config, no_llm_revie
     updates = review_classify_node(st)
     assert updates["reviewer_confidence"] is None
     assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
     assert "classification_confidence" not in updates
 
 
@@ -422,7 +427,7 @@ def test_invalid_confidence_is_none_in_state(decision_config, no_llm_reviewer, b
     updates = review_classify_node(st)
     assert updates["reviewer_confidence"] is None
     assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_oversized_int_cutoff_parks_through_node(decision_config, no_llm_reviewer):
@@ -431,7 +436,7 @@ def test_oversized_int_cutoff_parks_through_node(decision_config, no_llm_reviewe
     st = state()
     updates = review_classify_node(st)
     assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_ineligible_sorter_class_never_calls_backend(decision_config, no_llm_reviewer):
@@ -450,7 +455,7 @@ def test_router_prefers_transient_check_over_route():
 
 
 def test_router_unknown_route_value_parks():
-    assert after_review_classify({"review_route": "archive"}) == "human_review"
+    assert after_review_classify({"review_route": "archive"}) == ESCALATED
 
 
 def test_router_without_route_keeps_llm_behavior():
@@ -513,7 +518,7 @@ def test_default_decision_only_without_entry_parks(decision_config, no_llm_revie
     assert updates["review_route"] == "human_review"
     assert updates["reviewer_causes"] == [REVIEWER_INELIGIBLE_LABEL, REVIEWER_LOW_CONFIDENCE]
     assert "classification_confidence" not in updates
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_decision_only_entry_without_cutoff_parks(decision_config, no_llm_reviewer):
@@ -522,7 +527,7 @@ def test_decision_only_entry_without_cutoff_parks(decision_config, no_llm_review
     st = state()
     updates = review_classify_node(st)
     assert updates["reviewer_causes"] == [REVIEWER_LOW_CONFIDENCE]
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_low_confidence_label_covers_every_way_to_get_it():
@@ -544,16 +549,19 @@ def test_low_confidence_label_covers_every_way_to_get_it():
     ],
     ids=["no_answer", "low", "oversized", "guard_rejected", "disagreement", "no_text"],
 )
-def test_every_failure_routes_to_human_review(
+def test_every_failure_is_escalated(
     decision_config, no_llm_reviewer, backend_answer, overrides
 ):
+    """Every failure leaves the reviewer lane: to the classification arbiter, or with no
+    text straight to a person."""
     register_decision_backend(Spy(answer=backend_answer))
     st = state(**overrides)
     updates = review_classify_node(st)
     assert updates["review_verdict"] == "decision_escalates"
     assert updates["reviewer_causes"]
     assert "classification_confidence" not in updates
-    assert route_after(st, updates) == "human_review"
+    want = "human_review" if overrides.get("doc_text") == "" else ESCALATED
+    assert route_after(st, updates) == want
 
 
 @pytest.mark.parametrize(
@@ -605,7 +613,7 @@ def test_stalled_backend_times_out_and_parks(decision_config, no_llm_reviewer, m
     assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
     assert updates["transient_error"] is False
     assert "doc_type" not in updates
-    assert route_after(st, updates) == "human_review"
+    assert route_after(st, updates) == ESCALATED
 
 
 def test_backend_is_bounded_by_the_run_deadline(decision_config, no_llm_reviewer):

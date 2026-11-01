@@ -400,7 +400,44 @@ def after_human_review(state: dict) -> Literal["extract", "failed"]:
     return "failed"
 
 
-def after_review_classify(state: dict) -> Literal["review_classify", "extract", "human_review"]:
+def _decision_lane(state: dict) -> bool:
+    """True when the sorter's class is reviewed by the decision model (mode decision_only)."""
+    try:
+        from pipeline.config import get_reviewer_config
+
+        entry = get_reviewer_config()["by_class"].get(str(state.get("doc_type")))
+    except Exception:  # noqa: BLE001 - no reviewer config: not a decision lane
+        return False
+    return bool(entry) and entry.get("mode") == "decision_only"
+
+
+def _escalate_decision_review(state: dict) -> Literal["classification_arbiter", "human_review"]:
+    """A parked or failed decision review goes to the classification arbiter, then a person.
+
+    Only a document with no readable text skips the arbiter: there is nothing to arbitrate.
+    """
+    from pipeline.reconsideration import REVIEWER_NO_TEXT
+
+    if REVIEWER_NO_TEXT in (state.get("reviewer_causes") or []):
+        return "human_review"
+    return "classification_arbiter"
+
+
+def after_classification_arbiter(state: dict) -> Literal["extract", "human_review"]:
+    """The arbiter's accepted class continues to extraction; anything else goes to a person."""
+    if state.get("classification_arbiter_decision") not in ("accept_sorter", "accept_reviewer"):
+        return "human_review"
+    from pipeline.reconsideration import class_misses_ground_truth
+
+    if class_misses_ground_truth(state):
+        logger.info("gt_class_miss_after_classification_arbiter", doc_id=state.get("doc_id"))
+        return "human_review"
+    return "extract"
+
+
+def after_review_classify(state: dict) -> Literal[
+    "review_classify", "extract", "classification_arbiter", "human_review"
+]:
     """KANBAN-062 (Lane A) outcome router.
 
     Transient provider errors self-loop on the review node's per-node budget
@@ -412,12 +449,15 @@ def after_review_classify(state: dict) -> Literal["review_classify", "extract", 
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="review_classify") == "retry":
             return "review_classify"
-        return "human_review"
+        # A decision reviewer that stayed unavailable is escalated to the arbiter.
+        return _escalate_decision_review(state) if _decision_lane(state) else "human_review"
     # Decision-model reviewer: the node already applied decide_review; only a
-    # literal "extract" continues, any other value parks.
+    # literal "extract" continues. Anything else (below the calibrated cutoff,
+    # disagreement, no answer, a human verdict) is escalated: the classification
+    # arbiter first, then a person.
     if state.get("review_route") is not None:
         if state["review_route"] != "extract":
-            return "human_review"
+            return _escalate_decision_review(state)
         # Same ground-truth gate as the LLM accept arm below: a label both
         # opinions share can still miss the grounded class.
         from pipeline.reconsideration import class_misses_ground_truth

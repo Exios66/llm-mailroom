@@ -24,6 +24,7 @@ from graph.routing import (
     after_retry_extraction_gated,
     after_judge,
     after_arbiter,
+    after_classification_arbiter,
     after_boss,
     after_human_review,
     after_report,
@@ -1347,6 +1348,101 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
         updates["contract_subtype"] = updates["reviewer_contract_subtype"]
         updates["doc_subclass"] = answer.doc_subclass
         updates["classification_confidence"] = answer.confidence
+    return updates
+
+
+def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
+    """Arbitrate a parked or failed decision review before a person sees it.
+
+    The arbiter picks the sorter's class, the reviewer's class, or human review.
+    An accepted class continues only when it is extractable and the arbiter's
+    confidence clears the calibrated cutoff: ``reviewer.by_class.<class>.arbiter_cutoff``,
+    else the class's ``high`` band. A failure, an invalid answer or a confidence
+    below the cutoff routes to human review.
+    """
+    from agents.arbiter import ClassificationArbiterAgent
+    from pipeline.config import (
+        get_confidence_thresholds,
+        get_reviewer_config,
+        get_sorter_label_set,
+        is_extractable_doc_type,
+    )
+
+    sorter = {
+        "doc_type": state.get("doc_type"),
+        "doc_subclass": state.get("doc_subclass") or state.get("contract_subtype"),
+        "confidence": state.get("classification_confidence"),
+    }
+    reviewer = {
+        "doc_type": state.get("reviewer_doc_type"),
+        "doc_subclass": state.get("reviewer_doc_subclass"),
+        "confidence": state.get("reviewer_confidence"),
+    }
+    causes = [str(c) for c in (state.get("reviewer_causes") or [])]
+    base_reason = state.get("escalation_reason") or "decision review parked"
+    try:
+        result = ClassificationArbiterAgent().arbitrate_classification(
+            sorter=sorter,
+            reviewer=reviewer,
+            causes=causes,
+            labels=sorted(get_sorter_label_set()),
+            doc_text=str(state.get("doc_text") or ""),
+        )
+    except Exception as exc:
+        logger.exception("classification_arbiter_failed", doc_id=state.get("doc_id"))
+        return {
+            "classification_arbiter_decision": "human_review",
+            "classification_arbiter_confidence": None,
+            "classification_arbiter_reasoning": f"classification arbiter failed ({type(exc).__name__})",
+            "escalation_reason": f"{base_reason}; classification arbiter failed "
+            f"({type(exc).__name__}) -- routing to human review",
+            "transient_error": False,
+        }
+
+    decision = result.get("decision")
+    confidence = result.get("confidence") if _valid_unit_float(result.get("confidence")) else None
+    chosen = sorter if decision == "accept_sorter" else reviewer if decision == "accept_reviewer" else None
+    doc_type = chosen.get("doc_type") if chosen else None
+    cutoff = None
+    if isinstance(doc_type, str):
+        entry = get_reviewer_config()["by_class"].get(doc_type) or {}
+        cutoff = entry.get("arbiter_cutoff", get_confidence_thresholds(doc_type).get("high", 0.95))
+    accepted = (
+        chosen is not None
+        and isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        and confidence is not None
+        and cutoff is not None
+        and float(confidence) >= float(cutoff)
+    )
+    reasoning = str(result.get("reasoning") or "")[:400]
+    updates: dict[str, Any] = {
+        "classification_arbiter_decision": decision if accepted else "human_review",
+        "classification_arbiter_confidence": confidence,
+        "classification_arbiter_reasoning": reasoning,
+        "transient_error": False,
+    }
+    logger.info(
+        "classification_arbiter_routed",
+        doc_id=state.get("doc_id"),
+        decision=decision,
+        accepted=accepted,
+        confidence=confidence,
+        cutoff=cutoff,
+    )
+    if accepted:
+        updates.update({
+            "doc_type": doc_type,
+            "doc_subclass": chosen.get("doc_subclass"),
+            "contract_subtype": chosen.get("doc_subclass") if doc_type == "contract" else None,
+            "classification_confidence": confidence,
+            "escalation_reason": None,
+        })
+    else:
+        updates["escalation_reason"] = (
+            f"{base_reason}; classification arbiter: {decision} "
+            f"({_fmt_conf(confidence)}, cutoff {_fmt_conf(cutoff)}) -- routing to human review"
+        )
     return updates
 
 
@@ -2936,6 +3032,10 @@ def build_graph(checkpointer=None):
     # the Judge → [ARBITER] exception path from the target diagram.
     workflow.add_node("judge_verify", traced_node("judge-verify")(_bounded(judge_verify_node)))
     workflow.add_node("arbiter", traced_node("arbitrate-verdict")(_bounded(arbiter_node)))
+    workflow.add_node(
+        "classification_arbiter",
+        traced_node("arbitrate-classification")(_bounded(classification_arbiter_node)),
+    )
     workflow.add_node("human_review", traced_node("route-for-review")(_bounded(human_review_node)))
     workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(boss_escalation_node)))
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(compile_report_node)))
@@ -2967,6 +3067,11 @@ def build_graph(checkpointer=None):
     # extract (label applied by the node); anything else → human review.
     workflow.add_conditional_edges("review_classify", after_review_classify, {
         "review_classify": "review_classify",  # transient self-loop (own per-node budget)
+        "extract": "extract",
+        "classification_arbiter": "classification_arbiter",
+        "human_review": "human_review",
+    })
+    workflow.add_conditional_edges("classification_arbiter", after_classification_arbiter, {
         "extract": "extract",
         "human_review": "human_review",
     })
