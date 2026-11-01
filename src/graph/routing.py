@@ -401,14 +401,17 @@ def after_human_review(state: dict) -> Literal["extract", "failed"]:
 
 
 def _decision_lane(state: dict) -> bool:
-    """True when the sorter's class is reviewed by the decision model (mode decision_only)."""
-    try:
-        from pipeline.config import get_reviewer_config
+    """True when the sorter's class is reviewed by the decision model (mode decision_only).
 
-        entry = get_reviewer_config()["by_class"].get(str(state.get("doc_type")))
+    Uses ``get_review_mode``, so an untuned class under ``default_mode: decision_only``
+    is a decision lane here too (as it is in ``review_classify_node``).
+    """
+    try:
+        from pipeline.config import get_review_mode
+
+        return get_review_mode(state.get("doc_type")) == "decision_only"
     except Exception:  # noqa: BLE001 - no reviewer config: not a decision lane
         return False
-    return bool(entry) and entry.get("mode") == "decision_only"
 
 
 def _escalate_decision_review(state: dict) -> Literal["classification_arbiter", "human_review"]:
@@ -441,10 +444,14 @@ def after_review_classify(state: dict) -> Literal[
     """KANBAN-062 (Lane A) outcome router.
 
     Transient provider errors self-loop on the review node's per-node budget
-    (L-13) before escalating. A decision-model route proceeds only for the
-    literal ``extract`` value; other route values go to human review. Without
-    a decision route, a high-confidence, extractable LLM reviewer verdict can
-    proceed. In either case a known ground-truth class miss goes to review.
+    (L-13) before escalating; an exhausted decision lane goes to the
+    classification arbiter, an LLM lane to human review. A decision-model route
+    proceeds only for the literal ``extract`` value; any other route value goes
+    to the classification arbiter, which sends the document to a person unless
+    it accepts a class (a document with no readable text skips the arbiter).
+    Without a decision route, a high-confidence, extractable LLM reviewer
+    verdict can proceed. In either case a known ground-truth class miss goes to
+    review.
     """
     if state.get("transient_error"):
         if _transient_decision(state, retry_target="review_classify") == "retry":

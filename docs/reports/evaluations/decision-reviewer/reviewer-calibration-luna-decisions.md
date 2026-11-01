@@ -147,9 +147,9 @@ node, the Decisions reviewer on all five classes with the v2 cutoffs.
 
 ## What went wrong, and the guard against it
 
-Every reviewer run before this report (the 735 pilot, prompts v1–v3, the
-full-train and test runs, two smokes) used `openai/gpt-6-luna`, the plain chat
-model, through the `api` backend. That backend runs the `sorter_reviewer` chat
+Every chat-model reviewer run before the Decisions runs in the table above (the
+735 pilot, prompts v1–v3, the full-train and test runs, two smokes) used
+`openai/gpt-6-luna`, the plain chat model, through the `api` backend. That backend runs the `sorter_reviewer` chat
 agent and reads a confidence the model writes in its JSON. The Decisions
 adapter had never been built. About $2.50 went to those runs. Their findings
 carried into the question sets (class conventions, subclass rules, label
