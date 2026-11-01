@@ -16,6 +16,7 @@ reduced by the sorter's own subclass error rate.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -41,12 +42,13 @@ def extraction_gate_handoff(
     """What the gate sees: the class extracted for, the sorter's subclass and the fields.
 
     Underscore keys (parse diagnostics, raw text) and ``confidence`` are dropped.
-    ``doc_subclass`` is included only when the sorter gave one.
+    ``doc_subclass`` is included only when the sorter gave one. The fields are a deep
+    copy, so a gate that edits its handoff can never change the extraction.
     """
-    fields = {
+    fields = copy.deepcopy({
         k: v for k, v in (extraction or {}).items()
         if not str(k).startswith("_") and k != "confidence"
-    }
+    })
     out: dict[str, Any] = (
         {"doc_type": doc_type, "fields": fields} if fields else {"doc_type": doc_type, "available": False}
     )
