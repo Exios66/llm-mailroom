@@ -128,8 +128,9 @@ its insurer from the product line.
 **Advisory for now.**
 
 - The answer is recorded on state as `extraction_gate`, with the subclass sent, `verdict`, `key_field_score`,
-  `accept_probability`, `human_review_probability`, `field_support`, `question_set` and `model`. It is also
-  recorded in the `extracted` audit entry.
+  `accept_probability`, `human_review_probability`, `field_support`, `question_set` and `model`. From
+  `extract_node` it is also recorded in the `extracted` audit entry; `retry_extract_node` writes no audit
+  entry, so a retried extraction's answer is on state only.
 - Routing does not read it.
 - Gate errors, timeouts and malformed answers are recorded as `error`. Parse failures and empty extractions
   are recorded as `skipped` and never sent.

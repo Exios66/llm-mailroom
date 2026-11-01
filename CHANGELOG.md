@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extraction-gate hook** (`agents.extraction_gate`). It is opt-in and advisory.
   - A host-registered gate reviews each extraction in `extract_node` / `retry_extract_node`.
   - The handoff carries the **sorter's** `doc_subclass` (else `contract_subtype`), never a ground-truth label, so 1.3.0+ question sets apply their per-template rules.
-  - The answer is recorded on state (`extraction_gate`) and in the `extracted` audit entry. Routing is unchanged.
+  - The answer is recorded on state (`extraction_gate`); from `extract_node` it is also in the `extracted` audit entry (the retry path writes no audit entry). Routing is unchanged.
+  - Gate calls keep their own abandoned-thread list and cap, so stalled gate calls never block the decision backend.
   - Gate failures are recorded, not raised.
   - The bounded thread runner behind the decision backend is factored out as `_run_bounded` and shared by both.
   - Docs: `docs/pipeline-reference-llm-mailroom/decision-reviewer.md`. Tests: `src/tests/test_extraction_gate_hook.py`.

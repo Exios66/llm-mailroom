@@ -1079,6 +1079,10 @@ _UNREADABLE_STUB = re.compile(r"\s*\[Unreadable file:[^\]]*\]\s*")
 # abandoned threads, new backend calls are refused (the document parks).
 _MAX_ABANDONED_BACKEND_THREADS = 4
 _abandoned_backend_threads: list[threading.Thread] = []
+# The advisory extraction gate keeps its own list and cap, so stalled gate calls can never
+# make the decision backend refuse calls (and park documents as reviewer_unavailable).
+_MAX_ABANDONED_GATE_THREADS = 4
+_abandoned_gate_threads: list[threading.Thread] = []
 _abandoned_lock = threading.Lock()
 
 
@@ -1143,14 +1147,16 @@ def _decision_handoff(state: DocumentState) -> dict[str, Any]:
     }
 
 
-def _run_bounded(call, *, name: str = "decision-backend"):
+def _run_bounded(call, *, name: str = "decision-backend", abandoned: list[threading.Thread] | None = None,
+                 max_abandoned: int | None = None):
     """Run ``call()`` with a wall-clock bound and return its value.
 
     The timeout is ``llm_call_timeout_seconds``, shortened to the time left on
     the run deadline. The call runs on a daemon thread so a stalled backend
     can neither block the worker nor keep the process alive; on expiry
     ``DecisionBackendTimeout`` is raised and the stray thread is tracked.
-    At ``_MAX_ABANDONED_BACKEND_THREADS`` live abandoned threads, new calls
+    At ``max_abandoned`` live abandoned threads in ``abandoned`` (default: the
+    decision backend's list and ``_MAX_ABANDONED_BACKEND_THREADS``), new calls
     are refused with ``DecisionBackendTimeout`` instead of starting another.
     Exceptions raised by ``call`` propagate unchanged.
     """
@@ -1164,14 +1170,13 @@ def _run_bounded(call, *, name: str = "decision-backend"):
         timeout = min(timeout, deadline - time.time())
     if timeout <= 0:
         raise DecisionBackendTimeout("no time left on the run deadline")
+    if abandoned is None:
+        abandoned = _abandoned_backend_threads
+    limit = _MAX_ABANDONED_BACKEND_THREADS if max_abandoned is None else max_abandoned
     with _abandoned_lock:
-        _abandoned_backend_threads[:] = [
-            t for t in _abandoned_backend_threads if t.is_alive()
-        ]
-        if len(_abandoned_backend_threads) >= _MAX_ABANDONED_BACKEND_THREADS:
-            raise DecisionBackendTimeout(
-                f"{len(_abandoned_backend_threads)} stalled backend calls still running"
-            )
+        abandoned[:] = [t for t in abandoned if t.is_alive()]
+        if len(abandoned) >= limit:
+            raise DecisionBackendTimeout(f"{len(abandoned)} stalled {name} calls still running")
 
     box: dict[str, Any] = {}
     ctx = contextvars.copy_context()
@@ -1188,7 +1193,7 @@ def _run_bounded(call, *, name: str = "decision-backend"):
     thread.join(timeout)
     if thread.is_alive():
         with _abandoned_lock:
-            _abandoned_backend_threads.append(thread)
+            abandoned.append(thread)
         raise DecisionBackendTimeout(f"{name} exceeded {timeout:.0f}s")
     if "error" in box:
         raise box["error"]
@@ -1211,18 +1216,19 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
 
     The handoff carries the sorter's subclass (``doc_subclass``, else the contract
     subtype), never a ground-truth label. The gate is advisory and fail-open: its
-    answer is recorded on state and in the ``extracted`` audit entry, routing is
-    unchanged, and a timeout or error is recorded instead of failing extraction.
+    answer is recorded on state (and, from ``extract_node`` only, in the ``extracted``
+    audit entry; the retry path writes no audit entry), routing is unchanged, and a
+    timeout or error is recorded instead of failing extraction.
     """
     from agents.extraction_gate import extraction_gate_handoff, get_extraction_gate
 
     gate = get_extraction_gate()
     if gate is None:
         return None
-    subclass = state.get("doc_subclass") or state.get("contract_subtype")
-    record: dict[str, Any] = {
-        "doc_subclass": subclass if isinstance(subclass, str) and subclass.strip() else None,
-    }
+    # The first non-blank of the sorter's subclass and the contract subtype.
+    subclass = next((v.strip() for v in (state.get("doc_subclass"), state.get("contract_subtype"))
+                     if isinstance(v, str) and v.strip()), None)
+    record: dict[str, Any] = {"doc_subclass": subclass}
     if result.get("_parse_error"):
         return {**record, "skipped": "parse_error"}
     handoff = extraction_gate_handoff(doc_type, result, record["doc_subclass"])
@@ -1232,7 +1238,8 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
         logger.info("extraction_gate_no_subclass", doc_id=state.get("doc_id"), doc_type=doc_type)
     doc_text = state.get("doc_text") or ""
     try:
-        answer = _run_bounded(lambda: gate(doc_text, handoff), name="extraction-gate")
+        answer = _run_bounded(lambda: gate(doc_text, handoff), name="extraction-gate",
+                              abandoned=_abandoned_gate_threads, max_abandoned=_MAX_ABANDONED_GATE_THREADS)
     except DecisionBackendTimeout as exc:
         logger.warning("extraction_gate_timeout", doc_id=state.get("doc_id"), error=str(exc))
         return {**record, "error": f"timeout: {exc}"}
@@ -1243,7 +1250,11 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
         return {**record, "error": f"malformed gate answer ({type(answer).__name__})"}
     keep = ("verdict", "key_field_score", "accept_probability", "human_review_probability",
             "field_support", "question_set", "model")
-    return {**record, **{k: answer[k] for k in keep if k in answer}}
+    try:
+        fields = {k: answer[k] for k in keep if k in answer}
+    except Exception as exc:  # noqa: BLE001 - advisory gate: fail open, record the error
+        return {**record, "error": f"malformed gate answer ({type(exc).__name__})"}
+    return {**record, **fields}
 
 
 def _decision_review_classify(state: DocumentState) -> dict[str, Any]:

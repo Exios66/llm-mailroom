@@ -151,3 +151,71 @@ def test_retry_extract_is_reviewed_too(monkeypatch):
     updates = bg.retry_extract_node(_state())
     assert spy.calls[0][1]["doc_subclass"] == "service_agreement"
     assert updates["extraction_gate"]["verdict"] == "accept"
+
+
+def test_gate_cannot_mutate_the_extraction(monkeypatch):
+    """The handoff is a deep copy: a gate that edits it never changes extracted_data."""
+    monkeypatch.setattr(bg, "_extract_contracts", _fake_contracts)
+
+    def vandal(doc_text, handoff):
+        handoff["fields"]["parties"].append("Mallory")
+        handoff["fields"]["governing_law"] = "XX"
+        return {"verdict": "accept"}
+
+    register_extraction_gate(vandal)
+    updates = bg.extract_node(_state())
+    assert updates["extracted_data"]["parties"] == ["Acme Corp.", "Beta LLC"]
+    assert updates["extracted_data"]["governing_law"] == "NY"
+
+
+def test_blank_subclass_falls_back_to_contract_subtype(monkeypatch):
+    """A blank doc_subclass does not hide the contract subtype; values are stripped."""
+    monkeypatch.setattr(bg, "_extract_contracts", _fake_contracts)
+    spy = Spy()
+    register_extraction_gate(spy)
+    updates = bg.extract_node(_state(doc_subclass="   ", contract_subtype=" license_agreement "))
+    assert spy.calls[-1][1]["doc_subclass"] == "license_agreement"
+    assert updates["extraction_gate"]["doc_subclass"] == "license_agreement"
+
+
+def test_stalled_gate_calls_never_starve_the_decision_backend(monkeypatch):
+    """The gate has its own abandoned-thread cap; a full gate list leaves the backend's free."""
+    import threading
+
+    monkeypatch.setattr(bg, "_extract_contracts", _fake_contracts)
+    stop = threading.Event()
+    stalled = [threading.Thread(target=stop.wait, daemon=True) for _ in range(bg._MAX_ABANDONED_GATE_THREADS)]
+    for t in stalled:
+        t.start()
+    monkeypatch.setattr(bg, "_abandoned_gate_threads", list(stalled))
+    monkeypatch.setattr(bg, "_abandoned_backend_threads", [])
+    try:
+        register_extraction_gate(Spy())
+        assert "stalled extraction-gate calls" in bg.extract_node(_state())["extraction_gate"]["error"]
+        assert bg._run_bounded(lambda: "ok") == "ok"  # the decision backend still runs
+    finally:
+        stop.set()
+
+
+def test_answer_that_raises_on_read_is_recorded(monkeypatch):
+    """A mapping whose reads raise is a malformed answer, not an extraction failure."""
+    from collections.abc import Mapping
+
+    class Broken(Mapping):
+        def __getitem__(self, key):
+            raise KeyError(key)
+
+        def __iter__(self):
+            return iter(["verdict"])
+
+        def __len__(self):
+            return 1
+
+        def __contains__(self, key):
+            return True
+
+    monkeypatch.setattr(bg, "_extract_contracts", _fake_contracts)
+    register_extraction_gate(lambda doc_text, handoff: Broken())
+    updates = bg.extract_node(_state())
+    assert updates["extracted_data"]["parties"] == ["Acme Corp.", "Beta LLC"]
+    assert updates["extraction_gate"]["error"] == "malformed gate answer (KeyError)"
