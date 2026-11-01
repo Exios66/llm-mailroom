@@ -187,6 +187,7 @@ NODE_OBSERVATION_TYPES = {
     "extract-fields": "agent",
     "judge-verify": "evaluator",
     "arbitrate-verdict": "agent",
+    "arbitrate-classification": "agent",
     "route-for-review": "span",
     "adjudicate-conflict": "agent",
     "compile-report": "agent",
