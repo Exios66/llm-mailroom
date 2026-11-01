@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Vendored Dojo fallback** (`src/dojo_source`, `vendor/llm-dojo-scoring`).
+  - The installed release (the pyproject git pin) stays the primary Dojo.
+  - A tracked snapshot of the same pinned commit (0.25.0, `e35504db`) is served only when the release is missing or fails while importing, so scoring survives a broken install or dependency outage.
+  - Every package that imports the Dojo registers the lazy import hook; nothing is imported eagerly.
+  - `MAILROOM_DOJO_SOURCE=auto|installed|vendored` picks the policy; `dojo_source.status()` reports the source that served the import.
+  - `src/tests/test_dojo_source.py` checks the snapshot against the pyproject pin and covers the missing and broken-release fallbacks.
+
 ### Changed
 
 - The production sorter is the frozen `sorter_v15`: V14 plus the corpus class boundaries

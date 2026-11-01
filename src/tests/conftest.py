@@ -3,6 +3,8 @@ import sys
 import tempfile
 import pytest
 from pathlib import Path
+
+import dojo_source  # noqa: F401  (installed Dojo first, vendored snapshot as fallback)
 from unittest.mock import MagicMock, PropertyMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # src/
