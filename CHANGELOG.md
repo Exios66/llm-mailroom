@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The production sorter is the frozen `sorter_v15`: V14 plus the corpus class boundaries
+  (B1-B3: indentures and securities rights instruments are corporate_record; all mailbox
+  text is correspondence) and subclass conventions (S1-S5: CMS carrier vs outpatient by the
+  Medicare notice, Certificates of Designation as officer_certificate, charter amendments,
+  board-adopted bylaw amendments, the correspondence marker precedence, contract family over
+  `other`, merger consideration from the conversion section). On the 2,979-document train
+  split V14 got 122 classes and 664 subclasses wrong in these patterns. The sha256 is locked
+  in `test_sorter_prompt_freeze.py`, which refuses V14 as production; a managed prompt
+  without the guard clauses is not served over the pin.
+- The sorter's subclass catalog (user message) is the Dojo sorter guide: one corpus meaning
+  per key, the correspondence precedence order, and no `certificate_of_formation` (a scoring
+  key with no ground-truth rows).
+- A decision review that is parked goes to the classification arbiter before a person; the
+  graph node `arbitrate-classification` is typed `agent` in `NODE_OBSERVATION_TYPES`.
+- Dojo pin: interim commit `db15b7c` (sorter guide, unannotated merger subclass, the
+  classification arbiter node), on top of the DMR-113 zero-token fix.
+
 ### Fixed
 
 - DMR-113: consume the interim post-v0.24.2 Dojo commit `718e326` (explicit

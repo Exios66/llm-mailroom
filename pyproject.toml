@@ -39,9 +39,10 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-http>=1.20",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
-    # Interim post-v0.24.2 commit (explicit total_tokens: 0 zero-usage fix);
-    # replace with the released commit when Dojo v0.24.3 is published.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@718e326c1fe5a49b3f1cfd43a3ac10c73e7e01a4",
+    # Interim post-v0.24.2 commit: explicit total_tokens: 0 zero-usage fix (DMR-113),
+    # sorter subclass guide and unannotated merger subclass (fix/sorter-subclass-guide);
+    # replace with the released commit when Dojo publishes them.
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@db15b7c593a533bb07c388a5af74f70750769055",
 ]
 
 [project.optional-dependencies]
