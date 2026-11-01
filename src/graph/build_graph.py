@@ -1103,13 +1103,43 @@ class DecisionBackendTimeout(Exception):
     """The decision backend did not answer within the call/run deadline."""
 
 
-def _call_decision_backend(backend, doc_text, doc_types, catalogs):
+def _accepts_handoff(backend) -> bool:
+    """True when ``backend`` takes a ``handoff`` keyword (or ``**kwargs``)."""
+    import inspect
+
+    try:
+        params = inspect.signature(backend).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "handoff" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params)
+
+
+def _decision_handoff(state: DocumentState) -> dict[str, Any]:
+    """What the sorter hands the reviewer: its answer and why the document reached review."""
+    triggers = ["decision_class_review"]
+    confidence = state.get("classification_confidence")
+    low = float(get_confidence_thresholds(state.get("doc_type")).get("low", 0.70))
+    if not _valid_unit_float(confidence) or float(confidence) < low:
+        triggers.append("sorter_below_low_band")
+    if state.get("retry_count"):  # retry_classify ran
+        triggers.append("after_sorter_retry")
+    return {
+        "sorter_doc_type": state.get("doc_type"),
+        "sorter_doc_subclass": state.get("doc_subclass") or state.get("contract_subtype"),
+        "sorter_confidence": round(float(confidence), 4) if _valid_unit_float(confidence) else None,
+        "review_trigger": triggers,
+    }
+
+
+def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None):
     """Call ``backend`` with a wall-clock bound.
 
     The timeout is ``llm_call_timeout_seconds``, shortened to the time left on
     the run deadline. The call runs on a daemon thread so a stalled backend
     can neither block the worker nor keep the process alive; on expiry
     ``DecisionBackendTimeout`` is raised and the stray thread is tracked.
+    ``handoff`` (the sorter's answer and the review trigger) is passed as a
+    keyword only to a backend that accepts it; older backends are unchanged.
     At ``_MAX_ABANDONED_BACKEND_THREADS`` live abandoned threads, new calls
     are refused with ``DecisionBackendTimeout`` instead of starting another.
     Backend exceptions propagate unchanged.
@@ -1139,7 +1169,10 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs):
     def _target() -> None:
         """Run the backend on this thread and hand its result or error back."""
         try:
-            box["value"] = ctx.run(backend, doc_text, doc_types, catalogs)
+            if handoff is not None and _accepts_handoff(backend):
+                box["value"] = ctx.run(backend, doc_text, doc_types, catalogs, handoff=handoff)
+            else:
+                box["value"] = ctx.run(backend, doc_text, doc_types, catalogs)
         except BaseException as exc:  # re-raised on the caller's thread
             box["error"] = exc
 
@@ -1195,7 +1228,9 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
             try:
                 doc_types = sorted(get_sorter_label_set())
                 catalogs = {t: list(sorter_subclass_catalog(t)) for t in doc_types}
-                raw = _call_decision_backend(backend, doc_text, doc_types, catalogs)
+                raw = _call_decision_backend(
+                    backend, doc_text, doc_types, catalogs, handoff=_decision_handoff(state)
+                )
             except DecisionBackendTimeout as exc:
                 # A stalled backend is unavailable, not retryable: retrying
                 # would stall again. Park for a person.

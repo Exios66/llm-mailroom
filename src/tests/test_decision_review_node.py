@@ -669,3 +669,34 @@ def test_abandoned_backend_threads_are_capped(decision_config, no_llm_reviewer, 
     # Finished threads are pruned, so calls are accepted again.
     register_decision_backend(Spy(answer=answer()))
     assert review_classify_node(state())["review_route"] == "extract"
+
+
+class HandoffSpy(Spy):
+    """Fake backend that accepts the sorter handoff."""
+
+    def __call__(self, doc_text, doc_types, subclass_catalogs, handoff=None):
+        self.handoff = handoff
+        return super().__call__(doc_text, doc_types, subclass_catalogs)
+
+
+def test_backend_accepting_handoff_receives_the_sorters_answer(decision_config, no_llm_reviewer):
+    spy = HandoffSpy(answer=answer(conf=0.96))
+    register_decision_backend(spy)
+    st = state()
+
+    review_classify_node(st)
+
+    assert spy.call_count == 1
+    assert spy.handoff["sorter_doc_type"] == st["doc_type"]
+    assert spy.handoff["sorter_confidence"] == round(float(st["classification_confidence"]), 4)
+    assert spy.handoff["review_trigger"][0] == "decision_class_review"
+
+
+def test_three_argument_backend_gets_no_handoff(decision_config, no_llm_reviewer):
+    spy = Spy(answer=answer(conf=0.96))
+    register_decision_backend(spy)
+
+    updates = review_classify_node(state())
+
+    assert spy.call_count == 1
+    assert updates["review_verdict"] == "decision_accepts"
