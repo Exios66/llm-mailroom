@@ -21,6 +21,10 @@ class DocumentState(TypedDict, total=False):
     extracted_data: dict[str, Any] | None
     extraction_confidence: float | None
     extraction_attempts: int
+    # Advisory extraction-gate answer (agents.extraction_gate), present only when
+    # a gate is registered: the sorter subclass sent, verdict, key_field_score,
+    # field_support, or ``error`` / ``skipped``. Routing does not read it.
+    extraction_gate: dict[str, Any] | None
     trace_id: str | None
     escalation_reason: str | None
     review_decision: str | None

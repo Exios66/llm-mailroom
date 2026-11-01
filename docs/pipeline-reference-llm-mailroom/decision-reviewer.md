@@ -99,6 +99,44 @@ Full report: [reviewer-calibration-luna-decisions.md](../reports/evaluations/dec
   `output_tokens: 0` is dropped. Record Decisions usage under `prompt_tokens` /
   `completion_tokens`.
 
+## Extraction gate
+
+The extraction gate reviews a specialist's extraction. It is separate from the classification reviewer
+above and is registered the same way: the host calls `agents.extraction_gate.register_extraction_gate(gate)`
+with a callable `gate(doc_text, handoff) -> Mapping`. Nothing is registered by default, and then extraction
+runs exactly as before.
+
+When a gate is registered, `extract_node` and `retry_extract_node` send it this handoff after the extraction
+guard:
+
+| Key | Value |
+|---|---|
+| `doc_type` | The class the specialist extracted for |
+| `doc_subclass` | **The sorter's subclass** (`doc_subclass`, else `contract_subtype`). Omitted when the sorter gave none. |
+| `fields` | The extraction without `_`-prefixed diagnostics or `confidence` |
+
+**Why the sorter's subclass matters.** Gate question set 1.3.0 picks per-template field rules by subclass.
+For example, an inpatient notice takes `date_of_loss` from the claim-period start, and a property FNOL takes
+its insurer from the product line.
+
+- **Wrong subclass:** the gate applies the wrong template rules.
+- **No subclass:** the gate falls back to the class-level rules, which are the 1.2.0 behaviour.
+- **Calibration:** it used the dataset's labelled subclass, which amounts to an oracle sorter. Pipeline gate
+  numbers therefore sit below the calibration by the sorter's subclass error rate. Never fill `doc_subclass`
+  from a ground-truth label in the pipeline.
+
+**Advisory for now.**
+
+- The answer is recorded on state as `extraction_gate`, with the subclass sent, `verdict`, `key_field_score`,
+  `accept_probability`, `human_review_probability`, `field_support`, `question_set` and `model`. It is also
+  recorded in the `extracted` audit entry.
+- Routing does not read it.
+- Gate errors, timeouts and malformed answers are recorded as `error`. Parse failures and empty extractions
+  are recorded as `skipped` and never sent.
+- The call is bounded the same way as the decision backend (`llm_call_timeout_seconds`, the run deadline,
+  the abandoned-thread cap).
+- Routing on `key_field_score` cutoffs comes after the in-pipeline numbers have been measured.
+
 ## Recommended upstream changes
 
 1. Move the Decisions backend from the sandbox into `agents/` as a first-class
