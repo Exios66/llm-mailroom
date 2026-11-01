@@ -132,3 +132,67 @@ def test_invalid_decision_from_the_agent_is_human_review(monkeypatch):
 
 def test_reviewer_config_is_unchanged_by_default():
     assert "arbiter_cutoff" not in (get_reviewer_config()["by_class"].get("contract") or {})
+
+
+def test_long_document_is_never_arbitrated_from_an_excerpt(monkeypatch):
+    """Past the arbiter's input cap the document goes to a person without a model call."""
+    agent = arbiter_mod.ClassificationArbiterAgent.__new__(arbiter_mod.ClassificationArbiterAgent)
+    monkeypatch.setattr(agent, "_call_structured", lambda *a: pytest.fail("model called on an excerpt"),
+                        raising=False)
+    text = "x" * (arbiter_mod.CLASSIFICATION_SOURCE_CHARS + 1)
+    out = agent.arbitrate_classification(sorter={}, reviewer={}, causes=[], labels=["contract"], doc_text=text)
+    assert out["decision"] == "human_review" and out["confidence"] is None
+    seen = []
+    monkeypatch.setattr(agent, "_call_structured",
+                        lambda message, schema: seen.append(message) or {"decision": "human_review", "confidence": 0.1},
+                        raising=False)
+    full = "y" * arbiter_mod.CLASSIFICATION_SOURCE_CHARS
+    agent.arbitrate_classification(sorter={}, reviewer={}, causes=[], labels=["contract"], doc_text=full)
+    assert full in seen[0] and "truncated" not in seen[0]
+
+
+@pytest.mark.parametrize("subclass", [None, "", "  "])
+def test_contract_without_a_subtype_is_not_accepted(decision_config, monkeypatch, subclass):
+    """The arbiter cannot send a contract to extraction with no subtype."""
+    decision_config["by_class"]["contract"] = {"mode": "decision_only", "cutoff": 0.9, "arbiter_cutoff": 0.6}
+    stub_arbiter(monkeypatch, {"decision": "accept_sorter", "confidence": 0.99, "reasoning": "MSA"})
+    st = parked(doc_type="contract", doc_subclass=subclass, contract_subtype=None)
+    updates = classification_arbiter_node(st)
+    assert updates["classification_arbiter_decision"] == "human_review"
+    assert after_classification_arbiter({**st, **updates}) == "human_review"
+
+
+@pytest.mark.parametrize("cutoff", ["high", 10**400, float("nan"), 1.5, True])
+def test_bad_arbiter_cutoff_parks_instead_of_raising(decision_config, monkeypatch, cutoff):
+    """A misconfigured arbiter_cutoff sends the document to a person; the run is not aborted."""
+    decision_config["by_class"]["insurance_claim"]["arbiter_cutoff"] = cutoff
+    stub_arbiter(monkeypatch, {"decision": "accept_sorter", "confidence": 0.99, "reasoning": "FNOL"})
+    updates = classification_arbiter_node(parked())
+    assert updates["classification_arbiter_decision"] == "human_review"
+    assert "cutoff n/a" in updates["escalation_reason"]
+
+
+def test_accepted_arbitration_is_in_provenance_and_the_manifest(decision_config, monkeypatch):
+    """The arbiter model is named when it decided the class, and the outcome is durable."""
+    from graph.build_graph import _lane_b_manifest_fields, _resolved_models
+    from schemas.manifest import DocumentManifest
+
+    stub_arbiter(monkeypatch, {"decision": "accept_sorter", "confidence": 0.99, "reasoning": "FNOL form"})
+    st = {**parked(), **classification_arbiter_node(parked())}
+    assert "arbiter=" in _resolved_models(st)
+    assert "arbiter=" not in _resolved_models(parked())
+    fields = _lane_b_manifest_fields(st)
+    manifest = DocumentManifest(doc_id="d1", matter_id="M", original_filename="f.txt", **fields)
+    assert manifest.classification_arbiter_decision == "accept_sorter"
+    assert manifest.classification_arbiter_confidence == 0.99
+    assert manifest.classification_arbiter_reasoning == "FNOL form"
+
+
+def test_untuned_class_under_decision_default_reaches_the_arbiter_after_transient_exhaustion(
+        decision_config):
+    """``default_mode: decision_only`` makes an untuned class a decision lane on the transient path too."""
+    decision_config["default_mode"] = "decision_only"
+    decision_config["by_class"].pop("contract", None)
+    st = parked(doc_type="contract", transient_error=True, transient_retries_review_classify=99,
+                reviewer_causes=[REVIEWER_UNAVAILABLE], review_route=None)
+    assert after_review_classify(st) == "classification_arbiter"
