@@ -172,10 +172,21 @@ class ClassificationArbiterAgent(ArbiterAgent):
         labels: list[str],
         doc_text: str,
     ) -> dict:
-        """Return ``{decision, confidence, reasoning}``; an off-schema decision becomes human_review."""
-        excerpt = doc_text[:CLASSIFICATION_SOURCE_CHARS]
+        """Return ``{decision, confidence, reasoning}``; an off-schema decision becomes human_review.
+
+        Every character is read or none is: a document longer than
+        ``CLASSIFICATION_SOURCE_CHARS`` goes to a person without a model call,
+        since text past an excerpt could contradict the class the arbiter accepts.
+        """
         if len(doc_text) > CLASSIFICATION_SOURCE_CHARS:
-            excerpt += f"\n\n[... document truncated, {len(doc_text)} total characters ...]"
+            logger.info("classification_arbiter_document_too_long", chars=len(doc_text))
+            return {
+                "decision": "human_review",
+                "confidence": None,
+                "reasoning": f"document has {len(doc_text)} characters, over the arbiter's "
+                f"{CLASSIFICATION_SOURCE_CHARS}; not arbitrated from an excerpt",
+            }
+        excerpt = doc_text
         user_message = (
             f"ALLOWED CLASSES: {', '.join(labels)}\n\n"
             f"SORTER ANSWER\n{json.dumps(sorter, ensure_ascii=False, default=str)}\n\n"

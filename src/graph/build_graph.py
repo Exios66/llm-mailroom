@@ -1475,13 +1475,19 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
     if isinstance(doc_type, str):
         entry = get_reviewer_config()["by_class"].get(doc_type) or {}
         cutoff = entry.get("arbiter_cutoff", get_confidence_thresholds(doc_type).get("high", 0.95))
+        # A bad configured cutoff (not a number in [0, 1]) parks the document; it never aborts the run.
+        cutoff = float(cutoff) if _valid_unit_float(cutoff) else None
+    subclass = chosen.get("doc_subclass") if chosen else None
+    has_subclass = isinstance(subclass, str) and bool(subclass.strip())
     accepted = (
         chosen is not None
         and isinstance(doc_type, str)
         and is_extractable_doc_type(doc_type)
+        # A contract needs its subtype, as the classification guard requires.
+        and (doc_type != "contract" or has_subclass)
         and confidence is not None
         and cutoff is not None
-        and float(confidence) >= float(cutoff)
+        and float(confidence) >= cutoff
     )
     reasoning = str(result.get("reasoning") or "")[:400]
     updates: dict[str, Any] = {
@@ -2669,6 +2675,9 @@ def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
     fields_to_fix = state.get("arbiter_fields_to_fix")
     findings = state.get("judge_findings")
     return {
+        "classification_arbiter_decision": state.get("classification_arbiter_decision"),
+        "classification_arbiter_confidence": state.get("classification_arbiter_confidence"),
+        "classification_arbiter_reasoning": state.get("classification_arbiter_reasoning"),
         "arbiter_decision": state.get("arbiter_decision"),
         "arbiter_reasoning": state.get("arbiter_reasoning"),
         "arbiter_handoff": state.get("arbiter_handoff"),
@@ -3015,7 +3024,9 @@ def _resolved_models(state: dict) -> str:
             _add("sorter_reviewer")
         if state.get("judge_verdict") and state.get("judge_verdict") != "skipped":
             _add("judge")
-        if state.get("arbiter_decision"):
+        if state.get("arbiter_decision") or state.get("classification_arbiter_decision") in (
+            "accept_sorter", "accept_reviewer",
+        ):
             _add("arbiter")
         if state.get("review_decision") in ("approved", "review") and (
             state.get("escalation_reason") or ""
@@ -3996,6 +4007,9 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         "judge_score": getattr(manifest, "judge_score", None),
         "judge_findings": list(getattr(manifest, "judge_findings", None) or []),
         "judge_pass_count": 0,
+        "classification_arbiter_decision": getattr(manifest, "classification_arbiter_decision", None),
+        "classification_arbiter_confidence": getattr(manifest, "classification_arbiter_confidence", None),
+        "classification_arbiter_reasoning": getattr(manifest, "classification_arbiter_reasoning", None),
         "arbiter_decision": getattr(manifest, "arbiter_decision", None),
         "arbiter_reasoning": getattr(manifest, "arbiter_reasoning", None),
         "arbiter_handoff": getattr(manifest, "arbiter_handoff", None),
