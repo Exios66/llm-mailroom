@@ -708,3 +708,21 @@ def test_three_argument_backend_gets_no_handoff(decision_config, no_llm_reviewer
 
     assert spy.call_count == 1
     assert updates["review_verdict"] == "decision_accepts"
+
+
+def test_kwargs_wrapper_of_a_three_argument_backend_gets_no_handoff(decision_config, no_llm_reviewer):
+    """A forwarding wrapper or Mock (``**kwargs``) must not receive handoff=; the
+    three-argument backend behind it would raise TypeError and park the document."""
+    from unittest.mock import Mock
+
+    inner = Spy(answer=answer(conf=0.96))
+
+    def three_args(doc_text, doc_types, subclass_catalogs):
+        return inner(doc_text, doc_types, subclass_catalogs)
+
+    register_decision_backend(Mock(side_effect=three_args))
+
+    updates = review_classify_node(state())
+
+    assert inner.call_count == 1
+    assert updates["review_verdict"] == "decision_accepts"

@@ -1105,14 +1105,25 @@ class DecisionBackendTimeout(Exception):
 
 
 def _accepts_handoff(backend) -> bool:
-    """True when ``backend`` takes a ``handoff`` keyword (or ``**kwargs``)."""
+    """True when ``backend`` declares a ``handoff`` parameter.
+
+    ``**kwargs`` alone does not count: a forwarding wrapper or a Mock in front of
+    a three-argument backend would pass ``handoff=`` on and fail with TypeError,
+    parking every document as reviewer_unavailable. ``functools.wraps``
+    wrappers expose the wrapped signature, so a decorated backend that takes
+    ``handoff`` still receives it.
+    """
     import inspect
 
     try:
         params = inspect.signature(backend).parameters.values()
     except (TypeError, ValueError):
         return False
-    return any(p.name == "handoff" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params)
+    return any(
+        p.name == "handoff"
+        and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        for p in params
+    )
 
 
 def _decision_handoff(state: DocumentState) -> dict[str, Any]:
