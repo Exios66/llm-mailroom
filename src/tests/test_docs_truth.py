@@ -39,6 +39,8 @@ def _referenced_doc_paths() -> set[str]:
             continue
         if ".opencode/skills" in str(path):  # vendored third-party skills (external URLs)
             continue
+        if path.is_relative_to(REPO_ROOT / "vendor"):  # Dojo snapshot: its docs/ links point into the Dojo repo
+            continue
         try:
             text = _local_text(path)
         except OSError:
