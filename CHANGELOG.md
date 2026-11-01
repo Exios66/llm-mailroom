@@ -23,8 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   key with no ground-truth rows).
 - A decision review that is parked goes to the classification arbiter before a person; the
   graph node `arbitrate-classification` is typed `agent` in `NODE_OBSERVATION_TYPES`.
-- Dojo pin: interim commit `db15b7c` (sorter guide, unannotated merger subclass, the
-  classification arbiter node), on top of the DMR-113 zero-token fix.
+- Dojo pin: llm-dojo-scoring 0.25.0, the release merge commit `e35504d` (Dojo PR #91: sorter
+  guide, unannotated merger subclass, the classification arbiter node). Pinned by commit until
+  the `v0.25.0` tag is published; then run
+  `PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.25.0`.
 
 ### Fixed
 
