@@ -1143,18 +1143,16 @@ def _decision_handoff(state: DocumentState) -> dict[str, Any]:
     }
 
 
-def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None):
-    """Call ``backend`` with a wall-clock bound.
+def _run_bounded(call, *, name: str = "decision-backend"):
+    """Run ``call()`` with a wall-clock bound and return its value.
 
     The timeout is ``llm_call_timeout_seconds``, shortened to the time left on
     the run deadline. The call runs on a daemon thread so a stalled backend
     can neither block the worker nor keep the process alive; on expiry
     ``DecisionBackendTimeout`` is raised and the stray thread is tracked.
-    ``handoff`` (the sorter's answer and the review trigger) is passed as a
-    keyword only to a backend that accepts it; older backends are unchanged.
     At ``_MAX_ABANDONED_BACKEND_THREADS`` live abandoned threads, new calls
     are refused with ``DecisionBackendTimeout`` instead of starting another.
-    Backend exceptions propagate unchanged.
+    Exceptions raised by ``call`` propagate unchanged.
     """
     import contextvars
 
@@ -1179,25 +1177,73 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None)
     ctx = contextvars.copy_context()
 
     def _target() -> None:
-        """Run the backend on this thread and hand its result or error back."""
+        """Run the call on this thread and hand its result or error back."""
         try:
-            if handoff is not None and _accepts_handoff(backend):
-                box["value"] = ctx.run(backend, doc_text, doc_types, catalogs, handoff=handoff)
-            else:
-                box["value"] = ctx.run(backend, doc_text, doc_types, catalogs)
+            box["value"] = ctx.run(call)
         except BaseException as exc:  # re-raised on the caller's thread
             box["error"] = exc
 
-    thread = threading.Thread(target=_target, name="decision-backend", daemon=True)
+    thread = threading.Thread(target=_target, name=name, daemon=True)
     thread.start()
     thread.join(timeout)
     if thread.is_alive():
         with _abandoned_lock:
             _abandoned_backend_threads.append(thread)
-        raise DecisionBackendTimeout(f"decision backend exceeded {timeout:.0f}s")
+        raise DecisionBackendTimeout(f"{name} exceeded {timeout:.0f}s")
     if "error" in box:
         raise box["error"]
     return box.get("value")
+
+
+def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None):
+    """Call ``backend`` under ``_run_bounded``.
+
+    ``handoff`` (the sorter's answer and the review trigger) is passed as a
+    keyword only to a backend that accepts it; older backends are unchanged.
+    """
+    if handoff is not None and _accepts_handoff(backend):
+        return _run_bounded(lambda: backend(doc_text, doc_types, catalogs, handoff=handoff))
+    return _run_bounded(lambda: backend(doc_text, doc_types, catalogs))
+
+
+def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    """Ask the registered extraction gate about ``result``; ``None`` when no gate is registered.
+
+    The handoff carries the sorter's subclass (``doc_subclass``, else the contract
+    subtype), never a ground-truth label. The gate is advisory and fail-open: its
+    answer is recorded on state and in the ``extracted`` audit entry, routing is
+    unchanged, and a timeout or error is recorded instead of failing extraction.
+    """
+    from agents.extraction_gate import extraction_gate_handoff, get_extraction_gate
+
+    gate = get_extraction_gate()
+    if gate is None:
+        return None
+    subclass = state.get("doc_subclass") or state.get("contract_subtype")
+    record: dict[str, Any] = {
+        "doc_subclass": subclass if isinstance(subclass, str) and subclass.strip() else None,
+    }
+    if result.get("_parse_error"):
+        return {**record, "skipped": "parse_error"}
+    handoff = extraction_gate_handoff(doc_type, result, record["doc_subclass"])
+    if handoff.get("available") is False:
+        return {**record, "skipped": "empty_extraction"}
+    if record["doc_subclass"] is None:
+        logger.info("extraction_gate_no_subclass", doc_id=state.get("doc_id"), doc_type=doc_type)
+    doc_text = state.get("doc_text") or ""
+    try:
+        answer = _run_bounded(lambda: gate(doc_text, handoff), name="extraction-gate")
+    except DecisionBackendTimeout as exc:
+        logger.warning("extraction_gate_timeout", doc_id=state.get("doc_id"), error=str(exc))
+        return {**record, "error": f"timeout: {exc}"}
+    except Exception as exc:  # noqa: BLE001 - advisory gate: fail open, record the error
+        logger.warning("extraction_gate_failed", doc_id=state.get("doc_id"), error=str(exc)[:300])
+        return {**record, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    if not isinstance(answer, Mapping):
+        return {**record, "error": f"malformed gate answer ({type(answer).__name__})"}
+    keep = ("verdict", "key_field_score", "accept_probability", "human_review_probability",
+            "field_support", "question_set", "model")
+    return {**record, **{k: answer[k] for k in keep if k in answer}}
 
 
 def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
@@ -1790,6 +1836,9 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
+    gate = _review_extraction(state, doc_type, result)
+    if gate is not None:
+        result_dict["extraction_gate"] = gate
     # Per-agent memory (iterative improvement): record guardrail rejections and
     # extraction confidence so the specialist's retry calls learn from them.
     try:
@@ -1814,7 +1863,9 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         "extracted",
         actor=state.get("doc_type", "specialist"),
         detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None,
-                "conflict_detected": bool(conflict_detected)},
+                "conflict_detected": bool(conflict_detected),
+                **({"extraction_gate": result_dict["extraction_gate"]}
+                   if "extraction_gate" in result_dict else {})},
     )
     return result_dict
 
@@ -1934,7 +1985,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         attempts=attempts,
         conflict_detected=conflict_detected,
     )
-    return {
+    updates: dict[str, Any] = {
         "extracted_data": result,
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
@@ -1947,6 +1998,10 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
+    gate = _review_extraction(state, doc_type, result)
+    if gate is not None:
+        updates["extraction_gate"] = gate
+    return updates
 
 
 def _clean_fields_for_judge(extracted: dict | None) -> dict:
