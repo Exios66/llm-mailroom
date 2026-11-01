@@ -13,7 +13,7 @@
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
 [![Release](https://img.shields.io/badge/release-v0.8.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
-[![Dojo](https://img.shields.io/badge/dojo-db15b7c-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/db15b7c593a533bb07c388a5af74f70750769055)
+[![Dojo](https://img.shields.io/badge/dojo-e35504d-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/e35504db12f09aeda07ae116663c177acd8c0d6e)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
 [![Wiki](https://img.shields.io/badge/📖_wiki-deep_dives-555?style=flat-square)](https://github.com/Exios66/llm-mailroom/wiki)

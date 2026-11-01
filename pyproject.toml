@@ -42,7 +42,7 @@ dependencies = [
     # Interim post-v0.24.2 commit: explicit total_tokens: 0 zero-usage fix (DMR-113),
     # sorter subclass guide and unannotated merger subclass (fix/sorter-subclass-guide);
     # replace with the released commit when Dojo publishes them.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@db15b7c593a533bb07c388a5af74f70750769055",
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@e35504db12f09aeda07ae116663c177acd8c0d6e",
 ]
 
 [project.optional-dependencies]
