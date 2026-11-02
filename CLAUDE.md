@@ -63,6 +63,13 @@ PYTHONPATH=src python src/scripts/run_pilot.py --mock         # pipeline machine
 - `docs/superpowers/baselines/experiment-baseline.json` — re-approve only with
   `run_experiment.py ... --write-baseline`, and only when the user asks.
 
+## Skills and subagents
+
+- `/dojo-bump` (`.claude/skills/dojo-bump/`) — check or bump the Dojo pin and verify
+  against the real pinned revision. User-invoked only.
+- `trace-log-analyst` subagent (`.claude/agents/`) — read-only Langfuse trace review; it
+  loads the canonical prompt from `.opencode/agents/`.
+
 ## Cross-repo
 
 - Fix scoring bugs in **llm-dojo-scoring first**; this repo consumes it as a git pin
