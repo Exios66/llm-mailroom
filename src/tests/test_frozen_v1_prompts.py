@@ -1,4 +1,4 @@
-"""Production pins: sandbox/eval-environment frozen v1 specialists + sorter_v14.
+"""Production pins: sandbox/eval-environment frozen v1 specialists + sorter_v15 (frozen; V14 + class boundaries and subclass rules).
 
 LangGraph classify/extract nodes consume these through get_managed_prompt
 (mailroom-<agent>, production label) with the same local stems as fallback.
@@ -102,14 +102,14 @@ def test_corrected_roles_record_their_eval_environment_mutation_keys():
     assert not any(row["eval_environment_key"].endswith("_v2") for row in catalog.values())
 
 
-def test_production_templates_are_frozen_v1_specialists_and_sorter_v14():
+def test_production_templates_are_frozen_v1_specialists_and_sorter_v15():
     """Bind production templates and version labels to their frozen prompts."""
     templates = prompt_templates()
-    assert templates["sorter"] == LP.SORTER_PROMPT_V14
+    assert templates["sorter"] == LP.SORTER_PROMPT_V15
     for agent in SPECIALIST_AGENTS:
         assert templates[agent] == load_specialist_v1(agent)
     versions = _bound_prompt_versions()
-    assert versions["sorter"] == "sorter_v14"
+    assert versions["sorter"] == "sorter_v15"
     for agent in SPECIALIST_AGENTS:
         assert versions[agent] == "frozen_v1"
 
@@ -121,16 +121,16 @@ def test_entity_extraction_history_is_not_the_production_specialist_pin():
     assert LP.CONTRACTS_SPECIALIST_PROMPT_V33 != frozen
     assert LP.PROMPT_VERSIONS["contracts_specialist"] == frozen
     assert LP.PROMPT_VERSIONS["contracts_specialist_v33"] is LP.CONTRACTS_SPECIALIST_PROMPT_V33
-    assert LP.PROMPT_VERSIONS["sorter"] is LP.SORTER_PROMPT_V14
+    assert LP.PROMPT_VERSIONS["sorter"] is LP.SORTER_PROMPT_V15
     assert LP.PROMPT_VERSIONS["sorter_v14"] is LP.SORTER_PROMPT_V14
 
 
-def test_runtime_defaults_pin_frozen_v1_and_sorter_v14():
+def test_runtime_defaults_pin_frozen_v1_and_sorter_v15():
     from agents.contracts_specialist import ContractsSpecialist
     from agents.sorter import SorterAgent
 
     assert inspect.signature(SorterAgent.__init__).parameters["prompt_version"].default == (
-        "sorter_v14"
+        "sorter_v15"
     )
     assert inspect.signature(ContractsSpecialist.__init__).parameters[
         "prompt_version"
@@ -156,7 +156,7 @@ def test_mailroom_wrappers_resolve_prompts_through_get_managed_prompt(monkeypatc
 
     sorter = SorterAgent()
     sorter_text = sorter.system_prompt()
-    assert seen["sorter"] == LP.SORTER_PROMPT_V14
+    assert seen["sorter"] == LP.SORTER_PROMPT_V15
     assert "{{doc_type_descriptions}}" not in sorter_text
     assert "contract" in sorter_text.lower()
 

@@ -105,6 +105,13 @@ def test_step_capture_reports_nodes_in_graph_order() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_every_graph_node_has_a_span_name() -> None:
+    """A node added to the graph needs its traced span name in NODE_SPAN_NAMES, or
+    ``trace_contract`` raises KeyError in notebooks 07 and 08."""
+    nodes = set(lab.graph_map()["nodes"])
+    assert nodes <= set(lab.NODE_SPAN_NAMES), sorted(nodes - set(lab.NODE_SPAN_NAMES))
+
+
 def test_band_report_matches_routing_literals() -> None:
     from graph.routing import get_confidence_thresholds
 
