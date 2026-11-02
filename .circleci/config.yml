@@ -35,16 +35,7 @@ jobs:
             - ~/.cache/pip
       - run:
           name: Pytest (no network, no real LLM)
-          # KNOWN-RED on main when this gate was added (2026-11-02): these four
-          # fail on the current code, with or without the newest dojo. They are
-          # deselected by exact node id so the gate catches NEW regressions
-          # instead of blocking every PR. Fix them, then delete this list.
-          command: >-
-            python -m pytest src/tests -q --junitxml=test-results/junit.xml
-            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_charter_v0]"
-            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_poa_v0]"
-            --deselect "src/tests/test_prompt_mutation_lineage.py::test_extraction_doctrine_lists_exactly_the_current_schema_fields"
-            --deselect "src/tests/test_reconsideration.py::test_ground_truth_without_schema_fields_never_gates_coverage"
+          command: python -m pytest src/tests -q --junitxml=test-results/junit.xml
           no_output_timeout: 20m
       - run:
           name: Hermetic experiment regression gate (mock)
