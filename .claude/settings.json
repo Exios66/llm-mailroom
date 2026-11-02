@@ -1,0 +1,67 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(.venv/bin/python -m pytest:*)",
+      "Bash(PYTHONPATH=src python src/scripts/run_pilot.py --mock:*)",
+      "Bash(PYTHONPATH=src python src/scripts/run_experiment.py:*)",
+      "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/publish_space.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/smoke_modal_tiers.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/run_hf_pilot.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/cutover.py --list:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch --show-current:*)",
+      "Bash(git branch --list:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py:*)",
+      "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker-compose:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Bash(* --real*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_prompts.py:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_dataset.py:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_dashboards.py:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_evaluators.py:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --real*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_paths.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/syntax_check.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
