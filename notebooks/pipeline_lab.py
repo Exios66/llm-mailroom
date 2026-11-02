@@ -992,6 +992,7 @@ NODE_SPAN_NAMES = {
     "retry_extract": "extract-fields",
     "judge_verify": "judge-verify",
     "arbiter": "arbitrate-verdict",
+    "classification_arbiter": "arbitrate-classification",
     "human_review": "route-for-review",
     "boss_escalation": "adjudicate-conflict",
     "compile_report": "compile-report",
