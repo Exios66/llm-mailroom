@@ -29,6 +29,10 @@ class DocumentManifest(BaseModel):
     trace_id: str | None = None
     escalation_reason: str | None = None
     review_decision: str | None = None
+    # Classification arbitration of a parked decision review (Lane A).
+    classification_arbiter_decision: str | None = None
+    classification_arbiter_confidence: float | None = None
+    classification_arbiter_reasoning: str | None = None
     # Lane B arbitration — durable on archive AND review/failed terminals.
     arbiter_decision: str | None = None
     arbiter_reasoning: str | None = None

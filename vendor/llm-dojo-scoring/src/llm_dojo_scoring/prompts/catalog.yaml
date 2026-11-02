@@ -1,0 +1,595 @@
+version: 0.22.0
+description: Importable prompt catalog for llm-dojo-scoring. LLM bodies are production + latest
+  docclass-merged keys + the eval-environment frozen production_prompts v1 lineage. Metric
+  names live in entry metadata (metrics_bundle / doc_bundle), never as eval targets in the
+  model-visible template.
+prompts:
+- agent: sorter
+  family: production
+  version: sorter_v14
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: sorter_v14
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: sorter.production.md
+  priming: []
+- agent: contracts_specialist
+  family: production
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: contract
+  source_repo: llm-mailroom
+  source_key: frozen_v1
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: contracts_specialist.production.md
+  priming: []
+- agent: merger_agreement_specialist
+  family: production
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: merger_agreement
+  source_repo: llm-mailroom
+  source_key: frozen_v1
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: merger_agreement_specialist.production.md
+  priming: []
+- agent: corporate_records_specialist
+  family: production
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: corporate_record
+  source_repo: llm-mailroom
+  source_key: frozen_v1
+  source_commit: cb960a2c1ab323a7d9cb1ebf9e9aaf77652ca622
+  template: corporate_records_specialist.production.md
+  notes: 'Live mailroom freeze: corporate_records_specialist_v6 (sha256 fe13501f…).
+    production_prompts carries eval-environment v7; promote it here only after
+    llm-mailroom updates its dependency and freeze.'
+  priming: []
+- agent: correspondence_specialist
+  family: production
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: correspondence
+  source_repo: llm-mailroom
+  source_key: frozen_v1
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: correspondence_specialist.production.md
+  priming: []
+- agent: compliance_specialist
+  family: production
+  version: SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: compliance_filing
+  source_repo: llm-mailroom
+  source_key: SYSTEM_PROMPT
+  template: compliance_specialist.production.md
+  priming: []
+- agent: insurance_claims_specialist
+  family: production
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: insurance_claim
+  source_repo: llm-mailroom
+  source_key: frozen_v1
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: insurance_claims_specialist.production.md
+  priming: []
+- agent: due_diligence_specialist
+  family: production
+  version: DUE_DILIGENCE_SPECIALIST_PROMPT
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: due_diligence
+  source_repo: llm-entity-extraction
+  source_key: DUE_DILIGENCE_SPECIALIST_PROMPT
+  template: due_diligence_specialist.production.md
+  priming: []
+- agent: court_opinions_specialist
+  family: production
+  version: COURT_OPINIONS_SPECIALIST_PROMPT
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: court_opinion
+  source_repo: llm-entity-extraction
+  source_key: COURT_OPINIONS_SPECIALIST_PROMPT
+  template: court_opinions_specialist.production.md
+  priming: []
+- agent: sorter_reviewer
+  family: production
+  version: REVIEWER_SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: REVIEWER_SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: sorter_reviewer.production.md
+  priming: []
+- agent: arbiter
+  family: production
+  version: ARBITER_SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: audit
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: ARBITER_SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: arbiter.production.md
+  priming: []
+- agent: judge
+  family: production
+  version: SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: judge.production.md
+  priming: []
+- agent: judge-completeness
+  family: production
+  version: SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: judge.production.md
+  notes: Completeness judge — same production body as agent `judge`.
+  priming: []
+- agent: judge-classification
+  family: production
+  version: CLASSIFICATION_SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: CLASSIFICATION_SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: judge-classification.production.md
+  priming: []
+- agent: judge-correctness
+  family: production
+  version: CORRECTNESS_SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: CORRECTNESS_SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: judge-correctness.production.md
+  priming:
+  - extraction_correctness
+- agent: boss
+  family: production
+  version: BOSS_SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: reporter
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: BOSS_SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: boss.production.md
+  priming: []
+- agent: reporter
+  family: production
+  version: COMPILE_SYSTEM_PROMPT
+  kind: deterministic
+  metrics_bundle: reporter
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: COMPILE_SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: reporter.production.md
+  priming: []
+- agent: pdf_transcriber
+  family: production
+  version: SYSTEM_PROMPT
+  kind: llm
+  metrics_bundle: transcription
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: SYSTEM_PROMPT
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: pdf_transcriber.production.md
+  priming: []
+- agent: image_extractor
+  family: production
+  version: ImageExtractor.system_prompt
+  kind: llm
+  metrics_bundle: transcription
+  doc_bundle: null
+  source_repo: llm-mailroom
+  source_key: ImageExtractor.system_prompt
+  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  template: image_extractor.production.md
+  priming: []
+- agent: audit_agent
+  family: production
+  version: contracts_audit_v0
+  kind: llm
+  metrics_bundle: audit
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: contracts_audit_v0
+  template: audit_agent.production.md
+  priming: []
+- agent: contract_auditor
+  family: production
+  version: contracts_audit_v0
+  kind: llm
+  metrics_bundle: audit
+  doc_bundle: contract
+  source_repo: llm-entity-extraction
+  source_key: contracts_audit_v0
+  template: contract_auditor.production.md
+  priming: []
+- agent: sorter
+  family: docclass
+  version: sorter_mailroom_v0
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: sorter_mailroom_v0
+  template: sorter.docclass.md
+  priming: []
+- agent: contracts_specialist
+  family: docclass
+  version: contracts_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: contract
+  source_repo: llm-entity-extraction
+  source_key: contracts_specialist_mailroom_prompts_v0
+  template: contracts_specialist.docclass.md
+  priming:
+  - colloquial_precision
+  - colloquial_completeness
+- agent: merger_agreement_specialist
+  family: docclass
+  version: merger_agreement_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: merger_agreement
+  source_repo: llm-mailroom
+  source_key: merger_agreement_specialist_mailroom_prompts_v0
+  template: merger_agreement_specialist.docclass.md
+  priming: []
+- agent: corporate_records_specialist
+  family: docclass
+  version: corporate_records_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: corporate_record
+  source_repo: llm-entity-extraction
+  source_key: corporate_records_specialist_mailroom_prompts_v0
+  template: corporate_records_specialist.docclass.md
+  priming: []
+- agent: due_diligence_specialist
+  family: docclass
+  version: due_diligence_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: due_diligence
+  source_repo: llm-entity-extraction
+  source_key: due_diligence_specialist_mailroom_prompts_v0
+  template: due_diligence_specialist.docclass.md
+  priming: []
+- agent: correspondence_specialist
+  family: docclass
+  version: correspondence_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: correspondence
+  source_repo: llm-entity-extraction
+  source_key: correspondence_specialist_mailroom_prompts_v0
+  template: correspondence_specialist.docclass.md
+  priming: []
+- agent: compliance_specialist
+  family: docclass
+  version: compliance_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: compliance_filing
+  source_repo: llm-entity-extraction
+  source_key: compliance_specialist_mailroom_prompts_v0
+  template: compliance_specialist.docclass.md
+  priming: []
+- agent: court_opinions_specialist
+  family: docclass
+  version: court_opinions_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: court_opinion
+  source_repo: llm-entity-extraction
+  source_key: court_opinions_specialist_mailroom_prompts_v0
+  template: court_opinions_specialist.docclass.md
+  priming: []
+- agent: insurance_claims_specialist
+  family: docclass
+  version: insurance_claims_specialist_mailroom_prompts_v0
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: insurance_claim
+  source_repo: llm-entity-extraction
+  source_key: insurance_claims_specialist_mailroom_prompts_v0
+  template: insurance_claims_specialist.docclass.md
+  priming: []
+- agent: sorter_reviewer
+  family: docclass
+  version: reviewer_docclass_v2
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: reviewer_docclass_v2
+  template: sorter_reviewer.docclass.md
+  priming: []
+- agent: arbiter
+  family: docclass
+  version: arbiter_docclass_v1
+  kind: llm
+  metrics_bundle: audit
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: arbiter_docclass_v1
+  template: arbiter.docclass.md
+  priming: []
+- agent: judge
+  family: docclass
+  version: judge_docclass_v1
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: judge_docclass_v1
+  template: judge.docclass.md
+  priming:
+  - colloquial_completeness
+  - schema_valid
+- agent: judge-completeness
+  family: docclass
+  version: judge_docclass_v1
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: judge_docclass_v1
+  template: judge.docclass.md
+  notes: Completeness judge — same docclass body as agent `judge`.
+  priming:
+  - colloquial_completeness
+  - schema_valid
+- agent: judge-classification
+  family: docclass
+  version: judge_classification_docclass_v1
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: judge_classification_docclass_v1
+  template: judge-classification.docclass.md
+  priming:
+  - classification_correct
+- agent: judge-correctness
+  family: docclass
+  version: judge_correctness_docclass_v1
+  kind: llm
+  metrics_bundle: classification
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: judge_correctness_docclass_v1
+  template: judge-correctness.docclass.md
+  priming:
+  - extraction_correctness
+- agent: boss
+  family: docclass
+  version: boss_docclass_v1
+  kind: llm
+  metrics_bundle: reporter
+  doc_bundle: null
+  source_repo: llm-entity-extraction
+  source_key: boss_docclass_v1
+  template: boss.docclass.md
+  priming: []
+- agent: intake
+  family: production
+  version: deterministic
+  kind: deterministic
+  metrics_bundle: intake
+  doc_bundle: null
+  source_repo: llm-dojo-scoring
+  source_key: intake
+  template: null
+  notes: 'Deterministic clerk: NFC, newline unify, NBSP, zero-width, C0, hyphen unwrap, blank-run
+    collapse, horizontal space, trim. No LLM system prompt.'
+  priming: []
+- agent: archivist
+  family: production
+  version: procedural
+  kind: procedural
+  metrics_bundle: cost
+  doc_bundle: null
+  source_repo: llm-dojo-scoring
+  source_key: archivist
+  template: null
+  notes: 'Procedural storage/indexing: content-addressed archive + audit hash. No LLM system
+    prompt.'
+  priming: []
+- agent: corporate_records_auditor
+  family: production
+  version: proposed
+  kind: proposed
+  metrics_bundle: audit
+  doc_bundle: corporate_record
+  source_repo: llm-dojo-scoring
+  source_key: corporate_records_auditor
+  template: null
+  notes: No live LLM auditor prompt. Suite score() compares auditor output to the corporate_record
+    specialist field map via score_extraction. contracts_audit_v0 is the only authored auditor
+    body (see contract_auditor).
+  priming: []
+- agent: due_diligence_auditor
+  family: production
+  version: proposed
+  kind: proposed
+  metrics_bundle: audit
+  doc_bundle: due_diligence
+  source_repo: llm-dojo-scoring
+  source_key: due_diligence_auditor
+  template: null
+  notes: No live LLM auditor prompt. Suite score() compares auditor output to the due_diligence
+    specialist field map via score_extraction. contracts_audit_v0 is the only authored auditor
+    body (see contract_auditor).
+  priming: []
+- agent: correspondence_auditor
+  family: production
+  version: proposed
+  kind: proposed
+  metrics_bundle: audit
+  doc_bundle: correspondence
+  source_repo: llm-dojo-scoring
+  source_key: correspondence_auditor
+  template: null
+  notes: No live LLM auditor prompt. Suite score() compares auditor output to the correspondence
+    specialist field map via score_extraction. contracts_audit_v0 is the only authored auditor
+    body (see contract_auditor).
+  priming: []
+- agent: compliance_auditor
+  family: production
+  version: proposed
+  kind: proposed
+  metrics_bundle: audit
+  doc_bundle: compliance_filing
+  source_repo: llm-dojo-scoring
+  source_key: compliance_auditor
+  template: null
+  notes: No live LLM auditor prompt. Suite score() compares auditor output to the compliance_filing
+    specialist field map via score_extraction. contracts_audit_v0 is the only authored auditor
+    body (see contract_auditor).
+  priming: []
+- agent: court_opinions_auditor
+  family: production
+  version: proposed
+  kind: proposed
+  metrics_bundle: audit
+  doc_bundle: court_opinion
+  source_repo: llm-dojo-scoring
+  source_key: court_opinions_auditor
+  template: null
+  notes: No live LLM auditor prompt. Suite score() compares auditor output to the court_opinion
+    specialist field map via score_extraction. contracts_audit_v0 is the only authored auditor
+    body (see contract_auditor).
+  priming: []
+- agent: insurance_claims_auditor
+  family: production
+  version: proposed
+  kind: proposed
+  metrics_bundle: audit
+  doc_bundle: insurance_claim
+  source_repo: llm-dojo-scoring
+  source_key: insurance_claims_auditor
+  template: null
+  notes: No live LLM auditor prompt. Suite score() compares auditor output to the insurance_claim
+    specialist field map via score_extraction. contracts_audit_v0 is the only authored auditor
+    body (see contract_auditor).
+  priming: []
+- agent: local_vs_api
+  family: production
+  version: procedural
+  kind: procedural
+  metrics_bundle: serving
+  doc_bundle: null
+  source_repo: llm-dojo-scoring
+  source_key: local_vs_api
+  template: null
+  notes: 'Procedural serving comparison: TTFT, throughput, utilization, and identity
+    tags (model, quantization, GPU). No LLM system prompt. Compare local vs API-key
+    runs via serving.compare_serving / get_suite("local_vs_api").score(local, api).'
+  priming: []
+# production_prompts — eval-environment frozen v1 specialist lineage
+# (mailroom-dataset-v1, frozen 2026-09-26T05:09:29+00:00). Byte-identical to the
+# sandbox config/prompts/<stem>_simplified.txt stems; sha256 over the loaded text
+# with a trailing newline. Do not edit without a sanctioned re-freeze.
+- agent: contracts_specialist
+  family: production_prompts
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: contract
+  source_repo: LLM-Mailroom-Services/eval-environment
+  source_key: contracts_specialist_v1
+  template: contracts_specialist.production_prompts.md
+  sha256: d91de3967cc3b12cbd222cc5a4ae167b39578125abc83be7422498dc5024fd24
+  notes: 'Frozen eval-environment v1 (mailroom-dataset-v1, 2026-09-26). Byte-identical
+    to sandbox stem contracts_specialist_v33_simplified.'
+  priming: []
+- agent: corporate_records_specialist
+  family: production_prompts
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: corporate_record
+  source_repo: LLM-Mailroom-Services/eval-environment
+  source_key: corporate_records_specialist_v7
+  template: corporate_records_specialist.production_prompts.md
+  sha256: 253559fcb7ac6b36878453821a4fab0aa94228ad5add77d5aeabb06bb265134c
+  notes: 'Byte-identical to eval-environment mutation corporate_records_specialist_v7
+    (2026-10-17), which adds per-subclass key entities (generated from corporate_record_schema)
+    to _v6 (#29 field-guidance correction of frozen v1, mailroom-dataset-v1, sha256 484e64dd…),
+    now amended to coordinate: explicit certificate_of_formation line (organizers, registered_agent;
+    omit authorized_capital entirely, even when null) replaces the organizer/incorporator prose,
+    and subsidiary_list gains subject_matter/keywords guidance; sandbox stem corporate_records_specialist_simplified.'
+  priming: []
+- agent: correspondence_specialist
+  family: production_prompts
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: correspondence
+  source_repo: LLM-Mailroom-Services/eval-environment
+  source_key: correspondence_specialist_v7
+  template: correspondence_specialist.production_prompts.md
+  sha256: 2b0b81ff98920b9207627707443e2b023db39212fda5bdcba7bfbded39fa38b6
+  notes: 'Byte-identical to eval-environment mutation correspondence_specialist_v7
+    (2026-10-16, #29), the field-guidance correction of frozen v1 (mailroom-dataset-v1,
+    2026-09-26; v1 sha256 eab63b5a…); sandbox stem correspondence_specialist_simplified.'
+  priming: []
+- agent: insurance_claims_specialist
+  family: production_prompts
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: insurance_claim
+  source_repo: LLM-Mailroom-Services/eval-environment
+  source_key: insurance_claims_specialist_v1
+  template: insurance_claims_specialist.production_prompts.md
+  sha256: 6c2776bcbe00091200aecbcfd21c99f197398d929143dd0c7c722811fa100034
+  notes: 'Frozen eval-environment v1 (mailroom-dataset-v1, 2026-09-26). Byte-identical
+    to sandbox stem insurance_claims_specialist_simplified.'
+  priming: []
+- agent: merger_agreement_specialist
+  family: production_prompts
+  version: v1
+  kind: llm
+  metrics_bundle: extraction
+  doc_bundle: merger_agreement
+  source_repo: LLM-Mailroom-Services/eval-environment
+  source_key: merger_agreement_specialist_v1
+  template: merger_agreement_specialist.production_prompts.md
+  sha256: 003232584d6890054d956398135f439b86692a1123683f58914c0393b5e1a00b
+  notes: 'Frozen eval-environment v1 (mailroom-dataset-v1, 2026-09-26). Byte-identical
+    to sandbox stem merger_agreement_specialist_simplified.'
+  priming: []

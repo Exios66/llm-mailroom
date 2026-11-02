@@ -66,6 +66,8 @@ The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `lan
 
 Fires only where the pipeline would previously have pinged a human. Independence is the point: the reviewer never sees the sorter's label. The graph node compares the two opinions and either applies the reviewer's class or escalates to human review.
 
+For `decision_only` classes the node asks a registered decision backend instead of this agent; the calibrated backend is the Decisions-API model `openai/gpt-6-luna-decisions`. See [Decision reviewer](decision-reviewer.md).
+
 ***
 
 ### 2. Contracts Specialist (`agents/contracts_specialist.py`)

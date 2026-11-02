@@ -187,7 +187,7 @@ class TestTopology:
         nodes = {n for n in g.get_graph().nodes if not n.startswith("__")}
         expected = {
             "intake", "classify", "retry_classify", "review_classify",
-            "extract", "retry_extract", "judge_verify", "arbiter",
+            "extract", "retry_extract", "judge_verify", "arbiter", "classification_arbiter",
             "human_review", "boss_escalation", "compile_report",
             "catalog_write", "archive",
         }
