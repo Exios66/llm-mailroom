@@ -18,6 +18,7 @@ import pytest
 
 from agents.decision_backend import register_decision_backend
 from pipeline.decision_review import DecisionAnswer
+from pipeline.limits import RunBudgetExceeded, RunDeadlineExceeded
 
 SORTER_LABEL = "insurance_claim"
 REVIEWER_LABEL = "corporate_record"
@@ -365,7 +366,7 @@ def _assert_row_keeps_evidence(doc_id):
     assert "reviewer_disagreement" in review["review_causes"]
 
 
-def _assert_archived_evidence(doc_id):
+def _assert_archived_evidence(doc_id, field="entity_name", value="Acme Corp"):
     from pipeline.bins import load_manifest
 
     manifest = load_manifest(doc_id)
@@ -376,7 +377,7 @@ def _assert_archived_evidence(doc_id):
     assert "reviewer_disagreement" in manifest.review_causes
     row = _catalog_row(doc_id)
     assert row.stage == "archived"
-    assert row.extracted_data["entity_name"] == "Acme Corp"
+    assert row.extracted_data[field] == value
     _assert_row_keeps_evidence(doc_id)
 
 
@@ -431,13 +432,19 @@ def test_operator_completion_keeps_evidence_in_catalog(temp_base_dir, decision_l
     _assert_archived_evidence(doc_id)
 
 
-def test_approved_document_keeps_evidence_through_archive(
-    temp_base_dir, decision_lane, extractors
-):
+def test_plain_approval_keeps_evidence_through_archive(temp_base_dir, decision_lane, extractors):
+    from graph.build_graph import resume_from_review
+    from pipeline.bins import load_manifest, review_file_path
+
     result = _park(temp_base_dir)
-    resumed = _override_and_resume(result["doc_id"])
+    manifest = load_manifest(result["doc_id"])
+
+    resumed = resume_from_review(manifest, review_file_path(manifest))
+
     assert resumed["stage"] == "archived"
-    _assert_archived_evidence(result["doc_id"])
+    assert resumed["doc_type"] == SORTER_LABEL
+    assert extractors == [SORTER_LABEL]
+    _assert_archived_evidence(result["doc_id"], field="claim_number", value="C-1")
 
 
 def test_auto_accepted_document_keeps_verdict_through_archive(
@@ -655,3 +662,90 @@ def test_operator_supplied_review_block_is_stripped_on_complete(
     evidence = out["doc_record"]["extracted_data"]["_review"]
     assert evidence["reviewer_model"] == "decision-model-1"
     assert evidence["review_verdict"] == "decision_escalates"
+def test_class_change_drops_stale_subclass_and_subtype():
+    from pipeline.review_resolve import apply_classification_override
+    from schemas.manifest import DocumentManifest
+
+    def parked():
+        return DocumentManifest(
+            doc_id="o-2",
+            matter_id="M",
+            original_filename="a.txt",
+            doc_type=SORTER_LABEL,
+            contract_subtype="stale",
+            doc_subclass="carrier",
+        )
+
+    changed = parked()
+    apply_classification_override(changed, override_doc_type=REVIEWER_LABEL)
+    assert changed.doc_subclass is None
+    assert changed.contract_subtype is None
+
+    replaced = parked()
+    applied = apply_classification_override(
+        replaced, override_doc_type=REVIEWER_LABEL, doc_subclass="bylaws"
+    )
+    assert replaced.doc_subclass == applied["doc_subclass"] == "bylaws"
+
+    same = parked()
+    apply_classification_override(same, override_doc_type=SORTER_LABEL)
+    assert same.doc_subclass == "carrier"
+    assert same.contract_subtype == "stale"
+
+
+def test_override_hands_extract_no_stale_subclass(temp_base_dir, decision_lane, monkeypatch):
+    handoffs = _capture_handoff(monkeypatch)
+    result = _park(temp_base_dir)
+    resumed = _override_and_resume(result["doc_id"])
+    assert resumed["doc_subclass"] is None
+    assert "carrier" not in handoffs[0]
+
+
+@pytest.mark.parametrize("resume", ["interrupt", "fallback"])
+@pytest.mark.parametrize(
+    "failure",
+    [RunDeadlineExceeded(0.0), RunBudgetExceeded(2, 1), RuntimeError("crash")],
+    ids=["deadline", "budget", "crash"],
+)
+def test_abort_after_approval_keeps_evidence(
+    temp_base_dir, decision_lane, monkeypatch, resume, failure
+):
+    import graph.build_graph as bg
+    from pipeline.bins import load_manifest, review_file_path
+
+    result = _park(temp_base_dir)
+    doc_id = result["doc_id"]
+    if resume == "fallback":
+        bg.reset_compiled_graph()
+
+    # The node-boundary hook runs outside the extract node's own error handling.
+    def abort_once_approved(node_state):
+        if node_state.get("review_decision") == "approved":
+            raise failure
+
+    monkeypatch.setattr(bg, "_touch_heartbeat", abort_once_approved)
+    manifest = load_manifest(doc_id)
+    resumed = bg.resume_from_review(manifest, review_file_path(manifest))
+
+    assert resumed["stage"] == "failed"
+    assert resumed["run_aborted"] is True
+    aborted = load_manifest(doc_id)
+    assert aborted.stage.value == "failed"
+    assert aborted.review_verdict == "decision_escalates"
+    assert aborted.reviewer_model == "decision-model-1"
+    assert aborted.reviewer_doc_type == REVIEWER_LABEL
+    assert "reviewer_disagreement" in aborted.review_causes
+    assert _catalog_row(doc_id).stage == "failed"
+    _assert_row_keeps_evidence(doc_id)
+
+
+def test_abort_without_evidence_leaves_catalog_data_empty(temp_base_dir):
+    import graph.build_graph as bg
+
+    aborted = bg._finalize_aborted(
+        {"doc_id": "plain-abort", "matter_id": "M", "original_filename": "a.txt"}, "crash"
+    )
+
+    assert aborted["run_aborted"] is True
+    assert _catalog_row("plain-abort").extracted_data is None
+

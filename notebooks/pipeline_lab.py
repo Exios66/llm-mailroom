@@ -308,6 +308,8 @@ def script_client(client: MagicMock, *, judge: dict | list | None = None,
 
         if "Evaluate extraction completeness" in content and judge is not None:
             payload = _payload_for(judge)
+        elif "Audit the factual accuracy" in content and judge is not None:
+            payload = JUDGE_ACCURATE
         elif "CLASSIFY THIS DOCUMENT" in content and reviewer is not None:
             payload = _payload_for(reviewer)
         elif "JUDGE FINDINGS" in content and arbiter is not None:
@@ -519,6 +521,11 @@ BOSS_REVIEW = {
     "decision": "review",
     "reasoning": "The conflict is substantive — both readings are defensible",
     "resolution_notes": "Sending to the review siding for a human call",
+}
+JUDGE_ACCURATE = {
+    "extraction_correctness": 0.97,
+    "extraction_correctness_label": "accurate",
+    "reasoning": "Every populated field is supported by the document",
 }
 JUDGE_PASS = JUDGE_COMPLETE  # alias: the "verdict: pass" lane-B fuel
 

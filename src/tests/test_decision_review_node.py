@@ -16,7 +16,7 @@ from agents.decision_backend import (
     register_decision_backend,
 )
 from graph.build_graph import review_classify_node
-from graph.routing import after_review_classify
+from graph.routing import after_classify, after_retry_classify, after_review_classify
 from pipeline.config import get_review_mode, get_reviewer_config
 from pipeline.decision_review import DecisionAnswer
 from pipeline.reconsideration import (
@@ -726,3 +726,83 @@ def test_kwargs_wrapper_of_a_three_argument_backend_gets_no_handoff(decision_con
 
     assert inner.call_count == 1
     assert updates["review_verdict"] == "decision_accepts"
+
+
+@pytest.mark.parametrize(
+    "router,attempts", [(after_classify, 1), (after_retry_classify, 2)]
+)
+def test_high_confidence_decision_class_is_still_reviewed(
+    decision_config, router, attempts
+):
+    """A confident sorter is not a second opinion: disagreement must surface."""
+    state = {
+        "doc_type": "insurance_claim",
+        "classification_confidence": 0.99,
+        "classification_attempts": attempts,
+    }
+    assert router(state) == "review_classify"
+
+
+@pytest.mark.parametrize("router", [after_classify, after_retry_classify])
+def test_high_confidence_llm_class_skips_review(decision_config, router):
+    state = {
+        "doc_type": "contract",
+        "classification_confidence": 0.99,
+        "classification_attempts": 1,
+    }
+    assert router(state) == "extract"
+
+
+@pytest.mark.parametrize("confidence", [0.2, 0.8])
+@pytest.mark.parametrize("router", [after_classify, after_retry_classify])
+def test_unsure_decision_class_is_reviewed_once_retries_are_spent(
+    decision_config, router, confidence
+):
+    state = {
+        "doc_type": "insurance_claim",
+        "classification_confidence": confidence,
+        "classification_attempts": 9,
+    }
+    assert router(state) == "review_classify"
+
+
+@pytest.mark.parametrize("router", [after_classify, after_retry_classify])
+def test_low_llm_class_still_parks_once_retries_are_spent(decision_config, router):
+    state = {
+        "doc_type": "contract",
+        "classification_confidence": 0.2,
+        "classification_attempts": 9,
+    }
+    assert router(state) == "human_review"
+
+
+def test_confident_reviewer_corrects_a_low_sorter(decision_config, no_llm_reviewer):
+    register_decision_backend(Spy(answer=answer(label="corporate_record", subclass="bylaws", conf=0.99)))
+    updates = review_classify_node(
+        state(doc_type="insurance_claim", classification_confidence=0.2)
+    )
+    assert updates["review_route"] == "extract"
+    assert updates["doc_type"] == "corporate_record"
+    assert updates["classification_confidence"] == 0.99
+    assert updates["reviewer_causes"] == []
+
+
+def test_unsure_reviewer_still_parks_a_low_sorter(decision_config, no_llm_reviewer):
+    register_decision_backend(Spy(answer=answer(conf=0.1)))
+    updates = review_classify_node(
+        state(doc_type="insurance_claim", classification_confidence=0.2)
+    )
+    assert updates["review_route"] == "human_review"
+    assert REVIEWER_LOW_CONFIDENCE in updates["reviewer_causes"]
+
+
+@pytest.mark.parametrize("confidence", [0.95, 0.99])
+def test_reviewer_cannot_override_a_medium_or_high_sorter(
+    decision_config, no_llm_reviewer, confidence
+):
+    register_decision_backend(Spy(answer=answer(label="corporate_record", subclass="bylaws", conf=0.99)))
+    updates = review_classify_node(
+        state(doc_type="insurance_claim", classification_confidence=confidence)
+    )
+    assert updates["review_route"] == "human_review"
+    assert REVIEWER_DISAGREEMENT in updates["reviewer_causes"]
