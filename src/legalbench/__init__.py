@@ -12,3 +12,5 @@ obstructs the pipeline's own eval tasks.
 """
 
 __version__ = "0.1.0"
+
+import dojo_source  # noqa: E402,F401  (installed Dojo first, vendored snapshot as fallback)

@@ -544,6 +544,78 @@ SORTER_PROMPT_V14 = (
 )
 
 # =============================================================================
+# SORTER PROMPT V15 — class-boundary fix of V14 (FROZEN; the production pin).
+#
+# V14 is byte-identical as the prefix. On the full mailroom-dataset train split (2,979 documents,
+# qwen/qwen3.7-flash) V14 got the class wrong on 122 verified documents, 119 of them two ways:
+#   - 89 indentures and registration/investor-rights instruments called contract, because the
+#     corporate_record description never names them and they are written as agreements;
+#   - 30 mailbox fragments (bare URLs, attachment stubs, one-line notes) called unknown, because
+#     the doctrine's "never substitute correspondence for an unknown" was read as covering them.
+# V14's confidence did not separate these: 117 of the 122 were at 0.95 or above.
+# V14 also got the subclass wrong on 664 of the 2,925 subclass-scored documents (72.5% correct),
+# and the errors were not noise. The catalog the sorter sees was a bare key list, so it never said
+# what the corpus labels mean:
+#   - 116 CMS carrier tables (MEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM, Part B) were
+#     called outpatient;
+#   - 48 Certificates of Designation were called rights_instrument (corpus: officer_certificate);
+#   - 35 Certificates of Amendment were called certificate_of_formation (no such label) or
+#     articles_of_incorporation;
+#   - 9 board-adopted bylaw amendments were called bylaws (corpus: board_resolution);
+#   - 36 consulting / employment, IP and note-purchase agreements were called other;
+#   - 364 correspondence forms were missed: the corpus labels the first marker in a fixed
+#     precedence (attorney_demand, letter, press_release, memo, demand, notice, meeting_request,
+#     then email), and V14 read only the outer message.
+# V15 appends the corpus class boundaries (B1-B3) and subclass conventions (S1-S5). The keys
+# and their one-line meanings come from llm_dojo_scoring.sorter_guide (the user-message catalog).
+# FROZEN: its sha256 is locked in tests/test_sorter_prompt_freeze.py; a change is a new version
+# that must keep every SORTER_V15_GUARDS clause. V14 is the known-broken variant and may never be
+# the production pin.
+# =============================================================================
+SORTER_V15_CLASS_BOUNDARIES = """CLASS BOUNDARIES (corpus conventions; these override the topic of the text):
+
+B1. SECURITIES AND DEBT INSTRUMENTS ARE CORPORATE RECORDS, NOT CONTRACTS. An indenture or supplemental indenture (issuer and indenture trustee, notes or debentures), a registration rights agreement, an investor rights or stockholders' agreement, a subscription agreement, a preemptive-rights agreement, a warrant or warrant agreement, a unit purchase option, or a specimen stock certificate is doc_type "corporate_record" (subclass indenture or rights_instrument) even though it is written as an agreement between parties, signed by both, and filed as an SEC exhibit. The same holds for any amendment, joinder, waiver, supplement or letter agreement that changes one of these instruments. contract is for commercial dealings (license, supply, services, distribution, hosting and the other contract families).
+
+B2. ALL MAILBOX TEXT IS CORRESPONDENCE. A message from an email mailbox is doc_type "correspondence" however little it says: a bare URL, an attachment stub ("see attached hpl0706.xls"), a one-line note or joke, a forwarded news article or newsletter, an automated notification, a calendar or schedule entry, or a reply chain. Mailbox headers (From:, To:, Subject:, Sent:, X-From:), a forward marker, a signature line or an informal one-line note are enough. unknown is only for a stand-alone document that is plainly not a communication and fits no class (a court opinion, an accounting standard, a due-diligence checklist), or text too garbled to identify any form. Short or empty-looking mail is never unknown.
+
+B3. CONFIDENCE AT THESE BOUNDARIES. When a document is written as an agreement but its title names a securities or debt instrument (B1), or when it is a short mailbox fragment (B2), name the boundary rule in the reasoning. Do not give 0.90 or more to contract for an agreement whose title names an indenture, rights, warrant, subscription or option instrument, and do not give unknown to mailbox text at any confidence."""
+
+SORTER_V15_SUBCLASS_RULES = """SUBCLASS CONVENTIONS (corpus labels; doc_subclass must be a key of the chosen class's catalog in the user message, never a key of another class and never an invented key):
+
+S1. CMS CLAIM TABLES BY THE NOTICE THEY RENDER. "MEDICARE SUMMARY NOTICE -- PHYSICIAN/SUPPLIER CLAIM (Part B)", professional or physician/supplier claims with HCPCS lines, is carrier, not outpatient. "MEDICARE SUMMARY NOTICE -- OUTPATIENT SERVICES" (hospital outpatient) is outpatient. Inpatient admissions (admission and discharge dates, DRG) are inpatient. Part D prescription drug events are pde. Physician/supplier is never outpatient.
+
+S2. CORPORATE RECORDS BY THE INSTRUMENT THE TITLE NAMES. A Certificate of Designation(s) of preferred stock, its amendments and restatements, and an officer's or secretary's certificate are officer_certificate, never rights_instrument, although they define the rights of a class of stock. A Certificate or Articles of Amendment (or a Certificate of Correction) of a charter is charter_amendment; the charter itself (certificate or articles of incorporation, a restated charter, a certificate of formation, articles of organization) is articles_of_incorporation, even when its amendments are appended. A short amendment to the bylaws that the board adopted, or a board or stockholder resolution or written consent, is board_resolution; the full bylaws are bylaws. certificate_of_formation is not a corpus label: a certificate of formation is articles_of_incorporation.
+
+S3. CORRESPONDENCE FORM BY MARKER PRECEDENCE. Read the whole text, forwarded and quoted mail included, and give the FIRST form in this order whose marker appears anywhere: attorney_demand (a demand made by or for an attorney or law firm), letter (a salutation such as "Dear ..." with a formal closing), press_release (a press or news release is contained or discussed), memo (TO / FROM / DATE / RE lines in the body, or named memo or memorandum), demand (a demand, demand letter, past-due or final notice is contained or discussed), notice (a Notice of ..., Notice No., or giving notice), meeting_request (an invitation or request to meet, call or confer). email only when none of these appears. Mailbox headers do not make a message email when a marker above appears in it.
+
+S4. CONTRACT FAMILY OVER other. Employment agreements, executive offer and employment letters, and their terminations are consulting. Note purchase and asset purchase agreements and their extensions are supply. An IP assignment, transfer or separation is ip. other is only for a contract that fits no family in the catalog.
+
+S5. MERGER CONSIDERATION FROM THE CONVERSION SECTION. The subclass is what each share of the target's common stock converts into, read from the conversion or Effect on Capital Stock section, not the table of contents; options, appraisal rights, financing and escrow do not change it."""
+
+SORTER_PROMPT_V15 = (
+    SORTER_PROMPT_V14.rstrip()
+    + "\n\n" + SORTER_V15_CLASS_BOUNDARIES
+    + "\n\n" + SORTER_V15_SUBCLASS_RULES
+)
+
+#: Clauses every sorter version after V15 must keep (anti-regression guard).
+SORTER_V15_GUARDS = (
+    "SECURITIES AND DEBT INSTRUMENTS ARE CORPORATE RECORDS, NOT CONTRACTS",
+    "An indenture or supplemental indenture",
+    "a registration rights agreement, an investor rights or stockholders' agreement",
+    "ALL MAILBOX TEXT IS CORRESPONDENCE",
+    "Short or empty-looking mail is never unknown.",
+    "do not give unknown to mailbox text at any confidence",
+    "CMS CLAIM TABLES BY THE NOTICE THEY RENDER",
+    "Physician/supplier is never outpatient.",
+    "are officer_certificate, never rights_instrument",
+    "certificate_of_formation is not a corpus label",
+    "CORRESPONDENCE FORM BY MARKER PRECEDENCE",
+    "attorney_demand (a demand made by or for an attorney or law firm), letter",
+    "CONTRACT FAMILY OVER other",
+)
+
+# =============================================================================
 # SORTER AGENT — Vision Classification (RVL-CDIP-style image pipeline)
 # -----------------------------------------------------------------------------
 # Modeled on the RVL-CDIP classifier repo's v17 prompt structure: an ordered
@@ -2941,7 +3013,7 @@ If the PDF contains clean, selectable text (not scanned images), simply return t
 PROMPT_VERSIONS = {
     # Sorter
     "sorter_v0": SORTER_PROMPT_V0,
-    "sorter": SORTER_PROMPT_V14,  # mailroom production: V12 + pipeline doctrine
+    "sorter": SORTER_PROMPT_V15,  # mailroom production: V14 + class boundaries (frozen)
     "sorter_v1": SORTER_PROMPT_V1,
     "sorter_v2": SORTER_PROMPT_V2,
     "sorter_v3": SORTER_PROMPT_V3,
@@ -2956,6 +3028,7 @@ PROMPT_VERSIONS = {
     "sorter_v12": SORTER_PROMPT_V12,
     "sorter_v13": SORTER_PROMPT_V13,
     "sorter_v14": SORTER_PROMPT_V14,
+    "sorter_v15": SORTER_PROMPT_V15,
 
     # Sorter — vision (RVL-CDIP-style image classification)
     "sorter_vision_v0": SORTER_VISION_PROMPT_V0,
@@ -3022,7 +3095,7 @@ PROMPT_VERSIONS = {
 
 # Production specialist aliases: sandbox / eval-environment frozen v1 stems.
 # Historical entity-extraction keys (contracts_specialist_v1…v33, sorter_v0…v14)
-# stay on this dict for eval loops. Sorter production remains sorter_v14.
+# stay on this dict for eval loops. Sorter production is the frozen sorter_v15.
 from llm.frozen_v1 import bind_production_specialists  # noqa: E402
 
 bind_production_specialists(PROMPT_VERSIONS)

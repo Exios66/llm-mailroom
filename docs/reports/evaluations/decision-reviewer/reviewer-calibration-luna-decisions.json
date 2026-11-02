@@ -1,0 +1,87 @@
+{
+  "classes": {
+    "contract": {
+      "cutoff": 0.62,
+      "documents": 152,
+      "holdout_accepted": 151,
+      "holdout_accuracy": 0.9933774834437086,
+      "holdout_accuracy_ci": [
+        0.9634436690411698,
+        0.9988300351830177
+      ],
+      "holdout_documents": 152,
+      "holdout_share_accepted": 0.993421052631579,
+      "meets_target": true,
+      "top_confidence": 1.0,
+      "top_confidence_documents": 134,
+      "top_confidence_wrong": 0
+    },
+    "corporate_record": {
+      "cutoff": 0.66,
+      "documents": 148,
+      "holdout_accepted": 147,
+      "holdout_accuracy": 1.0,
+      "holdout_accuracy_ci": [
+        0.9745322245322244,
+        0.9999999999999999
+      ],
+      "holdout_documents": 148,
+      "holdout_share_accepted": 0.9932432432432432,
+      "meets_target": true,
+      "top_confidence": 1.0,
+      "top_confidence_documents": 139,
+      "top_confidence_wrong": 0
+    },
+    "correspondence": {
+      "cutoff": 0.52,
+      "documents": 157,
+      "holdout_accepted": 155,
+      "holdout_accuracy": 0.9612903225806452,
+      "holdout_accuracy_ci": [
+        0.9181273811193313,
+        0.9821405587654344
+      ],
+      "holdout_documents": 157,
+      "holdout_share_accepted": 0.9872611464968153,
+      "meets_target": false,
+      "top_confidence": 1.0,
+      "top_confidence_documents": 76,
+      "top_confidence_wrong": 0
+    },
+    "insurance_claim": {
+      "cutoff": 0.41,
+      "documents": 142,
+      "holdout_accepted": 141,
+      "holdout_accuracy": 1.0,
+      "holdout_accuracy_ci": [
+        0.9734772330601154,
+        1.0
+      ],
+      "holdout_documents": 142,
+      "holdout_share_accepted": 0.9929577464788732,
+      "meets_target": true,
+      "top_confidence": 1.0,
+      "top_confidence_documents": 13,
+      "top_confidence_wrong": 0
+    },
+    "merger_agreement": {
+      "cutoff": 0.99,
+      "documents": 133,
+      "holdout_accepted": 132,
+      "holdout_accuracy": 1.0,
+      "holdout_accuracy_ci": [
+        0.9717200032979587,
+        1.0
+      ],
+      "holdout_documents": 133,
+      "holdout_share_accepted": 0.9924812030075187,
+      "meets_target": true,
+      "top_confidence": 1.0,
+      "top_confidence_documents": 132,
+      "top_confidence_wrong": 0
+    }
+  },
+  "run_id": "reviewer-calibration-luna-decisions",
+  "seed": 42,
+  "target_accuracy": 0.95
+}

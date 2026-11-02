@@ -150,7 +150,7 @@ def test_ground_truth_without_schema_fields_never_gates_coverage():
         "token_estimate": 1200,
     }
     for doc_type in ("contract", "merger_agreement"):
-        assert routing_coverage_expected_fields(expected, doc_type) is None
+        assert not routing_coverage_expected_fields(expected, doc_type)  # empty scope, no fallback
         state = {
             "doc_type": doc_type,
             "extraction_confidence": 0.99,

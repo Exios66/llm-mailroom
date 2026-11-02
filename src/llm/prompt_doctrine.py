@@ -135,7 +135,7 @@ CONTRACTS = extraction_doctrine(
 
 CORPORATE_RECORDS = extraction_doctrine(
     "entity_name, record_type, effective_date, signatories, jurisdiction, "
-    "filing_number, intent, subject_matter, keywords",
+    "filing_number, intent, subject_matter, keywords, confidence",
     [
         "entity_name is the legal name as written — do not abbreviate unless the document does.",
         "filing_number is an identifier; transcribe it exactly.",
@@ -146,7 +146,7 @@ CORPORATE_RECORDS = extraction_doctrine(
 CORRESPONDENCE = extraction_doctrine(
     "sender, recipient, additional_recipients, communication_type, "
     "communication_date, demand_amount, action_items, urgency, intent, "
-    "subject_matter, keywords",
+    "subject_matter, keywords, confidence",
     [
         "A demand letter about a contract is still correspondence. demand_amount of 0 is a stated amount.",
         "Press releases and wire articles often have no named recipient — use null, not a invented audience.",
@@ -173,7 +173,7 @@ INSURANCE_CLAIMS = extraction_doctrine(
     "claim_number, policy_number, insurer, insured_party, claim_type, "
     "date_of_loss, date_filed, claimed_amount, adjuster, damages_description, "
     "coverage_determination, denial_reasons, supporting_documents, intent, "
-    "subject_matter, keywords, claim_checklist",
+    "subject_matter, keywords, claim_checklist, confidence",
     [
         "claim_number and policy_number are identifiers; never paraphrase them.",
         "On CMS Medicare Summary Notices, Notice ID is the claim_number; Claim total "
