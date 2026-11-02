@@ -34,6 +34,9 @@ jobs:
           paths:
             - ~/.cache/pip
       - run:
+          name: Prepare test results dir
+          command: mkdir -p test-results
+      - run:
           name: Pytest (no network, no real LLM)
           command: python -m pytest src/tests -q --junitxml=test-results/junit.xml
           no_output_timeout: 20m
@@ -49,4 +52,10 @@ jobs:
 workflows:
   ci:
     jobs:
-      - test
+      - test:
+          filters:
+            branches:
+              ignore:
+                - gh-pages
+            tags:
+              ignore: /.*/
