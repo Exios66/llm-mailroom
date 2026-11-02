@@ -51,7 +51,7 @@ def _repo_relative(path: str, root: str) -> str:
         rel = os.path.relpath(full, real_root)
     except ValueError:  # different drive on Windows
         return full.replace("\\", "/")
-    if rel == ".." or rel.startswith("../") or rel.startswith("..\\"):
+    if rel == ".." or rel.startswith(("../", "..\\")):
         return full.replace("\\", "/")
     return rel.replace("\\", "/")
 
