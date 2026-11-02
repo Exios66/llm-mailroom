@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dojo pin → v0.26.0** (`2fea5ea7`, the release merge of llm-dojo-scoring#112), pinned by commit SHA.
+  - Brings reviewer-lane scoring and `dojo-rescore`, the CMS insurance mapping (#93: `claim_type` and `cms_source_table` are separate fields), and the five-class extraction schema registry.
+  - The fallback snapshot under `vendor/llm-dojo-scoring` is replaced with the same commit's tree.
+  - Dojo modules now live in subpackages; the old flat import paths still resolve through Dojo's legacy aliases. The delegation tests now resolve the canonical module name instead of hard-coding the flat one.
+
 ### Added
 
 - **Extraction-gate hook** (`agents.extraction_gate`). It is opt-in and advisory.
