@@ -34,18 +34,22 @@ def test_hook_registered_by_package_imports():
     assert dojo_source.vendored_root() == ROOT / "vendor" / "llm-dojo-scoring" / "src"
 
 
+# Hide the real release without dropping its sys.path entry: a regular install lives in
+# site-packages, and removing that entry would also hide the Dojo's own dependencies
+# (yaml, ...), so the vendored snapshot could not import either. Only the top-level
+# ``llm_dojo_scoring`` lookup skips the directories that held the real release.
 _HIDE_INSTALLED = (
-    "import sys, os\n"
+    "import sys, os, importlib.machinery as _m\n"
     "sys.meta_path[:] = [f for f in sys.meta_path if 'llm_dojo_scoring' not in str(getattr(f, '__module__', '')) + type(f).__module__]\n"
-    "sys.path[:] = [p for p in sys.path if not os.path.isdir(os.path.join(p, 'llm_dojo_scoring'))]\n"
+    "_hidden = {p for p in sys.path if os.path.isdir(os.path.join(p or '.', 'llm_dojo_scoring'))}\n"
+    "class _HidingPathFinder(_m.PathFinder):\n"
+    "    @classmethod\n"
+    "    def find_spec(cls, name, path=None, target=None):\n"
+    "        if name == 'llm_dojo_scoring' and path is None:\n"
+    "            path = [p for p in sys.path if p not in _hidden]\n"
+    "        return super().find_spec(name, path, target)\n"
+    "sys.meta_path[:] = [_HidingPathFinder if f is _m.PathFinder else f for f in sys.meta_path]\n"
 )
-
-
-def _installed_in_site_packages() -> bool:
-    import importlib.util
-
-    spec = importlib.util.find_spec("llm_dojo_scoring")
-    return bool(spec and spec.origin and "site-packages" in spec.origin and "__editable__" not in str(spec.loader))
 
 
 def _probe(tmp_path: Path, extra_path: str | None, **env: str) -> dict:
@@ -73,10 +77,6 @@ def _fake_release(tmp_path: Path, body: str) -> str:
 
 
 def test_missing_release_uses_snapshot(tmp_path):
-    if _installed_in_site_packages():
-        import pytest
-
-        pytest.skip("a regular (non-editable) release in site-packages cannot be hidden")
     status = _probe(tmp_path, None)
     assert status["source"] == "vendored" and "not installed" in status["reason"]
     assert status["file"].startswith(str(ROOT / "vendor"))
