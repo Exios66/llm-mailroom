@@ -215,7 +215,44 @@ def normalize_sorter_subclass(doc_type: str | None, value: Any) -> str | None:
 
 
 def format_sorter_subclass_catalogs() -> str:
-    """User-message catalog block (not Mustache — doctrine stays placeholder-free)."""
+    """User-message catalog block (not Mustache — doctrine stays placeholder-free).
+
+    Renders the dojo sorter guide (``llm_dojo_scoring.sorter_guide``): per class
+    the keys a sorter may emit and the corpus meaning of each. A bare key list
+    made sorter V14 call CMS carrier tables outpatient, Certificates of
+    Designation rights_instrument and charter amendments certificate_of_formation,
+    and ignore the correspondence marker precedence. Falls back to the key list
+    on a dojo without the guide.
+    """
+    try:
+        from llm_dojo_scoring.sorter_guide import format_sorter_subclass_guide
+    except ImportError:
+        return _format_bare_subclass_catalogs()
+    lines = [
+        "DOCUMENT SUBCLASS CATALOGS — when the chosen doc_type has a catalog, "
+        "emit doc_subclass as exactly one of that class's keys (the text after "
+        "each key is what the label means in this corpus). "
+        "contract_subtype is CUAD-only (required for contract, null otherwise). "
+        "content_topic and sentiment_label are not sorter outputs.",
+    ]
+    for key in _SORTER_CATALOG_ORDER:
+        block = format_sorter_subclass_guide(key)
+        if block:
+            lines.append(block)
+    return "\n".join(lines)
+
+
+_SORTER_CATALOG_ORDER = (
+    "contract",
+    "merger_agreement",
+    "corporate_record",
+    "correspondence",
+    "insurance_claim",
+)
+
+
+def _format_bare_subclass_catalogs() -> str:
+    """Pre-guide catalog: comma-separated keys per class (dojo < sorter_guide)."""
     lines = [
         "DOCUMENT SUBCLASS CATALOGS — when the chosen doc_type has a catalog, "
         "emit doc_subclass as exactly one of that class's keys. "

@@ -1,0 +1,197 @@
+# Decisions-API question set for the decision reviewer (openai/gpt-6-luna-decisions), v2.
+# Changes from v1, from the 735-document train run (reviewer-calibration-luna-decisions):
+# - doc_type: First Notice of Loss forms are insurance_claim (8 went to correspondence or
+#   unknown); untitled subsidiary tables are corporate_record; transaction agreements that
+#   merge through merger subsidiaries are merger_agreement.
+# - contract subclass: a title naming one family decides (Supply, Cooperation, License).
+# - correspondence subclass: the corpus labels are keyword markers, so each marker is a
+#   yes/no question and the corpus's precedence order is applied in code.
+#
+# One request per document. `state` is the document text; every question below is
+# asked in the same request. The model returns a probability for every option, so
+# the doc_type probability of the chosen class is the number the per-class cutoff
+# applies to. The subclass answer used is the one for the chosen doc_type.
+#
+# Option keys are the mailroom taxonomy and subclass-catalog keys. Criteria carry the
+# class definitions and corpus conventions worked out on the train split
+# (config/prompts/sorter_reviewer_decision_v3.txt, reports/reviewer-calibration/).
+schema: sandbox.decisions/v1
+name: reviewer_decisions_v2
+# The state is cut to this many characters. On the train split every merger's conversion
+# terms start before character 103,101, and only mergers (and a few contracts) run longer.
+max_input_chars: 120000
+
+doc_type:
+  instructions: >-
+    Which class of the legal-document mailroom does this document belong to?
+    Classify the instrument the title names, not an exhibit stamp or SEC filing wrapper
+    around it. Amendments, restatements, supplements, waivers, joinders, forms and drafts
+    take the class of the instrument they change or copy. A main instrument with attached
+    exhibits is classified by the main instrument; a message carrying an attachment or a
+    forwarded document is correspondence. Follow the corpus conventions written into the
+    options even where a plain reading suggests another class.
+  criteria:
+    contract: >-
+      A commercial agreement between parties: license, supply, distributor, reseller,
+      service, hosting, maintenance, development, manufacturing, marketing, sponsorship,
+      endorsement, franchise, agency, consulting or employment, collaboration or
+      cooperation, outsourcing, transportation, joint venture, strategic alliance,
+      non-compete, IP assignment, note purchase agreements. An insurance policy is a
+      contract. A Joint Filing Agreement under Exchange Act Rule 13d-1(k) (Schedule 13D or
+      13G) is a contract. NOT registration-rights, investor-rights, stockholder-rights or
+      subscription agreements, warrants or indentures: those are corporate_record.
+    merger_agreement: >-
+      An Agreement and Plan of Merger, or an amendment to or amended and restated version
+      of one (MAUD), including one filed as an exhibit. Also a "Transaction Agreement",
+      "Master Transaction Agreement" or "Business Combination Agreement" whose parties
+      include a merger subsidiary (Merger Sub) and that effects a merger. Never contract,
+      even though it is an agreement.
+    corporate_record: >-
+      An instrument of a company's own organisation, governance or securities: articles
+      or certificates of incorporation or formation, charter amendments, bylaws, board or
+      stockholder resolutions and written consents, officer certificates and Certificates
+      of Designation, powers of attorney, lists of subsidiaries, indentures and
+      supplemental indentures, and securities rights instruments (registration rights,
+      investor or stockholder rights, preemptive rights and subscription agreements,
+      warrants and warrant agreements, specimen stock certificates), even when written as
+      a signed agreement between parties and filed as an SEC exhibit. A bare table of
+      company names with jurisdictions of incorporation and no other text is a list of
+      subsidiaries.
+    correspondence: >-
+      A communication: letter, email, memo, notice, demand letter, press release or
+      meeting request. All mailbox text is correspondence: messages, reply chains,
+      forwarded news or wire articles, newsletters, automated notifications and
+      scheduling logs, jokes, and bare message bodies or fragments with no headers.
+      A demand letter or notice about a contract or claim is correspondence. NOT insurance
+      claim paperwork: a First Notice of Loss form or claim file is insurance_claim even
+      when it contains call notes, emails or letters.
+    insurance_claim: >-
+      Insurance claim paperwork: a FIRST NOTICE OF LOSS (FNOL) form with fields such as
+      Claim Reference, Policy Number, Insured, Date of Loss and a loss description, for any
+      line (auto, property, household, building), including its call notes, emails and
+      letters; adjuster reports, claim demand
+      packages, coverage or denial letters about a claim) or CMS / DE-SynPUF claim tables
+      (inpatient, outpatient, carrier, prescription drug events) with claim, beneficiary,
+      HCPCS or ICD columns, even with no prose.
+    unknown: >-
+      A stand-alone document that is plainly not a communication and fits none of the
+      five classes, such as a court opinion, an accounting standard or a due-diligence
+      checklist, or text too garbled to identify any form.
+
+subclass:
+  contract:
+    instructions: >-
+      If this is a commercial contract, which agreement family is it? Decide from the
+      title and recitals and the operative obligations. A title that names a family is
+      that family: "Supply Agreement" is supply even when the supplier manufactures the
+      product; "Cooperation Agreement" and "Collaboration Agreement" are collaboration;
+      "Content License Agreement" is license; "Affiliate Agreement" is affiliate. For
+      hybrid titles naming several families, pick the family the operating obligations
+      mostly concern (development and manufacturing is manufacturing; site development and
+      hosting is hosting).
+    criteria:
+      affiliate: Affiliate or referral-affiliate programme agreement.
+      agency: Agency or sales-agency agreement appointing an agent.
+      collaboration: Collaboration or research collaboration agreement, and activist or shareholder Cooperation Agreements (standstill and board-nomination settlements).
+      co_branding: Co-branding or co-branded product or card agreement.
+      consulting: Consulting agreement, and employment agreements and executive offer letters.
+      development: Development agreement whose core is development work, milestones, plans or steering committees.
+      distributor: Distribution or distributor agreement.
+      endorsement: Endorsement agreement with a person or brand, and endorsement riders attached to insurance or annuity contracts.
+      franchise: Franchise agreement.
+      hosting: Hosting, hosted software, platform or SaaS provision agreement, even with an access licence.
+      ip: Intellectual-property assignment, transfer or separation agreement dealing with intellectual property.
+      joint_venture: Joint venture agreement, and Joint Filing Agreements or Statements under Rule 13d-1(k).
+      license: License agreement whose core is a grant of rights to use IP, software, trademarks or technology.
+      maintenance: Maintenance or support agreement, a license plus maintenance or support, and financial maintenance agreements (capital, net-worth, liquidity maintenance).
+      manufacturing: Manufacturing or contract-manufacturing agreement.
+      marketing: Marketing agreement, including remarketing agreements for securities, annuities or receivables.
+      non_compete_no_solicit: Stand-alone non-competition or non-solicitation agreement.
+      outsourcing: Outsourcing agreement.
+      promotion: Promotion or promotional agreement.
+      reseller: Reseller or value-added reseller agreement.
+      service: Services agreement, master services agreement or statement of work.
+      sponsorship: Sponsorship agreement.
+      strategic_alliance: Strategic alliance agreement.
+      supply: Supply or purchase agreement, and note purchase agreements with their supplements and amendments.
+      transportation: Transportation, shipping, carriage or logistics agreement.
+      other: No listed family fits.
+  merger_agreement:
+    instructions: >-
+      If this is a merger agreement, what is each share of the target's COMMON stock
+      converted into? Read the conversion or "Effect on Capital Stock" section and the
+      recitals; a table-of-contents entry says nothing about the type. Treatment of
+      options, RSUs, warrants or preferred stock, appraisal rights, financing and escrow
+      do not change the type.
+    criteria:
+      all_cash: Cash only per share, including a cash tender offer followed by a merger at the same cash price.
+      all_stock: Acquirer or parent shares only per share at an exchange ratio; cash paid only in lieu of fractional shares is still all_stock.
+      mixed_cash_stock: Every share receives a fixed combination of cash and stock.
+      mixed_cash_stock_election: Holders elect cash or stock or a mix, usually subject to proration.
+      other: Any other package, including cash or stock plus a contingent value right (CVR), units, partnership or LLC interests, or non-cash non-stock consideration.
+  corporate_record:
+    instructions: >-
+      If this is a corporate record, which kind is it? Decide by the document's own title
+      first, then by its operative text; an exhibit stamp never decides.
+    criteria:
+      articles_of_incorporation: The founding or restated charter (Certificate or Articles of Incorporation, Amended and Restated Certificate of Incorporation) and formation filings (Certificate of Formation, Articles of Organization).
+      charter_amendment: An instrument that amends or corrects an existing charter (Certificate of Amendment, Articles of Amendment, Certificate of Correction).
+      bylaws: Standing internal rules (Bylaws, Amended and Restated Bylaws).
+      board_resolution: A board or stockholder resolution or written consent, including a short stand-alone bylaw amendment adopted by the board.
+      officer_certificate: A certificate executed by officers, including a Certificate of Designation for a preferred-stock series and any amendment to a Certificate of Designation.
+      powers_of_attorney: A delegation of authority to act for another (Power of Attorney, attorney-in-fact).
+      subsidiary_list: A list of subsidiaries (Subsidiaries of the Registrant).
+      indenture: An indenture or supplemental indenture between an issuer and an indenture trustee.
+      rights_instrument: Registration rights, investor or stockholder rights, preemptive rights or subscription agreements (and their amendments, waivers and joinders), warrants and warrant agreements, specimen stock certificates.
+      other: None of the above fits.
+  correspondence:
+    instructions: >-
+      If this is correspondence, which form does its content take? The label follows
+      markers anywhere in the text, including forwarded or quoted content.
+    # The corpus labeller tests these markers in this order and takes the first present;
+    # with none present the label is `default`. Each marker is asked as a yes/no question.
+    order: [attorney_demand, letter, press_release, memo, demand, notice, meeting_request]
+    default: email
+    markers:
+      attorney_demand: >-
+        Does the text contain a demand for payment, performance or action made by or on
+        behalf of an attorney or law firm (Esq., Law Offices, counsel for, attorneys for)?
+      letter: >-
+        Does the text contain a letter: a salutation such as "Dear ..." together with a
+        formal closing such as Sincerely, Very truly yours, Yours truly or Best regards?
+      press_release: >-
+        Does the text contain or discuss a press release or news release (press release,
+        For Immediate Release, news release, PR Newswire, Business Wire, media contact)?
+      memo: >-
+        Does the text contain a memorandum: a memo header block (TO / FROM / DATE / RE or
+        SUBJECT lines inside the body) or the word memorandum or memo naming the document?
+      demand: >-
+        Does the text contain or discuss a demand: a demand letter, a demand for payment or
+        performance, past-due amounts or a final notice? Mentions of demand letters in an
+        ordinary email count.
+      notice: >-
+        Does the text contain or discuss a notice: the word notice used for a communication
+        (Notice of ..., Notice No., notice to members, give notice, please be notified)?
+      meeting_request: >-
+        Does the text invite or ask someone to meet or confer (meeting, conference call,
+        calendar entry, appointment, get together, invitation to an event)?
+    criteria:
+      attorney_demand: A demand made by or on behalf of an attorney or law firm.
+      letter: Letter form with a salutation and a formal closing.
+      press_release: Press-release form or content.
+      memo: A memorandum header block or memo form.
+      demand: A demand for payment, performance or action.
+      notice: Notice form or content.
+      meeting_request: An invitation or request to meet or confer.
+      email: Ordinary message correspondence with none of the markers above.
+  insurance_claim:
+    instructions: >-
+      If this is insurance-claim material, which kind? For CMS / DE-SynPUF tables, the
+      file type; for claim paperwork, the line of insurance.
+    criteria:
+      inpatient: CMS inpatient claims table.
+      outpatient: CMS outpatient claims table.
+      carrier: CMS carrier (professional or physician) claims table.
+      pde: CMS Part D prescription drug event table.
+      auto: Auto or motor-vehicle claim paperwork.
+      property: Property, homeowner or commercial-property claim paperwork.

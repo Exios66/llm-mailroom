@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import json
 import math
 import re
 import structlog
@@ -24,6 +25,7 @@ from graph.routing import (
     after_retry_extraction_gated,
     after_judge,
     after_arbiter,
+    after_classification_arbiter,
     after_boss,
     after_human_review,
     after_report,
@@ -1079,6 +1081,10 @@ _UNREADABLE_STUB = re.compile(r"\s*\[Unreadable file:[^\]]*\]\s*")
 # abandoned threads, new backend calls are refused (the document parks).
 _MAX_ABANDONED_BACKEND_THREADS = 4
 _abandoned_backend_threads: list[threading.Thread] = []
+# The advisory extraction gate keeps its own list and cap, so stalled gate calls can never
+# make the decision backend refuse calls (and park documents as reviewer_unavailable).
+_MAX_ABANDONED_GATE_THREADS = 4
+_abandoned_gate_threads: list[threading.Thread] = []
 _abandoned_lock = threading.Lock()
 
 
@@ -1104,16 +1110,57 @@ class DecisionBackendTimeout(Exception):
     """The decision backend did not answer within the call/run deadline."""
 
 
-def _call_decision_backend(backend, doc_text, doc_types, catalogs):
-    """Call ``backend`` with a wall-clock bound.
+def _accepts_handoff(backend) -> bool:
+    """True when ``backend`` declares a ``handoff`` parameter.
+
+    ``**kwargs`` alone does not count: a forwarding wrapper or a Mock in front of
+    a three-argument backend would pass ``handoff=`` on and fail with TypeError,
+    parking every document as reviewer_unavailable. ``functools.wraps``
+    wrappers expose the wrapped signature, so a decorated backend that takes
+    ``handoff`` still receives it.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(backend).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        p.name == "handoff"
+        and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        for p in params
+    )
+
+
+def _decision_handoff(state: DocumentState) -> dict[str, Any]:
+    """What the sorter hands the reviewer: its answer and why the document reached review."""
+    triggers = ["decision_class_review"]
+    confidence = state.get("classification_confidence")
+    low = float(get_confidence_thresholds(state.get("doc_type")).get("low", 0.70))
+    if not _valid_unit_float(confidence) or float(confidence) < low:
+        triggers.append("sorter_below_low_band")
+    if state.get("retry_count"):  # retry_classify ran
+        triggers.append("after_sorter_retry")
+    return {
+        "sorter_doc_type": state.get("doc_type"),
+        "sorter_doc_subclass": state.get("doc_subclass") or state.get("contract_subtype"),
+        "sorter_confidence": round(float(confidence), 4) if _valid_unit_float(confidence) else None,
+        "review_trigger": triggers,
+    }
+
+
+def _run_bounded(call, *, name: str = "decision-backend", abandoned: list[threading.Thread] | None = None,
+                 max_abandoned: int | None = None):
+    """Run ``call()`` with a wall-clock bound and return its value.
 
     The timeout is ``llm_call_timeout_seconds``, shortened to the time left on
     the run deadline. The call runs on a daemon thread so a stalled backend
     can neither block the worker nor keep the process alive; on expiry
     ``DecisionBackendTimeout`` is raised and the stray thread is tracked.
-    At ``_MAX_ABANDONED_BACKEND_THREADS`` live abandoned threads, new calls
+    At ``max_abandoned`` live abandoned threads in ``abandoned`` (default: the
+    decision backend's list and ``_MAX_ABANDONED_BACKEND_THREADS``), new calls
     are refused with ``DecisionBackendTimeout`` instead of starting another.
-    Backend exceptions propagate unchanged.
+    Exceptions raised by ``call`` propagate unchanged.
     """
     import contextvars
 
@@ -1125,35 +1172,97 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs):
         timeout = min(timeout, deadline - time.time())
     if timeout <= 0:
         raise DecisionBackendTimeout("no time left on the run deadline")
+    if abandoned is None:
+        abandoned = _abandoned_backend_threads
+    limit = _MAX_ABANDONED_BACKEND_THREADS if max_abandoned is None else max_abandoned
     with _abandoned_lock:
-        _abandoned_backend_threads[:] = [
-            t for t in _abandoned_backend_threads if t.is_alive()
-        ]
-        if len(_abandoned_backend_threads) >= _MAX_ABANDONED_BACKEND_THREADS:
-            raise DecisionBackendTimeout(
-                f"{len(_abandoned_backend_threads)} stalled backend calls still running"
-            )
+        abandoned[:] = [t for t in abandoned if t.is_alive()]
+        if len(abandoned) >= limit:
+            raise DecisionBackendTimeout(f"{len(abandoned)} stalled {name} calls still running")
 
     box: dict[str, Any] = {}
     ctx = contextvars.copy_context()
 
     def _target() -> None:
-        """Run the backend on this thread and hand its result or error back."""
+        """Run the call on this thread and hand its result or error back."""
         try:
-            box["value"] = ctx.run(backend, doc_text, doc_types, catalogs)
+            box["value"] = ctx.run(call)
         except BaseException as exc:  # re-raised on the caller's thread
             box["error"] = exc
 
-    thread = threading.Thread(target=_target, name="decision-backend", daemon=True)
+    thread = threading.Thread(target=_target, name=name, daemon=True)
     thread.start()
     thread.join(timeout)
     if thread.is_alive():
         with _abandoned_lock:
-            _abandoned_backend_threads.append(thread)
-        raise DecisionBackendTimeout(f"decision backend exceeded {timeout:.0f}s")
+            abandoned.append(thread)
+        raise DecisionBackendTimeout(f"{name} exceeded {timeout:.0f}s")
     if "error" in box:
         raise box["error"]
     return box.get("value")
+
+
+def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None):
+    """Call ``backend`` under ``_run_bounded``.
+
+    ``handoff`` (the sorter's answer and the review trigger) is passed as a
+    keyword only to a backend that accepts it; older backends are unchanged.
+    """
+    if handoff is not None and _accepts_handoff(backend):
+        return _run_bounded(lambda: backend(doc_text, doc_types, catalogs, handoff=handoff))
+    return _run_bounded(lambda: backend(doc_text, doc_types, catalogs))
+
+
+def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, Any]) -> dict[str, Any] | None:
+    """Ask the registered extraction gate about ``result``; ``None`` when no gate is registered.
+
+    The handoff carries the sorter's subclass (``doc_subclass``, else the contract
+    subtype), never a ground-truth label. The gate is advisory and fail-open: its
+    answer is recorded on state (and, from ``extract_node`` only, in the ``extracted``
+    audit entry; the retry path writes no audit entry), routing is unchanged, and a
+    timeout or error is recorded instead of failing extraction.
+    """
+    from agents.extraction_gate import extraction_gate_handoff, get_extraction_gate
+
+    gate = get_extraction_gate()
+    if gate is None:
+        return None
+    # The first non-blank of the sorter's subclass and the contract subtype.
+    subclass = next((v.strip() for v in (state.get("doc_subclass"), state.get("contract_subtype"))
+                     if isinstance(v, str) and v.strip()), None)
+    record: dict[str, Any] = {"doc_subclass": subclass}
+    if result.get("_parse_error"):
+        return {**record, "skipped": "parse_error"}
+    # Same emptiness rule as guard_extraction: only None / empty containers is no extraction.
+    from pipeline.guards import _has_substantive_content
+
+    if not _has_substantive_content(result):
+        return {**record, "skipped": "empty_extraction"}
+    handoff = extraction_gate_handoff(doc_type, result, record["doc_subclass"])
+    if record["doc_subclass"] is None:
+        logger.info("extraction_gate_no_subclass", doc_id=state.get("doc_id"), doc_type=doc_type)
+    doc_text = state.get("doc_text") or ""
+    try:
+        answer = _run_bounded(lambda: gate(doc_text, handoff), name="extraction-gate",
+                              abandoned=_abandoned_gate_threads, max_abandoned=_MAX_ABANDONED_GATE_THREADS)
+    except DecisionBackendTimeout as exc:
+        logger.warning("extraction_gate_timeout", doc_id=state.get("doc_id"), error=str(exc))
+        return {**record, "error": f"timeout: {exc}"}
+    except Exception as exc:  # noqa: BLE001 - advisory gate: fail open, record the error
+        logger.warning("extraction_gate_failed", doc_id=state.get("doc_id"), error=str(exc)[:300])
+        return {**record, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    if not isinstance(answer, Mapping):
+        return {**record, "error": f"malformed gate answer ({type(answer).__name__})"}
+    keep = ("verdict", "key_field_score", "accept_probability", "human_review_probability",
+            "field_support", "question_set", "model")
+    try:
+        fields = {k: answer[k] for k in keep if k in answer}
+        # The answer goes into state and the JSON ``extracted`` audit column: keep only
+        # JSON values (a set or an object would make the audit write drop the entry).
+        fields = json.loads(json.dumps(fields, allow_nan=False))
+    except Exception as exc:  # noqa: BLE001 - advisory gate: fail open, record the error
+        return {**record, "error": f"malformed gate answer ({type(exc).__name__})"}
+    return {**record, **fields}
 
 
 def _sorter_is_unsure(state: DocumentState) -> bool:
@@ -1206,7 +1315,9 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
             try:
                 doc_types = sorted(get_sorter_label_set())
                 catalogs = {t: list(sorter_subclass_catalog(t)) for t in doc_types}
-                raw = _call_decision_backend(backend, doc_text, doc_types, catalogs)
+                raw = _call_decision_backend(
+                    backend, doc_text, doc_types, catalogs, handoff=_decision_handoff(state)
+                )
             except DecisionBackendTimeout as exc:
                 # A stalled backend is unavailable, not retryable: retrying
                 # would stall again. Park for a person.
@@ -1324,6 +1435,107 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
         updates["contract_subtype"] = updates["reviewer_contract_subtype"]
         updates["doc_subclass"] = answer.doc_subclass
         updates["classification_confidence"] = answer.confidence
+    return updates
+
+
+def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
+    """Arbitrate a parked or failed decision review before a person sees it.
+
+    The arbiter picks the sorter's class, the reviewer's class, or human review.
+    An accepted class continues only when it is extractable and the arbiter's
+    confidence clears the calibrated cutoff: ``reviewer.by_class.<class>.arbiter_cutoff``,
+    else the class's ``high`` band. A failure, an invalid answer or a confidence
+    below the cutoff routes to human review.
+    """
+    from agents.arbiter import ClassificationArbiterAgent
+    from pipeline.config import (
+        get_confidence_thresholds,
+        get_reviewer_config,
+        get_sorter_label_set,
+        is_extractable_doc_type,
+    )
+
+    sorter = {
+        "doc_type": state.get("doc_type"),
+        "doc_subclass": state.get("doc_subclass") or state.get("contract_subtype"),
+        "confidence": state.get("classification_confidence"),
+    }
+    reviewer = {
+        "doc_type": state.get("reviewer_doc_type"),
+        "doc_subclass": state.get("reviewer_doc_subclass"),
+        "confidence": state.get("reviewer_confidence"),
+    }
+    causes = [str(c) for c in (state.get("reviewer_causes") or [])]
+    base_reason = state.get("escalation_reason") or "decision review parked"
+    try:
+        result = ClassificationArbiterAgent().arbitrate_classification(
+            sorter=sorter,
+            reviewer=reviewer,
+            causes=causes,
+            labels=sorted(get_sorter_label_set()),
+            doc_text=str(state.get("doc_text") or ""),
+        )
+    except Exception as exc:
+        logger.exception("classification_arbiter_failed", doc_id=state.get("doc_id"))
+        return {
+            "classification_arbiter_decision": "human_review",
+            "classification_arbiter_confidence": None,
+            "classification_arbiter_reasoning": f"classification arbiter failed ({type(exc).__name__})",
+            "escalation_reason": f"{base_reason}; classification arbiter failed "
+            f"({type(exc).__name__}) -- routing to human review",
+            "transient_error": False,
+        }
+
+    decision = result.get("decision")
+    confidence = result.get("confidence") if _valid_unit_float(result.get("confidence")) else None
+    chosen = sorter if decision == "accept_sorter" else reviewer if decision == "accept_reviewer" else None
+    doc_type = chosen.get("doc_type") if chosen else None
+    cutoff = None
+    if isinstance(doc_type, str):
+        entry = get_reviewer_config()["by_class"].get(doc_type) or {}
+        cutoff = entry.get("arbiter_cutoff", get_confidence_thresholds(doc_type).get("high", 0.95))
+        # A bad configured cutoff (not a number in [0, 1]) parks the document; it never aborts the run.
+        cutoff = float(cutoff) if _valid_unit_float(cutoff) else None
+    subclass = chosen.get("doc_subclass") if chosen else None
+    has_subclass = isinstance(subclass, str) and bool(subclass.strip())
+    accepted = (
+        chosen is not None
+        and isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        # A contract needs its subtype, as the classification guard requires.
+        and (doc_type != "contract" or has_subclass)
+        and confidence is not None
+        and cutoff is not None
+        and float(confidence) >= cutoff
+    )
+    reasoning = str(result.get("reasoning") or "")[:400]
+    updates: dict[str, Any] = {
+        "classification_arbiter_decision": decision if accepted else "human_review",
+        "classification_arbiter_confidence": confidence,
+        "classification_arbiter_reasoning": reasoning,
+        "transient_error": False,
+    }
+    logger.info(
+        "classification_arbiter_routed",
+        doc_id=state.get("doc_id"),
+        decision=decision,
+        accepted=accepted,
+        confidence=confidence,
+        cutoff=cutoff,
+    )
+    if accepted:
+        updates.update({
+            "doc_type": doc_type,
+            "doc_subclass": chosen.get("doc_subclass"),
+            "contract_subtype": chosen.get("doc_subclass") if doc_type == "contract" else None,
+            "classification_confidence": confidence,
+            "escalation_reason": None,
+        })
+    else:
+        updates["escalation_reason"] = (
+            f"{base_reason}; classification arbiter: {decision} "
+            f"({_fmt_conf(confidence)}, cutoff {_fmt_conf(cutoff)}) -- routing to human review"
+        )
     return updates
 
 
@@ -1660,6 +1872,9 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
+    gate = _review_extraction(state, doc_type, result)
+    if gate is not None:
+        result_dict["extraction_gate"] = gate
     # Per-agent memory (iterative improvement): record guardrail rejections and
     # extraction confidence so the specialist's retry calls learn from them.
     try:
@@ -1684,7 +1899,9 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         "extracted",
         actor=state.get("doc_type", "specialist"),
         detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None,
-                "conflict_detected": bool(conflict_detected)},
+                "conflict_detected": bool(conflict_detected),
+                **({"extraction_gate": result_dict["extraction_gate"]}
+                   if "extraction_gate" in result_dict else {})},
     )
     return result_dict
 
@@ -1804,7 +2021,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         attempts=attempts,
         conflict_detected=conflict_detected,
     )
-    return {
+    updates: dict[str, Any] = {
         "extracted_data": result,
         "extraction_confidence": confidence,
         "extraction_attempts": attempts,
@@ -1817,6 +2034,10 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
+    gate = _review_extraction(state, doc_type, result)
+    if gate is not None:
+        updates["extraction_gate"] = gate
+    return updates
 
 
 def _clean_fields_for_judge(extracted: dict | None) -> dict:
@@ -2492,6 +2713,9 @@ def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
     fields_to_fix = state.get("arbiter_fields_to_fix")
     findings = state.get("judge_findings")
     return {
+        "classification_arbiter_decision": state.get("classification_arbiter_decision"),
+        "classification_arbiter_confidence": state.get("classification_arbiter_confidence"),
+        "classification_arbiter_reasoning": state.get("classification_arbiter_reasoning"),
         "arbiter_decision": state.get("arbiter_decision"),
         "arbiter_reasoning": state.get("arbiter_reasoning"),
         "arbiter_handoff": state.get("arbiter_handoff"),
@@ -2838,7 +3062,9 @@ def _resolved_models(state: dict) -> str:
             _add("sorter_reviewer")
         if state.get("judge_verdict") and state.get("judge_verdict") != "skipped":
             _add("judge")
-        if state.get("arbiter_decision"):
+        if state.get("arbiter_decision") or state.get("classification_arbiter_decision") in (
+            "accept_sorter", "accept_reviewer",
+        ):
             _add("arbiter")
         if state.get("review_decision") in ("approved", "review") and (
             state.get("escalation_reason") or ""
@@ -2932,6 +3158,10 @@ def build_graph(checkpointer=None):
     # the Judge → [ARBITER] exception path from the target diagram.
     workflow.add_node("judge_verify", traced_node("judge-verify")(_bounded(judge_verify_node)))
     workflow.add_node("arbiter", traced_node("arbitrate-verdict")(_bounded(arbiter_node)))
+    workflow.add_node(
+        "classification_arbiter",
+        traced_node("arbitrate-classification")(_bounded(classification_arbiter_node)),
+    )
     workflow.add_node("human_review", traced_node("route-for-review")(_bounded(human_review_node)))
     workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(boss_escalation_node)))
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(compile_report_node)))
@@ -2963,6 +3193,11 @@ def build_graph(checkpointer=None):
     # extract (label applied by the node); anything else → human review.
     workflow.add_conditional_edges("review_classify", after_review_classify, {
         "review_classify": "review_classify",  # transient self-loop (own per-node budget)
+        "extract": "extract",
+        "classification_arbiter": "classification_arbiter",
+        "human_review": "human_review",
+    })
+    workflow.add_conditional_edges("classification_arbiter", after_classification_arbiter, {
         "extract": "extract",
         "human_review": "human_review",
     })
@@ -3845,6 +4080,9 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         "judge_score": getattr(manifest, "judge_score", None),
         "judge_findings": list(getattr(manifest, "judge_findings", None) or []),
         "judge_pass_count": 0,
+        "classification_arbiter_decision": getattr(manifest, "classification_arbiter_decision", None),
+        "classification_arbiter_confidence": getattr(manifest, "classification_arbiter_confidence", None),
+        "classification_arbiter_reasoning": getattr(manifest, "classification_arbiter_reasoning", None),
         "arbiter_decision": getattr(manifest, "arbiter_decision", None),
         "arbiter_reasoning": getattr(manifest, "arbiter_reasoning", None),
         "arbiter_handoff": getattr(manifest, "arbiter_handoff", None),
