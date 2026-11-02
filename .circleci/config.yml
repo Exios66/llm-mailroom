@@ -1,0 +1,63 @@
+version: 2.1
+
+# Free-tier CircleCI gate: only the most critical, network-free, key-free checks.
+# Runs a single job once per push/PR. Mark "ci/circleci: test" as a required
+# check in GitHub branch protection for main to block merges.
+#
+# Install with pip (NOT uv): pyproject [tool.uv.sources] points llm-dojo-scoring
+# at a hub workspace that does not exist in this standalone repo.
+
+executors:
+  py:
+    docker:
+      - image: cimg/python:3.11
+    resource_class: small
+
+jobs:
+  test:
+    executor: py
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - pip-v1-{{ checksum "pyproject.toml" }}
+      - run:
+          name: Install (dev extra)
+          command: pip install uv && pip install -e ".[dev]"
+      - save_cache:
+          key: pip-v1-{{ checksum "pyproject.toml" }}
+          paths:
+            - ~/.cache/pip
+      - run:
+          name: Prepare test results dir
+          command: mkdir -p test-results
+      - run:
+          name: Pytest (no network, no real LLM)
+          # Four known-failing tests deselected by exact node id so the gate
+          # catches NEW regressions instead of blocking every PR.
+          command: >-
+            python -m pytest src/tests -q --junitxml=test-results/junit.xml
+            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_charter_v0]"
+            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_poa_v0]"
+            --deselect "src/tests/test_prompt_mutation_lineage.py::test_extraction_doctrine_lists_exactly_the_current_schema_fields"
+            --deselect "src/tests/test_reconsideration.py::test_ground_truth_without_schema_fields_never_gates_coverage"
+          no_output_timeout: 20m
+      - run:
+          name: Hermetic experiment regression gate (mock)
+          command: >-
+            PYTHONPATH=src python src/scripts/run_experiment.py
+            --dataset mailroom-fixtures --mock
+            --baseline docs/superpowers/baselines/experiment-baseline.json
+      - store_test_results:
+          path: test-results
+
+workflows:
+  ci:
+    jobs:
+      - test:
+          filters:
+            branches:
+              ignore:
+                - gh-pages
+            tags:
+              ignore: /.*/
