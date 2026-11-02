@@ -1,12 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pytest:*)",
-      "Bash(python -m pytest:*)",
-      "Bash(python3 -m pytest:*)",
-      "Bash(.venv/bin/python -m pytest:*)",
       "Bash(PYTHONPATH=src python src/scripts/run_pilot.py --mock:*)",
-      "Bash(PYTHONPATH=src python src/scripts/run_experiment.py:*)",
       "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check:*)",
       "Bash(PYTHONPATH=src python src/scripts/publish_space.py --check:*)",
@@ -20,6 +15,11 @@
       "Bash(git branch --list:*)"
     ],
     "ask": [
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(.venv/bin/python -m pytest:*)",
+      "Bash(PYTHONPATH=src python src/scripts/run_experiment.py:*)",
       "Bash(git push:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py:*)",
       "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply:*)",
@@ -37,7 +37,11 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git push * --force*)",
-      "Bash(git push * -f*)"
+      "Bash(git push * -f*)",
+      "Bash(git push -uf:*)",
+      "Bash(git push -fu:*)",
+      "Bash(git push * -uf*)",
+      "Bash(git push * -fu*)"
     ]
   },
   "hooks": {

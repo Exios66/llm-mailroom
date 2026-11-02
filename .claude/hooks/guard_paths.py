@@ -36,6 +36,26 @@ RULES = [
 ]
 
 
+def _repo_relative(path: str, root: str) -> str:
+    """Return ``path`` relative to ``root`` as a normalized POSIX path.
+
+    Resolves ``.``/``..`` segments and symlinks first, so ``<root>/./data/x`` or
+    ``<root>/src/../data/x`` cannot slip past the ``^data/`` rule. A path outside
+    the root is returned normalized but absolute (only the basename rules apply).
+    """
+    path = path.replace("\\", "/")
+    root = root.replace("\\", "/")
+    full = os.path.realpath(os.path.join(root, path))
+    real_root = os.path.realpath(root)
+    try:
+        rel = os.path.relpath(full, real_root)
+    except ValueError:  # different drive on Windows
+        return full.replace("\\", "/")
+    if rel == ".." or rel.startswith("../") or rel.startswith("..\\"):
+        return full.replace("\\", "/")
+    return rel.replace("\\", "/")
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -43,10 +63,8 @@ def main() -> int:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
     except Exception:
         return 0
-    path = path.replace("\\", "/")
     root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    root = root.replace("\\", "/").rstrip("/") + "/"
-    rel = path[len(root):] if path.startswith(root) else path
+    rel = _repo_relative(path, root)
     for pattern, reason in RULES:
         if re.search(pattern, rel):
             print(f"Blocked edit to {path}: {reason}", file=sys.stderr)

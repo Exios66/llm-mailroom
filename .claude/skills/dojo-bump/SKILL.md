@@ -7,8 +7,9 @@ disable-model-invocation: true
 # dojo-bump
 
 Mailroom consumes `llm-dojo-scoring` as a **git pin in `pyproject.toml`** (a release tag
-or, while a fix is unreleased, an interim 40-hex SHA). The pin moves only at Dojo release
-time, via `src/scripts/bump_dojo_scoring.py`. **Never delete the pin line.**
+or, while a fix is unreleased, an interim 40-hex SHA). The pin moves at Dojo release
+time, or to an interim SHA before a release, always via `src/scripts/bump_dojo_scoring.py`.
+**Never delete the pin line.**
 
 ## 1. Check (read-only)
 
@@ -25,9 +26,15 @@ Stop here if the user only asked for status.
 ## 2. Bump (only when asked)
 
 ```bash
-PYTHONPATH=src .venv/bin/python src/scripts/bump_dojo_scoring.py --apply --dry-run
+PYTHONPATH=src .venv/bin/python src/scripts/bump_dojo_scoring.py --apply --dry-run [--tag vX.Y.Z]
 PYTHONPATH=src .venv/bin/python src/scripts/bump_dojo_scoring.py --apply [--tag vX.Y.Z]
 ```
+
+Pass the same `--tag` to both, so the dry run previews the target you will apply (without
+it, both use the latest GitHub release). For an **interim SHA** that no published release
+contains yet, pass the 40-hex commit as `--tag` and add `--allow-missing-release`; without
+that flag the script refuses an unreleased SHA. The flag also refuses to replace a SHA pin
+with a tag, so moving from an interim SHA to a release needs the online check (no flag).
 
 It rewrites the pin plus the documented pin references. Confirm the dry-run plan with
 the user before applying. The daily `.github/workflows/bump-dojo-scoring.yml` does the
