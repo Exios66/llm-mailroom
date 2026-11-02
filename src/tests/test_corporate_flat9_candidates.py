@@ -162,10 +162,12 @@ def test_actual_rendered_request_stays_flat9(key):
     assert user.startswith(document + "\n\nReturn ONLY a valid json object")
     schema = json.loads(user.split("JSON schema:\n", 1)[1])
     assert schema == CORPORATE_RECORDS_SCHEMA
-    assert set(schema["properties"]) == set(schema["required"]) == FLAT9
+    # The request also carries the self-reported confidence (routing metadata,
+    # not an extraction field); the extraction model stays flat-9.
+    assert set(schema["properties"]) == set(schema["required"]) == FLAT9 | {"confidence"}
     assert schema["additionalProperties"] is False
     assert _sha(json.dumps(schema, sort_keys=True, separators=(",", ":"))) == (
-        "b268b685c61466ec02d6328ffd64848011afb0c9111573bace34a47ac89c1628"
+        "4889c4cab24cd01c750e6b95ea0db5e1328882557e7ca85adef23e24a3aaefe7"
     )
     assert set(CorporateRecordExtraction.model_fields) == FLAT9
 
