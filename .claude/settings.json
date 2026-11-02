@@ -16,9 +16,11 @@
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch --show-current:*)",
+      "Bash(git branch --list:*)"
     ],
     "ask": [
+      "Bash(git push:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py:*)",
       "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply:*)",
       "Bash(docker compose:*)",
@@ -33,7 +35,9 @@
       "Bash(PYTHONPATH=src python src/scripts/sync_evaluators.py:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --real*)",
       "Bash(git push --force:*)",
-      "Bash(git push -f:*)"
+      "Bash(git push -f:*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)"
     ]
   },
   "hooks": {
