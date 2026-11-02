@@ -143,6 +143,37 @@ def test_parse_error_is_not_sent(monkeypatch):
     assert spy.calls == []
 
 
+def test_all_empty_extraction_is_not_sent(monkeypatch):
+    """Fields that are all None / empty are no extraction: skipped like guard_extraction does."""
+    monkeypatch.setattr(bg, "_extract_contracts",
+                        lambda *a, **k: {"parties": [], "governing_law": None, "confidence": 0.4})
+    spy = Spy()
+    register_extraction_gate(spy)
+    # No subclass, so contract enrichment derives no CUAD family: every field stays empty.
+    updates = bg.extract_node(_state(doc_subclass=None))
+    assert not any(v not in (None, [], {}, "") for v in updates["extracted_data"].values())
+    assert updates["extraction_gate"] == {"doc_subclass": None, "skipped": "empty_extraction"}
+    assert spy.calls == []
+
+
+@pytest.mark.parametrize("bad", [{"parties"}, float("nan"), object()])
+def test_non_json_gate_value_is_a_malformed_answer(monkeypatch, bad):
+    """A value the JSON audit column cannot hold is rejected, not silently lost on write."""
+    monkeypatch.setattr(bg, "_extract_contracts", _fake_contracts)
+    register_extraction_gate(Spy(answer={"verdict": "accept", "field_support": bad}))
+    gate = bg.extract_node(_state())["extraction_gate"]
+    assert gate["error"].startswith("malformed gate answer")
+    assert "field_support" not in gate
+
+
+def test_gate_answer_is_stored_as_json_values(monkeypatch):
+    """Tuples become lists, so state and the audit entry hold the same JSON values."""
+    monkeypatch.setattr(bg, "_extract_contracts", _fake_contracts)
+    register_extraction_gate(Spy(answer={"verdict": "accept", "field_support": {"parties": (0.9, 0.8)}}))
+    gate = bg.extract_node(_state())["extraction_gate"]
+    assert gate["field_support"] == {"parties": [0.9, 0.8]}
+
+
 def test_retry_extract_is_reviewed_too(monkeypatch):
     """retry_extract_node sends the same handoff."""
     monkeypatch.setattr(bg, "_extract_contracts", _fake_contracts)

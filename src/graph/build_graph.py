@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import json
 import math
 import re
 import structlog
@@ -1231,9 +1232,12 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
     record: dict[str, Any] = {"doc_subclass": subclass}
     if result.get("_parse_error"):
         return {**record, "skipped": "parse_error"}
-    handoff = extraction_gate_handoff(doc_type, result, record["doc_subclass"])
-    if handoff.get("available") is False:
+    # Same emptiness rule as guard_extraction: only None / empty containers is no extraction.
+    from pipeline.guards import _has_substantive_content
+
+    if not _has_substantive_content(result):
         return {**record, "skipped": "empty_extraction"}
+    handoff = extraction_gate_handoff(doc_type, result, record["doc_subclass"])
     if record["doc_subclass"] is None:
         logger.info("extraction_gate_no_subclass", doc_id=state.get("doc_id"), doc_type=doc_type)
     doc_text = state.get("doc_text") or ""
@@ -1252,6 +1256,9 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
             "field_support", "question_set", "model")
     try:
         fields = {k: answer[k] for k in keep if k in answer}
+        # The answer goes into state and the JSON ``extracted`` audit column: keep only
+        # JSON values (a set or an object would make the audit write drop the entry).
+        fields = json.loads(json.dumps(fields, allow_nan=False))
     except Exception as exc:  # noqa: BLE001 - advisory gate: fail open, record the error
         return {**record, "error": f"malformed gate answer ({type(exc).__name__})"}
     return {**record, **fields}

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - A host-registered gate reviews each extraction in `extract_node` / `retry_extract_node`.
   - The handoff carries the **sorter's** `doc_subclass` (else `contract_subtype`), never a ground-truth label, so 1.3.0+ question sets apply their per-template rules.
   - The answer is recorded on state (`extraction_gate`); from `extract_node` it is also in the `extracted` audit entry (the retry path writes no audit entry). Routing is unchanged.
+  - An extraction whose fields are all None / empty (the `guard_extraction` emptiness rule) is skipped as `empty_extraction`, not sent. Gate answer values must be JSON (`allow_nan=False`; tuples become lists); anything else is recorded as a malformed answer instead of being lost when the audit entry is written.
   - Gate calls keep their own abandoned-thread list and cap, so stalled gate calls never block the decision backend.
   - Gate failures are recorded, not raised.
   - The bounded thread runner behind the decision backend is factored out as `_run_bounded` and shared by both.
