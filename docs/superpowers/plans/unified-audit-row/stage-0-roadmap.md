@@ -31,9 +31,9 @@
 **Spec:** §9
 **Depends:** none
 
-- [ ] **Step 1: Merge PR #113** (owner action) after CI is green.
-- [ ] **Step 2: Move the `[Unreleased]` entries into `[0.26.0]`** in `CHANGELOG.md` on `main` with today's date, then `python scripts/release.py check`. Expected: `OK`.
-- [ ] **Step 3: Publish** with `python scripts/release.py publish 0.26.0` from the merge commit (dry run, then `--apply`). The commit `2fea5ea` is refused because its uv.lock is stale, which is expected.
+- [x] **Step 1: Merge PR #113** (owner action) after CI is green. (merged 2026-11-03, `f18a554`)
+- [x] **Step 2: Move the `[Unreleased]` entries into `[0.26.0]`** in `CHANGELOG.md` on `main` with today's date, then `python scripts/release.py check`. Expected: `OK`. Ruling: not moved. v0.26.0 was already tagged at `2fea5ea` before #113 merged, so the `[Unreleased]` entries ship in 0.27.0.
+- [x] **Step 3: Publish** with `python scripts/release.py publish 0.26.0` from the merge commit (dry run, then `--apply`). The commit `2fea5ea` is refused because its uv.lock is stale, which is expected. (already published 2026-11-03 02:24 at `2fea5ea`; the tag stays)
 
 ### Task R1: Roadmap tracker and #150 sync
 

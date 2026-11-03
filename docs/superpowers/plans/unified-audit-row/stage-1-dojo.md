@@ -41,11 +41,11 @@
 - Create: `tests/fixtures/doc_scorers/goldens.json`. It holds `{"sandbox_commit": ..., "cases": {case_id: {"payload": score_extraction_row(...), "adherence": assess_extraction_payload(...)}}}`.
 - Create: `tests/test_doc_scorer_fixtures.py`.
 
-- [ ] **Step 1: Write `test_inputs_cover_every_type_and_subclass`.** For every type in `CORPUS_DOC_TYPES`, every key in `DOC_TYPE_SUBCLASSES[type]` and every value in `CORPUS_SUBCLASS_SURFACES[type]` appears in at least one case. The test also requires at least one case each for: MAUD labels, CUAD labels, no ground truth, a prose payload, a `None` payload, a CMS insurance row without `cms_source_table`, and a corporate row with no subclass.
-- [ ] **Step 2: Run it.** Expected: FAIL (no fixture).
-- [ ] **Step 3: Write the inputs and the capture script.** The script loads the sandbox's `mailroom_sandbox.eval.scoring.score_extraction_row` and `mailroom_sandbox.eval.schema_adherence.assess_extraction_payload`. It records `git -C <sandbox> rev-parse HEAD`, the dojo version actually imported, and the per-case pydantic verdict (`typed_valid`), and it writes JSON with `sort_keys=True`. Load it in tests via `tests/conftest.py:load_script`.
-- [ ] **Step 4: Capture** with the sandbox at its current `main`, but with this dojo checkout at the v0.26.0 tag installed over its vendored 0.25.0 (`pip install -e <dojo>` into the sandbox venv; review item A15). That way the goldens hold the sandbox's logic on today's dojo internals. Then run the fixture test. Expected: PASS. Also add `test_goldens_match_inputs`, which checks that every case has a golden and that `dojo_version == "0.26.0"`.
-- [ ] **Step 5: Commit** (`test: golden inputs and sandbox goldens for doc scorers`).
+- [x] **Step 1: Write `test_inputs_cover_every_type_and_subclass`.** For every type in `CORPUS_DOC_TYPES`, every key in `DOC_TYPE_SUBCLASSES[type]` and every value in `CORPUS_SUBCLASS_SURFACES[type]` appears in at least one case. The test also requires at least one case each for: MAUD labels, CUAD labels, no ground truth, a prose payload, a `None` payload, a CMS insurance row without `cms_source_table`, and a corporate row with no subclass.
+- [x] **Step 2: Run it.** Expected: FAIL (no fixture).
+- [x] **Step 3: Write the inputs and the capture script.** The script loads the sandbox's `mailroom_sandbox.eval.scoring.score_extraction_row` and `mailroom_sandbox.eval.schema_adherence.assess_extraction_payload`. It records `git -C <sandbox> rev-parse HEAD`, the dojo version actually imported, and the per-case pydantic verdict (`typed_valid`), and it writes JSON with `sort_keys=True`. Load it in tests via `tests/conftest.py:load_script`.
+- [x] **Step 4: Capture** with the sandbox at its current `main`, but with this dojo checkout at the v0.26.0 tag installed over its vendored 0.25.0 (`pip install -e <dojo>` into the sandbox venv; review item A15). That way the goldens hold the sandbox's logic on today's dojo internals. Then run the fixture test. Expected: PASS. Also add `test_goldens_match_inputs`, which checks that every case has a golden and that `dojo_version == "0.26.0"`.
+- [x] **Step 5: Commit** (`test: golden inputs and sandbox goldens for doc scorers`). (Exios66/llm-dojo-scoring#116, `0a7d14d`, `e72033b`)
 
 ### Task D2: `assess_extraction_payload` in the dojo
 
@@ -60,11 +60,11 @@
 **Interfaces:**
 - Produces: `assess_extraction_payload(predicted: Any, doc_type: str, doc_subclass: str | None = None, *, schema_lookup: Callable[[str, str | None], type | None] | None = None) -> dict`. It returns exactly the keys `parse_error`, `schema_valid`, `schema_adherence`, `parse_failure_reason`, `extra_schema_keys`, `legacy_schema_keys`, `prose_wrapper`, `recovered_from_raw`. With no `schema_lookup`, `schema_valid` uses the structural fallback already in `assess_extraction_facts`. Corporate subclasses use `corporate_record_schema.entity_field_types` as today.
 
-- [ ] **Step 1: Write `test_adherence_matches_goldens`.** For every case it calls the function with `GoldenSchemaLookup`, a test stub that returns a model whose `model_validate` replays the case's recorded `typed_valid`, so the dojo tests never import mailroom (review item A16). The result must equal the golden `adherence`. Also add `test_adherence_without_lookup_never_raises`, which covers prose, `None`, a list and a JSON string.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Move the code.** The sandbox's direct `from schemas.documents import get_extraction_schema` becomes the `schema_lookup` call.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full gate.
-- [ ] **Step 5: Commit.**
+- [x] **Step 1: Write `test_adherence_matches_goldens`.** For every case it calls the function with `GoldenSchemaLookup`, a test stub that returns a model whose `model_validate` replays the case's recorded `typed_valid`, so the dojo tests never import mailroom (review item A16). The result must equal the golden `adherence`. Also add `test_adherence_without_lookup_never_raises`, which covers prose, `None`, a list and a JSON string.
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Move the code.** The sandbox's direct `from schemas.documents import get_extraction_schema` becomes the `schema_lookup` call.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full gate.
+- [x] **Step 5: Commit.** (Exios66/llm-dojo-scoring#116, `ba5f2a0`)
 
 ### Task D3: Tier 0 common scorer and extraction scoping
 
