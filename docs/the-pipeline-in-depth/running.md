@@ -22,7 +22,7 @@ cp .env.example .env              # add OPENROUTER_API_KEY for real runs
 pip install -e ".[dev]"
 ```
 
-The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@feec7ce80aebf9b4e9f675f66ed449d9e563ad01`), so `pip` needs `git` and network access on first install.
+The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@a82843e808336e0078c7d5b27dcdb3ff8b698170`), so `pip` needs `git` and network access on first install.
 
 ### Optional extras
 
