@@ -190,7 +190,7 @@
 **Spec:** §9
 **Depends:** D7
 
-- [ ] **Step 1: Run** `python scripts/release.py cut 0.27.0` (dry run), then `--apply`, then `uv lock`. Expected: `release.py check` prints OK. Before the cut, check that `docs/guides/PUBLIC_API.md` states the shipped signatures of `score_document`, `assess_extraction_payload(..., schema_lookup=)` and `score_archive_block(..., doc_subclass=)` (gap G11).
-- [ ] **Step 2: Open the PR** (owner asks) and get it merged.
-- [ ] **Step 3: Publish** with `python scripts/release.py publish 0.27.0` from the merge commit. The release fires `repository_dispatch: dojo-scoring-released` to llm-mailroom.
-- [ ] **Step 4: Tick D1–D8 here** in a follow-up PR that links the merged PRs.
+- [x] **Step 1: Run** `python scripts/release.py cut 0.27.0` (dry run), then `--apply`, then `uv lock`. Expected: `release.py check` prints OK. Before the cut, check that `docs/guides/PUBLIC_API.md` states the shipped signatures of `score_document`, `assess_extraction_payload(..., schema_lookup=)` and `score_archive_block(..., doc_subclass=)` (gap G11).
+- [x] **Step 2: Open the PR** (owner asks) and get it merged.
+- [x] **Step 3: Publish** with `python scripts/release.py publish 0.27.0` from the merge commit. The release fires `repository_dispatch: dojo-scoring-released` to llm-mailroom.
+- [x] **Step 4: Tick D1–D8 here** in a follow-up PR that links the merged PRs. Released: llm-dojo-scoring#116 merged as feec7ce; v0.27.0 published 2026-11-03 (tag 43663b8).
