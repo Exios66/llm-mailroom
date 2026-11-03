@@ -15,10 +15,15 @@ steps. `src/scripts/roadmap_status.py` reads them and does three things:
   or when a task is ticked done before a task it depends on;
 - renders the body of #150 (`--issue-body`).
 
-`.github/workflows/roadmap-sync.yml` runs `--check` on every pull request that touches the
-spec or plans. On a push to `main` that touches the spec, the plans or
-`src/scripts/roadmap_status.py`, it rewrites #150 from `--issue-body`. Progress is
-recorded by ticking steps in these files in the same PR that lands the work. Work in
+**This repository does not use GitHub Actions** (CI is CircleCI). The roadmap check runs in
+CircleCI as part of the suite: `src/tests/test_roadmap_status.py::test_repo_roadmap_is_consistent`
+fails when the plans or the status table are inconsistent. The #150 body is refreshed by hand:
+
+1. After ticking steps, run `python src/scripts/roadmap_status.py --write` and then
+   `--check` (prints `roadmap: OK`), and commit the regenerated table with the ticks.
+2. Paste the output of `--issue-body` into #150 (keep its "Current state" bullets current).
+
+Progress is recorded by ticking steps in these files in the same PR that lands the work. Work in
 another repository (dojo, sandbox, hub) is ticked here in a small follow-up PR that links
 the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring#120)`).
 
@@ -47,12 +52,12 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**11/33 tasks done.**
+**12/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
 | 0 | R0 | Merge PR #113 and publish v0.26.0 | llm-dojo-scoring | 3/3 | done |
-| 0 | R1 | Roadmap tracker and #150 sync | llm-mailroom | 6/7 | in progress |
+| 0 | R1 | Roadmap tracker and #150 sync | llm-mailroom | 7/7 | done |
 | 1 | D1 | Golden inputs and sandbox goldens | llm-dojo-scoring | 5/5 | done |
 | 1 | D2 | `assess_extraction_payload` in the dojo | llm-dojo-scoring | 5/5 | done |
 | 1 | D3 | Tier 0 common scorer and extraction scoping | llm-dojo-scoring | 5/5 | done |
