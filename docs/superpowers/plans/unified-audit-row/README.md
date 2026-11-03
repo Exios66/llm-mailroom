@@ -46,7 +46,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**7/32 tasks done.**
+**8/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -58,9 +58,9 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 1 | D4 | `DocScorer` protocol, registry and `generic` | llm-dojo-scoring | 5/5 | done |
 | 1 | D5 | Type modules for contract and merger (benchmark headlines) | llm-dojo-scoring | 5/5 | done |
 | 1 | D6 | Type modules for corporate record, correspondence and insurance claim | llm-dojo-scoring | 5/5 | done |
-| 1 | D7 | `score_document` dispatcher and wider `score_archive_block` | llm-dojo-scoring | 0/5 | ready |
-| 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 0/4 | blocked |
-| 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 0/3 | blocked |
+| 1 | D7 | `score_document` dispatcher and wider `score_archive_block` | llm-dojo-scoring | 5/5 | done |
+| 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 0/4 | ready |
+| 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 0/4 | blocked |
 | 2 | M2 | Audit tables and migration | llm-mailroom | 0/5 | blocked |
 | 2 | M3 | Row and addendum writers | llm-mailroom | 0/5 | blocked |
 | 2 | M4 | Verification | llm-mailroom | 0/5 | blocked |
@@ -73,6 +73,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 2 | M11 | Readers and `audit_row_metrics` | llm-mailroom | 0/5 | blocked |
 | 2 | M12 | Warehouse, `audit-report` and Langfuse scores | llm-mailroom | 0/5 | blocked |
 | 2 | M14 | Rescore CLI | llm-mailroom | 0/5 | blocked |
+| 2 | M15 | One scoring path (retire the legacy scorers) | llm-mailroom | 0/5 | blocked |
 | 2 | M13 | Docs and branch gate | llm-mailroom | 0/3 | blocked |
 | 3 | S0 | Capture sandbox output goldens | local-mailroom-sandbox | 0/3 | ready |
 | 3 | S1 | Vendor refresh and thin wrapper | local-mailroom-sandbox | 0/5 | blocked |
@@ -83,6 +84,28 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 4 | F2 | eval-environment alignment | eval-environment | 0/2 | blocked |
 | 4 | F3 | Issue close-out | mailroom-issues | 0/3 | blocked |
 <!-- roadmap:status:end -->
+
+## Cross-repo gap audit (2026-11-03)
+
+After D6 the owner asked that the dojo, the mailroom pipeline and the sandbox all run on
+the same specs. A read-only recon of all three found these gaps; each is now folded into
+a task.
+
+| # | Gap | Folded into |
+|---|---|---|
+| G1 | The mailroom pins dojo 0.25.0 (`e35504db`), so the jump to 0.27.0 also brings 0.26.0's behaviour changes | M1 step 2 (diff and record moved scores) |
+| G2 | The mailroom's vendored fallback snapshot is 0.25.0 | M1 step 2b |
+| G3 | `extraction_gt.py` drops raw `cuad_clause_labels`, so the CUAD headline never fires in the mailroom | M6 files and `test_benchmark_rows_get_headline` |
+| G4 | Three legacy scoring paths would disagree with the row | new task M15 |
+| G5 | Scoring calls pass no `doc_subclass` | M6 `test_doc_subclass_from_final_state` |
+| G6 | Two definitions of `schema_valid` (bool vs fraction) | M7 `audit-row-schema.md` |
+| G7 | S1 said `merge_schema_adherence` and `classify_floor_mode` stay in the sandbox; the dojo already has them | S1 files |
+| G8 | S1 left out files that must move in lockstep (`requirements/dojo-release.txt`, vendor READMEs, CHANGELOG) | S1 files and step 1 |
+| G9 | The sandbox's vendored mailroom declares dojo 0.25.0 while the sandbox vendors 0.26.0 | S1 step 1 |
+| G10 | Fallback labels must survive the wrapper | S1 step 2 (dojo tier 0 already keeps them; add goldens) |
+| G11 | Public signatures must be confirmed before the cut | D8 step 1 (documented in D7) |
+| G12 | Duplicated wilson/bootstrap helpers in the sandbox (low priority) | deferred; not in this roadmap |
+
 
 ## Adversarial review (2026-11-03)
 
