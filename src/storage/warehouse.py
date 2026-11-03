@@ -101,7 +101,7 @@ def warehouse_export_enabled() -> bool:
         return False
     if raw in ("1", "true", "yes", "on", "enabled"):
         return True
-    # auto: enabled when pyarrow is importable (pulled in by arize-phoenix)
+    # auto: enabled when pyarrow is importable
     try:
         import pyarrow  # noqa: F401
 
@@ -238,7 +238,7 @@ def _require_pyarrow():
     except ImportError as exc:
         raise RuntimeError(
             "pyarrow is required for warehouse export (install mailroom with "
-            "arize-phoenix or pip install pyarrow)"
+            "pyarrow)"
         ) from exc
     return pa, pq
 
