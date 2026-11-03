@@ -40,6 +40,22 @@ the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring
   Closed out: stage 0 → #151 (merged), stage 1 → Exios66/llm-dojo-scoring#116 and #118 (merged),
   M1 → #157 (merged), S0 → Exios66/local-mailroom-sandbox#240.
 
+- **Per-repo trackers.** Every repository in the roadmap has an issue that mirrors its slice,
+  so an agent working there sees current progress without opening llm-mailroom:
+
+  | Repo | Tracker | Tasks | llm-mailroom brief |
+  |---|---|---|---|
+  | llm-dojo-scoring | Exios66/llm-dojo-scoring#120 | R0, D1–D8 (done) | — |
+  | local-mailroom-sandbox | Exios66/local-mailroom-sandbox#241 | S0 (done), S1, S2 | #152 |
+  | Digital-Mailroom (hub) | LLM-Mailroom-Services/Digital-Mailroom#222 | H1, H2 | #153 |
+  | The-Mailroom | Exios66/The-Mailroom#60 | F1 | #154 |
+  | eval-environment | LLM-Mailroom-Services/eval-environment#105 | F2 | #155 |
+  | mailroom-issues | LLM-Mailroom-Services/mailroom-issues#249 | F3 | #156 |
+
+  At every checkpoint, update #150 **and** the tracker of each repo whose tasks moved (its
+  checklist and its "Current state" line). When a stage merges, refresh the "Current state"
+  line on every tracker it unblocks.
+
 ## Current state (handoff, 2026-11-03)
 
 Read this first if you are picking the work up.
