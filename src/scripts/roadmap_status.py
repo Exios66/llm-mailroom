@@ -39,6 +39,7 @@ _FIELD = re.compile(r"^\*\*(Repo|Spec|Depends):\*\*\s*(.*)$")
 _STEP = re.compile(r"^- \[( |x|X)\] ")
 _SECTION_REF = re.compile(r"§(\d+(?:\.\d+)*)")
 _TASK_REF = re.compile(r"\b([A-Z]\d+)\b")
+_DEPENDS_VALUE = re.compile(r"^(none|[A-Z]\d+(?:, *[A-Z]\d+)*)$")
 _HEADING = re.compile(r"^#{2,6} (\d+(?:\.\d+)*)\.?\s")
 _STAGE_FILE = re.compile(r"^stage-(\d+)-.*\.md$")
 
@@ -98,6 +99,10 @@ def _parse_file(path: Path, stage: int) -> list[Task]:
             elif key == "Spec":
                 current["spec"] = tuple(_SECTION_REF.findall(value))
             else:
+                if not _DEPENDS_VALUE.match(value.strip()):
+                    raise PlanError(
+                        f"{path.name}:{lineno}: **Depends:** must be 'none' or task IDs such as 'D1, D2'"
+                    )
                 current["has_depends"] = True
                 current["depends"] = tuple(_TASK_REF.findall(value))
             continue

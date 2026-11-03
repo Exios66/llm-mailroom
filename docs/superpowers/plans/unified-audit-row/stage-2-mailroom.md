@@ -90,7 +90,7 @@
   - `async def write_terminal_row(row: TerminalRow) -> WriteResult` (`entry_id`, `entry_hash`, `kind: "row" | "addendum"`).
   - `async def write_addendum(add: Addendum) -> WriteResult`.
   - `async def get_row(doc_id) -> dict | None`.
-  - `EVENTS = ("archived", "failed", "triage_archived", "triage_reviewed")` and `ADDENDUM_KINDS = ("rescore", "resumed", "review_decision", "relations_linked")`.
+  - `EVENTS = ("archived", "failed", "triage_archived", "triage_reviewed")` and `ADDENDUM_KINDS = ("rescore", "resumed", "review_decision", "relations_linked", "recovered_detail")`.
 
 - [ ] **Step 1: Write the tests.**
   - `test_row_hash_matches_dojo_format_audit_entry`: compare against `llm_dojo_scoring.format_audit_entry` on the same inputs.
@@ -310,7 +310,7 @@
 
 **Files:**
 - Modify: `src/audit/writer.py`, adding the retry and pending capture
-- Modify: `src/schemas/manifest.py`. `audit_written` can now be `true`, `false` or `"pending"`, and the manifest gains `audit_pending_refs`.
+- Modify: `src/schemas/manifest.py`. `audit_written` can now be `true`, `false`, `"pending"` or `"pending_partial"`, and the manifest gains `audit_pending_refs`.
 - Create: `src/scripts/audit_reconcile.py`
 - Test: `src/tests/test_audit_fallback.py`
 
@@ -325,6 +325,7 @@
   - `test_reconcile_dedupes_across_sinks`.
   - `test_reconcile_rejects_hash_mismatch`.
   - `test_reconcile_skips_doc_with_row`.
+  - `test_complete_copy_after_partial_row_becomes_addendum`: a first reconcile reaches only a decisions-only copy and writes a partial row; a later reconcile finds the complete copy whose SHA-256 equals `recovered_from.full_detail_sha256`, leaves the row untouched, writes one `recovered_detail` addendum chained to the document's last entry, and logs `audit_gap_closed`. A third run writes nothing more, and a complete copy with a different hash is refused.
   - `test_no_sink_accepts_logs_audit_gap`.
   - `test_ephemeral_spool_warning` (review item A6).
   - `test_migration_pending_takes_fallback`: `AuditMigrationPending` from the writer is handled like a failed commit; the record is parked and `audit-reconcile` writes it after the migration (spec §6).
