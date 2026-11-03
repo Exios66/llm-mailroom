@@ -204,10 +204,11 @@ Sub-rows are written in the same transaction as their parent. The parent's
 ### 4.3 `audit_addenda`: after the row
 
 `addendum_id`, `doc_id` (must have a row), `kind` (`rescore`, `resumed`, `review_decision`,
-`relations_linked`), `seq` (per document), `actor`, `timestamp`, `detail`, `prev_hash`,
+`relations_linked`, `recovered_detail`), `seq` (per document), `actor`, `timestamp`, `detail`, `prev_hash`,
 `entry_hash`. The first addendum links to the row's `entry_hash`; each later one to the
 previous addendum. A `rescore` carries a new `scoring` block; a `resumed` addendum carries its
-own `trace`, `scoring`, outcome and sub-rows.
+own `trace`, `scoring`, outcome and sub-rows. A `recovered_detail` addendum carries the complete
+record recovered after a decisions-only row (§5.6 step 3).
 
 Events that happen before the document has a row (a `record` or `requeue` decision on a
 parked document, an early relation link) are not addenda: they are visits in the
@@ -338,7 +339,13 @@ After 3 failed attempts to commit the row:
 3. `audit-reconcile` (mailroom script; also exposed by the sandbox CLI) reads all sinks,
    deduplicates by `doc_id` and `detail_sha256`, refuses anything whose hash does not match,
    and writes each as a normal row with `detail.recovered_from` =
-   `{sink, ref, captured_at, detail_sha256}`. It skips documents that already have a row.
+   `{sink, ref, captured_at, detail_sha256}`. It skips documents that already have a row,
+   with one exception: when that row has `recovered_from.complete = false` and a sink now
+   returns a complete copy whose SHA-256 equals the row's `recovered_from.full_detail_sha256`,
+   reconcile leaves the row unchanged (rows are immutable, §4.1) and writes one
+   `recovered_detail` addendum carrying the complete `detail` and sub-rows, chained like any
+   addendum, and logs `audit_gap_closed`. A document that already has a `recovered_detail`
+   addendum is skipped.
    It always prefers a complete copy. When only a decisions-only copy exists, the full
    record cannot be rebuilt: reconcile writes the decisions-only record as the row, with
    `recovered_from.complete = false` and `recovered_from.full_detail_sha256`, and logs

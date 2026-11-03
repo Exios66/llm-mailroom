@@ -16,7 +16,8 @@ steps. `src/scripts/roadmap_status.py` reads them and does three things:
 - renders the body of #150 (`--issue-body`).
 
 `.github/workflows/roadmap-sync.yml` runs `--check` on every pull request that touches the
-spec or plans, and on every push to `main` rewrites #150 from `--issue-body`. Progress is
+spec or plans. On a push to `main` that touches the spec, the plans or
+`src/scripts/roadmap_status.py`, it rewrites #150 from `--issue-body`. Progress is
 recorded by ticking steps in these files in the same PR that lands the work. Work in
 another repository (dojo, sandbox, hub) is ticked here in a small follow-up PR that links
 the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring#120)`).

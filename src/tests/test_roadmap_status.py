@@ -152,6 +152,14 @@ def test_missing_depends_line(tmp_path):
     assert any("D2" in e and "Depends" in e for e in R.check(plans, spec))
 
 
+@pytest.mark.parametrize("value", ["D-1", "", "see D1 notes", "D1 and D2"])
+def test_malformed_depends_value_is_an_error(tmp_path, value):
+    """A **Depends:** value must be 'none' or task IDs; a typo must not drop the dependency."""
+    plans, _ = _tree(tmp_path, STAGE1.replace("**Depends:** D1\n", f"**Depends:** {value}\n"))
+    with pytest.raises(R.PlanError, match="Depends"):
+        R.parse_plans(plans)
+
+
 def test_misnamed_stage_file_is_an_error(tmp_path):
     """A stage-*.md file the parser cannot number is reported, never skipped."""
     plans, _ = _tree(tmp_path)
