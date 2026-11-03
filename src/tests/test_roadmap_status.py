@@ -143,3 +143,44 @@ def test_issue_body_links_and_limit(tmp_path):
 def test_repo_roadmap_is_consistent():
     """The real plans and spec in this repository pass the check."""
     assert R.check(R.PLAN_DIR, R.SPEC_PATH) == []
+
+
+def test_missing_depends_line(tmp_path):
+    """A task without a **Depends:** line is an error, not silently dependency-free."""
+    plans, spec = _tree(tmp_path, STAGE1.replace("**Depends:** D1\n", ""))
+    R.write_status(plans)
+    assert any("D2" in e and "Depends" in e for e in R.check(plans, spec))
+
+
+def test_misnamed_stage_file_is_an_error(tmp_path):
+    """A stage-*.md file the parser cannot number is reported, never skipped."""
+    plans, _ = _tree(tmp_path)
+    (plans / "stage-5.md").write_text(STAGE1.replace("D1", "E1").replace("D2", "E2"))
+    with pytest.raises(R.PlanError, match="stage-5.md"):
+        R.parse_plans(plans)
+
+
+def test_spec_sections_any_depth(tmp_path):
+    _, spec = _tree(tmp_path, spec=SPEC + "#### 3.1.2 Deep\n")
+    assert "3.1.2" in R.spec_sections(spec)
+
+
+def test_deep_section_reference_parses(tmp_path):
+    plans, spec = _tree(tmp_path, STAGE1.replace("**Spec:** §3, §3.1", "**Spec:** §3, §3.1, §3.1.2"),
+                        spec=SPEC + "#### 3.1.2 Deep\n")
+    assert R.parse_plans(plans)[0].spec == ("3", "3.1", "3.1.2")
+    R.write_status(plans)
+    assert R.check(plans, spec) == []
+
+
+def test_status_table_escapes_pipes(tmp_path):
+    plans, _ = _tree(tmp_path, STAGE1.replace("### Task D1: First", "### Task D1: a | b"))
+    assert "| 1 | D1 | a \\| b | llm-dojo-scoring |" in R.render_status(R.parse_plans(plans))
+
+
+def test_progress_before_dependency(tmp_path):
+    """Ticking any step of a task whose dependency is incomplete is an error."""
+    text = STAGE1.replace("- [x] **Step 2: b**", "- [ ] **Step 2: b**", 1)  # D1 1/2, D2 1/2
+    plans, spec = _tree(tmp_path, text)
+    R.write_status(plans)
+    assert any("D2" in e and "D1" in e and "before" in e for e in R.check(plans, spec))
