@@ -196,11 +196,28 @@ def test_cut_warns_about_mentions_it_does_not_move(repo, capsys):
 
 @pytest.mark.parametrize(
     "version,match",
-    [("0.1.1", "tag v0.1.1 already exists"), ("0.0.9", "must be greater"), ("0.1.0", "already has"), ("1.0", "not semver")],
+    [
+        ("0.1.1", "tag v0.1.1 already exists"),
+        ("0.0.9", "must be greater"),
+        ("0.1.0", "already has"),
+        ("1.0", "not semver"),
+        ("01.2.3", "not semver"),
+        ("1.02.3", "not semver"),
+        ("1.2.03", "not semver"),
+        ("1.2.3-rc1", "not semver"),
+    ],
 )
 def test_cut_refuses_bad_versions(repo, capsys, version, match):
     assert cut(version) == 1
     assert match in capsys.readouterr().err
+
+
+def test_semver_rejects_leading_zeros_and_ignores_such_tags(repo):
+    assert R.parse_semver("v1.2.3") == (1, 2, 3) and R.parse_semver("0.0.0") == (0, 0, 0)
+    for bad in ("01.2.3", "v1.02.3", "1.2.03", "1.2", "1.2.3-rc1"):
+        assert R.parse_semver(bad) is None, bad
+    _git(repo, "tag", "v01.0.0")
+    assert [t["tag"] for t in R.list_version_tags()] == ["v0.1.1"]
 
 
 def test_cut_refuses_version_below_newest_tag(repo, capsys):
@@ -222,9 +239,50 @@ def test_cut_refuses_dirty_tree_and_empty_unreleased(repo, capsys):
     assert "## [v0.2.0] - 2026-02-03\n\n## [v0.1.1]" in (repo / "CHANGELOG.md").read_text()
 
 
-def test_cut_refuses_bad_date(repo, capsys):
-    assert R.main(["cut", "0.2.0", "--date", "yesterday"]) == 1
+@pytest.mark.parametrize("date", ["yesterday", "20261024", "2026-1-5", "2026-13-01", "2026-02-30", "2026-02-03T00:00"])
+def test_cut_refuses_anything_but_strict_yyyy_mm_dd(repo, capsys, date):
+    before = snapshot(repo)
+    assert R.main(["cut", "0.2.0", "--date", date, "--apply"]) == 1
     assert "YYYY-MM-DD" in capsys.readouterr().err
+    assert snapshot(repo) == before
+
+
+def test_cut_dry_run_preflights_the_gitbook_sync(repo, capsys):
+    (repo / R.SYNC_SCRIPT).write_text("import sys\nsys.exit('cannot parse')\n")
+    _git(repo, "commit", "-qam", "break sync")
+    before = snapshot(repo)
+    assert cut("0.2.0") == 1  # dry run already refuses
+    assert "GitBook" in capsys.readouterr().err
+    assert snapshot(repo) == before
+
+
+def test_cut_apply_restores_every_file_when_the_sync_fails_late(repo, monkeypatch, capsys):
+    before = snapshot(repo)
+    real = R.run_sync
+    monkeypatch.setattr(
+        R, "run_sync",
+        lambda *, check: real(check=check) if check else subprocess.CompletedProcess([], 1, "", "boom"),
+    )
+    assert cut("0.2.0", "--apply") == 1
+    err = capsys.readouterr().err
+    assert "boom" in err and "restored" in err
+    assert snapshot(repo) == before
+
+
+def test_cut_apply_restores_files_when_a_write_fails_midway(repo, monkeypatch, capsys):
+    before = snapshot(repo)
+    real_write = Path.write_text
+
+    def flaky(self, data, *a, **kw):
+        if self.name == "index.html":
+            raise OSError("disk full")
+        return real_write(self, data, *a, **kw)
+
+    monkeypatch.setattr(Path, "write_text", flaky)
+    assert cut("0.2.0", "--apply") == 1
+    monkeypatch.setattr(Path, "write_text", real_write)
+    assert "disk full" in capsys.readouterr().err
+    assert snapshot(repo) == before
 
 
 def test_cut_is_all_or_nothing_when_a_location_cannot_be_moved(repo, capsys):
@@ -275,6 +333,7 @@ def released(repo, monkeypatch):
     cut("0.2.0", "--apply")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "release 0.2.0")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")  # the release commit is "merged"
     calls: list[list[str]] = []
     monkeypatch.setattr(R, "remote_tag_commit", lambda tag: None)
     monkeypatch.setattr(R, "remote_release", lambda tag: None)
@@ -345,6 +404,49 @@ def test_publish_refusals(released, monkeypatch, capsys):
     assert any("local tag v0.2.0 points at" in e for e in plan()["errors"])
     assert R.main(["publish", "0.2.0", "--apply"]) == 1  # errors block apply
     assert R.main(["publish", "0.3.0"]) == 1  # no section for it
+
+
+def _unmerge(repo: Path) -> None:
+    """Move origin/main back so the release commit is only on a local branch."""
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD~1")
+
+
+def test_publish_dry_run_only_warns_about_an_unmerged_commit(released, capsys):
+    repo, _ = released
+    _unmerge(repo)
+    assert R.main(["publish", "0.2.0", "--json"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["errors"] == [] and any("not on origin/main" in w for w in plan["warnings"])
+
+
+def test_publish_apply_refuses_an_unmerged_commit_unless_overridden(released, capsys):
+    repo, calls = released
+    _unmerge(repo)
+    for extra in ([], ["--push"]):
+        assert R.main(["publish", "0.2.0", "--apply", *extra]) == 1
+        assert "not on origin/main" in capsys.readouterr().out
+    assert _git(repo, "tag", "--list", "v0.2.0") == "" and calls == []
+    assert R.main(["publish", "0.2.0", "--apply", "--allow-unmerged"]) == 0
+    assert _git(repo, "tag", "--list", "v0.2.0").strip() == "v0.2.0"
+
+
+def test_publish_apply_fails_closed_when_origin_main_is_unknown(released, capsys):
+    repo, _ = released
+    _git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+    assert R.main(["publish", "0.2.0", "--apply"]) == 1
+    assert "git fetch" in capsys.readouterr().out
+    assert R.main(["publish", "0.2.0"]) == 0  # dry run still only warns
+
+
+def test_remote_release_only_treats_release_not_found_as_absent(monkeypatch):
+    def fake(stderr, rc=1):
+        return lambda cmd, *, check=True: subprocess.CompletedProcess(cmd, rc, "", stderr)
+
+    monkeypatch.setattr(R, "run", fake("release not found"))
+    assert R.remote_release("v1.0.0") is None
+    monkeypatch.setattr(R, "run", fake("HTTP 404: Not Found (repository)"))
+    with pytest.raises(R.ReleaseError):
+        R.remote_release("v1.0.0")
 
 
 def test_publish_chain_errors_block_head_but_only_warn_for_older_commits(released, capsys):
