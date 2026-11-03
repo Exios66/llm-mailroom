@@ -13,7 +13,7 @@ Design / alignment
   The provider emits spans over OTLP HTTP to ``PHOENIX_ENDPOINT`` (default
   ``http://localhost:6006/v1/traces``).
 - ``instrument_openai_client`` uses the OpenInference ``OpenAIInstrumentor``
-  (part of the arize-phoenix dependency set) so every LLM call lands as a
+  so every LLM call lands as a
   nested span with model, token usage, latency and response — identical to
   what the Langfuse backend captures, but stored locally for free.
 - The node-level structured spans (``pipeline_trace`` / ``observation``)
