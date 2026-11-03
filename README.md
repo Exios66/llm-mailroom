@@ -12,7 +12,7 @@
 [![SQLite first](https://img.shields.io/badge/storage-SQLite_first-6C63FF?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
-[![Release](https://img.shields.io/badge/release-v0.8.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
+[![Release](https://img.shields.io/badge/release-v0.9.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1)
 [![Dojo](https://img.shields.io/badge/dojo-a82843e-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/a82843e808336e0078c7d5b27dcdb3ff8b698170)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
@@ -72,7 +72,7 @@ imports committed revisions, the [sandbox](https://github.com/Exios66/local-mail
 executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
-[`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1). The
+[`v0.9.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1). The
 dependency badge reflects this checkout's Dojo pin, **e35504d** (the Dojo v0.25.0 release merge commit).
 
 <details>
