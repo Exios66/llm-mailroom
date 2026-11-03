@@ -1,7 +1,8 @@
 # Unified audit row: one hash-chained row per document
 
 - **Date:** 2026-11-03
-- **Status:** design approved in conversation; spec awaiting review
+- **Status:** approved; revision 2 (2026-11-03) folds in the plan's adversarial review
+  (`docs/superpowers/plans/unified-audit-row/README.md`, items A1-A6)
 - **Issues:** LLM-Mailroom-Services/mailroom-issues #236, #237, #238, #239 (this spec),
   #240 and #241 (hub follow-ups that depend on it), #235 (field maps, already met)
 - **Repos touched:** `llm-dojo-scoring` (scoring), `llm-mailroom` (pipeline, audit, API),
@@ -67,11 +68,13 @@ the scoping. The sandbox path is the most complete.
   `schema_adherence`, `parse_failure_reason`, `extra_schema_keys`, `legacy_schema_keys`,
   `prose_wrapper`, `recovered_from_raw`. Pydantic models are passed in by the caller
   (`schema_lookup=`), so the dojo does not import mailroom.
-- `score_archive_block(...)` gains keyword-only `doc_subclass=` and `doc_text=` and builds its
-  block from `score_document`. Existing keys keep their meaning, including `status` /
-  `reason` (`unscorable` / `gt_missing` with no ground truth) and the dojo's `schema_valid`
-  (every live-map key present). New keys: `scoring_method`, `suite_overall_extraction_score`,
-  `unlabeled_fields`, `entity_list_f1`, MAUD/CUAD fields when present.
+- `score_archive_block(...)` gains keyword-only `doc_subclass=` (it already takes `doc_text=`
+  and `expected_subclass=`) and builds its block from `score_document`. Existing keys keep
+  their meaning: `overall_score` stays the field-map mean, `method` still carries `+maud` /
+  `+cuad`, and `status` / `reason` (`unscorable` / `gt_missing` with no ground truth),
+  `schema_valid` (every live-map key present) and `trace` (trace knobs) are unchanged. New
+  keys: `headline_score` and `headline_metric` (the MAUD/CUAD number when a type sets a
+  headline, else null), `unlabeled_fields`, `entity_list_f1`, `scorer`.
 
 The sandbox's `score_extraction_row` becomes a thin wrapper over `score_document`. A golden
 test on recorded sandbox rows proves its output is byte-identical.
@@ -199,6 +202,10 @@ Sub-rows are written in the same transaction as their parent. The parent's
 previous addendum. A `rescore` carries a new `scoring` block; a `resumed` addendum carries its
 own `trace`, `scoring`, outcome and sub-rows.
 
+Events that happen before the document has a row (a `record` or `requeue` decision on a
+parked document, an early relation link) are not addenda: they are visits in the
+document's `audit_trace` and land on the row when it is written.
+
 ### 4.4 Node visit record (`detail.trace[]`)
 
 `visit_id`, `node`, `attempt_id`, `started_at`, `ended_at`, `status` (`done`, `error`,
@@ -253,7 +260,9 @@ own `trace`, `scoring`, outcome and sub-rows.
 The `traced_node` wrapper appends one visit per node to `state["audit_trace"]` (append-only
 reducer). Attempt boundaries come from the existing counters (`classification_attempts`,
 `extraction_attempts`, `arbiter_retry_count`, `transient_retries_*`, `run_attempt`).
-LangGraph's checkpointer persists the trace across a human-tray pause or a crash. The seven
+LangGraph's checkpointer persists the trace across a human-tray pause or a crash. A document
+parked before this change resumes from a checkpoint with no trace; its row is written with
+the visits collected after resuming and `trace_incomplete: true`. The seven
 `_emit_stage_audit` calls become trace appends and no longer write rows.
 
 ### 5.3 Terminal writers
@@ -275,7 +284,7 @@ LangGraph's checkpointer persists the trace across a human-tray pause or a crash
 | `disposition=complete`, no `extracted_data` (approve as is) | `compile_report` -> scoring nodes -> `archive` | `pipeline_success: false`, `extraction_source: model` |
 | `disposition=complete` with `extracted_data` (person corrects the fields) | same path with the person's fields; no new extraction | `extraction_source: human`; `human_correction` sub-row with the diff; `scoring.scored_payload: human_corrected` |
 | `disposition=resume` (re-run with guidance, or doc type / subtype corrected) | back to `extract` (unchanged) | new extraction attempt |
-| `record`, `requeue` | unchanged | `review_decision` addendum |
+| `record`, `requeue` | unchanged | a `human_review` visit in the trace while the document has no row; a `review_decision` addendum once it has one |
 
 Today `complete` archives the file directly and skips the report, scoring and audit row;
 it now resumes the graph at `compile_report`.
@@ -304,6 +313,10 @@ reports model scores from the last model extraction attempt and the final scores
   rows can reach hundreds of KB.
 
 ### 5.6 Write failure fallback
+
+The spool path is `MAILROOM_AUDIT_SPOOL_PATH` (default `<db dir>/audit_spool.db`; the Modal
+volume when mounted). Startup logs `audit_spool_ephemeral` when the path is not under
+`MAILROOM_DATA_DIR`, since a Railway redeploy would lose it.
 
 After 3 failed attempts to commit the row:
 
@@ -336,10 +349,16 @@ deployment; the sandbox's reports do not read them.
 5. **Trace I/O:** `io_sha256` against the `sql` sink always; external sinks only with
    `--check-sinks`.
 
-Migration (one-time, in `ensure_schema`, safe to re-run): back up the DB file; create the new
-tables; copy every `audit_log` row byte-for-byte into `audit_log_legacy`; check counts and
-hashes before emptying `audit_log`; add the unique `doc_id` index and the global `seq`; write
-`audit_meta`.
+Migration (one-time, in `ensure_schema`, safe to re-run, under the `audit_log:chain` lock and
+skipped when `audit_meta` says it ran): back up the database (SQLite: copy the file; Postgres:
+runs only with `MAILROOM_AUDIT_MIGRATE=1`, in one transaction, after the operator's
+`pg_dump`); create the new tables; copy every `audit_log` row byte-for-byte into
+`audit_log_legacy`; check counts and hashes before emptying `audit_log`; add the unique
+`doc_id` index and the global `seq`; write `audit_meta`.
+
+Rollback: `python -m storage.audit_migrate --rollback` renames the new tables to
+`*_v2_<timestamp>` and restores `audit_log` from `audit_log_legacy`, so the previous release
+runs again; rows written since migration stay in the renamed tables.
 
 `verify_audit_chains.py` reports main chain, sub-rows, addenda, legacy and pending
 (manifests with `audit_written: pending` and sink pending records with no row). It exits
@@ -356,7 +375,8 @@ non-zero on any failure.
   results of the five checks.
 - **`audit_row_metrics(row, addenda, attempts) -> dict`:** one flat record per document:
   `outcome`, `pipeline_success`, `first_pass`, `doc_type`, `doc_subclass`, `class_correct`,
-  `subclass_correct`, `overall_extraction_score`, `suite_overall_extraction_score`,
+  `subclass_correct`, `overall_extraction_score` (`scoring.headline_score` when set, else
+  `scoring.overall_score`), `suite_overall_extraction_score` (`scoring.overall_score`),
   `extraction_f1`, `extraction_f2`, `schema_adherence`, `scoring_status`, model-only
   counterparts (`model_overall_extraction_score`, `model_extraction_f1`, ...) from the last
   model attempt, `classification_attempts`, `extraction_attempts`, `arbiter_rescued`,
