@@ -21,6 +21,16 @@ recorded by ticking steps in these files in the same PR that lands the work. Wor
 another repository (dojo, sandbox, hub) is ticked here in a small follow-up PR that links
 the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring#120)`).
 
+## Checkpointing (PRs)
+
+- Each stage opens a **draft PR** in its repository as soon as its first task is
+  committed, and pushes after every task. The PR body lists the stage's tasks as a
+  checklist and is marked ready when the stage's last code task is green.
+- After every task, the matching steps are ticked here (with the PR and commit) and
+  pushed, so #150 shows the checkpoint. Before this folder is on `main`, ticks ride on
+  PR #151; after that, they go in a small PR per checkpoint.
+- Open checkpoint PRs: stage 0 → Exios66/llm-mailroom#151; stage 1 → Exios66/llm-dojo-scoring#116.
+
 ## Stages
 
 | Stage | Plan | Repo | Gate to start |
