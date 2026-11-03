@@ -15,14 +15,13 @@ steps. `src/scripts/roadmap_status.py` reads them and does three things:
   or when a task is ticked done before a task it depends on;
 - renders the body of #150 (`--issue-body`).
 
-**This repository does not use GitHub Actions** (CI is CircleCI). `.github/workflows/roadmap-sync.yml`
-is in the tree but never runs, and its red `roadmap` check on PRs is not a gate. So the
-checks and the #150 sync are manual:
+**This repository does not use GitHub Actions** (CI is CircleCI). The roadmap check runs in
+CircleCI as part of the suite: `src/tests/test_roadmap_status.py::test_repo_roadmap_is_consistent`
+fails when the plans or the status table are inconsistent. The #150 body is refreshed by hand:
 
 1. After ticking steps, run `python src/scripts/roadmap_status.py --write` and then
    `--check` (prints `roadmap: OK`), and commit the regenerated table with the ticks.
-2. Update #150's body by hand: paste the output of `--issue-body` (keep the
-   "Current state" bullets at its top current), using the GitHub tool or the web UI.
+2. Paste the output of `--issue-body` into #150 (keep its "Current state" bullets current).
 
 Progress is recorded by ticking steps in these files in the same PR that lands the work. Work in
 another repository (dojo, sandbox, hub) is ticked here in a small follow-up PR that links
@@ -61,13 +60,13 @@ the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring
 Read this first if you are picking the work up.
 
 - **Merged to `main`:** the spec and plans (#151), dojo pin v0.27.1 `a82843e` (#157, M1),
-  the release tool `src/scripts/release.py` (#158), CircleCI fixes (#159, #161).
+  the release tool `src/scripts/release.py` (#158), CircleCI fixes (#159, #161), the
+  release cut 0.9.1 (#162) and the removal of the Roadmap sync Actions workflow (#163, R1 done).
 - **Draft PR #160** (`claude/unified-audit-row-wip`, based on `main`): M2 (audit tables and
   migration, `ba73947`) and M3 (row and addendum writers, `3b6e5b9`, full suite 2632 passed). Steps are ticked on
   this branch; they reach `main` when #160 merges. Rulings for both are in the notes under
   each task in [stage-2-mailroom.md](stage-2-mailroom.md).
-- **Open PR #162:** release cut v0.9.1 (`pyproject.toml` 0.8.1 → 0.9.1, after the existing
-  `v0.9.0` tag). After merge the owner runs `release.py publish 0.9.1 --commit <sha> --apply --push`.
+- **Released:** llm-mailroom v0.9.1 (tag `v0.9.1` at `2284832`, the #162 merge).
 - **Next task: M4 (verification)** on the #160 branch, then M5 onward in order. Commit
   and push after every task, tick the steps here, and refresh #150.
 - **Working notes:** the full mailroom suite takes about 5 minutes. On a cold uv cache,
@@ -92,12 +91,12 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**13/33 tasks done.**
+**14/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
 | 0 | R0 | Merge PR #113 and publish v0.26.0 | llm-dojo-scoring | 3/3 | done |
-| 0 | R1 | Roadmap tracker and #150 sync | llm-mailroom | 6/7 | in progress |
+| 0 | R1 | Roadmap tracker and #150 sync | llm-mailroom | 7/7 | done |
 | 1 | D1 | Golden inputs and sandbox goldens | llm-dojo-scoring | 5/5 | done |
 | 1 | D2 | `assess_extraction_payload` in the dojo | llm-dojo-scoring | 5/5 | done |
 | 1 | D3 | Tier 0 common scorer and extraction scoping | llm-dojo-scoring | 5/5 | done |
