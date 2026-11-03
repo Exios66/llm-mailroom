@@ -81,11 +81,11 @@
 **Interfaces:**
 - Produces: `score_common(doc_type: str, predicted: Mapping | None, expected: Mapping | None, *, doc_subclass: str | None, doc_text: str | None, detailed: bool) -> dict`. It returns the sandbox payload's tier-0 keys: scoped fields, suite `overall_extraction_score`, `scoring_method` (sandbox name), the PRF keys (`extraction_precision`, `extraction_recall`, `extraction_f1`, `extraction_f2`, `entity_list_f1`), `unlabeled_fields`, `status`, `reason`. `detailed` selects `suite.score(detailed=True)`.
 
-- [ ] **Step 1: Write `test_common_matches_golden_tier0_keys`.** For every case, the tier-0 keys must equal the golden payload's. A key a type module later overrides (`overall_extraction_score` and `scoring_method` for MAUD/CUAD cases) is compared against `suite_overall_extraction_score`.
-- [ ] **Step 2: Run it.** Expected: FAIL.
-- [ ] **Step 3: Implement** by moving the code from the sandbox's `score_extraction_row`, from the start up to just before the MAUD/CUAD branch.
-- [ ] **Step 4: Run it.** Expected: PASS. Run the full gate.
-- [ ] **Step 5: Commit.**
+- [x] **Step 1: Write `test_common_matches_golden_tier0_keys`.** For every case, the tier-0 keys must equal the golden payload's. A key a type module later overrides (`overall_extraction_score` and `scoring_method` for MAUD/CUAD cases) is compared against `suite_overall_extraction_score`.
+- [x] **Step 2: Run it.** Expected: FAIL.
+- [x] **Step 3: Implement** by moving the code from the sandbox's `score_extraction_row`, from the start up to just before the MAUD/CUAD branch.
+- [x] **Step 4: Run it.** Expected: PASS. Run the full gate.
+- [x] **Step 5: Commit.** (Exios66/llm-dojo-scoring#116, `502616c`)
 
 ### Task D4: `DocScorer` protocol, registry and `generic`
 
@@ -103,15 +103,15 @@
   - `class DocScorer(Protocol)` with `doc_type: str`, `subclasses: tuple[str, ...]`, `detailed: bool` (whether tier 0 uses the detailed suite path), `subclass(raw: Any) -> str | None`, `extras(predicted, raw_expected, *, subclass: str | None, doc_text: str | None) -> dict` and `headline(common: dict, extras: dict) -> tuple[float | None, str | None]`. `headline` returns `(score, metric_name)`; `(None, None)` means no headline override.
   - `DOC_SCORERS: dict[str, DocScorer]` and `get_doc_scorer(doc_type: str) -> DocScorer`, which resolves aliases through `DOC_TYPE_ALIASES` and falls back to `generic`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_every_native_type_resolves`: each `NATIVE_DOC_TYPES` entry returns a scorer whose `doc_type` is that type, or `generic` for the three corpus-absent types until they get modules.
   - `test_unknown_type_is_generic`.
   - `test_aliases_resolve`: `contracts_specialist` → contract scorer, case-insensitive.
   - `test_registry_doc_types_match_subclass_table`: every registered type's `subclasses` equals `DOC_TYPE_SUBCLASSES[type]`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement** the protocol, the registry and `generic`. `generic` has no subclasses, `detailed=False`, empty extras and no headline.
-- [ ] **Step 4: Run them.** Expected: PASS (only `generic` is registered so far; the type tests are parametrised over registered types plus the generic fallback).
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement** the protocol, the registry and `generic`. `generic` has no subclasses, `detailed=False`, empty extras and no headline.
+- [x] **Step 4: Run them.** Expected: PASS (only `generic` is registered so far; the type tests are parametrised over registered types plus the generic fallback).
+- [x] **Step 5: Commit.** (Exios66/llm-dojo-scoring#116, `2b78f71`)
 
 ### Task D5: Type modules for contract and merger (benchmark headlines)
 
