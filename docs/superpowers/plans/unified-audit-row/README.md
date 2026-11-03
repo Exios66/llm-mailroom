@@ -46,7 +46,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**8/33 tasks done.**
+**9/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -59,8 +59,8 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 1 | D5 | Type modules for contract and merger (benchmark headlines) | llm-dojo-scoring | 5/5 | done |
 | 1 | D6 | Type modules for corporate record, correspondence and insurance claim | llm-dojo-scoring | 5/5 | done |
 | 1 | D7 | `score_document` dispatcher and wider `score_archive_block` | llm-dojo-scoring | 5/5 | done |
-| 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 0/4 | ready |
-| 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 0/4 | blocked |
+| 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 4/4 | done |
+| 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 0/4 | ready |
 | 2 | M2 | Audit tables and migration | llm-mailroom | 0/5 | blocked |
 | 2 | M3 | Row and addendum writers | llm-mailroom | 0/5 | blocked |
 | 2 | M4 | Verification | llm-mailroom | 0/5 | blocked |
