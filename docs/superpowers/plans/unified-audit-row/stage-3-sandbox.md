@@ -36,9 +36,10 @@
 
 This runs as early as D1 allows, before any sandbox change (review item A8).
 
-- [ ] **Step 1: Write `tests/test_scoring_outputs_golden.py`.** It runs `score_extraction_row`, the scores-JSONL writer and the serving record on the dojo D1 inputs (copied to `tests/fixtures/scoring_golden/inputs.json`) and compares the results with `tests/fixtures/scoring_golden/outputs.json`.
-- [ ] **Step 2: Generate `outputs.json`** with the current code (before the refresh), then run the test. Expected: PASS.
-- [ ] **Step 3: Commit.**
+- [x] **Step 1: Write `tests/test_scoring_outputs_golden.py`.** It runs `score_extraction_row`, the scores-JSONL writer and the serving record on the dojo D1 inputs (copied to `tests/fixtures/scoring_golden/inputs.json`) and compares the results with `tests/fixtures/scoring_golden/outputs.json`.
+- [x] **Step 2: Generate `outputs.json`** with the current code (before the refresh), then run the test. Expected: PASS.
+- [x] **Step 3: Commit.**
+  - Done in Exios66/local-mailroom-sandbox#240: 89 cases × 3 outputs (score row, scores JSONL line, serving record). Eight cases raise `ValueError` today and are recorded as errors.
 
 ### Task S1: Vendor refresh and thin wrapper
 

@@ -46,7 +46,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**9/33 tasks done.**
+**10/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -75,7 +75,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 2 | M14 | Rescore CLI | llm-mailroom | 0/5 | blocked |
 | 2 | M15 | One scoring path (retire the legacy scorers) | llm-mailroom | 0/5 | blocked |
 | 2 | M13 | Docs and branch gate | llm-mailroom | 0/3 | blocked |
-| 3 | S0 | Capture sandbox output goldens | local-mailroom-sandbox | 0/3 | ready |
+| 3 | S0 | Capture sandbox output goldens | local-mailroom-sandbox | 3/3 | done |
 | 3 | S1 | Vendor refresh and thin wrapper | local-mailroom-sandbox | 0/5 | blocked |
 | 3 | S2 | Local audit rows and `audit-reconcile` in the sandbox CLI | local-mailroom-sandbox | 0/5 | blocked |
 | 4 | H1 | Hub sync (mailroom-issues #240) | Digital-Mailroom | 0/3 | blocked |
