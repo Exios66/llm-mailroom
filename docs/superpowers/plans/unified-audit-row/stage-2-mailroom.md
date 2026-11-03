@@ -37,11 +37,12 @@
 **Depends:** D8
 
 **Files:**
-- Modify (through the bump PR): `pyproject.toml` dojo pin, `uv.lock`, `vendor/llm-dojo-scoring`
+- Modify (through the bump PR): `pyproject.toml` dojo pin (today `e35504db`, 0.25.0), `uv.lock`, `vendor/llm-dojo-scoring` (the fallback snapshot, also 0.25.0)
 
-- [ ] **Step 1: Wait for the PR that `bump-dojo-scoring.yml` opens** for `v0.27.0` (review item A9). Close the unmerged branch `claude/dojo-v0.26.0-pin` as superseded.
-- [ ] **Step 2: On that PR**, run `pytest -q`. Expected: PASS, with no behaviour change, since the dojo change is additive.
-- [ ] **Step 3: Add `src/tests/test_dojo_contract.py`.** `test_field_maps_match_dojo` checks that `taxonomy.yaml` field maps equal dojo `DEFAULT_FIELD_TYPES` for all five classes. `test_no_extract_class_aliases` checks that `EXTRACT_CLASS_ALIASES` is empty. Commit, then merge (owner).
+- [ ] **Step 1: Wait for the PR that `bump-dojo-scoring.yml` opens** for `v0.27.0` (review item A9). Close any unmerged 0.26.0 pin branch as superseded (check the workflow's real branch name, `cursor/bump-dojo-scoring-<tag>`, before closing anything).
+- [ ] **Step 2: On that PR**, run `pytest -q`. Expected: PASS. The jump is 0.25.0 → 0.27.0 (gap G1): 0.27.0 is additive, but 0.26.0 is not, so diff field-scoring output on the mailroom golden/eval fixtures before and after the bump, and record every score that moves, with its 0.26.0 CHANGELOG entry, in the PR body.
+- [ ] **Step 2b: Re-vendor the fallback snapshot** to 0.27.0 and add `test_scoring_imports_under_vendored_source`: the dojo names the scoring nodes need (`score_document`, `get_doc_scorer`, `score_archive_block`, `assess_extraction_payload`) import with `MAILROOM_DOJO_SOURCE=vendored` (gap G2).
+- [ ] **Step 3: Extend `src/tests/test_dojo_parity.py`** (it already checks field maps at line 38) so it covers all five classes against dojo `DEFAULT_FIELD_TYPES`, and add `test_no_extract_class_aliases` (`EXTRACT_CLASS_ALIASES` is already `{}` in `pipeline/config.py`; the test pins it). Commit, then merge (owner).
 
 ### Task M2: Audit tables and migration
 
@@ -181,6 +182,7 @@
 **Files:**
 - Create: `src/graph/scoring_nodes.py`
 - Modify: `src/graph/build_graph.py`. The edge changes from `compile_report → catalog_write` to `compile_report → score_common → score_<type> → catalog_write`.
+- Modify: `src/observability/extraction_gt.py` (gap G3). Today it flattens CUAD/MAUD labels into `cuad_clauses` / `maud_clauses` and drops the raw `cuad_clause_labels`. The dojo type modules read the raw `cuad_clause_labels` / `maud_clause_labels` maps, so the ground-truth adapter for scoring must pass them through unchanged.
 - Test: `src/tests/test_scoring_nodes.py`
 
 **Interfaces:**
@@ -200,6 +202,8 @@
   - `test_non_dict_extraction_still_scored` (Review Focus).
   - `test_field_map_sha_from_mailroom_taxonomy`.
   - `test_each_scoring_node_has_trace_visit`.
+  - `test_benchmark_rows_get_headline` (G3): CUAD and MAUD rows reach `score_document_block` with their raw label maps, and the block has `headline_score` and `headline_metric`.
+  - `test_doc_subclass_from_final_state` (G5): the scoring call gets the final `state["doc_subclass"]` (set near `build_graph.py:831`), not the classifier's first guess and not nothing.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.** `schema_lookup` is `schemas.documents.get_extraction_schema`. `taxonomy_bytes` is read once from `src/config/taxonomy.yaml`.
 - [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
@@ -215,7 +219,7 @@
 - Create: `src/audit/row.py`
 - Modify: `src/agents/archivist.py`. `archive_document` writes the row through `write_terminal_row`, and its `detail` comes from `build_row`.
 - Modify: `src/graph/build_graph.py`. Add the `audit_failed` node and make every stop edge (`human_review → failed`, judge stop, intake failure, rejected review) target it. Wire the watcher abort path and the triage lane writers.
-- Create: `docs/audit-row-schema.md`. It is the row reference and says which `trace` is which (review item A12).
+- Create: `docs/audit-row-schema.md`. It is the row reference and says which `trace` is which (review item A12). It also defines `schema_valid` once (gap G6): today `observability/scores.py` `validate_extraction` returns a bool while dojo adherence reports a fraction. The row uses the dojo's `schema_adherence` and `schema_valid`, and `validate_extraction` delegates to `assess_extraction_payload`.
 - Test: `src/tests/test_audit_row.py`, `src/tests/test_audit_terminal_paths.py`
 
 **Interfaces:**
@@ -401,11 +405,29 @@
 - [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
 - [ ] **Step 5: Commit.**
 
+### Task M15: One scoring path (retire the legacy scorers)
+
+**Repo:** llm-mailroom
+**Spec:** §3, §7
+**Depends:** M6
+
+Gap G4: the mailroom never calls `score_archive_block` today. It scores in three older places: `src/graph/build_graph.py` (around line 3799), `src/observability/suite_scoring.py` and `src/scripts/run_hf_pilot.py` (around line 598). If they stay next to the scoring node family, judge gating and Langfuse report a different overall number from the audit row.
+
+**Files:**
+- Modify: those three call sites, so they read the row's `scoring` block or call `score_document_block`.
+- Test: `src/tests/test_one_scoring_path.py`
+
+- [ ] **Step 1: Write `test_judge_and_langfuse_use_row_score`.** For a fixture document, the judge's gating score, the Langfuse extraction score and the row's `scoring.overall_score` / `headline_score` are the same numbers. Add `test_no_direct_suite_scoring`, a grep-style test that `suite.score(` / `score_extraction(` are not called outside `graph/scoring_nodes.py` and the dojo.
+- [ ] **Step 2: Run them.** Expected: FAIL.
+- [ ] **Step 3: Route the three paths through `score_document_block`,** or the row's block when it already exists.
+- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [ ] **Step 5: Commit.**
+
 ### Task M13: Docs and branch gate
 
 **Repo:** llm-mailroom
 **Spec:** §8, §9
-**Depends:** M10, M12, M14
+**Depends:** M10, M12, M14, M15
 
 **Files:**
 - Modify: `docs/architecture.md`. Describe the current graph (judge before arbiter, boss), the scoring node family and `audit_failed`.

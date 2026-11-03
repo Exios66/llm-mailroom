@@ -172,17 +172,17 @@
     - `scorer`.
   - Unchanged keys: `overall_score` (field-map mean), `method` (gets `+maud`/`+cuad` through the existing `method=` path), `schema_valid`, `status`, `reason`, `trace`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_score_document_matches_goldens`: every case reproduces the golden payload byte-identically, with `scorer` removed.
   - `test_archive_block_existing_keys_unchanged`: run `score_archive_block` on every case with and without `doc_subclass`. Every key that existed before compares equal to a snapshot taken at the start of this task (committed in Step 1 as `tests/fixtures/doc_scorers/archive_block_before.json`).
   - `test_archive_block_headline`: for MAUD/CUAD cases, `headline_score` equals the golden `overall_extraction_score` and `overall_score` equals the golden `suite_overall_extraction_score`.
   - `test_no_gt_is_unscorable`.
   - `test_score_document_never_raises_on_bad_payload` (Review Focus).
   - `test_corpus_eda_names_unchanged`: `gt_metadata` and every `corporate_record_*` export still resolve with their current signatures (spec §8).
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement** the dispatcher (tier 0 → type extras → headline) and the archive-block widening.
-- [ ] **Step 4: Run them**, plus `tests/test_public_api_doc.py` and the consumer-surface tests. Expected: PASS. Then run the full gate.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement** the dispatcher (tier 0 → type extras → headline) and the archive-block widening.
+- [x] **Step 4: Run them**, plus `tests/test_public_api_doc.py` and the consumer-surface tests. Expected: PASS. Then run the full gate.
+- [x] **Step 5: Commit.** Done in llm-dojo-scoring 0529864 (PR #116).
 
 ### Task D8: Release 0.27.0
 
@@ -190,7 +190,7 @@
 **Spec:** §9
 **Depends:** D7
 
-- [ ] **Step 1: Run** `python scripts/release.py cut 0.27.0` (dry run), then `--apply`, then `uv lock`. Expected: `release.py check` prints OK.
+- [ ] **Step 1: Run** `python scripts/release.py cut 0.27.0` (dry run), then `--apply`, then `uv lock`. Expected: `release.py check` prints OK. Before the cut, check that `docs/guides/PUBLIC_API.md` states the shipped signatures of `score_document`, `assess_extraction_payload(..., schema_lookup=)` and `score_archive_block(..., doc_subclass=)` (gap G11).
 - [ ] **Step 2: Open the PR** (owner asks) and get it merged.
 - [ ] **Step 3: Publish** with `python scripts/release.py publish 0.27.0` from the merge commit. The release fires `repository_dispatch: dojo-scoring-released` to llm-mailroom.
 - [ ] **Step 4: Tick D1–D8 here** in a follow-up PR that links the merged PRs.

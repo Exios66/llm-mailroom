@@ -48,12 +48,13 @@ This runs as early as D1 allows, before any sandbox change (review item A8).
 
 **Files:**
 - Modify: `src/mailroom_sandbox/cli.py` (`_VENDOR_PINS` → dojo v0.27.0 and the mailroom stage 2 merge commit)
+- Modify, in lockstep with the pins (gap G8): `requirements/dojo-release.txt` (checked by `tests/test_dojo_source.py`), `vendor/README.md`, the vendored `VENDOR.md` files and `CHANGELOG.md`. Regenerate the requirements with the repo's sync script; never hand-edit `requirements/*.txt`.
 - Modify: `src/mailroom_sandbox/eval/scoring.py`. `score_extraction_row` calls `llm_dojo_scoring.score_document` with `schema_lookup=schemas.documents.get_extraction_schema`.
-- Modify: `src/mailroom_sandbox/eval/schema_adherence.py` and `eval/extraction_scope.py`, which re-export the dojo names. Sandbox-only aggregation helpers such as `merge_schema_adherence` and `classify_floor_mode` stay.
+- Modify: `src/mailroom_sandbox/eval/schema_adherence.py` and `eval/extraction_scope.py`, which re-export the dojo names. The dojo already has `merge_schema_adherence` and `classify_floor_mode` too, so `schema_adherence.py` re-exports all of them (gap G7; the earlier note that they stay was stale). `aggregate_schema_adherence` delegates to `merge_schema_adherence`. `mock_llm.py` and the tests that import `schema_keys_for` and the scope helpers keep working through the re-exports.
 - Test: `tests/test_scoring_outputs_golden.py`, `tests/test_scoring_ownership.py`, `tests/test_vendor_drift.py`
 
-- [ ] **Step 1: Run `python scripts/sync_vendor.py`** after updating the pins. Expected: `tests/test_vendor_drift.py` passes.
-- [ ] **Step 2: Replace the bodies with dojo calls.** Run the golden test. Expected: PASS (byte-identical).
+- [ ] **Step 1: Run `python scripts/sync_vendor.py`** after updating the pins, then the requirements sync check. Expected: `tests/test_vendor_drift.py` and `tests/test_dojo_source.py` pass. Add `test_vendored_mailroom_dojo_pin_matches` (gap G9): the dojo pin declared by the vendored llm-mailroom equals the sandbox's own dojo SHA. Today they differ (0.25.0 and 0.26.0).
+- [ ] **Step 2: Replace the bodies with dojo calls.** Run the golden test. Expected: PASS (byte-identical). The wrapper keeps `doc_subclass` over `expected_subclass`; the dojo's tier 0 already keeps the `generic` / `suite-fallback-generic` labels (gap G10). Add goldens for a suite-lookup failure and a `suite.score` failure, so the labels are proved and not just assumed.
 - [ ] **Step 3: Add `tests/test_decision_schema_contract.py`.** The `job/node_trace.py` decision keys must equal the mailroom fixture `src/tests/fixtures/audit/sandbox_decision_schema.json` in the vendored copy.
 - [ ] **Step 4: Run the full gate.** Expected: PASS, with coverage at or above 77.
 - [ ] **Step 5: Commit.**

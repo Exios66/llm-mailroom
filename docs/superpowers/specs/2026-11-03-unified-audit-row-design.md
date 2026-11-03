@@ -57,8 +57,10 @@ the scoping. The sandbox path is the most complete.
 **Dojo 0.27.0** (additive; no existing name changes):
 
 - `score_document(doc_type, predicted, expected, *, doc_text=None, doc_subclass=None,
-  expected_subclass=None) -> dict` returns exactly the payload the sandbox's
-  `score_extraction_row` returns today (same keys, same values). It contains the Hub
+  expected_subclass=None, schema_lookup=None) -> dict` returns exactly the payload the sandbox's
+  `score_extraction_row` returns today (same keys, same values), plus a `scorer` record
+  (`doc_type`, `module`, `subclass`, `tiers_run`). Where the sandbox raised on a
+  non-mapping prediction, it coerces or scores the prediction as empty instead. It contains the Hub
   scoping (`extraction_scope`), the detailed subclass-aware suite path, MAUD/CUAD headline
   replacement with `suite_overall_extraction_score` kept, `unlabeled_fields`, and the PRF
   keys (`extraction_precision`, `extraction_recall`, `extraction_f1`, `extraction_f2`,
