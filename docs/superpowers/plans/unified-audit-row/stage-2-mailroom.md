@@ -39,9 +39,10 @@
 **Files:**
 - Modify (through the bump PR): `pyproject.toml` dojo pin (today `e35504db`, 0.25.0), `uv.lock`, `vendor/llm-dojo-scoring` (the fallback snapshot, also 0.25.0)
 
-- [ ] **Step 1: Wait for the PR that `bump-dojo-scoring.yml` opens** for `v0.27.0` (review item A9). Close any unmerged 0.26.0 pin branch as superseded (check the workflow's real branch name, `cursor/bump-dojo-scoring-<tag>`, before closing anything).
-- [ ] **Step 2: On that PR**, run `pytest -q`. Expected: PASS. The jump is 0.25.0 → 0.27.0 (gap G1): 0.27.0 is additive, but 0.26.0 is not, so diff field-scoring output on the mailroom golden/eval fixtures before and after the bump, and record every score that moves, with its 0.26.0 CHANGELOG entry, in the PR body.
-- [ ] **Step 2b: Re-vendor the fallback snapshot** to 0.27.0 and add `test_scoring_imports_under_vendored_source`: the dojo names the scoring nodes need (`score_document`, `get_doc_scorer`, `score_archive_block`, `assess_extraction_payload`) import with `MAILROOM_DOJO_SOURCE=vendored` (gap G2).
+- [x] **Step 1: Wait for the PR that `bump-dojo-scoring.yml` opens** for `v0.27.0` (review item A9). Close any unmerged 0.26.0 pin branch as superseded (check the workflow's real branch name, `cursor/bump-dojo-scoring-<tag>`, before closing anything).
+- [x] **Step 2: On that PR**, run `pytest -q`. Expected: PASS. The jump is 0.25.0 → 0.27.0 (gap G1): 0.27.0 is additive, but 0.26.0 is not, so diff field-scoring output on the mailroom golden/eval fixtures before and after the bump, and record every score that moves, with its 0.26.0 CHANGELOG entry, in the PR body.
+- [x] **Step 2b: Re-vendor the fallback snapshot** to 0.27.0 and add `test_scoring_imports_under_vendored_source`: the dojo names the scoring nodes need (`score_document`, `get_doc_scorer`, `score_archive_block`, `assess_extraction_payload`) import with `MAILROOM_DOJO_SOURCE=vendored` (gap G2).
+  - Done in #157. The workflow is disabled in this repo, so `bump_dojo_scoring.py` made the branch by hand; it supersedes #149 (0.26.0). G1: one insurance CMS row moves (`cms_source_table`, #93); the mock experiment is unchanged. Step 3 is committed there and waits for the owner merge.
 - [ ] **Step 3: Extend `src/tests/test_dojo_parity.py`** (it already checks field maps at line 38) so it covers all five classes against dojo `DEFAULT_FIELD_TYPES`, and add `test_no_extract_class_aliases` (`EXTRACT_CLASS_ALIASES` is already `{}` in `pipeline/config.py`; the test pins it). Commit, then merge (owner).
 
 ### Task M2: Audit tables and migration
