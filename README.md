@@ -13,7 +13,7 @@
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
 [![Release](https://img.shields.io/badge/release-v0.8.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
-[![Dojo](https://img.shields.io/badge/dojo-feec7ce-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/feec7ce80aebf9b4e9f675f66ed449d9e563ad01)
+[![Dojo](https://img.shields.io/badge/dojo-a82843e-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/a82843e808336e0078c7d5b27dcdb3ff8b698170)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
 [![Wiki](https://img.shields.io/badge/📖_wiki-deep_dives-555?style=flat-square)](https://github.com/Exios66/llm-mailroom/wiki)
@@ -231,6 +231,29 @@ Optional install profiles — take only what you need:
 ```bash
 pip install -e ".[embeddings]"   # etc.
 ```
+
+The core install includes the local tracing stack
+(`openinference-instrumentation-openai`, `opentelemetry-sdk`,
+`opentelemetry-exporter-otlp-proto-http`) and `pyarrow` for Parquet
+warehouse export. The full `arize-phoenix` server package is deliberately
+**not** a runtime dependency: it pulls `arize-phoenix-otel`, which has no
+wheels for Python 3.15+. Phoenix-style local tracing still works — point
+`PHOENIX_ENDPOINT` at a running Phoenix server (or leave the default local
+endpoint) and the OpenInference instrumentor captures every LLM call.
+
+### Notebooks
+
+Install the notebook extra and launch JupyterLab from the repository root:
+
+```bash
+pip install -e ".[notebooks]"
+jupyter lab notebooks/
+```
+
+Use `jupyter lab notebooks/` — `jupyterlab notebook notebooks/` is not a
+valid invocation (it treats `notebook` as a file path). The dataset browser
+is `notebooks/dataset_browser.ipynb`; it falls back to plain-text output
+when the extra is absent.
 
 > **In the monorepo** ([`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)):
 > this repo is `packages/llm-mailroom` via git subtree. Skip `pip install` —
@@ -536,7 +559,7 @@ Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14
 
 ### Observability
 
-- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. One trace per document, one span per node, `session_id = matter_id` (or a run-scoped session for pilot runs), deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
+- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted), **Braintrust**, or the local cost-free **Arize Phoenix / OpenTelemetry** fallback, selected via `OBSERVABILITY_PROVIDER` in `.env`. With no cloud keys set, `auto` uses the local Phoenix backend (OpenInference instrumentation) at `PHOENIX_ENDPOINT` (default `http://localhost:6006/v1/traces`). One trace per document, one span per node, `session_id = matter_id` (or a run-scoped session for pilot runs), deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
 - **Scores** — every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, `success_rate` first-pass STP, confidence values); pilot runs add ground-truth scores (`class_correct`, `stage_correct`, calibration error). Score configs are auto-created by `observability/scores.py` (`ensure_score_configs()`).
 - **Run-log mirroring** — pull traces (with observations + scores) into the repo for offline analysis by subagents:
 
