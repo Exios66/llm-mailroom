@@ -42,7 +42,7 @@ on the row; the sandbox keeps writing its own outputs with it.
 | Per-stage rows; `verify_chain` per document | Still true | §4-§6 |
 | No intake node / no classification review agent | Stale: `intake`, `review_classify`, `classification_arbiter` exist | Keep |
 | Arbiter before judge on out-of-band extraction | Superseded by KANBAN-063 | Keep current order; update docs and issue text |
-| Report, then deterministic scoring, then archive | Open | `score_document` node (§5) |
+| Report, then deterministic scoring, then archive | Open | scoring node family (§3.1, §5.1) |
 | Twice-failed extraction cleared by a person goes to the reporter | Not implemented | §5.4 |
 | Every path writes the audit log | Open: `failed` goes to END with no row | `audit_failed` node (§5) |
 
@@ -75,6 +75,56 @@ the scoping. The sandbox path is the most complete.
 
 The sandbox's `score_extraction_row` becomes a thin wrapper over `score_document`. A golden
 test on recorded sandbox rows proves its output is byte-identical.
+
+### 3.1 Tiered scorers, one per document type
+
+`score_document` does not hold type-specific code. It is a dispatcher over three tiers, so
+each document type's rules live in their own module and adding a type touches one file
+plus one registry line.
+
+| Tier | Runs for | Lives in (dojo) | Does |
+|---|---|---|---|
+| 0, common | every document | `scoring/doc_scorers/common.py` | Hub scoping, `assess_extraction_payload`, field-map suite score, PRF keys, `unlabeled_fields`, `status`/`reason` (`unscorable` / `gt_missing`) |
+| 1, type | one document type | `scoring/doc_scorers/<doc_type>.py` | that type's extras and headline rule |
+| 2, subclass | one subclass within a type | a hook inside the type's module | subclass normalisation, subclass-specific fields or alignment |
+
+Each type module implements one small protocol:
+
+```python
+class DocScorer(Protocol):
+    doc_type: str
+    subclasses: tuple[str, ...]          # from DOC_TYPE_SUBCLASSES
+    def subclass(self, raw: Any) -> str | None: ...                  # tier 2: normalise
+    def extras(self, predicted, raw_expected, *, subclass, doc_text) -> dict: ...
+    def headline(self, common: dict, extras: dict) -> tuple[float | None, str]: ...
+```
+
+`DOC_SCORERS: dict[str, DocScorer]` is the registry; `get_doc_scorer(doc_type)` returns the
+type's scorer or `generic`.
+
+The modules reproduce today's numbers exactly (golden parity, §8); they move code, they
+do not change rules:
+
+| Module | Subclasses (count) | Tier 1 extras and headline | Tier 2 |
+|---|---|---|---|
+| `contract` | CUAD families (25) | CUAD clause presence (`score_sandbox_cuad`) when `cuad_clause_labels` exist; headline `cuad_presence_f1`, method `+cuad` | subtype normalisation |
+| `merger_agreement` | MAUD consideration types (5) | MAUD answers (`score_sandbox_maud`) when `maud_clause_labels` exist; headline `maud_accuracy`, method `+maud` | consideration type |
+| `corporate_record` | record types (11) | always the detailed suite path | per-record-type field alignment (authoritative even with no subclass) |
+| `correspondence` | communication forms (9) | topic and sentiment (`score_correspondence_content`) | form normalisation |
+| `insurance_claim` | CMS tables and LOB lines (6) | `score_claims_extras` (determination consistency, amount exactness), canonical `claim_type` | `cms_source_table` for CMS rows; CMS documented-absent fields |
+| `generic` | none | field-map score only | none |
+
+`generic` covers the native classes with no corpus rows (`due_diligence`,
+`compliance_filing`, `court_opinion`) and any unknown type, so every document is scored
+or marked `unscorable` and none falls through. Where headline replacement applies,
+`suite_overall_extraction_score` keeps the field-map score.
+
+The scoring block gains `scorer: {doc_type, module, subclass, tiers_run}` so the row says
+which code produced the numbers.
+
+The 1,740-line `ScoringSuite` is not split in 0.27.0: tier 0 calls it as it is. Moving its
+type-specific branches (`self.name == "insurance_claims_specialist"` and the like) into the
+type modules is the 0.28.0 dojo refactor (Project B), which this registry prepares for.
 
 **Three `schema_valid` meanings, kept apart by name:**
 
@@ -176,10 +226,24 @@ own `trace`, `scoring`, outcome and sub-rows.
 
 ### 5.1 Graph
 
-- `compile_report` -> **`score_document`** -> `catalog_write` -> `archive`. `score_document`
-  calls `score_archive_block(doc_type, extracted_data, expected_fields or None,
-  doc_subclass=..., doc_text=..., taxonomy_bytes=<src/config/taxonomy.yaml>)`, so
-  `field_map_sha` is the map actually used.
+- `compile_report` -> **scoring node family** -> `catalog_write` -> `archive`. It follows the
+  dojo tiers in §3.1:
+  - **`score_common`** runs tier 0 for every document and stores the result in
+    `state["scoring_common"]`. It then routes on the final `doc_type` (the human-corrected
+    type when a person changed it) using a conditional edge.
+  - There is one **`score_<doc_type>`** node per registry entry: `score_contract`,
+    `score_merger_agreement`, `score_corporate_record`, `score_correspondence`,
+    `score_insurance_claim` and `score_generic`. Each runs tiers 1 and 2 through
+    `get_doc_scorer(doc_type)`, then writes `state["scoring"]` as the block from
+    `score_archive_block(..., doc_subclass=..., doc_text=...,
+    taxonomy_bytes=<src/config/taxonomy.yaml>)`, so `field_map_sha` records the map that
+    was actually used.
+  - The nodes are built from `DOC_SCORERS` by one factory in `src/graph/scoring_nodes.py`.
+    Each node is a thin wrapper. All scoring logic stays in the dojo.
+  - Every node in the family has its own trace visit. The row's `nodes_visited` and
+    `trace` show which scorer ran, and a failure in one type's scorer shows up as that node.
+  - When there is no ground truth, the type node still runs and records adherence with
+    `status: unscorable`.
 - New **`audit_failed`** node is the target of every stop edge (`human_review` -> `failed`,
   judge stop, intake failure, rejected review) and writes the `failed` row.
 - Everything else in the graph is unchanged.
@@ -208,7 +272,7 @@ LangGraph's checkpointer persists the trace across a human-tray pause or a crash
 
 | Review action (existing API) | Path | Recorded as |
 |---|---|---|
-| `disposition=complete`, no `extracted_data` (approve as is) | `compile_report` -> `score_document` -> `archive` | `pipeline_success: false`, `extraction_source: model` |
+| `disposition=complete`, no `extracted_data` (approve as is) | `compile_report` -> scoring nodes -> `archive` | `pipeline_success: false`, `extraction_source: model` |
 | `disposition=complete` with `extracted_data` (person corrects the fields) | same path with the person's fields; no new extraction | `extraction_source: human`; `human_correction` sub-row with the diff; `scoring.scored_payload: human_corrected` |
 | `disposition=resume` (re-run with guidance, or doc type / subtype corrected) | back to `extract` (unchanged) | new extraction attempt |
 | `record`, `requeue` | unchanged | `review_decision` addendum |
@@ -314,11 +378,17 @@ non-zero on any failure.
 ## 8. Testing
 
 - **Dojo:** golden parity of `score_document` and `assess_extraction_payload` against
-  recorded sandbox payloads; `score_archive_block` for all five classes including merger
+  recorded sandbox payloads, per document type module; every `CORPUS_DOC_TYPES` and
+  `NATIVE_DOC_TYPES` entry resolves to a scorer (unknown -> `generic`); every subclass in
+  `DOC_TYPE_SUBCLASSES` and every `CORPUS_SUBCLASS_SURFACES` value normalises through its
+  type module; each module is tested on its own; `score_archive_block` for all five classes including merger
   with MAUD, contract with CUAD, corporate subclass alignment, and `unscorable` without
   ground truth; guard tests that `gt_metadata` and `corporate_record_*` (used by
   Mailroom-Corpus-EDA) are unchanged; full suite and ruff.
-- **Mailroom:** success fixture writes one row with a trace from `intake` to `archive`; judge
+- **Mailroom:** the scoring node family has one node per `DOC_SCORERS` entry and routes each
+  of the five corpus types, a corpus-absent type and an unknown type to the right node; a
+  human-corrected doc type routes by the corrected type;
+  success fixture writes one row with a trace from `intake` to `archive`; judge
   stop and tray park each write one `failed` row naming the stopping node; resume writes a
   `resumed` addendum; rescore writes a `rescore` addendum and no second row; each §5.4 review
   action; sub-row tamper and deletion fail verification; hash parity with the dojo's
@@ -337,12 +407,12 @@ non-zero on any failure.
 0. Merge llm-dojo-scoring PR #113; publish v0.26.0.
 1. Dojo **0.27.0**: §3 (additive). The cleanup refactor moves to 0.28.0.
 2. Mailroom: pin dojo 0.27.0 (superseding the unmerged `claude/dojo-v0.26.0-pin` branch);
-   §4-§7; `docs/architecture.md` updated to the current graph plus `score_document` and
+   §4-§7; `docs/architecture.md` updated to the current graph plus the scoring node family and
    `audit_failed`.
 3. Sandbox: refresh `vendor/` (mailroom and dojo), thin wrapper, golden parity.
 4. Hub: sync (#240) and warehouse readers (#241); the hub's dojo copy jumps from 0.24.2.
 5. Follow-ups: The-Mailroom catch-up (`AuditChain.tsx` reads `event`/`entry_hash`/`entry_id`
-   and nests sub-rows; stations for `score_document` and `audit_failed`); eval-environment
+   and nests sub-rows; stations for the scoring nodes and `audit_failed`); eval-environment
    scoping retirement.
 6. Issues: staleness notes (§2) on #235-#239; roadmap issue in llm-mailroom linking this
    spec and the plan.
