@@ -13,7 +13,7 @@ from typing import Any, Mapping
 from ...pipeline.sandbox_schema_adherence import SchemaLookup, assess_extraction_payload, coerce_predicted_payload
 from ..extraction_scope import scope_extraction_pair
 from . import canonical_doc_type, get_doc_scorer
-from .common import score_common
+from .common import _warn_once, score_common
 
 
 def score_tiers(
@@ -38,11 +38,20 @@ def score_tiers(
         detailed=scorer.detailed,
     )
     raw_expected = expected or {}
-    scoped_predicted, _ = scope_extraction_pair(doc_type, predicted or {}, raw_expected)
-    sub = scorer.subclass(doc_subclass or expected_subclass)
-    extras = scorer.extras(scoped_predicted, raw_expected, subclass=sub, doc_text=doc_text)
-    payload.update(extras)
-    score, metric = scorer.headline(payload, extras)
+    # Tier 1 is report-only and must never take the document down: a failed extras or
+    # headline keeps the tier-0 score and says so in ``scoring_method``.
+    score: float | None = None
+    metric: str | None = None
+    try:
+        scoped_predicted, _ = scope_extraction_pair(doc_type, predicted or {}, raw_expected)
+        sub = scorer.subclass(doc_subclass or expected_subclass)
+        extras = dict(scorer.extras(scoped_predicted, raw_expected, subclass=sub, doc_text=doc_text))
+        score, metric = scorer.headline({**payload, **extras}, extras)
+        payload.update(extras)
+    except Exception as exc:
+        _warn_once(f"extras-failed-{doc_type}", "type extras or headline raised; tier 0 score kept", exc)
+        score, metric = None, None
+        payload["scoring_method"] = f"{payload['scoring_method']}+extras-failed"
     if metric is not None:
         payload["suite_overall_extraction_score"] = payload["overall_extraction_score"]
         payload["overall_extraction_score"] = score
