@@ -35,13 +35,14 @@ from storage.db import ensure_schema  # noqa: E402
 
 async def _all_chains():
     from sqlalchemy import select, distinct
-    from storage.audit_log import AuditLogRecord, get_audit_chain
+    from storage.audit_log import event_log_model, get_audit_chain
 
     ensure_schema()
     from storage.db import async_session
 
     async with async_session() as session:
-        rows = await session.execute(select(distinct(AuditLogRecord.doc_id)))
+        Model = await event_log_model(session)
+        rows = await session.execute(select(distinct(Model.doc_id)))
         doc_ids = [r[0] for r in rows.all()]
     chains = {}
     for doc_id in doc_ids:

@@ -134,11 +134,13 @@ def test_first_use_concurrent_audit_and_relations_writes_are_all_persisted(datab
         asyncio.run(bounded_write(index))
     with ThreadPoolExecutor(max_workers=4) as executor:
         list(executor.map(worker, range(4)))
+    # The per-event writer appends to audit_log_legacy once the unified-audit-row
+    # migration has run (audit_log then holds one row per document).
     with sqlite3.connect(database) as conn:
-        assert conn.execute("SELECT count(*) FROM audit_log").fetchone()[0] == 4
-        assert conn.execute("SELECT seq FROM audit_log ORDER BY seq").fetchall() == [(1,), (2,), (3,), (4,)]
+        assert conn.execute("SELECT count(*) FROM audit_log_legacy").fetchone()[0] == 4
+        assert conn.execute("SELECT seq FROM audit_log_legacy ORDER BY seq").fetchall() == [(1,), (2,), (3,), (4,)]
         assert conn.execute("SELECT count(*) FROM relation_log").fetchone()[0] == 4
-        for table in ("audit_log", "relation_log"):
+        for table in ("audit_log_legacy", "relation_log"):
             rows = conn.execute(f"SELECT prev_hash, entry_hash FROM {table}").fetchall()
             assert sum(not prev for prev, _ in rows) == 1
             hashes = {entry_hash for _, entry_hash in rows}
