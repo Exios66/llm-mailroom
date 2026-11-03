@@ -144,11 +144,11 @@
 - Modify: the registry
 - Test: `tests/test_doc_scorers_types.py`
 
-- [ ] **Step 1: Write `test_type_parity[corporate_record|correspondence|insurance_claim]`** the same way as D5. Add `test_unknown_subclass_surface_normalises` (Review Focus) and `test_cms_row_without_table_scores_derived_table` (Review Focus).
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement the three modules.**
-- [ ] **Step 4: Run.** Expected: PASS, then the full gate.
-- [ ] **Step 5: Commit.**
+- [x] **Step 1: Write `test_type_parity[corporate_record|correspondence|insurance_claim]`** the same way as D5. Add `test_unknown_subclass_surface_normalises` (Review Focus) and `test_cms_row_without_table_scores_derived_table` (Review Focus).
+- [x] **Step 2: Run.** Expected: FAIL.
+- [x] **Step 3: Implement the three modules.**
+- [x] **Step 4: Run.** Expected: PASS, then the full gate.
+- [x] **Step 5: Commit.** Done in llm-dojo-scoring 8cb4eb8 (PR #116). Extras stay in suites until 0.28.0 (ruling).
 
 ### Task D7: `score_document` dispatcher and wider `score_archive_block`
 
