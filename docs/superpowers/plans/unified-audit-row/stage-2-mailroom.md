@@ -103,6 +103,7 @@
   - `test_addendum_without_row_raises_NoAuditRow`.
   - `test_concurrent_documents_do_not_fork_chain`: 20 documents under `asyncio.gather`.
   - `test_unknown_event_rejected`.
+  - `test_writer_refuses_while_migration_pending`: with no `audit_meta` (Postgres opt-in not given), `write_terminal_row` raises `AuditMigrationPending` and writes nothing to `audit_log` (spec §6). M10 routes that error into the §5.6 fallback.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:<doc_id>` for addenda.
 - [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
@@ -326,6 +327,8 @@
   - `test_reconcile_skips_doc_with_row`.
   - `test_no_sink_accepts_logs_audit_gap`.
   - `test_ephemeral_spool_warning` (review item A6).
+  - `test_migration_pending_takes_fallback`: `AuditMigrationPending` from the writer is handled like a failed commit; the record is parked and `audit-reconcile` writes it after the migration (spec §6).
+  - `test_decisions_only_copy_reconciles_as_partial`: with only a decisions-only copy, reconcile writes it with `recovered_from.complete = false`, and logs `audit_gap_partial`; the manifest said `pending_partial`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
@@ -400,9 +403,10 @@
   - `test_rescore_writes_addendum_not_row`.
   - `test_unchanged_score_writes_nothing`.
   - `test_rescore_uses_final_extraction_and_doc_type_from_row`.
-  - `test_rescore_records_old_and_new_dojo_version`.
+  - `test_rescore_records_old_and_new_dojo_version`: the addendum also records the ground-truth dataset revision.
+  - `test_rescore_without_gt_entry_is_skipped`: no `ground_truth` row for the document's filename → `skipped_no_gt`, no addendum.
 - [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Read `extraction.extracted_data`, `doc_type`, `doc_subclass` and the ground truth from the row's refs, then score through the same helper the graph uses.
+- [ ] **Step 3: Implement.** Read `extraction.extracted_data`, `doc_type` and `doc_subclass` from the row. The row's `refs` locate the document, not its ground truth. Ground truth comes from the same source the graph scores against: the pinned `mailroom-dataset` revision's `ground_truth` config (the revision `sync_hf_ground_truth.py` pins), looked up by the document's source filename from the manifest at `refs.manifest_path` and converted with `observability.extraction_gt.build_expected_fields`. A document with no entry is counted in `skipped_no_gt` and gets no addendum. Score through the same helper the graph uses, and record the dataset revision in the addendum next to the old and new dojo versions.
 - [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
 - [ ] **Step 5: Commit.**
 
@@ -418,7 +422,7 @@ Gap G4: the mailroom never calls `score_archive_block` today. It scores in three
 - Modify: those three call sites, so they read the row's `scoring` block or call `score_document_block`.
 - Test: `src/tests/test_one_scoring_path.py`
 
-- [ ] **Step 1: Write `test_judge_and_langfuse_use_row_score`.** For a fixture document, the judge's gating score, the Langfuse extraction score and the row's `scoring.overall_score` / `headline_score` are the same numbers. Add `test_no_direct_suite_scoring`, a grep-style test that `suite.score(` / `score_extraction(` are not called outside `graph/scoring_nodes.py` and the dojo.
+- [ ] **Step 1: Write `test_judge_and_langfuse_use_row_score`.** For a fixture document, the judge's gating score and the Langfuse `overall_score` equal the row's `scoring.overall_score` (the field-map mean), and `scoring.headline_score` is checked on its own: the MAUD/CUAD headline for a contract or merger fixture with clause labels, else null. The test does not require `headline_score` to equal `overall_score`. Add `test_no_direct_suite_scoring`, a grep-style test that `suite.score(` / `score_extraction(` are not called outside `graph/scoring_nodes.py` and the dojo.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Route the three paths through `score_document_block`,** or the row's block when it already exists.
 - [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
@@ -432,7 +436,7 @@ Gap G4: the mailroom never calls `score_archive_block` today. It scores in three
 
 **Files:**
 - Modify: `docs/architecture.md`. Describe the current graph (judge before arbiter, boss), the scoring node family and `audit_failed`.
-- Modify: `CHANGELOG.md`, and the deploy notes (migration, Postgres opt-in, rollback, spool path)
+- Modify: `CHANGELOG.md`, and the deploy notes (migration, Postgres opt-in, rollback, spool path; on Postgres the migration runs before, or with, the release that ships the writers, spec §6)
 
 - [ ] **Step 1: Run** `pytest -q`. Expected: PASS. Then `python src/scripts/verify_audit_chains.py` on a DB produced by `pytest`'s end-to-end fixture. Expected: exit 0.
 - [ ] **Step 2: Update the docs.** Run `python src/scripts/roadmap_status.py --check`. In llm-dojo-scoring, regenerate `tests/fixtures/consumer_surface.json` (`scripts/audit_consumer_surface.py --write`) now that the mailroom imports `score_document`; `contract_surface.json` keeps pinning the names until then.

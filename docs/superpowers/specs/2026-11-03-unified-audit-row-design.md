@@ -106,7 +106,7 @@ class DocScorer(Protocol):
     subclasses: tuple[str, ...]          # from DOC_TYPE_SUBCLASSES
     def subclass(self, raw: Any) -> str | None: ...                  # tier 2: normalise
     def extras(self, predicted, raw_expected, *, subclass, doc_text) -> dict: ...
-    def headline(self, common: dict, extras: dict) -> tuple[float | None, str]: ...
+    def headline(self, common: dict, extras: dict) -> tuple[float | None, str | None]: ...
 ```
 
 `DOC_SCORERS: dict[str, DocScorer]` is the registry; `get_doc_scorer(doc_type)` returns the
@@ -330,13 +330,21 @@ After 3 failed attempts to commit the row:
 1. Send the complete pending record (row `detail`, sub-rows, `detail_sha256`, sub-row hashes,
    `doc_id`, `matter_id`, `event`, `actor`, `captured_at`) to every enabled sink's
    `capture_pending`. If the payload exceeds a sink's limit, send the decisions-only version
-   and the SHA-256 of the full one.
-2. Set `audit_written: "pending"` and the sink references on the manifest; log
-   `audit_pending`. The run still succeeds.
+   and the SHA-256 of the full one, marked `complete: false`.
+2. Set the sink references on the manifest and `audit_written` to `"pending"` when at least
+   one sink holds the complete record, or `"pending_partial"` when only decisions-only copies
+   were accepted; log `audit_pending` (or `audit_pending_partial` at warning level). The run
+   still succeeds.
 3. `audit-reconcile` (mailroom script; also exposed by the sandbox CLI) reads all sinks,
    deduplicates by `doc_id` and `detail_sha256`, refuses anything whose hash does not match,
    and writes each as a normal row with `detail.recovered_from` =
    `{sink, ref, captured_at, detail_sha256}`. It skips documents that already have a row.
+   It always prefers a complete copy. When only a decisions-only copy exists, the full
+   record cannot be rebuilt: reconcile writes the decisions-only record as the row, with
+   `recovered_from.complete = false` and `recovered_from.full_detail_sha256`, and logs
+   `audit_gap_partial` at error level, so the loss is recorded rather than silent. The
+   hash check applies to whichever copy is written (the decisions-only copy carries its own
+   SHA-256).
 4. If no sink accepts the record, log `audit_gap` at error level.
 
 The sandbox's vendored graph writes rows into the sandbox's own local DB like any other
@@ -362,6 +370,14 @@ runs only with `MAILROOM_AUDIT_MIGRATE=1`, in one transaction, after the operato
 `pg_dump`); create the new tables; copy every `audit_log` row byte-for-byte into
 `audit_log_legacy`; check counts and hashes before emptying `audit_log`; add the unique
 `doc_id` index and the global `seq`; write `audit_meta`.
+
+While the migration is pending (Postgres without the opt-in: `audit_meta` is absent), the
+writers never write new-format rows into the old `audit_log`. `write_terminal_row` raises
+`AuditMigrationPending`; the terminal nodes treat it like a failed commit and take the §5.6
+fallback, so the record is parked in the sinks with `audit_written: "pending"` and
+`audit-reconcile` writes it once the migration has run. Deploy order: run the migration
+(`MAILROOM_AUDIT_MIGRATE=1`, after `pg_dump`) before, or together with, the release that
+ships the writers.
 
 Rollback: `python -m storage.audit_migrate --rollback` renames the new tables to
 `*_v2_<timestamp>` and restores `audit_log` from `audit_log_legacy`, so the previous release

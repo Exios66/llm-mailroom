@@ -88,8 +88,8 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Cross-repo gap audit (2026-11-03)
 
 After D6 the owner asked that the dojo, the mailroom pipeline and the sandbox all run on
-the same specs. A read-only recon of all three found these gaps; each is now folded into
-a task.
+the same specs. A read-only recon of all three found these gaps. G1–G11 are folded into tasks; G12 is
+deferred and has no task in this roadmap.
 
 | # | Gap | Folded into |
 |---|---|---|

@@ -37,9 +37,9 @@ _TASK_ANY = re.compile(r"^### Task\b(.*)$")
 _TASK = re.compile(r"^### Task ([A-Z]\d+): (.+?)\s*$")
 _FIELD = re.compile(r"^\*\*(Repo|Spec|Depends):\*\*\s*(.*)$")
 _STEP = re.compile(r"^- \[( |x|X)\] ")
-_SECTION_REF = re.compile(r"§(\d+(?:\.\d+)?)")
+_SECTION_REF = re.compile(r"§(\d+(?:\.\d+)*)")
 _TASK_REF = re.compile(r"\b([A-Z]\d+)\b")
-_HEADING = re.compile(r"^#{2,3} (\d+(?:\.\d+)?)\.?\s")
+_HEADING = re.compile(r"^#{2,6} (\d+(?:\.\d+)*)\.?\s")
 _STAGE_FILE = re.compile(r"^stage-(\d+)-.*\.md$")
 
 
@@ -58,6 +58,7 @@ class Task:
     depends: tuple[str, ...]
     done_steps: int
     total_steps: int
+    has_depends: bool = False
 
     @property
     def done(self) -> bool:
@@ -97,6 +98,7 @@ def _parse_file(path: Path, stage: int) -> list[Task]:
             elif key == "Spec":
                 current["spec"] = tuple(_SECTION_REF.findall(value))
             else:
+                current["has_depends"] = True
                 current["depends"] = tuple(_TASK_REF.findall(value))
             continue
         step = _STEP.match(line)
@@ -112,8 +114,9 @@ def parse_plans(plan_dir: Path = PLAN_DIR) -> list[Task]:
     tasks: list[Task] = []
     for path in sorted(plan_dir.glob("stage-*.md")):
         m = _STAGE_FILE.match(path.name)
-        if m:
-            tasks.extend(_parse_file(path, int(m.group(1))))
+        if not m:
+            raise PlanError(f"{path.name}: stage plans must be named 'stage-<N>-<slug>.md'")
+        tasks.extend(_parse_file(path, int(m.group(1))))
     return tasks
 
 
@@ -142,9 +145,14 @@ def render_status(tasks: list[Task]) -> str:
     ]
     for t in tasks:
         lines.append(
-            f"| {t.stage} | {t.id} | {t.name} | {t.repo} | {t.done_steps}/{t.total_steps} | {task_state(t, by_id)} |"
+            f"| {t.stage} | {t.id} | {_cell(t.name)} | {_cell(t.repo)} | {t.done_steps}/{t.total_steps} | {task_state(t, by_id)} |"
         )
     return "\n".join(lines)
+
+
+def _cell(text: str) -> str:
+    """Escape a value for a Markdown table cell."""
+    return text.replace("|", "\\|")
 
 
 def _block(text: str) -> tuple[int, int]:
@@ -182,6 +190,8 @@ def check(plan_dir: Path = PLAN_DIR, spec: Path = SPEC_PATH) -> list[str]:
             errors.append(f"{t.id}: missing **Spec:** section reference")
         if not t.total_steps:
             errors.append(f"{t.id}: no steps")
+        if not t.has_depends:
+            errors.append(f"{t.id}: missing **Depends:** line (write 'none' if it has no dependency)")
 
     sections = spec_sections(spec)
     cited: set[str] = set()
@@ -193,8 +203,8 @@ def check(plan_dir: Path = PLAN_DIR, spec: Path = SPEC_PATH) -> list[str]:
         for dep in t.depends:
             if dep not in by_id:
                 errors.append(f"{t.id}: depends on unknown task {dep}")
-            elif t.done and not by_id[dep].done:
-                errors.append(f"{t.id}: marked done before its dependency {dep}")
+            elif t.done_steps and not by_id[dep].done:
+                errors.append(f"{t.id}: progress recorded before its dependency {dep} is done")
 
     for sec in sorted(sections, key=lambda s: tuple(int(p) for p in s.split("."))):
         if sec.split(".")[0] in EXEMPT_SECTIONS:

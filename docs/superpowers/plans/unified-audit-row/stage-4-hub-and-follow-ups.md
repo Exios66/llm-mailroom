@@ -61,7 +61,7 @@
 **Spec:** §1, §9
 **Depends:** M13
 
-- [ ] **Step 1: Make the archivist task's `audit_ok` read the row's `event`** and accept `pending` (Review Focus).
+- [ ] **Step 1: Make the archivist task's `audit_ok` read the row's `event` when a row exists**, and report `pending` (or `pending_partial`) from the manifest's `audit_written` value when no row was written (spec §5.6; Review Focus).
 - [ ] **Step 2: Optional: replace its `extraction_scope.py` copy** with `llm_dojo_scoring.scoring.extraction_scope`. Run its suite. Commit.
 
 ### Task F3: Issue close-out
