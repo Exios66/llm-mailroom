@@ -34,12 +34,78 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-10-23" tags="fix" %}
+{% update date="2026-10-23" tags="feature,improvement,fix" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.
 
+### Changed
+
+- **Dojo pin → v0.27.0** (`feec7ce`, the release merge of llm-dojo-scoring#116), pinned by commit SHA. It supersedes the unmerged 0.26.0 pin (#149), so this one bump takes in both releases.
+  - 0.26.0: reviewer-lane scoring and `dojo-rescore`; the CMS insurance mapping (#93: `claim_type` and `cms_source_table` are separate fields); the five-class extraction schema registry, with an additive `schema` block on detailed scores.
+  - 0.27.0 (additive): `score_document`, `get_doc_scorer` and `assess_extraction_payload`, the tiered per-document-type scorers, and a wider `score_archive_block`. Mailroom does not call them yet; the scoring nodes (roadmap M6) will.
+  - Score movement, checked on the dojo's 0.27.0 golden inputs through `get_suite(...).score`: one insurance CMS row (a predicted `cms_source_table` with no labelled table) moves from 0.9167 to 1.0, per the #93 entry. Every other field score is unchanged. The mock experiment (`mailroom-fixtures`) metrics are identical under both pins, and the approved baseline still passes.
+  - The fallback snapshot under `vendor/llm-dojo-scoring` is replaced with the same commit's tree.
+  - Dojo modules now live in subpackages; the old flat import paths still resolve through Dojo's legacy aliases. The delegation tests now resolve the canonical module name instead of hard-coding the flat one.
+  - New tests: `test_scoring_imports_under_vendored_source` (the forced fallback carries the names the scoring nodes need), and parity tests for all five live classes against the dojo field maps and scorer registry, plus `test_no_extract_class_aliases`.
+
+### Added
+
+- **Extraction-gate hook** (`agents.extraction_gate`). It is opt-in and advisory.
+  - A host-registered gate reviews each extraction in `extract_node` / `retry_extract_node`.
+  - The handoff carries the **sorter's** `doc_subclass` (else `contract_subtype`), never a ground-truth label, so 1.3.0+ question sets apply their per-template rules.
+  - The answer is recorded on state (`extraction_gate`); from `extract_node` it is also in the `extracted` audit entry (the retry path writes no audit entry). Routing is unchanged.
+  - An extraction whose fields are all None / empty (the `guard_extraction` emptiness rule) is skipped as `empty_extraction`, not sent. Gate answer values must be JSON (`allow_nan=False`; tuples become lists); anything else is recorded as a malformed answer instead of being lost when the audit entry is written.
+  - Gate calls keep their own abandoned-thread list and cap, so stalled gate calls never block the decision backend.
+  - Gate failures are recorded, not raised.
+  - The bounded thread runner behind the decision backend is factored out as `_run_bounded` and shared by both.
+  - Docs: `docs/pipeline-reference-llm-mailroom/decision-reviewer.md`. Tests: `src/tests/test_extraction_gate_hook.py`.
+
+- **Vendored Dojo fallback** (`src/dojo_source`, `vendor/llm-dojo-scoring`).
+  - The installed release (the pyproject git pin) stays the primary Dojo.
+  - A tracked snapshot of the same pinned commit (0.25.0, `e35504db`) is served only when the release is missing or fails while importing, so scoring survives a broken install or dependency outage.
+  - Every package that imports the Dojo registers the lazy import hook; nothing is imported eagerly.
+  - `MAILROOM_DOJO_SOURCE=auto|installed|vendored` picks the policy; `dojo_source.status()` reports the source that served the import.
+  - `src/tests/test_dojo_source.py` checks the snapshot against the pyproject pin and covers the missing and broken-release fallbacks.
+
+### Changed
+
+- The production sorter is the frozen `sorter_v15`: V14 plus the corpus class boundaries
+  (B1-B3: indentures and securities rights instruments are corporate_record; all mailbox
+  text is correspondence) and subclass conventions (S1-S5: CMS carrier vs outpatient by the
+  Medicare notice, Certificates of Designation as officer_certificate, charter amendments,
+  board-adopted bylaw amendments, the correspondence marker precedence, contract family over
+  `other`, merger consideration from the conversion section). On the 2,979-document train
+  split V14 got 122 classes and 664 subclasses wrong in these patterns. The sha256 is locked
+  in `test_sorter_prompt_freeze.py`, which refuses V14 as production; a managed prompt
+  without the guard clauses is not served over the pin.
+- The sorter's subclass catalog (user message) is the Dojo sorter guide: one corpus meaning
+  per key, the correspondence precedence order, and no `certificate_of_formation` (a scoring
+  key with no ground-truth rows).
+- A decision review that is parked goes to the classification arbiter before a person; the
+  graph node `arbitrate-classification` is typed `agent` in `NODE_OBSERVATION_TYPES`.
+- Dojo pin: llm-dojo-scoring 0.25.0, the release merge commit `e35504d` (Dojo PR #91: sorter
+  guide, unannotated merger subclass, the classification arbiter node). Pinned by commit until
+  the `v0.25.0` tag is published; then run
+  `PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.25.0`.
+
 ### Fixed
+
+- Routing: `routing_coverage_expected_fields` no longer falls back to checking
+  every ground-truth key (and parking contracts/mergers at human review) when no
+  ground-truth key is a registered schema field for the document type. Returns
+  the scoped (possibly empty) subset instead.
+
+- DMR-113: consume the interim post-v0.24.2 Dojo commit `718e326` (explicit
+  `total_tokens: 0` zero-usage fix); the immutable pin is identified as interim
+  and will move to the next released commit.
+
+- DMR-113: keep archived documents requeueable after a doc-type override, treat
+  an unreadable processing root as a missing source candidate instead of a 500,
+  refuse offline SHA-to-tag rewrites in the Dojo bump tool, reject malformed
+  40-hex prefixes in the docs-truth pin guard, and resolve the vendored Dojo
+  sibling on a direct `run_hf_pilot` run. Correct the current Dojo version and
+  field-scoring module references.
 
 - DMR-111: refuse ambiguous legacy basename reads after failed moves or metadata
   changes. Current stage, matter or class does not prove historical file ownership;

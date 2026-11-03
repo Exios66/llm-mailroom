@@ -3,6 +3,13 @@ import sys
 import pytest
 
 
+def _dojo_module(legacy):
+    """Canonical module name behind a Dojo import path (legacy flat aliases resolve too)."""
+    import importlib
+
+    return importlib.import_module(legacy).__name__
+
+
 def _calls(function, *args, **kwargs):
     seen = set()
     def trace(frame, event, arg):
@@ -39,7 +46,7 @@ def test_subclass_and_normalizer_delegation():
         got, seen = _calls(subclass_ok,kind,expected,**kwargs)
         assert got is want
         if expected:
-            assert ('llm_dojo_scoring.pilot_labels','pilot_subclass_match') in seen
+            assert (_dojo_module('llm_dojo_scoring.pilot_labels'),'pilot_subclass_match') in seen
     for fn,args,name in [
         (normalize_subtype,('Joint Venture',),'normalize_pipeline_subtype'),
         (normalize_record_type,('Certificate of Incorporation',),'normalize_inventory_label'),
@@ -63,7 +70,7 @@ def test_summary_exact_population_and_real_delegation():
     assert out['per_class']['contract']['exact_accuracy'] == .5
     assert out['per_class']['corporate_record']['subclass_accuracy'] is None
     assert out['total_tokens'] == 0
-    assert ('llm_dojo_scoring.pilot_summary','pilot_classification_summary') in seen
+    assert (_dojo_module('llm_dojo_scoring.pilot_summary'),'pilot_classification_summary') in seen
     assert summarize_rows([])['subclass_accuracy'] is None
 
 
@@ -72,7 +79,7 @@ def test_pilot_presence_and_calibration_adapter():
     row = {'class_match':True,'stage_expected':False,'extracted_data':{'a':[],'b':False,'c':[None]},'classification_confidence':.3}
     out,seen = _calls(_ground_truth_scores,row,{'a':[],'b':False,'c':'x','blank':None})
     assert out == {'class_correct':1,'stage_correct':0,'expected_field_presence':.333,'confidence_calibration_error':.7}
-    assert ('llm_dojo_scoring.field_support','pilot_ground_truth_scores') in seen
+    assert (_dojo_module('llm_dojo_scoring.field_support'),'pilot_ground_truth_scores') in seen
 
 
 def test_schema_support_adapter_preserves_schema_order():
@@ -84,7 +91,7 @@ def test_schema_support_adapter_preserves_schema_order():
     assert out['n_labeled'] == 2
     assert out['labeled_fields'] == names[:2]
     assert out['coverage'] == round(2/len(names),3)
-    assert ('llm_dojo_scoring.field_support','schema_gt_support') in seen
+    assert (_dojo_module('llm_dojo_scoring.field_support'),'schema_gt_support') in seen
 
 
 def test_real_field_audit_emission_uses_canonical_support(monkeypatch):
@@ -103,8 +110,8 @@ def test_real_field_audit_emission_uses_canonical_support(monkeypatch):
     assert values['extraction_hallucination_rate']['value'] == .5
     assert values['extraction_overall_verified_precision']['value'] == .5
     assert 'n_audited=2' in values['extraction_hallucination_rate']['comment']
-    assert ('llm_dojo_scoring.field_support','field_audit_support') in seen
-    assert ('llm_dojo_scoring.field_scoring','score_extraction') in seen
+    assert (_dojo_module('llm_dojo_scoring.field_support'),'field_audit_support') in seen
+    assert (_dojo_module('llm_dojo_scoring.field_scoring'),'score_extraction') in seen
 
 
 def test_producer_equivalence_groups_do_not_follow_global_task_overrides(monkeypatch):
