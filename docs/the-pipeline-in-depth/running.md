@@ -349,6 +349,7 @@ The `sync_*` scripts need `LANGFUSE_*` keys and are idempotent.
 | `fetch_full_cuad.py` | Downloads full CUAD to `data/cuad/` and writes the EDA | `--data-dir`, `--skip-download`, `--no-eda`, `--force` |
 | `cutover.py` | Per-agent provider/model switching in `taxonomy.yaml`. See [Local models](../pipeline-reference-llm-mailroom/local-models.md) | `--list`, `--list-models`, `--recommend`, `--agent`, `--all`, `--provider`, `--model`, `--validate` |
 | `bump_dojo_scoring.py` | Checks or bumps the `llm-dojo-scoring` git pin | `--check`, `--apply`, `--tag`, `--dry-run`, `--allow-missing-release` |
+| `release.py` | Bumps this package's own version and cuts releases (`status`, `check`, `cut`, `notes`, `publish`); unlike `bump_dojo_scoring.py` it never touches the Dojo pin | `--apply`, `--json`, `--date`, `--allow-dirty`, `--allow-empty`, `--push`, `--commit` |
 | `publish_space.py` | Publishes the producer Docker Space (`--check` makes no Hub calls) | `--check`, `--repo`, `--private`, `--secrets-only`, `--skip-secrets`, `--message` |
 | `new_report.py` | Scaffolds a dated report file under the reports tree | positional `kind` and `title`, `--date`, `--dry-run` |
 

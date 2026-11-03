@@ -62,6 +62,13 @@ Work landed on `main` since the last tagged release.
   - The bounded thread runner behind the decision backend is factored out as `_run_bounded` and shared by both.
   - Docs: `docs/pipeline-reference-llm-mailroom/decision-reviewer.md`. Tests: `src/tests/test_extraction_gate_hook.py`.
 
+- **Release tool** (`src/scripts/release.py`, tests in `src/tests/test_release_tool.py`). It is stdlib-only and gives the package the same version-bump workflow as llm-dojo-scoring.
+  - `status` and `check` report the chain across `pyproject.toml`, `CHANGELOG.md` (headings, compare links), every documented "current release" string, tags, and the GitBook mirror.
+  - `cut X.Y.Z` stamps `[Unreleased]`, opens a fresh one, moves every version location together and regenerates `docs/changelog/`. It plans fully in memory first, so a location it cannot move aborts before anything is written.
+  - `notes X.Y.Z` renders release notes; `publish X.Y.Z [--push] [--commit REF]` creates an annotated tag and a GitHub release through `gh`; `--apply` refuses a commit that is not on `origin/main` unless `--allow-unmerged`.
+  - Mutating commands are dry runs unless `--apply`; `--json` returns a `next` list; exit codes are 0/1/2. It never force-pushes, deletes or moves tags, or amends commits.
+  - It does not touch the Dojo dependency pin; that stays with `bump_dojo_scoring.py`.
+
 - **Vendored Dojo fallback** (`src/dojo_source`, `vendor/llm-dojo-scoring`).
   - The installed release (the pyproject git pin) stays the primary Dojo.
   - A tracked snapshot of the same pinned commit (0.25.0, `e35504db`) is served only when the release is missing or fails while importing, so scoring survives a broken install or dependency outage.

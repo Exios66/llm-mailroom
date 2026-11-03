@@ -64,6 +64,8 @@ docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --bui
 PYTHONPATH=src python src/scripts/publish_space.py --check  # validate HF Docker Space payload (MAILROOM_PIPELINE_URL + Observatory pair)
 PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py # regenerate the GitBook Changelog space from CHANGELOG.md
 PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check # fail if docs/changelog/ is stale vs CHANGELOG.md
+python3 src/scripts/release.py status   # read-only: version / changelog / tags; `check` verifies the chain (exit 1 on drift)
+python3 src/scripts/release.py cut X.Y.Z  # dry run: stamp [Unreleased], move every version location, regenerate docs/changelog/ (--apply writes)
 PYTHONPATH=src python src/scripts/probe_hosted_spaces.py  # live Lucius-Morningstar Observatory + producer pair
 PYTHONPATH=src python -m pipeline.ops_monitor  # scheduled Boss sweep (optional)
 PYTHONPATH=src python -m pipeline.pager status    # operator SMS pings: ON/OFF, masked numbers, deliverability (--full: every key + source)
@@ -182,6 +184,13 @@ PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mo
 
 - **Never log a trace without tags.** Every run must carry: the `mailroom` tag (always set in `run_pipeline`), a run-context tag matching its environment (`pilot`/`live`), an attempt tag (`run-<n>` for re-runs), and, for pilot/corpus runs, a source tag (`source-<corpus>` e.g. `source-atticus`). These dimensions are what make the Langfuse trace table, dashboards, and tag filters usable at all.
 - Because tags are immutable and the trace id is deterministic per document, **re-runs keep the first run's tags/environment** — if a run's classification context changes, do not rely on re-runs to fix it; instead pick the tags correctly on the run that creates the trace (or use a distinct seed for a genuinely new run class).
+
+## Releases (`src/scripts/release.py`)
+
+- **Do not hand-edit this package's version.** It is stated in `pyproject.toml`, the README / `docs/README.md` / `landing/index.html` release badges, the "current release" rows in `docs/` (see `VERSION_LOCATIONS` in the script, enforced by `test_docs_truth.py` and `test_landing.py`), and the `CHANGELOG.md` heading + compare links. Move them together with `python3 src/scripts/release.py cut X.Y.Z` (dry run unless `--apply`), which also regenerates `docs/changelog/` via `sync_gitbook_changelog.py`.
+- Flow: `check` -> `cut X.Y.Z --apply` -> review `git diff`, update the hardcoded release assertions `cut` warns about (`test_docs_truth.py` changelog-order tests), run the tests, commit and merge on a release PR -> `publish X.Y.Z --commit <merge-sha>` (dry run) then `--apply --push` (annotated tag `vX.Y.Z` + GitHub release via `gh`; `--verify-tag`, so the tag must be on origin first). `--apply` refuses a commit that is not on `origin/main` unless `--allow-unmerged`.
+- Never force-push, delete or move tags, or amend release commits; the tool has no such operation. `--json` returns a `next` list; exit 0 ok, 1 refusal / failed check, 2 usage.
+- `bump_dojo_scoring.py` is a different tool: it moves the `llm-dojo-scoring` dependency pin, not this package's version.
 
 ## Config gotchas
 
