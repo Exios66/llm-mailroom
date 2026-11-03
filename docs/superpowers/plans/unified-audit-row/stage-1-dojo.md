@@ -125,11 +125,11 @@
 - Modify: the registry
 - Test: `tests/test_doc_scorers_types.py`
 
-- [ ] **Step 1: Write `test_type_parity[contract|merger_agreement]`.** For each case of the type, `score_common` plus the module's extras and headline must reproduce the golden payload exactly, including `suite_overall_extraction_score`, `overall_extraction_score` and `scoring_method`. Add `test_benchmark_labels_without_clause_keys_score_zero` (Review Focus).
-- [ ] **Step 2: Run.** Expected: FAIL.
-- [ ] **Step 3: Implement both modules.** Subclass normalisation goes through `normalize_corpus_subclass`.
-- [ ] **Step 4: Run.** Expected: PASS, then the full gate.
-- [ ] **Step 5: Commit.**
+- [x] **Step 1: Write `test_type_parity[contract|merger_agreement]`.** For each case of the type, `score_common` plus the module's extras and headline must reproduce the golden payload exactly, including `suite_overall_extraction_score`, `overall_extraction_score` and `scoring_method`. Add `test_benchmark_labels_without_clause_keys_score_zero` (Review Focus).
+- [x] **Step 2: Run.** Expected: FAIL.
+- [x] **Step 3: Implement both modules.** Subclass normalisation goes through `normalize_corpus_subclass`.
+- [x] **Step 4: Run.** Expected: PASS, then the full gate.
+- [x] **Step 5: Commit.** Done in llm-dojo-scoring b8d7353 (PR #116).
 
 ### Task D6: Type modules for corporate record, correspondence and insurance claim
 
