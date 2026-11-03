@@ -47,7 +47,7 @@ Read this first if you are picking the work up.
 - **Merged to `main`:** the spec and plans (#151), dojo pin v0.27.1 `a82843e` (#157, M1),
   the release tool `src/scripts/release.py` (#158), CircleCI fixes (#159, #161).
 - **Draft PR #160** (`claude/unified-audit-row-wip`, based on `main`): M2 (audit tables and
-  migration, `ba73947`) and M3 (row and addendum writers, `3b6e5b9`). Steps are ticked on
+  migration, `ba73947`) and M3 (row and addendum writers, `3b6e5b9`, full suite 2632 passed). Steps are ticked on
   this branch; they reach `main` when #160 merges. Rulings for both are in the notes under
   each task in [stage-2-mailroom.md](stage-2-mailroom.md).
 - **Open PR #162:** release cut v0.9.1 (`pyproject.toml` 0.8.1 → 0.9.1, after the existing
@@ -76,7 +76,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**12/33 tasks done.**
+**13/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -92,8 +92,8 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 4/4 | done |
 | 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 4/4 | done |
 | 2 | M2 | Audit tables and migration | llm-mailroom | 5/5 | done |
-| 2 | M3 | Row and addendum writers | llm-mailroom | 4/5 | in progress |
-| 2 | M4 | Verification | llm-mailroom | 0/5 | blocked |
+| 2 | M3 | Row and addendum writers | llm-mailroom | 5/5 | done |
+| 2 | M4 | Verification | llm-mailroom | 0/5 | ready |
 | 2 | M5 | Trace collection in state | llm-mailroom | 0/5 | ready |
 | 2 | M6 | Scoring node family | llm-mailroom | 0/5 | blocked |
 | 2 | M7 | Row builder and terminal nodes | llm-mailroom | 0/5 | blocked |
