@@ -1,6 +1,6 @@
 import structlog
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, JSON, Text, Integer, ForeignKey, select, desc
+from sqlalchemy import String, DateTime, JSON, Text, Integer, ForeignKey, Index, select, desc
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, acquire_write_lock, async_session, ensure_schema
@@ -9,6 +9,13 @@ logger = structlog.get_logger(__name__)
 
 
 class AuditLogRecord(Base):
+    """One hash-chained row per document (unified audit row, spec §4.1).
+
+    ``doc_id`` is unique and ``seq`` is one sequence across the database; the
+    row is never updated after it is written. The pre-migration per-event
+    chains live in :class:`AuditLegacyRecord` (``audit_log_legacy``).
+    """
+
     __tablename__ = "audit_log"
 
     entry_id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -19,6 +26,7 @@ class AuditLogRecord(Base):
         # orphaned chains).
         ForeignKey("documents.doc_id", ondelete="RESTRICT"),
         nullable=False,
+        unique=True,
         index=True,
     )
     matter_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -27,11 +35,122 @@ class AuditLogRecord(Base):
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     prev_hash: Mapped[str] = mapped_column(String(256), default="")
     entry_hash: Mapped[str] = mapped_column(String(256), default="")
-    # A-3: monotonic per-doc sequence — tie-breaks appends that land in the
-    # same timestamp bucket so the chain order is deterministic even when two
-    # entries are written 59 µs apart (the observed chain-break scenario).
+    # Global chain position, assigned under the ``audit_log:chain`` lock. It is
+    # not part of the hash. No default: a writer that forgets it must fail on
+    # the unique index rather than store a shared 0.
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AuditLegacyRecord(Base):
+    """``audit_log_legacy``: the previous release's ``audit_log``, rows unchanged.
+
+    Per-event chains: many rows per ``doc_id`` with ``seq`` counted per
+    document, so neither is unique here.
+    """
+
+    __tablename__ = "audit_log_legacy"
+
+    entry_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("documents.doc_id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    matter_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    event: Mapped[str] = mapped_column(String(128), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    prev_hash: Mapped[str] = mapped_column(String(256), default="")
+    entry_hash: Mapped[str] = mapped_column(String(256), default="")
     seq: Mapped[int] = mapped_column(Integer, default=0)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class AuditAttemptRecord(Base):
+    """``audit_attempts``: sub-rows of a document row or a ``resumed`` addendum (§4.2).
+
+    Written in the same transaction as the parent, whose ``detail.attempts``
+    lists each ``entry_hash``. ``parent_id`` is the row's ``entry_id`` or an
+    addendum id, so it carries no foreign key.
+    """
+
+    __tablename__ = "audit_attempts"
+
+    attempt_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    parent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    doc_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)  # classification | extraction | judge
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    # initial | retry | arbiter_rescue | human_correction | transient | resume
+    trigger: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    entry_hash: Mapped[str] = mapped_column(String(256), default="")
+
+
+class AuditAddendumRecord(Base):
+    """``audit_addenda``: what happens to a document after its row (§4.3).
+
+    ``seq`` counts per document. The first addendum's ``prev_hash`` is the
+    row's ``entry_hash``; each later one links to the previous addendum.
+    """
+
+    __tablename__ = "audit_addenda"
+    __table_args__ = (Index("ix_audit_addenda_doc_seq", "doc_id", "seq", unique=True),)
+
+    addendum_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # rescore | resumed | review_decision | relations_linked
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    prev_hash: Mapped[str] = mapped_column(String(256), default="")
+    entry_hash: Mapped[str] = mapped_column(String(256), default="")
+
+
+class AuditMetaRecord(Base):
+    """``audit_meta``: key/value facts about the audit store (§4.5).
+
+    The ``migration`` key holds ``{migrated_at, legacy_rows,
+    legacy_tail_hashes_sha256}`` once the legacy migration has run; its
+    presence is what makes the migration skip.
+    """
+
+    __tablename__ = "audit_meta"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class AuditTraceIORecord(Base):
+    """``audit_trace_io``: prompts and completions of the ``sql`` trace sink (§4.5)."""
+
+    __tablename__ = "audit_trace_io"
+
+    visit_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    doc_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+async def event_log_model(session):
+    """The table the per-event writer and readers use right now.
+
+    INTERIM BRIDGE, removed with the per-event writers (roadmap M7/M8, M11).
+    ``audit_log`` holds one row per document once the legacy migration has run
+    (unique ``doc_id`` and global ``seq``), so ``write_audit_entry`` and the
+    per-document readers move to ``audit_log_legacy``. Until then (Postgres
+    without ``MAILROOM_AUDIT_MIGRATE=1``, or a migration that aborted) the old
+    ``audit_log`` is still the live per-event table and they keep using it.
+    """
+    row = await session.execute(
+        select(AuditMetaRecord.key).where(AuditMetaRecord.key == "migration").limit(1)
+    )
+    return AuditLegacyRecord if row.first() else AuditLogRecord
 
 
 def _link_to_tail(entry, tail) -> None:
@@ -66,7 +185,7 @@ def _link_to_tail(entry, tail) -> None:
     )
 
 
-async def write_audit_entry(entry) -> AuditLogRecord:
+async def write_audit_entry(entry) -> AuditLogRecord | AuditLegacyRecord:
     ensure_schema()
     from schemas.audit import AuditLogEntry
     async with async_session() as session:
@@ -74,6 +193,7 @@ async def write_audit_entry(entry) -> AuditLogRecord:
         # write lock, concurrent appenders read the same tail/max(seq) and
         # fork the chain (duplicate prev_hash and seq).
         await acquire_write_lock(session, f"audit_log:{entry.doc_id}")
+        Model = await event_log_model(session)
 
         # A-5: the FK audit_log.doc_id -> documents.doc_id is enforced per
         # connection. Audit-first flows (ingest writes its audit entry before
@@ -102,15 +222,15 @@ async def write_audit_entry(entry) -> AuditLogRecord:
         # cannot interleave.
         tail = (
             await session.execute(
-                select(AuditLogRecord.seq, AuditLogRecord.entry_hash, AuditLogRecord.timestamp)
-                .where(AuditLogRecord.doc_id == entry.doc_id)
-                .order_by(desc(AuditLogRecord.seq), desc(AuditLogRecord.timestamp))
+                select(Model.seq, Model.entry_hash, Model.timestamp)
+                .where(Model.doc_id == entry.doc_id)
+                .order_by(desc(Model.seq), desc(Model.timestamp))
                 .limit(1)
             )
         ).first()
         next_seq = ((tail.seq or 0) if tail else 0) + 1
         _link_to_tail(entry, tail)
-        record = AuditLogRecord(
+        record = Model(
             entry_id=entry.entry_id,
             doc_id=entry.doc_id,
             matter_id=entry.matter_id,
@@ -141,10 +261,11 @@ async def get_audit_chain(doc_id: str) -> list[dict]:
         return dt.replace(tzinfo=_tz.utc) if dt.tzinfo is None else dt.astimezone(_tz.utc)
 
     async with async_session() as session:
+        Model = await event_log_model(session)
         result = await session.execute(
-            select(AuditLogRecord)
-            .where(AuditLogRecord.doc_id == doc_id)
-            .order_by(AuditLogRecord.seq, AuditLogRecord.timestamp)
+            select(Model)
+            .where(Model.doc_id == doc_id)
+            .order_by(Model.seq, Model.timestamp)
         )
         records = result.scalars().all()
         return [
@@ -166,10 +287,11 @@ async def get_audit_chain(doc_id: str) -> list[dict]:
 async def get_latest_audit_hash(doc_id: str) -> str:
     ensure_schema()
     async with async_session() as session:
+        Model = await event_log_model(session)
         result = await session.execute(
-            select(AuditLogRecord.entry_hash)
-            .where(AuditLogRecord.doc_id == doc_id)
-            .order_by(desc(AuditLogRecord.seq), desc(AuditLogRecord.timestamp))
+            select(Model.entry_hash)
+            .where(Model.doc_id == doc_id)
+            .order_by(desc(Model.seq), desc(Model.timestamp))
             .limit(1)
         )
         row = result.first()
@@ -182,7 +304,8 @@ async def list_audit_doc_ids() -> list[str]:
     from sqlalchemy import distinct
 
     async with async_session() as session:
-        rows = await session.execute(select(distinct(AuditLogRecord.doc_id)))
+        Model = await event_log_model(session)
+        rows = await session.execute(select(distinct(Model.doc_id)))
         return sorted(r[0] for r in rows.all() if r[0])
 
 async def analyze_audit_db(
@@ -211,26 +334,27 @@ async def analyze_audit_db(
         return dt.astimezone(_tz.utc)
 
     async with async_session() as session:
-        total = (await session.execute(select(func.count()).select_from(AuditLogRecord))).scalar() or 0
+        Model = await event_log_model(session)
+        total = (await session.execute(select(func.count()).select_from(Model))).scalar() or 0
         by_event_rows = await session.execute(
-            select(AuditLogRecord.event, func.count())
-            .group_by(AuditLogRecord.event)
+            select(Model.event, func.count())
+            .group_by(Model.event)
             .order_by(func.count().desc())
         )
         by_actor_rows = await session.execute(
-            select(AuditLogRecord.actor, func.count())
-            .group_by(AuditLogRecord.actor)
+            select(Model.actor, func.count())
+            .group_by(Model.actor)
             .order_by(func.count().desc())
         )
         doc_count = (
-            await session.execute(select(func.count(func.distinct(AuditLogRecord.doc_id))))
+            await session.execute(select(func.count(func.distinct(Model.doc_id))))
         ).scalar() or 0
         matter_count = (
-            await session.execute(select(func.count(func.distinct(AuditLogRecord.matter_id))))
+            await session.execute(select(func.count(func.distinct(Model.matter_id))))
         ).scalar() or 0
         recent = await session.execute(
-            select(AuditLogRecord)
-            .order_by(desc(AuditLogRecord.timestamp), desc(AuditLogRecord.seq))
+            select(Model)
+            .order_by(desc(Model.timestamp), desc(Model.seq))
             .limit(max(1, event_limit))
         )
         recent_rows = list(recent.scalars().all())

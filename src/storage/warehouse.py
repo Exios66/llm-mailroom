@@ -340,7 +340,7 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
         return []
     from sqlalchemy import select
 
-    from storage.audit_log import AuditLogRecord, get_audit_chain
+    from storage.audit_log import event_log_model, get_audit_chain
     from storage.db import async_session, ensure_schema
 
     ensure_schema()
@@ -351,10 +351,11 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
             rows.extend({**row, "doc_id": doc_id} for row in await get_audit_chain(doc_id))
         return rows
     async with async_session() as session:
+        Model = await event_log_model(session)
         result = await session.execute(
-            select(AuditLogRecord)
-            .where(AuditLogRecord.doc_id.in_(doc_ids))
-            .order_by(AuditLogRecord.doc_id, AuditLogRecord.seq, AuditLogRecord.timestamp)
+            select(Model)
+            .where(Model.doc_id.in_(doc_ids))
+            .order_by(Model.doc_id, Model.seq, Model.timestamp)
         )
         for rec in result.scalars().all():
             rows.append(
