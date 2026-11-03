@@ -101,7 +101,7 @@ class AuditAddendumRecord(Base):
 
     addendum_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     doc_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # rescore | resumed | review_decision | relations_linked
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)  # rescore | resumed | review_decision | relations_linked | recovered_detail
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
