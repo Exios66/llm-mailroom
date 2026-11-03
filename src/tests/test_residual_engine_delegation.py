@@ -5,6 +5,13 @@ from observability.scores import deterministic_verdict_label
 from pipeline import config
 
 
+def _dojo_module(legacy):
+    """Canonical module name behind a Dojo import path (legacy flat aliases resolve too)."""
+    import importlib
+
+    return importlib.import_module(legacy).__name__
+
+
 def _call(*args,**kwargs):
     """Observe real canonical function entries without replacing the scorer."""
     seen=set()
@@ -17,7 +24,7 @@ def _call(*args,**kwargs):
         result=deterministic_verdict_label(*args,**kwargs)
     finally:
         sys.setprofile(old)
-    assert ('llm_dojo_scoring.pipeline_verdict','deterministic_verdict_label') in seen
+    assert (_dojo_module('llm_dojo_scoring.pipeline_verdict'),'deterministic_verdict_label') in seen
     return result
 
 

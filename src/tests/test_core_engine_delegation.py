@@ -5,6 +5,13 @@ from contextlib import contextmanager
 import pytest
 
 
+def _dojo_module(legacy):
+    """Canonical module name behind a Dojo import path (legacy flat aliases resolve too)."""
+    import importlib
+
+    return importlib.import_module(legacy).__name__
+
+
 @contextmanager
 def calls_to(prefix):
     """Observe executed source functions without replacing any scored unit."""
@@ -67,7 +74,7 @@ def test_experiment_delegates_union_class_and_selected_stage_metrics():
 def test_usage_reducer_delegates_six_legacy_keys_and_nonfinite_behavior():
     """Known zero cost counts; ignored empty usage rows and mean/total retained."""
     from legalbench.runner import _tokens_summary
-    with calls_to("llm_dojo_scoring.cost") as calls:
+    with calls_to(_dojo_module("llm_dojo_scoring.cost")) as calls:
         out = _tokens_summary([{}, None, {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5, "cost": 0.0}, {"total_tokens": 4, "cost": 2.0}, {"total_tokens": 1}])
     assert out == {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 10, "cost_usd": 1.0, "cost_total_usd": 2.0, "rows_with_usage": 3}
     assert "tokens_summary" in calls
@@ -83,7 +90,7 @@ def test_agent_rubrics_delegate_without_mocking_scorers():
     from observability.agent_eval import score_case, token_overlap
     from llm_dojo_scoring import agent_rubrics as engine
     assert token_overlap is engine.token_set_f1
-    with calls_to("llm_dojo_scoring.agent_rubrics") as calls:
+    with calls_to(_dojo_module("llm_dojo_scoring.agent_rubrics")) as calls:
         report = score_case("reporter", {"expected_fields": {"party": "A", "date": "B"}}, {"note": "party"})
         text = score_case("pdf_transcriber", {"text": "a c"}, {"markdown": "a a b"})
         boss = score_case("boss", {}, {"decision": "approved"})
@@ -101,7 +108,7 @@ def test_local_pack_diagnostic_facades_use_real_dojo():
     assert c.insurance_gt_is_homogeneous is engine.insurance_gt_is_homogeneous
     assert c.insurance_expected_set_is_homogeneous is engine.insurance_expected_set_is_homogeneous
     from observability.local_eval_packs import score_local_packs
-    with calls_to("llm_dojo_scoring.agent_rubrics") as calls:
+    with calls_to(_dojo_module("llm_dojo_scoring.agent_rubrics")) as calls:
         out = score_local_packs()
     assert out["insurance_contrast"]["gt_homogeneity"] is False
     assert out["insurance_contrast"]["hub_cms_shaped"]["gt_homogeneity"] is True

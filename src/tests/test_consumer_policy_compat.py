@@ -3,6 +3,13 @@ from contextlib import contextmanager
 import sys
 
 
+def _dojo_module(legacy):
+    """Canonical module name behind a Dojo import path (legacy flat aliases resolve too)."""
+    import importlib
+
+    return importlib.import_module(legacy).__name__
+
+
 @contextmanager
 def _calls():
     """Observe function entries without replacing scorer implementations."""
@@ -39,7 +46,7 @@ def test_legalbench_uses_producer_groups_without_changing_global_settings(monkey
     assert result["accuracy_equiv"] == 1.0
     assert settings.subtype_equivalences == []
     assert SUBTYPE_EQUIVALENCES == before
-    assert ("llm_dojo_scoring.legalbench_scoring", "score_multiclass") in seen
+    assert (_dojo_module("llm_dojo_scoring.legalbench_scoring"), "score_multiclass") in seen
 
 
 def test_raw_pilot_calibration_delegates_round_last_and_empty_support():
@@ -57,7 +64,7 @@ def test_raw_pilot_calibration_delegates_round_last_and_empty_support():
     assert result["mean_calibration_error"] == .001
     assert result["calibration_n"] == 3
     assert empty["mean_calibration_error"] is None
-    assert ("llm_dojo_scoring.pilot_summary", "pilot_calibration_error") in seen
+    assert (_dojo_module("llm_dojo_scoring.pilot_summary"), "pilot_calibration_error") in seen
 
 
 def test_diagnostic_public_imports_reexport_canonical_objects():

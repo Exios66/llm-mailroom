@@ -5,12 +5,14 @@ Guards (1) the live specialist prompts against the dojo ``production`` /
 against the dojo ``DEFAULT_FIELD_TYPES`` for the live document classes.
 """
 
+from llm_dojo_scoring import get_doc_scorer
+from llm_dojo_scoring.scoring.doc_scorers import DOC_SCORERS
 from llm_dojo_scoring.prompts import get_prompt
 from llm_dojo_scoring.suites import DEFAULT_FIELD_TYPES
 
 from llm.frozen_v1 import SPECIALIST_AGENTS
 from llm.prompts import prompt_templates
-from pipeline.config import load_config
+from pipeline.config import EXTRACT_CLASS_ALIASES, load_config
 
 # No shared constant exists: these are the doc_classes keys in
 # src/config/taxonomy.yaml that carry ``field_types`` (all five live classes).
@@ -43,3 +45,26 @@ def test_taxonomy_field_types_equal_dojo_defaults_for_live_classes():
     tax = {c["key"]: c["field_types"] for c in load_config()["doc_classes"]}
     for doc in LIVE_DOC_TYPES:
         assert tax[doc] == DEFAULT_FIELD_TYPES[doc], doc
+
+
+def test_live_classes_all_have_dojo_field_maps():
+    """The taxonomy's field-map classes are the five live ones, each with a dojo field map.
+
+    The dojo also keeps maps for retired classes (court opinion, due diligence,
+    compliance filing); those are allowed, the live five are required.
+    """
+    tax = {c["key"] for c in load_config()["doc_classes"] if c.get("field_types")}
+    assert tax == set(LIVE_DOC_TYPES)
+    assert set(LIVE_DOC_TYPES) <= set(DEFAULT_FIELD_TYPES)
+
+
+def test_every_live_class_has_its_own_dojo_scorer():
+    """dojo 0.27.0 routes each live class to its own module, never ``generic``."""
+    for doc in LIVE_DOC_TYPES:
+        assert get_doc_scorer(doc) is DOC_SCORERS[doc], doc
+        assert DOC_SCORERS[doc].doc_type == doc
+
+
+def test_no_extract_class_aliases():
+    """Extraction never aliases one class onto another's field map (plan M1)."""
+    assert EXTRACT_CLASS_ALIASES == {}
