@@ -54,9 +54,9 @@ This runs as early as D1 allows, before any sandbox change (review item A8).
 - Test: `tests/test_scoring_outputs_golden.py`, `tests/test_scoring_ownership.py`, `tests/test_vendor_drift.py`
 
 - [ ] **Step 1: Run `python scripts/sync_vendor.py`** after updating the pins, then the requirements sync check. Expected: `tests/test_vendor_drift.py` and `tests/test_dojo_source.py` pass. Add `test_vendored_mailroom_dojo_pin_matches` (gap G9): the dojo pin declared by the vendored llm-mailroom equals the sandbox's own dojo SHA. Today they differ (0.25.0 and 0.26.0).
-- [ ] **Step 2: Replace the bodies with dojo calls.** Run the golden test. Expected: PASS (byte-identical). The wrapper keeps `doc_subclass` over `expected_subclass`; the dojo's tier 0 already keeps the `generic` / `suite-fallback-generic` labels (gap G10). Add goldens for a suite-lookup failure and a `suite.score` failure, so the labels are proved and not just assumed.
+- [ ] **Step 2: Replace the bodies with dojo calls.** Run the golden test. Expected: PASS. Every field score is identical; three outputs change on purpose (dojo 0.27.0 CHANGELOG): a `None` prediction is now a parse error, adherence reports keys outside the class schema, and correspondence/insurance rows gain topic/sentiment and claims-consistency extras. Re-record the affected S0 goldens in the same commit and list them in the PR. The wrapper keeps `doc_subclass` over `expected_subclass`; the dojo's tier 0 already keeps the `generic` / `suite-fallback-generic` labels (gap G10). Add goldens for a suite-lookup failure and a `suite.score` failure, so the labels are proved and not just assumed.
 - [ ] **Step 3: Add `tests/test_decision_schema_contract.py`.** The `job/node_trace.py` decision keys must equal the mailroom fixture `src/tests/fixtures/audit/sandbox_decision_schema.json` in the vendored copy.
-- [ ] **Step 4: Run the full gate.** Expected: PASS, with coverage at or above 77.
+- [ ] **Step 4: Run the full gate.** Expected: PASS, with coverage at or above 77. Then, in llm-dojo-scoring, regenerate `tests/fixtures/consumer_surface.json` (`scripts/audit_consumer_surface.py --write`) so the scan picks up the sandbox's use of `score_document`.
 - [ ] **Step 5: Commit.**
 
 ### Task S2: Local audit rows and `audit-reconcile` in the sandbox CLI

@@ -58,9 +58,13 @@ the scoping. The sandbox path is the most complete.
 
 - `score_document(doc_type, predicted, expected, *, doc_text=None, doc_subclass=None,
   expected_subclass=None, schema_lookup=None) -> dict` returns exactly the payload the sandbox's
-  `score_extraction_row` returns today (same keys, same values), plus a `scorer` record
-  (`doc_type`, `module`, `subclass`, `tiers_run`). Where the sandbox raised on a
-  non-mapping prediction, it coerces or scores the prediction as empty instead. It contains the Hub
+  `score_extraction_row` returns today, with every field score unchanged, plus a `scorer`
+  record (`doc_type`, `module`, `subclass`, `tiers_run`). Where the sandbox raised on a
+  non-mapping prediction, it coerces or scores the prediction as empty instead. Three
+  outputs differ from the sandbox on purpose: a `None` prediction is a parse error;
+  adherence is checked on the prediction as given, so foreign keys are reported; and
+  correspondence topic/sentiment and insurance claims-consistency extras (which the
+  suites computed and the sandbox dropped) are reported. None feeds the headline. It contains the Hub
   scoping (`extraction_scope`), the detailed subclass-aware suite path, MAUD/CUAD headline
   replacement with `suite_overall_extraction_score` kept, `unlabeled_fields`, and the PRF
   keys (`extraction_precision`, `extraction_recall`, `extraction_f1`, `extraction_f2`,
@@ -79,7 +83,8 @@ the scoping. The sandbox path is the most complete.
   headline, else null), `unlabeled_fields`, `entity_list_f1`, `scorer`.
 
 The sandbox's `score_extraction_row` becomes a thin wrapper over `score_document`. A golden
-test on recorded sandbox rows proves its output is byte-identical.
+test on recorded sandbox rows proves every field score is identical and pins the three
+departures above.
 
 ### 3.1 Tiered scorers, one per document type
 
