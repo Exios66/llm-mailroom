@@ -2,8 +2,8 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `e35504db12f09aeda07ae116663c177acd8c0d6e`
-- Source package version: `0.25.0`
+- Exact source commit: `a82843e808336e0078c7d5b27dcdb3ff8b698170`
+- Source package version: `0.27.1`
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
 
 The installed release (the pyproject git pin) is the primary Dojo. This snapshot is the
