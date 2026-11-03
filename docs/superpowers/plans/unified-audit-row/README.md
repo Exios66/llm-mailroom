@@ -15,10 +15,16 @@ steps. `src/scripts/roadmap_status.py` reads them and does three things:
   or when a task is ticked done before a task it depends on;
 - renders the body of #150 (`--issue-body`).
 
-`.github/workflows/roadmap-sync.yml` runs `--check` on every pull request that touches the
-spec or plans. On a push to `main` that touches the spec, the plans or
-`src/scripts/roadmap_status.py`, it rewrites #150 from `--issue-body`. Progress is
-recorded by ticking steps in these files in the same PR that lands the work. Work in
+**This repository does not use GitHub Actions** (CI is CircleCI). `.github/workflows/roadmap-sync.yml`
+is in the tree but never runs, and its red `roadmap` check on PRs is not a gate. So the
+checks and the #150 sync are manual:
+
+1. After ticking steps, run `python src/scripts/roadmap_status.py --write` and then
+   `--check` (prints `roadmap: OK`), and commit the regenerated table with the ticks.
+2. Update #150's body by hand: paste the output of `--issue-body` (keep the
+   "Current state" bullets at its top current), using the GitHub tool or the web UI.
+
+Progress is recorded by ticking steps in these files in the same PR that lands the work. Work in
 another repository (dojo, sandbox, hub) is ticked here in a small follow-up PR that links
 the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring#120)`).
 
@@ -30,7 +36,30 @@ the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring
 - After every task, the matching steps are ticked here (with the PR and commit) and
   pushed, so #150 shows the checkpoint. Before this folder is on `main`, ticks ride on
   PR #151; after that, they go in a small PR per checkpoint.
-- Open checkpoint PRs: stage 0 → Exios66/llm-mailroom#151; stage 1 → Exios66/llm-dojo-scoring#116.
+- Open checkpoint PRs: stage 2 → Exios66/llm-mailroom#160 (draft; M2 and M3 so far).
+  Closed out: stage 0 → #151 (merged), stage 1 → Exios66/llm-dojo-scoring#116 and #118 (merged),
+  M1 → #157 (merged), S0 → Exios66/local-mailroom-sandbox#240.
+
+## Current state (handoff, 2026-11-03)
+
+Read this first if you are picking the work up.
+
+- **Merged to `main`:** the spec and plans (#151), dojo pin v0.27.1 `a82843e` (#157, M1),
+  the release tool `src/scripts/release.py` (#158), CircleCI fixes (#159, #161).
+- **Draft PR #160** (`claude/unified-audit-row-wip`, based on `main`): M2 (audit tables and
+  migration, `ba73947`) and M3 (row and addendum writers, `3b6e5b9`). Steps are ticked on
+  this branch; they reach `main` when #160 merges. Rulings for both are in the notes under
+  each task in [stage-2-mailroom.md](stage-2-mailroom.md).
+- **Open PR #162:** release cut v0.9.1 (`pyproject.toml` 0.8.1 → 0.9.1, after the existing
+  `v0.9.0` tag). After merge the owner runs `release.py publish 0.9.1 --commit <sha> --apply --push`.
+- **Next task: M4 (verification)** on the #160 branch, then M5 onward in order. Commit
+  and push after every task, tick the steps here, and refresh #150.
+- **Working notes:** the full mailroom suite takes about 5 minutes. On a cold uv cache,
+  `test_wheel_runtime_catalog` fails until you run
+  `uv build --no-sources --wheel --out-dir /tmp/uv-warm .` once. `ruff` is not a gate in
+  this repo. `docs/changelog/` is generated: after a CHANGELOG merge conflict, run
+  `python src/scripts/sync_gitbook_changelog.py`. Never hand-edit versions; use
+  `src/scripts/release.py cut`.
 
 ## Stages
 
@@ -47,7 +76,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**11/33 tasks done.**
+**12/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -62,8 +91,8 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 1 | D7 | `score_document` dispatcher and wider `score_archive_block` | llm-dojo-scoring | 5/5 | done |
 | 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 4/4 | done |
 | 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 4/4 | done |
-| 2 | M2 | Audit tables and migration | llm-mailroom | 0/5 | ready |
-| 2 | M3 | Row and addendum writers | llm-mailroom | 0/5 | blocked |
+| 2 | M2 | Audit tables and migration | llm-mailroom | 5/5 | done |
+| 2 | M3 | Row and addendum writers | llm-mailroom | 4/5 | in progress |
 | 2 | M4 | Verification | llm-mailroom | 0/5 | blocked |
 | 2 | M5 | Trace collection in state | llm-mailroom | 0/5 | ready |
 | 2 | M6 | Scoring node family | llm-mailroom | 0/5 | blocked |
