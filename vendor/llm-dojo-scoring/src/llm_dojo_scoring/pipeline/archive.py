@@ -29,7 +29,6 @@ from ..scoring.field_scoring import (
     expected_cms_source_table,
     score_extraction,
 )
-from ..schemas.corpus import cms_source_table
 from ..schemas.gt_metadata import CMS_SOURCE_TABLE_KEY, is_empty_value
 from ..metrics.scorecard_honesty import (
     _METRIC_ID_BY_NAME,
@@ -383,6 +382,17 @@ def _filter_to_live_map(
     return out
 
 
+def _derived_expected_fields(doc_class: str, raw_subclass: Any) -> dict[str, str]:
+    """Expected fields the type's scorer derives from a subclass (CMS ``cms_source_table``)."""
+    from ..scoring.doc_scorers import get_doc_scorer
+
+    scorer = get_doc_scorer(doc_class)
+    if scorer.doc_type != doc_class:
+        return {}
+    derive = getattr(scorer, "derived_fields", None)
+    return dict(derive(raw_subclass)) if derive is not None else {}
+
+
 def _document_keys(
     doc_class: str,
     predicted: Any,
@@ -391,29 +401,48 @@ def _document_keys(
     doc_subclass: str | None,
     expected_subclass: Any,
 ) -> dict[str, Any]:
-    """The 0.27.0 block keys from :func:`score_document`; null when there is no ground truth."""
-    from ..scoring.doc_scorers import get_doc_scorer
-    from ..scoring.doc_scorers.dispatch import score_document
+    """The 0.27.0 block keys from :func:`score_document`.
 
-    doc = score_document(
-        doc_class,
-        predicted,
-        expected,
-        doc_text=doc_text,
-        doc_subclass=doc_subclass,
-        expected_subclass=str(expected_subclass) if expected_subclass is not None else None,
-    )
+    Never raises: if the tiered scorers fail the new keys are null (``scorer`` is kept
+    when it can still be built) and the keys that existed before 0.27.0 are unaffected.
+    The caller nulls ``entity_list_f1`` / ``unlabeled_fields`` when the block's own status
+    says they have no ground truth to describe.
+    """
+    from ..scoring.doc_scorers import get_doc_scorer
+    from ..scoring.doc_scorers.dispatch import _scorer_info, score_document
+    from ..scoring.doc_scorers.common import _warn_once
+
     out: dict[str, Any] = {
         "headline_score": None,
         "headline_metric": None,
-        "unlabeled_fields": doc.get("unlabeled_fields"),
-        "entity_list_f1": doc.get("entity_list_f1"),
-        "scorer": doc["scorer"],
+        "unlabeled_fields": None,
+        "entity_list_f1": None,
+        "scorer": None,
     }
-    # A type module's headline reads its own extras, which sit on the payload.
-    score, metric = get_doc_scorer(doc_class).headline(doc, doc)
-    if metric is not None:
-        out["headline_score"], out["headline_metric"] = score, metric
+    try:
+        doc = score_document(
+            doc_class,
+            predicted,
+            expected,
+            doc_text=doc_text,
+            doc_subclass=doc_subclass,
+            expected_subclass=str(expected_subclass) if expected_subclass is not None else None,
+        )
+        out["unlabeled_fields"] = doc.get("unlabeled_fields")
+        out["entity_list_f1"] = doc.get("entity_list_f1")
+        out["scorer"] = doc["scorer"]
+        # A type module's headline reads its own extras, which sit on the payload.
+        score, metric = get_doc_scorer(doc_class).headline(doc, doc)
+        if metric is not None:
+            out["headline_score"], out["headline_metric"] = score, metric
+    except Exception as exc:
+        _warn_once(f"document-keys-failed-{doc_class}", "tiered block keys raised; left null", exc)
+        out["headline_score"] = out["headline_metric"] = None
+        try:
+            raw = str(doc_subclass or expected_subclass or "").strip() or None
+            out["scorer"] = _scorer_info(get_doc_scorer(doc_class), doc_class, raw)
+        except Exception:
+            out["scorer"] = None
     return out
 
 
@@ -461,6 +490,19 @@ def score_archive_block(
     existed before 0.27.0 keeps its meaning; ``overall_score`` stays the field-map mean.
     A prediction that is not a mapping (JSON text, prose, a list) is coerced to the JSON
     object it holds, else scored as empty; before 0.27.0 it raised.
+
+    ``expected_subclass`` decides the CMS ``cms_source_table`` above; when it is ``None``,
+    ``doc_subclass`` does (0.27.1), so the field-map score and the tiered keys describe
+    one subclass.
+
+    The new keys follow the block's own verdict (0.27.1): ``entity_list_f1`` is null when
+    the block is not countable, and ``unlabeled_fields`` is null when ``reason`` is
+    ``gt_missing``. They are computed behind a guard: if the tiered scorers fail they are
+    null and every earlier key is unaffected.
+
+    ``status`` is the field-map verdict and stays unchanged for MAUD and CUAD rows. Rows
+    with a non-null ``headline_score`` are judged by the headline; readers that filter on
+    ``status == 'scored'`` must also keep rows whose ``headline_score`` is not null.
     """
     if predicted is not None and not isinstance(predicted, Mapping):
         # Job items and raw LLM text arrive as strings or lists: score the JSON object
@@ -471,11 +513,15 @@ def score_archive_block(
     ftypes = _live_field_types(doc_class, field_types)
     exp = _filter_to_live_map(expected, ftypes)
     pred = _filter_to_live_map(predicted, ftypes)
-    cms_table = cms_source_table(doc_class, expected_subclass)
+    # ``expected_subclass`` decides the CMS table; with none, ``doc_subclass`` stands in
+    # (the sandbox rule, and what ``score_document`` does), so the block and its tiered
+    # keys describe one subclass. The scorer's ``derived_fields`` owns the derivation.
+    raw_subclass = expected_subclass if expected_subclass is not None else doc_subclass
+    cms_table = _derived_expected_fields(doc_class, raw_subclass).get(CMS_SOURCE_TABLE_KEY)
     if cms_table is None:
         # An expected row that already carries the derived key keeps it.
         carried = (expected or {}).get(CMS_SOURCE_TABLE_KEY)
-        cms_table = cms_source_table(doc_class, carried)
+        cms_table = _derived_expected_fields(doc_class, carried).get(CMS_SOURCE_TABLE_KEY)
     if cms_table is not None:
         exp[CMS_SOURCE_TABLE_KEY] = cms_table
         if (predicted or {}).get(CMS_SOURCE_TABLE_KEY) is not None:
@@ -546,6 +592,12 @@ def score_archive_block(
             f"method {resolved_method!r} ({metric_id!r})"
         )
     block.update(_document_keys(doc_class, predicted, expected, doc_text, doc_subclass, expected_subclass))
+    # The new keys follow the block's own verdict: nothing countable, no entity-list F1;
+    # no ground truth at all, no unlabeled-field list.
+    if not countable:
+        block["entity_list_f1"] = None
+    if assessment.reason == "gt_missing":
+        block["unlabeled_fields"] = None
     if field_types:
         # A caller's own field map: entity-list F1 must describe that map, not the default.
         block["entity_list_f1"] = prf.get("entity_list_f1") if countable else None

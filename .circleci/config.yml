@@ -48,6 +48,11 @@ jobs:
           paths:
             - ~/.cache/pip
       - run:
+          # test_wheel_runtime_catalog runs `uv build --offline`, which can only read
+          # setuptools/wheel from uv's cache. Build once online so the cache has them.
+          name: Warm uv build cache (for the offline wheel test)
+          command: uv build --no-sources --wheel --out-dir /tmp/uv-warm .
+      - run:
           name: Prepare test results dir
           command: mkdir -p test-results
       - run:

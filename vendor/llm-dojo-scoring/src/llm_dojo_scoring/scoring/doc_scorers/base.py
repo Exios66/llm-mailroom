@@ -67,3 +67,7 @@ class TypeScorer:
     def headline(self, common: Mapping[str, Any], extras: Mapping[str, Any]) -> tuple[float | None, str | None]:
         """No headline swap."""
         return None, None
+
+    def derived_fields(self, raw_subclass: Any) -> dict[str, str]:
+        """Expected fields derived from a row's subclass (ground truth never carries them); none by default."""
+        return {}
