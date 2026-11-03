@@ -434,5 +434,5 @@ Gap G4: the mailroom never calls `score_archive_block` today. It scores in three
 - Modify: `CHANGELOG.md`, and the deploy notes (migration, Postgres opt-in, rollback, spool path)
 
 - [ ] **Step 1: Run** `pytest -q`. Expected: PASS. Then `python src/scripts/verify_audit_chains.py` on a DB produced by `pytest`'s end-to-end fixture. Expected: exit 0.
-- [ ] **Step 2: Update the docs.** Run `python src/scripts/roadmap_status.py --check`.
+- [ ] **Step 2: Update the docs.** Run `python src/scripts/roadmap_status.py --check`. In llm-dojo-scoring, regenerate `tests/fixtures/consumer_surface.json` (`scripts/audit_consumer_surface.py --write`) now that the mailroom imports `score_document`; `contract_surface.json` keeps pinning the names until then.
 - [ ] **Step 3: Commit, then open the PR** (owner asks). Tick M1–M14 in the same PR.
