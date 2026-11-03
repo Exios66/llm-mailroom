@@ -15,6 +15,9 @@ dependencies = [
     "pydantic>=2.0",
     "watchdog>=4.0",
     "fastapi>=0.110",
+    # FastAPI form and upload routes (src/api/main.py) need it. It used to arrive
+    # transitively through arize-phoenix, which c816130 removed.
+    "python-multipart>=0.0.9",
     "uvicorn[standard]>=0.29",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.19",
