@@ -7,16 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Dojo pin → v0.27.1** (`a82843e`, the release merge of llm-dojo-scoring#118), pinned by commit SHA. It supersedes the unmerged 0.26.0 pin (#149), so this one bump takes in 0.26.0, 0.27.0 and 0.27.1.
-  - 0.26.0: reviewer-lane scoring and `dojo-rescore`; the CMS insurance mapping (#93: `claim_type` and `cms_source_table` are separate fields); the five-class extraction schema registry, with an additive `schema` block on detailed scores.
-  - 0.27.0 (additive): `score_document`, `get_doc_scorer` and `assess_extraction_payload`, the tiered per-document-type scorers, and a wider `score_archive_block`. Mailroom does not call them yet; the scoring nodes (roadmap M6) will.
-  - 0.27.1 (review fixes): the tiered scorers never raise on a bad field value (the type extras are guarded, and `score_archive_block` keeps its pre-0.27 keys if they fail); `score_archive_block` derives the CMS table from `doc_subclass` when no `expected_subclass` is given; `entity_list_f1` / `unlabeled_fields` are null when the block itself has no ground truth to describe. Rows with a `headline_score` are judged by the headline, not `status`. None of these paths is called by mailroom yet.
-  - Score movement, checked on the dojo's golden inputs through `get_suite(...).score`: one insurance CMS row (a predicted `cms_source_table` with no labelled table) moves from 0.9167 to 1.0, per the #93 entry. Every other field score is unchanged. The mock experiment (`mailroom-fixtures`) metrics are identical under both pins, and the approved baseline still passes.
-  - The fallback snapshot under `vendor/llm-dojo-scoring` is replaced with the same commit's tree.
-  - Dojo modules now live in subpackages; the old flat import paths still resolve through Dojo's legacy aliases. The delegation tests now resolve the canonical module name instead of hard-coding the flat one.
-  - New tests: `test_scoring_imports_under_vendored_source` (the forced fallback carries the names the scoring nodes need), and parity tests for all five live classes against the dojo field maps and scorer registry, plus `test_no_extract_class_aliases`.
+## [v0.9.1] - 2026-11-03
 
 ### Added
 
@@ -45,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/tests/test_dojo_source.py` checks the snapshot against the pyproject pin and covers the missing and broken-release fallbacks.
 
 ### Changed
+
+- **Dojo pin → v0.27.1** (`a82843e`, the release merge of llm-dojo-scoring#118), pinned by commit SHA. It supersedes the unmerged 0.26.0 pin (#149), so this one bump takes in 0.26.0, 0.27.0 and 0.27.1.
+  - 0.26.0: reviewer-lane scoring and `dojo-rescore`; the CMS insurance mapping (#93: `claim_type` and `cms_source_table` are separate fields); the five-class extraction schema registry, with an additive `schema` block on detailed scores.
+  - 0.27.0 (additive): `score_document`, `get_doc_scorer` and `assess_extraction_payload`, the tiered per-document-type scorers, and a wider `score_archive_block`. Mailroom does not call them yet; the scoring nodes (roadmap M6) will.
+  - 0.27.1 (review fixes): the tiered scorers never raise on a bad field value (the type extras are guarded, and `score_archive_block` keeps its pre-0.27 keys if they fail); `score_archive_block` derives the CMS table from `doc_subclass` when no `expected_subclass` is given; `entity_list_f1` / `unlabeled_fields` are null when the block itself has no ground truth to describe. Rows with a `headline_score` are judged by the headline, not `status`. None of these paths is called by mailroom yet.
+  - Score movement, checked on the dojo's golden inputs through `get_suite(...).score`: one insurance CMS row (a predicted `cms_source_table` with no labelled table) moves from 0.9167 to 1.0, per the #93 entry. Every other field score is unchanged. The mock experiment (`mailroom-fixtures`) metrics are identical under both pins, and the approved baseline still passes.
+  - The fallback snapshot under `vendor/llm-dojo-scoring` is replaced with the same commit's tree.
+  - Dojo modules now live in subpackages; the old flat import paths still resolve through Dojo's legacy aliases. The delegation tests now resolve the canonical module name instead of hard-coding the flat one.
+  - New tests: `test_scoring_imports_under_vendored_source` (the forced fallback carries the names the scoring nodes need), and parity tests for all five live classes against the dojo field maps and scorer registry, plus `test_no_extract_class_aliases`.
 
 - The production sorter is the frozen `sorter_v15`: V14 plus the corpus class boundaries
   (B1-B3: indentures and securities rights instruments are corporate_record; all mailbox
@@ -958,7 +958,8 @@ Minor release covering everything since v0.4.1. Live pipeline is **five document
 - File moves in `pipeline/bins.py` now use `shutil.move`; default file-extension fallback added.
 - Watcher and ops-monitor robustness fixes; audit log writer made async-safe; `Matter.opened_at` made timezone-aware.
 
-[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.9.1...HEAD
+[v0.9.1]: https://github.com/Exios66/llm-mailroom/compare/v0.8.1...v0.9.1
 [v0.8.1]: https://github.com/Exios66/llm-mailroom/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/Exios66/llm-mailroom/compare/v0.7.1...v0.8.0
 [v0.7.1]: https://github.com/Exios66/llm-mailroom/compare/v0.7.0...v0.7.1
