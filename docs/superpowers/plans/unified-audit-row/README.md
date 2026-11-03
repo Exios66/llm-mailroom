@@ -46,7 +46,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**5/32 tasks done.**
+**6/32 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -56,7 +56,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 1 | D2 | `assess_extraction_payload` in the dojo | llm-dojo-scoring | 5/5 | done |
 | 1 | D3 | Tier 0 common scorer and extraction scoping | llm-dojo-scoring | 5/5 | done |
 | 1 | D4 | `DocScorer` protocol, registry and `generic` | llm-dojo-scoring | 5/5 | done |
-| 1 | D5 | Type modules for contract and merger (benchmark headlines) | llm-dojo-scoring | 0/5 | ready |
+| 1 | D5 | Type modules for contract and merger (benchmark headlines) | llm-dojo-scoring | 5/5 | done |
 | 1 | D6 | Type modules for corporate record, correspondence and insurance claim | llm-dojo-scoring | 0/5 | ready |
 | 1 | D7 | `score_document` dispatcher and wider `score_archive_block` | llm-dojo-scoring | 0/5 | blocked |
 | 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 0/4 | blocked |
