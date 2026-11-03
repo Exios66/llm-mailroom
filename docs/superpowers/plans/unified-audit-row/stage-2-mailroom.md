@@ -60,7 +60,7 @@
 **Interfaces:**
 - Produces: `async def migrate_audit_log(*, backup_dir: Path | None = None) -> MigrationResult` (`migrated: bool`, `legacy_rows: int`, `backup_path: str | None`) and `async def rollback_audit_migration() -> RollbackResult`. CLI: `python -m storage.audit_migrate [--rollback]`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_migrates_legacy_rows_byte_for_byte`: every legacy column equals the original, and `verify_legacy_chain` passes.
   - `test_migration_is_idempotent`: a second run gives `migrated=False` and no changes.
   - `test_concurrent_startup_migrates_once`: two `ensure_schema` calls run under `asyncio.gather`.
@@ -69,10 +69,13 @@
   - `test_postgres_requires_opt_in`: with a Postgres URL and no `MAILROOM_AUDIT_MIGRATE=1`, the result is `migrated=False` and `audit_migration_pending` is logged.
   - `test_ddl_compiles_for_postgres`.
   - `test_rollback_restores_audit_log`: new tables are renamed `*_v2_<ts>`, and `audit_log` holds the legacy rows again.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Everything runs under `acquire_write_lock(session, "audit_log:chain")`. Check `audit_meta` first. Add unique indexes on `audit_log.doc_id` and `audit_log.seq`. SQLite: copy the DB file to `backup_dir` (default `<db dir>/backups/`). Postgres: proceed only with the opt-in, in one transaction. Write `audit_meta = {migrated_at, legacy_rows, legacy_tail_hashes_sha256}`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** Everything runs under `acquire_write_lock(session, "audit_log:chain")`. Check `audit_meta` first. Add unique indexes on `audit_log.doc_id` and `audit_log.seq`. SQLite: copy the DB file to `backup_dir` (default `<db dir>/backups/`). Postgres: proceed only with the opt-in, in one transaction. Write `audit_meta = {migrated_at, legacy_rows, legacy_tail_hashes_sha256}`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `ba73947`)
+
+> **Status:** implemented on draft PR #160 (branch `claude/unified-audit-row-wip`), not merged yet; full suite 2616 passed after merging `main`.
+> Rulings: (1) interim bridge `storage.audit_log.event_log_model()` sends the old per-event writer `write_audit_entry` and its readers to `audit_log_legacy` once `audit_meta` records the migration (removed by M7/M8/M11 when the per-event writers go); (2) the copy check compares row counts plus a digest over every legacy column, not only hashes; (3) `test_storage_concurrency.py` now queries `audit_log_legacy`.
 
 ### Task M3: Row and addendum writers
 
@@ -92,7 +95,7 @@
   - `async def get_row(doc_id) -> dict | None`.
   - `EVENTS = ("archived", "failed", "triage_archived", "triage_reviewed")` and `ADDENDUM_KINDS = ("rescore", "resumed", "review_decision", "relations_linked", "recovered_detail")`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_row_hash_matches_dojo_format_audit_entry`: compare against `llm_dojo_scoring.format_audit_entry` on the same inputs.
   - `test_rows_chain_globally_by_seq`.
   - `test_subrow_hashes_listed_in_parent_detail_attempts`.
@@ -104,10 +107,14 @@
   - `test_concurrent_documents_do_not_fork_chain`: 20 documents under `asyncio.gather`.
   - `test_unknown_event_rejected`.
   - `test_writer_refuses_while_migration_pending`: with no `audit_meta` (Postgres opt-in not given), `write_terminal_row` raises `AuditMigrationPending` and writes nothing to `audit_log` (spec §6). M10 routes that error into the §5.6 fallback.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:<doc_id>` for addenda.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:<doc_id>` for addenda.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (full suite 2632 passed, 37 skipped)
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `3b6e5b9`)
+
+> **Status:** implemented on draft PR #160 (`3b6e5b9`), not merged yet. `src/audit/{models,writer}.py`, 16 tests in `src/tests/test_audit_writer.py`; `audit*` added to the wheel packages in `pyproject.toml`.
+> Rulings: (1) a sub-row hashes an envelope of its columns (`attempt_detail_envelope`: parent_id, stage, attempt_no, trigger, outcome, started_at, ended_at, detail) with `prev_hash=""`, `entry_id=attempt_id`, `event=attempt:<stage>`, timestamp `started_at`; M4 must recompute with `audit.writer.attempt_hash`. (2) `test_row_hash_matches_dojo_format_audit_entry` compares with the dojo's `archive_entry_hash` (what `format_audit_entry` hashes with), because `format_audit_entry` fills its own detail template. (3) SQLite's `BEGIN IMMEDIATE` already serializes processes, so `test_seq_conflict_retries` simulates the A17 race with a stale tail read; conflicts retry 5 times, then `AuditWriteError`. (4) A `resumed` addendum keeps the event the second terminal write asked for in `detail.event`. (5) `get_row` returns the row with `sub_rows` and `addenda` (each with its `sub_rows`), timestamps as UTC ISO strings. (6) The writers add a minimal `documents` row when the catalog has none (FK), as the per-event writer does.
+> For M4: use `audit.writer.hash_entry` (naive SQLite timestamps are read as UTC) and `attempt_hash`; rows chain by `seq`, addenda per document from the row's `entry_hash`.
 
 ### Task M4: Verification
 
