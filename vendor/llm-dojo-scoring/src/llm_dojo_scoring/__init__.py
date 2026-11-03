@@ -12,51 +12,22 @@ from __future__ import annotations
 
 # Vendor and source checkouts can coexist with unrelated installed metadata.
 # Report the version of the code actually loaded; release tests pin pyproject parity.
-__version__ = "0.25.0"
+__version__ = "0.27.1"
+from ._layout import install_legacy_aliases
 
-from . import (
-    archive,
-    bundles,
-    doc_bundles,
-    emitter,
-    profiles,
-    pruning,
-    registry,
-    corpus,
-    mailroom,
-    suites,
-    asr,
-    bootstrap,
-    classification,
-    claims_consistency,
-    config,
-    content_scoring,
-    cost,
-    diagnostics,
-    equivalences,
-    error_analysis,
-    experiment,
-    export,
-    extraction_metrics,
-    failure_modes,
-    field_scoring,
-    grid,
-    intake,
-    io,
-    interpret,
-    langfuse_sync,
-    phoenix_sync,
-    prompts,
-    report,
-    serving,
-    tasks,
-    trace_knobs,
-    visualize,
-)
+install_legacy_aliases()
+
+from . import config, prompts  # noqa: E402
+from .schemas import corpus, equivalences  # noqa: E402
+from .scoring import asr, claims_consistency, classification, content_scoring, extraction_metrics, field_scoring, suites, tasks, trace_knobs  # noqa: E402
+from .pipeline import archive, intake, mailroom  # noqa: E402
+from .metrics import bundles, doc_bundles, emitter, profiles, pruning, registry, score_changelog  # noqa: E402
+from .analysis import bootstrap, cost, diagnostics, error_analysis, experiment, export, failure_modes, grid, interpret, io, report, serving, visualize  # noqa: E402
+from .integrations import langfuse_sync, phoenix_sync  # noqa: E402
 
 # Convenience re-exports (the most common entry points).
-from .bootstrap import bootstrap_ci, delta_significance, wilson_ci
-from .classification import (
+from .analysis.bootstrap import bootstrap_ci, delta_significance, wilson_ci
+from .scoring.classification import (
     accuracy,
     binary_metrics,
     confusion_matrix,
@@ -67,26 +38,26 @@ from .classification import (
     normalize_label,
     per_class_stats,
 )
-from .cost import estimate_cost, tokens_summary
-from .equivalences import (
+from .analysis.cost import estimate_cost, tokens_summary
+from .schemas.equivalences import (
     equivalent_doc_subclasses,
     equivalent_subtypes,
     normalize_doc_subclass,
     normalize_subtype,
 )
-from .failure_modes import (
+from .analysis.failure_modes import (
     classify_docclass_failure,
     classify_failure,
     per_subtype_accuracy,
     summarize_failures,
 )
-from .intents import (
+from .schemas.intents import (
     INTENT_ALIASES,
     INTENT_DESCRIPTIONS,
     INTENT_LABELS,
     normalize_intent,
 )
-from .field_scoring import (
+from .scoring.field_scoring import (
     EntityListScore,
     embed_texts,
     ExtractionScoreResult,
@@ -105,7 +76,7 @@ from .field_scoring import (
     score_entity_list,
     warm_embedding_model,
 )
-from .archive import (
+from .pipeline.archive import (
     ARCHIVE_HASH_VERSION,
     ARCHIVE_SCORING_METHOD,
     archivist_sign_off,
@@ -115,12 +86,15 @@ from .archive import (
     score_archive_block,
     upsert_archive_scoring,
 )
-from .extraction_metrics import (
+from .pipeline.sandbox_schema_adherence import assess_extraction_payload
+from .scoring.doc_scorers import get_doc_scorer
+from .scoring.doc_scorers.dispatch import score_document
+from .scoring.extraction_metrics import (
     extraction_binary_metrics,
     mean_entity_list_f1,
     merge_extraction_counts,
 )
-from .claims_consistency import (
+from .scoring.claims_consistency import (
     amount_exactness,
     determination_consistency,
     score_claims_extras,
@@ -134,7 +108,7 @@ from .config import (
     get_settings,
     load_settings,
 )
-from .tasks import (
+from .scoring.tasks import (
     chained_composite,
     chained_summary,
     court_opinion_score,
@@ -148,12 +122,39 @@ from .tasks import (
     score_task,
     task_kind,
 )
-from .asr import (
+from .scoring.reviewer import (
+    CONTINUE_VERDICTS,
+    DECISION_VERDICTS,
+    HUMAN_VERDICTS,
+    ReviewRecord,
+    review_record_from_run_item,
+    score_review_lane,
+)
+from .scoring.rescore import (
+    RescoreError,
+    diff_scorecards,
+    rescore_file,
+    rescore_record,
+    rescore_records,
+)
+from .analysis.calibration import (
+    auroc,
+    brier_score,
+    clopper_pearson_upper,
+    cross_fit_cutoffs,
+    cutoff_at_target,
+    cutoff_for_precision,
+    expected_calibration_error,
+    reliability_bins,
+    required_samples,
+    spearman,
+)
+from .scoring.asr import (
     character_error_rate,
     score_transcription,
     word_error_rate,
 )
-from .content_scoring import (
+from .scoring.content_scoring import (
     is_valid_maud_answer,
     peel_non_extraction_fields,
     score_content_topic,
@@ -161,7 +162,7 @@ from .content_scoring import (
     score_maud_extraction,
     score_sentiment,
 )
-from .maud import (
+from .schemas.maud import (
     MAUD_ANSWER_CLASSES,
     MAUD_CATALOG_GENERATED,
     MAUD_CATALOG_ROWS,
@@ -173,7 +174,7 @@ from .maud import (
     maud_class_index,
     maud_question_catalog,
 )
-from .gt_metadata import (
+from .schemas.gt_metadata import (
     ABSENT_PRESENCE_STATUSES,
     ANNOTATION_KEYS,
     CUAD_PRESENCE_KEY,
@@ -187,28 +188,28 @@ from .gt_metadata import (
     presence_expectations_from_cuad_labels,
     scoring_gt_fields,
 )
-from .trace_knobs import (
+from .scoring.trace_knobs import (
     capture_trace_knobs,
     confidence_calibration_error,
     parse_confidence,
     parse_reasoning,
 )
-from .intake import (
+from .pipeline.intake import (
     INTAKE_SPAN_KEYS,
     apply_intake,
     deterministic_normalize,
     looks_messy,
     score_intake,
 )
-from .bundles import BUILTIN_BUNDLES, Bundle, bundle_metric_names, get_bundle, validate_bundle
-from .doc_bundles import (
+from .metrics.bundles import BUILTIN_BUNDLES, Bundle, bundle_metric_names, get_bundle, validate_bundle
+from .metrics.doc_bundles import (
     DOC_TYPES,
     DOC_TYPE_BUNDLES,
     get_doc_bundle,
     list_doc_types,
     validate_doc_bundle,
 )
-from .emitter import (
+from .metrics.emitter import (
     Emitter,
     get_emitter,
     LangfuseSink,
@@ -216,21 +217,26 @@ from .emitter import (
     reset_default_emitter,
     ScoreRecord,
 )
-from .profiles import AgentProfile, get_profile, list_profiles, load_profiles
-from .pruning import (
+from .metrics.profiles import AgentProfile, get_profile, list_profiles, load_profiles
+from .metrics.pruning import (
     DEFAULT_DASHBOARD_TIER,
     dashboard_metrics,
     headline_metrics,
     prune_metrics,
     prune_records,
 )
-from .corpus import (
+from .metrics.score_changelog import (
+    SCORE_CHANGELOG,
+    score_changes_between,
+    score_changes_for_metric,
+)
+from .schemas.corpus import (
     CORPUS_DOC_TYPES,
     DOC_TYPE_SUBCLASSES,
     normalize_corpus_subclass,
     suite_schema,
 )
-from .sorter_guide import (
+from .schemas.sorter_guide import (
     CORRESPONDENCE_SUBCLASS_PRECEDENCE,
     SORTER_SUBCLASS_GUIDE,
     UNANNOTATED_SUBCLASSES,
@@ -238,7 +244,7 @@ from .sorter_guide import (
     sorter_subclass_keys,
     subclass_scorable,
 )
-from .cuad_schema import (
+from .schemas.cuad_schema import (
     CUAD_CATEGORIES,
     CUAD_FAMILIES,
     cuad_category,
@@ -247,7 +253,7 @@ from .cuad_schema import (
     cuad_questions,
     render_cuad_question_block,
 )
-from .maud_schema import (
+from .schemas.maud_schema import (
     MAUD_CONSIDERATION_SUBCLASSES,
     MAUD_QUESTIONS,
     maud_answers_to_clauses,
@@ -257,7 +263,7 @@ from .maud_schema import (
     parse_maud_clause,
     render_maud_question_block,
 )
-from .corporate_record_schema import (
+from .schemas.corporate_record_schema import (
     SUBCLASS_SCHEMAS as CORPORATE_RECORD_SUBCLASS_SCHEMAS,
     audit_gt_rows as audit_corporate_record_labels,
     corporate_record_json_schema,
@@ -265,8 +271,16 @@ from .corporate_record_schema import (
     scored_field_types as corporate_record_field_types,
     subclass_schema as corporate_record_subclass_schema,
 )
-from .schema_contract import contract_empty_payload, contract_violations
-from .mailroom import (
+from .schemas.schema_contract import contract_empty_payload, contract_violations
+from .schemas.scored_enums import (  # noqa: E402
+    SCORED_ENUM_FIELDS, enum_hint_violations, scored_enum_hint, scored_enum_schema,
+    scored_enum_schemas, scored_vocabulary,
+)
+from .schemas.extraction_schemas import (  # noqa: E402
+    ExtractionSchema, FieldSchema, extraction_schema,
+    extraction_subtypes, iter_extraction_schemas, schema_coverage,
+)
+from .pipeline.mailroom import (
     EXTRACT_CLASS_ALIASES,
     LIVE_DOC_TYPES,
     LIVE_SPECIALISTS,
@@ -278,7 +292,7 @@ from .mailroom import (
     resolve_extract_class,
     score_aligned_classification,
 )
-from .suites import (
+from .scoring.suites import (
     DEFAULT_FIELD_TYPES,
     DEFAULT_SUITES,
     DOC_TYPE_ALIASES,
@@ -290,7 +304,7 @@ from .suites import (
     score_suite,
     suite_for_doc_type,
 )
-from .registry import (
+from .metrics.registry import (
     ALLOWED_GROUND_TRUTH,
     clear_registry_cache,
     get_registry,
@@ -300,7 +314,7 @@ from .registry import (
     Registry,
 )
 from .prompts import PromptRecord, get_prompt, list_prompts
-from .serving import (
+from .analysis.serving import (
     CANONICAL_SERVING_KEYS,
     ServingIdentity,
     ServingObservation,
@@ -317,7 +331,7 @@ from .serving import (
     serving_table_rows,
     split_local_api,
 )
-from .grid import (
+from .analysis.grid import (
     GridDocument,
     GridExperiment,
     build_grid_report,
@@ -338,6 +352,7 @@ __all__ = [
     "ARCHIVE_HASH_VERSION", "ARCHIVE_SCORING_METHOD",
     "archive_entry_hash", "archivist_sign_off", "format_audit_entry",
     "prepare_archivist_handoff", "score_archive_block", "upsert_archive_scoring",
+    "assess_extraction_payload", "get_doc_scorer", "score_document",
     "bootstrap_ci", "delta_significance", "wilson_ci",
     "accuracy", "binary_metrics", "confusion_matrix", "exact_match",
     "fbeta", "macro_accuracy", "macro_prf", "normalize_label", "per_class_stats",
@@ -362,6 +377,13 @@ __all__ = [
     "get_jaccard", "legalbench_score", "maud_docclass_score", "maud_extraction_score",
     "maud_question_score",
     "multiclass_score", "normalize_task_answer", "score_task", "task_kind",
+    "CONTINUE_VERDICTS", "DECISION_VERDICTS", "HUMAN_VERDICTS",
+    "ReviewRecord", "review_record_from_run_item", "score_review_lane",
+    "RescoreError", "diff_scorecards", "rescore_file", "rescore_record", "rescore_records",
+    "auroc", "brier_score", "clopper_pearson_upper", "cross_fit_cutoffs",
+    "cutoff_at_target", "cutoff_for_precision", "expected_calibration_error",
+    "reliability_bins", "required_samples", "spearman",
+    "SCORE_CHANGELOG", "score_changes_between", "score_changes_for_metric",
     "BUILTIN_BUNDLES", "Bundle", "bundle_metric_names", "get_bundle",
     "validate_bundle",
     "Emitter", "get_emitter", "LangfuseSink", "LocalManifestSink",
@@ -403,6 +425,10 @@ __all__ = [
     "corporate_record_json_schema", "render_corporate_record_block",
     "corporate_record_field_types", "corporate_record_subclass_schema",
     "contract_empty_payload", "contract_violations",
+    "SCORED_ENUM_FIELDS", "enum_hint_violations", "scored_enum_hint", "scored_enum_schema",
+    "scored_enum_schemas", "scored_vocabulary",
+    "ExtractionSchema", "FieldSchema", "extraction_schema",
+    "extraction_subtypes", "iter_extraction_schemas", "schema_coverage",
     "parse_gt_fields", "scoring_gt_fields", "normalize_field_values",
     "parse_json_container", "is_empty_value", "gt_presence_map",
     "presence_expectations_from_cuad_labels", "derive_presence_from_gt",
@@ -422,13 +448,13 @@ __all__ = [
 ]
 
 # Additive sandbox benchmark API; existing task/suite entry points keep their rubrics.
-from .sandbox_scoring import score_cuad as score_sandbox_cuad
-from .sandbox_scoring import score_maud as score_sandbox_maud
+from .pipeline.sandbox_scoring import score_cuad as score_sandbox_cuad
+from .pipeline.sandbox_scoring import score_maud as score_sandbox_maud
 
 __all__ += ["score_sandbox_cuad", "score_sandbox_maud"]
 
-from .sandbox_scoring import sandbox_metric_scores
+from .pipeline.sandbox_scoring import sandbox_metric_scores
 __all__ += ["sandbox_metric_scores"]
 
-from .sandbox_scoring import aggregate_sandbox_scores
+from .pipeline.sandbox_scoring import aggregate_sandbox_scores
 __all__ += ["aggregate_sandbox_scores"]
