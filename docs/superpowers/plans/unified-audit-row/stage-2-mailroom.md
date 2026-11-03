@@ -221,7 +221,7 @@
 - Create: `src/audit/row.py`
 - Modify: `src/agents/archivist.py`. `archive_document` writes the row through `write_terminal_row`, and its `detail` comes from `build_row`.
 - Modify: `src/graph/build_graph.py`. Add the `audit_failed` node and make every stop edge (`human_review → failed`, judge stop, intake failure, rejected review) target it. Wire the watcher abort path and the triage lane writers.
-- Create: `docs/audit-row-schema.md`. It is the row reference and says which `trace` is which (review item A12). It also defines `schema_valid` once (gap G6): today `observability/scores.py` `validate_extraction` returns a bool while dojo adherence reports a fraction. The row uses the dojo's `schema_adherence` and `schema_valid`, and `validate_extraction` delegates to `assess_extraction_payload`.
+- Create: `audit-row-schema.md` under `docs/` (new in M13). It is the row reference and says which `trace` is which (review item A12). It also defines `schema_valid` once (gap G6): today `observability/scores.py` `validate_extraction` returns a bool while dojo adherence reports a fraction. The row uses the dojo's `schema_adherence` and `schema_valid`, and `validate_extraction` delegates to `assess_extraction_payload`.
 - Test: `src/tests/test_audit_row.py`, `src/tests/test_audit_terminal_paths.py`
 
 **Interfaces:**

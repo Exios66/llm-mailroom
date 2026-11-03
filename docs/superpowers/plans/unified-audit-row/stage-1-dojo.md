@@ -17,7 +17,7 @@
 - `gt_metadata` and `corporate_record_*` names (used by Mailroom-Corpus-EDA) are unchanged.
 - Never hand-edit versions; `uv.lock` is generated; new module paths need no legacy alias, but existing aliases in `_layout.LEGACY_MODULES` must keep working.
 - Gate per task: `uv run --extra dev pytest tests -q` and `uvx ruff check llm_dojo_scoring tests scripts examples` pass.
-- Any change to public names: update `tests/fixtures/consumer_surface.json` scan expectations and `docs/guides/PUBLIC_API.md` (guarded by `tests/test_public_api_doc.py`).
+- Any change to public names: update `tests/fixtures/consumer_surface.json` scan expectations and the dojo's `PUBLIC_API.md` (under `docs/guides/`) (guarded by `tests/test_public_api_doc.py`).
 
 ## Review Focus
 
@@ -159,7 +159,7 @@
 **Files:**
 - Create: `llm_dojo_scoring/scoring/doc_scorers/dispatch.py`
 - Modify: `llm_dojo_scoring/pipeline/archive.py` (`score_archive_block`)
-- Modify: `llm_dojo_scoring/__init__.py` (exports), `docs/guides/PUBLIC_API.md`, `tests/fixtures/consumer_surface.json`, `CHANGELOG.md` (`[Unreleased]` Added)
+- Modify: `llm_dojo_scoring/__init__.py` (exports), `PUBLIC_API.md` (dojo, under `docs/guides/`), `tests/fixtures/consumer_surface.json`, `CHANGELOG.md` (`[Unreleased]` Added)
 - Test: `tests/test_score_document.py`, `tests/test_archive_scoring.py`
 
 **Interfaces:**
@@ -190,7 +190,7 @@
 **Spec:** §9
 **Depends:** D7
 
-- [x] **Step 1: Run** `python scripts/release.py cut 0.27.0` (dry run), then `--apply`, then `uv lock`. Expected: `release.py check` prints OK. Before the cut, check that `docs/guides/PUBLIC_API.md` states the shipped signatures of `score_document`, `assess_extraction_payload(..., schema_lookup=)` and `score_archive_block(..., doc_subclass=)` (gap G11).
+- [x] **Step 1: Run** `python scripts/release.py cut 0.27.0` (dry run), then `--apply`, then `uv lock`. Expected: `release.py check` prints OK. Before the cut, check that `PUBLIC_API.md` (dojo `docs/guides/`) states the shipped signatures of `score_document`, `assess_extraction_payload(..., schema_lookup=)` and `score_archive_block(..., doc_subclass=)` (gap G11).
 - [x] **Step 2: Open the PR** (owner asks) and get it merged.
 - [x] **Step 3: Publish** with `python scripts/release.py publish 0.27.0` from the merge commit. The release fires `repository_dispatch: dojo-scoring-released` to llm-mailroom.
 - [x] **Step 4: Tick D1–D8 here** in a follow-up PR that links the merged PRs. Released: llm-dojo-scoring#116 merged as feec7ce; v0.27.0 published 2026-11-03 (tag 43663b8).
