@@ -59,6 +59,18 @@ def _headline(payload: Mapping[str, Any] | None) -> float | None:
     return None
 
 
+def _extraction_headline(block: Mapping[str, Any]) -> float | None:
+    """An archive block's headline: ``headline_score`` when the type has one, else the field map.
+
+    Contract (CUAD) and merger (MAUD) rows are judged by ``headline_score``
+    (0.27.1); every other row keeps ``overall_score``.
+    """
+    value = block.get("headline_score")
+    if _is_number(value):
+        return float(value)
+    return _headline(block)
+
+
 def _is_number(value: Any) -> bool:
     """A finite int/float that is not a bool (stored NaN / Infinity never counts)."""
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
@@ -174,7 +186,7 @@ def _rescore_extraction(record: Mapping[str, Any], given: Mapping[str, Any] | No
         "doc_id": record.get("doc_id", record.get("id", record.get("item_id"))),
         "task": "extraction",
         "doc_class": str(doc_class),
-        "score": _headline(block),
+        "score": _extraction_headline(block),
         "payload": block,
         "provenance": block.get("provenance") or _provenance(given),
         "rescored_from": {
@@ -303,7 +315,8 @@ def rescore_record(
             "score": (
                 _reviewer_headline(stored_payload)
                 if task == "reviewer"
-                else _headline(stored_payload)
+                # same headline as a fresh extraction rescore (headline_score first)
+                else _extraction_headline(stored_payload)
             ),
             "payload": _finite(dict(stored_payload)),
             "provenance": dict(stored_prov),
