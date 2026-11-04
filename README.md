@@ -73,7 +73,7 @@ executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
 [`v0.9.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1). The
-dependency badge reflects this checkout's Dojo pin, **e35504d** (the Dojo v0.25.0 release merge commit).
+dependency badge reflects this checkout's Dojo pin, **1cd4aba** (the Dojo v0.27.2 release commit).
 
 <details>
 <summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
