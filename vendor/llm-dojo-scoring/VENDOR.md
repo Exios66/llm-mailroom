@@ -2,9 +2,11 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `a82843e808336e0078c7d5b27dcdb3ff8b698170`
-- Source package version: `0.27.1`
+- Exact source commit: `1cd4aba76d82eea20c6e8dfcc0d760881bf84924`
+- Source package version: `0.27.2`
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
+  That includes the package data `schemas/data/extraction_status.json`, which `.gitignore`
+  re-includes explicitly (its `data/` rule had dropped it from earlier snapshots).
 
 The installed release (the pyproject git pin) is the primary Dojo. This snapshot is the
 backup that `src/dojo_source` serves only when the installed release is missing or fails to
