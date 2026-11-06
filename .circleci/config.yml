@@ -1,8 +1,12 @@
 version: 2.1
 
-# Free-tier CircleCI gate: only the most critical, network-free, key-free checks.
-# Runs a single job once per push/PR. Mark "ci/circleci: test" as a required
-# check in GitHub branch protection for main to block merges.
+# Free-tier CircleCI gate for the pipeline repo (same service as
+# local-mailroom-sandbox and llm-dojo-scoring). Runs on every push/PR once the
+# repo is followed in CircleCI; to BLOCK merges, mark "ci/circleci: test" as a
+# required check in the GitHub branch protection rule for main.
+#
+# Network-free and key-free by design: conftest.py mocks the LLM client, and the
+# experiment gate runs with --mock.
 #
 # Usage burn: the job keys a "green" marker on the git TREE hash (file
 # contents, not commit SHA). A merge whose tree equals the PR head that already
@@ -42,6 +46,8 @@ jobs:
             - pip-v1-{{ checksum "pyproject.toml" }}
       - run:
           name: Install (dev extra)
+          # uv is only a build tool for test_wheel_runtime_catalog (it shells out to
+          # `uv build`); installing the project itself still uses pip.
           command: pip install uv && pip install -e ".[dev]"
       - save_cache:
           key: pip-v1-{{ checksum "pyproject.toml" }}
@@ -57,14 +63,7 @@ jobs:
           command: mkdir -p test-results
       - run:
           name: Pytest (no network, no real LLM)
-          # Four known-failing tests deselected by exact node id so the gate
-          # catches NEW regressions instead of blocking every PR.
-          command: >-
-            python -m pytest src/tests -q -p no:cacheprovider --junitxml=test-results/junit.xml
-            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_charter_v0]"
-            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_poa_v0]"
-            --deselect "src/tests/test_prompt_mutation_lineage.py::test_extraction_doctrine_lists_exactly_the_current_schema_fields"
-            --deselect "src/tests/test_reconsideration.py::test_ground_truth_without_schema_fields_never_gates_coverage"
+          command: python -m pytest src/tests -q -p no:cacheprovider --junitxml=test-results/junit.xml
           no_output_timeout: 20m
       - run:
           name: Hermetic experiment regression gate (mock)
