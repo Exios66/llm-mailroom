@@ -74,16 +74,9 @@ python -c "import asyncio; from storage.db import init_db; asyncio.run(init_db()
 
 Start all services (each in its own terminal or use a process manager):
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:353f84ad493905d583ef8bff8aa04b19d51297a304ea04b288aa38ca3585a625 -->
-
 ```bash
 # Terminal 1: API (embeds the inbox watcher by default)
-# Configure MAILROOM_API_TOKEN in the environment before an off-loopback launch.
-PYTHONPATH=src MAILROOM_API_HOST=0.0.0.0 python -m api.main
-# Alternative: match both host settings so lifespan applies the startup guard.
-# PYTHONPATH=src MAILROOM_API_HOST=0.0.0.0 uvicorn api.main:app --host 0.0.0.0 --port 8000
+PYTHONPATH=src python -m api.main
 
 # Terminal 2 (optional): dedicated watcher — only if MAILROOM_EMBED_WATCHER=0
 PYTHONPATH=src python -m pipeline.watcher
@@ -91,16 +84,6 @@ PYTHONPATH=src python -m pipeline.watcher
 # Terminal 3 (optional): Ops Monitor (system health sweeps)
 PYTHONPATH=src python -m pipeline.ops_monitor
 ```
-
-<!-- /coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:ada11f06cfc08bfa9c8647fb23ef31e3390bd4a5c6717cc6e5a974f742ecd2e5 -->
-
-Plain Uvicorn does not start the pager, even with matching bind settings. When paging is enabled, run the watchdog or `PYTHONPATH=src python -m pipeline.pager run` separately for alerts to be sent. `python -m api.main` starts its pager when the pager configuration is active.
-
-<!-- /coderabbit-ai-generated:v1 -->
 
 Uploads land in the inbox and drain while a watcher is running. `python -m api.main` starts that watcher in-process unless `MAILROOM_EMBED_WATCHER=0` (use that when a dedicated `python -m pipeline.watcher` already holds `watcher.lock`). `GET /health` reports `checks.watcher` (`live` / `stale` / `missing`) and `inbox_pending` so The-Mailroom's live floor can show operator liveness without fabricating document rows.
 

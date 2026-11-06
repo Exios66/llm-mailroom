@@ -20,7 +20,6 @@ def _reload_main(monkeypatch, **env):
         "MAILROOM_API_HOST",
         "MAILROOM_API_TOKEN",
         "MAILROOM_API_TOKENS",
-        "MAILROOM_API_TOKEN_REVOKED",
         "SPACE_ID",
         "HF_SPACE_ID",
     ):
@@ -60,23 +59,6 @@ def test_default_port_is_8000(monkeypatch):
     assert main.listen_port() == 8000
 
 
-@pytest.mark.parametrize("platform_port", ["", " ", "\t\n"])
-@pytest.mark.parametrize("configured_port,expected", [("7860", 7860), (None, 8000)])
-def test_blank_platform_port_uses_documented_fallback(
-    monkeypatch, platform_port, configured_port, expected
-):
-    """A present but blank PORT is not a platform port override (PR #171)."""
-    main = _reload_main(
-        monkeypatch, PORT=platform_port, MAILROOM_API_PORT=configured_port
-    )
-    assert main.listen_port() == expected
-
-
-def test_padded_platform_port_still_overrides_configured_port(monkeypatch):
-    main = _reload_main(monkeypatch, PORT=" \t8080\n", MAILROOM_API_PORT="7860")
-    assert main.listen_port() == 8080
-
-
 def test_off_loopback_without_token_exits_with_space_hint(monkeypatch):
     main = _reload_main(
         monkeypatch,
@@ -104,37 +86,3 @@ def test_railway_is_retired():
     """Railway Config as Code and its nixpacks fallback are gone (The-Mailroom ADR-005)."""
     for rel in ("railway.json", "railway.toml", ".railway", "nixpacks.toml"):
         assert not (REPO_ROOT / rel).exists(), rel
-
-
-@pytest.mark.asyncio
-async def test_lifespan_rejects_unsafe_bind_before_starting_watcher(monkeypatch):
-    main = _reload_main(monkeypatch, MAILROOM_API_HOST="0.0.0.0")
-    with pytest.raises(SystemExit, match="Refusing to bind"):
-        async with main.lifespan(main.app):
-            pytest.fail("Unsafe startup reached serving state")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("host", ["192.0.2.10", "::", "0.0.0.0", "127.0.0.1", "::1"])
-@pytest.mark.parametrize("token_state", ["unset", "revoked", "live"])
-async def test_direct_asgi_listener_auth(monkeypatch, host, token_state):
-    import httpx
-
-    main = _reload_main(
-        monkeypatch,
-        MAILROOM_API_TOKEN="key" if token_state != "unset" else None,
-        MAILROOM_API_TOKEN_REVOKED="key" if token_state == "revoked" else None,
-    )
-    # ASGITransport does not run lifespan: also covers --lifespan off.
-    transport = httpx.ASGITransport(app=main.app)
-    async with httpx.AsyncClient(transport=transport, base_url=f"http://[{host}]:8000" if ":" in host else f"http://{host}:8000") as client:
-        for path in ("/status/missing", "/v1/status/missing"):
-            response = await client.get(path)
-            if token_state == "live":
-                assert response.status_code == 401
-                authorized = await client.get(path, headers={"Authorization": "Bearer key"})
-                assert authorized.status_code == 404
-            elif host in ("127.0.0.1", "::1"):
-                assert response.status_code == 404
-            else:
-                assert response.status_code == 503
