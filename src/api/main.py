@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import os
 import re
 import uuid
@@ -79,7 +80,17 @@ def _require_token(request: Request) -> None:
     """Dependency: reject requests without a live bearer token (audit L-2)."""
     tokens = active_api_tokens()
     if not tokens:
-        return  # token disabled — see server bind note below; loopback-only default
+        # ASGI exposes the actual local listener address, independently of
+        # MAILROOM_API_HOST (which direct Uvicorn launches can override).
+        server = request.scope.get("server")
+        host = server[0] if server else ""
+        try:
+            loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            loopback = host == "localhost"
+        if not loopback:
+            raise HTTPException(503, "Non-loopback API access requires a live API token")
+        return
     auth = request.headers.get("authorization", "")
     prefix = "Bearer "
     if not auth.startswith(prefix) or auth[len(prefix):].strip() not in tokens:
@@ -108,6 +119,7 @@ def _embed_watcher_running() -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _embedded_watcher
+    assert_bind_allowed()
     _ensure_dirs()
     watcher = None
     from pipeline.watcher import Watcher, WatcherLockHeld, embed_watcher_enabled
