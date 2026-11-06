@@ -34,10 +34,20 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-11-03" tags="improvement,fix" %}
+{% update date="2026-11-03" tags="feature,improvement,fix" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.
+
+### Added
+
+- **Display contract for The-Mailroom** (`contract/mailroom-contract.json`, `src/scripts/export_contract.py`).
+  - Built from the pipeline's runtime constants: the compiled LangGraph's nodes and edges with each node's span and Langfuse observation type, `NODE_OBSERVATION_TYPES`, taxonomy agents, the five document classes with their schema, specialist, field keys and sorter subclass catalog, failure classes, `SCORE_CONFIGS` names and Langfuse aliases, and the `confidence` thresholds.
+  - The-Mailroom will vendor the file at its pinned commit and test against it (in review there), so pipeline changes that break the visualizer fail in its CI instead of rendering as `unknown`.
+  - `src/tests/test_contract_export.py` fails when the committed file is stale; regenerate with `PYTHONPATH=src python src/scripts/export_contract.py --write`.
+  - `release.py cut` moves the contract's `pipeline_version` with the other version locations.
+  - `traced_node` tags its wrapper with `mailroom_span_name` so the exporter can read each node's span from the graph.
+  - `intake-ml-triage` is now listed in `NODE_OBSERVATION_TYPES` (type `span`, as emitted).
 
 ### Changed
 

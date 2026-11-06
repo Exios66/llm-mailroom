@@ -1,6 +1,6 @@
 """The committed display contract (contract/mailroom-contract.json) must match
-the pipeline it describes. The-Mailroom vendors it at a pinned commit (ADR-001),
-so a stale file would hide drift from the visualizer."""
+the pipeline it describes. The-Mailroom is set to vendor it at a pinned commit
+(ADR-001), so a stale file would hide drift from the visualizer."""
 
 from __future__ import annotations
 
