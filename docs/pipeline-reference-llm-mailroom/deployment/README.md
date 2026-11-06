@@ -135,7 +135,7 @@ Use `systemd`, `supervisord`, or Docker to manage the three processes:
 
 ```
 [Service] pipeline-watcher  → PYTHONPATH=src python -m pipeline.watcher
-[Service] mailroom-api      → PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
+[Service] mailroom-api      → PYTHONPATH=src MAILROOM_API_HOST=0.0.0.0 python -m api.main   (needs MAILROOM_API_TOKEN)
 [Service] ops-monitor       → PYTHONPATH=src python -m pipeline.ops_monitor
 ```
 

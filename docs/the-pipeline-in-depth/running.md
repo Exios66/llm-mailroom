@@ -87,7 +87,7 @@ PYTHONPATH=src python -m api.main
 | Setting | Rule (from `listen_host()` / `listen_port()`) |
 | --- | --- |
 | Host | `MAILROOM_API_HOST`, default `127.0.0.1` |
-| Port | `PORT` if set (Fly, Render, other hosts), else `MAILROOM_API_PORT`, else `8000` |
+| Port | `PORT` if non-empty after stripping whitespace (Fly, Render, other hosts), else `MAILROOM_API_PORT`, else `8000` |
 | Off-loopback bind | Refused with `SystemExit` unless `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS` is set (audit L-2) |
 
 [API reference](../pipeline-reference-llm-mailroom/api.md) also documents a direct uvicorn start:
@@ -96,7 +96,7 @@ PYTHONPATH=src python -m api.main
 PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-This path skips the `assert_bind_allowed()` check in `__main__`, so set a token yourself when binding `0.0.0.0`.
+This path skips the `assert_bind_allowed()` check in `__main__`. Without a live token the app still refuses non-loopback traffic per request: every token-protected route answers 503 until `MAILROOM_API_TOKEN` (or `MAILROOM_API_TOKENS`) is set. The health checks and FastAPI's `/docs`, `/redoc` and `/openapi.json` have no token dependency and stay reachable. The guard looks at the address the request arrived on, plus the `Forwarded` / `X-Forwarded-For` / `X-Real-IP` headers; a reverse proxy on the same host that adds none of those looks like a local client, so set a token whenever the API sits behind a proxy.
 
 Push a document through and follow it:
 
