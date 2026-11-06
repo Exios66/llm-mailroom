@@ -8,7 +8,9 @@
   appends to the document's addendum chain, which starts at the row's hash.
 
 Every hash is hash version 2 (``schemas.audit.compute_audit_hash``),
-byte-identical with the dojo's ``format_audit_entry``. A sub-row is hashed
+byte-identical with the dojo's ``archive_entry_hash``. The dojo's
+``format_audit_entry`` builds and normalizes its detail object before hashing
+with ``archive_entry_hash``. ``seq`` is not hashed. A sub-row is hashed
 with ``entry_id = attempt_id`` and ``event = attempt:<stage>`` over an
 envelope of its columns (``attempt_detail_envelope``), so its trigger,
 outcome and times are covered too; the parent's ``detail.attempts`` lists the
@@ -85,12 +87,12 @@ def hash_entry(
 ) -> str:
     """Return the version 2 entry hash after normalizing its timestamp to UTC.
 
-    Naive timestamps (SQLite) are read as UTC. Invalid ISO datetime strings,
-    including the empty string, raise ``ValueError``.
+    Naive timestamps (SQLite) are read as UTC. Invalid non-empty ISO datetime strings
+    raise ``ValueError``; the empty string is preserved for unknown attempt times.
     """
     return compute_audit_hash(
         prev_hash, doc_id, entry_id, event, detail,
-        matter_id=matter_id, actor=actor, timestamp=_iso(timestamp),
+        matter_id=matter_id, actor=actor, timestamp="" if timestamp == "" else _iso(timestamp),
     )
 
 
@@ -111,8 +113,8 @@ def attempt_detail_envelope(sub: dict[str, Any]) -> dict[str, Any]:
 def attempt_hash(sub: dict[str, Any], *, matter_id: str, actor: str) -> str:
     """Hash of one sub-row. Sub-rows are not chained to each other (``prev_hash``
     is empty); the parent binds them by listing these hashes. The timestamp is
-    the attempt's ``started_at``. A missing or invalid ``started_at`` raises
-    ``ValueError`` during timestamp normalization.
+    the attempt's ``started_at``, or empty when the start time is unknown.
+    Invalid non-empty timestamps raise ``ValueError`` during normalization.
     """
     return hash_entry(
         prev_hash="",

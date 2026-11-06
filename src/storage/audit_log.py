@@ -211,6 +211,12 @@ async def write_audit_entry(entry) -> AuditLogRecord | AuditLegacyRecord:
         # write lock, concurrent appenders read the same tail/max(seq) and
         # fork the chain (duplicate prev_hash and seq).
         await acquire_write_lock(session, f"audit_log:{entry.doc_id}")
+        # PostgreSQL's document lock does not exclude the migration. Hold
+        # its chain lock from model selection through commit so the selected
+        # table cannot be migrated out from under this append. SQLite's
+        # BEGIN IMMEDIATE above already excludes every other writer.
+        if session.get_bind().dialect.name == "postgresql":
+            await acquire_write_lock(session, "audit_log:chain")
         Model = await event_log_model(session)
 
         # A-5: the FK audit_log.doc_id -> documents.doc_id is enforced per

@@ -12,7 +12,13 @@
 
 ## Global Constraints
 
-- Hash version 2 is unchanged and byte-identical with the dojo's `format_audit_entry`. `seq` is not hashed.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c535bdb0c904ded435f306b2b9d61a0fa37eaf52df9c675a9f35781bc3931aac -->
+
+- Hash version 2 is unchanged and byte-identical with the dojo's `archive_entry_hash`. `format_audit_entry` builds and normalizes the dojo detail object before hashing with `archive_entry_hash`. `seq` is not hashed.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - Fields not collected on a run are `null`, never filled in.
 - `audit.full_trace` / `MAILROOM_AUDIT_FULL_TRACE` defaults to off.
 - The current graph order stays as it is: judge before arbiter (KANBAN-063), and the boss escalation path.
@@ -96,7 +102,13 @@
   - `EVENTS = ("archived", "failed", "triage_archived", "triage_reviewed")` and `ADDENDUM_KINDS = ("rescore", "resumed", "review_decision", "relations_linked", "recovered_detail")`.
 
 - [x] **Step 1: Write the tests.**
-  - `test_row_hash_matches_dojo_format_audit_entry`: compare against `llm_dojo_scoring.format_audit_entry` on the same inputs.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:decf93b9b8e0421d93ee9ba20f43447799abd909e0dc19d621972660b559ec53 -->
+
+  - `test_row_hash_matches_dojo_format_audit_entry`: compare the stored row hash against `llm_dojo_scoring.archive_entry_hash` on the same inputs, and reproduce the hash from `format_audit_entry` using its built and normalized detail object.
+
+<!-- /coderabbit-ai-generated:v1 -->
   - `test_rows_chain_globally_by_seq`.
   - `test_subrow_hashes_listed_in_parent_detail_attempts`.
   - `test_subrows_and_row_commit_atomically`: a failure injected after the sub-row insert leaves neither.

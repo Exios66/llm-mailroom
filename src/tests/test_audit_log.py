@@ -222,3 +222,46 @@ def test_ensure_schema_creates_postgres_schema_without_loop(monkeypatch):
     monkeypatch.setattr(db, "_create_schema_async", _fake_create_schema)
     assert db.ensure_schema() is True
     assert calls == [url]
+
+
+async def test_event_writer_holds_migration_and_document_locks_through_commit(monkeypatch):
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, MagicMock
+
+    from storage import audit_log
+
+    session = MagicMock()
+    session.get_bind.return_value.dialect.name = "postgresql"
+    result = MagicMock()
+    result.first.return_value = None
+    session.execute = AsyncMock(return_value=result)
+    session.flush = AsyncMock()
+    held = []
+
+    async def lock(session_arg, key):
+        assert session_arg is session
+        held.append(key)
+
+    async def model(session_arg):
+        assert held == ["audit_log:doc", "audit_log:chain"]
+        return audit_log.AuditLegacyRecord
+
+    async def commit():
+        assert held == ["audit_log:doc", "audit_log:chain"]
+        assert isinstance(session.add.call_args.args[0], audit_log.AuditLegacyRecord)
+        held.clear()
+
+    session.commit = AsyncMock(side_effect=commit)
+
+    @asynccontextmanager
+    async def session_scope():
+        yield session
+
+    monkeypatch.setattr(audit_log, "ensure_schema", lambda: None)
+    monkeypatch.setattr(audit_log, "async_session", session_scope)
+    monkeypatch.setattr(audit_log, "acquire_write_lock", lock)
+    monkeypatch.setattr(audit_log, "event_log_model", model)
+    entry = build_audit_entry("doc", "matter", "classified", "sorter", {})
+    await audit_log.write_audit_entry(entry)
+    session.commit.assert_awaited_once()
+    assert held == []
