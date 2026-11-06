@@ -50,4 +50,4 @@ typed endpoints required.
 ### Wiring notes
 
 - The API shares `storage/` and `pipeline/bins.py` with the rest of the app, so the DB file and bins are the same ones the watcher uses.
-- Auth: all endpoints except `GET /health` and `GET /matters/{matter_id}` require the `MAILROOM_API_TOKEN` bearer token when one is configured (loopback-only dev works without; off-loopback / Spaces / container hosts **require** a token or the process exits — see root README → Security).
+- Auth: every endpoint except `GET /health` requires the `MAILROOM_API_TOKEN` bearer token when one is configured (loopback-only dev works without; off-loopback / Spaces / container hosts **require** a token or the process exits — see root README → Security).

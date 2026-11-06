@@ -56,7 +56,7 @@ def resolve_provider_name() -> str:
         # a real collector.
         on_hosted = bool(os.environ.get("SPACE_ID") or os.environ.get("HF_SPACE_ID"))
         endpoint = os.environ.get("PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
-        local_only = ("localhost" in endpoint) or ("127.0.0.1" in endpoint)
+        local_only = any(h in endpoint for h in ("localhost", "127.0.0.1", "[::1]"))
         if on_hosted and local_only:
             return "none"
         return "phoenix"
