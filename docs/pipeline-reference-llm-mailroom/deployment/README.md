@@ -1,6 +1,6 @@
 # Deployment
 
-Laptop install, Railway, Hugging Face Spaces, and backup. The **full Docker compose matrix** (Modes B / Mixed / A-ollama / A-llamafile / M / G) is [Docker deployment](docker-deployment.md). Remote GPU OpenAI `/v1` is [Modal + vLLM](modal-vllm.md). Compose files themselves live in [`deploy/`](../../../deploy/).
+Laptop install, Hugging Face Spaces, other container hosts, and backup. The **full Docker compose matrix** (Modes B / Mixed / A-ollama / A-llamafile / M / G) is [Docker deployment](docker-deployment.md). Remote GPU OpenAI `/v1` is [Modal + vLLM](modal-vllm.md). Compose files themselves live in [`deploy/`](../../../deploy/).
 
 ## Prerequisites
 
@@ -135,7 +135,7 @@ Use `systemd`, `supervisord`, or Docker to manage the three processes:
 
 ```
 [Service] pipeline-watcher  → PYTHONPATH=src python -m pipeline.watcher
-[Service] mailroom-api      → PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
+[Service] mailroom-api      → PYTHONPATH=src MAILROOM_API_HOST=0.0.0.0 python -m api.main   (needs MAILROOM_API_TOKEN)
 [Service] ops-monitor       → PYTHONPATH=src python -m pipeline.ops_monitor
 ```
 
@@ -348,16 +348,14 @@ stderr_logfile_backups=14
 
 ***
 
-## Railway
+## Other container hosts
 
-Root [`railway.json`](../../../railway.json) forces the **Dockerfile** builder (multi-stage, non-root, `HEALTHCHECK`) and probes `GET /health`. A [`nixpacks.toml`](../../../nixpacks.toml) exists only as a fallback if a service is accidentally left on Nixpacks.
+Railway was retired on 2026-11-06 (The-Mailroom ADR-005). The hosted producer is the Hugging Face Docker Space paired with The-Mailroom Observatory; see [Docker deployment](docker-deployment.md) and `src/scripts/publish_space.py`.
 
-### Why deploys looked “crashed”
+The same image runs on any host that injects secrets. Two things make a container host look "crashed":
 
-1. **Wrong listen port.** The image defaults `MAILROOM_API_PORT=7860` (Spaces). Railway injects `$PORT` and proxies to that port. The API prefers `PORT` over `MAILROOM_API_PORT` so the process binds where the edge expects.
-2. **Missing bearer token.** `MAILROOM_API_HOST=0.0.0.0` (image default) refuses to start without `MAILROOM_API_TOKEN` / `MAILROOM_API_TOKENS` (audit L-2). Without the variable the process exits immediately → Railway `CRASHED`.
-
-### Required service variables
+1. **Wrong listen port.** The image defaults `MAILROOM_API_PORT=7860` (Spaces). Hosts that inject `$PORT` proxy to that port; the API prefers `PORT` over `MAILROOM_API_PORT` so the process binds where the edge expects.
+2. **Missing bearer token.** `MAILROOM_API_HOST=0.0.0.0` (image default) refuses to start without `MAILROOM_API_TOKEN` / `MAILROOM_API_TOKENS` (audit L-2), so the process exits immediately.
 
 | Variable             | Value                                                             |
 | -------------------- | ----------------------------------------------------------------- |
@@ -365,31 +363,16 @@ Root [`railway.json`](../../../railway.json) forces the **Dockerfile** builder (
 | `MAILROOM_API_TOKEN` | shared secret (The-Mailroom `MAILROOM_PIPELINE_TOKEN` must match) |
 | `OPENROUTER_API_KEY` | production LLM key                                                |
 
-Recommended: Langfuse keys under `auto`, `MAILROOM_BASE_DIR=/data` (attach a volume for durable SQLite), `LOG_FORMAT=json`. On Railway, `auto` skips the local Phoenix fallback unless `PHOENIX_ENDPOINT` is a remote collector.
-
-### Deploy
-
-```bash
-railway link   # once
-railway variables set MAILROOM_API_TOKEN=... OPENROUTER_API_KEY=...
-railway up -m "mailroom producer"
-# The-Mailroom:
-#   MAILROOM_PIPELINE_URL=https://<your-railway-domain>
-#   MAILROOM_PIPELINE_TOKEN=$MAILROOM_API_TOKEN
-#   MAILROOM_PIPELINE_API_PREFIX=/v1
-```
-
-Generate a public domain in the Railway dashboard (or `railway domain`) and point The-Mailroom at it. Health: `curl -sS https://<domain>/health`.
+Recommended: Langfuse keys under `auto`, `MAILROOM_BASE_DIR=/data` (attach a volume for durable SQLite), `LOG_FORMAT=json`. On a Hugging Face Space, `auto` skips the local Phoenix fallback unless `PHOENIX_ENDPOINT` is a remote collector.
 
 ***
 
 ## Troubleshooting
 
-### Railway deploy CRASHED / restart loop
+### Container deploy CRASHED / restart loop
 
-* Confirm `MAILROOM_API_TOKEN` is set on the **service** (not only shared).
-* Confirm runtime logs show `Uvicorn running on http://0.0.0.0:<PORT>` where `<PORT>` matches Railway’s injected `PORT` (not stuck on 7860).
-* Confirm `railway.json` is on the deployed branch (`builder: DOCKERFILE`).
+* Confirm `MAILROOM_API_TOKEN` is set as a secret on the Space or service.
+* Confirm runtime logs show `Uvicorn running on http://0.0.0.0:<PORT>` where `<PORT>` matches the host's injected `PORT` (not stuck on 7860).
 
 ### Watcher not picking up files
 
@@ -416,13 +399,13 @@ Generate a public domain in the Railway dashboard (or `railway domain`) and poin
 
 ### No traces in `auto` mode after dropping cloud keys
 
-With no `LANGFUSE_SECRET_KEY` or `BRAINTRUST_API_KEY`, `auto` falls through to the local Arize Phoenix backend (cost-free) **on a laptop**. On Railway, local Phoenix is skipped (no collector). To see traces:
+With no `LANGFUSE_SECRET_KEY` or `BRAINTRUST_API_KEY`, `auto` falls through to the local Arize Phoenix backend (cost-free) **on a laptop**. On a Hugging Face Space, local Phoenix is skipped (no collector). To see traces:
 
 * Start Phoenix locally: `phoenix serve`, then open `http://localhost:6006`
 * Verify `PHOENIX_TRACING` is not `disabled` and `PHOENIX_ENDPOINT` matches Phoenix
 * Set `OBSERVABILITY_PROVIDER=phoenix` explicitly if you want to force it
 * Set `OBSERVABILITY_PROVIDER=none` only if you want tracing fully off
-* On Railway, set Langfuse keys (or a remote `PHOENIX_ENDPOINT`)
+* On a Space, set Langfuse keys (or a remote `PHOENIX_ENDPOINT`)
 
 ### LLM provider errors
 

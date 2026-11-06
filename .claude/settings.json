@@ -5,7 +5,6 @@
       "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check:*)",
       "Bash(PYTHONPATH=src python src/scripts/publish_space.py --check:*)",
-      "Bash(PYTHONPATH=src python src/scripts/smoke_modal_tiers.py --check:*)",
       "Bash(PYTHONPATH=src python src/scripts/run_hf_pilot.py --check:*)",
       "Bash(PYTHONPATH=src python src/scripts/cutover.py --list:*)",
       "Bash(git status:*)",
@@ -23,6 +22,7 @@
       "Bash(git push:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py:*)",
       "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply:*)",
+      "Bash(PYTHONPATH=src python src/scripts/smoke_modal_tiers.py:*)",
       "Bash(docker compose:*)",
       "Bash(docker-compose:*)"
     ],

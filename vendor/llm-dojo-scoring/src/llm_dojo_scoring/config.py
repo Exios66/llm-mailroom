@@ -157,7 +157,7 @@ DOCCLASS_FAILURE_MODES: dict[str, dict[str, str]] = {
 # Full historical + live class set the scorer still understands.
 # Live pipeline extracts five of these; court_opinion, due_diligence, and
 # compliance_filing are RETIRED (sorter emits ``unknown``); merger_agreement
-# is ``MergerAgreementExtraction``. See :mod:`llm_dojo_scoring.mailroom`.
+# is ``MergerAgreementExtraction``. See :mod:`llm_dojo_scoring.pipeline.mailroom`.
 DOC_CLASS_KEYS: list[str] = [
     "contract", "corporate_record", "due_diligence", "correspondence",
     "compliance_filing", "court_opinion", "insurance_claim",
@@ -172,7 +172,7 @@ LIVE_DOC_CLASS_KEYS: list[str] = [
 # due_diligence, and compliance_filing are RETIRED (sorter emits ``unknown``,
 # and llm-mailroom taxonomy.yaml no longer carries a compliance_filing class).
 # merger_agreement is ``MergerAgreementExtraction``. See
-# :mod:`llm_dojo_scoring.mailroom`.
+# :mod:`llm_dojo_scoring.pipeline.mailroom`.
 RETIRED_DOC_CLASS_KEYS: list[str] = [
     "court_opinion", "due_diligence", "compliance_filing",
 ]

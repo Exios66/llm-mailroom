@@ -96,6 +96,6 @@ A host vLLM server is still `DEFAULT_PROVIDER=vllm` + `VLLM_BASE_URL=http://loca
 ## Related
 
 * [Docker deployment](docker-deployment.md) — Mode M compose + Mode G full stack
-* [Deployment](./) — laptop install, Railway, Spaces
+* [Deployment](./) — laptop install, Spaces, container hosts
 * [Local models](../local-models.md) — Ollama / local vLLM cutover
 * [Configuration](../configuration.md) — `DEFAULT_PROVIDER`, `VLLM_*`, `MODAL_*`
