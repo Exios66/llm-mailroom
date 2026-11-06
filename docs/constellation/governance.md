@@ -58,7 +58,7 @@ From the hub's [Board Governance](https://github.com/LLM-Mailroom-Services/Digit
 
 1. Develop in `Digital-Mailroom/packages/<name>`.
 2. When cutting a release of a package, push it to its `Exios66/<name>` repository with `python scripts/sync_packages.py push --package <name>`.
-3. Tag the release in the upstream repo. Deployments (Docker, Railway, Hugging Face Spaces) install from that tag.
+3. Tag the release in the upstream repo. Deployments (Docker, Hugging Face Spaces) build from a checkout of that tag; they do not `pip install` it.
 4. Bump the pins in dependent packages. llm-mailroom's dojo pin is bumped automatically by a workflow when llm-dojo-scoring publishes; inside the monorepo, run `src/scripts/bump_dojo_scoring.py` by hand at release time.
 
 Changes made directly in a standalone repo come back into the monorepo with `sync_packages.py pull`. Docs that describe the constellation are maintained in the standalone repo and arrive in the monorepo the same way.
