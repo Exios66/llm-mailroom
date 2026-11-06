@@ -245,10 +245,13 @@ async def _fingerprint(session, table: str) -> tuple[int, str]:
     """(row count, digest over every column cast to text) of ``table``."""
     digest = hashlib.sha256()
     count = 0
-    stream = await session.stream(
+    # Buffered execute, not session.stream(): an asyncpg server-side cursor
+    # stays open in this transaction and makes the migration's later
+    # CREATE INDEX on the same table fail ("being used by active queries").
+    result = await session.execute(
         text(f"SELECT {_FINGERPRINT_COLUMNS} FROM {table} ORDER BY entry_id")
     )
-    async for row in stream:
+    for row in result:
         digest.update(json.dumps(list(row), default=str).encode())
         digest.update(b"\n")
         count += 1
@@ -279,13 +282,14 @@ async def _verify_copy(session, source: str, copy: str) -> None:
 async def _tail_digest(session) -> str:
     """SHA-256 over each document's last legacy ``entry_hash`` (sorted by doc_id)."""
     tails: dict[str, str] = {}
-    stream = await session.stream(
+    # Buffered for the same reason as _fingerprint (no open cursor).
+    result = await session.execute(
         text(
             f"SELECT doc_id, entry_hash FROM {LEGACY_TABLE} "
             'ORDER BY doc_id, seq, "timestamp", entry_id'
         )
     )
-    async for doc_id, entry_hash in stream:
+    for doc_id, entry_hash in result:
         tails[doc_id] = entry_hash
     payload = "\n".join(f"{doc_id}\t{tails[doc_id]}" for doc_id in sorted(tails))
     return hashlib.sha256(payload.encode()).hexdigest()
