@@ -135,3 +135,34 @@ def test_token_set_after_import_is_live(monkeypatch, temp_base_dir):
     with pytest.raises(HTTPException) as exc:
         main._require_token(_request(("testserver", 80)))
     assert exc.value.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        (b"x-forwarded-for", b"203.0.113.7"),
+        (b"forwarded", b"for=203.0.113.7;proto=https"),
+        (b"x-real-ip", b"203.0.113.7"),
+    ],
+)
+def test_tokenless_proxied_request_on_loopback_gets_503(monkeypatch, temp_base_dir, header):
+    """A same-host reverse proxy reaches the API over 127.0.0.1 (CodeAnt, #172).
+
+    Its forwarding headers show the request came from elsewhere, so tokenless
+    mode must not serve it.
+    """
+    main = _reload_main(monkeypatch, temp_base_dir)
+    request = Request({"type": "http", "headers": [header], "server": ("127.0.0.1", 8000)})
+    with pytest.raises(HTTPException) as exc:
+        main._require_token(request)
+    assert exc.value.status_code == 503
+
+
+def test_live_token_still_serves_proxied_requests(monkeypatch, temp_base_dir):
+    main = _reload_main(monkeypatch, temp_base_dir, MAILROOM_API_TOKEN="key")
+    request = Request({
+        "type": "http",
+        "headers": [(b"x-forwarded-for", b"203.0.113.7"), (b"authorization", b"Bearer key")],
+        "server": ("127.0.0.1", 8000),
+    })
+    main._require_token(request)  # no exception
