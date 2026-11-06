@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Display contract for The-Mailroom** (`contract/mailroom-contract.json`, `src/scripts/export_contract.py`).
+  - Built from the pipeline's runtime constants: the compiled LangGraph's nodes and edges with each node's span and Langfuse observation type, `NODE_OBSERVATION_TYPES`, taxonomy agents, the five document classes with their schema, specialist, field keys and sorter subclass catalog, failure classes, `SCORE_CONFIGS` names and Langfuse aliases, and the `confidence` thresholds.
+  - The-Mailroom will vendor the file at its pinned commit and test against it (in review there), so pipeline changes that break the visualizer fail in its CI instead of rendering as `unknown`.
+  - `src/tests/test_contract_export.py` fails when the committed file is stale; regenerate with `PYTHONPATH=src python src/scripts/export_contract.py --write`.
+  - `release.py cut` moves the contract's `pipeline_version` with the other version locations.
+  - `traced_node` tags its wrapper with `mailroom_span_name` so the exporter can read each node's span from the graph.
+  - `intake-ml-triage` is now listed in `NODE_OBSERVATION_TYPES` (type `span`, as emitted).
+
+### Changed
+
+- **Dojo pin → v0.27.2** (`1cd4aba`, llm-dojo-scoring#121), from the 0.27.1 pin `a82843e`. The pin stays an exact commit (the `v0.27.2` tag's commit). 0.27.2 is a fix release:
+  - `score_document` never raises on deeply nested prediction text, and parses brace-heavy text in linear time.
+  - Any `Mapping` prediction counts as a dict payload for schema adherence.
+  - A prose-wrapped Python repr sets `prose_wrapper`.
+  - `rescore` reports the CUAD/MAUD `headline_score` as the extraction score.
+
+  Field-map, tier 0 and headline scores are unchanged. Moved with `bump_dojo_scoring.py --apply --tag 1cd4aba…`.
+
+### Removed
+
+- **Railway deployment.** `railway.json` and the Railway-only `nixpacks.toml` fallback are deleted (Railway stops honouring Config as Code on 2026-12-01; the owner retired the platform, The-Mailroom ADR-005). The hosted producer is the Hugging Face Docker Space paired with The-Mailroom Observatory. The deployment docs now describe the Space and generic container hosts.
+  - The `auto` provider's local-Phoenix skip now keys on a Hugging Face Space (`SPACE_ID` / `HF_SPACE_ID`) instead of `RAILWAY_*`, with the same intent: hosted containers have no local collector.
+  - The off-loopback bind error names Hugging Face Spaces instead of Railway.
+  - `src/tests/test_railway_listen.py` is now `src/tests/test_listen_guards.py` and asserts that no Railway config comes back.
+
+### Fixed
+
+- **Vendored Dojo fallback was missing its package data.** `.gitignore`'s `data/` rule dropped `schemas/data/extraction_status.json` from `vendor/llm-dojo-scoring`, so under the fallback (`MAILROOM_DOJO_SOURCE=vendored`, or a broken install) `extraction_schema()` raised `FileNotFoundError`. The 0.27.2 snapshot includes it, and `.gitignore` re-includes that directory.
+
+## [v0.9.1] - 2026-11-03
+
+### Added
+
 - **Extraction-gate hook** (`agents.extraction_gate`). It is opt-in and advisory.
   - A host-registered gate reviews each extraction in `extract_node` / `retry_extract_node`.
   - The handoff carries the **sorter's** `doc_subclass` (else `contract_subtype`), never a ground-truth label, so 1.3.0+ question sets apply their per-template rules.
@@ -19,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The bounded thread runner behind the decision backend is factored out as `_run_bounded` and shared by both.
   - Docs: `docs/pipeline-reference-llm-mailroom/decision-reviewer.md`. Tests: `src/tests/test_extraction_gate_hook.py`.
 
+- **Release tool** (`src/scripts/release.py`, tests in `src/tests/test_release_tool.py`). It is stdlib-only and gives the package the same version-bump workflow as llm-dojo-scoring.
+  - `status` and `check` report the chain across `pyproject.toml`, `CHANGELOG.md` (headings, compare links), every documented "current release" string, tags, and the GitBook mirror.
+  - `cut X.Y.Z` stamps `[Unreleased]`, opens a fresh one, moves every version location together and regenerates `docs/changelog/`. It plans fully in memory first, so a location it cannot move aborts before anything is written.
+  - `notes X.Y.Z` renders release notes; `publish X.Y.Z [--push] [--commit REF]` creates an annotated tag and a GitHub release through `gh`; `--apply` refuses a commit that is not on `origin/main` unless `--allow-unmerged`.
+  - Mutating commands are dry runs unless `--apply`; `--json` returns a `next` list; exit codes are 0/1/2. It never force-pushes, deletes or moves tags, or amends commits.
+  - It does not touch the Dojo dependency pin; that stays with `bump_dojo_scoring.py`.
+
 - **Vendored Dojo fallback** (`src/dojo_source`, `vendor/llm-dojo-scoring`).
   - The installed release (the pyproject git pin) stays the primary Dojo.
   - A tracked snapshot of the same pinned commit (0.25.0, `e35504db`) is served only when the release is missing or fails while importing, so scoring survives a broken install or dependency outage.
@@ -27,6 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/tests/test_dojo_source.py` checks the snapshot against the pyproject pin and covers the missing and broken-release fallbacks.
 
 ### Changed
+
+- **Dojo pin → v0.27.1** (`a82843e`, the release merge of llm-dojo-scoring#118), pinned by commit SHA. It supersedes the unmerged 0.26.0 pin (#149), so this one bump takes in 0.26.0, 0.27.0 and 0.27.1.
+  - 0.26.0: reviewer-lane scoring and `dojo-rescore`; the CMS insurance mapping (#93: `claim_type` and `cms_source_table` are separate fields); the five-class extraction schema registry, with an additive `schema` block on detailed scores.
+  - 0.27.0 (additive): `score_document`, `get_doc_scorer` and `assess_extraction_payload`, the tiered per-document-type scorers, and a wider `score_archive_block`. Mailroom does not call them yet; the scoring nodes (roadmap M6) will.
+  - 0.27.1 (review fixes): the tiered scorers never raise on a bad field value (the type extras are guarded, and `score_archive_block` keeps its pre-0.27 keys if they fail); `score_archive_block` derives the CMS table from `doc_subclass` when no `expected_subclass` is given; `entity_list_f1` / `unlabeled_fields` are null when the block itself has no ground truth to describe. Rows with a `headline_score` are judged by the headline, not `status`. None of these paths is called by mailroom yet.
+  - Score movement, checked on the dojo's golden inputs through `get_suite(...).score`: one insurance CMS row (a predicted `cms_source_table` with no labelled table) moves from 0.9167 to 1.0, per the #93 entry. Every other field score is unchanged. The mock experiment (`mailroom-fixtures`) metrics are identical under both pins, and the approved baseline still passes.
+  - The fallback snapshot under `vendor/llm-dojo-scoring` is replaced with the same commit's tree.
+  - Dojo modules now live in subpackages; the old flat import paths still resolve through Dojo's legacy aliases. The delegation tests now resolve the canonical module name instead of hard-coding the flat one.
+  - New tests: `test_scoring_imports_under_vendored_source` (the forced fallback carries the names the scoring nodes need), and parity tests for all five live classes against the dojo field maps and scorer registry, plus `test_no_extract_class_aliases`.
 
 - The production sorter is the frozen `sorter_v15`: V14 plus the corpus class boundaries
   (B1-B3: indentures and securities rights instruments are corporate_record; all mailbox
@@ -940,7 +989,8 @@ Minor release covering everything since v0.4.1. Live pipeline is **five document
 - File moves in `pipeline/bins.py` now use `shutil.move`; default file-extension fallback added.
 - Watcher and ops-monitor robustness fixes; audit log writer made async-safe; `Matter.opened_at` made timezone-aware.
 
-[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.9.1...HEAD
+[v0.9.1]: https://github.com/Exios66/llm-mailroom/compare/v0.8.1...v0.9.1
 [v0.8.1]: https://github.com/Exios66/llm-mailroom/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/Exios66/llm-mailroom/compare/v0.7.1...v0.8.0
 [v0.7.1]: https://github.com/Exios66/llm-mailroom/compare/v0.7.0...v0.7.1

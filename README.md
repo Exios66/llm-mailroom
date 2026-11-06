@@ -12,8 +12,8 @@
 [![SQLite first](https://img.shields.io/badge/storage-SQLite_first-6C63FF?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
-[![Release](https://img.shields.io/badge/release-v0.8.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1)
-[![Dojo](https://img.shields.io/badge/dojo-e35504d-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/e35504db12f09aeda07ae116663c177acd8c0d6e)
+[![Release](https://img.shields.io/badge/release-v0.9.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1)
+[![Dojo](https://img.shields.io/badge/dojo-1cd4aba-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/1cd4aba76d82eea20c6e8dfcc0d760881bf84924)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
 [![Wiki](https://img.shields.io/badge/📖_wiki-deep_dives-555?style=flat-square)](https://github.com/Exios66/llm-mailroom/wiki)
@@ -72,8 +72,8 @@ imports committed revisions, the [sandbox](https://github.com/Exios66/local-mail
 executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
-[`v0.8.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.8.1). The
-dependency badge reflects this checkout's Dojo pin, **e35504d** (the Dojo v0.25.0 release merge commit).
+[`v0.9.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1). The
+dependency badge reflects this checkout's Dojo pin, **1cd4aba** (the Dojo v0.27.2 release commit).
 
 <details>
 <summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
@@ -231,6 +231,29 @@ Optional install profiles — take only what you need:
 ```bash
 pip install -e ".[embeddings]"   # etc.
 ```
+
+The core install includes the local tracing stack
+(`openinference-instrumentation-openai`, `opentelemetry-sdk`,
+`opentelemetry-exporter-otlp-proto-http`) and `pyarrow` for Parquet
+warehouse export. The full `arize-phoenix` server package is deliberately
+**not** a runtime dependency: it pulls `arize-phoenix-otel`, which has no
+wheels for Python 3.15+. Phoenix-style local tracing still works — point
+`PHOENIX_ENDPOINT` at a running Phoenix server (or leave the default local
+endpoint) and the OpenInference instrumentor captures every LLM call.
+
+### Notebooks
+
+Install the notebook extra and launch JupyterLab from the repository root:
+
+```bash
+pip install -e ".[notebooks]"
+jupyter lab notebooks/
+```
+
+Use `jupyter lab notebooks/` — `jupyterlab notebook notebooks/` is not a
+valid invocation (it treats `notebook` as a file path). The dataset browser
+is `notebooks/dataset_browser.ipynb`; it falls back to plain-text output
+when the extra is absent.
 
 > **In the monorepo** ([`Digital-Mailroom`](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)):
 > this repo is `packages/llm-mailroom` via git subtree. Skip `pip install` —
@@ -536,7 +559,7 @@ Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14
 
 ### Observability
 
-- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted) or **Braintrust**, selected via `OBSERVABILITY_PROVIDER` in `.env`. One trace per document, one span per node, `session_id = matter_id` (or a run-scoped session for pilot runs), deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
+- **Tracing** — every LLM call (prompt, response, tokens, latency) is auto-logged to **Langfuse** (cloud or self-hosted), **Braintrust**, or the local cost-free **Arize Phoenix / OpenTelemetry** fallback, selected via `OBSERVABILITY_PROVIDER` in `.env`. With no cloud keys set, `auto` uses the local Phoenix backend (OpenInference instrumentation) at `PHOENIX_ENDPOINT` (default `http://localhost:6006/v1/traces`). One trace per document, one span per node, `session_id = matter_id` (or a run-scoped session for pilot runs), deterministic trace ids seeded from filenames. Optional — the pipeline runs fine with tracing disabled.
 - **Scores** — every run emits self-evident scores (`parse_error`, `schema_valid`, `stage_completed`, `success_rate` first-pass STP, confidence values); pilot runs add ground-truth scores (`class_correct`, `stage_correct`, calibration error). Score configs are auto-created by `observability/scores.py` (`ensure_score_configs()`).
 - **Run-log mirroring** — pull traces (with observations + scores) into the repo for offline analysis by subagents:
 
@@ -849,7 +872,7 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - [Configuration](docs/pipeline-reference-llm-mailroom/configuration.md) — config reference
 - [Agents](docs/agents.md) — agent specifications and personalities
 - [API Reference](docs/pipeline-reference-llm-mailroom/api.md) — complete API documentation
-- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Railway, Spaces, backup
+- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Spaces, other container hosts, backup
 - [Docker deployment](docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md) — compose matrix (Modes B / Mixed / A / M / G)
 - [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) — `mailroom-vllm` serve and GPU-tier cutover
 - [Testing](docs/testing.md) — testing strategy and fixtures

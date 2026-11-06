@@ -1,0 +1,1181 @@
+{
+ "commit": "0a2f829248525cf434ed49e38c3ac43b05090ba6",
+ "config": "ground_truth",
+ "dataset": "Lucius-Morningstar/mailroom-dataset",
+ "doc_types": {
+  "contract": {
+   "affiliate": {
+    "fields": {
+     "cuad_clause_labels": {
+      "pending_annotation": 1,
+      "populated": 10
+     }
+    },
+    "rows": 11,
+    "surfaces": {
+     "Affiliate_Agreements": 11
+    }
+   },
+   "agency": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 13
+     }
+    },
+    "rows": 13,
+    "surfaces": {
+     "Agency Agreements": 13
+    }
+   },
+   "co_branding": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 22
+     }
+    },
+    "rows": 22,
+    "surfaces": {
+     "Co_Branding": 22
+    }
+   },
+   "collaboration": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 26
+     }
+    },
+    "rows": 26,
+    "surfaces": {
+     "Collaboration": 26
+    }
+   },
+   "consulting": {
+    "fields": {
+     "cuad_clause_labels": {
+      "pending_annotation": 27,
+      "populated": 11
+     }
+    },
+    "rows": 38,
+    "surfaces": {
+     "Consulting Agreements": 38
+    }
+   },
+   "development": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 28
+     }
+    },
+    "rows": 28,
+    "surfaces": {
+     "Development": 28
+    }
+   },
+   "distributor": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 32
+     }
+    },
+    "rows": 32,
+    "surfaces": {
+     "Distributor": 32
+    }
+   },
+   "endorsement": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 24
+     }
+    },
+    "rows": 24,
+    "surfaces": {
+     "Endorsement": 24
+    }
+   },
+   "franchise": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 15
+     }
+    },
+    "rows": 15,
+    "surfaces": {
+     "Franchise": 15
+    }
+   },
+   "hosting": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 20
+     }
+    },
+    "rows": 20,
+    "surfaces": {
+     "Hosting": 20
+    }
+   },
+   "ip": {
+    "fields": {
+     "cuad_clause_labels": {
+      "pending_annotation": 18,
+      "populated": 17
+     }
+    },
+    "rows": 35,
+    "surfaces": {
+     "IP": 35
+    }
+   },
+   "joint_venture": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 23
+     }
+    },
+    "rows": 23,
+    "surfaces": {
+     "Joint Venture": 9,
+     "Joint Venture _ Filing": 14
+    }
+   },
+   "license": {
+    "fields": {
+     "cuad_clause_labels": {
+      "pending_annotation": 10,
+      "populated": 33
+     }
+    },
+    "rows": 43,
+    "surfaces": {
+     "License_Agreements": 43
+    }
+   },
+   "maintenance": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 34
+     }
+    },
+    "rows": 34,
+    "surfaces": {
+     "Maintenance": 34
+    }
+   },
+   "manufacturing": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 17
+     }
+    },
+    "rows": 17,
+    "surfaces": {
+     "Manufacturing": 17
+    }
+   },
+   "marketing": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 17
+     }
+    },
+    "rows": 17,
+    "surfaces": {
+     "Marketing": 17
+    }
+   },
+   "non_compete_no_solicit": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 3
+     }
+    },
+    "rows": 3,
+    "surfaces": {
+     "Non_Compete_Non_Solicit": 3
+    }
+   },
+   "outsourcing": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 18
+     }
+    },
+    "rows": 18,
+    "surfaces": {
+     "Outsourcing": 18
+    }
+   },
+   "promotion": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 12
+     }
+    },
+    "rows": 12,
+    "surfaces": {
+     "Promotion": 12
+    }
+   },
+   "reseller": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 12
+     }
+    },
+    "rows": 12,
+    "surfaces": {
+     "Reseller": 12
+    }
+   },
+   "service": {
+    "fields": {
+     "cuad_clause_labels": {
+      "pending_annotation": 6,
+      "populated": 28
+     }
+    },
+    "rows": 34,
+    "surfaces": {
+     "Service": 34
+    }
+   },
+   "sponsorship": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 31
+     }
+    },
+    "rows": 31,
+    "surfaces": {
+     "Sponsorship": 31
+    }
+   },
+   "strategic_alliance": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 32
+     }
+    },
+    "rows": 32,
+    "surfaces": {
+     "Strategic Alliance": 32
+    }
+   },
+   "supply": {
+    "fields": {
+     "cuad_clause_labels": {
+      "pending_annotation": 29,
+      "populated": 18
+     }
+    },
+    "rows": 47,
+    "surfaces": {
+     "Supply": 47
+    }
+   },
+   "transportation": {
+    "fields": {
+     "cuad_clause_labels": {
+      "populated": 13
+     }
+    },
+    "rows": 13,
+    "surfaces": {
+     "Transportation": 13
+    }
+   }
+  },
+  "corporate_record": {
+   "articles_of_incorporation": {
+    "fields": {
+     "entity_name": {
+      "populated": 43
+     },
+     "intent": {
+      "populated": 54
+     },
+     "keywords": {
+      "populated": 54
+     },
+     "record_type": {
+      "populated": 54
+     },
+     "subject_matter": {
+      "populated": 54
+     }
+    },
+    "rows": 54,
+    "surfaces": {
+     "articles_of_incorporation": 54
+    }
+   },
+   "board_resolution": {
+    "fields": {
+     "entity_name": {
+      "populated": 32
+     },
+     "filing_number": {
+      "not_applicable": 32
+     },
+     "intent": {
+      "populated": 32
+     },
+     "keywords": {
+      "populated": 32
+     },
+     "record_type": {
+      "populated": 32
+     },
+     "subject_matter": {
+      "populated": 32
+     }
+    },
+    "rows": 32,
+    "surfaces": {
+     "board_resolution": 32
+    }
+   },
+   "bylaws": {
+    "fields": {
+     "entity_name": {
+      "populated": 26
+     },
+     "filing_number": {
+      "not_applicable": 36
+     },
+     "intent": {
+      "populated": 36
+     },
+     "keywords": {
+      "populated": 36
+     },
+     "record_type": {
+      "populated": 36
+     },
+     "subject_matter": {
+      "populated": 36
+     }
+    },
+    "rows": 36,
+    "surfaces": {
+     "bylaws": 36
+    }
+   },
+   "charter_amendment": {
+    "fields": {
+     "entity_name": {
+      "populated": 80
+     },
+     "intent": {
+      "populated": 80
+     },
+     "keywords": {
+      "populated": 80
+     },
+     "record_type": {
+      "populated": 80
+     },
+     "subject_matter": {
+      "populated": 80
+     }
+    },
+    "rows": 80,
+    "surfaces": {
+     "charter_amendment": 80
+    }
+   },
+   "indenture": {
+    "fields": {
+     "entity_name": {
+      "populated": 57
+     },
+     "filing_number": {
+      "not_applicable": 57
+     },
+     "intent": {
+      "populated": 57
+     },
+     "keywords": {
+      "populated": 57
+     },
+     "record_type": {
+      "populated": 57
+     },
+     "subject_matter": {
+      "populated": 57
+     }
+    },
+    "rows": 57,
+    "surfaces": {
+     "indenture": 57
+    }
+   },
+   "officer_certificate": {
+    "fields": {
+     "entity_name": {
+      "populated": 61
+     },
+     "filing_number": {
+      "not_applicable": 61
+     },
+     "intent": {
+      "populated": 61
+     },
+     "keywords": {
+      "populated": 61
+     },
+     "record_type": {
+      "populated": 61
+     },
+     "subject_matter": {
+      "populated": 61
+     }
+    },
+    "rows": 61,
+    "surfaces": {
+     "officer_certificate": 61
+    }
+   },
+   "other": {
+    "fields": {
+     "entity_name": {
+      "populated": 2
+     },
+     "intent": {
+      "populated": 2
+     },
+     "keywords": {
+      "populated": 2
+     },
+     "record_type": {
+      "populated": 2
+     },
+     "subject_matter": {
+      "populated": 2
+     }
+    },
+    "rows": 2,
+    "surfaces": {
+     "other": 2
+    }
+   },
+   "powers_of_attorney": {
+    "fields": {
+     "entity_name": {
+      "populated": 26
+     },
+     "filing_number": {
+      "not_applicable": 26
+     },
+     "intent": {
+      "populated": 26
+     },
+     "keywords": {
+      "populated": 26
+     },
+     "record_type": {
+      "populated": 26
+     },
+     "subject_matter": {
+      "populated": 26
+     }
+    },
+    "rows": 26,
+    "surfaces": {
+     "powers_of_attorney": 26
+    }
+   },
+   "rights_instrument": {
+    "fields": {
+     "entity_name": {
+      "populated": 32
+     },
+     "filing_number": {
+      "not_applicable": 49
+     },
+     "intent": {
+      "populated": 49
+     },
+     "keywords": {
+      "populated": 49
+     },
+     "record_type": {
+      "populated": 49
+     },
+     "subject_matter": {
+      "populated": 49
+     }
+    },
+    "rows": 49,
+    "surfaces": {
+     "rights_instrument": 49
+    }
+   },
+   "subsidiary_list": {
+    "fields": {
+     "entity_name": {
+      "populated": 53
+     },
+     "filing_number": {
+      "not_applicable": 53
+     },
+     "intent": {
+      "populated": 53
+     },
+     "jurisdiction": {
+      "not_applicable": 53
+     },
+     "keywords": {
+      "populated": 53
+     },
+     "record_type": {
+      "populated": 53
+     },
+     "signatories": {
+      "not_applicable": 53
+     },
+     "subject_matter": {
+      "populated": 53
+     }
+    },
+    "rows": 53,
+    "surfaces": {
+     "subsidiary_list": 53
+    }
+   }
+  },
+  "correspondence": {
+   "attorney_demand": {
+    "fields": {
+     "content_topic": {
+      "populated": 3
+     },
+     "intent": {
+      "populated": 3
+     },
+     "keywords": {
+      "populated": 3
+     },
+     "sentiment_label": {
+      "populated": 3
+     },
+     "subject_matter": {
+      "populated": 3
+     }
+    },
+    "rows": 3,
+    "surfaces": {
+     "attorney_demand": 3
+    }
+   },
+   "demand": {
+    "fields": {
+     "content_topic": {
+      "populated": 66
+     },
+     "intent": {
+      "populated": 66
+     },
+     "keywords": {
+      "populated": 66
+     },
+     "sentiment_label": {
+      "populated": 66
+     },
+     "subject_matter": {
+      "populated": 66
+     }
+    },
+    "rows": 66,
+    "surfaces": {
+     "demand": 66
+    }
+   },
+   "email": {
+    "fields": {
+     "content_topic": {
+      "populated": 557
+     },
+     "intent": {
+      "populated": 557
+     },
+     "keywords": {
+      "populated": 557
+     },
+     "sentiment_label": {
+      "populated": 557
+     },
+     "subject_matter": {
+      "populated": 557
+     }
+    },
+    "rows": 557,
+    "surfaces": {
+     "email": 557
+    }
+   },
+   "letter": {
+    "fields": {
+     "content_topic": {
+      "populated": 79
+     },
+     "intent": {
+      "populated": 79
+     },
+     "keywords": {
+      "populated": 79
+     },
+     "sentiment_label": {
+      "populated": 79
+     },
+     "subject_matter": {
+      "populated": 79
+     }
+    },
+    "rows": 79,
+    "surfaces": {
+     "letter": 79
+    }
+   },
+   "meeting_request": {
+    "fields": {
+     "content_topic": {
+      "populated": 53
+     },
+     "intent": {
+      "populated": 53
+     },
+     "keywords": {
+      "populated": 53
+     },
+     "sentiment_label": {
+      "populated": 53
+     },
+     "subject_matter": {
+      "populated": 53
+     }
+    },
+    "rows": 53,
+    "surfaces": {
+     "meeting_request": 53
+    }
+   },
+   "memo": {
+    "fields": {
+     "content_topic": {
+      "populated": 83
+     },
+     "intent": {
+      "populated": 83
+     },
+     "keywords": {
+      "populated": 83
+     },
+     "sentiment_label": {
+      "populated": 83
+     },
+     "subject_matter": {
+      "populated": 83
+     }
+    },
+    "rows": 83,
+    "surfaces": {
+     "memo": 83
+    }
+   },
+   "notice": {
+    "fields": {
+     "content_topic": {
+      "populated": 81
+     },
+     "intent": {
+      "populated": 81
+     },
+     "keywords": {
+      "populated": 81
+     },
+     "sentiment_label": {
+      "populated": 81
+     },
+     "subject_matter": {
+      "populated": 81
+     }
+    },
+    "rows": 81,
+    "surfaces": {
+     "notice": 81
+    }
+   },
+   "press_release": {
+    "fields": {
+     "content_topic": {
+      "populated": 78
+     },
+     "intent": {
+      "populated": 78
+     },
+     "keywords": {
+      "populated": 78
+     },
+     "sentiment_label": {
+      "populated": 78
+     },
+     "subject_matter": {
+      "populated": 78
+     }
+    },
+    "rows": 78,
+    "surfaces": {
+     "press_release": 78
+    }
+   }
+  },
+  "insurance_claim": {
+   "auto": {
+    "fields": {
+     "adjuster": {
+      "populated": 150,
+      "schema_documented_absence": 150
+     },
+     "claim_number": {
+      "populated": 300
+     },
+     "claim_type": {
+      "populated": 300
+     },
+     "claimed_amount": {
+      "populated": 300
+     },
+     "coverage_determination": {
+      "populated": 300
+     },
+     "damages_description": {
+      "populated": 300
+     },
+     "date_filed": {
+      "populated": 300
+     },
+     "date_of_loss": {
+      "populated": 300
+     },
+     "denial_reasons": {
+      "populated": 36,
+      "schema_documented_absence": 264
+     },
+     "insured_party": {
+      "populated": 300
+     },
+     "insurer": {
+      "populated": 300
+     },
+     "intent": {
+      "populated": 300
+     },
+     "keywords": {
+      "populated": 300
+     },
+     "policy_number": {
+      "populated": 300
+     },
+     "subject_matter": {
+      "populated": 300
+     },
+     "supporting_documents": {
+      "populated": 294,
+      "schema_documented_absence": 6
+     }
+    },
+    "rows": 300,
+    "surfaces": {
+     "auto": 300
+    }
+   },
+   "carrier": {
+    "fields": {
+     "adjuster": {
+      "schema_documented_absence": 150
+     },
+     "claim_number": {
+      "populated": 150
+     },
+     "claim_type": {
+      "populated": 150
+     },
+     "claimed_amount": {
+      "populated": 150
+     },
+     "coverage_determination": {
+      "populated": 150
+     },
+     "damages_description": {
+      "populated": 150
+     },
+     "date_filed": {
+      "populated": 150
+     },
+     "date_of_loss": {
+      "populated": 150
+     },
+     "denial_reasons": {
+      "schema_documented_absence": 150
+     },
+     "insured_party": {
+      "populated": 150
+     },
+     "insurer": {
+      "populated": 150
+     },
+     "intent": {
+      "populated": 150
+     },
+     "keywords": {
+      "populated": 150
+     },
+     "policy_number": {
+      "populated": 150
+     },
+     "subject_matter": {
+      "populated": 150
+     },
+     "supporting_documents": {
+      "populated": 150
+     }
+    },
+    "rows": 150,
+    "surfaces": {
+     "carrier": 150
+    }
+   },
+   "inpatient": {
+    "fields": {
+     "adjuster": {
+      "schema_documented_absence": 150
+     },
+     "claim_number": {
+      "populated": 150
+     },
+     "claim_type": {
+      "populated": 150
+     },
+     "claimed_amount": {
+      "populated": 150
+     },
+     "coverage_determination": {
+      "populated": 150
+     },
+     "damages_description": {
+      "populated": 150
+     },
+     "date_filed": {
+      "populated": 150
+     },
+     "date_of_loss": {
+      "populated": 150
+     },
+     "denial_reasons": {
+      "schema_documented_absence": 150
+     },
+     "insured_party": {
+      "populated": 150
+     },
+     "insurer": {
+      "populated": 150
+     },
+     "intent": {
+      "populated": 150
+     },
+     "keywords": {
+      "populated": 150
+     },
+     "policy_number": {
+      "populated": 150
+     },
+     "subject_matter": {
+      "populated": 150
+     },
+     "supporting_documents": {
+      "populated": 150
+     }
+    },
+    "rows": 150,
+    "surfaces": {
+     "inpatient": 150
+    }
+   },
+   "outpatient": {
+    "fields": {
+     "adjuster": {
+      "schema_documented_absence": 150
+     },
+     "claim_number": {
+      "populated": 150
+     },
+     "claim_type": {
+      "populated": 150
+     },
+     "claimed_amount": {
+      "populated": 150
+     },
+     "coverage_determination": {
+      "populated": 150
+     },
+     "damages_description": {
+      "populated": 150
+     },
+     "date_filed": {
+      "populated": 150
+     },
+     "date_of_loss": {
+      "populated": 150
+     },
+     "denial_reasons": {
+      "schema_documented_absence": 150
+     },
+     "insured_party": {
+      "populated": 150
+     },
+     "insurer": {
+      "populated": 150
+     },
+     "intent": {
+      "populated": 150
+     },
+     "keywords": {
+      "populated": 150
+     },
+     "policy_number": {
+      "populated": 150
+     },
+     "subject_matter": {
+      "populated": 150
+     },
+     "supporting_documents": {
+      "populated": 150
+     }
+    },
+    "rows": 150,
+    "surfaces": {
+     "outpatient": 150
+    }
+   },
+   "pde": {
+    "fields": {
+     "adjuster": {
+      "schema_documented_absence": 150
+     },
+     "claim_number": {
+      "populated": 150
+     },
+     "claim_type": {
+      "populated": 150
+     },
+     "claimed_amount": {
+      "populated": 150
+     },
+     "coverage_determination": {
+      "populated": 150
+     },
+     "damages_description": {
+      "populated": 150
+     },
+     "date_filed": {
+      "populated": 150
+     },
+     "date_of_loss": {
+      "populated": 150
+     },
+     "denial_reasons": {
+      "schema_documented_absence": 150
+     },
+     "insured_party": {
+      "populated": 150
+     },
+     "insurer": {
+      "populated": 150
+     },
+     "intent": {
+      "populated": 150
+     },
+     "keywords": {
+      "populated": 150
+     },
+     "policy_number": {
+      "populated": 150
+     },
+     "subject_matter": {
+      "populated": 150
+     },
+     "supporting_documents": {
+      "populated": 150
+     }
+    },
+    "rows": 150,
+    "surfaces": {
+     "pde": 150
+    }
+   },
+   "property": {
+    "fields": {
+     "adjuster": {
+      "schema_documented_absence": 200
+     },
+     "claim_number": {
+      "populated": 200
+     },
+     "claim_type": {
+      "populated": 200
+     },
+     "claimed_amount": {
+      "populated": 200
+     },
+     "coverage_determination": {
+      "populated": 200
+     },
+     "damages_description": {
+      "populated": 200
+     },
+     "date_filed": {
+      "populated": 200
+     },
+     "date_of_loss": {
+      "populated": 200
+     },
+     "denial_reasons": {
+      "schema_documented_absence": 200
+     },
+     "insured_party": {
+      "populated": 200
+     },
+     "insurer": {
+      "populated": 200
+     },
+     "intent": {
+      "populated": 200
+     },
+     "keywords": {
+      "populated": 200
+     },
+     "policy_number": {
+      "populated": 200
+     },
+     "subject_matter": {
+      "populated": 200
+     },
+     "supporting_documents": {
+      "populated": 200
+     }
+    },
+    "rows": 200,
+    "surfaces": {
+     "property": 200
+    }
+   }
+  },
+  "merger_agreement": {
+   "all_cash": {
+    "fields": {
+     "intent": {
+      "not_applicable": 57
+     },
+     "keywords": {
+      "not_applicable": 57
+     },
+     "maud_clause_labels": {
+      "populated": 57
+     },
+     "subject_matter": {
+      "not_applicable": 57
+     }
+    },
+    "rows": 57,
+    "surfaces": {
+     "all_cash": 57
+    }
+   },
+   "all_stock": {
+    "fields": {
+     "intent": {
+      "not_applicable": 24
+     },
+     "keywords": {
+      "not_applicable": 24
+     },
+     "maud_clause_labels": {
+      "populated": 24
+     },
+     "subject_matter": {
+      "not_applicable": 24
+     }
+    },
+    "rows": 24,
+    "surfaces": {
+     "all_stock": 24
+    }
+   },
+   "mixed_cash_stock": {
+    "fields": {
+     "intent": {
+      "not_applicable": 13
+     },
+     "keywords": {
+      "not_applicable": 13
+     },
+     "maud_clause_labels": {
+      "populated": 13
+     },
+     "subject_matter": {
+      "not_applicable": 13
+     }
+    },
+    "rows": 13,
+    "surfaces": {
+     "mixed_cash_stock": 13
+    }
+   },
+   "mixed_cash_stock_election": {
+    "fields": {
+     "intent": {
+      "not_applicable": 1
+     },
+     "keywords": {
+      "not_applicable": 1
+     },
+     "maud_clause_labels": {
+      "populated": 1
+     },
+     "subject_matter": {
+      "not_applicable": 1
+     }
+    },
+    "rows": 1,
+    "surfaces": {
+     "mixed_cash_stock_election": 1
+    }
+   },
+   "other": {
+    "fields": {
+     "intent": {
+      "not_applicable": 57
+     },
+     "keywords": {
+      "not_applicable": 57
+     },
+     "maud_clause_labels": {
+      "populated": 57
+     },
+     "subject_matter": {
+      "not_applicable": 57
+     }
+    },
+    "rows": 57,
+    "surfaces": {
+     "other": 57
+    }
+   }
+  }
+ },
+ "revision": "v9.2.1",
+ "rows": 3302
+}

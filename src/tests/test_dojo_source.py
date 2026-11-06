@@ -105,3 +105,27 @@ def test_modes(tmp_path):
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
                          env={**os.environ, "MAILROOM_DOJO_SOURCE": "installed"})
     assert "raised" in out.stdout
+
+
+#: Dojo names the per-type scoring nodes need (plan M1, gap G2).
+_SCORING_NAMES = ("score_document", "get_doc_scorer", "score_archive_block", "assess_extraction_payload")
+
+
+def test_scoring_imports_under_vendored_source(tmp_path):
+    """The forced fallback snapshot carries every name the scoring nodes import."""
+    code = (_HIDE_INSTALLED + f"sys.path[:0] = [{str(SRC)!r}]\n"
+            "import dojo_source, llm_dojo_scoring as d, json\n"
+            f"names = {_SCORING_NAMES!r}\n"
+            "print(json.dumps({**dojo_source.status(), 'file': d.__file__, 'version': d.__version__,"
+            " 'missing': [n for n in names if not callable(getattr(d, n, None))]}))\n")
+    run_env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    run_env["MAILROOM_DOJO_SOURCE"] = "vendored"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=run_env,
+                         cwd=tmp_path, timeout=120)
+    assert out.returncode == 0, out.stderr[-2000:]
+    import json
+
+    status = json.loads(out.stdout.strip().splitlines()[-1])
+    assert status["source"] == "vendored"
+    assert status["file"].startswith(str(ROOT / "vendor"))
+    assert status["missing"] == []

@@ -35,9 +35,20 @@ typed endpoints required.
 ## Technical reference
 
 - Single module: `main.py` defines `app = FastAPI(...)`. `python -m api.main`
-  binds via `listen_host()` / `listen_port()` — platform `PORT` wins over
-  `MAILROOM_API_PORT` (Railway/Fly/Render). Equivalent:
-  `uvicorn api.main:app --port 8000`.
+  binds via `listen_host()` / `listen_port()`: host `MAILROOM_API_HOST`
+  (default `127.0.0.1`); port from platform `PORT` when non-empty after stripping whitespace, else
+  `MAILROOM_API_PORT` (default `8000`), so `PORT` wins on Fly/Render/any host.
+  It also refuses an off-loopback bind without `MAILROOM_API_TOKEN` /
+  `MAILROOM_API_TOKENS` (`assert_bind_allowed`, audit L-2), offers the pager
+  (`--pager` / `--no-pager`) and sets up process tracing.
+- `uvicorn api.main:app` serves the same app but does none of that: its listener ignores
+  `PORT` / `MAILROOM_API_HOST` / `MAILROOM_API_PORT` (the app still reads
+  `MAILROOM_API_TOKEN(S)`; pass `--host` / `--port` yourself; `UVICORN_HOST` /
+  `UVICORN_PORT` also apply), skips the bind guard (set a token yourself before
+  `--host 0.0.0.0`) and starts no pager (run `python -m pipeline.pager run` or
+  the watchdog separately if alerts are on). Prefer `python -m api.main` on hosts
+  that inject `PORT`; for a proxy outside loopback set `MAILROOM_API_HOST=0.0.0.0`
+  together with a token.
 - `lifespan` calls `_ensure_dirs()` on startup and, unless `MAILROOM_EMBED_WATCHER=0`, starts the inbox watcher in-process (`watcher.lock` so a dedicated `python -m pipeline.watcher` cannot double-drain).
 - `POST /upload` writes bytes straight into the inbox bin — it does NOT run the pipeline itself. Processing happens asynchronously in the (embedded or standalone) watcher. Response is `202 Accepted`, with an `upload_id` and the accepted `matter_id`. It also writes a `<file>.meta` sidecar (matter_id, upload_id, uploaded_at, size) that the watcher reads to file the document under the submitted matter.
 - `GET /queue` lists queued inbox files (with sidecar metadata), in-flight `processing/<worker>/` claims, and recent catalog documents.
@@ -45,9 +56,9 @@ typed endpoints required.
 - `GET /audit/{doc_id}` returns the hash chain from `storage/audit_log.py` plus a `chain_valid` bool from `schemas/audit.py:verify_chain`.
 - `POST /ops/resume` — clear the ingestion-pause flag (there is no `/ops/pause` endpoint; the pause flag is written by the ops monitor / operator); `GET /ops/status` reports `paused_ingestion` and pipeline-wide metrics.
 - Full endpoint docs (request/response shapes): `docs/api.md`.
-- Railway: root `railway.json` + [docs/deployment.md](../../docs/pipeline-reference-llm-mailroom/deployment/README.md) § Railway.
+- Hosted: Hugging Face Docker Space; see [the deployment guide](../../docs/pipeline-reference-llm-mailroom/deployment/README.md) § Other container hosts (Railway retired).
 
 ### Wiring notes
 
 - The API shares `storage/` and `pipeline/bins.py` with the rest of the app, so the DB file and bins are the same ones the watcher uses.
-- Auth: all endpoints except `GET /health` and `GET /matters/{matter_id}` require the `MAILROOM_API_TOKEN` bearer token when one is configured (loopback-only dev works without; off-loopback / Railway / Spaces **require** a token or the process exits — see root README → Security).
+- Auth: every endpoint except `GET /health` requires the `MAILROOM_API_TOKEN` bearer token when one is configured (loopback-only dev works without; off-loopback / Spaces / container hosts **require** a token: `python -m api.main` exits without one, while direct `uvicorn` does not check, so set it yourself — see root README → Security).
