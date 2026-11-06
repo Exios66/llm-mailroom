@@ -346,6 +346,8 @@ def test_api_docs_describe_the_tokenless_off_loopback_503():
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         flat = " ".join(text.split())
         assert "503" in flat, rel
+        # /docs, /redoc and /openapi.json carry no token dependency either.
         for stale in ("set a token yourself", "does not check", "set it yourself",
-                      "skipping the off-loopback token guard"):
+                      "skipping the off-loopback token guard",
+                      "every route except `/health` answers 503"):
             assert stale not in flat, (rel, stale)
