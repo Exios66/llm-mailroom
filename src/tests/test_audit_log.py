@@ -224,7 +224,9 @@ def test_ensure_schema_creates_postgres_schema_without_loop(monkeypatch):
     assert calls == [url]
 
 
-async def test_event_writer_holds_migration_and_document_locks_through_commit(monkeypatch):
+async def test_event_writer_holds_document_lock_through_commit_without_exclusive_chain_lock(monkeypatch):
+    """The Postgres chain gate is taken shared (via execute); an exclusive
+    acquire of the same key deadlocks concurrent writers (PR #160 review)."""
     from contextlib import asynccontextmanager
     from unittest.mock import AsyncMock, MagicMock
 
@@ -243,11 +245,11 @@ async def test_event_writer_holds_migration_and_document_locks_through_commit(mo
         held.append(key)
 
     async def model(session_arg):
-        assert held == ["audit_log:doc", "audit_log:chain"]
+        assert held == ["audit_log:doc"]
         return audit_log.AuditLegacyRecord
 
     async def commit():
-        assert held == ["audit_log:doc", "audit_log:chain"]
+        assert held == ["audit_log:doc"]
         assert isinstance(session.add.call_args.args[0], audit_log.AuditLegacyRecord)
         held.clear()
 
@@ -265,3 +267,5 @@ async def test_event_writer_holds_migration_and_document_locks_through_commit(mo
     await audit_log.write_audit_entry(entry)
     session.commit.assert_awaited_once()
     assert held == []
+    assert any("pg_advisory_xact_lock_shared" in str(call.args[0])
+               for call in session.execute.await_args_list)
