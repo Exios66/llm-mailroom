@@ -501,7 +501,8 @@ def main(argv: list[str] | None = None) -> int:
     release, a refused SHA downgrade, or no changes when the pins differ;
     otherwise return 0. ``--allow-missing-release`` skips the release-existence
     check and the SHA ancestry guard, but refuses to replace an immutable SHA
-    pin with a movable tag because it cannot verify the tag's commit offline.
+    pin with a movable tag, and refuses any tag target on --apply, because it
+    cannot resolve or verify the tag's commit offline.
 
     Argument parsing may raise SystemExit. Invalid refs raise ValueError;
     file I/O and GitHub lookup errors propagate.
@@ -594,6 +595,16 @@ def main(argv: list[str] | None = None) -> int:
     # tag resolves to its commit, and the tag stays as the label docs show.
     release: str | None = None
     if not is_sha(desired):
+        if args.allow_missing_release:
+            # Resolving the tag needs GitHub, which --allow-missing-release
+            # (offline / pre-publish) promises not to need.
+            print(
+                f"error: cannot resolve tag {desired} to its commit while "
+                "--allow-missing-release skips GitHub; pass the release "
+                "commit SHA instead",
+                file=sys.stderr,
+            )
+            return 1
         release = desired
         desired = release_commit(release)
         print(f"release={release} commit={desired}")
