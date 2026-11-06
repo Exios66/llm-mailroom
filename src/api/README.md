@@ -45,8 +45,9 @@ typed endpoints required.
   `PORT` / `MAILROOM_API_HOST` / `MAILROOM_API_PORT` (the app still reads
   `MAILROOM_API_TOKEN(S)`; pass `--host` / `--port` yourself; `UVICORN_HOST` /
   `UVICORN_PORT` also apply), skips the startup bind guard (with no live token, token-protected routes then
-  answer 503 to requests arriving on a non-loopback address; the health checks and
-  `/docs`, `/redoc`, `/openapi.json` stay open) and starts no pager (run `python -m pipeline.pager run` or
+  answer 503 to requests arriving on a non-loopback address or carrying forwarding
+  headers; the health checks and `/docs`, `/redoc`, `/openapi.json` stay open;
+  behind any proxy set a token, since one that adds no forwarding header looks local) and starts no pager (run `python -m pipeline.pager run` or
   the watchdog separately if alerts are on). Prefer `python -m api.main` on hosts
   that inject `PORT`; for a proxy outside loopback set `MAILROOM_API_HOST=0.0.0.0`
   together with a token.
