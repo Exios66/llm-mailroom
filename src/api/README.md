@@ -36,13 +36,14 @@ typed endpoints required.
 
 - Single module: `main.py` defines `app = FastAPI(...)`. `python -m api.main`
   binds via `listen_host()` / `listen_port()`: host `MAILROOM_API_HOST`
-  (default `127.0.0.1`); port from a non-empty platform `PORT`, else
+  (default `127.0.0.1`); port from platform `PORT` when non-empty after stripping whitespace, else
   `MAILROOM_API_PORT` (default `8000`), so `PORT` wins on Fly/Render/any host.
   It also refuses an off-loopback bind without `MAILROOM_API_TOKEN` /
   `MAILROOM_API_TOKENS` (`assert_bind_allowed`, audit L-2), offers the pager
   (`--pager` / `--no-pager`) and sets up process tracing.
-- `uvicorn api.main:app` serves the same app but does none of that: it ignores
-  `PORT` / `MAILROOM_API_*` (pass `--host` / `--port` yourself; `UVICORN_HOST` /
+- `uvicorn api.main:app` serves the same app but does none of that: its listener ignores
+  `PORT` / `MAILROOM_API_HOST` / `MAILROOM_API_PORT` (the app still reads
+  `MAILROOM_API_TOKEN(S)`; pass `--host` / `--port` yourself; `UVICORN_HOST` /
   `UVICORN_PORT` also apply), skips the bind guard (set a token yourself before
   `--host 0.0.0.0`) and starts no pager (run `python -m pipeline.pager run` or
   the watchdog separately if alerts are on). Prefer `python -m api.main` on hosts
