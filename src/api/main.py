@@ -1300,10 +1300,10 @@ def listen_host() -> str:
 def listen_port() -> int:
     """Listen port for ``python -m api.main``.
 
-    Platform-injected ``PORT`` (Railway / Fly / Render / Heroku, and many
-    Spaces runtimes) **wins** over image defaults such as
-    ``MAILROOM_API_PORT=7860``. Listening on the baked-in Space port while the
-    edge proxy dials ``$PORT`` is the usual “crashed on Railway” failure mode.
+    Platform-injected ``PORT`` (Fly / Render / Heroku, and many Spaces
+    runtimes) **wins** over image defaults such as ``MAILROOM_API_PORT=7860``.
+    Listening on the baked-in Space port while the edge proxy dials ``$PORT``
+    is the usual container-host crash-loop failure mode.
     """
     platform = (os.environ.get("PORT") or "").strip()
     if platform:
@@ -1313,8 +1313,6 @@ def listen_port() -> int:
 
 
 def _platform_hint() -> str:
-    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"):
-        return "Railway"
     if os.environ.get("SPACE_ID") or os.environ.get("HF_SPACE_ID"):
         return "Hugging Face Spaces"
     return "a non-loopback host"
