@@ -36,24 +36,33 @@ RULES = [
 ]
 
 
-def _repo_relative(path: str, root: str) -> str:
-    """Return ``path`` relative to ``root`` as a normalized POSIX path.
+def _candidates(path: str, root: str) -> tuple[list[str], bool]:
+    """Return the repo-relative POSIX paths to check, and whether any is inside root.
 
-    Resolves ``.``/``..`` segments and symlinks first, so ``<root>/./data/x`` or
-    ``<root>/src/../data/x`` cannot slip past the ``^data/`` rule. A path outside
-    the root is returned normalized but absolute (only the basename rules apply).
+    Two views are checked: the lexical one (``.``/``..`` folded, symlinks kept) and
+    the resolved one (symlinks followed). So ``<root>/./data/x`` and
+    ``<root>/src/../data/x`` hit ``^data/``, and so does ``data/x`` when ``data`` is
+    a symlink to a directory outside the repo. A path outside the root in both views
+    is returned absolute, and only the ``.env`` basename rule applies to it.
     """
     path = path.replace("\\", "/")
     root = root.replace("\\", "/")
-    full = os.path.realpath(os.path.join(root, path))
-    real_root = os.path.realpath(root)
-    try:
-        rel = os.path.relpath(full, real_root)
-    except ValueError:  # different drive on Windows
-        return full.replace("\\", "/")
-    if rel == ".." or rel.startswith(("../", "..\\")):
-        return full.replace("\\", "/")
-    return rel.replace("\\", "/")
+    joined = os.path.join(root, path)
+    views = [
+        (os.path.normpath(joined), os.path.normpath(os.path.abspath(root))),
+        (os.path.realpath(joined), os.path.realpath(root)),
+    ]
+    inside: list[str] = []
+    for full, base in views:
+        try:
+            rel = os.path.relpath(full, base).replace("\\", "/")
+        except ValueError:  # different drive on Windows
+            continue
+        if rel != ".." and not rel.startswith("../"):
+            inside.append(rel)
+    if inside:
+        return inside, True
+    return [views[1][0].replace("\\", "/")], False
 
 
 def main() -> int:
@@ -64,11 +73,13 @@ def main() -> int:
     except Exception:
         return 0
     root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    rel = _repo_relative(path, root)
-    for pattern, reason in RULES:
-        if re.search(pattern, rel):
-            print(f"Blocked edit to {path}: {reason}", file=sys.stderr)
-            return 2
+    rels, inside = _candidates(path, root)
+    rules = RULES if inside else RULES[:1]  # outside the repo: only the .env rule
+    for rel in rels:
+        for pattern, reason in rules:
+            if re.search(pattern, rel):
+                print(f"Blocked edit to {path}: {reason}", file=sys.stderr)
+                return 2
     return 0
 
 

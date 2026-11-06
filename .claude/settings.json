@@ -28,6 +28,8 @@
     ],
     "deny": [
       "Read(./.env)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
       "Bash(* --real*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_prompts.py:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_dataset.py:*)",
@@ -41,7 +43,9 @@
       "Bash(git push -uf:*)",
       "Bash(git push -fu:*)",
       "Bash(git push * -uf*)",
-      "Bash(git push * -fu*)"
+      "Bash(git push * -fu*)",
+      "Bash(git push +*)",
+      "Bash(git push * +*)"
     ]
   },
   "hooks": {
