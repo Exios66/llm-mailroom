@@ -35,7 +35,9 @@ def test_every_graph_node_has_a_typed_span(contract):
     """Each node names a known span and the type its wrapper opens it as."""
     from graph.build_graph import build_graph
 
-    builder_nodes = build_graph(checkpointer=None).builder.nodes
+    from langgraph.checkpoint.memory import MemorySaver
+
+    builder_nodes = build_graph(checkpointer=MemorySaver()).builder.nodes
     for node in contract["graph"]["nodes"]:
         assert node["span"] in NODE_OBSERVATION_TYPES, node
         func = builder_nodes[node["id"]].runnable.func
@@ -78,3 +80,13 @@ def test_doc_class_specialists_are_agents(contract):
 
 def test_contract_is_json_serialisable(contract):
     json.loads(export_contract.render(contract))
+
+
+def test_export_does_not_open_the_configured_checkpointer(monkeypatch, tmp_path):
+    """Reading the graph's shape must not create the SQLite checkpoint DB."""
+    import graph.build_graph as bg
+
+    monkeypatch.setenv("MAILROOM_CHECKPOINTER", "sqlite")
+    monkeypatch.setattr(bg, "_build_checkpointer",
+                        lambda: pytest.fail("exporter opened the configured checkpointer"))
+    export_contract.build_contract()

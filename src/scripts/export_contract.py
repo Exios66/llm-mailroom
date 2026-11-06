@@ -61,8 +61,12 @@ def node_row(node_id: str, func: Any) -> dict[str, str]:
 def _graph_section() -> dict[str, Any]:
     """Nodes (with span and observation type) and edges of the compiled graph."""
     from graph.build_graph import build_graph
+    from langgraph.checkpoint.memory import MemorySaver
 
-    graph = build_graph(checkpointer=None)
+    # An explicit in-memory saver: ``None`` would let build_graph open the
+    # configured checkpointer, which with MAILROOM_CHECKPOINTER=sqlite creates
+    # the on-disk database just to read the graph's shape.
+    graph = build_graph(checkpointer=MemorySaver())
     drawn = graph.get_graph()
     nodes = [
         node_row(node_id, getattr(spec.runnable, "func", None))
