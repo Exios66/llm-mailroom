@@ -152,10 +152,19 @@ CONTRACTS_SCHEMA = build_structured_schema({
     },
     "document_name": _nullable_string("The name of the contract (e.g. 'Web Hosting Agreement')"),
     "parties": _string_array("The names of the contracting parties"),
+    # MAILROOM PATCH: v2 fields match schemas.documents.ContractExtraction.
+    "party_roles": _string_array("Each contracting party and its role as '<party>: <role>'"),
+    "signatories": _string_array("Persons who signed the contract, as printed"),
+    "agreement_date": _nullable_string("The dated-as-of or signature date as YYYY-MM-DD"),
     "effective_date": _nullable_string("YYYY-MM-DD (ISO)"),
+    "expiration_date": _nullable_string("End of the initial term as YYYY-MM-DD when stated as a date"),
     "term_length": _nullable_string("The full duration or term of the agreement, including any riders"),
+    "termination_notice_period": _nullable_string("Notice needed to terminate or prevent renewal, as stated"),
     "governing_law": _nullable_string("The jurisdiction whose laws govern the agreement (governing-law sentence only)"),
+    "dispute_forum": _nullable_string("Courts or arbitral seat for disputes, separate from governing law"),
     "contract_value": _nullable_string("The monetary value or consideration"),
+    "payment_terms": _nullable_string("How and when the consideration is paid, as stated"),
+    "territory": _nullable_string("The stated territory of the grant, distribution, or service"),
     "renewal_terms": _nullable_string("Renewal, extension, or rollover terms (automatic or otherwise)"),
     "cuad_family": _nullable_string(
         "CUAD agreement family key: affiliate, agency, collaboration, co_branding, "
@@ -289,6 +298,11 @@ def _merger_agreement_schema() -> dict:
             "Named parties as stated — Parent, Merger Sub, and Target (and any "
             "other contracting entity the agreement names)"
         ),
+        # MAILROOM PATCH: v2 fields match schemas.documents.MergerAgreementExtraction.
+        "acquirer": _nullable_string("The Parent (acquirer), as printed"),
+        "target": _nullable_string("The Company (target), as printed"),
+        "merger_sub": _string_array("Merger subsidiary or subsidiaries, as printed"),
+        "signatories": _string_array("Persons signing for each party, as printed"),
         "effective_date": _nullable_string("Effective Date as YYYY-MM-DD (ISO) when stated"),
         "effective_time": _nullable_string(
             "Effective Time as stated (clock time, time zone, or defined-term "
@@ -297,6 +311,13 @@ def _merger_agreement_schema() -> dict:
         "governing_law": _nullable_string(
             "The jurisdiction whose laws govern the agreement (governing-law sentence only)"
         ),
+        "per_share_cash_amount": _nullable_string("Cash paid per Target share, as stated"),
+        "exchange_ratio": _nullable_string("Parent shares per Target share, as stated"),
+        "target_termination_fee": _nullable_string("Termination fee payable by the Target, as stated"),
+        "parent_termination_fee": _nullable_string("Reverse termination fee payable by the Parent, as stated"),
+        "outside_date": _nullable_string("End or Outside Date as YYYY-MM-DD, or as printed when relative"),
+        "financial_advisors": _string_array("Financial advisors named in the agreement"),
+        "legal_counsel": _string_array("Law firms named in the agreement"),
         "merger_consideration": _nullable_string(
             "MAUD merger consideration token — exactly one of: " + tokens
         ),

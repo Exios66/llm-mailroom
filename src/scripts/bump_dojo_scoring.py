@@ -32,6 +32,7 @@ Examples::
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -343,7 +344,44 @@ def release_commit(tag: str, repo: str = DOJO_REPO) -> str:
     return sha
 
 
-def _rewrite_text(text: str, tag: str) -> str:
+def _semver(ref: str) -> tuple[int, int, int] | None:
+    """Return a release's version tuple, or None unless it is a plain X.Y.Z tag."""
+    m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", str(ref or "").strip())
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
+#: Rows naming the newest Dojo release next to the consumer pin. They move only
+#: forward, and only when the pin itself is a newer release.
+_LATEST_ROW_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(\| Latest \| )(" + _TAG + r")( as of )(\d{4}-\d{2}-\d{2})( \(llm-mailroom pins )"),
+    re.compile(r"(\| llm-dojo-scoring \| )(" + _TAG + r")( latest as of )(\d{4}-\d{2}-\d{2})(; llm-mailroom pins )"),
+)
+
+
+def _advance_latest(text: str, tag: str, today: str) -> str:
+    """Update recognized latest-release rows with ``tag`` and the supplied date.
+
+    A plain release tag replaces an older version or a non-plain version in
+    a matching row. Equal or newer plain versions stay unchanged; a SHA or
+    non-plain target leaves all rows unchanged. ``today`` is inserted as given.
+    """
+    new = _semver(tag)
+    if new is None:
+        return text
+
+    def repl(m: re.Match[str]) -> str:
+        """Replace a row's version and date unless its plain version is current or newer."""
+        old = _semver(m.group(2))
+        if old is not None and old >= new:
+            return m.group(0)
+        return f"{m.group(1)}{tag}{m.group(3)}{today}{m.group(5)}"
+
+    for pattern in _LATEST_ROW_RES:
+        text = pattern.sub(repl, text)
+    return text
+
+
+def _rewrite_text(text: str, tag: str, *, today: str | None = None, release: str | None = None) -> str:
     """Return text with recognized dojo pins, badges, and test references updated.
 
     ``tag`` accepts a version tag or full commit SHA. Strip surrounding
@@ -351,6 +389,10 @@ def _rewrite_text(text: str, tag: str) -> str:
     raise ValueError for an empty or invalid ref. SHA pins use seven-character
     badge labels and commit links, leaving version assertions and test names
     unchanged; release tags also update those version references.
+    ``release`` supplies a version label for release prose and latest-release
+    rows, including when ``tag`` is a commit. An invalid nonempty ``release``
+    raises ValueError. ``today`` supplies the date for advanced latest-release
+    rows; if omitted or empty, the current UTC date is used.
     Text without recognized patterns is returned unchanged. No files are written.
     """
     tag = _normalize_tag(tag)
@@ -409,6 +451,22 @@ def _rewrite_text(text: str, tag: str) -> str:
         out = out.replace("pinned release `", "pinned commit `")
     else:
         out = out.replace("pinned commit `", "pinned release `")
+    # ``release`` names the release a commit pin belongs to (``v0.28.0`` for its
+    # commit); prose that states a version shows it instead of a bare SHA.
+    version_label = _normalize_tag(release) if release else label
+    note = f" (the Dojo {version_label} release commit)" if is_sha(tag) and release else ""
+    # README: "Dojo pin, **1cd4aba** (the Dojo v0.27.2 release commit)." The short
+    # SHA form and its parenthetical go stale on every bump; rewrite both.
+    out = _c(r"(Dojo pin, \*\*)(?:__LABEL__|__REF__)(\*\*)(?: \(the Dojo v[0-9][^)]*\))?").sub(
+        lambda m: f"{m.group(1)}{label}{m.group(2)}{note}", out
+    )
+    # architecture: "the pinned [llm-dojo-scoring](https://...) library (v0.27.2, wired in"
+    out = _c(
+        r"(\[llm-dojo-scoring\]\(https://github\.com/Exios66/llm-dojo-scoring\) library \()(__LABEL__)(,)"
+    ).sub(rf"\g<1>{version_label}\g<3>", out)
+    out = _advance_latest(
+        out, version_label, today or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    )
     for pattern, repl in DOC_PIN_PATTERNS:
         out = pattern.sub(
             repl.format(tag=tag, label=label, release_path=release_path), out
@@ -422,7 +480,16 @@ def _rewrite_text(text: str, tag: str) -> str:
     return out
 
 
-def apply_pin(tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False) -> list[Path]:
+def apply_pin(
+    tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False, release: str | None = None
+) -> list[Path]:
+    """Rewrite recognized pins in existing pin files under ``root``.
+
+    ``release`` supplies a release label for the pin's version prose. Return
+    paths whose contents differ, including in a dry run, which writes nothing.
+    An invalid ``tag`` raises ValueError; an invalid nonempty ``release``
+    raises it when an existing pin file is processed. File I/O errors propagate.
+    """
     tag = _normalize_tag(tag)
     changed: list[Path] = []
     for rel in PIN_FILES:
@@ -430,7 +497,7 @@ def apply_pin(tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False) -> lis
         if not path.is_file():
             continue
         before = path.read_text(encoding="utf-8")
-        after = _rewrite_text(before, tag)
+        after = _rewrite_text(before, tag, release=release)
         if after == before:
             continue
         changed.append(path)
@@ -443,13 +510,17 @@ def main(argv: list[str] | None = None) -> int:
     """Check or apply a scoring pin using CLI arguments (default: sys.argv).
 
     Print the current and desired refs and check results or updated paths.
-    ``--check`` returns 0 for a matching pin or an interim SHA not contained
-    in the target release, and 2 when an update is needed. ``--apply`` writes
-    recognized pin files unless ``--dry-run`` is set. Return 1 for a missing
-    release, a refused SHA downgrade, or no changes when the pins differ;
-    otherwise return 0. ``--allow-missing-release`` skips the release-existence
+    ``--check`` returns 0 for a matching pin, a SHA at the target release's
+    commit, or an interim SHA not contained in the target release, and 2 when
+    an update is needed. ``--apply`` resolves release tags to commit pins and
+    writes recognized pin files unless ``--dry-run`` is set. Return 1 for a
+    missing release, a target SHA absent from the latest release, a refused
+    SHA downgrade, or no changes when the pins differ; otherwise return 0.
+    ``--allow-missing-release`` skips the release-existence
     check and the SHA ancestry guard, but refuses to replace an immutable SHA
-    pin with a movable tag because it cannot verify the tag's commit offline.
+    pin with a movable tag, and refuses any tag target on --apply, because it
+    cannot resolve or verify the tag's commit offline. Omitting ``--tag``
+    still looks up the latest release on GitHub.
 
     Argument parsing may raise SystemExit. Invalid refs raise ValueError;
     file I/O and GitHub lookup errors propagate.
@@ -538,7 +609,27 @@ def main(argv: list[str] | None = None) -> int:
         print("up_to_date=false")
         return 2
 
-    changed = apply_pin(desired, dry_run=args.dry_run)
+    # The pin is an immutable commit (test_dojo_source, vendor/VENDOR.md): a release
+    # tag resolves to its commit, and the tag stays as the label docs show.
+    release: str | None = None
+    if not is_sha(desired):
+        if args.allow_missing_release:
+            # Resolving the tag needs GitHub, which --allow-missing-release
+            # (offline / pre-publish) promises not to need.
+            print(
+                f"error: cannot resolve tag {desired} to its commit while "
+                "--allow-missing-release skips GitHub; pass the release "
+                "commit SHA instead",
+                file=sys.stderr,
+            )
+            return 1
+        release = desired
+        desired = release_commit(release)
+        print(f"release={release} commit={desired}")
+        if current == desired:
+            print("changed=0 (already at the release's commit)")
+            return 0
+    changed = apply_pin(desired, dry_run=args.dry_run, release=release)
     if not changed:
         print("changed=0 (already at desired pin or no matching text)")
         return 0 if current == desired else 1

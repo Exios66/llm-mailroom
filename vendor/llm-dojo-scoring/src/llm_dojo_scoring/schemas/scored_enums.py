@@ -34,11 +34,21 @@ from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 from typing import Any
 
-from .corpus import CMS_SOURCE_TABLES, INSURANCE_PRODUCT_LINES
-from .intents import INTENT_DESCRIPTIONS, INTENT_LABELS
+import re
+
+from .corpus import (
+    CMS_SOURCE_TABLES,
+    COVERAGE_DETERMINATIONS,
+    DOC_TYPE_SUBCLASSES,
+    INSURANCE_PRODUCT_LINES,
+    URGENCY_LEVELS,
+    normalize_corpus_subclass,
+)
+from .intents import INTENT_DESCRIPTIONS, INTENT_LABELS, normalize_intent
 
 __all__ = [
     "SCORED_ENUM_FIELDS",
+    "canonical_label",
     "enum_hint_violations",
     "scored_enum_hint",
     "scored_enum_schema",
@@ -64,6 +74,34 @@ _scored_enum_fields["insurance_claim"].update(
     {
         "claim_type": (tuple(INSURANCE_PRODUCT_LINES), _CLAIM_TYPE_DESCRIPTION),
         "cms_source_table": (tuple(sorted(CMS_SOURCE_TABLES)), _CMS_SOURCE_TABLE_DESCRIPTION),
+        "coverage_determination": (
+            COVERAGE_DETERMINATIONS,
+            "Outcome of THIS claim as the document states it: approved, denied, partial "
+            "(partly approved or partly denied) or pending (no decision yet).",
+        ),
+    }
+)
+# The 0.28.0 ``label`` retypes (mailroom-dataset v10, plan A1-A3).
+_scored_enum_fields.setdefault("contract", {})["cuad_family"] = (
+    (*DOC_TYPE_SUBCLASSES["contract"], "other"),  # cuad_schema.CUAD_FAMILY_KEYS
+    "CUAD family of THIS contract: one of the 25 family keys, or other.",
+)
+_scored_enum_fields["merger_agreement"]["merger_consideration"] = (
+    DOC_TYPE_SUBCLASSES["merger_agreement"],
+    "MAUD Type of Consideration of THIS merger: all_cash, all_stock, mixed_cash_stock, "
+    "mixed_cash_stock_election, or other.",
+)
+_scored_enum_fields["correspondence"].update(
+    {
+        "communication_type": (
+            DOC_TYPE_SUBCLASSES["correspondence"],
+            "Form of THIS communication; attorney_demand is a lawyer's demand letter, "
+            "demand any other demand.",
+        ),
+        "urgency": (
+            URGENCY_LEVELS,
+            "How urgent THIS message is; a neutral message is routine (never null).",
+        ),
     }
 )
 
@@ -174,3 +212,56 @@ def enum_hint_violations(
         if missing:
             problems.append(f"{doc_type}.{field}: never teaches scored values {missing}")
     return problems
+
+
+def _compact(value: Any) -> str:
+    """Lower-case alphanumerics only (the ``label`` scorer's comparison key)."""
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+#: Stated outcomes that fold onto a coverage token (the claims-consistency sets).
+_COVERAGE_ALIASES: dict[str, str] = {
+    **{_compact(v): "approved" for v in ("approve", "covered", "accepted", "paid")},
+    **{_compact(v): "denied" for v in ("deny", "declined", "rejected", "not covered", "uncovered")},
+    **{_compact(v): "partial" for v in (
+        "partially approved", "partially denied", "partial approval", "partial denial",
+    )},
+    **{_compact(v): "pending" for v in ("under review", "in review", "open", "undetermined")},
+}
+
+#: Fields whose surfaces fold through the corpus subclass normaliser.
+_SUBCLASS_LABELS: dict[tuple[str, str], str] = {
+    ("contract", "cuad_family"): "contract",
+    ("merger_agreement", "merger_consideration"): "merger_agreement",
+    ("correspondence", "communication_type"): "correspondence",
+}
+
+
+def canonical_label(doc_type: str | None, field: str, value: Any) -> str:
+    """The scored token a ``label`` value folds onto, or ``""`` when none does.
+
+    ``intent`` folds through :func:`.intents.normalize_intent`; ``cuad_family``,
+    ``merger_consideration`` and ``communication_type`` through the corpus
+    subclass normaliser (``License_Agreements`` → ``license``, ``All Cash`` →
+    ``all_cash``); ``coverage_determination`` through the claims-consistency
+    outcome words; every other scored enum by exact compact match. A value that
+    folds onto nothing returns ``""`` (never ``other`` by default), so callers
+    keep the raw value and the exact-match scorer marks it wrong.
+    """
+    kind = str(doc_type or "").strip().lower()
+    if field == "intent":
+        return normalize_intent(kind, value)
+    vocabulary = SCORED_ENUM_FIELDS.get(kind, {}).get(field)
+    key = _compact(value)
+    if vocabulary is None or not key:
+        return ""
+    tokens = {_compact(t): t for t in vocabulary[0]}
+    if key in tokens:
+        return tokens[key]
+    corpus_type = _SUBCLASS_LABELS.get((kind, field))
+    if corpus_type is not None:
+        token = normalize_corpus_subclass(corpus_type, value)
+        return token if token in vocabulary[0] and token != "other" else ""
+    if kind == "insurance_claim" and field == "coverage_determination":
+        return _COVERAGE_ALIASES.get(key, "")
+    return ""

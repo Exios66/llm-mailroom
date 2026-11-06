@@ -2,8 +2,8 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `1cd4aba76d82eea20c6e8dfcc0d760881bf84924`
-- Source package version: `0.27.2`
+- Exact source commit: `cab976807854129d1cfea4897dbff5b6e337a62b` (tag `v0.28.0`)
+- Source package version: `0.28.0`
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
   That includes the package data `schemas/data/extraction_status.json`, which `.gitignore`
   re-includes explicitly (its `data/` rule had dropped it from earlier snapshots).

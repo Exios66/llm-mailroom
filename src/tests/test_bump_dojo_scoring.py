@@ -76,7 +76,9 @@ def test_apply_pin_dry_run_and_write(tmp_path: Path):
             id="test-pin-assertion",
         ),
         pytest.param(
-            "| Latest | v0.19.1 as of 2026-10-07 (llm-mailroom pins {version}; "
+            # Latest is newer than the pin, so only the pin moves (the Latest row
+            # advancing with a newer pin is tested separately).
+            "| Latest | v0.21.0 as of 2026-10-07 (llm-mailroom pins {version}; "
             "entity-extraction and agent-mailroom pin v0.16.0) |\n",
             id="consumer-pin-with-sibling-versions",
         ),
@@ -567,14 +569,22 @@ def interim_pin_cli(tmp_path, monkeypatch, mocker):
     mocker.patch.object(B, "latest_release_tag", return_value="v0.22.0")
     mocker.patch.object(B, "release_exists", return_value=True)
     mocker.patch.object(B, "tag_contains_commit", return_value=True)
+    # The release's own commit (distinct from the interim pin): no live GitHub calls.
+    mocker.patch.object(B, "release_commit", return_value=RELEASE_SHA)
     return tmp_path
+
+
+#: Commit the mocked ``v0.22.0`` release points at.
+RELEASE_SHA = "a" * 40
 
 
 @pytest.mark.parametrize("dry_run", [False, True], ids=["apply", "dry-run"])
 def test_main_promotes_interim_pin_to_containing_release(interim_pin_cli, dry_run, capsys):
     args = ["--apply", "--tag", "0.22.0"] + (["--dry-run"] if dry_run else [])
     assert B.main(args) == 0
-    expected_pin = SHA if dry_run else "v0.22.0"
+    # The pin stays an immutable commit: the release's own commit, never the tag
+    # (src/tests/test_dojo_source.py requires a 40-hex pin).
+    expected_pin = SHA if dry_run else RELEASE_SHA
     assert current_pin(interim_pin_cli) == expected_pin
     assert (interim_pin_cli / "README.md").read_text() == f"llm-mailroom pins {expected_pin}\n"
     B.release_exists.assert_called_once_with("v0.22.0")
@@ -619,6 +629,16 @@ def test_main_offline_override_refuses_tag_target_from_sha_pin(interim_pin_cli, 
     assert "refusing to replace an immutable SHA pin" in capsys.readouterr().err
 
 
+def test_main_offline_override_refuses_tag_target_from_tag_pin(interim_pin_cli, capsys):
+    """A tag pin plus --allow-missing-release never calls GitHub to resolve the tag."""
+    pyproject = interim_pin_cli / "pyproject.toml"
+    pyproject.write_text(pyproject.read_text().replace(SHA, "v0.21.0"), encoding="utf-8")
+    assert B.main(["--apply", "--tag", "v0.22.0", "--allow-missing-release"]) == 1
+    B.release_commit.assert_not_called()
+    B.apply_pin.assert_not_called()
+    assert "pass the release commit SHA" in capsys.readouterr().err
+
+
 def test_main_same_sha_is_up_to_date_without_ancestry_lookup(interim_pin_cli, capsys):
     assert B.main(["--check", "--tag", SHA.upper(), "--allow-missing-release"]) == 0
     B.tag_contains_commit.assert_not_called()
@@ -632,3 +652,61 @@ def test_main_compare_failure_never_writes_pin(interim_pin_cli):
         B.main(["--apply", "--tag", "v0.22.0"])
     B.apply_pin.assert_not_called()
     assert current_pin(interim_pin_cli) == SHA
+
+
+def test_readme_short_sha_pin_and_stale_parenthetical_follow_the_pin():
+    """The README pin note takes the short-SHA form and drops a stale release note."""
+    before = "dependency badge reflects this checkout's Dojo pin, **1cd4aba** (the Dojo v0.27.2 release commit).\n"
+    assert _rewrite_text(before, "v0.28.0") == "dependency badge reflects this checkout's Dojo pin, **v0.28.0**.\n"
+    sha = "cab976807854129d1cfea4897dbff5b6e337a62b"
+    assert "**cab9768**." in _rewrite_text(before, sha)
+
+
+def test_architecture_library_version_follows_the_pin():
+    """architecture.md names the pinned library version inline."""
+    before = (
+        "the pinned [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) library "
+        "(v0.27.2, wired in through"
+    )
+    assert "library (v0.28.0, wired in" in _rewrite_text(before, "v0.28.0")
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [
+        (
+            "| Latest | v0.27.2 as of 2026-11-04 (llm-mailroom pins v0.27.2) |",
+            "| Latest | v0.28.0 as of 2026-11-06 (llm-mailroom pins v0.28.0) |",
+        ),
+        (
+            "| llm-dojo-scoring | v0.27.2 latest as of 2026-11-04; llm-mailroom pins v0.27.2 |",
+            "| llm-dojo-scoring | v0.28.0 latest as of 2026-11-06; llm-mailroom pins v0.28.0 |",
+        ),
+    ],
+)
+def test_latest_release_rows_advance_with_a_newer_pin(before, after):
+    """"Latest" rows move to the pinned release and today's date when it is newer."""
+    assert _rewrite_text(before, "v0.28.0", today="2026-11-06") == after
+
+
+def test_latest_release_rows_never_move_backwards_or_to_a_sha():
+    """Pinning an older tag or an interim SHA leaves the newest-release row alone."""
+    row = "| Latest | v0.29.0 as of 2026-12-01 (llm-mailroom pins v0.29.0) |"
+    assert "| Latest | v0.29.0 as of 2026-12-01" in _rewrite_text(row, "v0.28.0", today="2026-12-02")
+    sha = "cab976807854129d1cfea4897dbff5b6e337a62b"
+    assert "| Latest | v0.29.0 as of 2026-12-01" in _rewrite_text(row, sha, today="2026-12-02")
+
+
+def test_release_label_names_the_version_for_a_commit_pin():
+    """A commit pin keeps its release's version wherever prose states one."""
+    sha = "cab976807854129d1cfea4897dbff5b6e337a62b"
+    readme = "Dojo pin, **1cd4aba** (the Dojo v0.27.2 release commit).\n"
+    assert _rewrite_text(readme, sha, release="v0.28.0") == (
+        "Dojo pin, **cab9768** (the Dojo v0.28.0 release commit).\n"
+    )
+    arch = "pinned [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) library (v0.27.2, wired"
+    assert "library (v0.28.0, wired" in _rewrite_text(arch, sha, release="v0.28.0")
+    row = "| Latest | v0.27.2 as of 2026-11-04 (llm-mailroom pins 1cd4aba76d82eea20c6e8dfcc0d760881bf84924) |"
+    assert _rewrite_text(row, sha, release="v0.28.0", today="2026-11-06") == (
+        f"| Latest | v0.28.0 as of 2026-11-06 (llm-mailroom pins {sha}) |"
+    )
