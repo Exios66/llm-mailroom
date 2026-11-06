@@ -143,8 +143,11 @@ def _scores() -> dict[str, Any]:
 
 
 def build_contract() -> dict[str, Any]:
-    """The contract as a plain dict (deterministic ordering)."""
-    os.environ.setdefault("OBSERVABILITY_PROVIDER", "none")
+    """The contract as a plain dict (deterministic ordering).
+
+    Reads the environment but never changes it, so callers in the same process
+    keep their own tracing provider. The CLI disables tracing in ``main``.
+    """
     from observability.tracing import NODE_OBSERVATION_TYPES
 
     taxonomy = _taxonomy()
@@ -177,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--check", action="store_true", help="exit 1 if the committed file is stale")
     args = parser.parse_args(argv)
 
+    # The exporter traces nothing; keep a configured backend from starting.
+    os.environ.setdefault("OBSERVABILITY_PROVIDER", "none")
     text = render(build_contract())
     if args.write:
         CONTRACT_PATH.parent.mkdir(parents=True, exist_ok=True)
