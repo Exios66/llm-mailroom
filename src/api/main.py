@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import os
 import re
 import uuid
@@ -75,11 +76,40 @@ _UPLOAD_MAX_PER_WINDOW = int(os.environ.get("MAILROOM_UPLOAD_RATE", 20))
 _upload_timestamps: list[float] = []
 
 
+def _listener_is_loopback(server) -> bool:
+    """True when the ASGI ``server`` address (the local socket the request
+    arrived on) is loopback. Unknown addresses and unix sockets are not."""
+    if not server or server[1] is None:
+        return False
+    host = str(server[0])
+    if host == "localhost":
+        return True
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    mapped = getattr(addr, "ipv4_mapped", None)
+    return (mapped or addr).is_loopback
+
+
 def _require_token(request: Request) -> None:
-    """Dependency: reject requests without a live bearer token (audit L-2)."""
+    """Dependency: reject requests without a live bearer token (audit L-2).
+
+    With no live token, only a loopback listener is served. This is checked
+    per request from the real listener address, so it also covers a direct
+    ``uvicorn api.main:app --host 0.0.0.0``, which never runs
+    ``assert_bind_allowed`` (that reads ``MAILROOM_API_HOST``, not uvicorn's
+    ``--host``).
+    """
     tokens = active_api_tokens()
     if not tokens:
-        return  # token disabled — see server bind note below; loopback-only default
+        if _listener_is_loopback(request.scope.get("server")):
+            return  # loopback-only dev without a token
+        raise HTTPException(
+            503,
+            "API token not configured: set MAILROOM_API_TOKEN or "
+            "MAILROOM_API_TOKENS to serve requests off loopback",
+        )
     auth = request.headers.get("authorization", "")
     prefix = "Bearer "
     if not auth.startswith(prefix) or auth[len(prefix):].strip() not in tokens:
