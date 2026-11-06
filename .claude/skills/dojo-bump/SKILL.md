@@ -6,8 +6,9 @@ disable-model-invocation: true
 
 # dojo-bump
 
-Mailroom consumes `llm-dojo-scoring` as a **git pin in `pyproject.toml`** (a release tag
-or, while a fix is unreleased, an interim 40-hex SHA). The pin moves at Dojo release
+Mailroom consumes `llm-dojo-scoring` as a **git pin in `pyproject.toml`**: always a 40-hex
+commit (`src/tests/test_dojo_source.py` requires it). `--tag vX.Y.Z` pins that release's
+commit and labels the docs with the tag; while a fix is unreleased the pin is an interim SHA. The pin moves at Dojo release
 time, or to an interim SHA before a release, always via `src/scripts/bump_dojo_scoring.py`.
 **Never delete the pin line.**
 
