@@ -51,6 +51,11 @@ class TestProviderResolution:
         monkeypatch.setenv("SPACE_ID", "user/mailroom-producer")
         assert tracing.resolve_provider_name() == "none"
 
+    def test_auto_skips_ipv6_loopback_phoenix_on_hosted_space(self, monkeypatch):
+        monkeypatch.setenv("SPACE_ID", "user/mailroom-producer")
+        monkeypatch.setenv("PHOENIX_ENDPOINT", "http://[::1]:6006/v1/traces")
+        assert tracing.resolve_provider_name() == "none"
+
     def test_auto_allows_remote_phoenix_on_hosted_space(self, monkeypatch):
         monkeypatch.setenv("SPACE_ID", "user/mailroom-producer")
         monkeypatch.setenv("PHOENIX_ENDPOINT", "https://phoenix.example.com/v1/traces")
