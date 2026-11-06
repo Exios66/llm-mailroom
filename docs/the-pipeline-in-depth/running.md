@@ -87,7 +87,7 @@ PYTHONPATH=src python -m api.main
 | Setting | Rule (from `listen_host()` / `listen_port()`) |
 | --- | --- |
 | Host | `MAILROOM_API_HOST`, default `127.0.0.1` |
-| Port | `PORT` if set (Fly, Render, other hosts), else `MAILROOM_API_PORT`, else `8000` |
+| Port | `PORT` if non-empty after stripping whitespace (Fly, Render, other hosts), else `MAILROOM_API_PORT`, else `8000` |
 | Off-loopback bind | Refused with `SystemExit` unless `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS` is set (audit L-2) |
 
 [API reference](../pipeline-reference-llm-mailroom/api.md) also documents a direct uvicorn start:
