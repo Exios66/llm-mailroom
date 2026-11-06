@@ -44,8 +44,10 @@ typed endpoints required.
 - `uvicorn api.main:app` serves the same app but does none of that: its listener ignores
   `PORT` / `MAILROOM_API_HOST` / `MAILROOM_API_PORT` (the app still reads
   `MAILROOM_API_TOKEN(S)`; pass `--host` / `--port` yourself; `UVICORN_HOST` /
-  `UVICORN_PORT` also apply), skips the bind guard (set a token yourself before
-  `--host 0.0.0.0`) and starts no pager (run `python -m pipeline.pager run` or
+  `UVICORN_PORT` also apply), skips the startup bind guard (with no live token, token-protected routes then
+  answer 503 to requests arriving on a non-loopback address or carrying forwarding
+  headers; the health checks and `/docs`, `/redoc`, `/openapi.json` stay open;
+  behind any proxy set a token, since one that adds no forwarding header looks local) and starts no pager (run `python -m pipeline.pager run` or
   the watchdog separately if alerts are on). Prefer `python -m api.main` on hosts
   that inject `PORT`; for a proxy outside loopback set `MAILROOM_API_HOST=0.0.0.0`
   together with a token.
@@ -61,4 +63,4 @@ typed endpoints required.
 ### Wiring notes
 
 - The API shares `storage/` and `pipeline/bins.py` with the rest of the app, so the DB file and bins are the same ones the watcher uses.
-- Auth: every endpoint except `GET /health` requires the `MAILROOM_API_TOKEN` bearer token when one is configured (loopback-only dev works without; off-loopback / Spaces / container hosts **require** a token: `python -m api.main` exits without one, while direct `uvicorn` does not check, so set it yourself — see root README → Security).
+- Auth: every endpoint except `GET /health` requires the `MAILROOM_API_TOKEN` bearer token when one is configured (loopback-only dev works without; off-loopback / Spaces / container hosts **require** a token: `python -m api.main` exits without one, while a direct `uvicorn` start without one answers 503 on every token-protected route off loopback — see root README → Security).
