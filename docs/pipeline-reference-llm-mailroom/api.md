@@ -6,7 +6,7 @@ Mailroom exposes a FastAPI server on port 8000 by default.
 
 ```bash
 PYTHONPATH=src python -m api.main
-# or
+# or, skipping the off-loopback token guard (set MAILROOM_API_TOKEN yourself first):
 PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
