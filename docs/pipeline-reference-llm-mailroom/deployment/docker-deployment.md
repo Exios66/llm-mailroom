@@ -184,7 +184,7 @@ Runtime: `ML_MODEL_DIR` (default `/models/mailroom-modernbert-classifier`) + `MA
 
 ## Related
 
-* [Deployment](./) — laptop install, Railway, backup
+* [Deployment](./) — laptop install, container hosts, backup
 * [Modal + vLLM](modal-vllm.md) — GPU serve and cutover
 * [Local models](../local-models.md) — Ollama / vLLM provider cutover
 * [Configuration](../configuration.md) — env vars

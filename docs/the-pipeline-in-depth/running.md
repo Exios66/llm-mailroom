@@ -87,7 +87,7 @@ PYTHONPATH=src python -m api.main
 | Setting | Rule (from `listen_host()` / `listen_port()`) |
 | --- | --- |
 | Host | `MAILROOM_API_HOST`, default `127.0.0.1` |
-| Port | `PORT` if set (Railway, Fly, Render), else `MAILROOM_API_PORT`, else `8000` |
+| Port | `PORT` if set (Fly, Render, other hosts), else `MAILROOM_API_PORT`, else `8000` |
 | Off-loopback bind | Refused with `SystemExit` unless `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS` is set (audit L-2) |
 
 [API reference](../pipeline-reference-llm-mailroom/api.md) also documents a direct uvicorn start:
@@ -132,7 +132,7 @@ PYTHONPATH=src python -m pipeline.watchdog
 docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 ```
 
-## Docker and Railway
+## Docker
 
 This is a summary. Full steps, backups and troubleshooting are in the [Deployment guide](../pipeline-reference-llm-mailroom/deployment/README.md).
 
@@ -163,13 +163,7 @@ docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --bui
 
 Mode M (one Modal-hosted vLLM server) is env-only: `modal deploy deploy/modal_vllm.py`, then `DEFAULT_PROVIDER=vllm`, `VLLM_BASE_URL` and `VLLM_API_KEY`. See [Modal + vLLM](../pipeline-reference-llm-mailroom/deployment/modal-vllm.md). Mode G (LiteLLM gateway plus Modal GPU tiers) has its own compose file: see [Full Docker stack](#full-docker-stack-mode-g).
 
-**Railway.** `railway.json` uses the `DOCKERFILE` builder, health-checks `/health` (timeout 300 s), and restarts `ON_FAILURE` up to 10 times. `nixpacks.toml` is only a fallback (installs with `pip install .`, starts `PYTHONPATH=src python -m api.main`). Required service variables are `MAILROOM_API_TOKEN` and `OPENROUTER_API_KEY`; the API prefers Railway's `$PORT`.
-
-```bash
-railway link   # once
-railway variables set MAILROOM_API_TOKEN=... OPENROUTER_API_KEY=...
-railway up -m "mailroom producer"
-```
+**Hosted.** The producer runs as a Hugging Face Docker Space paired with The-Mailroom Observatory (Railway was retired on 2026-11-06). The API prefers a platform-injected `$PORT` on other container hosts.
 
 ## Full Docker stack (Mode G)
 
@@ -405,7 +399,7 @@ More in [Getting started](../start-here/getting-started.md).
 
 - [pyproject.toml](https://github.com/Exios66/llm-mailroom/blob/main/pyproject.toml), [.env.example](https://github.com/Exios66/llm-mailroom/blob/main/.env.example), [README.md](https://github.com/Exios66/llm-mailroom/blob/main/README.md)
 - [src/api/main.py](https://github.com/Exios66/llm-mailroom/blob/main/src/api/main.py), [src/llm/providers.py](https://github.com/Exios66/llm-mailroom/blob/main/src/llm/providers.py), [src/llm/client.py](https://github.com/Exios66/llm-mailroom/blob/main/src/llm/client.py)
-- [Dockerfile](https://github.com/Exios66/llm-mailroom/blob/main/Dockerfile), [railway.json](https://github.com/Exios66/llm-mailroom/blob/main/railway.json), [nixpacks.toml](https://github.com/Exios66/llm-mailroom/blob/main/nixpacks.toml), [deploy/docker-compose.yml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/docker-compose.yml), [deploy/README.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/README.md)
+- [Dockerfile](https://github.com/Exios66/llm-mailroom/blob/main/Dockerfile), [deploy/docker-compose.yml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/docker-compose.yml), [deploy/README.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/README.md)
 - [src/scripts/](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/README.md) (argparse in each script), [src/legalbench/cli.py](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/cli.py), [src/legalbench/README.md](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/README.md)
 - [deploy/docker-compose.full.yml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/docker-compose.full.yml), [deploy/litellm/config.yaml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/litellm/config.yaml), [deploy/modal_vllm.py](https://github.com/Exios66/llm-mailroom/blob/main/deploy/modal_vllm.py), [src/scripts/smoke_modal_tiers.py](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/smoke_modal_tiers.py), [src/config/taxonomy.yaml](https://github.com/Exios66/llm-mailroom/blob/main/src/config/taxonomy.yaml)
 - [local-mailroom-sandbox README](https://github.com/Exios66/local-mailroom-sandbox/blob/main/README.md), [Digital-Mailroom README](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/README.md)

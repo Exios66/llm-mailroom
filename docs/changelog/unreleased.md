@@ -35,6 +35,13 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
   Field-map, tier 0 and headline scores are unchanged. Moved with `bump_dojo_scoring.py --apply --tag 1cd4aba…`.
 
+## Removed
+
+- **Railway deployment.** `railway.json` and the Railway-only `nixpacks.toml` fallback are deleted (Railway stops honouring Config as Code on 2026-12-01; the owner retired the platform, The-Mailroom ADR-005). The hosted producer is the Hugging Face Docker Space paired with The-Mailroom Observatory. The deployment docs now describe the Space and generic container hosts.
+  - The `auto` provider's local-Phoenix skip now keys on a Hugging Face Space (`SPACE_ID` / `HF_SPACE_ID`) instead of `RAILWAY_*`, with the same intent: hosted containers have no local collector.
+  - The off-loopback bind error names Hugging Face Spaces instead of Railway.
+  - `src/tests/test_railway_listen.py` is now `src/tests/test_listen_guards.py` and asserts that no Railway config comes back.
+
 ## Fixed
 
 - **Vendored Dojo fallback was missing its package data.** `.gitignore`'s `data/` rule dropped `schemas/data/extraction_status.json` from `vendor/llm-dojo-scoring`, so under the fallback (`MAILROOM_DOJO_SOURCE=vendored`, or a broken install) `extraction_schema()` raised `FileNotFoundError`. The 0.27.2 snapshot includes it, and `.gitignore` re-includes that directory.
