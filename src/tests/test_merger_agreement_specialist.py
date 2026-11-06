@@ -49,7 +49,7 @@ def test_taxonomy_points_at_dedicated_specialist():
     row = classes["merger_agreement"]
     assert row["schema"] == "MergerAgreementExtraction"
     assert row["specialist"] == "merger_agreement_specialist"
-    assert row["field_types"]["merger_consideration"] == "name"
+    assert row["field_types"]["merger_consideration"] == "label"  # Dojo 0.28.0 closed label
     assert row["field_types"]["maud_clauses"] == "entity_list:free_text"
     assert "cuad_family" not in row["field_types"]
     assert tax["agents"]["merger_agreement_specialist"]["provider"] == "openrouter"

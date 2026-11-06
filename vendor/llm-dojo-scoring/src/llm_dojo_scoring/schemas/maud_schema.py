@@ -14,7 +14,7 @@ making the contract data, not prose:
 * :data:`MAUD_CONSIDERATION_SUBCLASSES` — the five ``subclass`` /
   ``merger_consideration`` tokens, their mapping from the MAUD
   ``Type of Consideration`` classes, and *documentation-only* entity hints.
-* :data:`MergerAgreementExtraction` — the 10 scored fields, asserted equal to
+* :data:`MergerAgreementExtraction` — the 21 scored v2 fields (0.28.0), asserted equal to
   ``DEFAULT_FIELD_TYPES["merger_agreement"]`` at import time (drift fails
   loudly).
 * Helpers: :func:`maud_question`, :func:`maud_questions`,
@@ -48,6 +48,7 @@ from .corpus import (
     MAUD_QUESTION_KEYS,
 )
 from .maud import MAUD_ANSWER_CLASSES, MAUD_VARIABLE_CLASS_QUESTIONS
+from .intents import MERGER_INTENTS
 from ..scoring.suites import DEFAULT_FIELD_TYPES
 
 __all__ = [
@@ -684,6 +685,13 @@ MergerAgreementExtraction = EntitySchema(
             "parties", "entity_list:name", [],
             "Parent, Merger Sub, Target and any other contracting entity, as written.",
         ),
+        EntityField("acquirer", "name", None, "The Parent (acquirer), as printed."),
+        EntityField("target", "name", None, "The Company (target), as printed."),
+        EntityField(
+            "merger_sub", "entity_list:name", [],
+            "The merger subsidiary or subsidiaries, as printed; [] when none.",
+        ),
+        EntityField("signatories", "entity_list:name", [], "Persons signing for each party, as printed."),
         EntityField(
             "effective_date", "date", None,
             "Calendar date YYYY-MM-DD only; null when only an Effective Time is defined.",
@@ -693,15 +701,37 @@ MergerAgreementExtraction = EntitySchema(
             "Clock / time zone / defined-term Effective Time as written.",
         ),
         EntityField("governing_law", "name", None, "Governing-law sentence; no forum/venue."),
+        EntityField("per_share_cash_amount", "money", None, "Cash paid per Target share, e.g. '$45.00'."),
+        EntityField("exchange_ratio", "free_text", None, "Parent shares per Target share, as stated."),
+        EntityField("target_termination_fee", "money", None, "Termination fee payable by the Target."),
         EntityField(
-            "merger_consideration", "name", None,
+            "parent_termination_fee", "money", None,
+            "Reverse termination fee payable by the Parent.",
+        ),
+        EntityField(
+            "outside_date", "date", None,
+            "End / Outside Date as YYYY-MM-DD, or as printed when relative.",
+        ),
+        EntityField(
+            "financial_advisors", "entity_list:name", [],
+            "Financial advisors named in the brokers and fairness-opinion sections.",
+        ),
+        EntityField(
+            "legal_counsel", "entity_list:name", [],
+            "Law firms named on the notice 'with a copy to' lines.",
+        ),
+        EntityField(
+            "merger_consideration", "label", None,
             "Exactly one token: " + ", ".join(MAUD_CONSIDERATION_TYPES) + ".",
         ),
         EntityField(
             "maud_clauses", "entity_list:free_text", [],
             "Answered MAUD questions as '<Question>: <Hub valid_class>'; omit unanswered.",
         ),
-        EntityField("intent", "name", None, "One short label, e.g. effect_merger, amend_merger."),
+        EntityField(
+            "intent", "label", None,
+            "Exactly one token: " + ", ".join(MERGER_INTENTS) + " (plan_of_merger is effect_merger).",
+        ),
         EntityField("subject_matter", "free_text", None, "One grounded sentence."),
         EntityField("keywords", "entity_list:name", [], "Up to 8 phrases copied from the text."),
     ),
@@ -717,8 +747,8 @@ def _parity_problems() -> list[str]:
         problems.append(f"field types differ from DEFAULT_FIELD_TYPES: {mine} != {live}")
     if tuple(mine) != tuple(CORPUS_EXTRACTION_FIELDS["merger_agreement"]):
         problems.append("field order differs from CORPUS_EXTRACTION_FIELDS")
-    if len(mine) != 10:
-        problems.append(f"expected 10 scored fields, found {len(mine)}")
+    if len(mine) != 21:
+        problems.append(f"expected 21 scored fields, found {len(mine)}")
     return problems
 
 
@@ -1082,8 +1112,14 @@ def maud_json_schema(
             props[key] = sub
         elif f.name == "merger_consideration":
             props[f.name] = {"enum": [*MAUD_CONSIDERATION_TYPES, None]}
+        elif f.name == "intent":
+            props[f.name] = {"enum": [*MERGER_INTENTS, None]}
         elif f.type.startswith("entity_list"):
             props[f.name] = {"type": "array", "items": {"type": "string"}}
+        elif f.name == "outside_date":
+            # ISO when the agreement states a date, else as printed ("nine months after
+            # the date hereof"), so no date pattern here.
+            props[f.name] = {"type": ["string", "null"]}
         else:
             props[f.name] = _scalar_schema(f.type)
     if include_trace:

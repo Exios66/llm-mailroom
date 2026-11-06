@@ -6,6 +6,18 @@ Grounded in the published Hugging Face dataset
 as the v9 GT-closure revision ``46a4d3c2``, v9.1 ``ed7576b6``) — the v9 successor of the frozen v8 ``mailroom-corpus``
 baseline).
 
+**v10 (0.28.0 aligns to it; not yet published).** The v10 revision built in
+``Exios66/Mailroom-Corpus-EDA`` keeps 3,292 rows (train 2,971 / test 321, 151
+mergers) and adds typed per-class configs (``gt_contract``, ``gt_merger_agreement``,
+``gt_correspondence``, ``gt_insurance_claim``, ``gt_corporate_record``), a blind
+``default`` (``document_id``, ``doc_text``, ``prompt``), ``routing``, and the long
+``cuad_clauses`` / ``maud_answers`` tables; the legacy ``ground_truth`` config stays,
+deprecated. The new configs carry ``subclass`` as the canonical key from
+:data:`DOC_TYPE_SUBCLASSES` (``source_subclass`` keeps the raw value), so the
+canonical keys are corpus surfaces too. :mod:`llm_dojo_scoring.schemas.v10_rows`
+maps a typed row onto the legacy ``gt_fields`` shape. The v10 tag and its commit
+are pinned here when the revision is published; until then ``v9.2`` is the pin.
+
 This module is the single source mapping each mailroom document class to:
 
 - the **subclass taxonomy** the sorter must emit for that class,
@@ -38,6 +50,7 @@ __all__ = [
     "NATIVE_DOC_TYPES",
     "DOC_TYPE_SUBCLASSES",
     "CORPUS_SUBCLASS_SURFACES",
+    "RAW_CORPUS_SUBCLASS_SURFACES",
     "CORPUS_DIFFERENTIATORS",
     "CORPUS_EXTRACTION_FIELDS",
     "CUAD_CLAUSE_CATEGORIES",
@@ -46,6 +59,8 @@ __all__ = [
     "CORRESPONDENCE_TOPICS",
     "CORRESPONDENCE_SENTIMENT_LABELS",
     "INSURANCE_CLAIM_TYPES",
+    "COVERAGE_DETERMINATIONS",
+    "URGENCY_LEVELS",
     "INSURANCE_PRODUCT_LINES",
     "CMS_DOCUMENTED_ABSENT_FIELDS",
     "CMS_SOURCE_TABLES",
@@ -155,7 +170,7 @@ DOC_TYPE_SUBCLASSES: dict[str, tuple[str, ...]] = {
 #: Used by tests to pin corpus coverage; normalizers must resolve every value
 #: to a key in :data:`DOC_TYPE_SUBCLASSES` (or ``other`` only when the
 #: surface is the canonical other-bucket).
-CORPUS_SUBCLASS_SURFACES: dict[str, tuple[str, ...]] = {
+_RAW_SUBCLASS_SURFACES: dict[str, tuple[str, ...]] = {
     "contract": (
         "Affiliate_Agreements",
         "Agency Agreements",
@@ -223,6 +238,16 @@ CORPUS_SUBCLASS_SURFACES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: v10 configs carry the canonical key as ``subclass`` (``source_subclass`` keeps the
+#: raw surface above), so every canonical key is a surface as well.
+CORPUS_SUBCLASS_SURFACES: dict[str, tuple[str, ...]] = {
+    doc_type: raw + tuple(k for k in DOC_TYPE_SUBCLASSES[doc_type] if k not in raw)
+    for doc_type, raw in _RAW_SUBCLASS_SURFACES.items()
+}
+
+#: The raw (v9 ``expected_subclass``) surfaces only, without the v10 canonical keys.
+RAW_CORPUS_SUBCLASS_SURFACES: dict[str, tuple[str, ...]] = dict(_RAW_SUBCLASS_SURFACES)
+
 #: Ground-truth columns that actually vary by document type in the merge.
 #: Classification subclasses are listed even when they are not extraction fields.
 CORPUS_DIFFERENTIATORS: dict[str, tuple[str, ...]] = {
@@ -262,25 +287,44 @@ CORPUS_DIFFERENTIATORS: dict[str, tuple[str, ...]] = {
 #: Merger is ``MergerAgreementExtraction`` (no CUAD family/clauses).
 #: ``document_name`` is on the contracts / merger schema.
 CORPUS_EXTRACTION_FIELDS: dict[str, tuple[str, ...]] = {
+    # ContractExtraction v2 (0.28.0): no parse-compat merger keys.
     "contract": (
         "document_name",
         "parties",
+        "party_roles",
+        "signatories",
+        "agreement_date",
         "effective_date",
+        "expiration_date",
         "term_length",
-        "governing_law",
-        "contract_value",
         "renewal_terms",
+        "termination_notice_period",
+        "governing_law",
+        "dispute_forum",
+        "contract_value",
+        "payment_terms",
+        "territory",
         "cuad_family",
-        "merger_consideration",
         "cuad_clauses",
-        "maud_clauses",
     ),
+    # MergerAgreementExtraction v2 (0.28.0).
     "merger_agreement": (
         "document_name",
         "parties",
+        "acquirer",
+        "target",
+        "merger_sub",
+        "signatories",
         "effective_date",
         "effective_time",
         "governing_law",
+        "per_share_cash_amount",
+        "exchange_ratio",
+        "target_termination_fee",
+        "parent_termination_fee",
+        "outside_date",
+        "financial_advisors",
+        "legal_counsel",
         "merger_consideration",
         "maud_clauses",
         "intent",
@@ -486,6 +530,14 @@ INSURANCE_PRODUCT_LINES: tuple[str, ...] = (
     "workers_comp",
     "other",
 )
+
+#: Closed ``coverage_determination`` vocabulary (0.28.0 ``label``), the outcomes the
+#: insurance specialist is told to quote (llm-mailroom ``insurance_claims_specialist``).
+COVERAGE_DETERMINATIONS: tuple[str, ...] = ("approved", "denied", "partial", "pending")
+
+#: Closed correspondence ``urgency`` vocabulary (0.28.0 ``label``); never absent:
+#: a neutral message is ``routine``.
+URGENCY_LEVELS: tuple[str, ...] = ("routine", "time-sensitive", "urgent", "critical")
 
 #: Subclass keys the sorter may emit for an insurance row, in catalog order:
 #: the CMS source tables (the 600 CMS rows' ``expected_subclass``) then the

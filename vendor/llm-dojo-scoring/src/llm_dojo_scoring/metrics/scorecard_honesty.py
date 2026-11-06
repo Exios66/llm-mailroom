@@ -439,6 +439,12 @@ def _numeric_field_names(fields: Mapping[str, Any]) -> list[str]:
     return [str(name) for name, value in fields.items() if _is_real_score(value)]
 
 
+#: Keys a class accepts for parse compatibility but never scores (0.28.0).
+_PARSE_COMPAT_FIELDS: dict[str, frozenset[str]] = {
+    "contract": frozenset({"merger_consideration", "maud_clauses"}),
+}
+
+
 def _live_fields(doc_class: str | None) -> tuple[str | None, list[str]]:
     """Resolve *doc_class* (stripped, lower-cased; specialist names accepted).
 
@@ -454,7 +460,10 @@ def _live_fields(doc_class: str | None) -> tuple[str | None, list[str]]:
         name = SPECIALIST_DOC_TYPES.get(name, "")
     if name not in DEFAULT_FIELD_TYPES:
         return None, []
-    return name, list(DEFAULT_FIELD_TYPES[name])
+    # Parse-compat keys (the contract's v1 merger_consideration / maud_clauses) are
+    # accepted in a prediction but never scored, so they never count toward scope.
+    compat = _PARSE_COMPAT_FIELDS.get(name, frozenset())
+    return name, [f for f in DEFAULT_FIELD_TYPES[name] if f not in compat]
 
 
 def _is_maud_only_doc(scored_fields: Sequence[str], live: set[str]) -> bool:
