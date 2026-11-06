@@ -77,6 +77,9 @@ _UPLOAD_MAX_PER_WINDOW = int(os.environ.get("MAILROOM_UPLOAD_RATE", 20))
 _upload_timestamps: list[float] = []
 
 
+_FORWARDING_HEADERS = ("forwarded", "x-forwarded-for", "x-real-ip")
+
+
 def _listener_is_loopback(server) -> bool:
     """True when the ASGI ``server`` address (the local socket the request
     arrived on) is loopback. Unknown addresses and unix sockets are not."""
@@ -104,7 +107,10 @@ def _require_token(request: Request) -> None:
     """
     tokens = active_api_tokens()
     if not tokens:
-        if _listener_is_loopback(request.scope.get("server")):
+        # A same-host reverse proxy also arrives on loopback; its forwarding
+        # headers show the request came from elsewhere.
+        proxied = any(h in request.headers for h in _FORWARDING_HEADERS)
+        if not proxied and _listener_is_loopback(request.scope.get("server")):
             return  # loopback-only dev without a token
         raise HTTPException(
             503,
