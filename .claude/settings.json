@@ -30,6 +30,7 @@
       "Read(./.env)",
       "Read(./**/.env)",
       "Read(./**/.env.*)",
+      "Read(!.env.example)",
       "Bash(* --real*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_prompts.py:*)",
       "Bash(PYTHONPATH=src python src/scripts/sync_dataset.py:*)",
