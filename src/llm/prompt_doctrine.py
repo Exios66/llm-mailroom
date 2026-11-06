@@ -122,9 +122,10 @@ SORTER_REVIEWER = classification_doctrine(
 )
 
 CONTRACTS = extraction_doctrine(
-    "reasoning, document_name, parties, effective_date, term_length, "
-    "governing_law, contract_value, renewal_terms, cuad_family, "
-    "merger_consideration, cuad_clauses, maud_clauses, confidence",
+    "reasoning, document_name, parties, party_roles, signatories, agreement_date, "
+    "effective_date, expiration_date, term_length, termination_notice_period, "
+    "governing_law, dispute_forum, contract_value, payment_terms, territory, "
+    "renewal_terms, cuad_family, merger_consideration, cuad_clauses, maud_clauses, confidence",
     [
         "parties is an entity list of distinct named parties; do not invent from letterhead without contract language.",
         "contract_value may be $0; that is a stated amount.",
@@ -156,8 +157,11 @@ CORRESPONDENCE = extraction_doctrine(
 )
 
 MERGER_AGREEMENT = extraction_doctrine(
-    "document_name, parties, effective_date, effective_time, governing_law, "
-    "merger_consideration, maud_clauses, intent, subject_matter, keywords",
+    "document_name, parties, acquirer, target, merger_sub, signatories, "
+    "effective_date, effective_time, governing_law, per_share_cash_amount, "
+    "exchange_ratio, target_termination_fee, parent_termination_fee, outside_date, "
+    "financial_advisors, legal_counsel, merger_consideration, maud_clauses, intent, "
+    "subject_matter, keywords",
     [
         "parties names Parent, Merger Sub, and Target as the agreement states — do not invent roles.",
         "merger_consideration is exactly one of all_cash, all_stock, mixed_cash_stock, "
