@@ -15,6 +15,74 @@ from scripts.bump_dojo_scoring import current_pin
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
+def test_api_readme_distinguishes_module_and_direct_uvicorn_startup():
+    """PR #171: direct uvicorn must not be advertised as an equivalent launch."""
+    text = (REPO_ROOT / "src/api/README.md").read_text(encoding="utf-8")
+    technical = text.split("## Technical reference", 1)[1]
+    module, direct = technical.split("- `uvicorn api.main:app`", 1)
+    module = " ".join(module.split())
+    direct = " ".join(direct.split("\n- ", 1)[0].split())
+
+    assert "Equivalent:" not in technical
+    for setting in ("MAILROOM_API_HOST", "MAILROOM_API_PORT", "PORT", "127.0.0.1", "8000"):
+        assert f"`{setting}`" in module
+    assert "non-empty after stripping whitespace" in module
+    assert "refuses an off-loopback bind" in module
+    assert "assert_bind_allowed" in module
+    assert "--pager" in module and "--no-pager" in module
+    assert "process tracing" in module
+
+    assert "listener ignores" in direct
+    for setting in ("PORT", "MAILROOM_API_HOST", "MAILROOM_API_PORT", "UVICORN_HOST", "UVICORN_PORT"):
+        assert f"`{setting}`" in direct
+    assert "--host" in direct and "--port" in direct
+    assert "skips the bind guard" in direct
+    assert "set a token yourself before" in direct
+    assert "starts no pager" in direct
+    assert "python -m pipeline.pager run" in direct
+
+
+def test_api_readme_scopes_missing_token_exit_to_module_start():
+    text = (REPO_ROOT / "src/api/README.md").read_text(encoding="utf-8")
+    auth = " ".join(text.split("- Auth:", 1)[1].split())
+    assert "`python -m api.main` exits without one" in auth
+    assert "direct `uvicorn` does not check" in auth
+    assert "set it yourself" in auth
+
+
+def test_running_docs_describe_nonempty_platform_port_precedence():
+    text = (REPO_ROOT / "docs/the-pipeline-in-depth/running.md").read_text(encoding="utf-8")
+    port_rows = re.findall(r"^\| Port \| (.+) \|$", text, re.MULTILINE)
+    assert len(port_rows) == 1
+    rule = port_rows[0]
+    assert "`PORT` if non-empty after stripping whitespace" in rule
+    assert rule.index("`PORT`") < rule.index("`MAILROOM_API_PORT`") < rule.index("`8000`")
+
+
+def test_api_reference_warns_before_direct_public_uvicorn_example():
+    text = (REPO_ROOT / "docs/pipeline-reference-llm-mailroom/api.md").read_text(encoding="utf-8")
+    startup = text.split("## Starting the API", 1)[1]
+    block = re.search(r"```bash\n(.*?)```", startup, re.DOTALL).group(1)
+    lines = block.splitlines()
+    command_index = next(i for i, line in enumerate(lines) if "uvicorn api.main:app" in line)
+    warning = lines[command_index - 1]
+    assert warning.startswith("#")
+    assert "skipping the off-loopback token guard" in warning
+    assert "set MAILROOM_API_TOKEN yourself first" in warning
+    assert "--host 0.0.0.0" in lines[command_index]
+
+
+def test_deployment_api_service_uses_guarded_module_entrypoint():
+    text = (REPO_ROOT / "docs/pipeline-reference-llm-mailroom/deployment/README.md").read_text(encoding="utf-8")
+    services = re.findall(r"^\[Service\] mailroom-api\s+→\s+(.+)$", text, re.MULTILINE)
+    assert len(services) == 1
+    command = services[0]
+    assert "PYTHONPATH=src" in command
+    assert "MAILROOM_API_HOST=0.0.0.0 python -m api.main" in command
+    assert "needs MAILROOM_API_TOKEN" in command
+    assert "uvicorn" not in command
+
 # Markdown links into OTHER repositories (the constellation guides under
 # docs/constellation/ cite sibling repos' own docs/ trees) name paths that are
 # not this repo's — strip them before scanning. Links back into this repo
