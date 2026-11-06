@@ -181,6 +181,7 @@ NODE_OBSERVATION_TYPES = {
     "document-pipeline": "chain",
     "intake-document": "span",
     "normalize-intake": "span",
+    "intake-ml-triage": "span",
     "extract-image-text": "retriever",
     "transcribe-pdf": "retriever",
     "classify-document": "agent",
@@ -244,6 +245,8 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
                 flush()
                 return result
 
+        # Read by src/scripts/export_contract.py to map graph nodes to spans.
+        wrapper.mailroom_span_name = name
         return wrapper
 
     return deco
