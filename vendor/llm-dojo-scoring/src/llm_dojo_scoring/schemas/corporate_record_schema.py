@@ -374,11 +374,14 @@ def entity_field_types(subclass: Any) -> dict[str, str]:
     return {e.key: e.type for e in subclass_schema(subclass).entities}
 
 
-# Only these two statuses document "expected empty"; ``pending_annotation``
-# means the label never ran (stale values must not score) and ``not_applicable``
-# means the field is outside the subclass — neither counts as a labeled entity.
-_DOCUMENTED_ABSENCE = frozenset({"schema_documented_absence", "not_applicable"})
-_UNLABELED_STATUSES = frozenset({"not_applicable", "pending_annotation"})
+# One rule for ``not_applicable`` (0.28.0, mailroom-dataset v10 plan A3): the field
+# is outside this row's schema, so it is never a scoring event — not a labeled
+# entity, not an unlabeled one and not an expected-empty one; it is dropped from
+# both sides. ``schema_documented_absence`` alone documents "expected empty";
+# ``pending_annotation`` means the label never ran (stale values must not score).
+_DOCUMENTED_ABSENCE = frozenset({"schema_documented_absence"})
+_NOT_APPLICABLE = "not_applicable"
+_UNLABELED_STATUSES = frozenset({_NOT_APPLICABLE, "pending_annotation"})
 
 
 def all_entity_field_types() -> dict[str, str]:
@@ -433,7 +436,9 @@ def unlabeled_fields(subclass: Any, gt: Mapping[str, Any] | str | None) -> tuple
     """Return unlabeled entity fields from the core and the current subclass.
 
     A blank entity field is *expected empty* only when ``gt_presence`` says
-    ``schema_documented_absence`` / ``not_applicable``. A blank with no such
+    ``schema_documented_absence``. A ``not_applicable`` field is outside the
+    row's schema: it is never reported here (0.28.0; before, it counted as
+    expected empty while :func:`scored_field_types` excluded it). A blank with no such
     statement is **unlabeled**: the annotation never ran, so neither a filled
     nor an empty prediction may be scored against it. ``pending_annotation``
     is unlabeled even with a stored value; ``populated`` alone does not make
@@ -448,6 +453,8 @@ def unlabeled_fields(subclass: Any, gt: Mapping[str, Any] | str | None) -> tuple
     out: list[str] = []
     for key in candidates:
         status = presence.get(key)
+        if status == _NOT_APPLICABLE:
+            continue  # outside this row's schema: not a scoring event at all
         if status == "pending_annotation":
             out.append(key)
             continue
@@ -486,7 +493,10 @@ def align_unlabeled(
         for e in o.entities
         if not _labeled(presence, parsed, e.key)
     }
-    if not dropped and not (stray & set(predicted)):
+    # ``not_applicable`` core fields leave both sides too (same rule as the
+    # extension entities above); they are not reported as unlabeled.
+    stray |= {f for f in ENTITY_CORE_FIELDS if presence.get(f) == _NOT_APPLICABLE}
+    if not dropped and not (stray & (set(predicted) | set(expected))):
         return dict(expected), dict(predicted), ()
     gone = set(dropped) | stray
     return (

@@ -85,6 +85,10 @@ ANNOTATION_KEYS: frozenset[str] = frozenset(
         "maud_label_count",
         "related_document_ids",
         "relationships",
+        # mailroom-dataset v10 per-field label support (``gt_<class>`` configs):
+        # evidence spans and label provenance, carried by ``v10_rows``.
+        "evidence",
+        "provenance",
         # Document-level subclass label (corpus differentiator, mailroom
         # GROUND_TRUTH_KEYS) — scored by the classifier, never as a field.
         "expected_subclass",

@@ -97,8 +97,13 @@ def required_samples(
     confidence = _validate_confidence(confidence)
     if errors == 0:
         # 1 - (1 - risk) ** n <= 1 - confidence
-        n = math.ceil(math.log(1.0 - confidence) / math.log(1.0 - risk))
-        return max(1, n)
+        # log1p keeps a tiny risk from rounding ``1 - risk`` to 1.0 (a zero
+        # denominator); the cap applies here as it does to the search below.
+        exact = math.log(1.0 - confidence) / math.log1p(-risk)
+        # Compare before ``ceil``: a risk near the float minimum overflows to inf.
+        if not math.isfinite(exact) or exact > _MAX_REQUIRED_SAMPLES:
+            return None
+        return max(1, math.ceil(exact))
     low, high = max(errors, 1), _MAX_REQUIRED_SAMPLES
     if errors > high:
         # More errors than the search cap allows trials: no sample clears it.
@@ -191,8 +196,19 @@ def cross_fit_cutoffs(
         "holdout_accuracy": right / kept if kept else None,
         "holdout_accuracy_ci": interval,
         "holdout_share_accepted": kept / len(shuffled) if shuffled else None,
-        "meets_target": bool(interval and interval["lo"] >= target),
+        # Decide on the exact bound: ``wilson_ci`` rounds ``lo`` to 4 places,
+        # which can lift a just-short bound over the target.
+        "meets_target": bool(kept and _wilson_lower(right / kept, kept, z) >= target),
     }
+
+
+def _wilson_lower(p: float, n: int, z: float) -> float:
+    """Unrounded Wilson lower bound (the same formula as :func:`wilson_ci`)."""
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    centre = (p + z2 / (2 * n)) / denom
+    margin = z * ((p * (1 - p) / n + z2 / (4 * n * n)) ** 0.5) / denom
+    return max(0.0, centre - margin)
 
 
 def _clean_pairs(pairs: Iterable[Pair]) -> list[Pair]:
@@ -283,6 +299,11 @@ def reliability_bins(pairs: Iterable[Pair], *, bins: int = 10) -> list[dict[str,
     return out
 
 
+def _is_nan(value: Any) -> bool:
+    """NaN test that never converts: ``math.isnan(10**400)`` overflows."""
+    return value != value
+
+
 def _rank(values: Sequence[float]) -> list[float]:
     """Average ranks with ties sharing the midpoint."""
     order = sorted(range(len(values)), key=lambda index: values[index])
@@ -307,9 +328,13 @@ def auroc(scores: Sequence[float], labels: Sequence[bool]) -> float | None:
     if len(scores) != len(labels):
         raise ValueError("scores and labels must have the same length")
     pairs = [
-        (float(score), bool(label))
+        (score, bool(label))
         for score, label in zip(scores, labels)
-        if isinstance(score, (int, float)) and not isinstance(score, bool)
+        # numbers.Real admits numpy scalars (float32, int64); bools are labels, not scores.
+        if isinstance(score, numbers.Real)
+        and not isinstance(score, bool)
+        and type(score).__name__ != "bool_"
+        and not _is_nan(score)  # NaN has no order, so it cannot be ranked
     ]
     positives = [score for score, label in pairs if label]
     negatives = [score for score, label in pairs if not label]
@@ -325,9 +350,16 @@ def spearman(xs: Sequence[float], ys: Sequence[float]) -> float | None:
     """Rank correlation; ``None`` under three rows or with a constant axis."""
     if len(xs) != len(ys):
         raise ValueError("xs and ys must have the same length")
-    if len(xs) < 3:
+    # NaN has no order: drop any pair carrying one before ranking.
+    # Rank the values as given: float() would merge distinct integers above 2**53.
+    kept = [
+        (x, y)
+        for x, y in zip(xs, ys)
+        if not (_is_nan(x) or _is_nan(y))
+    ]
+    if len(kept) < 3:
         return None
-    rx, ry = _rank([float(value) for value in xs]), _rank([float(value) for value in ys])
+    rx, ry = _rank([x for x, _ in kept]), _rank([y for _, y in kept])
     mean_x, mean_y = sum(rx) / len(rx), sum(ry) / len(ry)
     covariance = sum((a - mean_x) * (b - mean_y) for a, b in zip(rx, ry))
     variance = math.sqrt(
