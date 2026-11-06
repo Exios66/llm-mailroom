@@ -65,6 +65,7 @@ FILES = {
         "no scorecard for the current release ({v}).\nNothing for release {v}.\n"
     ),
     "src/tests/test_landing.py": 'BADGES = ("release-v{v}-2EA043",)\n',
+    "contract/mailroom-contract.json": '{{\n  "contract_version": "1.0.0",\n  "pipeline_version": "{v}",\n  "trace_name": "document-pipeline"\n}}\n',
 }
 
 

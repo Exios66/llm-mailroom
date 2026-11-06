@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Display contract for The-Mailroom** (`contract/mailroom-contract.json`, `src/scripts/export_contract.py`).
   - Built from the pipeline's runtime constants: the compiled LangGraph's nodes and edges with each node's span and Langfuse observation type, `NODE_OBSERVATION_TYPES`, taxonomy agents, the five document classes with their schema, specialist, field keys and sorter subclass catalog, failure classes, `SCORE_CONFIGS` names and Langfuse aliases, and the `confidence` thresholds.
-  - The-Mailroom vendors the file at its pinned commit and tests against it, so pipeline changes that break the visualizer fail there instead of rendering as `unknown`.
+  - The-Mailroom will vendor the file at its pinned commit and test against it (in review there), so pipeline changes that break the visualizer fail in its CI instead of rendering as `unknown`.
   - `src/tests/test_contract_export.py` fails when the committed file is stale; regenerate with `PYTHONPATH=src python src/scripts/export_contract.py --write`.
+  - `release.py cut` moves the contract's `pipeline_version` with the other version locations.
   - `traced_node` tags its wrapper with `mailroom_span_name` so the exporter can read each node's span from the graph.
   - `intake-ml-triage` is now listed in `NODE_OBSERVATION_TYPES` (type `span`, as emitted).
 
