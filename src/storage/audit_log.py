@@ -1,6 +1,6 @@
 import structlog
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, JSON, Text, Integer, ForeignKey, Index, select, desc
+from sqlalchemy import String, DateTime, JSON, Text, Integer, ForeignKey, Index, select, desc, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, acquire_write_lock, async_session, ensure_schema
@@ -196,6 +196,17 @@ async def write_audit_entry(entry) -> AuditLogRecord | AuditLegacyRecord:
     ensure_schema()
     from schemas.audit import AuditLogEntry
     async with async_session() as session:
+        # Share the migration's chain gate until commit, before choosing the
+        # live event table. Postgres writers can share this gate while the
+        # migration takes it exclusively. SQLite's document lock below uses
+        # BEGIN IMMEDIATE and must remain the first statement.
+        if session.get_bind().dialect.name == "postgresql":
+            from .audit_migrate import LOCK_KEY
+
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock_shared(hashtext(:key))"),
+                {"key": LOCK_KEY},
+            )
         # Serialize the whole read-tail-then-append for this doc: without a
         # write lock, concurrent appenders read the same tail/max(seq) and
         # fork the chain (duplicate prev_hash and seq).

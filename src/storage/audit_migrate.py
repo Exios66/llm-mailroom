@@ -82,7 +82,7 @@ _FINGERPRINT_COLUMNS = (
 
 _PENDING_HINT = (
     "audit_log still holds the previous release's rows. Back up the database (pg_dump), then "
-    f"restart with {OPT_IN_ENV}=1 or run `python -m storage.audit_migrate`."
+    f"restart with {OPT_IN_ENV}=1 or run `{OPT_IN_ENV}=1 python -m storage.audit_migrate`."
 )
 
 

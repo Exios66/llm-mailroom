@@ -228,7 +228,8 @@ async def test_postgres_requires_opt_in(legacy_db, monkeypatch):
     assert result.backup_path is None
     pending = [e for e in logs if e["event"] == "audit_migration_pending"]
     assert len(pending) == 1
-    assert "MAILROOM_AUDIT_MIGRATE=1" in pending[0]["hint"]
+    assert "restart with MAILROOM_AUDIT_MIGRATE=1" in pending[0]["hint"]
+    assert "`MAILROOM_AUDIT_MIGRATE=1 python -m storage.audit_migrate`" in pending[0]["hint"]
     assert _dump(legacy_db, ("audit_log",)) == before
     assert _rows(legacy_db, "audit_log") != []
     assert _index_is_unique(legacy_db, "audit_log", "doc_id") is False
@@ -365,3 +366,93 @@ async def test_event_writer_stays_on_audit_log_while_migration_is_pending(legacy
     assert len(await get_audit_chain("fixture-doc-a")) == 5
     assert len(_rows(legacy_db, "audit_log")) == 12
     assert _rows(legacy_db, "audit_log_legacy") == []
+
+
+async def test_event_writers_wait_for_migration_before_selecting_model(monkeypatch):
+    """The shared Postgres gate precedes document locking and model lookup."""
+    import asyncio
+    from types import SimpleNamespace
+    from storage import audit_log
+    from schemas.audit import build_audit_entry
+
+    migration_committed = asyncio.Event()
+    both_waiting = asyncio.Event()
+    calls = []
+
+    class ModelSelected(Exception):
+        pass
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        def get_bind(self):
+            return SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+
+        async def execute(self, statement, params):
+            assert str(statement) == "SELECT pg_advisory_xact_lock_shared(hashtext(:key))"
+            assert params == {"key": audit_migrate.LOCK_KEY}
+            calls.append(("gate", self))
+            if len(calls) == 2:
+                both_waiting.set()
+            await migration_committed.wait()
+
+    async def document_lock(session, key):
+        assert migration_committed.is_set()
+        assert key.startswith("audit_log:doc-")
+        calls.append(("document", session))
+
+    async def select_model(session):
+        assert calls[-1] == ("document", session)
+        calls.append(("model", session))
+        raise ModelSelected
+
+    monkeypatch.setattr(audit_log, "ensure_schema", lambda: True)
+    monkeypatch.setattr(audit_log, "async_session", Session)
+    monkeypatch.setattr(audit_log, "acquire_write_lock", document_lock)
+    monkeypatch.setattr(audit_log, "event_log_model", select_model)
+
+    async def write(i):
+        with pytest.raises(ModelSelected):
+            await audit_log.write_audit_entry(
+                build_audit_entry(f"doc-{i}", "matter", "event", "test", {})
+            )
+
+    tasks = [asyncio.create_task(write(i)) for i in range(2)]
+    try:
+        await asyncio.wait_for(both_waiting.wait(), timeout=2)
+        assert [kind for kind, _ in calls] == ["gate", "gate"]
+        migration_committed.set()
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=2)
+        assert [kind for kind, _ in calls].count("model") == 2
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+async def test_sqlite_event_writer_begins_with_immediate_lock(legacy_db):
+    from sqlalchemy import event
+
+    db.ensure_schema()
+    statements = []
+    engine = db.get_engine().sync_engine
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        from schemas.audit import build_audit_entry
+        from storage.audit_log import write_audit_entry
+
+        await write_audit_entry(
+            build_audit_entry("fixture-doc-a", "matter-1", "relinked", "test", {})
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert statements[0] == "BEGIN IMMEDIATE"
+    assert sum(s == "BEGIN IMMEDIATE" for s in statements) == 1
