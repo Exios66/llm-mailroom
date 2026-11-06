@@ -264,7 +264,7 @@ class TestFieldTypesFromConfig:
         assert merger["effective_time"] == "free_text"
         assert "cuad_family" not in merger
         assert "cuad_clauses" not in merger
-        assert contract["cuad_family"] == "name"
+        assert contract["cuad_family"] == "label"  # Dojo 0.28.0 closed label
         assert resolve_extract_class("merger_agreement") == "merger_agreement"
 
 
