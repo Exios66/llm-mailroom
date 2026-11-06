@@ -42,13 +42,12 @@ logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Auth (audit L-2): every endpoint except /health requires the configured
-# bearer token (MAILROOM_API_TOKEN). When unset the API refuses to start in
-# server mode — it must never bind unauthenticated.
+# bearer token (MAILROOM_API_TOKEN). With no live token, ``python -m api.main``
+# refuses an off-loopback bind and _require_token answers 503 to any request
+# that did not arrive on a loopback address.
 # ---------------------------------------------------------------------------
 
 _DOC_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
-
-_API_TOKEN = os.environ.get("MAILROOM_API_TOKEN", "").strip()
 
 
 def _csv_tokens(raw: str | None) -> set[str]:
@@ -63,8 +62,10 @@ def active_api_tokens() -> set[str]:
     unauthenticated mode (bind check still requires a token off-loopback).
     """
     tokens = set()
-    if _API_TOKEN:
-        tokens.add(_API_TOKEN)
+    # Read per call, like the two CSV vars, so a token set after import counts.
+    single = os.environ.get("MAILROOM_API_TOKEN", "").strip()
+    if single:
+        tokens.add(single)
     tokens |= _csv_tokens(os.environ.get("MAILROOM_API_TOKENS", ""))
     tokens -= _csv_tokens(os.environ.get("MAILROOM_API_TOKEN_REVOKED", ""))
     return tokens

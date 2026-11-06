@@ -120,3 +120,18 @@ def test_loopback_dev_app_still_serves_without_token(monkeypatch, temp_base_dir)
     main = _reload_main(monkeypatch, temp_base_dir, MAILROOM_EMBED_WATCHER="0")
     with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         assert client.get("/queue").status_code == 200
+
+
+def test_token_set_after_import_is_live(monkeypatch, temp_base_dir):
+    """MAILROOM_API_TOKEN is read per request, like MAILROOM_API_TOKENS.
+
+    local-mailroom-sandbox's offline pilot (``connect_review_api``) imports
+    ``api.main`` and only then sets the token, talking to ``http://testserver``
+    with a Bearer header. An import-time snapshot would see no token and 503 it.
+    """
+    main = _reload_main(monkeypatch, temp_base_dir)
+    monkeypatch.setenv("MAILROOM_API_TOKEN", "late")
+    main._require_token(_request(("testserver", 80), "Bearer late"))  # no exception
+    with pytest.raises(HTTPException) as exc:
+        main._require_token(_request(("testserver", 80)))
+    assert exc.value.status_code == 401
