@@ -336,6 +336,13 @@ async def fetch_terminal_documents(
 
 
 async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any]]:
+    """Return per-event audit rows with doc ids, or ``[]`` for no requested ids.
+
+    After migration, read legacy history, excluding unified rows and addenda.
+    Up to 50 ids preserve request order with each chain in sequence order;
+    larger requests return rows ordered by doc id, sequence, and timestamp.
+    Schema initialization may migrate legacy data; database errors propagate.
+    """
     if not doc_ids:
         return []
     from sqlalchemy import select

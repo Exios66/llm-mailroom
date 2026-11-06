@@ -45,6 +45,7 @@ class AttemptRow:
     detail: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Raise ``ValueError`` for an unknown stage or trigger."""
         if self.stage not in STAGES:
             raise ValueError(f"unknown attempt stage {self.stage!r}; expected one of {STAGES}")
         if self.trigger not in TRIGGERS:

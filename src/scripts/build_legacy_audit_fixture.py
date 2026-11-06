@@ -90,6 +90,7 @@ DOCUMENTS = (
 
 
 async def _write_all() -> int:
+    """Write the fixed fixture events in interleaved document order; return the count."""
     from schemas.audit import AuditLogEntry, compute_audit_hash
     from storage.audit_log import get_latest_audit_hash, write_audit_entry
 
@@ -125,6 +126,12 @@ async def _write_all() -> int:
 
 
 def build(out: Path) -> int:
+    """Replace ``out`` with a legacy SQLite fixture and return the event count.
+
+    Parent directories are created. ``DATABASE_URL`` and the schema cache are
+    changed to use a temporary database and are not restored. Database and
+    filesystem errors propagate.
+    """
     out = Path(out)
     with tempfile.TemporaryDirectory() as tmp:
         os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{Path(tmp) / 'mailroom.db'}"
@@ -185,6 +192,7 @@ def build(out: Path) -> int:
 
 
 def main() -> int:
+    """Build the fixture selected by ``--out``, print its row count, and return 0."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
