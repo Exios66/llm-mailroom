@@ -59,6 +59,23 @@ def test_default_port_is_8000(monkeypatch):
     assert main.listen_port() == 8000
 
 
+@pytest.mark.parametrize("platform_port", ["", " ", "\t\n"])
+@pytest.mark.parametrize("configured_port,expected", [("7860", 7860), (None, 8000)])
+def test_blank_platform_port_uses_documented_fallback(
+    monkeypatch, platform_port, configured_port, expected
+):
+    """A present but blank PORT is not a platform port override (PR #171)."""
+    main = _reload_main(
+        monkeypatch, PORT=platform_port, MAILROOM_API_PORT=configured_port
+    )
+    assert main.listen_port() == expected
+
+
+def test_padded_platform_port_still_overrides_configured_port(monkeypatch):
+    main = _reload_main(monkeypatch, PORT=" \t8080\n", MAILROOM_API_PORT="7860")
+    assert main.listen_port() == 8080
+
+
 def test_off_loopback_without_token_exits_with_space_hint(monkeypatch):
     main = _reload_main(
         monkeypatch,
