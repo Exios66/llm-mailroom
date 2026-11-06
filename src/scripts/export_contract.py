@@ -33,25 +33,41 @@ _END = "__end__"
 
 
 def _pipeline_version() -> str:
+    """The package version from ``pyproject.toml``."""
     data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     return str(data["project"]["version"])
 
 
+def node_row(node_id: str, func: Any) -> dict[str, str]:
+    """One graph node as the contract lists it.
+
+    ``func`` is the node's callable. It must be wrapped by
+    ``observability.tracing.traced_node``, which records the span name and the
+    observation type the span is opened as. That type includes an ``as_type``
+    override, so the contract shows what a trace backend actually receives,
+    not only the ``NODE_OBSERVATION_TYPES`` default for the span name.
+    """
+    span = getattr(func, "mailroom_span_name", None)
+    if not span:
+        raise RuntimeError(f"graph node {node_id!r} is not wrapped by traced_node")
+    obs_type = getattr(func, "mailroom_observation_type", None)
+    if not obs_type:
+        from observability.tracing import observation_type_for
+
+        obs_type = observation_type_for(span)
+    return {"id": node_id, "span": span, "observation_type": obs_type}
+
+
 def _graph_section() -> dict[str, Any]:
+    """Nodes (with span and observation type) and edges of the compiled graph."""
     from graph.build_graph import build_graph
-    from observability.tracing import observation_type_for
 
     graph = build_graph(checkpointer=None)
     drawn = graph.get_graph()
-    nodes = []
-    for node_id, spec in sorted(graph.builder.nodes.items()):
-        func = getattr(spec.runnable, "func", None)
-        span = getattr(func, "mailroom_span_name", None)
-        if not span:
-            raise RuntimeError(f"graph node {node_id!r} is not wrapped by traced_node")
-        nodes.append(
-            {"id": node_id, "span": span, "observation_type": observation_type_for(span)}
-        )
+    nodes = [
+        node_row(node_id, getattr(spec.runnable, "func", None))
+        for node_id, spec in sorted(graph.builder.nodes.items())
+    ]
     edges = sorted(
         (
             {
@@ -68,6 +84,7 @@ def _graph_section() -> dict[str, Any]:
 
 
 def _taxonomy() -> dict[str, Any]:
+    """The parsed ``src/config/taxonomy.yaml``."""
     import yaml
 
     path = REPO_ROOT / "src" / "config" / "taxonomy.yaml"
@@ -75,6 +92,7 @@ def _taxonomy() -> dict[str, Any]:
 
 
 def _doc_classes(taxonomy: dict[str, Any]) -> list[dict[str, Any]]:
+    """Document classes in taxonomy order, with fields and sorter subclasses."""
     from langchain_agents.doc_inventories import sorter_subclass_catalog
 
     rows = []
@@ -94,6 +112,7 @@ def _doc_classes(taxonomy: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _failure_classes() -> list[str]:
+    """The ``failure_class`` values a run can be aborted with."""
     from pipeline import failures
 
     names = [
@@ -104,6 +123,7 @@ def _failure_classes() -> list[str]:
 
 
 def _scores() -> dict[str, Any]:
+    """Score configs (name, type, categories) and Langfuse name aliases."""
     from observability.scores import LANGFUSE_SCORE_NAME_ALIASES, SCORE_CONFIGS
 
     configs = []
@@ -141,10 +161,12 @@ def build_contract() -> dict[str, Any]:
 
 
 def render(contract: dict[str, Any]) -> str:
+    """The contract as the exact text committed to ``CONTRACT_PATH``."""
     return json.dumps(contract, indent=2, sort_keys=False, ensure_ascii=False) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI: print the contract, ``--write`` it, or ``--check`` it is current."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="regenerate the committed file")
