@@ -6,7 +6,8 @@ Mailroom exposes a FastAPI server on port 8000 by default.
 
 ```bash
 PYTHONPATH=src python -m api.main
-# or, skipping the off-loopback token guard (set MAILROOM_API_TOKEN yourself first):
+# or direct uvicorn (no startup bind guard; without MAILROOM_API_TOKEN every
+# token-protected route answers 503 to requests that arrive off loopback):
 PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -559,7 +560,7 @@ All errors follow a consistent format:
 | `413`  | Upload exceeds `MAILROOM_MAX_UPLOAD_BYTES`                          |
 | `429`  | Upload rate limit exceeded (`MAILROOM_UPLOAD_RATE` per 60 s window) |
 | `500`  | Internal server error / database unavailable                        |
-| `503`  | Ingestion paused / dependency unavailable                           |
+| `503`  | Ingestion paused / dependency unavailable / no live API token and the request arrived off loopback |
 
 ***
 
@@ -592,7 +593,7 @@ The Mailroom API is versioned under `/v1`. Unversioned routes remain as aliases 
 * Prefer `/v1/...` for all new integrations. Unversioned routes will be removed after the deprecation window (see `CHANGELOG.md`).
 * Do not depend on undocumented response fields — only fields documented in this reference are stable.
 * Breaking changes are announced in `CHANGELOG.md` under the "Breaking changes" section of the release.
-* Every management endpoint except `GET /health` and `GET /v1/health` requires `Authorization: Bearer $MAILROOM_API_TOKEN` (or a token from `MAILROOM_API_TOKENS`), including `GET /matters/{matter_id}` and `GET /v1/matters/{matter_id}`. `MAILROOM_API_TOKEN_REVOKED` subtracts retired keys.
+* Every management endpoint except `GET /health` and `GET /v1/health` requires `Authorization: Bearer $MAILROOM_API_TOKEN` (or a token from `MAILROOM_API_TOKENS`), including `GET /matters/{matter_id}` and `GET /v1/matters/{matter_id}`. `MAILROOM_API_TOKEN_REVOKED` subtracts retired keys. With no live token, those endpoints answer only requests that arrive on a loopback address (`127.0.0.0/8`, `::1`, `localhost`); anything else gets `503`, however the server was started.
 
 ### `/v1` layout
 

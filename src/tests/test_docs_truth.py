@@ -328,3 +328,24 @@ def test_documented_pin_pattern_rejects_longer_hex_refs():
     pattern = r"llm-mailroom pins (v[\d.]+|(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z]))"
     assert re.findall(pattern, "llm-mailroom pins " + "a" * 41) == []
     assert re.findall(pattern, "llm-mailroom pins " + "a" * 40) == ["a" * 40]
+
+
+def test_api_docs_describe_the_tokenless_off_loopback_503():
+    """Direct uvicorn without a token is refused per request, and the docs say so.
+
+    The older wording ("set a token yourself" / "does not check") described a
+    server that served everything off loopback; the runtime guard in
+    ``api.main._require_token`` replaced that.
+    """
+    paths = (
+        "src/api/README.md",
+        "docs/pipeline-reference-llm-mailroom/api.md",
+        "docs/the-pipeline-in-depth/running.md",
+    )
+    for rel in paths:
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        flat = " ".join(text.split())
+        assert "503" in flat, rel
+        for stale in ("set a token yourself", "does not check", "set it yourself",
+                      "skipping the off-loopback token guard"):
+            assert stale not in flat, (rel, stale)
