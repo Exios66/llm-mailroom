@@ -629,6 +629,16 @@ def test_main_offline_override_refuses_tag_target_from_sha_pin(interim_pin_cli, 
     assert "refusing to replace an immutable SHA pin" in capsys.readouterr().err
 
 
+def test_main_offline_override_refuses_tag_target_from_tag_pin(interim_pin_cli, capsys):
+    """A tag pin plus --allow-missing-release never calls GitHub to resolve the tag."""
+    pyproject = interim_pin_cli / "pyproject.toml"
+    pyproject.write_text(pyproject.read_text().replace(SHA, "v0.21.0"), encoding="utf-8")
+    assert B.main(["--apply", "--tag", "v0.22.0", "--allow-missing-release"]) == 1
+    B.release_commit.assert_not_called()
+    B.apply_pin.assert_not_called()
+    assert "pass the release commit SHA" in capsys.readouterr().err
+
+
 def test_main_same_sha_is_up_to_date_without_ancestry_lookup(interim_pin_cli, capsys):
     assert B.main(["--check", "--tag", SHA.upper(), "--allow-missing-release"]) == 0
     B.tag_contains_commit.assert_not_called()
