@@ -164,6 +164,9 @@ def ensure_schema() -> bool:
     migration that cannot run or aborts is logged and leaves the old
     ``audit_log`` untouched; it never fails the schema, and the next process
     start tries again.
+
+    Return ``True`` on success or a cache hit, even if the audit migration is
+    pending or failed. Return ``False`` for caught schema-creation errors.
     """
     with _schema_lock:
         global _schema_checked_url
@@ -205,8 +208,11 @@ def _create_schema(url: str) -> None:
 
 
 def ensure_tables() -> None:
-    """create_all under ``_schema_lock``, for callers outside ``ensure_schema``
-    (the audit migration CLI and tests). Does not run any migration."""
+    """Create missing tables and add missing SQLite columns under ``_schema_lock``.
+
+    Used by the audit migration CLI and tests without running the legacy
+    audit migration. Schema-creation errors propagate to the caller.
+    """
     with _schema_lock:
         _ensure_models_imported()
         _create_schema(_resolve_url())

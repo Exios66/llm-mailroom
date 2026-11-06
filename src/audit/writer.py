@@ -55,6 +55,10 @@ MAX_ATTEMPTS = 5
 
 
 def _utc(ts: datetime | str | None) -> datetime | None:
+    """Normalize to UTC, treating naive values as UTC and preserving ``None``.
+
+    Raise ``ValueError`` if a string is not a valid ISO datetime.
+    """
     if ts is None:
         return None
     if isinstance(ts, str):
@@ -63,6 +67,7 @@ def _utc(ts: datetime | str | None) -> datetime | None:
 
 
 def _iso(ts: datetime | str | None) -> str | None:
+    """Return the UTC ISO datetime or ``None``; invalid strings raise ``ValueError``."""
     ts = _utc(ts)
     return ts.isoformat() if ts is not None else None
 
@@ -78,7 +83,11 @@ def hash_entry(
     actor: str,
     timestamp: datetime | str,
 ) -> str:
-    """Hash version 2 of one entry. Naive timestamps (SQLite) are read as UTC."""
+    """Return the version 2 entry hash after normalizing its timestamp to UTC.
+
+    Naive timestamps (SQLite) are read as UTC. Invalid ISO datetime strings,
+    including the empty string, raise ``ValueError``.
+    """
     return compute_audit_hash(
         prev_hash, doc_id, entry_id, event, detail,
         matter_id=matter_id, actor=actor, timestamp=_iso(timestamp),
@@ -86,7 +95,7 @@ def hash_entry(
 
 
 def attempt_detail_envelope(sub: dict[str, Any]) -> dict[str, Any]:
-    """What a sub-row's hash covers besides its id: every column but the hash."""
+    """Build the attempt hash's detail payload, normalizing optional times to UTC."""
     return {
         "parent_id": sub["parent_id"],
         "stage": sub["stage"],
@@ -102,7 +111,9 @@ def attempt_detail_envelope(sub: dict[str, Any]) -> dict[str, Any]:
 def attempt_hash(sub: dict[str, Any], *, matter_id: str, actor: str) -> str:
     """Hash of one sub-row. Sub-rows are not chained to each other (``prev_hash``
     is empty); the parent binds them by listing these hashes. The timestamp is
-    the attempt's ``started_at`` (empty when unknown)."""
+    the attempt's ``started_at``. A missing or invalid ``started_at`` raises
+    ``ValueError`` during timestamp normalization.
+    """
     return hash_entry(
         prev_hash="",
         doc_id=sub["doc_id"],
@@ -123,6 +134,7 @@ def _new_id(prefix: str) -> str:
 
 
 async def _require_migrated(session) -> None:
+    """Raise ``AuditMigrationPending`` when the migration marker is absent."""
     found = await session.execute(
         select(AuditMetaRecord.key).where(AuditMetaRecord.key == "migration").limit(1)
     )
@@ -151,6 +163,7 @@ async def _existing_row(session, doc_id: str):
 
 
 async def _ensure_catalog_parent(session, doc_id: str, matter_id: str, detail: dict) -> None:
+    """Create and flush a minimal processing-stage catalog row only if absent."""
     # audit_log.doc_id references documents.doc_id. A document that reaches a
     # terminal node is normally in the catalog already; a minimal row keeps
     # the FK satisfied when it is not (same rule as the per-event writer).
@@ -172,6 +185,7 @@ async def _ensure_catalog_parent(session, doc_id: str, matter_id: str, detail: d
 def _build_sub_rows(
     attempts: list[AttemptRow], *, parent_id: str, doc_id: str, matter_id: str, actor: str
 ) -> tuple[list[AuditAttemptRecord], list[dict[str, Any]]]:
+    """Build unsaved attempt records and their hash references for the parent detail."""
     records, listed = [], []
     for att in attempts:
         sub = {
@@ -203,7 +217,19 @@ def _is_retryable(exc: IntegrityError) -> bool:
 
 
 async def write_terminal_row(row: TerminalRow) -> WriteResult:
-    """Write the document's one row, or a ``resumed`` addendum if it has one."""
+    """Commit a terminal row and its attempts, returning its entry id, hash, and sequence.
+
+    A new row joins the global chain and creates a minimal catalog document
+    if needed. Its ``detail.attempts`` is replaced with attempt hash references.
+    An existing row is preserved; the call writes a ``resumed`` addendum with
+    the requested event in ``detail.event`` and returns its identity instead.
+
+    Raise ``ValueError`` for an unknown event, missing attempt start time, or
+    invalid attempt timestamp,
+    ``AuditMigrationPending`` if the migration marker is absent, and
+    ``AuditWriteError`` after five attempts encounter uniqueness conflicts.
+    Other database errors propagate; failed transactions are rolled back.
+    """
     if row.event not in EVENTS:
         raise ValueError(f"unknown audit event {row.event!r}; expected one of {EVENTS}")
     ensure_schema()
@@ -260,6 +286,7 @@ async def write_terminal_row(row: TerminalRow) -> WriteResult:
 
 
 def _as_resumed(row: TerminalRow) -> Addendum:
+    """Convert a repeat terminal write to an addendum retaining the requested event."""
     # The row is immutable (§4.1): a second terminal write records what the
     # resumed run did as an addendum, keeping the event it would have written.
     return Addendum(
@@ -272,7 +299,19 @@ def _as_resumed(row: TerminalRow) -> Addendum:
 
 
 async def write_addendum(add: Addendum) -> WriteResult:
-    """Append an addendum to a document that already has a row."""
+    """Commit an addendum and its attempts, returning its entry id, hash, and sequence.
+
+    The per-document chain starts at the terminal row's hash; its sequence
+    starts at 1. The terminal row supplies the matter id and stays unchanged.
+    When attempts are supplied, their hash references replace ``detail.attempts``.
+
+    Raise ``ValueError`` for an unknown kind, missing attempt start time, or
+    invalid attempt timestamp,
+    ``AuditMigrationPending`` if the migration marker is absent, ``NoAuditRow``
+    if the document has no terminal row, and ``AuditWriteError`` after five
+    attempts encounter uniqueness conflicts. Other database errors propagate;
+    failed transactions are rolled back.
+    """
     if add.kind not in ADDENDUM_KINDS:
         raise ValueError(f"unknown addendum kind {add.kind!r}; expected one of {ADDENDUM_KINDS}")
     ensure_schema()
@@ -354,6 +393,9 @@ async def get_row(doc_id: str) -> dict[str, Any] | None:
     """The document's row with its sub-rows and addenda, or None.
 
     Timestamps come back as UTC ISO strings, the form they were hashed in.
+    Each parent has its own ``sub_rows``, ordered by stage, attempt number,
+    and attempt id; addenda are ordered by their per-document sequence.
+    Schema initialization may migrate legacy data. Database errors propagate.
     """
     ensure_schema()
     async with async_session() as session:

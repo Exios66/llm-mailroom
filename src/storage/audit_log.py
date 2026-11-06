@@ -186,6 +186,13 @@ def _link_to_tail(entry, tail) -> None:
 
 
 async def write_audit_entry(entry) -> AuditLogRecord | AuditLegacyRecord:
+    """Commit a per-event entry and return its stored record.
+
+    After migration, events go to ``audit_log_legacy``. Create a minimal
+    catalog document if absent and assign the next per-document sequence.
+    The supplied entry's previous hash, timestamp, and hash may be updated
+    to link it to the current tail. Database errors propagate.
+    """
     ensure_schema()
     from schemas.audit import AuditLogEntry
     async with async_session() as session:
@@ -249,6 +256,12 @@ async def write_audit_entry(entry) -> AuditLogRecord | AuditLegacyRecord:
 
 
 async def get_audit_chain(doc_id: str) -> list[dict]:
+    """Return per-event entries in sequence/timestamp order, or an empty list.
+
+    After migration, read ``audit_log_legacy``; unified rows and addenda are
+    excluded. Timestamps are UTC datetimes. Schema initialization may migrate
+    legacy data; database errors propagate.
+    """
     ensure_schema()
     from datetime import timezone as _tz
 
@@ -285,6 +298,10 @@ async def get_audit_chain(doc_id: str) -> list[dict]:
 
 
 async def get_latest_audit_hash(doc_id: str) -> str:
+    """Return the per-event chain's latest hash, or ``""`` when no entry exists.
+
+    After migration, read the legacy chain rather than the unified row.
+    """
     ensure_schema()
     async with async_session() as session:
         Model = await event_log_model(session)
@@ -299,7 +316,7 @@ async def get_latest_audit_hash(doc_id: str) -> str:
 
 
 async def list_audit_doc_ids() -> list[str]:
-    """Every doc_id that has at least one audit entry (ordered)."""
+    """Return sorted nonempty doc ids with per-event entries (legacy after migration)."""
     ensure_schema()
     from sqlalchemy import distinct
 
@@ -313,10 +330,13 @@ async def analyze_audit_db(
     verify_chains: bool = True,
     event_limit: int = 20,
 ) -> dict:
-    """Parse the full local audit DB into summary stats for operators.
+    """Summarize per-event audit history (legacy history after migration).
 
     Returns counts by event/actor, per-doc chain lengths, optional hash-chain
-    verification results, and the most recent events. Read-only.
+    verification results, and the most recent events. ``verify_chains=False``
+    skips chain checks and lengths; ``event_limit`` is clamped to at least 1.
+    Unified rows and addenda are excluded. Schema initialization may migrate
+    legacy data; database errors propagate.
     """
     from collections import Counter
     from datetime import timezone as _tz

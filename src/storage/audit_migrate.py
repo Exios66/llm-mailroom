@@ -209,7 +209,7 @@ async def _table_exists(session, name: str) -> bool:
 
 
 async def _is_unified_audit_log(session) -> bool:
-    """True when ``audit_log`` already has the unique ``doc_id`` index."""
+    """Return whether ``audit_log`` has a unique doc-id index or constraint."""
     conn = await session.connection()
 
     def _check(sync_conn) -> bool:
@@ -224,6 +224,7 @@ async def _is_unified_audit_log(session) -> bool:
 
 
 async def _migration_meta(session) -> dict | None:
+    """Read and decode the migration marker, or return ``None`` if absent."""
     row = (
         await session.execute(
             text('SELECT "value" FROM audit_meta WHERE "key" = :key'), {"key": META_KEY}
@@ -262,6 +263,7 @@ async def _copy_legacy_rows(session) -> None:
 
 
 async def _verify_copy(session, source: str, copy: str) -> None:
+    """Raise ``AuditMigrationError`` if table counts or column digests differ."""
     src = await _fingerprint(session, source)
     dst = await _fingerprint(session, copy)
     if src[0] != dst[0]:
@@ -290,6 +292,11 @@ async def _tail_digest(session) -> str:
 
 
 def _backup_sqlite_file(src: Path, dest_dir: Path) -> Path:
+    """Back up a consistent SQLite snapshot, including WAL, to a new path.
+
+    Create ``dest_dir`` if needed and return the backup path. Filesystem and
+    SQLite errors propagate.
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     stamp = _utc_now().strftime("%Y%m%dT%H%M%SZ")
     dest = dest_dir / f"{src.stem}.pre-audit-migration-{stamp}{src.suffix}"
@@ -309,6 +316,11 @@ def _backup_sqlite_file(src: Path, dest_dir: Path) -> Path:
 
 
 async def _backup_sqlite(session, backup_dir: Path | None) -> str | None:
+    """Return the SQLite backup path, or ``None`` for an in-memory database.
+
+    Use ``backup_dir`` when supplied, otherwise ``<db dir>/backups/``.
+    Backup errors propagate.
+    """
     database = session.get_bind().url.database
     if not database or database == ":memory:":
         logger.warning("audit_migration_backup_skipped", reason="in-memory database")
@@ -337,6 +349,12 @@ async def _write_meta(session, *, legacy_rows: int, tail_digest: str) -> None:
 
 
 async def _migrate_locked(session, backup_dir: Path | None) -> MigrationResult:
+    """Migrate under the caller's chain lock without committing the transaction.
+
+    Return a reason when already migrated, empty, or awaiting Postgres opt-in.
+    Raise ``AuditMigrationError`` for ambiguous existing data or a copy mismatch;
+    backup and database errors propagate.
+    """
     dialect = _dialect_name(session)
     meta = await _migration_meta(session)
     if meta is not None:
@@ -377,6 +395,7 @@ async def _migrate_locked(session, backup_dir: Path | None) -> MigrationResult:
 
 
 async def _run_migration(backup_dir: Path | None) -> MigrationResult:
+    """Run and commit the migration under the chain lock; roll back and re-raise errors."""
     async with async_session() as session:
         await acquire_write_lock(session, LOCK_KEY)
         try:
@@ -393,7 +412,11 @@ async def _run_migration(backup_dir: Path | None) -> MigrationResult:
 
 
 async def migrate_at_startup() -> MigrationResult:
-    """The migration as ``ensure_schema`` runs it (the tables already exist)."""
+    """Run the migration with existing tables and the default SQLite backup directory.
+
+    Return the same outcomes as ``migrate_audit_log``. Errors propagate to
+    ``ensure_schema``'s migration wrapper, which catches ordinary exceptions.
+    """
     return await _run_migration(None)
 
 
@@ -401,8 +424,17 @@ async def migrate_audit_log(*, backup_dir: Path | None = None) -> MigrationResul
     """Migrate ``audit_log`` to the unified shape once; safe to call again.
 
     Creates any missing table first. ``backup_dir`` is where the SQLite backup
-    goes (default ``<db dir>/backups/``). Raises :class:`AuditMigrationError`
-    when the copy does not match the source; the database is then unchanged.
+    goes (default ``<db dir>/backups/``); in-memory databases have no backup.
+    Postgres with legacy rows requires ``MAILROOM_AUDIT_MIGRATE`` set to
+    ``1``, ``true``, ``yes``, or ``on`` (case-insensitive); take a backup first.
+
+    Return a ``MigrationResult`` with the legacy row count and backup path.
+    ``migrated=False`` means already migrated, no legacy rows (the migration
+    marker is still written), or Postgres opt-in required; ``reason`` identifies
+    which. Raise :class:`AuditMigrationError` for ambiguous existing data or a
+    copy mismatch. Backup and database errors propagate. The migration
+    transaction is rolled back on failure; created tables and backup files
+    may remain.
     """
     await asyncio.to_thread(db.ensure_tables)
     return await _run_migration(backup_dir)
@@ -419,6 +451,12 @@ async def rollback_audit_migration() -> RollbackResult:
     recreated as the previous release had it and refilled from
     ``audit_log_legacy``, which is renamed last. Does nothing when no migration
     is recorded.
+
+    Return the restored legacy row count and the table rename mapping.
+    Raise ``AuditMigrationError`` if the legacy table is missing, a rename
+    target exists, or the restored copy differs. Database errors propagate;
+    failed transactions are rolled back. Success clears the schema cache,
+    so a later ``ensure_schema`` call can migrate again.
     """
     async with async_session() as session:
         await acquire_write_lock(session, LOCK_KEY)
@@ -436,6 +474,7 @@ async def rollback_audit_migration() -> RollbackResult:
 
 
 async def _rollback_locked(session) -> RollbackResult:
+    """Restore the legacy table under the caller's chain lock without committing."""
     if not await _table_exists(session, "audit_meta") or await _migration_meta(session) is None:
         return RollbackResult(False, 0, {})
     if not await _table_exists(session, LEGACY_TABLE):
@@ -464,9 +503,14 @@ async def _rollback_locked(session) -> RollbackResult:
 async def verify_legacy_chain() -> LegacyChainReport:
     """Run today's per-document check on every document in ``audit_log_legacy``.
 
-    Hashes recompute (v2, with the v1 fallback for old rows) and ``prev_hash``
-    links hold, in ``seq`` order. Roadmap M4 builds the full ``verify_audit_db``
-    around this and the sub-row, addendum and trace checks.
+    Return overall validity, the number of documents checked, and each failed
+    document's id and entry count. Verification orders entries by timestamp
+    and entry id, checks ``prev_hash`` links, and recomputes v2 hashes (v1 for
+    rows with both matter id and actor empty). Schema initialization may
+    migrate legacy data; validation and database errors propagate.
+
+    Roadmap M4 builds the full ``verify_audit_db`` around this and the sub-row,
+    addendum and trace checks.
     """
     from schemas.audit import AuditLogEntry, verify_chain
 
@@ -512,6 +556,11 @@ async def verify_legacy_chain() -> LegacyChainReport:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Load the environment, migrate or roll back, and print the result as JSON.
+
+    ``argv=None`` reads process arguments. Return 2 when Postgres opt-in is
+    required, otherwise 0; migration and rollback errors propagate.
+    """
     parser = argparse.ArgumentParser(
         prog="python -m storage.audit_migrate",
         description="Migrate audit_log to the unified audit row, or undo it.",

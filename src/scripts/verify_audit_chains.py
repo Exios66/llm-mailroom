@@ -34,6 +34,7 @@ from storage.db import ensure_schema  # noqa: E402
 
 
 async def _all_chains():
+    """Return per-event chains keyed by doc id, reading legacy history after migration."""
     from sqlalchemy import select, distinct
     from storage.audit_log import event_log_model, get_audit_chain
 
