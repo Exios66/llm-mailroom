@@ -46,7 +46,8 @@ import structlog
 from ..config import get_settings
 from ..schemas.corpus import CMS_DOCUMENTED_ABSENT_FIELDS, CMS_SOURCE_TABLES
 from ..schemas.gt_metadata import ANNOTATION_KEYS, is_empty_value, parse_json_container
-from ..schemas.intents import INTENT_LABELS, normalize_intent
+from ..schemas.intents import INTENT_LABELS, normalize_intent  # noqa: F401  (historic module attributes)
+from ..schemas.scored_enums import canonical_label
 
 logger = structlog.get_logger(__name__)
 
@@ -1519,10 +1520,14 @@ def score_extraction(
         pred_value = predicted.get(key)
         if pred_value is not None:
             pred_value = parse_json_container(pred_value)
-        if field_type == "label" and key == "intent" and doc_class in INTENT_LABELS:
-            exp_value = normalize_intent(doc_class, exp_value) or exp_value
+        if field_type == "label" and doc_class:
+            # Closed labels (0.28.0): fold aliases onto the scored token first, then
+            # exact match. An unfoldable value is kept as written: published v9 gold
+            # still carries off-vocabulary labels (urgency "low", intent "inform"),
+            # and a prediction that repeats the gold verbatim matches it.
+            exp_value = canonical_label(doc_class, key, exp_value) or exp_value
             if pred_value is not None:
-                pred_value = normalize_intent(doc_class, pred_value) or pred_value
+                pred_value = canonical_label(doc_class, key, pred_value) or pred_value
         if doc_class == "insurance_claim" and key == "cms_source_table" and is_empty_value(pred_value):
             # Compatibility with the frozen insurance prompt, which reports the
             # table on ``claim_type``: when ``cms_source_table`` itself is blank

@@ -258,7 +258,8 @@ class TestFieldTypesFromConfig:
         merger = field_types_for_class("merger_agreement")
         contract = field_types_for_class("contract")
         assert merger["parties"] == "entity_list:name"
-        assert merger["merger_consideration"] == "name"
+        # Dojo 0.28.0: the MAUD consideration is a closed label.
+        assert merger["merger_consideration"] == "label"
         assert merger["maud_clauses"] == "entity_list:free_text"
         assert merger["effective_time"] == "free_text"
         assert "cuad_family" not in merger
@@ -446,6 +447,6 @@ class TestJudgeGating:
 
 
 def test_taxonomy_scores_controlled_intents_as_label():
-    for doc in ("corporate_record", "correspondence", "insurance_claim"):
+    # Dojo 0.28.0 closed the merger vocabulary too (MERGER_INTENTS).
+    for doc in ("corporate_record", "correspondence", "insurance_claim", "merger_agreement"):
         assert get_field_types(doc)["intent"] == "label"
-    assert get_field_types("merger_agreement")["intent"] == "name"

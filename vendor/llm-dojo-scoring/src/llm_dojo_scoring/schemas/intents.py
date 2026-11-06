@@ -2,8 +2,9 @@
 
 Ported verbatim from llm-mailroom ``langchain_agents.doc_inventories`` at
 ``bee7f46``; this module is now the single source of the vocabulary and
-mailroom imports it from here. ``merger_agreement`` and ``contract`` have no
-vocabulary: their ``intent`` stays a free-form ``name`` field.
+mailroom imports it from here. ``merger_agreement`` gained its closed vocabulary
+in 0.28.0 (:data:`MERGER_INTENTS`, mailroom-dataset v10); ``contract`` carries no
+``intent`` field.
 """
 
 from __future__ import annotations
@@ -37,7 +38,15 @@ INTENT_LABELS: dict[str, tuple[str, ...]] = {
         "claim_data_record",         # CMS / DE-SynPUF table row (pde, inpatient, ...)
         "other",
     ),
+    "merger_agreement": (
+        "effect_merger",             # the agreement and plan of merger itself
+        "amend_merger",              # an amendment to an existing merger agreement
+        "other",
+    ),
 }
+
+#: The merger ``intent`` vocabulary (mailroom-dataset v10 ``merger_intent``).
+MERGER_INTENTS: tuple[str, ...] = INTENT_LABELS["merger_agreement"]
 
 INTENT_DESCRIPTIONS: dict[str, str] = {
     "corporate_record": (
@@ -63,6 +72,12 @@ INTENT_DESCRIPTIONS: dict[str, str] = {
         "approved/denied/partial determination letter; loss_report = adjuster "
         "report / appraisal / examination; claim_data_record = CMS/DE-SynPUF "
         "table row (pde, inpatient, outpatient, carrier). other = residual."
+    ),
+    "merger_agreement": (
+        "One controlled purpose label for THIS merger agreement. effect_merger = "
+        "the agreement (and plan) of merger that effects the transaction; "
+        "amend_merger = an amendment to an existing merger agreement. "
+        "other = residual."
     ),
 }
 
@@ -133,6 +148,14 @@ INTENT_ALIASES = {
     "adjusterreport": "loss_report",
     "claimdatarecord": "claim_data_record",
     "data record": "claim_data_record",
+    # merger_agreement (0.28.0). ``plan_of_merger`` is the v10 alias of effect_merger.
+    "planofmerger": "effect_merger",
+    "agreementandplanofmerger": "effect_merger",
+    "mergeragreement": "effect_merger",
+    "effectmerger": "effect_merger",
+    "amendmerger": "amend_merger",
+    "amendmenttomergeragreement": "amend_merger",
+    "mergeramendment": "amend_merger",
 }
 
 
@@ -193,5 +216,9 @@ def normalize_intent(doc_type: str | None, value: Any) -> str:
     keys = INTENT_LABELS.get(kind, ())
     if not keys:
         return ""
+    if kind == "merger_agreement" and _compact(value).startswith("amend"):
+        # "Amendment No. 1 to Agreement and Plan of Merger" names the merger
+        # agreement it amends; the amendment is what it is.
+        return "amend_merger"
     token = _normalize(value, keys, INTENT_ALIASES)
     return token if token in keys else ""

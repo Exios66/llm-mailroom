@@ -280,7 +280,7 @@ def _emit_provenance(
         return prov
     missing = [k for k in EMIT_REQUIRED_PROVENANCE if not prov.get(k)]
     invalid = ""
-    if units == "USD":
+    if isinstance(units, str) and units.upper() == "USD":
         basis = prov.get("cost_basis")
         if not basis:
             missing.append("cost_basis")

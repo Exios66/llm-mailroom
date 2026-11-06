@@ -32,6 +32,7 @@ Examples::
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -343,7 +344,39 @@ def release_commit(tag: str, repo: str = DOJO_REPO) -> str:
     return sha
 
 
-def _rewrite_text(text: str, tag: str) -> str:
+def _semver(ref: str) -> tuple[int, int, int] | None:
+    """``(major, minor, patch)`` of a release tag, ``None`` for a SHA or pre-release."""
+    m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", str(ref or "").strip())
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
+
+
+#: Rows naming the newest Dojo release next to the consumer pin. They move only
+#: forward, and only when the pin itself is a newer release.
+_LATEST_ROW_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(\| Latest \| )(" + _TAG + r")( as of )(\d{4}-\d{2}-\d{2})( \(llm-mailroom pins )"),
+    re.compile(r"(\| llm-dojo-scoring \| )(" + _TAG + r")( latest as of )(\d{4}-\d{2}-\d{2})(; llm-mailroom pins )"),
+)
+
+
+def _advance_latest(text: str, tag: str, today: str) -> str:
+    """Move "latest Dojo release" rows to ``tag`` (dated ``today``) when it is newer."""
+    new = _semver(tag)
+    if new is None:
+        return text
+
+    def repl(m: re.Match[str]) -> str:
+        """Replace one row's version and date when the pinned tag is newer."""
+        old = _semver(m.group(2))
+        if old is not None and old >= new:
+            return m.group(0)
+        return f"{m.group(1)}{tag}{m.group(3)}{today}{m.group(5)}"
+
+    for pattern in _LATEST_ROW_RES:
+        text = pattern.sub(repl, text)
+    return text
+
+
+def _rewrite_text(text: str, tag: str, *, today: str | None = None, release: str | None = None) -> str:
     """Return text with recognized dojo pins, badges, and test references updated.
 
     ``tag`` accepts a version tag or full commit SHA. Strip surrounding
@@ -409,6 +442,22 @@ def _rewrite_text(text: str, tag: str) -> str:
         out = out.replace("pinned release `", "pinned commit `")
     else:
         out = out.replace("pinned commit `", "pinned release `")
+    # ``release`` names the release a commit pin belongs to (``v0.28.0`` for its
+    # commit); prose that states a version shows it instead of a bare SHA.
+    version_label = _normalize_tag(release) if release else label
+    note = f" (the Dojo {version_label} release commit)" if is_sha(tag) and release else ""
+    # README: "Dojo pin, **1cd4aba** (the Dojo v0.27.2 release commit)." The short
+    # SHA form and its parenthetical go stale on every bump; rewrite both.
+    out = _c(r"(Dojo pin, \*\*)(?:__LABEL__|__REF__)(\*\*)(?: \(the Dojo v[0-9][^)]*\))?").sub(
+        lambda m: f"{m.group(1)}{label}{m.group(2)}{note}", out
+    )
+    # architecture: "the pinned [llm-dojo-scoring](https://...) library (v0.27.2, wired in"
+    out = _c(
+        r"(\[llm-dojo-scoring\]\(https://github\.com/Exios66/llm-dojo-scoring\) library \()(__LABEL__)(,)"
+    ).sub(rf"\g<1>{version_label}\g<3>", out)
+    out = _advance_latest(
+        out, version_label, today or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    )
     for pattern, repl in DOC_PIN_PATTERNS:
         out = pattern.sub(
             repl.format(tag=tag, label=label, release_path=release_path), out
@@ -422,7 +471,10 @@ def _rewrite_text(text: str, tag: str) -> str:
     return out
 
 
-def apply_pin(tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False) -> list[Path]:
+def apply_pin(
+    tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False, release: str | None = None
+) -> list[Path]:
+    """Rewrite every pin file to ``tag``; ``release`` labels a commit pin's release."""
     tag = _normalize_tag(tag)
     changed: list[Path] = []
     for rel in PIN_FILES:
@@ -430,7 +482,7 @@ def apply_pin(tag: str, *, root: Path = REPO_ROOT, dry_run: bool = False) -> lis
         if not path.is_file():
             continue
         before = path.read_text(encoding="utf-8")
-        after = _rewrite_text(before, tag)
+        after = _rewrite_text(before, tag, release=release)
         if after == before:
             continue
         changed.append(path)
@@ -538,7 +590,17 @@ def main(argv: list[str] | None = None) -> int:
         print("up_to_date=false")
         return 2
 
-    changed = apply_pin(desired, dry_run=args.dry_run)
+    # The pin is an immutable commit (test_dojo_source, vendor/VENDOR.md): a release
+    # tag resolves to its commit, and the tag stays as the label docs show.
+    release: str | None = None
+    if not is_sha(desired):
+        release = desired
+        desired = release_commit(release)
+        print(f"release={release} commit={desired}")
+        if current == desired:
+            print("changed=0 (already at the release's commit)")
+            return 0
+    changed = apply_pin(desired, dry_run=args.dry_run, release=release)
     if not changed:
         print("changed=0 (already at desired pin or no matching text)")
         return 0 if current == desired else 1

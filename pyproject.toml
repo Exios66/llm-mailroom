@@ -49,9 +49,9 @@ dependencies = [
     "pyarrow>=15.0",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
-    # v0.27.2 release (1cd4aba, llm-dojo-scoring#121): tiered per-document-type
-    # scorers and score_document, plus 0.27.2's no-raise parsing and rescore headline.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@1cd4aba76d82eea20c6e8dfcc0d760881bf84924",
+    # v0.28.0 release (cab9768, llm-dojo-scoring#124): mailroom-dataset v10 alignment —
+    # Contract/Merger v2 field maps, closed label fields, gt_from_v10_row.
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@cab976807854129d1cfea4897dbff5b6e337a62b",
 ]
 
 [project.optional-dependencies]

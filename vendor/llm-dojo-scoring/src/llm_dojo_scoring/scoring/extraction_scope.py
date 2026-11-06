@@ -20,33 +20,51 @@ from typing import Any, Mapping
 
 # Live extraction keys that the class suite scores. Keep in lockstep with
 # vendored ``schemas.documents`` / ``langchain_agents.specialist_agents`` for
-# the five live classes — **not** with dojo ``DEFAULT_FIELD_TYPES`` for
-# merger (that map still lists CUAD leftovers: term_length, cuad_family,
-# cuad_clauses). Trace-only keys (``reasoning``, ``confidence``) are never
-# scoring events.
+# the five live classes; as of 0.28.0 each set equals the keys of dojo
+# ``DEFAULT_FIELD_TYPES`` for its class (tests pin it). Trace-only keys
+# (``reasoning``, ``confidence``) are never scoring events.
 LIVE_SCHEMA_FIELDS: dict[str, frozenset[str]] = {
+    # v2 schemas (0.28.0, mailroom-dataset v10). The contract's v1 parse-compat
+    # ``merger_consideration`` / ``maud_clauses`` are not scored, so scoping drops them.
     "contract": frozenset(
         {
             "document_name",
             "parties",
+            "party_roles",
+            "signatories",
+            "agreement_date",
             "effective_date",
+            "expiration_date",
             "term_length",
-            "governing_law",
-            "contract_value",
             "renewal_terms",
+            "termination_notice_period",
+            "governing_law",
+            "dispute_forum",
+            "contract_value",
+            "payment_terms",
+            "territory",
             "cuad_family",
-            "merger_consideration",
             "cuad_clauses",
-            "maud_clauses",
         }
     ),
     "merger_agreement": frozenset(
         {
             "document_name",
             "parties",
+            "acquirer",
+            "target",
+            "merger_sub",
+            "signatories",
             "effective_date",
             "effective_time",
             "governing_law",
+            "per_share_cash_amount",
+            "exchange_ratio",
+            "target_termination_fee",
+            "parent_termination_fee",
+            "outside_date",
+            "financial_advisors",
+            "legal_counsel",
             "merger_consideration",
             "maud_clauses",
             "intent",
