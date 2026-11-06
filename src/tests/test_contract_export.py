@@ -5,6 +5,7 @@ the pipeline it describes. The-Mailroom is set to vendor it at a pinned commit
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -90,3 +91,10 @@ def test_export_does_not_open_the_configured_checkpointer(monkeypatch, tmp_path)
     monkeypatch.setattr(bg, "_build_checkpointer",
                         lambda: pytest.fail("exporter opened the configured checkpointer"))
     export_contract.build_contract()
+
+
+def test_build_contract_leaves_the_tracing_provider_alone(monkeypatch):
+    """Assembling the contract must not switch tracing off for the caller."""
+    monkeypatch.delenv("OBSERVABILITY_PROVIDER", raising=False)
+    export_contract.build_contract()
+    assert "OBSERVABILITY_PROVIDER" not in os.environ
