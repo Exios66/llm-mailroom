@@ -35,9 +35,13 @@ typed endpoints required.
 ## Technical reference
 
 - Single module: `main.py` defines `app = FastAPI(...)`. `python -m api.main`
-  binds via `listen_host()` / `listen_port()` — platform `PORT` wins over
-  `MAILROOM_API_PORT` (Fly/Render/any host). Equivalent:
-  `uvicorn api.main:app --port 8000`.
+  binds via `listen_host()` / `listen_port()`: host `MAILROOM_API_HOST`
+  (default `127.0.0.1`); port from platform `PORT` when set, else
+  `MAILROOM_API_PORT` (default `8000`), so `PORT` wins on Fly/Render/any host.
+  Plain `uvicorn api.main:app --port 8000` is equivalent only when `PORT`,
+  `MAILROOM_API_HOST` and `MAILROOM_API_PORT` are unset; uvicorn ignores them,
+  so on a host that injects `PORT` use `python -m api.main` (or pass
+  `--host` / `--port "$PORT"` yourself).
 - `lifespan` calls `_ensure_dirs()` on startup and, unless `MAILROOM_EMBED_WATCHER=0`, starts the inbox watcher in-process (`watcher.lock` so a dedicated `python -m pipeline.watcher` cannot double-drain).
 - `POST /upload` writes bytes straight into the inbox bin — it does NOT run the pipeline itself. Processing happens asynchronously in the (embedded or standalone) watcher. Response is `202 Accepted`, with an `upload_id` and the accepted `matter_id`. It also writes a `<file>.meta` sidecar (matter_id, upload_id, uploaded_at, size) that the watcher reads to file the document under the submitted matter.
 - `GET /queue` lists queued inbox files (with sidecar metadata), in-flight `processing/<worker>/` claims, and recent catalog documents.
