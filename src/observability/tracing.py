@@ -216,9 +216,14 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
     ``LANGFUSE_FLUSH_INTERVAL`` or process exit.
     """
 
+    obs_type = as_type or observation_type_for(name)
+
     def deco(fn):
+        """Wrap ``fn`` so each call opens the ``name`` observation."""
+
         @functools.wraps(fn)
         def wrapper(state):
+            """Run the node inside its span, then flush for the live floor."""
             provider = resolve_provider_name()
             if provider != "langfuse":
                 result = fn(state)
@@ -228,7 +233,6 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
 
             from .langfuse_setup import observation
 
-            obs_type = as_type or observation_type_for(name)
             inp = summarize_input(state) if summarize_input else _state_summary(state)
             with observation(name, as_type=obs_type, input=inp) as span:
                 result = fn(state)
@@ -245,8 +249,10 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
                 flush()
                 return result
 
-        # Read by src/scripts/export_contract.py to map graph nodes to spans.
+        # Read by src/scripts/export_contract.py to map graph nodes to spans,
+        # with the type the span is actually opened as (``as_type`` wins).
         wrapper.mailroom_span_name = name
+        wrapper.mailroom_observation_type = obs_type
         return wrapper
 
     return deco
