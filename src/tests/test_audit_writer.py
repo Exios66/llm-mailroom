@@ -131,10 +131,17 @@ async def test_subrow_hashes_listed_in_parent_detail_attempts(audit_db):
 async def test_subrows_and_row_commit_atomically(audit_db, monkeypatch):
     from audit import writer
 
-    def boom(**_kw):
-        raise RuntimeError("injected after the sub-row insert")
+    from sqlalchemy.orm import Session
 
-    monkeypatch.setattr(writer, "AuditLogRecord", boom)
+    real_add = Session.add
+
+    def boom(session, instance, **kwargs):
+        if isinstance(instance, writer.AuditLogRecord):
+            assert sum(isinstance(row, writer.AuditAttemptRecord) for row in session.identity_map.values()) == 2
+            raise RuntimeError("injected after the sub-row insert")
+        return real_add(session, instance, **kwargs)
+
+    monkeypatch.setattr(Session, "add", boom)
     with pytest.raises(RuntimeError, match="injected"):
         await writer.write_terminal_row(_row("doc-x", attempts=[_attempt(1), _attempt(2)]))
     assert _q(audit_db, "SELECT count(*) FROM audit_attempts") == [(0,)]
@@ -298,3 +305,32 @@ async def test_get_row_none_for_unknown_doc(audit_db):
     from audit.writer import get_row
 
     assert await get_row("nope") is None
+
+
+async def test_unknown_attempt_start_time_can_be_written(audit_db):
+    from audit.models import Addendum
+    from audit.writer import attempt_hash, get_row, write_addendum, write_terminal_row
+
+    first = _attempt(1)
+    first.started_at = None
+    await write_terminal_row(_row("doc-unknown", attempts=[first]))
+    second = _attempt(2)
+    second.started_at = None
+    await write_addendum(Addendum("doc-unknown", "resumed", "archivist", {}, attempts=[second]))
+    row = await get_row("doc-unknown")
+    for sub in [*row["sub_rows"], *row["addenda"][0]["sub_rows"]]:
+        assert sub["started_at"] is None
+        assert sub["entry_hash"] == attempt_hash(sub, matter_id="M-1", actor="archivist")
+    assert await _stored_row_recomputes("doc-unknown")
+
+
+def test_hash_entry_preserves_empty_timestamp_and_rejects_invalid_timestamp():
+    from audit.writer import hash_entry
+    from schemas.audit import compute_audit_hash
+
+    fields = dict(prev_hash="", doc_id="d", entry_id="a", event="attempt:judge",
+                  detail={}, matter_id="m", actor="a", timestamp="")
+    assert hash_entry(**fields) == compute_audit_hash(**fields)
+    fields["timestamp"] = "invalid"
+    with pytest.raises(ValueError):
+        hash_entry(**fields)
