@@ -872,7 +872,7 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - [Configuration](docs/pipeline-reference-llm-mailroom/configuration.md) — config reference
 - [Agents](docs/agents.md) — agent specifications and personalities
 - [API Reference](docs/pipeline-reference-llm-mailroom/api.md) — complete API documentation
-- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Railway, Spaces, backup
+- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Spaces, other container hosts, backup
 - [Docker deployment](docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md) — compose matrix (Modes B / Mixed / A / M / G)
 - [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) — `mailroom-vllm` serve and GPU-tier cutover
 - [Testing](docs/testing.md) — testing strategy and fixtures

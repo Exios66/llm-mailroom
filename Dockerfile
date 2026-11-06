@@ -109,7 +109,7 @@ USER ${FINAL_USER}
 
 EXPOSE 7860
 
-# Prefer platform PORT (Railway/Fly/Render) over the Spaces image default.
+# Prefer platform PORT (Fly/Render/any host) over the Spaces image default.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD python -c "import os,urllib.request; p=os.environ.get('PORT') or os.environ.get('MAILROOM_API_PORT','7860'); urllib.request.urlopen(f'http://127.0.0.1:{p}/health', timeout=3)"
 

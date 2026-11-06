@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Railway deployment.** `railway.json` and the Railway-only `nixpacks.toml` fallback are deleted (Railway stops honouring Config as Code on 2026-12-01; the owner retired the platform, The-Mailroom ADR-005). The hosted producer is the Hugging Face Docker Space paired with The-Mailroom Observatory. The deployment docs now describe the Space and generic container hosts.
+  - The `auto` provider's local-Phoenix skip now keys on a Hugging Face Space (`SPACE_ID` / `HF_SPACE_ID`) instead of `RAILWAY_*`, with the same intent: hosted containers have no local collector.
+  - The off-loopback bind error names Hugging Face Spaces instead of Railway.
+  - `src/tests/test_railway_listen.py` is now `src/tests/test_listen_guards.py` and asserts that no Railway config comes back.
+
 ### Changed
 
 - **Dojo pin → v0.27.2** (`1cd4aba`, llm-dojo-scoring#121), from the 0.27.1 pin `a82843e`. The pin stays an exact commit (the `v0.27.2` tag's commit). 0.27.2 is a fix release:
