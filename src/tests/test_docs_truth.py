@@ -236,8 +236,8 @@ def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
     assert current.tags == ("improvement", "fix")
     assert current.page_rel == "2026/v0-9-3.md"
     # Allow future Unreleased work, but don't duplicate notes already shipped.
-    released_notes = set(re.findall(r"^- .+$", current.body, re.MULTILINE))
-    unreleased_notes = set(re.findall(r"^- .+$", releases[0].body, re.MULTILINE))
+    released_notes = set(re.findall(r"^\s*- .+$", current.body, re.MULTILINE))
+    unreleased_notes = set(re.findall(r"^\s*- .+$", releases[0].body, re.MULTILINE))
     assert released_notes.isdisjoint(unreleased_notes)
     assert re.findall(r"^### (.+)$", current.body, re.MULTILINE) == [
         "Changed", "Security", "Fixed",
@@ -245,8 +245,8 @@ def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
     # The out-of-band v0.9.2 tag keeps its own section: v0.9.3 does not repeat its notes.
     v092 = releases[2]
     assert v092.date == "2026-11-06"
-    assert released_notes.isdisjoint(re.findall(r"^- .+$", v092.body, re.MULTILINE))
-    assert unreleased_notes.isdisjoint(re.findall(r"^- .+$", v092.body, re.MULTILINE))
+    assert released_notes.isdisjoint(re.findall(r"^\s*- .+$", v092.body, re.MULTILINE))
+    assert unreleased_notes.isdisjoint(re.findall(r"^\s*- .+$", v092.body, re.MULTILINE))
 
 
 @pytest.mark.parametrize("label,comparison", [
