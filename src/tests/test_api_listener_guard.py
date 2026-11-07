@@ -143,6 +143,12 @@ def test_token_set_after_import_is_live(monkeypatch, temp_base_dir):
         (b"x-forwarded-for", b"203.0.113.7"),
         (b"forwarded", b"for=203.0.113.7;proto=https"),
         (b"x-real-ip", b"203.0.113.7"),
+        (b"x-forwarded-proto", b"https"),
+        (b"x-forwarded-host", b"mailroom.example.com"),
+        (b"x-forwarded-port", b"443"),
+        (b"via", b"1.1 proxy"),
+        (b"true-client-ip", b"203.0.113.7"),
+        (b"cf-connecting-ip", b"203.0.113.7"),
     ],
 )
 def test_tokenless_proxied_request_on_loopback_gets_503(monkeypatch, temp_base_dir, header):
@@ -156,6 +162,63 @@ def test_tokenless_proxied_request_on_loopback_gets_503(monkeypatch, temp_base_d
     with pytest.raises(HTTPException) as exc:
         main._require_token(request)
     assert exc.value.status_code == 503
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        (b"host", b"evil.example"),
+        (b"host", b"evil.example:8000"),
+        (b"host", b"127.0.0.1.evil.example"),
+        (b"host", b"["),
+        (b"host", b"127.0.0.1#@evil.example"),
+        (b"host", b"127.0.0.1?x@evil.example"),
+        (b"host", b"evil.example\\@127.0.0.1"),
+        (b"host", b"evil.example@localhost"),
+        (b"host", b"localhost/evil.example"),
+        (b"host", b"localhost#evil.example"),
+        (b"origin", b"https://evil.example"),
+        (b"origin", b"null"),
+        (b"sec-fetch-site", b"cross-site"),
+    ],
+)
+def test_tokenless_public_host_or_origin_on_loopback_gets_503(monkeypatch, temp_base_dir, header):
+    """DNS rebinding, a proxy keeping the public Host, or another site's page."""
+    main = _reload_main(monkeypatch, temp_base_dir)
+    request = Request({"type": "http", "headers": [header], "server": ("127.0.0.1", 8000)})
+    with pytest.raises(HTTPException) as exc:
+        main._require_token(request)
+    assert exc.value.status_code == 503
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        (b"host", b"localhost:8000"),
+        (b"host", b"127.0.0.1:8000"),
+        (b"host", b"[::1]:8000"),
+        (b"origin", b"http://localhost:3000"),
+        (b"origin", b"http://127.0.0.1:8000"),
+        (b"sec-fetch-site", b"same-origin"),
+        (b"sec-fetch-site", b"none"),
+    ],
+)
+def test_tokenless_loopback_host_or_origin_is_served(monkeypatch, temp_base_dir, header):
+    main = _reload_main(monkeypatch, temp_base_dir)
+    request = Request({"type": "http", "headers": [header], "server": ("127.0.0.1", 8000)})
+    main._require_token(request)  # no exception
+
+
+def test_cross_site_upload_is_refused_without_a_token(monkeypatch, temp_base_dir):
+    main = _reload_main(monkeypatch, temp_base_dir, MAILROOM_EMBED_WATCHER="0")
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
+        response = client.post(
+            "/upload",
+            files={"file": ("a.txt", b"x")},
+            data={"matter_id": "M-1"},
+            headers={"Origin": "https://evil.example"},
+        )
+    assert response.status_code == 503
 
 
 def test_live_token_still_serves_proxied_requests(monkeypatch, temp_base_dir):

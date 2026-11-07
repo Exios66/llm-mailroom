@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Tokenless API requests are served only on a loopback listener** (audit L-2). A direct `uvicorn api.main:app --host 0.0.0.0` never runs `assert_bind_allowed()`, so with no `MAILROOM_API_TOKEN` it served every route to the network. Token-protected routes now read the ASGI `server` address (the local socket the request arrived on) and answer `503` when no live token is configured and that address is not loopback; unix sockets and unknown addresses fail closed, and so does a loopback request that carries `Forwarded` / `X-Forwarded-For` / `X-Real-IP` (a same-host reverse proxy). A proxy that adds no forwarding headers still looks local: set a token behind any proxy. `/health`, FastAPI's `/docs` / `/redoc` / `/openapi.json` and live-token behaviour are unchanged. If you run the API off loopback without a token on purpose, set `MAILROOM_API_TOKEN`.
+- Tokenless loopback mode also refuses requests carrying `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `Via`, `True-Client-IP` or `CF-Connecting-IP`, in addition to `Forwarded` / `X-Forwarded-For` / `X-Real-IP`, and requests whose `Host` or `Origin` is not loopback or that carry `Sec-Fetch-Site: cross-site`. That closes DNS rebinding, a proxy keeping the public `Host`, and a page on another site posting to localhost. A proxy that rewrites `Host` to loopback and adds no forwarding header still looks local: set a token behind any proxy.
 - `MAILROOM_API_TOKEN` is now read per request, like `MAILROOM_API_TOKENS` and `MAILROOM_API_TOKEN_REVOKED`, instead of once at import. A token set after `api.main` is imported (as local-mailroom-sandbox's offline pilot does) now counts rather than leaving the app in tokenless mode.
 
 ### Added
@@ -41,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Vendored Dojo fallback was missing its package data.** `.gitignore`'s `data/` rule dropped `schemas/data/extraction_status.json` from `vendor/llm-dojo-scoring`, so under the fallback (`MAILROOM_DOJO_SOURCE=vendored`, or a broken install) `extraction_schema()` raised `FileNotFoundError`. The 0.27.2 snapshot includes it, and `.gitignore` re-includes that directory.
+- **`load_manifest_cases` crashed from an installed wheel.** It imported `scripts.prepare_samples` before checking for the manifest, and the wheel ships neither, so it raised `ModuleNotFoundError` instead of returning no cases. The import now sits behind the manifest check. `scripts` and `legalbench` stay checkout-only, and the wheel smoke test now asserts that.
+- **Warehouse exports could exceed driver bind limits.** `fetch_terminal_documents` and `fetch_audit_rows_for_doc_ids` passed every doc id to one `IN` clause, which goes over the limit at about 32k ids (999 on SQLite before 3.32). Both now query 500 unique ids at a time. Audit rows above the 50-id path stay ordered by doc id, then seq and timestamp, with doc ids now compared in Python's code-point order on every database.
 
 ## [v0.9.1] - 2026-11-03
 
