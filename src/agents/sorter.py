@@ -81,16 +81,15 @@ class SorterAgent(_LangChainSorterAgent):
         """
         default = get_prompt(self.prompt_version)
         text, self._langfuse_prompt = get_managed_prompt(self.agent_name, default)
-        # Anti-regression: a managed (Langfuse) prompt that drops the frozen V15 class
-        # boundaries never replaces a pin that has them; the frozen text is served instead.
-        from langchain_agents.prompts import SORTER_V15_GUARDS
+        # Anti-regression: a managed (Langfuse) prompt that drops the class boundaries of the
+        # pinned default (V15's, or the condensed production prompt's) never replaces it; the
+        # pinned text is served instead.
+        from langchain_agents.prompts import SORTER_GUARD_SETS
 
-        if all(g in default for g in SORTER_V15_GUARDS) and not all(g in text for g in SORTER_V15_GUARDS):
-            logger.warning(
-                "managed_sorter_prompt_regressed",
-                prompt_version=self.prompt_version,
-                missing=[g for g in SORTER_V15_GUARDS if g not in text],
-            )
+        missing = [g for guards in SORTER_GUARD_SETS if all(g in default for g in guards)
+                   for g in guards if g not in text]
+        if missing:
+            logger.warning("managed_sorter_prompt_regressed", prompt_version=self.prompt_version, missing=missing)
             text, self._langfuse_prompt = default, None
         return fill_sorter_placeholders(text)
 
