@@ -246,6 +246,7 @@ def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
     v092 = releases[2]
     assert v092.date == "2026-11-06"
     assert released_notes.isdisjoint(re.findall(r"^- .+$", v092.body, re.MULTILINE))
+    assert unreleased_notes.isdisjoint(re.findall(r"^- .+$", v092.body, re.MULTILINE))
 
 
 @pytest.mark.parametrize("label,comparison", [
@@ -297,22 +298,30 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     assert listed.count("2026/v0-8-0.md") == 1
 
 
-@pytest.mark.parametrize("version", ["v0.9.3", "v0.9.2"])
-def test_latest_release_page_and_feed_carry_every_note(version):
+@pytest.mark.parametrize("version,date,tags", [
+    ("v0.9.3", "2026-11-07", ["improvement", "fix"]),
+    ("v0.9.2", "2026-11-06", ["feature", "improvement", "fix"]),
+])
+def test_latest_release_page_and_feed_carry_the_whole_release(version, date, tags):
     from scripts.sync_gitbook_changelog import parse_changelog
 
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     release = next(r for r in parse_changelog(text, unreleased_date="2026-10-07")
                    if r.title == version)
-    notes = re.findall(r"^\s*- .+$", release.body, re.MULTILINE)
-    assert notes
+    assert re.search(r"^- .+$", release.body, re.MULTILINE)
     page = (_DOCS / "changelog" / release.page_rel).read_text(encoding="utf-8")
+    _, frontmatter, content = page.split("---", 2)
+    assert yaml.safe_load(frontmatter)["tags"] == tags
+    assert f"Released {date}." in content
+    # The page demotes section headings one level; the feed card keeps them.
+    assert re.sub(r"^### ", "## ", release.body, flags=re.MULTILINE).strip() in content
     feed = (_DOCS / "changelog" / "README.md").read_text(encoding="utf-8")
-    card = next(body for _, body in re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
-                if f"## {version}\n" in body)
-    for note in notes:
-        assert note in page, note[:80]
-        assert note in card, note[:80]
+    attrs, card = next((attrs, body) for attrs, body in
+                       re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
+                       if f"## {version}\n" in body)
+    assert f'date="{date}"' in attrs
+    assert f'tags="{",".join(tags)}"' in attrs
+    assert release.body.strip() in card
 
 
 def test_unreleased_page_sections_follow_title_without_changing_feed():
