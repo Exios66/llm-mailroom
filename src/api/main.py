@@ -77,7 +77,13 @@ _UPLOAD_MAX_PER_WINDOW = int(os.environ.get("MAILROOM_UPLOAD_RATE", 20))
 _upload_timestamps: list[float] = []
 
 
-_FORWARDING_HEADERS = ("forwarded", "x-forwarded-for", "x-real-ip")
+_FORWARDING_HEADERS = (
+    "forwarded",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-real-ip",
+)
 
 
 def _listener_is_loopback(server) -> bool:
