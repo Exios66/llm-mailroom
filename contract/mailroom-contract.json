@@ -1,6 +1,6 @@
 {
   "contract_version": "1.0.0",
-  "pipeline_version": "0.9.1",
+  "pipeline_version": "0.9.3",
   "trace_name": "document-pipeline",
   "graph": {
     "start": "__start__",
