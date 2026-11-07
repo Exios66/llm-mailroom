@@ -62,7 +62,7 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
-from .corpus import CORPUS_SUBCLASS_SURFACES, CORRESPONDENCE_TOPICS
+from .corpus import CORRESPONDENCE_TOPICS, RAW_CORPUS_SUBCLASS_SURFACES
 from .gt_metadata import (
     ABSENT_PRESENCE_STATUSES,
     gt_presence_map,
@@ -92,7 +92,7 @@ CORRESPONDENCE_DEFECT_CODES: tuple[str, ...] = (
 
 _TOPIC_KEYS = frozenset(CORRESPONDENCE_TOPICS)
 #: ``communication_type`` vocabulary (the 8 Hub tokens), normalized like keywords.
-_COMMUNICATION_TYPES = frozenset(CORPUS_SUBCLASS_SURFACES["correspondence"])
+_COMMUNICATION_TYPES = frozenset(RAW_CORPUS_SUBCLASS_SURFACES["correspondence"])
 # The frame must START the value; the topic is followed by the end, a period,
 # or a colon and anything (the real GT appends ": <title>" to the frame).
 _TEMPLATE_FRAME = re.compile(

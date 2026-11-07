@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mailroom"
-version = "0.9.1"
+version = "0.9.3"
 description = "Multi-Agent Legal Document Processing Pipeline"
 requires-python = ">=3.11"
 dependencies = [
@@ -35,6 +35,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "jellyfish>=1.0",
     "python-dateutil>=2.8",
+    "markdown-it-py>=3.0,<5",  # deterministic intake Markdown-to-text parsing
     # Local, cost-free OpenTelemetry tracing (default fallback in
     # `observability/tracing.py`; aligned with llm-entity-extraction).
     # OpenInference instruments the OpenAI SDK for the Phoenix backend; the
@@ -49,9 +50,10 @@ dependencies = [
     "pyarrow>=15.0",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
-    # v0.27.1 release merge (a82843e): tiered per-document-type scorers and
-    # score_document.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@a82843e808336e0078c7d5b27dcdb3ff8b698170",
+    # v0.28.1 release (00a2a7f, llm-dojo-scoring#130/#131): the sorter guide files a bylaw
+    # amendment under bylaws, never board_resolution (agrees with sorter_condensed_v5).
+    # v0.28.0 (cab9768, #124): v10 alignment — Contract/Merger v2 field maps, gt_from_v10_row.
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f",
 ]
 
 [project.optional-dependencies]
@@ -98,6 +100,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-mock>=3.12",
+    "pytest-cov>=5.0",
     "httpx>=0.27",
     # src/tests/test_notebook_suite.py re-executes notebooks/ headlessly.
     "nbformat>=5.9",
@@ -127,3 +130,10 @@ pythonpath = ["src", "."]
 # (uv hard-requires workspace members to use `{ workspace = true }` here.)
 [tool.uv.sources]
 llm-dojo-scoring = { workspace = true }
+
+[tool.coverage.run]
+omit = ["src/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

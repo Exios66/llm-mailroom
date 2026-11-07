@@ -34,7 +34,7 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-11-03" tags="feature" %}
+{% update date="2026-11-07" tags="feature" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.
@@ -63,6 +63,80 @@ Work landed on `main` since the last tagged release.
   - Row hashes are byte-identical with the dojo's `archive_entry_hash`. Tests: `src/tests/test_audit_writer.py`.
 
 <a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
+{% endupdate %}
+
+{% update date="2026-11-07" tags="improvement,fix" %}
+## v0.9.3
+
+llm-mailroom v0.9.3, released 2026-11-07.
+
+### Changed
+
+- **Production sorter is `sorter_condensed_v5`** (was V15): the sandbox's condensed v1 with one corporate rule reversed. A bylaw amendment is `bylaws`, never `board_resolution` (v10 corpus rule C). The v9.3 labels file 8 board-adopted bylaw amendments under `board_resolution`, so scoring against v9.3 counts those 8 as wrong until the corpus relabels them. On a 275-document prime sample of verified labels (`qwen/qwen3.7-flash`), v1 fixed 108 class answers against V15's 100, broke none, and was right on 263/228 class/subclass answers against 255/219, with a ~3.7k-character system prompt instead of ~25k. A managed Langfuse prompt that drops any guard clause its pin has (each one checked on its own, so the v1 pin keeps the guards it has), or restores the reversed v1 bylaw rule, is refused and the pinned text is served. llm-dojo-scoring moves to v0.28.1 (pin and vendored snapshot), whose sorter guide agrees: the user-message catalog files every bylaw amendment under `bylaws`, and a test fails if `board_resolution` mentions bylaws again.
+- **Intake cleans Markdown before classification** (#180). `agents/intake.py` strips Markdown presentation syntax first (`pipeline/text_cleaning.py`, on `markdown-it-py`, a new pipeline dependency), then runs the Dojo whitespace/OCR clerk. Clause numbers and delimiters, nested item boundaries, code contents, table cells, link and image destinations and reference definitions are kept. **Comparability:** the text the sorter and specialists read changes for documents with Markdown syntax, so pipeline scores before and after v0.9.3 are not comparable without a re-run.
+- **Dojo pin → v0.28.0** (`cab9768`, llm-dojo-scoring#124), from the v0.9.2 pin v0.27.2 (`1cd4aba`, whose fixes 0.28.0 includes). This was an intermediate pin: v0.9.3 ships **v0.28.1** (`00a2a7f`, see the sorter entry above), which changes only the sorter guide, so every field map below is the same under v0.28.1. Step G2 of the mailroom-dataset v10 plan ([v10 consumer plan](https://github.com/Exios66/Mailroom-Corpus-EDA/blob/main/docs/plans/v10-consumer-patches.md)). At that step the pin was an exact commit (the `v0.28.0` tag's commit), and the vendored fallback snapshot (`vendor/llm-dojo-scoring`) was the same commit. Both are now `00a2a7f` (v0.28.1). `bump_dojo_scoring.py --apply --tag <tag>` resolves a release tag to its commit itself (it used to write the tag, which `test_dojo_source.py` rejects).
+  - **Field maps mirror the Dojo.** `taxonomy.yaml` `field_types` for contract, merger, correspondence and insurance equal the Dojo 0.28.0 `DEFAULT_FIELD_TYPES` (the file hashes to blob `44e0ab59`, which the Dojo's `tests/fixtures/taxonomy_field_types.json` pins). `schemas/documents.py`: `ContractExtraction` v2 (17 scored fields: `party_roles`, `signatories`, `agreement_date`, `expiration_date`, `termination_notice_period`, `dispute_forum`, `payment_terms`, `territory` are new; the v1 `merger_consideration` / `maud_clauses` stay as parse-compat fields the Dojo accepts but never scores) and `MergerAgreementExtraction` v2 (21: `acquirer`, `target`, `merger_sub`, `signatories`, `per_share_cash_amount`, `exchange_ratio`, both termination fees, `outside_date`, `financial_advisors`, `legal_counsel`).
+  - **Closed labels.** `cuad_family`, `merger_consideration`, merger `intent`, `communication_type`, `urgency`, `claim_type` and `coverage_determination` are `label` fields: aliases fold, then exact match (no containment credit, so `demand` no longer matches `attorney_demand`).
+  - **Comparability.** `field_map_sha` changes for those four classes (corporate is unchanged); wrong closed labels score 0 where they had partial credit; contract rows no longer count spurious merger keys as false positives; `schema_valid` follows the larger v2 maps. v9 rows carry no GT for the new v2 fields, so contract and merger headlines read `partial` until v10. Live extraction asks for the new fields too: the contracts and merger specialists' response schemas (`langchain_agents/specialist_agents.py`) and their field lists (`llm/prompt_doctrine.py`) gain the 8 contract and 11 merger fields, so those calls return longer outputs and cost more per document.
+  - `bump_dojo_scoring.py` now also moves the README pin note's short-SHA form (dropping its stale "(the Dojo vX release commit)"), the architecture page's "library (vX," mention, and the "Latest" release rows (only forward, only when the pin is a newer release), which had stayed at v0.27.2.
+  - `contract/mailroom-contract.json` regenerated (`export_contract.py --write`).
+
+### Security
+
+- Tokenless loopback mode also refuses requests carrying `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-Port`, `Via`, `True-Client-IP` or `CF-Connecting-IP`, in addition to `Forwarded` / `X-Forwarded-For` / `X-Real-IP`, and requests whose `Host` or `Origin` is not loopback or that carry `Sec-Fetch-Site: cross-site`. That closes DNS rebinding, a proxy keeping the public `Host`, and a page on another site posting to localhost. A proxy that rewrites `Host` to loopback and adds no forwarding header still looks local: set a token behind any proxy.
+
+### Fixed
+
+- **`load_manifest_cases` crashed from an installed wheel.** It imported `scripts.prepare_samples` before checking for the manifest, and the wheel ships neither, so it raised `ModuleNotFoundError` instead of returning no cases. The import now sits behind the manifest check. `scripts` and `legalbench` stay checkout-only, and the wheel smoke test now asserts that.
+- **Warehouse exports could exceed driver bind limits.** `fetch_terminal_documents` and `fetch_audit_rows_for_doc_ids` passed every doc id to one `IN` clause, which goes over the limit at about 32k ids (999 on SQLite before 3.32). Both now query 500 unique ids at a time. Audit rows above the 50-id path stay ordered by doc id, then seq and timestamp, with doc ids now compared in Python's code-point order on every database.
+
+<a href="2026/v0-9-3.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
+{% endupdate %}
+
+{% update date="2026-11-06" tags="feature,improvement,fix" %}
+## v0.9.2
+
+llm-mailroom v0.9.2, released 2026-11-06.
+
+> **Known issue:** the `v0.9.2` tag was cut outside `release.py`, and its `pyproject.toml` still says `0.9.1`. An install from that tag reports `mailroom 0.9.1`, and a requirement such as `mailroom>=0.9.2` rejects it. Use v0.9.3, which carries everything below.
+
+### Security
+
+- **Tokenless API requests are served only on a loopback listener** (audit L-2). A direct `uvicorn api.main:app --host 0.0.0.0` never runs `assert_bind_allowed()`, so with no `MAILROOM_API_TOKEN` it served every route to the network. Token-protected routes now read the ASGI `server` address (the local socket the request arrived on) and answer `503` when no live token is configured and that address is not loopback; unix sockets and unknown addresses fail closed, and so does a loopback request that carries `Forwarded` / `X-Forwarded-For` / `X-Real-IP` (a same-host reverse proxy). A proxy that adds no forwarding headers still looks local: set a token behind any proxy. `/health`, FastAPI's `/docs` / `/redoc` / `/openapi.json` and live-token behaviour are unchanged. If you run the API off loopback without a token on purpose, set `MAILROOM_API_TOKEN`.
+- `MAILROOM_API_TOKEN` is now read per request, like `MAILROOM_API_TOKENS` and `MAILROOM_API_TOKEN_REVOKED`, instead of once at import. A token set after `api.main` is imported (as local-mailroom-sandbox's offline pilot does) now counts rather than leaving the app in tokenless mode.
+
+### Added
+
+- **Display contract for The-Mailroom** (`contract/mailroom-contract.json`, `src/scripts/export_contract.py`).
+  - Built from the pipeline's runtime constants: the compiled LangGraph's nodes and edges with each node's span and Langfuse observation type, `NODE_OBSERVATION_TYPES`, taxonomy agents, the five document classes with their schema, specialist, field keys and sorter subclass catalog, failure classes, `SCORE_CONFIGS` names and Langfuse aliases, and the `confidence` thresholds.
+  - The-Mailroom will vendor the file at its pinned commit and test against it (in review there), so pipeline changes that break the visualizer fail in its CI instead of rendering as `unknown`.
+  - `src/tests/test_contract_export.py` fails when the committed file is stale; regenerate with `PYTHONPATH=src python src/scripts/export_contract.py --write`.
+  - `release.py cut` moves the contract's `pipeline_version` with the other version locations.
+  - `traced_node` tags its wrapper with `mailroom_span_name` so the exporter can read each node's span from the graph.
+  - `intake-ml-triage` is now listed in `NODE_OBSERVATION_TYPES` (type `span`, as emitted).
+
+### Changed
+
+- **Dojo pin → v0.27.2** (`1cd4aba`, llm-dojo-scoring#121), from the 0.27.1 pin `a82843e`. The pin stays an exact commit (the `v0.27.2` tag's commit). 0.27.2 is a fix release:
+  - `score_document` never raises on deeply nested prediction text, and parses brace-heavy text in linear time.
+  - Any `Mapping` prediction counts as a dict payload for schema adherence.
+  - A prose-wrapped Python repr sets `prose_wrapper`.
+  - `rescore` reports the CUAD/MAUD `headline_score` as the extraction score.
+
+  Field-map, tier 0 and headline scores are unchanged. Moved with `bump_dojo_scoring.py --apply --tag 1cd4aba…`.
+
+### Removed
+
+- **Railway deployment.** `railway.json` and the Railway-only `nixpacks.toml` fallback are deleted (Railway stops honouring Config as Code on 2026-12-01; the owner retired the platform, The-Mailroom ADR-005). The hosted producer is the Hugging Face Docker Space paired with The-Mailroom Observatory. The deployment docs now describe the Space and generic container hosts.
+  - The `auto` provider's local-Phoenix skip now keys on a Hugging Face Space (`SPACE_ID` / `HF_SPACE_ID`) instead of `RAILWAY_*`, with the same intent: hosted containers have no local collector.
+  - The off-loopback bind error names Hugging Face Spaces instead of Railway.
+  - `src/tests/test_railway_listen.py` is now `src/tests/test_listen_guards.py` and asserts that no Railway config comes back.
+
+### Fixed
+
+- **Vendored Dojo fallback was missing its package data.** `.gitignore`'s `data/` rule dropped `schemas/data/extraction_status.json` from `vendor/llm-dojo-scoring`, so under the fallback (`MAILROOM_DOJO_SOURCE=vendored`, or a broken install) `extraction_schema()` raised `FileNotFoundError`. The 0.27.2 snapshot includes it, and `.gitignore` re-includes that directory.
+
+<a href="2026/v0-9-2.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}
 
 {% update date="2026-11-03" tags="feature,improvement,fix" %}

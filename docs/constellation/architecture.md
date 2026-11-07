@@ -105,7 +105,7 @@ flowchart LR
     UP["Standalone package<br/>author, test, commit"] -- "sync_packages.py pull" --> HUB["Digital-Mailroom<br/>integrate committed source"]
     HUB -- "sync_vendor.py" --> VENDOR["Integration vendor snapshots"]
     UP -- "committed source snapshots" --> SAND["local-mailroom-sandbox<br/>local/offline + Modal/vLLM tests"]
-    UP -- "pip install @tag" --> DEPLOY["Docker / Railway / HF Spaces"]
+    UP -- "build from tag checkout" --> DEPLOY["Docker / HF Spaces"]
 ```
 
 - Develop pipeline changes in llm-mailroom and scoring changes in dojo. Commit source-owned work before hub imports or vendor refreshes.
@@ -117,7 +117,7 @@ flowchart LR
 
 | Consumer | Depends on | How |
 | :--- | :--- | :--- |
-| llm-mailroom | llm-dojo-scoring | git pin `@a82843e808336e0078c7d5b27dcdb3ff8b698170` as of 2026-10-25; changed through explicit release adoption |
+| llm-mailroom | llm-dojo-scoring | git pin `@00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f` as of 2026-11-07; changed through explicit release adoption |
 | llm-mailroom | mailroom-ml | optional, lazily imported at intake |
 | eval-environment | llm-mailroom (and dojo through it) | editable path source to a sibling checkout, set in `[tool.uv.sources]` |
 | local-mailroom-sandbox | llm-mailroom, llm-dojo-scoring | tracked snapshots under `vendor/` |

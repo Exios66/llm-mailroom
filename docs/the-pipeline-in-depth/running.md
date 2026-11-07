@@ -9,7 +9,7 @@ All commands run from the repository root. Most scripts need `PYTHONPATH=src` be
 | Need | Value | Source |
 | --- | --- | --- |
 | Python | 3.11 or newer (`requires-python = ">=3.11"`) | `pyproject.toml` |
-| Package name / version | `mailroom` 0.9.1 | `pyproject.toml` |
+| Package name / version | `mailroom` 0.9.3 | `pyproject.toml` |
 | Database | None to install. SQLite file is created at `{MAILROOM_BASE_DIR}/mailroom.db` on first use | `.env.example` |
 | Docker | Only for the optional Langfuse stack or container deploys | `README.md` |
 
@@ -22,7 +22,7 @@ cp .env.example .env              # add OPENROUTER_API_KEY for real runs
 pip install -e ".[dev]"
 ```
 
-The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@a82843e808336e0078c7d5b27dcdb3ff8b698170`), so `pip` needs `git` and network access on first install.
+The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f`), so `pip` needs `git` and network access on first install.
 
 ### Optional extras
 
@@ -87,7 +87,7 @@ PYTHONPATH=src python -m api.main
 | Setting | Rule (from `listen_host()` / `listen_port()`) |
 | --- | --- |
 | Host | `MAILROOM_API_HOST`, default `127.0.0.1` |
-| Port | `PORT` if set (Railway, Fly, Render), else `MAILROOM_API_PORT`, else `8000` |
+| Port | `PORT` if non-empty after stripping whitespace (Fly, Render, other hosts), else `MAILROOM_API_PORT`, else `8000` |
 | Off-loopback bind | Refused with `SystemExit` unless `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS` is set (audit L-2) |
 
 [API reference](../pipeline-reference-llm-mailroom/api.md) also documents a direct uvicorn start:
@@ -96,7 +96,7 @@ PYTHONPATH=src python -m api.main
 PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-This path skips the `assert_bind_allowed()` check in `__main__`, so set a token yourself when binding `0.0.0.0`.
+This path skips the `assert_bind_allowed()` check in `__main__`. Without a live token the app still refuses non-loopback traffic per request: every token-protected route answers 503 until `MAILROOM_API_TOKEN` (or `MAILROOM_API_TOKENS`) is set. The health checks and FastAPI's `/docs`, `/redoc` and `/openapi.json` have no token dependency and stay reachable. The guard looks at the address the request arrived on and refuses a request carrying `Forwarded`, `Via`, `X-Forwarded-*`, `X-Real-IP`, `True-Client-IP` or `CF-Connecting-IP`, a `Host` or `Origin` other than loopback, or `Sec-Fetch-Site: cross-site`. A reverse proxy on the same host that rewrites `Host` to loopback and adds none of those headers still looks like a local client, so set a token whenever the API sits behind a proxy.
 
 Push a document through and follow it:
 
@@ -132,7 +132,7 @@ PYTHONPATH=src python -m pipeline.watchdog
 docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server
 ```
 
-## Docker and Railway
+## Docker
 
 This is a summary. Full steps, backups and troubleshooting are in the [Deployment guide](../pipeline-reference-llm-mailroom/deployment/README.md).
 
@@ -163,13 +163,7 @@ docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --bui
 
 Mode M (one Modal-hosted vLLM server) is env-only: `modal deploy deploy/modal_vllm.py`, then `DEFAULT_PROVIDER=vllm`, `VLLM_BASE_URL` and `VLLM_API_KEY`. See [Modal + vLLM](../pipeline-reference-llm-mailroom/deployment/modal-vllm.md). Mode G (LiteLLM gateway plus Modal GPU tiers) has its own compose file: see [Full Docker stack](#full-docker-stack-mode-g).
 
-**Railway.** `railway.json` uses the `DOCKERFILE` builder, health-checks `/health` (timeout 300 s), and restarts `ON_FAILURE` up to 10 times. `nixpacks.toml` is only a fallback (installs with `pip install .`, starts `PYTHONPATH=src python -m api.main`). Required service variables are `MAILROOM_API_TOKEN` and `OPENROUTER_API_KEY`; the API prefers Railway's `$PORT`.
-
-```bash
-railway link   # once
-railway variables set MAILROOM_API_TOKEN=... OPENROUTER_API_KEY=...
-railway up -m "mailroom producer"
-```
+**Hosted.** The producer runs as a Hugging Face Docker Space paired with The-Mailroom Observatory (Railway was retired on 2026-11-06). The API prefers a platform-injected `$PORT` on other container hosts.
 
 ## Full Docker stack (Mode G)
 
@@ -405,7 +399,7 @@ More in [Getting started](../start-here/getting-started.md).
 
 - [pyproject.toml](https://github.com/Exios66/llm-mailroom/blob/main/pyproject.toml), [.env.example](https://github.com/Exios66/llm-mailroom/blob/main/.env.example), [README.md](https://github.com/Exios66/llm-mailroom/blob/main/README.md)
 - [src/api/main.py](https://github.com/Exios66/llm-mailroom/blob/main/src/api/main.py), [src/llm/providers.py](https://github.com/Exios66/llm-mailroom/blob/main/src/llm/providers.py), [src/llm/client.py](https://github.com/Exios66/llm-mailroom/blob/main/src/llm/client.py)
-- [Dockerfile](https://github.com/Exios66/llm-mailroom/blob/main/Dockerfile), [railway.json](https://github.com/Exios66/llm-mailroom/blob/main/railway.json), [nixpacks.toml](https://github.com/Exios66/llm-mailroom/blob/main/nixpacks.toml), [deploy/docker-compose.yml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/docker-compose.yml), [deploy/README.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/README.md)
+- [Dockerfile](https://github.com/Exios66/llm-mailroom/blob/main/Dockerfile), [deploy/docker-compose.yml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/docker-compose.yml), [deploy/README.md](https://github.com/Exios66/llm-mailroom/blob/main/deploy/README.md)
 - [src/scripts/](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/README.md) (argparse in each script), [src/legalbench/cli.py](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/cli.py), [src/legalbench/README.md](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/README.md)
 - [deploy/docker-compose.full.yml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/docker-compose.full.yml), [deploy/litellm/config.yaml](https://github.com/Exios66/llm-mailroom/blob/main/deploy/litellm/config.yaml), [deploy/modal_vllm.py](https://github.com/Exios66/llm-mailroom/blob/main/deploy/modal_vllm.py), [src/scripts/smoke_modal_tiers.py](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/smoke_modal_tiers.py), [src/config/taxonomy.yaml](https://github.com/Exios66/llm-mailroom/blob/main/src/config/taxonomy.yaml)
 - [local-mailroom-sandbox README](https://github.com/Exios66/local-mailroom-sandbox/blob/main/README.md), [Digital-Mailroom README](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/blob/main/README.md)

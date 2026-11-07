@@ -59,11 +59,15 @@ _FALLBACK_SCHEMA_KEYS: dict[str, frozenset[str]] = {
             "intent", "subject_matter", "keywords",
         }
     ),
+    # ContractExtraction v2 (0.28.0) plus the v1 parse-compat keys, which are
+    # accepted (never extra) but not scored.
     "contract": frozenset(
         {
-            "document_name", "parties", "effective_date", "term_length", "governing_law",
-            "contract_value", "renewal_terms", "cuad_family", "merger_consideration",
-            "cuad_clauses", "maud_clauses",
+            "document_name", "parties", "party_roles", "signatories", "agreement_date",
+            "effective_date", "expiration_date", "term_length", "renewal_terms",
+            "termination_notice_period", "governing_law", "dispute_forum", "contract_value",
+            "payment_terms", "territory", "cuad_family", "cuad_clauses",
+            "merger_consideration", "maud_clauses",
         }
     ),
     "insurance_claim": frozenset(
@@ -83,14 +87,23 @@ _FALLBACK_SCHEMA_KEYS: dict[str, frozenset[str]] = {
     ),
     "merger_agreement": frozenset(
         {
-            "document_name", "parties", "effective_date", "effective_time",
-            "governing_law", "merger_consideration", "maud_clauses", "intent",
-            "subject_matter", "keywords",
+            "document_name", "parties", "acquirer", "target", "merger_sub", "signatories",
+            "effective_date", "effective_time", "governing_law", "per_share_cash_amount",
+            "exchange_ratio", "target_termination_fee", "parent_termination_fee",
+            "outside_date", "financial_advisors", "legal_counsel", "merger_consideration",
+            "maud_clauses", "intent", "subject_matter", "keywords",
         }
     ),
 }
 
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+#: v1 contract keys v2 accepts but never scores (``cuad_schema.CONTRACT_PARSE_COMPAT_FIELDS``).
+_PARSE_COMPAT_KEYS: dict[str, frozenset[str]] = {
+    "contract": frozenset({"merger_consideration", "maud_clauses"}),
+}
+
+
+_JSON_OBJECT_START = re.compile(r'\{\s*["}]')
 
 _MODEL_CLASSES = ("correspondence", "contract", "insurance_claim", "corporate_record", "merger_agreement")
 
@@ -113,7 +126,9 @@ def schema_keys_for(
         try:
             model = schema_lookup(resolved)
             if model is not None:
-                return frozenset(model.model_fields) - {"confidence", "reasoning"}
+                keys = frozenset(model.model_fields) - {"confidence", "reasoning"}
+                # Parse-compat keys stay accepted whatever the producer's model lists.
+                return keys | _PARSE_COMPAT_KEYS.get(resolved, frozenset())
         except Exception:
             pass
     if resolved in _FALLBACK_SCHEMA_KEYS:
@@ -135,7 +150,10 @@ def coerce_predicted_payload(predicted: Any) -> tuple[dict[str, Any] | None, dic
         meta["parse_error"] = True
         meta["parse_failure_reason"] = "null_payload"
         return None, meta
-    if isinstance(predicted, dict):
+    if isinstance(predicted, Mapping):
+        # Any mapping (MappingProxyType, UserDict, ...) is a dict payload; score_document
+        # accepts them, so adherence must too.
+        predicted = dict(predicted)
         if predicted.get("_parse_error"):
             meta["parse_error"] = True
             meta["parse_failure_reason"] = "flagged_parse_error"
@@ -166,7 +184,7 @@ def coerce_predicted_payload(predicted: Any) -> tuple[dict[str, Any] | None, dic
         return None, meta
     parsed, how = _parse_object_text(text)
     if parsed is not None:
-        if how == "wrapped_json":
+        if how in ("wrapped_json", "wrapped_python_repr"):
             meta["prose_wrapper"] = True
         return parsed, meta
     meta["parse_error"] = True
@@ -176,11 +194,13 @@ def coerce_predicted_payload(predicted: Any) -> tuple[dict[str, Any] | None, dic
 
 def _parse_object_text(text: str) -> tuple[dict[str, Any] | None, str | None]:
     """Parse JSON, a Python repr, or either wrapped in prose; say which it was."""
+    # RecursionError: deeply nested input ("[[[[...") exhausts the decoder's stack;
+    # that is unparseable text, not a crash (score_document never raises).
     try:
         obj = json.loads(text)
         if isinstance(obj, dict):
             return obj, "json"
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, RecursionError):
         pass
     try:
         obj = ast.literal_eval(text)
@@ -188,33 +208,93 @@ def _parse_object_text(text: str) -> tuple[dict[str, Any] | None, str | None]:
             return obj, "python_repr"
     except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
         pass
-    match = _JSON_OBJECT_RE.search(text)
-    if match and (text[: match.start()].strip() or text[match.end():].strip()):
+    # First "{" to last "}" (what the greedy r"\{.*\}" matched), found without the regex:
+    # on text with many "{" and no "}" the regex rescans from every "{" (quadratic).
+    lo, hi = text.find("{"), text.rfind("}")
+    span = text[lo : hi + 1] if lo != -1 and hi > lo else None
+    if span is not None and (text[:lo].strip() or text[hi + 1 :].strip()):
         try:
-            obj = json.loads(match.group(0))
+            obj = json.loads(span)
             if isinstance(obj, dict):
                 return obj, "wrapped_json"
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             pass
         try:
-            obj = ast.literal_eval(match.group(0))
+            obj = ast.literal_eval(span)
             if isinstance(obj, dict):
                 return obj, "wrapped_python_repr"
         except (SyntaxError, ValueError, TypeError, MemoryError, RecursionError):
             pass
-    # The greedy match spans the first "{" to the last "}", so braces in the surrounding
-    # prose break it. Fall back to decoding a JSON object at each "{" in turn.
+    # The greedy span runs from the first "{" to the last "}", so braces in the surrounding
+    # prose break it. Fall back to decoding a JSON object at each candidate "{" in turn.
+    # Only `{"` / `{}` can open a JSON object. Each candidate is decoded from its own
+    # slice, ending at its matching "}", so a failed decode builds its JSONDecodeError
+    # (which counts lines up to the failure) over that object only, not the whole text.
+    # A candidate whose "{" never closes cannot decode and is skipped without trying.
     decoder = json.JSONDecoder()
-    start = text.find("{")
-    while start != -1:
-        try:
-            obj, _end = decoder.raw_decode(text, start)
-        except json.JSONDecodeError:
-            obj = None
+    ends: dict[int, int] = {}
+    region_end = -1
+    candidate = _JSON_OBJECT_START.search(text)
+    while candidate is not None:
+        start = candidate.start()
+        if start >= region_end:
+            ends, region_end = _object_ends(text, start)
+        end = ends.get(start)
+        resume = start + 1
+        obj = None
+        if end is None:
+            # Not a "{" of the scanned region (it sits inside one of its strings):
+            # decode from here as a fresh object.
+            try:
+                obj, _end = decoder.raw_decode(text, start)
+            except (json.JSONDecodeError, RecursionError):
+                obj = None
+        elif end > 0:
+            try:
+                obj, _end = decoder.raw_decode(text[start:end])
+            except json.JSONDecodeError:
+                obj = None
+            except RecursionError:
+                # Too deep to decode; every "{" inside it is deeper still.
+                resume = end
         if isinstance(obj, dict):
             return obj, "wrapped_json"
-        start = text.find("{", start + 1)
+        candidate = _JSON_OBJECT_START.search(text, resume)
     return None, None
+
+
+def _object_ends(text: str, start: int) -> tuple[dict[int, int], int]:
+    """Match the braces of the object opening at ``start`` in one pass.
+
+    Returns ``(ends, region_end)``. ``ends`` maps each "{" in the region (outside JSON
+    strings, with backslash escapes) to the index just past its closing "}", or -1 when
+    it never closes. ``region_end`` is the index just past the object's own "}", or
+    ``len(text)`` when it never closes. Every "{" is scanned once per region, which
+    keeps the candidate search linear.
+    """
+    ends: dict[int, int] = {}
+    stack: list[int] = []
+    in_string = escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            stack.append(index)
+        elif char == "}" and stack:
+            ends[stack.pop()] = index + 1
+            if not stack:
+                return ends, index + 1
+    for open_index in stack:
+        ends[open_index] = -1
+    return ends, len(text)
 
 
 def _typed_valid(

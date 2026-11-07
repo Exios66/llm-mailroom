@@ -1,0 +1,89 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PYTHONPATH=src python src/scripts/run_pilot.py --mock:*)",
+      "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/publish_space.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/run_hf_pilot.py --check:*)",
+      "Bash(PYTHONPATH=src python src/scripts/cutover.py --list:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch --show-current:*)",
+      "Bash(git branch --list:*)"
+    ],
+    "ask": [
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(.venv/bin/python -m pytest:*)",
+      "Bash(PYTHONPATH=src python src/scripts/run_experiment.py:*)",
+      "Bash(git push:*)",
+      "Bash(PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py:*)",
+      "Bash(PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply:*)",
+      "Bash(PYTHONPATH=src python src/scripts/smoke_modal_tiers.py:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker-compose:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(!.env.example)",
+      "Bash(* --rea*)",
+      "Bash(* sync_prompts.py*)",
+      "Bash(*/sync_prompts.py*)",
+      "Bash(*scripts.sync_prompts*)",
+      "Bash(* sync_dataset.py*)",
+      "Bash(*/sync_dataset.py*)",
+      "Bash(*scripts.sync_dataset*)",
+      "Bash(* sync_dashboards.py*)",
+      "Bash(*/sync_dashboards.py*)",
+      "Bash(*scripts.sync_dashboards*)",
+      "Bash(* sync_evaluators.py*)",
+      "Bash(*/sync_evaluators.py*)",
+      "Bash(*scripts.sync_evaluators*)",
+      "Bash(* sync_hf_ground_truth.py* --rea*)",
+      "Bash(* sync_hf_ground_truth.py* --p*)",
+      "Bash(*/sync_hf_ground_truth.py* --rea*)",
+      "Bash(*/sync_hf_ground_truth.py* --p*)",
+      "Bash(*scripts.sync_hf_ground_truth* --rea*)",
+      "Bash(*scripts.sync_hf_ground_truth* --p*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push -uf:*)",
+      "Bash(git push -fu:*)",
+      "Bash(git push * -uf*)",
+      "Bash(git push * -fu*)",
+      "Bash(git push +*)",
+      "Bash(git push * +*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_paths.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/syntax_check.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

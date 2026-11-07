@@ -13,7 +13,10 @@ sorter prompt V14 (subclass 72.5% against the verified targets):
 - 35 Certificates of Amendment called ``certificate_of_formation`` or
   ``articles_of_incorporation`` (``certificate_of_formation`` has no
   ground-truth rows; it is a scoring key only);
-- 9 board-adopted bylaw amendments called ``bylaws`` (``board_resolution``);
+- 9 board-adopted bylaw amendments called ``bylaws`` (v9.3 files them under
+  ``board_resolution``). The guide now calls every bylaw amendment ``bylaws``
+  (mailroom-dataset v10 rule C), and v9.3 labels 8 of them ``board_resolution``,
+  so scoring against v9.3 counts those 8 as wrong until v10 relabels them;
 - 36 consulting / employment, IP and note-purchase agreements called
   ``other``;
 - 364 correspondence forms missed because the corpus applies a marker
@@ -139,14 +142,16 @@ SORTER_SUBCLASS_GUIDE: dict[str, dict[str, str]] = {
             "certificate or articles of incorporation, restated charter, certificate of formation, "
             "articles of organization (the charter itself, even with its amendments appended)"
         ),
-        "bylaws": "bylaws or amended and restated bylaws (the full rules)",
+        "bylaws": (
+            "bylaws, amended and restated bylaws, or an amendment to the bylaws, "
+            "even one the board adopted (never board_resolution)"
+        ),
         "charter_amendment": (
             "Certificate or Articles of Amendment of a charter, Certificate of Correction "
             "(the amending certificate, not the restated charter)"
         ),
         "board_resolution": (
-            "board or stockholder resolution or written consent, incl. a short amendment to the "
-            "bylaws adopted by the board"
+            "board or stockholder resolution or written consent"
         ),
         "officer_certificate": (
             "officer's or secretary's certificate; Certificate of Designation(s) of preferred stock "

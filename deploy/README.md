@@ -14,7 +14,7 @@ Operator manuals for this folder are published on the GitBook site (pages listed
 |:---|:---|
 | [Docker deployment](../docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md) | Compose matrix (Modes B / Mixed / A-ollama / A-llamafile / M / G), producer image, BERT build args |
 | [Modal + vLLM](../docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) | `mailroom-vllm` serve, pipeline cutover, multi-tier Mode G GPUs |
-| [Deployment](../docs/pipeline-reference-llm-mailroom/deployment/README.md) | Laptop Python install, Railway, Hugging Face Spaces, backup |
+| [Deployment](../docs/pipeline-reference-llm-mailroom/deployment/README.md) | Laptop Python install, Hugging Face Spaces, other container hosts, backup |
 
 This README is an index of files in `deploy/`. Keep the operator recipes on the GitBook pages so they stay in sync.
 
@@ -41,8 +41,6 @@ Quick start (Mode B / Mixed): see [Docker deployment](../docs/pipeline-reference
 | File | Purpose |
 |:---|:---|
 | `Dockerfile` (repository root) | Multi-stage producer / compose image |
-| `nixpacks.toml` | Nixpacks fallback |
-| `railway.json` | Railway deployment config |
 
 ## Usage
 

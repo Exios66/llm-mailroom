@@ -106,7 +106,7 @@ def cutover_all(cfg, provider, model):
 def validate_agent(agent_name):
     print(f"\nValidating {agent_name}...")
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", f"tests/test_agents/", "-v", "-k", agent_name, "--no-header"],
+        [sys.executable, "-m", "pytest", "src/tests/test_agents/", "-v", "-k", agent_name, "--no-header"],
         capture_output=True, text=True,
     )
     print(result.stdout)
