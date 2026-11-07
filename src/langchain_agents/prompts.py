@@ -630,8 +630,8 @@ SORTER_PROMPT_CONDENSED_V1 = (
 #: Condensed v5, mailroom production (the sandbox lineage's v2-v4 were not adopted): v1 with one
 #: corporate rule reversed. A bylaw amendment is bylaws, never board_resolution (v10 corpus rule
 #: C, decided 2026-11-07). v1 followed the v9.3
-#: labels, which file 9 board-adopted bylaw amendments under board_resolution; until the corpus
-#: relabels them, scoring against v9.3 counts those 9 as wrong. The prime-sample compare above
+#: labels, which file 8 board-adopted bylaw amendments under board_resolution; until the corpus
+#: relabels them, scoring against v9.3 counts those 8 as wrong. The prime-sample compare above
 #: was run on v1.
 SORTER_CONDENSED_V1_BYLAW_RULE = "a board-adopted bylaw amendment is board_resolution"
 SORTER_CONDENSED_BYLAW_RULE = "a bylaw amendment is bylaws, never board_resolution"
