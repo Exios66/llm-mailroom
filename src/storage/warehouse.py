@@ -31,8 +31,9 @@ WAREHOUSE_SCHEMA_VERSION = "1"
 TERMINAL_STAGES = frozenset({"archived", "failed"})
 _MANIFEST_NAME = "manifest.json"
 _EXPORT_LOCK = threading.RLock()
-# Ids per IN clause, well below driver bind limits (about 32k on SQLite and asyncpg).
-_IN_CLAUSE_CHUNK_SIZE = 1000
+# Ids per IN clause. Leaves room for other binds under SQLite's 999-variable default
+# before 3.32; newer SQLite and asyncpg allow about 32k.
+_IN_CLAUSE_CHUNK_SIZE = 500
 
 
 @contextmanager
