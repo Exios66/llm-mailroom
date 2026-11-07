@@ -168,6 +168,8 @@ def test_routine_export_from_running_loop_does_not_deadlock(warehouse_env, temp_
 
 # SQLite defaults to 32,766 bound variables per statement and asyncpg allows 32,767.
 _DRIVER_BIND_LIMIT = 32_766
+# SQLite before 3.32 defaults to 999; statements must fit there too.
+_OLD_SQLITE_BIND_LIMIT = 999
 
 
 def _ids_spanning_bind_limit(first: str, last: str) -> list[str]:
@@ -205,7 +207,7 @@ def test_audit_fetch_splits_ids_over_the_driver_bind_limit(
 
     asyncio.run(fetch_audit_rows_for_doc_ids(_ids_spanning_bind_limit("wh-aaa", "wh-aaa")))
 
-    assert max(statement_bind_counts) <= _DRIVER_BIND_LIMIT
+    assert max(statement_bind_counts) <= _OLD_SQLITE_BIND_LIMIT
 
 
 def test_audit_fetch_over_the_limit_orders_by_doc_then_seq_without_duplicates(
@@ -253,7 +255,7 @@ def test_terminal_fetch_splits_ids_over_the_driver_bind_limit(
 
     asyncio.run(fetch_terminal_documents(doc_ids=_ids_spanning_bind_limit("wh-aaa", "wh-aaa")))
 
-    assert max(statement_bind_counts) <= _DRIVER_BIND_LIMIT
+    assert max(statement_bind_counts) <= _OLD_SQLITE_BIND_LIMIT
 
 
 def test_terminal_fetch_over_the_limit_returns_each_document_once(warehouse_env, temp_base_dir):
