@@ -171,17 +171,51 @@ def _managed(monkeypatch, served, prompt_version="sorter_condensed_v5"):
     return agent.system_prompt(), agent._langfuse_prompt, handle
 
 
-def test_managed_prompt_without_the_condensed_guards_is_refused_for_the_production_pin(monkeypatch):
+@pytest.mark.parametrize("pin", ["sorter_condensed_v5", "sorter"])
+def test_managed_prompt_without_the_condensed_guards_is_refused_for_the_production_pin(monkeypatch, pin):
     """A stale Langfuse mailroom-sorter (V14, or any text without the condensed boundaries) never
-    replaces the production condensed pin; the pinned text is served instead."""
+    replaces the production condensed pin, named or by the ``sorter`` alias; the pinned text is
+    served instead."""
     from langchain_agents.prompts import SORTER_CONDENSED_GUARDS
 
     assert all(g in SORTER_PROMPT_CONDENSED for g in SORTER_CONDENSED_GUARDS)
-    for served in (SORTER_PROMPT_V14, "Classify the document.",
-                   SORTER_PROMPT_CONDENSED.replace(SORTER_CONDENSED_GUARDS[-1], "")):
-        text, handle, _ = _managed(monkeypatch, served)
+    for served in (SORTER_PROMPT_V14, "Classify the document."):
+        text, handle, _ = _managed(monkeypatch, served, prompt_version=pin)
         assert all(g in text for g in SORTER_CONDENSED_GUARDS)
         assert handle is None
+
+
+def _condensed_guards():
+    from langchain_agents.prompts import SORTER_CONDENSED_GUARDS
+
+    return SORTER_CONDENSED_GUARDS
+
+
+@pytest.mark.parametrize("guard", _condensed_guards())
+def test_a_managed_prompt_missing_any_one_condensed_guard_is_refused(monkeypatch, guard):
+    assert SORTER_PROMPT_CONDENSED.count(guard) >= 1
+    text, handle, _ = _managed(monkeypatch, SORTER_PROMPT_CONDENSED.replace(guard, ""))
+    assert guard in text and handle is None
+
+
+def test_the_v1_pin_keeps_the_guards_it_has(monkeypatch):
+    """v1 lacks only the v5 bylaw clause; a managed prompt that drops another guard is refused."""
+    from langchain_agents.prompts import SORTER_CONDENSED_BYLAW_RULE, SORTER_PROMPT_CONDENSED_V1
+
+    guard = "officer_certificate, never rights_instrument"
+    assert SORTER_CONDENSED_BYLAW_RULE not in SORTER_PROMPT_CONDENSED_V1
+    text, handle, _ = _managed(monkeypatch, SORTER_PROMPT_CONDENSED_V1.replace(guard, ""),
+                               prompt_version="sorter_condensed_v1")
+    assert guard in text and handle is None
+
+
+def test_a_managed_prompt_that_restores_the_v1_bylaw_rule_is_refused(monkeypatch):
+    """Keeping the v5 clause and adding v1's opposite one contradicts the pin."""
+    from langchain_agents.prompts import SORTER_CONDENSED_V1_BYLAW_RULE
+
+    served = SORTER_PROMPT_CONDENSED + "\nNote: " + SORTER_CONDENSED_V1_BYLAW_RULE + "."
+    text, handle, _ = _managed(monkeypatch, served)
+    assert SORTER_CONDENSED_V1_BYLAW_RULE not in text and handle is None
 
 
 @pytest.mark.parametrize("rule", [
@@ -196,7 +230,7 @@ def test_a_managed_prompt_missing_a_corporate_subclass_rule_is_refused(monkeypat
     assert rule in SORTER_PROMPT_CONDENSED
     text, handle, _ = _managed(monkeypatch, SORTER_PROMPT_CONDENSED.replace(rule, ""))
     assert rule in text and handle is None
-    assert any(g in rule or rule in g for g in SORTER_CONDENSED_GUARDS)
+    assert rule in SORTER_CONDENSED_GUARDS
 
 
 def test_managed_prompt_that_keeps_the_condensed_guards_is_served(monkeypatch):
