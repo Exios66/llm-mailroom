@@ -308,3 +308,60 @@ class TestMockModel:
         assert m1.answer_binary("q", "d") == m2.answer_binary("q", "d")
         assert m1.classify_family("d") == m2.classify_family("d")
         assert m1.usage()["total_tokens"] > 0
+
+
+class TestLangfuseTracingAttach:
+    def test_zero_macro_f1_is_attached_not_dropped(self, monkeypatch):
+        """#197: a legitimate macro_f1 == 0.0 falls through no fallback chain."""
+        from legalbench import langfuse_tracing as lt
+
+        emitted = []
+        monkeypatch.setattr(lt.tracing, "is_enabled", lambda: True)
+        monkeypatch.setattr(lt, "score_trace", lambda name, value, **kw: emitted.append((name, value)))
+        lt.attach_run_scores({"accuracy": 0.9, "macro_f1": 0.0, "yes_f1": 1.0}, "contract_qa")
+        assert ("legalbench_macro_f1", 0.0) in emitted
+
+    def test_runner_usage_stays_empty_after_pre_call_failure(self, monkeypatch):
+        """#197: a row that raises before any LLM call must not re-attach the
+        previous row's usage (tokens/cost double-count)."""
+        from types import SimpleNamespace as NS
+
+        from legalbench import runner as R
+
+        calls = {"n": 0}
+
+        def exploding_call(agent, row):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise KeyError("question")
+            agent._last_usage = {"total_tokens": 111, "cost": 0.5}
+
+        task = NS(
+            id="contract_qa",
+            kind="binary",
+            call=exploding_call,
+            extract=lambda row, p: ("yes", 1.0, ""),
+            scorer=lambda results: {},
+            prompt_version="v1",
+            data_source_label=["test"],
+            ground_truth_label="TEST_GT",
+        )
+        agent = NS(_last_usage=None, usage=lambda: dict(agent._last_usage or {}))
+        monkeypatch.setattr(R, "get_task", lambda task_id: task)
+        monkeypatch.setattr(R, "build_record", lambda **kw: {})
+        monkeypatch.setattr(R, "_model_name", lambda model, default: "fake-model")
+        result = R.run_task(
+            "contract_qa",
+            model=agent,
+            rows=[{"question": "q1", "answer": "yes"}, {"answer": "yes"}],
+            trace_enabled=False,
+        )
+        errored = [r for r in result.results if r["status"] == "error"]
+        assert errored and errored[0]["cost_usd"] is None
+        # Only row 1 contributed usage: the failed row did not re-attach it.
+        assert calls["n"] == 2
+        totals = {
+            k: v for k, v in result.tokens.items() if isinstance(v, (int, float))
+        }
+        assert totals and all(isinstance(v, (int, float)) for v in totals.values())
+        assert any(v == 111 for v in totals.values()), result.tokens
