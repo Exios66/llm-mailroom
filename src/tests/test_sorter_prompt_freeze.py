@@ -238,3 +238,16 @@ def test_managed_prompt_that_keeps_the_condensed_guards_is_served(monkeypatch):
     text, handle, sent = _managed(monkeypatch, edited)
     assert "One more managed note." in text
     assert handle is sent
+
+
+def test_the_rendered_catalog_agrees_with_the_production_bylaw_rule():
+    """The user-message subclass catalog (the Dojo sorter guide) must not contradict v5: a bylaw
+    amendment is bylaws, so board_resolution's catalog line never mentions bylaws."""
+    from langchain_agents.doc_inventories import format_sorter_subclass_catalogs
+
+    lines = format_sorter_subclass_catalogs().splitlines()
+    board = [line for line in lines if line.lstrip("- ").startswith("board_resolution")]
+    bylaws = [line for line in lines if line.lstrip("- ").startswith("bylaws")]
+    assert board and bylaws
+    assert all("bylaw" not in line.lower() for line in board), board
+    assert any("amendment to the bylaws" in line for line in bylaws), bylaws
