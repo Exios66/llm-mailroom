@@ -99,6 +99,11 @@ def _listener_is_loopback(server) -> bool:
     return _host_is_loopback(str(server[0]))
 
 
+# An HTTP Host value: name or bracketed IP, optional port. urlsplit alone would
+# read ``127.0.0.1#@evil.example`` as 127.0.0.1.
+_HOST_HEADER_RE = re.compile(r"(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(:[0-9]*)?")
+
+
 def _url_names_loopback(url: str) -> bool:
     """True when a URL's host is loopback. ``null`` and malformed URLs are not."""
     try:
@@ -139,7 +144,7 @@ def _require_token(request: Request) -> None:
         proxied = any(h in headers for h in _FORWARDING_HEADERS)
         host, origin = headers.get("host"), headers.get("origin")
         local_names = (
-            (host is None or _url_names_loopback(f"//{host}"))
+            (host is None or (_HOST_HEADER_RE.fullmatch(host) and _url_names_loopback(f"//{host}")))
             and (origin is None or _url_names_loopback(origin))
             and headers.get("sec-fetch-site") != "cross-site"
         )
