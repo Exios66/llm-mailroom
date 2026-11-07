@@ -25,10 +25,12 @@ Inputs from the brief: the user's original request, the diff range (for example
 
 How to work:
 
-1. Read `CLAUDE.md`, then `git diff <range>` in full, then the code around each hunk.
+1. Run `git status --short`; work the change needs that is not committed is a BLOCKING
+   finding, because the diff range does not contain it. Read `CLAUDE.md`, then
+   `git diff <range>` in full, then the code around each hunk.
 2. Re-run the evidence yourself (`.venv/bin/python -m pytest …` with `PYTHONPATH=src` for
    scripts). Never run `--real`, the `sync_*` scripts or `--push`, and never write to hosted
-   services.
+   services. The read-only `sync_gitbook_changelog.py --check` is the one exception.
 3. For each finding, give the location, a concrete failure scenario (input → wrong
    result), and how you confirmed it. Mark anything you could not confirm as `PLAUSIBLE`.
 

@@ -2,7 +2,8 @@
 
 Bot reviewers (CodeRabbit, CodeAnt) should spend their attention on real bugs, not on
 mistakes we could have caught ourselves. So **nothing is pushed for review until it has
-been vetted locally and by a fresh-context reviewer.** Run these steps in order.
+been vetted locally and by a fresh-context reviewer.** Once the user has asked for a push
+or a pull request, run these steps in order.
 
 ## 1. Local gate (before any push)
 
@@ -11,15 +12,16 @@ gates" in `CLAUDE.md` and `.claude/rules/evidence-contract.md`) and keep the raw
 At minimum:
 
 ```bash
-git status --short                      # nothing unintended staged or untracked
+git status --short                      # prints nothing: commit the work first
 git diff origin/main...HEAD --stat      # the diff is the size you expect
 .venv/bin/python -m compileall -q src   # syntax only; no linter is configured
 PYTHONPATH=src .venv/bin/python src/scripts/affected_tests.py --run -- -q   # fast loop
 .venv/bin/python -m pytest src/tests -q # full suite before the PR is marked ready
 ```
 
-Add the generated-file checks when they apply (`sync_gitbook_changelog.py --check`,
-`export_contract.py --check`). A red gate stops the flow; fix it first.
+Add the generated-file checks when they apply
+(`PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check`,
+`PYTHONPATH=src .venv/bin/python src/scripts/export_contract.py --check`). A red gate stops the flow; fix it first.
 
 ## 2. Self-review checklist
 
@@ -43,7 +45,7 @@ Give it only:
 
 - the user's original request, quoted;
 - the base ref and branch name (`origin/main...HEAD`);
-- the draft PR description, including the evidence section;
+- the draft PR description with the evidence section, leaving out its "Review log";
 - the gate commands you ran and their exit codes.
 
 Do **not** give it the implementer's reasoning or the adversarial-review history; it must

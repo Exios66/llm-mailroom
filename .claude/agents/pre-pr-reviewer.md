@@ -11,11 +11,14 @@ and that is the point: review it the way a careful stranger, or a review bot, wo
 not edit files.
 
 Inputs from the brief: the user's original request, the diff range, the draft PR
-description with its evidence section, and the gate commands that were run.
+description with its evidence section (its "Review log" is left out on purpose), and the
+gate commands that were run.
 
 Work through:
 
-1. `CLAUDE.md` (rules and gates), then `git diff <range>` in full.
+1. `git status --short`: work the change needs that is not committed is a BLOCKING finding,
+   because the diff range does not contain it. Then `CLAUDE.md` (rules and gates) and
+   `git diff <range>` in full.
 2. **Correctness:** logic errors, wrong conditions, off-by-one, unhandled `None`, broken
    error paths, wrong types crossing module boundaries, resource leaks, thread safety in
    `pipeline/watcher.py` and the daemon threads.
@@ -34,7 +37,8 @@ Work through:
 8. **Lessons from bot reviews** (below): check each one.
 
 You may run read-only commands and tests (`.venv/bin/python -m pytest …`). Never run
-`--real`, the `sync_*` scripts or `--push`.
+`--real`, the `sync_*` scripts or `--push`. The read-only
+`sync_gitbook_changelog.py --check` is the one exception.
 
 Return exactly this:
 
@@ -54,7 +58,7 @@ Only report real problems. If the diff is clean, say READY with no findings.
 ## Lessons from bot reviews
 
 Careless mistakes that the bots are configured to catch (`.coderabbit.yaml`) or have
-caught before. Check each one. Append a line when a new one gets through (see
+caught before. Check each one. The orchestrator adds a line when a new one gets through (see
 `.claude/rules/pr-flow.md`).
 
 - A fact changed in one doc but not in the other pages that repeat it (versions, counts,
