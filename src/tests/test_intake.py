@@ -1,5 +1,7 @@
 """Intake clerk — deterministic normalize + ingest span contract."""
 
+import pytest
+
 from agents.intake import (
     apply_intake,
     deterministic_normalize,
@@ -208,3 +210,39 @@ class TestIntakePreprocessingEdges:
         result = intake_node(state)
         assert result["intake_messy"] is True
         assert result["doc_text"]  # clerk still produced cleaned text
+
+
+# Assert complete content, including facts that a blanket punctuation strip
+# would corrupt. These cases are the reusable intake text contract.
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("# **Agreement**\r\n\r\n> Acme\u00a0  owes *Beta* `$1,250.00`.\n", "Agreement\n\nAcme owes Beta $1,250.00."),
+    ("## Terms\n\n- **Party**: Acme\n- Party: Beta", "Terms\n\nParty: Acme\nParty: Beta"),
+    ("7. Pay $5.00\n8. Retain section 2.1", "7. Pay $5.00\n8. Retain section 2.1"),
+    ("7. Pay $5.00\n9. Retain section 2.1", "7. Pay $5.00\n9. Retain section 2.1"),
+    ("7) Pay $5.00\n9) Retain section 2.1", "7) Pay $5.00\n9) Retain section 2.1"),
+    ("- Acme\n  - Beta\n- Gamma", "Acme\nBeta\nGamma"),
+    ("1. Acme\n   3. Beta\n   5. Delta\n2. Gamma", "1. Acme\n3. Beta\n5. Delta\n2. Gamma"),
+    ('# Terms\n\n[Notice address]: https://example.org/claims "Claims desk"', "Terms\n\nNotice address: https://example.org/claims (Claims desk)"),
+    ('See [notice][desk].\n\n[desk]: https://example.org/claims "Claims desk"', "See notice (https://example.org/claims) (Claims desk).\n\ndesk: https://example.org/claims (Claims desk)"),
+    ("See [Exhibit **A**](https://example.org/a_b?q=1) and ![signed copy](scan.png).", "See Exhibit A (https://example.org/a_b?q=1) and signed copy (scan.png)."),
+    ('View [policy](policy.pdf "Policy AB-42 expires 2026-11-07").', "View policy (policy.pdf) (Policy AB-42 expires 2026-11-07)."),
+    ('![Signature](signed.png "Executed by Acme on 2026-11-07")', "Signature (signed.png) (Executed by Acme on 2026-11-07)"),
+    ("```text\nClaim_ID: A_B-42\nAmount: -$25.50\n```", "Claim_ID: A_B-42\nAmount: -$25.50"),
+    ("| Party | Amount |\n| --- | ---: |\n| Acme | $1,250.00 |", "| Party | Amount |\n| Acme | $1,250.00 |"),
+    ("Title\n=====\n\nClause\n-----\n\nKeep § 2(a).", "Title\n\nClause\n\nKeep § 2(a)."),
+    ("A_B-42; 2 * 3 = 6; -$50.00; #123; 2026-11-07; § 2(a).", "A_B-42; 2 * 3 = 6; -$50.00; #123; 2026-11-07; § 2(a)."),
+])
+def test_intake_plain_text_contract(raw, expected):
+    cleaned, stats = deterministic_normalize(raw)
+    assert cleaned == expected
+    assert stats["raw_chars"] == len(raw)
+    assert stats["cleaned_chars"] == len(expected)
+    assert stats["changed"] == (raw != expected)
+
+
+def test_cleanup_preserves_complete_long_document():
+    raw = "# Schedule\n\n" + "\n\n".join(f"**Clause {i}**: Acme owes ${i}.00." for i in range(2000))
+    expected = "Schedule\n\n" + "\n\n".join(f"Clause {i}: Acme owes ${i}.00." for i in range(2000))
+    cleaned, _ = deterministic_normalize(raw)
+    assert cleaned == expected
+    assert deterministic_normalize(cleaned)[0] == cleaned
