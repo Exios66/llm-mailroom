@@ -619,10 +619,25 @@ SORTER_V15_GUARDS = (
 #: production): V15's B1-B3/S1-S5 conventions in ~1k tokens rendered; the subclass catalog
 #: still comes from llm_dojo_scoring.sorter_guide in the user message. Validated against the
 #: frozen V15 on the mailroom-dataset prime sample (class fixed-broken 108 vs 100, subclass
-#: 135 vs 126; reports/sorter-handoff/sorter-*-train-prime-sample.compare.json).
-SORTER_PROMPT_CONDENSED = (
+#: 135 vs 126; reports/sorter-handoff/sorter-*-train-prime-sample.compare.json). These are the
+#: vendored sandbox bytes; production is v5 below.
+SORTER_PROMPT_CONDENSED_V1 = (
     'You classify legal documents in a law-firm mailroom. Pick the document\'s substantive form, not its filing wrapper or topic.\n\nClasses:\n{{doc_type_descriptions}}\n\nClass boundaries (corpus conventions; they override the topic):\nB1. Securities and debt instruments are corporate_record, not contract, even when written and signed as an agreement or filed as an SEC exhibit: indenture or supplemental indenture -> indenture; registration, investor, stockholders\', preemptive-rights or subscription agreement, warrant, unit purchase option, specimen stock certificate -> rights_instrument. Amendments, joinders and waivers of these follow them. contract is for commercial dealings.\nB2. All mailbox text is correspondence, however short: a bare URL, an attachment stub, a one-line note, a forwarded article, an automated notice, a calendar entry, a reply chain. Mailbox headers (From:/To:/Subject:/Sent:) or a forward marker are enough. unknown is only for a stand-alone non-communication that fits no class (court opinion, accounting standard, due-diligence checklist) or unreadable text.\nB3. Merger agreements (agreement and plan of merger) are merger_agreement, not contract.\n\nSubclass (doc_subclass) — use exactly one key of the chosen class from the catalog in the user message; the text after each key is what the label means. Never a key of another class, never invented. Hard cases:\n- Insurance CMS tables: PHYSICIAN/SUPPLIER (Part B) is carrier, never outpatient; OUTPATIENT SERVICES is outpatient.\n- Corporate: Certificate of Designation and officer\'s/secretary\'s certificates are officer_certificate, never rights_instrument; a Certificate/Articles of Amendment is charter_amendment; a board-adopted bylaw amendment is board_resolution; certificate_of_formation is not a label (use articles_of_incorporation).\n- Correspondence: scan the whole text, quoted and forwarded mail included, and give the FIRST form in catalog order whose marker appears; email only when none does.\n- Contract: copy the key into contract_subtype; employment/offer letters are consulting, note or asset purchase is supply, IP assignment is ip; other only when no family fits. contract_subtype is null for every other class.\n- Merger: what each common share converts into, from the conversion section.\n\nConfidence: derive it from this document\'s evidence (0.0-1.0). Below 0.85 when two classes compete; never 0.90+ for contract when the title names an indenture, rights, warrant, subscription or option instrument. Name the boundary rule you applied in the reasoning.\n\nReturn strict JSON only: {"doc_type": <class key>, "contract_subtype": <key or null>, "doc_subclass": <key or null>, "confidence": <0-1>, "reasoning": <one or two sentences citing the evidence>}'
     "\n"
+)
+
+
+#: Condensed v5, mailroom production (the sandbox lineage's v2-v4 were not adopted): v1 with one
+#: corporate rule reversed. A bylaw amendment is bylaws, never board_resolution (v10 corpus rule
+#: C, decided 2026-11-07). v1 followed the v9.3
+#: labels, which file 9 board-adopted bylaw amendments under board_resolution; until the corpus
+#: relabels them, scoring against v9.3 counts those 9 as wrong. The prime-sample compare above
+#: was run on v1.
+SORTER_CONDENSED_V1_BYLAW_RULE = "a board-adopted bylaw amendment is board_resolution"
+SORTER_CONDENSED_BYLAW_RULE = "a bylaw amendment is bylaws, never board_resolution"
+assert SORTER_PROMPT_CONDENSED_V1.count(SORTER_CONDENSED_V1_BYLAW_RULE) == 1
+SORTER_PROMPT_CONDENSED = SORTER_PROMPT_CONDENSED_V1.replace(
+    SORTER_CONDENSED_V1_BYLAW_RULE, SORTER_CONDENSED_BYLAW_RULE
 )
 
 
@@ -638,7 +653,7 @@ SORTER_CONDENSED_GUARDS = (
     "Merger agreements (agreement and plan of merger) are merger_agreement, not contract.",
     "PHYSICIAN/SUPPLIER (Part B) is carrier, never outpatient",
     "officer_certificate, never rights_instrument",
-    "a board-adopted bylaw amendment is board_resolution",
+    SORTER_CONDENSED_BYLAW_RULE,
     "certificate_of_formation is not a label",
     "give the FIRST form in catalog order whose marker appears",
     "other only when no family fits",
@@ -3046,8 +3061,9 @@ If the PDF contains clean, selectable text (not scanned images), simply return t
 PROMPT_VERSIONS = {
     # Sorter
     "sorter_v0": SORTER_PROMPT_V0,
-    "sorter": SORTER_PROMPT_CONDENSED,  # mailroom production: condensed lineage v1 (prime-sample compare beat V15); V15 stays a frozen reference
-    "sorter_condensed_v1": SORTER_PROMPT_CONDENSED,
+    "sorter": SORTER_PROMPT_CONDENSED,  # mailroom production: condensed lineage v5 (v1 beat V15 on the prime-sample compare; v5 reverses the bylaw rule); V15 stays a frozen reference
+    "sorter_condensed_v1": SORTER_PROMPT_CONDENSED_V1,
+    "sorter_condensed_v5": SORTER_PROMPT_CONDENSED,
     "sorter_v1": SORTER_PROMPT_V1,
     "sorter_v2": SORTER_PROMPT_V2,
     "sorter_v3": SORTER_PROMPT_V3,

@@ -1,7 +1,7 @@
 """Sorter agent — LangChain version vendored from llm-entity-extraction.
 
 Re-exports ``langchain_agents.sorter_agent.SorterAgent`` (the eval-validated
-LangChain sorter with the contract-subtype dimension, ``sorter_condensed_v1`` prompt)
+LangChain sorter with the contract-subtype dimension, ``sorter_condensed_v5`` prompt)
 with mailroom defaults applied from ``config/taxonomy.yaml`` (model,
 temperature, max_tokens, max_input_chars) and page-image vision support.
 
@@ -47,7 +47,7 @@ class SorterAgent(_LangChainSorterAgent):
     - ``classify_json`` accepts page-image data-URIs; they are appended as
       multimodal content (additive, never replacing the text) when the
       configured model is vision-capable — attached to the FIRST window only.
-    - Runs the production condensed prompt by default (``sorter_condensed_v1``,
+    - Runs the production condensed prompt by default (``sorter_condensed_v5``,
       ~1k tokens rendered); override with ``prompt_version=``. ``sorter_v15`` stays
       frozen as a reference (V14 is the known-broken
       variant (indentures / rights instruments as contract, mailbox fragments
@@ -59,7 +59,7 @@ class SorterAgent(_LangChainSorterAgent):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        prompt_version: str = "sorter_condensed_v1",
+        prompt_version: str = "sorter_condensed_v5",
     ):
         super().__init__(model=model, api_key=api_key, prompt_version=prompt_version)
         cfg = get_agent_config(self.agent_name)

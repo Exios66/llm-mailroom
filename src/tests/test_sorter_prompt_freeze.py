@@ -74,7 +74,7 @@ def test_production_sorter_is_the_condensed_lineage():
     """Production is the condensed prompt; it keeps the lineage's essentials."""
     production = PROMPT_VERSIONS["sorter"]
     assert production is SORTER_PROMPT_CONDENSED
-    assert PROMPT_VERSIONS["sorter_condensed_v1"] is SORTER_PROMPT_CONDENSED
+    assert PROMPT_VERSIONS["sorter_condensed_v5"] is SORTER_PROMPT_CONDENSED
     assert _sha(production) not in BROKEN_SHA256
     missing = [g for g in CONDENSED_ESSENTIALS if g not in production]
     assert not missing, f"production sorter dropped the condensed lineage's essentials: {missing}"
@@ -92,8 +92,21 @@ def test_pins_point_at_the_condensed_lineage():
     from agents.sorter import SorterAgent
     from llm.prompts import _bound_prompt_versions
 
-    assert inspect.signature(SorterAgent.__init__).parameters["prompt_version"].default == "sorter_condensed_v1"
-    assert _bound_prompt_versions()["sorter"] == "sorter_condensed_v1"
+    assert inspect.signature(SorterAgent.__init__).parameters["prompt_version"].default == "sorter_condensed_v5"
+    assert _bound_prompt_versions()["sorter"] == "sorter_condensed_v5"
+
+
+def test_production_files_a_bylaw_amendment_under_bylaws():
+    """v10 corpus rule C: a bylaw amendment is bylaws. v1's opposite rule stays only in v1."""
+    from langchain_agents.prompts import SORTER_PROMPT_CONDENSED_V1
+
+    production = PROMPT_VERSIONS["sorter"]
+    assert "a bylaw amendment is bylaws, never board_resolution" in production
+    assert "bylaw amendment is board_resolution" not in production
+    assert "a board-adopted bylaw amendment is board_resolution" in SORTER_PROMPT_CONDENSED_V1
+    assert PROMPT_VERSIONS["sorter_condensed_v1"] is SORTER_PROMPT_CONDENSED_V1
+    assert production.replace("a bylaw amendment is bylaws, never board_resolution",
+                              "a board-adopted bylaw amendment is board_resolution") == SORTER_PROMPT_CONDENSED_V1
 
 
 def test_condensed_is_a_fraction_of_v15():
@@ -147,7 +160,7 @@ def test_v15_subclass_rules_name_only_catalog_keys():
             assert key in SORTER_V15_SUBCLASS_RULES, key
 
 
-def _managed(monkeypatch, served, prompt_version="sorter_condensed_v1"):
+def _managed(monkeypatch, served, prompt_version="sorter_condensed_v5"):
     import agents.sorter as sorter_mod
 
     handle = object()
@@ -172,7 +185,7 @@ def test_managed_prompt_without_the_condensed_guards_is_refused_for_the_producti
 
 
 @pytest.mark.parametrize("rule", [
-    "a board-adopted bylaw amendment is board_resolution",
+    "a bylaw amendment is bylaws, never board_resolution",
     "officer_certificate, never rights_instrument",
 ])
 def test_a_managed_prompt_missing_a_corporate_subclass_rule_is_refused(monkeypatch, rule):

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Production sorter is `sorter_condensed_v1`** (was V15). On a 275-document prime sample of verified labels (`qwen/qwen3.7-flash`), it fixed 108 class answers against V15's 100, broke none, and was right on 263/228 class/subclass answers against 255/219, with a ~3.7k-character system prompt instead of ~25k. A managed Langfuse prompt that drops any condensed guard, including the corporate bylaw-amendment rule, is refused and the pinned text is served.
+- **Production sorter is `sorter_condensed_v5`** (was V15): the sandbox's condensed v1 with one corporate rule reversed. A bylaw amendment is `bylaws`, never `board_resolution` (v10 corpus rule C). The v9.3 labels file 9 board-adopted bylaw amendments under `board_resolution`, so scoring against v9.3 counts those 9 as wrong until the corpus relabels them. On a 275-document prime sample of verified labels (`qwen/qwen3.7-flash`), v1 fixed 108 class answers against V15's 100, broke none, and was right on 263/228 class/subclass answers against 255/219, with a ~3.7k-character system prompt instead of ~25k. A managed Langfuse prompt that drops any condensed guard, including the corporate bylaw-amendment rule, is refused and the pinned text is served.
 
 ### Security
 
