@@ -3366,6 +3366,15 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         state["escalation_reason"] = tagged
 
     file_path_str = state.get("file_path") or ""
+    if file_path_str and not Path(file_path_str).exists():
+        # Intake claims the file into a worker dir before the run finishes —
+        # an abort between claim and the state update carries a stale inbox
+        # path (PR #202 review). Resolve the claimed bytes by name.
+        from pipeline.bins import find_claimed_file
+
+        claimed = find_claimed_file(state.get("original_filename", ""))
+        if claimed is not None:
+            file_path_str = str(claimed)
     if file_path_str:
         try:
             move_to_failed(Path(file_path_str), aborted_doc_id)
