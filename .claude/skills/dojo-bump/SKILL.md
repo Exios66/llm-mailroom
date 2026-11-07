@@ -54,8 +54,8 @@ Install the exact pinned revision first:
 ```
 
 `test_wheel_runtime_catalog` runs `uv build --offline`, so uv's cache must already hold
-setuptools and wheel; if it is the only failure with an empty cache, say so rather than
-calling the suite red.
+setuptools and wheel. If it is the only failure with an empty cache, report the nonzero
+pytest exit, the failing test and the empty-cache cause.
 
 ## 4. Commit
 

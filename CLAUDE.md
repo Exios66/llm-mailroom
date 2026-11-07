@@ -81,7 +81,7 @@ full suite and the experiment gate.
 | Change touches | Run |
 |:---|:---|
 | Any Python | `.venv/bin/python -m compileall -q src`, then `affected_tests.py --run`, then the full suite before the PR is ready |
-| Graph, agents, routing, prompts | + `run_pilot.py --mock` and `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
+| Graph, agents, routing, prompts | + `run_pilot.py --mock` (needs `docs/examples/samples/manifest.csv`) and `MAILROOM_BASE_DIR="$(mktemp -d)"` with `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
 | Nodes, spans, agents, classes, score configs, thresholds | + `PYTHONPATH=src .venv/bin/python src/scripts/export_contract.py --check` (`--write` to regenerate) |
 | `CHANGELOG.md` | + `PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check` |
 | Docs, README, prose with paths/versions | + `pytest src/tests/test_docs_truth.py -q` |
@@ -126,7 +126,7 @@ lint or type cleanliness.
 - New agent tests inject `agent.client = <mock>` and `agent.model = "test-model"`.
 - `test_wheel_runtime_catalog` runs `uv build --offline`, so uv's cache must already hold
   setuptools and wheel (the test skips if `uv` is missing). With an empty cache it can be
-  the only failure — say so instead of calling the suite red.
+  the only failure. Report the nonzero pytest exit, the failing test and the empty-cache cause.
 - Langfuse trace ids are deterministic per filename and tags are immutable: a re-run keeps
   the first run's tags and environment.
 - The suite is slow; use `affected_tests.py` while iterating, the full suite before "ready".
