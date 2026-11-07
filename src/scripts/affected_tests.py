@@ -56,13 +56,17 @@ def _python_files() -> dict[str, Path]:
 
 
 def _imports(path: Path, module: str, known: set[str]) -> set[str]:
-    """Known modules that ``path`` imports or names in a string literal."""
+    """Known modules imported, named dynamically, or executed by literal path."""
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except (SyntaxError, UnicodeDecodeError):
         return set()
     is_pkg = path.name == "__init__.py"
     found: set[str] = set()
+    roots = {m.split(".", 1)[0] for m in known}
+    by_stem: dict[str, set[str]] = defaultdict(set)
+    for name in known:
+        by_stem[name.rsplit(".", 1)[-1]].add(name)
 
     def add(name: str) -> None:
         # "pkg.mod.attr" -> the longest known prefix; also every parent
@@ -96,9 +100,16 @@ def _imports(path: Path, module: str, known: set[str]) -> set[str]:
                 add(f"{target}.{alias.name}")
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             value = node.value
+            # CLI consumers often execute a source file rather than import
+            # its module. A literal basename also covers Path("src") / ...
+            # constructions; collisions conservatively include every match.
+            if value.endswith(".py"):
+                stem = Path(value).stem
+                for candidate in by_stem.get(stem, ()):
+                    add(candidate)
             if "." in value and " " not in value and len(value) < 200:
                 head = value.split(".", 1)[0]
-                if head in {m.split(".", 1)[0] for m in known}:
+                if head in roots:
                     add(value)
     found.discard(module)
     return found
@@ -109,11 +120,11 @@ def changed_files(base: str) -> list[str]:
         out = subprocess.run(
             ["git", *args], cwd=REPO, capture_output=True, text=True, check=True
         ).stdout
-        return [line for line in out.splitlines() if line]
+        return [name for name in out.split("\0") if name]
 
-    committed = git("diff", "--name-only", f"{base}...HEAD")
-    uncommitted = git("diff", "--name-only", "HEAD")
-    untracked = git("ls-files", "--others", "--exclude-standard")
+    committed = git("diff", "--no-renames", "--name-only", "-z", f"{base}...HEAD")
+    uncommitted = git("diff", "--no-renames", "--name-only", "-z", "HEAD")
+    untracked = git("ls-files", "--others", "--exclude-standard", "-z")
     return sorted(set(committed + uncommitted + untracked))
 
 
@@ -132,8 +143,8 @@ def select(changed: list[str], depth: int = 0) -> list[str]:
     seeds = {path_to_mod[c] for c in changed if c in path_to_mod}
 
     # Walk importers breadth-first. Tests are collected at every level;
-    # only non-test modules are expanded, at most ``depth`` hops past the
-    # changed modules (depth < 0 means unlimited).
+    # bounded local mode expands non-test modules up to ``depth`` hops.
+    # Full closure also follows re-exported/shared test helpers.
     affected = set(seeds)
     frontier = set(seeds)
     hop = 0
@@ -144,7 +155,7 @@ def select(changed: list[str], depth: int = 0) -> list[str]:
                 if user in affected:
                     continue
                 affected.add(user)
-                if not _is_test(files[user]):
+                if depth < 0 or not _is_test(files[user]):
                     nxt.add(user)
         if depth >= 0 and hop >= depth:
             break
@@ -188,8 +199,8 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(tests))
         return 0
     if not tests:
-        print("no affected tests", file=sys.stderr)
-        return 0
+        print("no affected tests; use ci_tests.py for a safe fallback", file=sys.stderr)
+        return 5
     cmd = [sys.executable, "-m", "pytest", *tests, *args.pytest_args]
     return subprocess.call(cmd, cwd=REPO)
 
