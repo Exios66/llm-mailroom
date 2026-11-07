@@ -29,6 +29,8 @@ def test_built_wheel_contains_and_loads_its_runtime_prompt_catalog(tmp_path):
         assert "config/taxonomy.yaml" in names
         assert archive.read("config/taxonomy.yaml") == (root / "src/config/taxonomy.yaml").read_bytes()
         assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
+        # Checkout-only trees: shipped code must not need them at runtime.
+        assert not [name for name in names if name.startswith(("scripts/", "legalbench/"))]
         archive.extractall(unpacked)
 
     import llm_dojo_scoring
@@ -50,6 +52,8 @@ assert len(templates) == 18
 assert "corporate_records_specialist" in templates
 assert set(config.get_all_doc_types()) == {"contract", "corporate_record", "correspondence", "insurance_claim", "merger_agreement"}
 assert not any("editable" in repr(finder).lower() for finder in sys.meta_path)
+from observability.agent_eval import load_manifest_cases
+assert load_manifest_cases(mock=True) == []
 print(json.dumps({"templates": len(templates), "config": str(config.CONFIG_PATH)}))
 '''
     environment = {**os.environ, "OBSERVABILITY_PROVIDER": "none", "LLM_DOJO_UPDATE_CHECK": "0"}
