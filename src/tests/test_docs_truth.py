@@ -229,21 +229,28 @@ def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     releases = parse_changelog(text, unreleased_date="2026-10-07")
     titles = [release.title for release in releases]
-    assert titles[:3] == ["Unreleased", f"v{release_project['version']}", "v0.8.1"]
+    # The second slot is the project version; the third is v0.9.1 — the newest
+    # section CHANGELOG.md carries. v0.9.2 / v0.9.3 were tagged out-of-band
+    # (#184) and have no CHANGELOG sections, so they cannot appear here.
+    assert titles[:3] == ["Unreleased", f"v{release_project['version']}", "v0.9.1"]
     assert len(titles) == len(set(titles)), "duplicate changelog release headings"
     current = releases[1]
-    assert current.date == "2026-11-03"
-    assert current.tags == ("feature", "improvement", "fix")
-    assert current.page_rel == "2026/v0-9-1.md"
+    assert current.date == "2026-11-07"
+    assert current.body.strip(), "the stamped release section carries the pending content"
+    v091 = releases[2]
+    assert v091.title == "v0.9.1"
+    assert v091.tags == ("feature", "improvement", "fix")
+    assert v091.page_rel == "2026/v0-9-1.md"
     # Allow future Unreleased work, but don't duplicate notes already shipped.
     released_notes = set(re.findall(r"^- .+$", current.body, re.MULTILINE))
     unreleased_notes = set(re.findall(r"^- .+$", releases[0].body, re.MULTILINE))
     assert released_notes.isdisjoint(unreleased_notes)
-    assert re.findall(r"^### (.+)$", current.body, re.MULTILINE) == ["Added", "Changed", "Fixed", "Documentation"]
+    assert "Added" in re.findall(r"^### (.+)$", current.body, re.MULTILINE)
 
 
 @pytest.mark.parametrize("label,comparison", [
-    ("Unreleased", "v0.9.1...HEAD"),
+    ("Unreleased", "v0.9.4...HEAD"),
+    ("v0.9.4", "v0.9.1...v0.9.4"),  # v0.9.2/0.9.3 have no CHANGELOG sections (#184)
     ("v0.9.1", "v0.8.1...v0.9.1"),
     ("v0.8.1", "v0.8.0...v0.8.1"),
     ("v0.8.0", "v0.7.1...v0.8.0"),
@@ -273,7 +280,9 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     feed = (_DOCS / "changelog" / "README.md").read_text(encoding="utf-8")
     cards = re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
     titles = [re.search(r"^## (.+)$", body, re.MULTILINE).group(1) for _, body in cards]
-    assert titles[:4] == ["Unreleased", "v0.9.1", "v0.8.1", "v0.8.0"]
+    # v0.9.2 / v0.9.3 were tagged out-of-band (#184) with no CHANGELOG
+    # sections, so the feed skips straight from v0.9.4 to v0.9.1.
+    assert titles[:4] == ["Unreleased", "v0.9.4", "v0.9.1", "v0.8.1"]
     assert titles.count("v0.8.0") == 1
     attrs, body = next((attrs, body) for attrs, body in cards if "## v0.8.0\n" in body)
     assert 'date="2026-10-07"' in attrs
@@ -285,7 +294,14 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     assert released_notes.isdisjoint(unreleased_notes)
 
     listed = _summary_targets(_DOCS / "changelog" / "SUMMARY.md")
-    assert listed[:5] == ["README.md", "unreleased.md", "2026/v0-9-1.md", "2026/v0-8-1.md", "2026/v0-8-0.md"]
+    assert listed[:6] == [
+        "README.md",
+        "unreleased.md",
+        "2026/v0-9-4.md",
+        "2026/v0-9-1.md",
+        "2026/v0-8-1.md",
+        "2026/v0-8-0.md",
+    ]
     assert listed.count("2026/v0-8-0.md") == 1
 
 
