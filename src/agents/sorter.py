@@ -1,7 +1,7 @@
 """Sorter agent — LangChain version vendored from llm-entity-extraction.
 
 Re-exports ``langchain_agents.sorter_agent.SorterAgent`` (the eval-validated
-LangChain sorter with the contract-subtype dimension, ``sorter_v15`` prompt)
+LangChain sorter with the contract-subtype dimension, ``sorter_condensed_v5`` prompt)
 with mailroom defaults applied from ``config/taxonomy.yaml`` (model,
 temperature, max_tokens, max_input_chars) and page-image vision support.
 
@@ -47,8 +47,9 @@ class SorterAgent(_LangChainSorterAgent):
     - ``classify_json`` accepts page-image data-URIs; they are appended as
       multimodal content (additive, never replacing the text) when the
       configured model is vision-capable — attached to the FIRST window only.
-    - Runs the frozen ``sorter_v15`` prompt by default (V14 + the corpus class
-      boundaries); override with ``prompt_version=``. V14 is the known-broken
+    - Runs the production condensed prompt by default (``sorter_condensed_v5``,
+      ~1k tokens rendered); override with ``prompt_version=``. ``sorter_v15`` stays
+      frozen as a reference (V14 is the known-broken
       variant (indentures / rights instruments as contract, mailbox fragments
       as unknown). Production classify nodes serve it
       through ``get_managed_prompt`` (Langfuse ``mailroom-sorter``).
@@ -58,7 +59,7 @@ class SorterAgent(_LangChainSorterAgent):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        prompt_version: str = "sorter_v15",
+        prompt_version: str = "sorter_condensed_v5",
     ):
         super().__init__(model=model, api_key=api_key, prompt_version=prompt_version)
         cfg = get_agent_config(self.agent_name)
@@ -71,7 +72,7 @@ class SorterAgent(_LangChainSorterAgent):
             self._reasoning_effort = cfg["reasoning_effort"]
 
     def system_prompt(self) -> str:
-        """Langfuse-managed sorter_v15 with live taxonomy catalogs compiled in.
+        """Langfuse-managed pinned prompt with live taxonomy catalogs compiled in.
 
         LangGraph ``classify`` / ``retry_classify`` call ``classify_json`` →
         ``_call_structured`` → this method. Eval pins via ``prompt_version=``
@@ -80,16 +81,16 @@ class SorterAgent(_LangChainSorterAgent):
         """
         default = get_prompt(self.prompt_version)
         text, self._langfuse_prompt = get_managed_prompt(self.agent_name, default)
-        # Anti-regression: a managed (Langfuse) prompt that drops the frozen V15 class
-        # boundaries never replaces a pin that has them; the frozen text is served instead.
-        from langchain_agents.prompts import SORTER_V15_GUARDS
+        # Anti-regression: a managed (Langfuse) prompt that drops any guard clause the pinned
+        # default has (V15's, or the condensed prompts'), or adds a superseded rule the default
+        # reversed, never replaces it; the pinned text is served instead.
+        from langchain_agents.prompts import SORTER_GUARD_SETS, SORTER_SUPERSEDED_RULES
 
-        if all(g in default for g in SORTER_V15_GUARDS) and not all(g in text for g in SORTER_V15_GUARDS):
-            logger.warning(
-                "managed_sorter_prompt_regressed",
-                prompt_version=self.prompt_version,
-                missing=[g for g in SORTER_V15_GUARDS if g not in text],
-            )
+        missing = [g for guards in SORTER_GUARD_SETS for g in guards if g in default and g not in text]
+        restored = [r for r in SORTER_SUPERSEDED_RULES if r in text and r not in default]
+        if missing or restored:
+            logger.warning("managed_sorter_prompt_regressed", prompt_version=self.prompt_version,
+                           missing=missing, restored=restored)
             text, self._langfuse_prompt = default, None
         return fill_sorter_placeholders(text)
 

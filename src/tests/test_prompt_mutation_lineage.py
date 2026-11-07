@@ -47,7 +47,8 @@ def test_sorter_v14_is_pure_append_of_v12():
     assert "insurance_claim" not in LP.SORTER_PROMPT_V0
     assert LP.PROMPT_TEMPLATES()["sorter_v12"] is LP.SORTER_PROMPT_V12
     assert LP.PROMPT_TEMPLATES()["sorter_v13"] is LP.SORTER_PROMPT_V13
-    assert LP.PROMPT_TEMPLATES()["sorter"] is LP.SORTER_PROMPT_V15
+    assert LP.PROMPT_TEMPLATES()["sorter"] is LP.SORTER_PROMPT_CONDENSED
+    assert LP.PROMPT_TEMPLATES()["sorter_v15"] is LP.SORTER_PROMPT_V15  # frozen reference
 
 
 def test_contracts_v33_is_pure_append_of_v32():
@@ -117,7 +118,7 @@ def test_production_templates_are_the_mutated_versions():
     from llm.frozen_v1 import load_specialist_v1
 
     templates = prompt_templates()
-    assert templates["sorter"] == LP.SORTER_PROMPT_V15
+    assert templates["sorter"] == LP.SORTER_PROMPT_CONDENSED
     assert templates["contracts_specialist"] == load_specialist_v1("contracts_specialist")
     assert templates["corporate_records_specialist"] == corporate_records_specialist.SYSTEM_PROMPT
     assert templates["insurance_claims_specialist"] == insurance_claims_specialist.SYSTEM_PROMPT
@@ -135,7 +136,7 @@ def test_runtime_defaults_pin_the_new_versions():
     from agents.sorter import SorterAgent
 
     sorter_params = inspect.signature(SorterAgent.__init__).parameters
-    assert sorter_params["prompt_version"].default == "sorter_v15"
+    assert sorter_params["prompt_version"].default == "sorter_condensed_v5"
     contracts_params = inspect.signature(ContractsSpecialist.__init__).parameters
     assert contracts_params["prompt_version"].default == "contracts_specialist"
 
