@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Production sorter is `sorter_condensed_v1`** (was V15). On a 275-document prime sample of verified labels (`qwen/qwen3.7-flash`), it fixed 108 class answers against V15's 100, broke none, and was right on 263/228 class/subclass answers against 255/219, with a ~3.7k-character system prompt instead of ~25k. A managed Langfuse prompt that drops any condensed guard, including the corporate bylaw-amendment rule, is refused and the pinned text is served.
+
 ### Security
 
 - **Tokenless API requests are served only on a loopback listener** (audit L-2). A direct `uvicorn api.main:app --host 0.0.0.0` never runs `assert_bind_allowed()`, so with no `MAILROOM_API_TOKEN` it served every route to the network. Token-protected routes now read the ASGI `server` address (the local socket the request arrived on) and answer `503` when no live token is configured and that address is not loopback; unix sockets and unknown addresses fail closed, and so does a loopback request that carries `Forwarded` / `X-Forwarded-For` / `X-Real-IP` (a same-host reverse proxy). A proxy that adds no forwarding headers still looks local: set a token behind any proxy. `/health`, FastAPI's `/docs` / `/redoc` / `/openapi.json` and live-token behaviour are unchanged. If you run the API off loopback without a token on purpose, set `MAILROOM_API_TOKEN`.

@@ -36,9 +36,8 @@ as the mutations `corporate_records_specialist_v6` /
 legacy `*.txt` files for these two roles still hold those uncorrected v1 bytes
 (`484e64dd…`, `eab63b5a…`); nothing loads them.
 
-The **sorter** is not in this catalog. Production classification stays on
-`sorter_v14` (V12 CUAD-subtype lineage + mailroom pipeline doctrine) — the
-strongest sorter this pipeline has — served through `get_managed_prompt`
+The **sorter** is not in this catalog. Production classification uses `sorter_condensed_v1` (the token-budgeted
+condensed sorter), served through `get_managed_prompt`
 from the classify nodes.
 
 Entity-extraction lineage keys (`contracts_specialist_v1`…`v33`,

@@ -34,6 +34,8 @@ ANTI_ANCHOR_VARIANT = (
 # so); the former is a tracked follow-up mutation (SAND board), the clamp is
 # what the condensed prompt writes today.
 ANTI_ANCHOR_CONDENSED = "never 0.90+ for contract when the title names an indenture"
+# Its general rule for competing classes, which the clamp above does not cover.
+COMPETING_CLASSES_CONDENSED = "below 0.85 when two classes compete"
 # Frozen v1 specialist stems (sandbox / eval-environment).
 ANTI_ANCHOR_FROZEN_V1 = "never default to 0.90 / 0.95"
 # The condensed lineage's evidence sentence ("derive it from this document's
@@ -66,6 +68,12 @@ def test_confidence_calibration_rule_present(agent_name):
         evidence in prompt
         for evidence in (EVIDENCE_BASE, EVIDENCE_VARIANT, EVIDENCE_FROZEN_V1, EVIDENCE_CONDENSED)
     ), f"{agent_name} prompt must require evidence-derived confidence"
+
+
+def test_production_sorter_lowers_confidence_when_two_classes_compete():
+    """The securities clamp only covers contracts with certain titles; the production sorter must
+    also cap confidence whenever two classes compete."""
+    assert COMPETING_CLASSES_CONDENSED in _normalize(prompt_templates()["sorter"])
 
 
 def test_corporate_records_frozen_v1_omits_confidence_as_a_registered_field():
