@@ -92,6 +92,9 @@ from pipeline.hf_corpora import (  # noqa: E402
 
 DATASET_ID = FULL_CORPUS_ID
 DATASET_REVISION = FULL_CORPUS_REVISION
+
+# Score with the calibrated taxonomy, not dojo defaults (#192).
+import observability.scoring_wiring  # noqa: F401,E402
 # §45 evaluation-trace identity (HUB-022): rides on every pilot trace so any
 # experiment is reproducible from dataset revision + taxonomy surface.
 DATASET_IDENTITY = {

@@ -423,10 +423,24 @@ def move_to_review(file_path: Path, manifest) -> Path:
     return dest
 
 
-def move_to_failed(file_path: Path) -> Path:
+def move_to_failed(file_path: Path, doc_id: str = "") -> Path:
+    """Move a file to the failed bin with the A-20 collision protection.
+
+    Same hazard as the archive bin: POSIX rename silently overwrites a
+    same-named target and a previously failed document's bytes (and its
+    manifest) would be destroyed."""
     dest_dir = failed_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / file_path.name
+    if dest.exists():
+        stem, suffix = file_path.stem, file_path.suffix
+        if doc_id:
+            dest = dest_dir / f"{stem}--{doc_id}{suffix}"
+        else:
+            counter = 1
+            while dest.exists():
+                dest = dest_dir / f"{stem}--{counter}{suffix}"
+                counter += 1
     shutil.move(str(file_path), str(dest))
     return dest
 

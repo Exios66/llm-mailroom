@@ -15,6 +15,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
 
 from graph.state import DocumentState
+# Wires taxonomy.yaml into llm-dojo-scoring at import time (#192): without it
+# field scoring / judge gating run on package defaults, not the calibrated map.
+import observability.scoring_wiring  # noqa: F401,E402
 from graph.routing import (
     after_classify,
     after_retry_classify,
@@ -2487,7 +2490,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     logger.info("human_review_rejected", doc_id=doc_id, notes=notes[:200] or None)
     failed_path = str(dest) if dest is not None else file_path_str
     if dest is not None and dest.exists():
-        failed_path = str(move_to_failed(dest))
+        failed_path = str(move_to_failed(dest, doc_id))
     _catalog_upsert(
         {
             "doc_id": doc_id,
@@ -3361,7 +3364,7 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
     file_path_str = state.get("file_path") or ""
     if file_path_str:
         try:
-            move_to_failed(Path(file_path_str))
+            move_to_failed(Path(file_path_str), aborted_doc_id)
         except Exception:
             logger.exception("abort_move_to_failed_error", file=file_path_str)
     try:
@@ -3817,7 +3820,9 @@ def _execute_run(
                         predicted=extracted,
                         expected=expected_fields,
                         matter_id=initial_state.get("matter_id"),
-                        doc_text=initial_state.get("doc_text"),
+                        # The real transcription lives on the post-run state;
+                        # the pre-invoke snapshot never carries it (#191).
+                        doc_text=result.get("doc_text") or initial_state.get("doc_text"),
                         expected_class=expected_class,
                         presence_expectations=presence,
                     )

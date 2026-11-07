@@ -320,9 +320,13 @@ async def health():
 async def get_relations_mode():
     """Relations clerk mode readout (HUB-052) — the effective live/pilot
     posture plus every knob that can block or shape it."""
+    import asyncio
+
     from pipeline.relations_mode import mode_status
 
-    return mode_status()
+    # mode_status uses asyncio.run internally; inside this running loop that
+    # raises and the coroutines silently die (#193) — run it off-loop.
+    return await asyncio.to_thread(mode_status)
 
 
 class RelationsModeRequest(BaseModel):

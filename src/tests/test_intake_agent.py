@@ -178,21 +178,15 @@ def test_sliding_windows_cover_every_character():
     bases = [b for _, b in windows]
     assert bases == sorted(bases)
     assert bases[0] == 0
-    # full coverage: the chunk spans (excluding re-sent overlap prefixes) are
-    # contiguous and reach the end of the text — every character is read.
-    last_end = 0
-    for i, (chunk, base) in enumerate(windows):
-        overlap_prefix = 0
-        if i > 0:
-            prev = windows[i - 1][0]
-            tail = prev[-200:]
-            if "\n\n" in tail:
-                tail = tail[tail.find("\n\n") + 2:]
-            overlap_prefix = len(tail) + 2
-        span_end = base + len(chunk) - overlap_prefix
-        assert span_end > last_end or i == 0
-        last_end = span_end
-    assert last_end >= len(text) - 5
+    # every window i>0 BEGINS at its overlap tail's position in the document
+    # (#199: the base is the window's start, not its chunk's start)
+    for i in range(1, len(windows)):
+        prev_window, prev_start = windows[i - 1]
+        assert prev_start < windows[i][1] < prev_start + len(prev_window)
+    # full coverage: window_start + window length reaches the end — every
+    # character is read.
+    last_window, last_start = windows[-1]
+    assert last_start + len(last_window) >= len(text) - 5
 
 
 def test_sliding_windows_single_window_when_within_budget():

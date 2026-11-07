@@ -513,6 +513,51 @@ class TestPipelineResultSuppression:
         )
 
 
+class TestGroundedFieldScoringDocText:
+    def test_scorer_receives_result_doc_text(self, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch):
+        """#191: the deterministic scorer must receive the transcribed text
+        (the post-run state's doc_text), not the empty pre-invoke snapshot."""
+        from graph.build_graph import run_pipeline
+        from observability import langfuse_field_scoring as lfs
+
+        real = lfs.score_and_log_extraction
+        captured = []
+
+        def spy(trace_id, **kw):
+            captured.append(kw)
+            return real(trace_id, **kw)
+
+        monkeypatch.setattr(lfs, "score_and_log_extraction", spy)
+
+        inbox = temp_base_dir / "pipeline" / "inbox"
+        test_file = inbox / "gt_doctext.txt"
+        test_file.write_text("Service agreement between Acme Corp and Beta LLC.")
+        mock_langchain_llm.classification = {
+            "doc_type": "contract",
+            "contract_subtype": "other",
+            "confidence": 0.99,
+            "reasoning": "Service agreement",
+        }
+        mock_langchain_llm.extraction = {
+            "parties": ["Acme Corp", "Beta LLC"],
+            "effective_date": "2024-01-15",
+            "governing_law": "Delaware",
+            "confidence": 0.99,
+        }
+        result = run_pipeline(
+            test_file,
+            "MATTER-191",
+            ground_truth={
+                "expected_doc_class": "contract",
+                "expected_fields": {"parties": ["Acme Corp", "Beta LLC"]},
+            },
+        )
+        assert result["stage"] == "archived"
+        assert captured, "a grounded archived run must call the field scorer"
+        assert captured[0]["doc_text"]
+        assert captured[0]["doc_text"] == result.get("doc_text")
+
+
 class TestEmptyDocRoutesStraightToReview:
     def test_empty_doc_no_retry_call(self, temp_base_dir, mock_openai_client, mock_langchain_llm):
         from graph.build_graph import run_pipeline

@@ -81,7 +81,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "docclass-pilot": {
         "slug": "docclass-pilot",
         "id": EXAMPLES_ID,
-        "revision": None,
+        "revision": "c37469e86b3eec2cdbd0bb205820bddce502af3e",
         "schema": FULL_CORPUS_SCHEMA,
         "role": "class_subclass_examples",
         "pipeline": True,
@@ -96,7 +96,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "enron-correspondence-dedup": {
         "slug": "enron-correspondence-dedup",
         "id": f"{ORG}/enron-correspondence-dedup",
-        "revision": None,
+        "revision": "993919b4387f017b2fcff5902102de609ad41464",
         "schema": None,
         "role": "correspondence_full",
         "pipeline": True,
@@ -111,7 +111,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "cms-desynpuf-insurance-claims": {
         "slug": "cms-desynpuf-insurance-claims",
         "id": f"{ORG}/cms-desynpuf-insurance-claims",
-        "revision": None,
+        "revision": "875da3aa1c4cf0220be7e3fe11e489ec7490e840",
         "schema": None,
         "role": "insurance_claims",
         "pipeline": True,
@@ -126,7 +126,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "mailroom-cuad-contracts-full": {
         "slug": "mailroom-cuad-contracts-full",
         "id": f"{ORG}/mailroom-cuad-contracts-full",
-        "revision": None,
+        "revision": "e69afe340b48133b7173d74b8ad220fcd28a1a6e",
         "schema": None,
         "role": "cuad_contracts",
         "pipeline": True,
@@ -141,7 +141,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "mailroom-cuad-contracts": {
         "slug": "mailroom-cuad-contracts",
         "id": f"{ORG}/mailroom-cuad-contracts",
-        "revision": None,
+        "revision": "efdd23644bd70305f44a524953bd60cdeba0a11f",
         "schema": None,
         "role": "cuad_contracts_sample",
         "pipeline": True,
@@ -156,7 +156,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "legalbench-full": {
         "slug": "legalbench-full",
         "id": f"{ORG}/legalbench-full",
-        "revision": None,
+        "revision": "1a13e8f63fb0448b2888d49d9a9d9cadffdeb287",
         "schema": None,
         "role": "legalbench_tasks",
         "pipeline": False,
