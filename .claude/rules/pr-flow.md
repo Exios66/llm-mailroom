@@ -53,11 +53,11 @@ judge the diff as a stranger would. Fix every BLOCKING and MAJOR finding, then r
 local gate. If the fixes were more than trivial, dispatch another fresh `pre-pr-reviewer`
 (at most two passes; then escalate to the user).
 
-## 4. Push and open a draft PR
+## 4. Push, and open a draft PR only if the user asked for one
 
 - Push the designated branch only (`git push -u origin <branch>`). Never force-push a
   shared branch.
-- Open the PR **as a draft**, filled in from `.github/pull_request_template.md`: problem,
+- If the user asked for a PR, open it **as a draft**, filled in from `.github/pull_request_template.md`: problem,
   change, evidence, what was not verified, review log, cross-repo impact.
 - Mark it ready only when every evidence item is present and the full suite is green on
   the pushed commit.
