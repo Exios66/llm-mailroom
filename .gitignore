@@ -33,6 +33,7 @@ test-results/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
 *.log
 .ipynb_checkpoints/
