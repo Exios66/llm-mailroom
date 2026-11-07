@@ -136,7 +136,7 @@ def test_runtime_defaults_pin_the_new_versions():
     from agents.sorter import SorterAgent
 
     sorter_params = inspect.signature(SorterAgent.__init__).parameters
-    assert sorter_params["prompt_version"].default == "sorter_condensed_v1"
+    assert sorter_params["prompt_version"].default == "sorter_condensed_v5"
     contracts_params = inspect.signature(ContractsSpecialist.__init__).parameters
     assert contracts_params["prompt_version"].default == "contracts_specialist"
 

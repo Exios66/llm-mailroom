@@ -110,7 +110,7 @@ def test_production_templates_are_frozen_v1_specialists_and_condensed_sorter():
     for agent in SPECIALIST_AGENTS:
         assert templates[agent] == load_specialist_v1(agent)
     versions = _bound_prompt_versions()
-    assert versions["sorter"] == "sorter_condensed_v1"
+    assert versions["sorter"] == "sorter_condensed_v5"
     for agent in SPECIALIST_AGENTS:
         assert versions[agent] == "frozen_v1"
 
@@ -131,7 +131,7 @@ def test_runtime_defaults_pin_frozen_v1_and_condensed_sorter():
     from agents.sorter import SorterAgent
 
     assert inspect.signature(SorterAgent.__init__).parameters["prompt_version"].default == (
-        "sorter_condensed_v1"
+        "sorter_condensed_v5"
     )
     assert inspect.signature(ContractsSpecialist.__init__).parameters[
         "prompt_version"
