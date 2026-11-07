@@ -35,6 +35,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "jellyfish>=1.0",
     "python-dateutil>=2.8",
+    "markdown-it-py>=3.0,<5",  # deterministic intake Markdown-to-text parsing
     # Local, cost-free OpenTelemetry tracing (default fallback in
     # `observability/tracing.py`; aligned with llm-entity-extraction).
     # OpenInference instruments the OpenAI SDK for the Phoenix backend; the
