@@ -6,7 +6,7 @@ outpatient, Certificates of Designation as rights_instrument, charter amendments
 certificate_of_formation, the correspondence marker precedence ignored). V15 (V14 +
 SORTER_V15_CLASS_BOUNDARIES + SORTER_V15_SUBCLASS_RULES) fixed those, and its subclass
 catalog is the dojo sorter guide, but the condensed lineage beat it on the prime-sample
-promotion compare (class fixed-broken 96 vs 80, subclass 135 vs 126), so production is
+promotion compare (class fixed-broken 108 vs 100, subclass 135 vs 126), so production is
 SORTER_PROMPT_CONDENSED with the same guide catalog; V15 stays frozen as the reference
 and no numeric version after V15 may drop its guard clauses. Changing V15's bytes,
 pinning production to V14, shipping a newer numeric version without the guards, a
@@ -145,3 +145,34 @@ def test_v15_subclass_rules_name_only_catalog_keys():
         for key in keys:
             assert key in valid, (kind, key)
             assert key in SORTER_V15_SUBCLASS_RULES, key
+
+
+def _managed(monkeypatch, served, prompt_version="sorter_condensed_v1"):
+    import agents.sorter as sorter_mod
+
+    handle = object()
+    monkeypatch.setattr(sorter_mod, "get_managed_prompt", lambda name, default: (served, handle))
+    agent = sorter_mod.SorterAgent.__new__(sorter_mod.SorterAgent)
+    agent.prompt_version = prompt_version
+    agent.agent_name = "sorter"
+    return agent.system_prompt(), agent._langfuse_prompt, handle
+
+
+def test_managed_prompt_without_the_condensed_guards_is_refused_for_the_production_pin(monkeypatch):
+    """A stale Langfuse mailroom-sorter (V14, or any text without the condensed boundaries) never
+    replaces the production condensed pin; the pinned text is served instead."""
+    from langchain_agents.prompts import SORTER_CONDENSED_GUARDS
+
+    assert all(g in SORTER_PROMPT_CONDENSED for g in SORTER_CONDENSED_GUARDS)
+    for served in (SORTER_PROMPT_V14, "Classify the document.",
+                   SORTER_PROMPT_CONDENSED.replace(SORTER_CONDENSED_GUARDS[-1], "")):
+        text, handle, _ = _managed(monkeypatch, served)
+        assert all(g in text for g in SORTER_CONDENSED_GUARDS)
+        assert handle is None
+
+
+def test_managed_prompt_that_keeps_the_condensed_guards_is_served(monkeypatch):
+    edited = SORTER_PROMPT_CONDENSED + "\nOne more managed note."
+    text, handle, sent = _managed(monkeypatch, edited)
+    assert "One more managed note." in text
+    assert handle is sent
