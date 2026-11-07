@@ -1,7 +1,10 @@
 # Pull requests
 
-Keep PRs centered on one concrete behavior change. Use the repository PR template;
-replace its hints with evidence. Describe the failure, proposed behavior and methods
+Keep PRs centered on one concrete behavior change. For pipeline changes, select
+the [pipeline PR template](PULL_REQUEST_TEMPLATE/pipeline.md) (add
+`?template=pipeline.md` to the GitHub new-PR URL). This named template coexists
+with the repository's default template and agent evidence workflow.
+Replace its hints with evidence. Describe the failure, proposed behavior and methods
 concisely enough that someone outside the conversation can review the change.
 
 Name every affected node and downstream consumer in the blast radius. Include
