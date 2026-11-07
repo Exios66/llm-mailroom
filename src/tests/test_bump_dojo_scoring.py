@@ -331,6 +331,8 @@ def test_main_never_downgrades_an_interim_sha_pin(monkeypatch, capsys):
     monkeypatch.setattr(B, "current_pin", lambda root=B.REPO_ROOT: SHA)
     monkeypatch.setattr(B, "release_exists", lambda tag, repo=B.DOJO_REPO: True)
     monkeypatch.setattr(B, "tag_contains_commit", lambda sha, tag, repo=B.DOJO_REPO: False)
+    # A release other than the pin; unstubbed, this asks the live GitHub API.
+    monkeypatch.setattr(B, "release_commit", lambda tag, repo=B.DOJO_REPO: "f" * 40)
     # The workflow's backstop (--check) must read "nothing to bump", not exit 2 ...
     assert B.main(["--check", "--tag", "v0.21.0"]) == 0
     # ... and an explicit --apply must refuse, writing nothing.
