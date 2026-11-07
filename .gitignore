@@ -61,3 +61,6 @@ graphify-out/
 
 # Claude Code local overrides
 .claude/settings.local.json
+
+# PR evidence captured locally (screenshots, recordings); published via the pr-evidence branch
+.evidence/
