@@ -133,10 +133,11 @@ def _bound_prompt_versions() -> dict[str, str]:
     agents pin an explicit lineage key.
     """
     return {
-        "sorter": "sorter_v15",
+        "sorter": "sorter_condensed_v1",
         "sorter_reviewer": "production",
         # Specialists: sandbox / eval-environment frozen v1. Entity-extraction
-        # contracts_specialist_v33 remains an eval pin only. Sorter is frozen v15.
+        # contracts_specialist_v33 remains an eval pin only. Sorter runs the
+        # condensed lineage; sorter_v15 stays frozen as a reference pin.
         "contracts_specialist": "frozen_v1",
         "merger_agreement_specialist": "frozen_v1",
         "corporate_records_specialist": "frozen_v1",
@@ -184,11 +185,11 @@ def prompt_templates() -> dict[str, str]:
     from llm.frozen_v1 import load_specialist_v1
 
     return {
-        # Sorter: best classify prompt this pipeline has (V12 CUAD-subtype
-        # lineage + mailroom doctrine). Specialists: frozen v1 stems from
+        # Sorter: the condensed lineage prompt (prime-sample compare beat the
+        # long-form V15). Specialists: frozen v1 stems from
         # the sandbox / eval-environment lineage — LangGraph extract nodes
         # and Langfuse `mailroom-<agent>` production share these bytes.
-        "sorter": _langchain_prompt("sorter_v15"),
+        "sorter": _langchain_prompt("sorter_condensed_v1"),
         "sorter_reviewer": sorter_reviewer.REVIEWER_SYSTEM_PROMPT,
         "contracts_specialist": load_specialist_v1("contracts_specialist"),
         "merger_agreement_specialist": load_specialist_v1("merger_agreement_specialist"),

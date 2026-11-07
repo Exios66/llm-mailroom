@@ -1,13 +1,16 @@
-"""Sorter prompt V15 is frozen; no later version may drop its class boundaries or subclass rules.
+"""Sorter prompt V15 is frozen; production is the condensed lineage.
 
 V14 put 89 indentures / rights instruments under contract and 30 mailbox fragments under
 unknown on the mailroom-dataset train split, and got 664 subclasses wrong (CMS carrier as
 outpatient, Certificates of Designation as rights_instrument, charter amendments as
 certificate_of_formation, the correspondence marker precedence ignored). V15 (V14 +
-SORTER_V15_CLASS_BOUNDARIES + SORTER_V15_SUBCLASS_RULES) is the production pin, and its
-subclass catalog is the dojo sorter guide. Changing V15's bytes, pinning production back to
-V14, shipping a newer version without the guard clauses, or a catalog that drops the guide
-fails here.
+SORTER_V15_CLASS_BOUNDARIES + SORTER_V15_SUBCLASS_RULES) fixed those, and its subclass
+catalog is the dojo sorter guide, but the condensed lineage beat it on the prime-sample
+promotion compare (class fixed-broken 96 vs 80, subclass 135 vs 126), so production is
+SORTER_PROMPT_CONDENSED with the same guide catalog; V15 stays frozen as the reference
+and no numeric version after V15 may drop its guard clauses. Changing V15's bytes,
+pinning production to V14, shipping a newer numeric version without the guards, a
+condensed prompt that drops its essentials, or a catalog that drops the guide fails here.
 """
 
 import hashlib
@@ -16,6 +19,7 @@ import pytest
 
 from langchain_agents.prompts import (
     PROMPT_VERSIONS,
+    SORTER_PROMPT_CONDENSED,
     SORTER_PROMPT_V14,
     SORTER_PROMPT_V15,
     SORTER_V15_CLASS_BOUNDARIES,
@@ -25,6 +29,24 @@ from langchain_agents.prompts import (
 
 SORTER_V15_SHA256 = "78f95ca4b6b40bc35e91c7e8fcf4593a3ae3f7fb0989350a4a6ca49d83d50666"
 BROKEN_SHA256 = {"905abc696c1975d5fe29c3f773738ac6836993d8f8e4cef40d1f6c30012e164f"}  # V14
+
+#: The clauses the prompt tests require of the vendored v1 and every lineage version beyond it.
+CONDENSED_ESSENTIALS = (
+    "corporate_record, not contract",
+    "indenture",
+    "rights_instrument",
+    "All mailbox text is correspondence",
+    "unknown is only for",
+    "carrier, never outpatient",
+    "officer_certificate, never rights_instrument",
+    "charter_amendment",
+    "board_resolution",
+    "certificate_of_formation is not a label",
+    "FIRST form in catalog order",
+    "consulting",
+    "other only when no family fits",
+    "conversion section",
+)
 
 
 def _sha(text):
@@ -48,11 +70,14 @@ def test_v15_keeps_v14_as_prefix_and_adds_every_guard():
     assert any(g in SORTER_V15_SUBCLASS_RULES for g in SORTER_V15_GUARDS)
 
 
-def test_production_sorter_is_never_the_broken_variant():
+def test_production_sorter_is_the_condensed_lineage():
+    """Production is the condensed prompt; it keeps the lineage's essentials."""
     production = PROMPT_VERSIONS["sorter"]
+    assert production is SORTER_PROMPT_CONDENSED
+    assert PROMPT_VERSIONS["sorter_condensed_v1"] is SORTER_PROMPT_CONDENSED
     assert _sha(production) not in BROKEN_SHA256
-    missing = [g for g in SORTER_V15_GUARDS if g not in production]
-    assert not missing, f"production sorter dropped the V15 class boundaries: {missing}"
+    missing = [g for g in CONDENSED_ESSENTIALS if g not in production]
+    assert not missing, f"production sorter dropped the condensed lineage's essentials: {missing}"
 
 
 @pytest.mark.parametrize("key", sorted(k for k in PROMPT_VERSIONS if (_version(k) or 0) >= 15))
@@ -61,14 +86,19 @@ def test_every_version_after_v15_keeps_the_guards(key):
     assert not missing, f"{key} regresses past the frozen V15: missing {missing}"
 
 
-def test_pins_point_at_v15():
+def test_pins_point_at_the_condensed_lineage():
     import inspect
 
     from agents.sorter import SorterAgent
     from llm.prompts import _bound_prompt_versions
 
-    assert inspect.signature(SorterAgent.__init__).parameters["prompt_version"].default == "sorter_v15"
-    assert _bound_prompt_versions()["sorter"] == "sorter_v15"
+    assert inspect.signature(SorterAgent.__init__).parameters["prompt_version"].default == "sorter_condensed_v1"
+    assert _bound_prompt_versions()["sorter"] == "sorter_condensed_v1"
+
+
+def test_condensed_is_a_fraction_of_v15():
+    """The ~1k-token production prompt is a fraction of the frozen 25k-char reference."""
+    assert len(SORTER_PROMPT_CONDENSED) * 4 < len(SORTER_PROMPT_V15)
 
 
 def test_managed_prompt_without_guards_is_refused(monkeypatch):
