@@ -369,13 +369,10 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
         records: list[AuditLogRecord] = []
         for chunk in _doc_id_chunks(doc_ids):
             result = await session.execute(
-                select(AuditLogRecord)
-                .where(AuditLogRecord.doc_id.in_(chunk))
-                .order_by(AuditLogRecord.doc_id, AuditLogRecord.seq, AuditLogRecord.timestamp)
+                select(AuditLogRecord).where(AuditLogRecord.doc_id.in_(chunk))
             )
             records.extend(result.scalars().all())
-        # Each doc sits in one chunk, so a stable sort keeps its seq, timestamp order.
-        records.sort(key=lambda rec: rec.doc_id)
+        records.sort(key=lambda rec: (rec.doc_id, rec.seq, rec.timestamp))
         for rec in records:
             rows.append(
                 {
