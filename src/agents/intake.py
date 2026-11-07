@@ -239,10 +239,13 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
     window's tail (``overlap_chars``, paragraph-aligned) so content crossing a
     cut is visible on both sides — the caller's merge dedupes.
 
-    Returns ``[(window, base_offset)]`` where ``base_offset`` is the window's
-    start position in ``text`` (the overlap prefix belongs to the previous
-    window and is NOT counted toward ``base_offset``; it is re-sent for
-    context only). Mirrors the extraction chunker's overlap guarantee.
+    Returns ``[(window, window_start)]`` where ``window_start`` is the
+    window's first character's position in ``text``. A window after the
+    first BEGINS with its overlap tail, so its start position is inside the
+    previous chunk's span — document-absolute offsets reported relative to
+    the full window text (tail included) translate by ``window_start``
+    (#199: the tail is part of the window text the model reads; the old
+    per-chunk base made every window ≥2 shift its section offsets).
     """
     if not text:
         return []
@@ -284,10 +287,15 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
     if len(chunks) > 1 and overlap_chars > 0:
         overlapped: list[tuple[str, int]] = [(chunks[0], bases[0])]
         for i in range(1, len(chunks)):
-            tail = chunks[i - 1][-overlap_chars:]
-            if "\n\n" in tail:
-                tail = tail[tail.find("\n\n") + 2:]
-            overlapped.append((f"{tail}\n\n{chunks[i]}", bases[i]))
+            raw_tail = chunks[i - 1][-overlap_chars:]
+            trim = 0
+            if "\n\n" in raw_tail:
+                trim = raw_tail.find("\n\n") + 2
+                tail = raw_tail[trim:]
+            else:
+                tail = raw_tail
+            tail_start = bases[i - 1] + len(chunks[i - 1]) - len(raw_tail) + trim
+            overlapped.append((f"{tail}\n\n{chunks[i]}", tail_start))
         return overlapped
     return list(zip(chunks, bases))
 

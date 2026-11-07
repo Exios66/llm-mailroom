@@ -240,32 +240,40 @@ def ensure_score_configs() -> list[str]:
                 if getattr(c, "id", None):
                     _config_ids[c.name] = c.id
         except Exception:
-            existing = []
-        created = list(existing)
+            # Do NOT fall through to create-all: duplicates would be rejected
+            # and a partial cache would stick for the process lifetime (#201).
+            logger.warning("score_config_fetch_failed")
+            return []
         for spec in SCORE_CONFIGS:
-            wire_name = langfuse_score_name(spec["name"])
-            if spec["name"] in existing or wire_name in existing:
-                continue
-            kwargs = {"name": wire_name, "data_type": spec["data_type"]}
-            if spec.get("min_value") is not None:
-                kwargs["min_value"] = spec["min_value"]
-            if spec.get("max_value") is not None:
-                kwargs["max_value"] = spec["max_value"]
-            if spec.get("categories"):
-                from langfuse.api.commons.types.config_category import ConfigCategory
+            try:
+                wire_name = langfuse_score_name(spec["name"])
+                if spec["name"] in existing or wire_name in existing:
+                    _configs_ensured.add(spec["name"])
+                    continue
+                kwargs = {"name": wire_name, "data_type": spec["data_type"]}
+                if spec.get("min_value") is not None:
+                    kwargs["min_value"] = spec["min_value"]
+                if spec.get("max_value") is not None:
+                    kwargs["max_value"] = spec["max_value"]
+                if spec.get("categories"):
+                    from langfuse.api.commons.types.config_category import ConfigCategory
 
-                kwargs["categories"] = [
-                    ConfigCategory(value=c["value"], label=c["label"]) for c in spec["categories"]
-                ]
-            made = client.api.score_configs.create(**kwargs)
-            if getattr(made, "id", None):
-                _config_ids[wire_name] = made.id
-            created.append(wire_name)
-            logger.info("score_config_created", name=wire_name, data_type=spec["data_type"])
+                    kwargs["categories"] = [
+                        ConfigCategory(value=c["value"], label=c["label"])
+                        for c in spec["categories"]
+                    ]
+                made = client.api.score_configs.create(**kwargs)
+                if getattr(made, "id", None):
+                    _config_ids[wire_name] = made.id
+                # Cache per-spec success only: a mid-loop failure must not
+                # cache the specs after it (#201).
+                _configs_ensured.add(spec["name"])
+                logger.info("score_config_created", name=wire_name, data_type=spec["data_type"])
+            except Exception as exc:
+                logger.warning("score_config_create_failed", name=spec["name"], detail=str(exc)[:200])
     except Exception:
         logger.warning("score_config_creation_failed", exc_info=True)
-    _configs_ensured.update(created)
-    return created
+    return list(_configs_ensured)
 
 
 def warmup_score_configs(blocking: bool = False) -> None:

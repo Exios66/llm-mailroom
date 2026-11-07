@@ -363,3 +363,47 @@ def test_ensure_score_configs_records_ids(monkeypatch):
     assert scores._config_ids["class_correct"] == "cfg-1"
     assert scores._config_ids["stage_correct"] == "new-stage_correct"
     assert "class_correct" not in created
+
+
+def test_ensure_score_configs_does_not_cache_after_failure(monkeypatch):
+    """#201: a mid-loop create failure must not cache the specs after it."""
+    from types import SimpleNamespace as NS
+    from observability import scores
+
+    attempts = []
+
+    class Configs:
+        def get(self, limit=100):
+            return NS(data=[])
+
+        def create(self, **kw):
+            attempts.append(kw["name"])
+            if len(attempts) == 2:
+                raise RuntimeError("boom")
+            return NS(id="new-" + kw["name"])
+
+    client = NS(api=NS(score_configs=Configs()))
+    monkeypatch.setattr(scores, "_client", lambda: client)
+    monkeypatch.setattr(scores, "_configs_ensured", set())
+    monkeypatch.setattr(scores, "_config_ids", {})
+    returned = scores.ensure_score_configs()
+    # First spec cached, the failed one NOT cached, but the loop moved on and
+    # created the specs after the failure.
+    first = scores.langfuse_score_name(scores.SCORE_CONFIGS[0]["name"])
+    assert first in returned
+    failed = scores.langfuse_score_name(scores.SCORE_CONFIGS[1]["name"])
+    assert failed not in returned
+    assert len(attempts) == len(scores.SCORE_CONFIGS)
+
+
+def test_scoring_wiring_import_sites_present():
+    """#192 tripwire: every field-scoring entrypoint must import
+    observability.scoring_wiring for its side effect, or field scores /
+    judge gating run on dojo package defaults instead of the calibrated
+    taxonomy (the whole reason the wiring module exists)."""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parent.parent
+    for rel in ("graph/build_graph.py", "scripts/run_pilot.py", "scripts/run_hf_pilot.py"):
+        text = (src / rel).read_text()
+        assert "import observability.scoring_wiring" in text, rel
