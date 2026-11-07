@@ -53,8 +53,9 @@ Install the exact pinned revision first:
 .venv/bin/python -m pytest src/tests -q          # about 5 minutes
 ```
 
-`test_wheel_runtime_catalog` shells out to `uv build` and needs network; if it is the
-only failure in an offline container, say so rather than calling the suite red.
+`test_wheel_runtime_catalog` runs `uv build --offline`, so uv's cache must already hold
+setuptools and wheel. If it is the only failure with an empty cache, report the nonzero
+pytest exit, the failing test and the empty-cache cause.
 
 ## 4. Commit
 
