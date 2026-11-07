@@ -52,7 +52,9 @@ PR descriptions. A claim without evidence is a guess; label it as one or drop it
   `![what it shows](https://github.com/Exios66/llm-mailroom/blob/pr-evidence/<feature-branch>/<file>.png?raw=true)`.
   That branch is never merged; pushing evidence files there is allowed (the one exception to
   "push the designated branch only"). If it does not exist yet, create it on first use from a
-  separate worktree: `git worktree add --detach "$tmp" && git -C "$tmp" switch --orphan pr-evidence`. If the push is
+  separate worktree: `tmp=$(mktemp -d) && git worktree add --detach "$tmp" && git -C "$tmp" switch --orphan pr-evidence`,
+  then copy the files to `"$tmp/<feature-branch>/"`, `git -C "$tmp" add . && git -C "$tmp" commit -m "evidence: <feature-branch>"`
+  and `git -C "$tmp" push -u origin pr-evidence`. If the push is
   refused (cloud sessions are often limited to one branch), send the files to the user
   and list each file and what it shows under "Visual evidence" in the PR, marked
   "attached by hand". Never describe a screenshot you did not take.

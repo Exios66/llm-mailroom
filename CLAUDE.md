@@ -98,8 +98,9 @@ lint or type cleanliness.
 
 - **No real LLM call ever runs in tests** (`src/tests/conftest.py` patches the client).
   **Never** run anything with `--real`, `sync_prompts`, `sync_dataset`, `sync_dashboards`,
-  `sync_evaluators` or `sync_hf_ground_truth --push` unless the user asks: they spend money
-  or write to hosted Langfuse / Hugging Face. Prefer `--mock` and `--check`.
+  `sync_evaluators` or `sync_hf_ground_truth --push`: they spend money
+  or write to hosted Langfuse / Hugging Face, and `.claude/settings.json` denies them, so when
+  the user wants one run, they run it. Prefer `--mock` and `--check`.
 - LLM access **only** via `get_llm(agent_name)` (`llm/client.py`). `agent_name` must be a key
   under `agents:` in `src/config/taxonomy.yaml`. No agent names a provider or model; all chat
   completions go through `llm/retry.py:retry_chat_completion`.
