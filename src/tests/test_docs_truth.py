@@ -229,21 +229,30 @@ def test_release_changelog_rollover_has_unique_ordered_entries(release_project):
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     releases = parse_changelog(text, unreleased_date="2026-10-07")
     titles = [release.title for release in releases]
-    assert titles[:3] == ["Unreleased", f"v{release_project['version']}", "v0.8.1"]
+    assert titles[:3] == ["Unreleased", f"v{release_project['version']}", "v0.9.2"]
     assert len(titles) == len(set(titles)), "duplicate changelog release headings"
     current = releases[1]
-    assert current.date == "2026-11-03"
-    assert current.tags == ("feature", "improvement", "fix")
-    assert current.page_rel == "2026/v0-9-1.md"
+    assert current.date == "2026-11-07"
+    assert current.tags == ("improvement", "fix")
+    assert current.page_rel == "2026/v0-9-3.md"
     # Allow future Unreleased work, but don't duplicate notes already shipped.
-    released_notes = set(re.findall(r"^- .+$", current.body, re.MULTILINE))
-    unreleased_notes = set(re.findall(r"^- .+$", releases[0].body, re.MULTILINE))
+    released_notes = set(re.findall(r"^\s*- .+$", current.body, re.MULTILINE))
+    unreleased_notes = set(re.findall(r"^\s*- .+$", releases[0].body, re.MULTILINE))
     assert released_notes.isdisjoint(unreleased_notes)
-    assert re.findall(r"^### (.+)$", current.body, re.MULTILINE) == ["Added", "Changed", "Fixed", "Documentation"]
+    assert re.findall(r"^### (.+)$", current.body, re.MULTILINE) == [
+        "Changed", "Security", "Fixed",
+    ]
+    # The out-of-band v0.9.2 tag keeps its own section: v0.9.3 does not repeat its notes.
+    v092 = releases[2]
+    assert v092.date == "2026-11-06"
+    assert released_notes.isdisjoint(re.findall(r"^\s*- .+$", v092.body, re.MULTILINE))
+    assert unreleased_notes.isdisjoint(re.findall(r"^\s*- .+$", v092.body, re.MULTILINE))
 
 
 @pytest.mark.parametrize("label,comparison", [
-    ("Unreleased", "v0.9.1...HEAD"),
+    ("Unreleased", "v0.9.3...HEAD"),
+    ("v0.9.3", "v0.9.2...v0.9.3"),
+    ("v0.9.2", "v0.9.1...v0.9.2"),
     ("v0.9.1", "v0.8.1...v0.9.1"),
     ("v0.8.1", "v0.8.0...v0.8.1"),
     ("v0.8.0", "v0.7.1...v0.8.0"),
@@ -273,7 +282,7 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     feed = (_DOCS / "changelog" / "README.md").read_text(encoding="utf-8")
     cards = re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
     titles = [re.search(r"^## (.+)$", body, re.MULTILINE).group(1) for _, body in cards]
-    assert titles[:4] == ["Unreleased", "v0.9.1", "v0.8.1", "v0.8.0"]
+    assert titles[:4] == ["Unreleased", "v0.9.3", "v0.9.2", "v0.9.1"]
     assert titles.count("v0.8.0") == 1
     attrs, body = next((attrs, body) for attrs, body in cards if "## v0.8.0\n" in body)
     assert 'date="2026-10-07"' in attrs
@@ -285,8 +294,34 @@ def test_release_gitbook_page_and_feed_preserve_all_notes():
     assert released_notes.isdisjoint(unreleased_notes)
 
     listed = _summary_targets(_DOCS / "changelog" / "SUMMARY.md")
-    assert listed[:5] == ["README.md", "unreleased.md", "2026/v0-9-1.md", "2026/v0-8-1.md", "2026/v0-8-0.md"]
+    assert listed[:5] == ["README.md", "unreleased.md", "2026/v0-9-3.md", "2026/v0-9-2.md", "2026/v0-9-1.md"]
     assert listed.count("2026/v0-8-0.md") == 1
+
+
+@pytest.mark.parametrize("version,date,tags", [
+    ("v0.9.3", "2026-11-07", ["improvement", "fix"]),
+    ("v0.9.2", "2026-11-06", ["feature", "improvement", "fix"]),
+])
+def test_latest_release_page_and_feed_carry_the_whole_release(version, date, tags):
+    from scripts.sync_gitbook_changelog import parse_changelog
+
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    release = next(r for r in parse_changelog(text, unreleased_date="2026-10-07")
+                   if r.title == version)
+    assert re.search(r"^- .+$", release.body, re.MULTILINE)
+    page = (_DOCS / "changelog" / release.page_rel).read_text(encoding="utf-8")
+    _, frontmatter, content = page.split("---", 2)
+    assert yaml.safe_load(frontmatter)["tags"] == tags
+    assert f"Released {date}." in content
+    # The page demotes section headings one level; the feed card keeps them.
+    assert re.sub(r"^### ", "## ", release.body, flags=re.MULTILINE).strip() in content
+    feed = (_DOCS / "changelog" / "README.md").read_text(encoding="utf-8")
+    attrs, card = next((attrs, body) for attrs, body in
+                       re.findall(r"{% update ([^%]+)%}\n(.*?){% endupdate %}", feed, re.DOTALL)
+                       if f"## {version}\n" in body)
+    assert f'date="{date}"' in attrs
+    assert f'tags="{",".join(tags)}"' in attrs
+    assert release.body.strip() in card
 
 
 def test_unreleased_page_sections_follow_title_without_changing_feed():
