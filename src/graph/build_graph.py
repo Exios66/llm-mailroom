@@ -59,7 +59,8 @@ logger = structlog.get_logger(__name__)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 PDF_EXTENSIONS = {".pdf"}
-SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | PDF_EXTENSIONS | {".txt", ".md", ".docx"}
+# The real intake gate is bins.accepted_extensions(); this aggregate was dead
+# and is gone (#200).
 
 
 def _build_checkpointer():
@@ -576,8 +577,11 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
     else:
-        inbox = inbox_dir()
-        files = list(inbox.glob("*"))
+        # Route the fallback through the same extension gate as the watcher
+        # (#200): a leftover <file>.pdf.meta sidecar is not a document.
+        from pipeline.bins import list_inbox_files
+
+        files = list_inbox_files()
         if not files:
             raise RuntimeError("No files in inbox")
         file_path = files[0]

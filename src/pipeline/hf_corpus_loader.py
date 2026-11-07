@@ -169,7 +169,20 @@ def parquet_urls(
     out: dict[str, str] = {}
     for entry in listing.get("parquet_files") or []:
         if entry.get("split") == split and entry.get("url"):
-            out[str(entry.get("config"))] = str(entry["url"])
+            config = str(entry.get("config"))
+            if config in out:
+                # A sharded config would lose rows here; keep the first shard
+                # visible and say so instead of silently scoring partial data
+                # (#195).
+                _log.warning(
+                    "sharded config %r in %s: /parquet ladder does not merge "
+                    "shards — the ladder scores the first shard only; switch "
+                    "/rows pagination for this corpus",
+                    config,
+                    repo_id,
+                )
+                continue
+            out[config] = str(entry["url"])
     if not out:
         raise RuntimeError(f"/parquet listing empty for {repo_id} split={split}")
     return out
@@ -336,6 +349,20 @@ def load_corpus(
                 "verified": int(verified.sum()),
                 "mismatched": int(((~verified) & (texts.str.len() > 0)).sum()),
             }
+            if provenance["integrity"]["mismatched"]:
+                # A decode-corrupted row must never flow into GT-joined scoring
+                # silently (#195): say it loudly, name the count.
+                _log.warning(
+                    "content_sha256 mismatch for %s/%s[%s@%s]: %d of %d rows "
+                    "failed the integrity check — scores computed on mutated "
+                    "text are suspect; re-pin or re-download",
+                    repo_id,
+                    GT_CONFIG,
+                    split,
+                    revision,
+                    provenance["integrity"]["mismatched"],
+                    provenance["integrity"]["checked"],
+                )
     provenance["num_rows"] = int(len(merged))
     return merged, provenance
 
