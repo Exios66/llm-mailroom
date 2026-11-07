@@ -29,8 +29,16 @@ ANTI_ANCHOR = "never default to a fixed high value (e.g. 0.90 or 0.95)"
 ANTI_ANCHOR_VARIANT = (
     "high score (0.90+) is acceptable only when the reasoning cites the concrete evidence"
 )
+# The adopted condensed sorter lineage trades the general anti-anchor for token
+# budget and keeps the task-specific clamp (never 0.90+ when the boundary says
+# so); the former is a tracked follow-up mutation (SAND board), the clamp is
+# what the condensed prompt writes today.
+ANTI_ANCHOR_CONDENSED = "never 0.90+ for contract when the title names an indenture"
 # Frozen v1 specialist stems (sandbox / eval-environment).
 ANTI_ANCHOR_FROZEN_V1 = "never default to 0.90 / 0.95"
+# The condensed lineage's evidence sentence ("derive it from this document's
+# evidence").
+EVIDENCE_CONDENSED = "derive it from this document's evidence"
 EVIDENCE_BASE = "derived from the evidence"
 # ...which sorter_v5 words as "Derive the confidence from the evidence in THIS
 # document".
@@ -47,11 +55,16 @@ def test_confidence_calibration_rule_present(agent_name):
     prompt = _normalize(prompt_templates()[agent_name])
     assert any(
         anchor in prompt
-        for anchor in (ANTI_ANCHOR, ANTI_ANCHOR_VARIANT, ANTI_ANCHOR_FROZEN_V1)
+        for anchor in (
+            ANTI_ANCHOR,
+            ANTI_ANCHOR_VARIANT,
+            ANTI_ANCHOR_FROZEN_V1,
+            ANTI_ANCHOR_CONDENSED,
+        )
     ), f"{agent_name} prompt must forbid anchoring confidence on a fixed high value"
     assert any(
         evidence in prompt
-        for evidence in (EVIDENCE_BASE, EVIDENCE_VARIANT, EVIDENCE_FROZEN_V1)
+        for evidence in (EVIDENCE_BASE, EVIDENCE_VARIANT, EVIDENCE_FROZEN_V1, EVIDENCE_CONDENSED)
     ), f"{agent_name} prompt must require evidence-derived confidence"
 
 
