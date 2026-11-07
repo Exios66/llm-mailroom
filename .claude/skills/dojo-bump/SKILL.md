@@ -50,7 +50,7 @@ Install the exact pinned revision first:
 .venv/bin/pip install --no-deps --force-reinstall \
   "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@<sha-from-pyproject>"
 .venv/bin/pip list | grep -i dojo
-.venv/bin/python -m pytest src/tests -q          # about 5 minutes
+.venv/bin/python -m pytest src/tests -q          # 10+ minutes
 ```
 
 `test_wheel_runtime_catalog` runs `uv build --offline`, so uv's cache must already hold

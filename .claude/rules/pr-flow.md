@@ -55,12 +55,12 @@ local gate. If the fixes were more than trivial, dispatch another fresh `pre-pr-
 
 ## 4. Push, and open a draft PR only if the user asked for one
 
-- Push the designated branch only (`git push -u origin <branch>`). Never force-push a
-  shared branch.
+- Push the designated branch only (`git push -u origin <branch>`), plus evidence files to
+  `pr-evidence` (`.claude/rules/evidence-contract.md`). Never force-push.
 - If the user asked for a PR, open it **as a draft**, filled in from `.github/pull_request_template.md`: problem,
   change, evidence, what was not verified, review log, cross-repo impact.
-- Mark it ready only when every evidence item is present and the full suite is green on
-  the pushed commit.
+- Mark it ready only when every evidence item is present and the full suite passed locally on
+  the pushed commit (CI may run a scoped subset; see `CLAUDE.md`).
 
 ## 5. Handling bot and human review
 

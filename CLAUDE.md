@@ -4,9 +4,9 @@ LangGraph pipeline that processes legal documents through specialist LLM agents
 (intake → classify → extract → judge/arbiter → report → archive), with filesystem bins,
 a SQLite catalog and hash-chained audit log, a FastAPI producer on :8000, and
 Langfuse / Braintrust / Phoenix tracing. Python 3.11+. This repo **owns pipeline
-behavior**: the 13-node graph, agents, prompts, storage and API.
+behavior**: the 14-node graph, agents, prompts, storage and API.
 
-`AGENTS.md` is the long-form manual (~55 KB) and is **not** auto-loaded. Read the matching
+`AGENTS.md` is the long-form manual (~60 KB) and is **not** auto-loaded. Read the matching
 section on demand ("Architecture", "Config gotchas", "Testing quirks", "Releases",
 "Source ownership") instead of guessing.
 
@@ -36,7 +36,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 
 | Path | What lives there |
 |:---|:---|
-| `src/graph/` | `build_graph.py` (13 nodes, `run_pipeline`, tracing wrappers), `routing.py` (conditional edges) |
+| `src/graph/` | `build_graph.py` (14 nodes, including `classification_arbiter`; `run_pipeline`, tracing wrappers), `routing.py` (conditional edges) |
 | `src/agents/` | LLM agents (`BaseAgent` subclasses: sorter, specialists, judge, boss, relations, triage) and procedural ones (reporter, archivist, pdf_transcriber, image_extractor, intake clerk) |
 | `src/llm/` | `client.py:get_llm`, `providers.py`, `retry.py`, `prompts.py` (Langfuse-managed prompts + fallbacks), `vision.py` |
 | `src/pipeline/` | watcher, bins, guards, Gmail intake, relations, ops monitor, pager, env/logging/config |
@@ -59,7 +59,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # use PIP, never uv
 .venv/bin/python -m pytest src/tests -q                       # full suite, no network (10+ min)
-PYTHONPATH=src .venv/bin/python src/scripts/affected_tests.py --run -- -q   # only tests the diff can affect
+PYTHONPATH=src .venv/bin/python src/scripts/affected_tests.py --run -- -q   # only tests the diff can affect (exit 5 = none selected)
 .venv/bin/python -m pytest src/tests -k sorter -q             # one area
 PYTHONPATH=src .venv/bin/python src/scripts/run_pilot.py --mock   # whole pipeline, fake LLM
 PYTHONPATH=src .venv/bin/python -m api.main                   # API on :8000 (needs .env)
@@ -75,13 +75,15 @@ PYTHONPATH=src .venv/bin/python -m api.main                   # API on :8000 (ne
 ## Verification gates
 
 Run the ones that match the change, on the final state, and keep the output for the PR
-(`.claude/rules/evidence-contract.md`). CI (`.circleci/config.yml`, job `test`) runs the
-full suite and the experiment gate.
+(`.claude/rules/evidence-contract.md`). CI (`.circleci/config.yml`, job `test`) runs `src/scripts/ci_tests.py`, which plans a smoke,
+affected or full run for each PR (full on `release/*` branches, an explicit `full_suite`
+request, the weekly backstop, or when it cannot plan). A green PR check is therefore not a full-suite run:
+the full-suite evidence is your local run on the final commit.
 
 | Change touches | Run |
 |:---|:---|
 | Any Python | `.venv/bin/python -m compileall -q src`, then `affected_tests.py --run`, then the full suite before the PR is ready |
-| Graph, agents, routing, prompts | + `run_pilot.py --mock` (needs `docs/examples/samples/manifest.csv`) and `MAILROOM_BASE_DIR="$(mktemp -d)"` with `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
+| Graph, agents, routing, prompts | + `run_pilot.py --mock` (needs `docs/examples/samples/manifest.csv`, which only the monorepo has; in a standalone checkout say it was not run) and `MAILROOM_BASE_DIR="$(mktemp -d)"` with `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
 | Nodes, spans, agents, classes, score configs, thresholds | + `PYTHONPATH=src .venv/bin/python src/scripts/export_contract.py --check` (`--write` to regenerate) |
 | `CHANGELOG.md` | + `PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check` |
 | Docs, README, prose with paths/versions | + `pytest src/tests/test_docs_truth.py -q` |

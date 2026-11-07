@@ -9,7 +9,8 @@ PR descriptions. A claim without evidence is a guess; label it as one or drop it
 1. **Evidence is output, not prose.** Quote the command, its exit code and the lines that
    prove the claim (the pytest summary line, the gate verdict, the screenshot). "Should
    work", "looks right" and "I believe" are not evidence.
-2. **Evidence comes from the final state.** Commit the last edit, then re-run the gates on a clean
+2. **Evidence comes from the final state.** Commit the last edit (local commits need no
+   request; pushing does), then re-run the gates on a clean
    tree (`git status --short` prints nothing). Name that commit
    (`git rev-parse --short HEAD`). Output from before a later change is stale.
 3. **Prove the original problem is solved, not just that nothing broke.** A green suite
@@ -49,7 +50,9 @@ PR descriptions. A claim without evidence is a guess; label it as one or drop it
   binaries to the feature branch. Push them to the orphan branch `pr-evidence`, under
   `<feature-branch>/`, and embed them with
   `![what it shows](https://github.com/Exios66/llm-mailroom/blob/pr-evidence/<feature-branch>/<file>.png?raw=true)`.
-  That branch is never merged; pushing evidence files there is allowed. If the push is
+  That branch is never merged; pushing evidence files there is allowed (the one exception to
+  "push the designated branch only"). If it does not exist yet, create it on first use from a
+  separate worktree: `git worktree add --detach "$tmp" && git -C "$tmp" switch --orphan pr-evidence`. If the push is
   refused (cloud sessions are often limited to one branch), send the files to the user
   and list each file and what it shows under "Visual evidence" in the PR, marked
   "attached by hand". Never describe a screenshot you did not take.
