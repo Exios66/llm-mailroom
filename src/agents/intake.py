@@ -51,10 +51,24 @@ from llm_dojo_scoring.intake import (
     INTAKE_PREP_STEPS,
     INTAKE_SPAN,
     INTAKE_SPAN_KEYS,
-    deterministic_normalize,
+    deterministic_normalize as _dojo_normalize,
     intake_span_output,
     looks_messy,
 )
+from pipeline.text_cleaning import plain_document_text
+
+
+def deterministic_normalize(text: str) -> tuple[str, dict]:
+    """Remove presentation markup, then run the canonical Dojo clerk.
+
+    Keep raw/cleaned counters relative to the actual incoming document, so
+    downstream gates and intake scoring see the complete preparation step.
+    """
+    text = text or ""
+    plain = plain_document_text(text)
+    cleaned, stats = _dojo_normalize(plain)
+    stats.update(raw_chars=len(text), cleaned_chars=len(cleaned), changed=cleaned != text)
+    return cleaned, stats
 
 __all__ = [
     "INTAKE_LIVE_METHOD",
