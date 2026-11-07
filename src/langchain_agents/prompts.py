@@ -638,6 +638,7 @@ SORTER_CONDENSED_GUARDS = (
     "Merger agreements (agreement and plan of merger) are merger_agreement, not contract.",
     "PHYSICIAN/SUPPLIER (Part B) is carrier, never outpatient",
     "officer_certificate, never rights_instrument",
+    "a board-adopted bylaw amendment is board_resolution",
     "certificate_of_formation is not a label",
     "give the FIRST form in catalog order whose marker appears",
     "other only when no family fits",

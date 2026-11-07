@@ -171,6 +171,21 @@ def test_managed_prompt_without_the_condensed_guards_is_refused_for_the_producti
         assert handle is None
 
 
+@pytest.mark.parametrize("rule", [
+    "a board-adopted bylaw amendment is board_resolution",
+    "officer_certificate, never rights_instrument",
+])
+def test_a_managed_prompt_missing_a_corporate_subclass_rule_is_refused(monkeypatch, rule):
+    """Each corporate hard-case rule of the condensed pin is guarded on its own: the user-message
+    catalog does not restate it, so a managed prompt that drops it must not be served."""
+    from langchain_agents.prompts import SORTER_CONDENSED_GUARDS
+
+    assert rule in SORTER_PROMPT_CONDENSED
+    text, handle, _ = _managed(monkeypatch, SORTER_PROMPT_CONDENSED.replace(rule, ""))
+    assert rule in text and handle is None
+    assert any(g in rule or rule in g for g in SORTER_CONDENSED_GUARDS)
+
+
 def test_managed_prompt_that_keeps_the_condensed_guards_is_served(monkeypatch):
     edited = SORTER_PROMPT_CONDENSED + "\nOne more managed note."
     text, handle, sent = _managed(monkeypatch, edited)
