@@ -6,6 +6,7 @@ import uuid
 import datetime
 import structlog
 from pathlib import Path
+from urllib.parse import urlsplit
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form, Request, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -78,9 +79,13 @@ _upload_timestamps: list[float] = []
 
 
 _FORWARDING_HEADERS = (
+    "cf-connecting-ip",
     "forwarded",
+    "true-client-ip",
+    "via",
     "x-forwarded-for",
     "x-forwarded-host",
+    "x-forwarded-port",
     "x-forwarded-proto",
     "x-real-ip",
 )
@@ -91,7 +96,19 @@ def _listener_is_loopback(server) -> bool:
     arrived on) is loopback. Unknown addresses and unix sockets are not."""
     if not server or server[1] is None:
         return False
-    host = str(server[0])
+    return _host_is_loopback(str(server[0]))
+
+
+def _url_names_loopback(url: str) -> bool:
+    """True when a URL's host is loopback. ``null`` and malformed URLs are not."""
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return False
+    return bool(host) and _host_is_loopback(host)
+
+
+def _host_is_loopback(host: str) -> bool:
     if host == "localhost":
         return True
     try:
@@ -114,9 +131,16 @@ def _require_token(request: Request) -> None:
     tokens = active_api_tokens()
     if not tokens:
         # A same-host reverse proxy also arrives on loopback; its forwarding
-        # headers show the request came from elsewhere.
-        proxied = any(h in request.headers for h in _FORWARDING_HEADERS)
-        if not proxied and _listener_is_loopback(request.scope.get("server")):
+        # headers show the request came from elsewhere. So does a public Host
+        # (proxy, tunnel, DNS rebinding) or another site's Origin (a browser
+        # page posting to localhost).
+        headers = request.headers
+        proxied = any(h in headers for h in _FORWARDING_HEADERS)
+        host, origin = headers.get("host"), headers.get("origin")
+        local_names = (host is None or _url_names_loopback(f"//{host}")) and (
+            origin is None or _url_names_loopback(origin)
+        )
+        if not proxied and local_names and _listener_is_loopback(request.scope.get("server")):
             return  # loopback-only dev without a token
         raise HTTPException(
             503,
