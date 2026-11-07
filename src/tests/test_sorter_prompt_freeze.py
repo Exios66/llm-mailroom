@@ -251,3 +251,12 @@ def test_the_rendered_catalog_agrees_with_the_production_bylaw_rule():
     assert board and bylaws
     assert all("bylaw" not in line.lower() for line in board), board
     assert any("amendment to the bylaws" in line for line in bylaws), bylaws
+
+
+def test_the_v1_pin_serves_its_own_managed_text(monkeypatch):
+    """The superseded-rule check never refuses the pin that still states the rule (v1)."""
+    from langchain_agents.prompts import SORTER_PROMPT_CONDENSED_V1
+
+    edited = SORTER_PROMPT_CONDENSED_V1 + "\nOne more managed note."
+    text, handle, sent = _managed(monkeypatch, edited, prompt_version="sorter_condensed_v1")
+    assert "One more managed note." in text and handle is sent
