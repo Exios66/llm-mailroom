@@ -120,6 +120,10 @@ def run_task(
 
     with trace_ctx:
         for i, row in enumerate(rows):
+            # A failed row must not re-append the previous row's usage
+            # (#197): start every row with an empty last-usage.
+            if hasattr(agent, "_last_usage"):
+                agent._last_usage = None
             expected = row.get("answer") or row.get("family") or ""
             obs_input = {
                 "task": task.id,
@@ -165,6 +169,9 @@ def run_task(
                         "error": str(exc)[:300],
                     }
                 )
+            # Usage capture only fires fresh calls; on a row that raised
+            # BEFORE any call, usage must stay empty, not repeat the previous
+            # row's tokens/cost (#197).
             usage = agent.usage() if hasattr(agent, "usage") else {}
             usages.append(usage)
             cost = usage.get("cost")
