@@ -76,7 +76,7 @@ Older copies, forks, earlier monorepo attempts and the repositories retired from
 
 ## Current versions
 
-Package versions and pins refreshed 2026-10-23 from each repository's README and pins; the Dojo release and consumer pin were updated 2026-11-04. Check the repository itself before relying on a number.
+Package versions and pins refreshed 2026-10-23 from each repository's README and pins; the Dojo release and consumer pin were updated 2026-11-04 and again 2026-11-07. The llm-mailroom row is moved by `release.py cut` on every release (v0.9.3, cut 2026-11-07). Check the repository itself before relying on a number.
 
 | Item | Version |
 | :--- | :--- |
