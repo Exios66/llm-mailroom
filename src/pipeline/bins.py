@@ -29,6 +29,36 @@ def get_base_dir() -> Path:
     return Path(os.environ.get("MAILROOM_BASE_DIR", "./data")).resolve()
 
 
+def find_claimed_file(original_filename: str) -> Path | None:
+    """The claimed copy of ``original_filename`` under processing/<worker>/.
+
+    The abort path may hold a STALE pre-claim path (intake claims the file
+    into a worker dir before the run completes; a crash in between leaves
+    the reported path missing — PR #202 review). Resolve the actual claimed
+    bytes by name; with same-named claims in several worker dirs the newest
+    wins (mtime), matching "the live claim is the most recent one"."""
+    return _claimed_file_scan(original_filename, processing_dir())
+
+
+def _claimed_file_scan(original_filename: str, proc_root: Path) -> Path | None:
+    if not original_filename:
+        return None
+    if not proc_root.exists():
+        return None
+    best: Path | None = None
+    best_mtime = -1.0
+    for worker_dir in proc_root.iterdir():
+        if not worker_dir.is_dir():
+            continue
+        candidate = worker_dir / _safe_bin_component(original_filename, "original_filename")
+        if not candidate.is_file():
+            continue
+        mtime = candidate.stat().st_mtime
+        if mtime > best_mtime:
+            best, best_mtime = candidate, mtime
+    return best
+
+
 def list_stale_processing_files(stale_minutes: int = 60) -> list[Path]:
     """Files stranded in processing/<worker_id>/ by a crashed process (L-1/A-18).
 
@@ -365,6 +395,36 @@ def _move_review_file_no_clobber(src: Path, dest: Path) -> None:
     src.unlink()
 
 
+def _no_clobber_move_to_dir(file_path: Path, dest_dir: Path, doc_id: str = "") -> Path:
+    """Resolve an unoccupied destination name, then publish via the atomic
+    link+unlink move.
+
+    ``os.link`` raising FileExistsError makes every step race-free: two
+    concurrent movers (or a re-failed same-name / same-doc_id file) can
+    never overwrite preserved bytes (PR #202 review on #194) — the old
+    code checked ``exists()`` *before* moving, which is not atomic, and the
+    doc-tagged fallback itself could overwrite."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    def _candidates():
+        stem, suffix = file_path.stem, file_path.suffix
+        yield dest_dir / file_path.name
+        if doc_id:
+            yield dest_dir / f"{stem}--{doc_id}{suffix}"
+        counter = 1
+        while True:
+            yield dest_dir / f"{stem}--{counter}{suffix}"
+            counter += 1
+
+    for dest in _candidates():
+        try:
+            _move_review_file_no_clobber(file_path, dest)
+            return dest
+        except FileExistsError:
+            continue
+    raise FileExistsError(f"no free destination for {file_path.name} in {dest_dir}")  # unreachable
+
+
 def park_for_review(file_path: Path, manifest) -> tuple[Path, bool]:
     """Move into the document-ID review path, replaying only identical bytes.
 
@@ -416,48 +476,16 @@ def move_to_review(file_path: Path, manifest) -> Path:
 
 
 def move_to_failed(file_path: Path, doc_id: str = "") -> Path:
-    """Move a file to the failed bin with the A-20 collision protection.
-
-    Same hazard as the archive bin: POSIX rename silently overwrites a
-    same-named target and a previously failed document's bytes (and its
-    manifest) would be destroyed."""
-    dest_dir = failed_dir()
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file_path.name
-    if dest.exists():
-        stem, suffix = file_path.stem, file_path.suffix
-        if doc_id:
-            dest = dest_dir / f"{stem}--{doc_id}{suffix}"
-        else:
-            counter = 1
-            while dest.exists():
-                dest = dest_dir / f"{stem}--{counter}{suffix}"
-                counter += 1
-    shutil.move(str(file_path), str(dest))
-    return dest
+    """Move a file to the failed bin with race-free collision resolution
+    (PR #202 review on #194 — an occupied target is never overwritten)."""
+    return _no_clobber_move_to_dir(file_path, failed_dir(), doc_id)
 
 
 def move_to_archive(file_path: Path, matter_id: str, doc_type: str, doc_id: str = "") -> Path:
-    """Move a file to the archive with a collision-safe name (audit A-20).
-
-    POSIX rename silently overwrites a same-named target — re-processing could
-    destroy a previously archived legal document. When a collision exists, the
-    incoming file gets a ``<stem>--<doc_id><suffix>`` name so nothing is ever
-    overwritten."""
-    dest_dir = archive_dir(matter_id, doc_type)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file_path.name
-    if dest.exists():
-        stem, suffix = file_path.stem, file_path.suffix
-        if doc_id:
-            dest = dest_dir / f"{stem}--{doc_id}{suffix}"
-        else:
-            counter = 1
-            while dest.exists():
-                dest = dest_dir / f"{stem}--{counter}{suffix}"
-                counter += 1
-    shutil.move(str(file_path), str(dest))
-    return dest
+    """Move a file to the archive with race-free collision resolution
+    (audit A-20; re-processing can never destroy a previously archived
+    legal document, and the doc-tagged fallback no longer clobbers)."""
+    return _no_clobber_move_to_dir(file_path, archive_dir(matter_id, doc_type), doc_id)
 
 
 def _save_manifest(manifest) -> Path:
