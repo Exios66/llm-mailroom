@@ -110,10 +110,11 @@ def load_local_pack_cases(doc_class: str | None = None) -> list[dict[str, Any]]:
 def load_manifest_cases(*, mock: bool, doc_class: str | None = None) -> list[dict[str, Any]]:
     import csv
 
-    from scripts.prepare_samples import is_real_sample
-
     if not MANIFEST.exists():
         return []
+    # Checkout-only import: `scripts` is not in the wheel, and neither is the manifest.
+    from scripts.prepare_samples import is_real_sample
+
     cases: list[dict[str, Any]] = []
     with MANIFEST.open() as fh:
         for row in csv.DictReader(fh):
