@@ -31,6 +31,8 @@ WAREHOUSE_SCHEMA_VERSION = "1"
 TERMINAL_STAGES = frozenset({"archived", "failed"})
 _MANIFEST_NAME = "manifest.json"
 _EXPORT_LOCK = threading.RLock()
+# Ids per IN clause, well below driver bind limits (about 32k on SQLite and asyncpg).
+_IN_CLAUSE_CHUNK_SIZE = 1000
 
 
 @contextmanager
@@ -305,6 +307,15 @@ def _write_parquet_rows_unlocked(path: Path, rows: list[dict[str, Any]], *, merg
     return len(merged)
 
 
+def _doc_id_chunks(doc_ids: list[str]) -> list[list[str]]:
+    """Split ids for IN clauses; dedupe so no row comes back from two chunks."""
+    unique = list(dict.fromkeys(doc_ids))
+    return [
+        unique[start : start + _IN_CLAUSE_CHUNK_SIZE]
+        for start in range(0, len(unique), _IN_CLAUSE_CHUNK_SIZE)
+    ]
+
+
 async def fetch_terminal_documents(
     *,
     doc_ids: list[str] | None = None,
@@ -318,13 +329,16 @@ async def fetch_terminal_documents(
     ensure_schema()
     async with async_session() as session:
         if doc_ids:
-            result = await session.execute(
-                select(DocumentRecord).where(
-                    DocumentRecord.doc_id.in_(doc_ids),
-                    DocumentRecord.stage.in_(tuple(TERMINAL_STAGES)),
+            records: list = []
+            for chunk in _doc_id_chunks(doc_ids):
+                result = await session.execute(
+                    select(DocumentRecord).where(
+                        DocumentRecord.doc_id.in_(chunk),
+                        DocumentRecord.stage.in_(tuple(TERMINAL_STAGES)),
+                    )
                 )
-            )
-            return list(result.scalars().all())
+                records.extend(result.scalars().all())
+            return records
         query = select(DocumentRecord).where(
             DocumentRecord.stage.in_(tuple(TERMINAL_STAGES))
         )
@@ -351,12 +365,17 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
             rows.extend({**row, "doc_id": doc_id} for row in await get_audit_chain(doc_id))
         return rows
     async with async_session() as session:
-        result = await session.execute(
-            select(AuditLogRecord)
-            .where(AuditLogRecord.doc_id.in_(doc_ids))
-            .order_by(AuditLogRecord.doc_id, AuditLogRecord.seq, AuditLogRecord.timestamp)
-        )
-        for rec in result.scalars().all():
+        records: list[AuditLogRecord] = []
+        for chunk in _doc_id_chunks(doc_ids):
+            result = await session.execute(
+                select(AuditLogRecord)
+                .where(AuditLogRecord.doc_id.in_(chunk))
+                .order_by(AuditLogRecord.doc_id, AuditLogRecord.seq, AuditLogRecord.timestamp)
+            )
+            records.extend(result.scalars().all())
+        # Each doc sits in one chunk, so a stable sort keeps its seq, timestamp order.
+        records.sort(key=lambda rec: rec.doc_id)
+        for rec in records:
             rows.append(
                 {
                     "entry_id": rec.entry_id,

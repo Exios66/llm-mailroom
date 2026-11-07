@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Vendored Dojo fallback was missing its package data.** `.gitignore`'s `data/` rule dropped `schemas/data/extraction_status.json` from `vendor/llm-dojo-scoring`, so under the fallback (`MAILROOM_DOJO_SOURCE=vendored`, or a broken install) `extraction_schema()` raised `FileNotFoundError`. The 0.27.2 snapshot includes it, and `.gitignore` re-includes that directory.
+- **`load_manifest_cases` crashed from an installed wheel.** It imported `scripts.prepare_samples` before checking for the manifest, and the wheel ships neither, so it raised `ModuleNotFoundError` instead of returning no cases. The import now sits behind the manifest check. `scripts` and `legalbench` stay checkout-only, and the wheel smoke test now asserts that.
+- **Warehouse exports could exceed driver bind limits.** `fetch_terminal_documents` and `fetch_audit_rows_for_doc_ids` passed every doc id to one `IN` clause, which goes over the limit at about 32k ids. Both now query 1,000 unique ids at a time. Audit rows above the 50-id path stay ordered by doc id, then seq and timestamp, with doc ids now compared in Python's code-point order on every database.
 
 ## [v0.9.1] - 2026-11-03
 
