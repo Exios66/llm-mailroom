@@ -34,10 +34,24 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-11-03" tags="feature,improvement,fix" %}
+{% update date="2026-11-07" tags="improvement" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.
+
+
+
+<a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
+{% endupdate %}
+
+{% update date="2026-11-07" tags="feature,improvement,fix" %}
+## v0.9.4
+
+llm-mailroom v0.9.4, released 2026-11-07.
+
+### Changed
+
+- **Production sorter is `sorter_condensed_v5`** (was V15): the sandbox's condensed v1 with one corporate rule reversed. A bylaw amendment is `bylaws`, never `board_resolution` (v10 corpus rule C). The v9.3 labels file 8 board-adopted bylaw amendments under `board_resolution`, so scoring against v9.3 counts those 8 as wrong until the corpus relabels them. On a 275-document prime sample of verified labels (`qwen/qwen3.7-flash`), v1 fixed 108 class answers against V15's 100, broke none, and was right on 263/228 class/subclass answers against 255/219, with a ~3.7k-character system prompt instead of ~25k. A managed Langfuse prompt that drops any guard clause its pin has (each one checked on its own, so the v1 pin keeps the guards it has), or restores the reversed v1 bylaw rule, is refused and the pinned text is served. llm-dojo-scoring moves to v0.28.1 (pin and vendored snapshot), whose sorter guide agrees: the user-message catalog files every bylaw amendment under `bylaws`, and a test fails if `board_resolution` mentions bylaws again.
 
 ### Security
 
@@ -77,7 +91,7 @@ Work landed on `main` since the last tagged release.
 - **`load_manifest_cases` crashed from an installed wheel.** It imported `scripts.prepare_samples` before checking for the manifest, and the wheel ships neither, so it raised `ModuleNotFoundError` instead of returning no cases. The import now sits behind the manifest check. `scripts` and `legalbench` stay checkout-only, and the wheel smoke test now asserts that.
 - **Warehouse exports could exceed driver bind limits.** `fetch_terminal_documents` and `fetch_audit_rows_for_doc_ids` passed every doc id to one `IN` clause, which goes over the limit at about 32k ids (999 on SQLite before 3.32). Both now query 500 unique ids at a time. Audit rows above the 50-id path stay ordered by doc id, then seq and timestamp, with doc ids now compared in Python's code-point order on every database.
 
-<a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
+<a href="2026/v0-9-4.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}
 
 {% update date="2026-11-03" tags="feature,improvement,fix" %}

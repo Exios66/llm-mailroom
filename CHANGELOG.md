@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.9.4] - 2026-11-07
+
 ### Changed
 
 - **Production sorter is `sorter_condensed_v5`** (was V15): the sandbox's condensed v1 with one corporate rule reversed. A bylaw amendment is `bylaws`, never `board_resolution` (v10 corpus rule C). The v9.3 labels file 8 board-adopted bylaw amendments under `board_resolution`, so scoring against v9.3 counts those 8 as wrong until the corpus relabels them. On a 275-document prime sample of verified labels (`qwen/qwen3.7-flash`), v1 fixed 108 class answers against V15's 100, broke none, and was right on 263/228 class/subclass answers against 255/219, with a ~3.7k-character system prompt instead of ~25k. A managed Langfuse prompt that drops any guard clause its pin has (each one checked on its own, so the v1 pin keeps the guards it has), or restores the reversed v1 bylaw rule, is refused and the pinned text is served. llm-dojo-scoring moves to v0.28.1 (pin and vendored snapshot), whose sorter guide agrees: the user-message catalog files every bylaw amendment under `bylaws`, and a test fails if `board_resolution` mentions bylaws again.
@@ -1000,7 +1002,8 @@ Minor release covering everything since v0.4.1. Live pipeline is **five document
 - File moves in `pipeline/bins.py` now use `shutil.move`; default file-extension fallback added.
 - Watcher and ops-monitor robustness fixes; audit log writer made async-safe; `Matter.opened_at` made timezone-aware.
 
-[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/Exios66/llm-mailroom/compare/v0.9.4...HEAD
+[v0.9.4]: https://github.com/Exios66/llm-mailroom/compare/v0.9.1...v0.9.4
 [v0.9.1]: https://github.com/Exios66/llm-mailroom/compare/v0.8.1...v0.9.1
 [v0.8.1]: https://github.com/Exios66/llm-mailroom/compare/v0.8.0...v0.8.1
 [v0.8.0]: https://github.com/Exios66/llm-mailroom/compare/v0.7.1...v0.8.0

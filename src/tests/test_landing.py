@@ -25,7 +25,7 @@ BADGES = (
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
     f"dojo-{pin_label(current_pin(REPO))}-6f42c1",
-    "release-v0.9.1-2EA043",
+    "release-v0.9.4-2EA043",
     "contributor-Exios66-blue",
     "contributor-grantmooslin-blue",
     "org-LLM--Mailroom--Services-24292F",
