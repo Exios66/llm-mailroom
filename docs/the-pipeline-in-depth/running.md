@@ -96,7 +96,7 @@ PYTHONPATH=src python -m api.main
 PYTHONPATH=src uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-This path skips the `assert_bind_allowed()` check in `__main__`. Without a live token the app still refuses non-loopback traffic per request: every token-protected route answers 503 until `MAILROOM_API_TOKEN` (or `MAILROOM_API_TOKENS`) is set. The health checks and FastAPI's `/docs`, `/redoc` and `/openapi.json` have no token dependency and stay reachable. The guard looks at the address the request arrived on and refuses a request carrying `Forwarded`, `Via`, `X-Forwarded-*`, `X-Real-IP`, `True-Client-IP` or `CF-Connecting-IP`, a `Host` other than loopback, or an `Origin` other than loopback. A reverse proxy on the same host that rewrites `Host` to loopback and adds none of those headers still looks like a local client, so set a token whenever the API sits behind a proxy.
+This path skips the `assert_bind_allowed()` check in `__main__`. Without a live token the app still refuses non-loopback traffic per request: every token-protected route answers 503 until `MAILROOM_API_TOKEN` (or `MAILROOM_API_TOKENS`) is set. The health checks and FastAPI's `/docs`, `/redoc` and `/openapi.json` have no token dependency and stay reachable. The guard looks at the address the request arrived on and refuses a request carrying `Forwarded`, `Via`, `X-Forwarded-*`, `X-Real-IP`, `True-Client-IP` or `CF-Connecting-IP`, a `Host` or `Origin` other than loopback, or `Sec-Fetch-Site: cross-site`. A reverse proxy on the same host that rewrites `Host` to loopback and adds none of those headers still looks like a local client, so set a token whenever the API sits behind a proxy.
 
 Push a document through and follow it:
 

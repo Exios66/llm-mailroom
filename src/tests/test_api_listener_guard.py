@@ -173,6 +173,7 @@ def test_tokenless_proxied_request_on_loopback_gets_503(monkeypatch, temp_base_d
         (b"host", b"["),
         (b"origin", b"https://evil.example"),
         (b"origin", b"null"),
+        (b"sec-fetch-site", b"cross-site"),
     ],
 )
 def test_tokenless_public_host_or_origin_on_loopback_gets_503(monkeypatch, temp_base_dir, header):
@@ -192,6 +193,8 @@ def test_tokenless_public_host_or_origin_on_loopback_gets_503(monkeypatch, temp_
         (b"host", b"[::1]:8000"),
         (b"origin", b"http://localhost:3000"),
         (b"origin", b"http://127.0.0.1:8000"),
+        (b"sec-fetch-site", b"same-origin"),
+        (b"sec-fetch-site", b"none"),
     ],
 )
 def test_tokenless_loopback_host_or_origin_is_served(monkeypatch, temp_base_dir, header):
