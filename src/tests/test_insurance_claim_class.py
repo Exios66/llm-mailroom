@@ -115,7 +115,7 @@ def test_sorter_prompt_v13_registered_and_live():
     templates = lp.PROMPT_TEMPLATES()
     assert templates["sorter_v13"] is v13
     assert templates["sorter_v14"] is lp.SORTER_PROMPT_V14
-    assert templates["sorter"] is lp.SORTER_PROMPT_V15
+    assert templates["sorter"] is lp.SORTER_PROMPT_CONDENSED
 
 
 def test_sorter_prompt_predecessors_unmutated():
