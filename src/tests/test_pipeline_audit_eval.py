@@ -211,6 +211,17 @@ class TestAgentEvalHarness:
         assert any("insurance_02" in i for i in ids)
         assert any("insurance_03" in i for i in ids)
 
+    def test_missing_manifest_needs_no_checkout_scripts(self, monkeypatch, tmp_path):
+        """A wheel has no manifest and no ``scripts`` package: no cases, no crash."""
+        import sys
+
+        from observability import agent_eval
+
+        monkeypatch.setattr(agent_eval, "MANIFEST", tmp_path / "absent.csv")
+        # A None entry makes `from scripts.prepare_samples import ...` raise ImportError.
+        monkeypatch.setitem(sys.modules, "scripts.prepare_samples", None)
+        assert agent_eval.load_manifest_cases(mock=True) == []
+
     def test_token_overlap(self):
         from observability.agent_eval import token_overlap
 
