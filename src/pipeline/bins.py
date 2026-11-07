@@ -247,14 +247,6 @@ def claim_file(file_path: Path, worker_id: str) -> Path:
     return dest
 
 
-def move_to_classified(file_path: Path, doc_type: str) -> Path:
-    dest_dir = classified_dir(doc_type)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file_path.name
-    shutil.move(str(file_path), str(dest))
-    return dest
-
-
 def requeue_from_review(file_path: Path, worker_id: str, *, original_filename: str | None = None) -> Path:
     """Move a review-bin file back into a worker's processing dir (resume flow).
 
@@ -491,10 +483,6 @@ def load_manifest(doc_id: str):
     if not isinstance(data, dict):
         raise ValueError("Document manifest root must be a JSON object")
     return DocumentManifest(**data)
-
-
-def load_taxonomy():
-    return _get_config()
 
 
 def get_worker_id() -> str:
