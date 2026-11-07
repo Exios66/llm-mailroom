@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Production sorter is `sorter_condensed_v5`** (was V15): the sandbox's condensed v1 with one corporate rule reversed. A bylaw amendment is `bylaws`, never `board_resolution` (v10 corpus rule C). The v9.3 labels file 8 board-adopted bylaw amendments under `board_resolution`, so scoring against v9.3 counts those 8 as wrong until the corpus relabels them. On a 275-document prime sample of verified labels (`qwen/qwen3.7-flash`), v1 fixed 108 class answers against V15's 100, broke none, and was right on 263/228 class/subclass answers against 255/219, with a ~3.7k-character system prompt instead of ~25k. A managed Langfuse prompt that drops any guard clause its pin has (each one checked on its own, so the v1 pin keeps the guards it has), or restores the reversed v1 bylaw rule, is refused and the pinned text is served. llm-dojo-scoring moves to v0.28.1 (pin and vendored snapshot), whose sorter guide agrees: the user-message catalog files every bylaw amendment under `bylaws`, and a test fails if `board_resolution` mentions bylaws again.
+
 ### Security
 
 - **Tokenless API requests are served only on a loopback listener** (audit L-2). A direct `uvicorn api.main:app --host 0.0.0.0` never runs `assert_bind_allowed()`, so with no `MAILROOM_API_TOKEN` it served every route to the network. Token-protected routes now read the ASGI `server` address (the local socket the request arrived on) and answer `503` when no live token is configured and that address is not loopback; unix sockets and unknown addresses fail closed, and so does a loopback request that carries `Forwarded` / `X-Forwarded-For` / `X-Real-IP` (a same-host reverse proxy). A proxy that adds no forwarding headers still looks local: set a token behind any proxy. `/health`, FastAPI's `/docs` / `/redoc` / `/openapi.json` and live-token behaviour are unchanged. If you run the API off loopback without a token on purpose, set `MAILROOM_API_TOKEN`.
