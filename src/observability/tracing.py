@@ -50,15 +50,14 @@ def resolve_provider_name() -> str:
     if os.environ.get("PHOENIX_TRACING", "enabled").strip().lower() in (
         "1", "true", "enabled", "yes", "on"
     ):
-        # Railway (and similar) has no local `phoenix serve`. Defaulting auto →
-        # phoenix there only burns memory against localhost:6006; skip unless
-        # the operator pointed PHOENIX_ENDPOINT at a real collector.
-        on_railway = bool(
-            os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID")
-        )
+        # A hosted container (Hugging Face Space) has no local `phoenix serve`.
+        # Defaulting auto → phoenix there only burns memory against
+        # localhost:6006; skip unless the operator pointed PHOENIX_ENDPOINT at
+        # a real collector.
+        on_hosted = bool(os.environ.get("SPACE_ID") or os.environ.get("HF_SPACE_ID"))
         endpoint = os.environ.get("PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
-        local_only = ("localhost" in endpoint) or ("127.0.0.1" in endpoint)
-        if on_railway and local_only:
+        local_only = any(h in endpoint for h in ("localhost", "127.0.0.1", "[::1]"))
+        if on_hosted and local_only:
             return "none"
         return "phoenix"
     return "none"
@@ -181,6 +180,7 @@ NODE_OBSERVATION_TYPES = {
     "document-pipeline": "chain",
     "intake-document": "span",
     "normalize-intake": "span",
+    "intake-ml-triage": "span",
     "extract-image-text": "retriever",
     "transcribe-pdf": "retriever",
     "classify-document": "agent",
@@ -215,9 +215,14 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
     ``LANGFUSE_FLUSH_INTERVAL`` or process exit.
     """
 
+    obs_type = as_type or observation_type_for(name)
+
     def deco(fn):
+        """Wrap ``fn`` so each call opens the ``name`` observation."""
+
         @functools.wraps(fn)
         def wrapper(state):
+            """Run the node inside its span, then flush for the live floor."""
             provider = resolve_provider_name()
             if provider != "langfuse":
                 result = fn(state)
@@ -227,7 +232,6 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
 
             from .langfuse_setup import observation
 
-            obs_type = as_type or observation_type_for(name)
             inp = summarize_input(state) if summarize_input else _state_summary(state)
             with observation(name, as_type=obs_type, input=inp) as span:
                 result = fn(state)
@@ -244,6 +248,10 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
                 flush()
                 return result
 
+        # Read by src/scripts/export_contract.py to map graph nodes to spans,
+        # with the type the span is actually opened as (``as_type`` wins).
+        wrapper.mailroom_span_name = name
+        wrapper.mailroom_observation_type = obs_type
         return wrapper
 
     return deco

@@ -232,9 +232,8 @@ class TestManifestCorruptionHygiene:
     """hub#63: a corrupted manifest must be logged, not silently skipped."""
 
     def test_review_queue_skips_corrupt_manifest_with_warning(self, temp_base_dir, monkeypatch):
-        # MAILROOM_API_TOKENS is read live by active_api_tokens() (the single
-        # MAILROOM_API_TOKEN is captured at module import, which may already
-        # have happened in an earlier test) — set the live-read var.
+        # active_api_tokens() reads the token vars per request, so setting one
+        # after api.main was imported by an earlier test still counts.
         monkeypatch.setenv("MAILROOM_API_TOKENS", "test-token")
         import api.main as api_main
         from api.main import app

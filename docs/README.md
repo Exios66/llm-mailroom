@@ -63,7 +63,7 @@ The pipeline reference:
 | [Configuration](pipeline-reference-llm-mailroom/configuration.md)         | `taxonomy.yaml`, thresholds, and environment variables.                      |
 | [API](pipeline-reference-llm-mailroom/api.md)                             | Upload, status, and audit endpoints on the FastAPI server.                   |
 | [Local models](pipeline-reference-llm-mailroom/local-models.md)           | Cutting agents over to Ollama or vLLM.                                       |
-| [Deployment](pipeline-reference-llm-mailroom/deployment/)                 | Laptop install, Railway, Hugging Face Spaces, and backup.                    |
+| [Deployment](pipeline-reference-llm-mailroom/deployment/)                 | Laptop install, Hugging Face Spaces, container hosts, and backup.             |
 | [Docker](pipeline-reference-llm-mailroom/deployment/docker-deployment.md) | Full compose matrix: Modes B / Mixed / A / M / G, producer image, BERT args. |
 | [Modal + vLLM](pipeline-reference-llm-mailroom/deployment/modal-vllm.md)  | Remote GPU serve (`mailroom-vllm`), cutover, and Mode G tiers.               |
 | [Gmail intake](pipeline-reference-llm-mailroom/gmail-intake.md)           | Mailbox polling, the free triage lane, and reply echoes.                     |
@@ -100,7 +100,7 @@ The pages below are the canonical documentation for the `llm-mailroom` pipeline 
 | [Configuration](pipeline-reference-llm-mailroom/configuration.md)                 | `taxonomy.yaml`, environment variables, thresholds                          |
 | [Gmail intake](pipeline-reference-llm-mailroom/gmail-intake.md)                   | Gmail intake route: upload guide, subject-line contract, pathways (HUB-037) |
 | [API](pipeline-reference-llm-mailroom/api.md)                                     | HTTP endpoint reference                                                     |
-| [Deployment](pipeline-reference-llm-mailroom/deployment/)                         | Laptop install, Railway, Spaces, backup                                     |
+| [Deployment](pipeline-reference-llm-mailroom/deployment/)                         | Laptop install, Spaces, container hosts, backup                             |
 | [Docker](pipeline-reference-llm-mailroom/deployment/docker-deployment.md)         | Compose matrix (Modes B / Mixed / A / M / G) and producer image             |
 | [Modal + vLLM](pipeline-reference-llm-mailroom/deployment/modal-vllm.md)          | Modal `mailroom-vllm` serve, cutover, and GPU tiers                         |
 | [Operational procedure](pipeline-reference-llm-mailroom/operational-procedure.md) | Day-to-day operating runbook                                                |

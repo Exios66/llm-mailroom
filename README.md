@@ -13,7 +13,7 @@
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
 [![Release](https://img.shields.io/badge/release-v0.9.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1)
-[![Dojo](https://img.shields.io/badge/dojo-a82843e-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/a82843e808336e0078c7d5b27dcdb3ff8b698170)
+[![Dojo](https://img.shields.io/badge/dojo-cab9768-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/cab976807854129d1cfea4897dbff5b6e337a62b)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
 [![Wiki](https://img.shields.io/badge/📖_wiki-deep_dives-555?style=flat-square)](https://github.com/Exios66/llm-mailroom/wiki)
@@ -73,7 +73,7 @@ executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
 [`v0.9.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1). The
-dependency badge reflects this checkout's Dojo pin, **e35504d** (the Dojo v0.25.0 release merge commit).
+dependency badge reflects this checkout's Dojo pin, **cab9768** (the Dojo v0.28.0 release commit).
 
 <details>
 <summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
@@ -872,7 +872,7 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - [Configuration](docs/pipeline-reference-llm-mailroom/configuration.md) — config reference
 - [Agents](docs/agents.md) — agent specifications and personalities
 - [API Reference](docs/pipeline-reference-llm-mailroom/api.md) — complete API documentation
-- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Railway, Spaces, backup
+- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Spaces, other container hosts, backup
 - [Docker deployment](docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md) — compose matrix (Modes B / Mixed / A / M / G)
 - [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) — `mailroom-vllm` serve and GPU-tier cutover
 - [Testing](docs/testing.md) — testing strategy and fixtures

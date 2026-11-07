@@ -68,6 +68,9 @@ VERSION_LOCATIONS: dict[str, list[str]] = {
     "docs/the-pipeline-in-depth/running.md": [rf"`mailroom` {_V}"],
     "docs/the-pipeline-in-depth/scoring-and-metrics.md": [rf"current release \({_V}\)"],
     "src/tests/test_landing.py": [rf'"release-v{_V}-2EA043"'],
+    # The display contract embeds the package version; a cut must move it too
+    # or test_contract_export fails right after the bump.
+    "contract/mailroom-contract.json": [rf'^  "pipeline_version": "{_V}"'],
 }
 PYPROJECT_PATTERN = VERSION_LOCATIONS["pyproject.toml"][0]
 

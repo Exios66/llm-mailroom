@@ -12,6 +12,8 @@ build/
 
 # Data directory (pipeline bins + archive)
 data/
+# ...but not Dojo's package data in the vendored fallback (extraction_status.json).
+!vendor/llm-dojo-scoring/src/llm_dojo_scoring/schemas/data/
 
 # IDE
 .vscode/
@@ -56,3 +58,6 @@ src/legalbench/reports/
 
 # graphify knowledge-graph build artifacts (KANBAN-065 follow-on; rebuild with `graphify .`)
 graphify-out/
+
+# Claude Code local overrides
+.claude/settings.local.json

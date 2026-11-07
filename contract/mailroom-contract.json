@@ -1,0 +1,885 @@
+{
+  "contract_version": "1.0.0",
+  "pipeline_version": "0.9.1",
+  "trace_name": "document-pipeline",
+  "graph": {
+    "start": "__start__",
+    "end": "__end__",
+    "nodes": [
+      {
+        "id": "arbiter",
+        "span": "arbitrate-verdict",
+        "observation_type": "agent"
+      },
+      {
+        "id": "archive",
+        "span": "archive-document",
+        "observation_type": "span"
+      },
+      {
+        "id": "boss_escalation",
+        "span": "adjudicate-conflict",
+        "observation_type": "agent"
+      },
+      {
+        "id": "catalog_write",
+        "span": "write-catalog",
+        "observation_type": "span"
+      },
+      {
+        "id": "classification_arbiter",
+        "span": "arbitrate-classification",
+        "observation_type": "agent"
+      },
+      {
+        "id": "classify",
+        "span": "classify-document",
+        "observation_type": "agent"
+      },
+      {
+        "id": "compile_report",
+        "span": "compile-report",
+        "observation_type": "agent"
+      },
+      {
+        "id": "extract",
+        "span": "extract-fields",
+        "observation_type": "agent"
+      },
+      {
+        "id": "human_review",
+        "span": "route-for-review",
+        "observation_type": "span"
+      },
+      {
+        "id": "intake",
+        "span": "intake-document",
+        "observation_type": "span"
+      },
+      {
+        "id": "judge_verify",
+        "span": "judge-verify",
+        "observation_type": "evaluator"
+      },
+      {
+        "id": "retry_classify",
+        "span": "classify-document",
+        "observation_type": "agent"
+      },
+      {
+        "id": "retry_extract",
+        "span": "extract-fields",
+        "observation_type": "agent"
+      },
+      {
+        "id": "review_classify",
+        "span": "classify-document",
+        "observation_type": "agent"
+      }
+    ],
+    "edges": [
+      {
+        "source": "__start__",
+        "target": "extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "__start__",
+        "target": "intake",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "arbiter",
+        "target": "arbiter",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "arbiter",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "arbiter",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "arbiter",
+        "target": "retry_extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "archive",
+        "target": "__end__",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "boss_escalation",
+        "target": "boss_escalation",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "boss_escalation",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "boss_escalation",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "catalog_write",
+        "target": "archive",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "classification_arbiter",
+        "target": "extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "classification_arbiter",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "classify",
+        "target": "classify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "classify",
+        "target": "extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "classify",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "classify",
+        "target": "retry_classify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "classify",
+        "target": "review_classify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "compile_report",
+        "target": "catalog_write",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "compile_report",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "extract",
+        "target": "boss_escalation",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "extract",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "extract",
+        "target": "extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "extract",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "extract",
+        "target": "judge_verify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "extract",
+        "target": "retry_extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "human_review",
+        "target": "__end__",
+        "conditional": true,
+        "label": "failed"
+      },
+      {
+        "source": "human_review",
+        "target": "extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "intake",
+        "target": "classify",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "judge_verify",
+        "target": "arbiter",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "judge_verify",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "judge_verify",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "judge_verify",
+        "target": "judge_verify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_classify",
+        "target": "extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_classify",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_classify",
+        "target": "retry_classify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_classify",
+        "target": "review_classify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_extract",
+        "target": "boss_escalation",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_extract",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_extract",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_extract",
+        "target": "judge_verify",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "retry_extract",
+        "target": "retry_extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "review_classify",
+        "target": "classification_arbiter",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "review_classify",
+        "target": "extract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "review_classify",
+        "target": "human_review",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "review_classify",
+        "target": "review_classify",
+        "conditional": true,
+        "label": null
+      }
+    ]
+  },
+  "spans": {
+    "adjudicate-conflict": "agent",
+    "answer-question": "generation",
+    "arbitrate-classification": "agent",
+    "arbitrate-verdict": "agent",
+    "archive-document": "span",
+    "classify-document": "agent",
+    "compile-report": "agent",
+    "document-pipeline": "chain",
+    "extract-fields": "agent",
+    "extract-image-text": "retriever",
+    "intake-document": "span",
+    "intake-ml-triage": "span",
+    "judge-verify": "evaluator",
+    "normalize-intake": "span",
+    "pipeline-result": "generation",
+    "route-for-review": "span",
+    "transcribe-pdf": "retriever",
+    "write-catalog": "span"
+  },
+  "agents": [
+    "arbiter",
+    "boss",
+    "contracts_specialist",
+    "corporate_records_specialist",
+    "correspondence_specialist",
+    "gmail_triage",
+    "image_extractor",
+    "insurance_claims_specialist",
+    "intake",
+    "judge",
+    "merger_agreement_specialist",
+    "pdf_transcriber",
+    "relations",
+    "reporter",
+    "sorter",
+    "sorter_reviewer"
+  ],
+  "doc_classes": [
+    {
+      "key": "contract",
+      "label": "Contract / Agreement",
+      "schema": "ContractExtraction",
+      "specialist": "contracts_specialist",
+      "fields": [
+        "agreement_date",
+        "contract_value",
+        "cuad_clauses",
+        "cuad_family",
+        "dispute_forum",
+        "document_name",
+        "effective_date",
+        "expiration_date",
+        "governing_law",
+        "parties",
+        "party_roles",
+        "payment_terms",
+        "renewal_terms",
+        "signatories",
+        "term_length",
+        "termination_notice_period",
+        "territory"
+      ],
+      "subclasses": [
+        "affiliate",
+        "agency",
+        "collaboration",
+        "co_branding",
+        "consulting",
+        "development",
+        "distributor",
+        "endorsement",
+        "franchise",
+        "hosting",
+        "ip",
+        "joint_venture",
+        "license",
+        "maintenance",
+        "manufacturing",
+        "marketing",
+        "non_compete_no_solicit",
+        "outsourcing",
+        "promotion",
+        "reseller",
+        "service",
+        "sponsorship",
+        "strategic_alliance",
+        "supply",
+        "transportation"
+      ]
+    },
+    {
+      "key": "merger_agreement",
+      "label": "Merger Agreement",
+      "schema": "MergerAgreementExtraction",
+      "specialist": "merger_agreement_specialist",
+      "fields": [
+        "acquirer",
+        "document_name",
+        "effective_date",
+        "effective_time",
+        "exchange_ratio",
+        "financial_advisors",
+        "governing_law",
+        "intent",
+        "keywords",
+        "legal_counsel",
+        "maud_clauses",
+        "merger_consideration",
+        "merger_sub",
+        "outside_date",
+        "parent_termination_fee",
+        "parties",
+        "per_share_cash_amount",
+        "signatories",
+        "subject_matter",
+        "target",
+        "target_termination_fee"
+      ],
+      "subclasses": [
+        "all_cash",
+        "all_stock",
+        "mixed_cash_stock",
+        "mixed_cash_stock_election",
+        "other"
+      ]
+    },
+    {
+      "key": "corporate_record",
+      "label": "Corporate Record",
+      "schema": "CorporateRecordExtraction",
+      "specialist": "corporate_records_specialist",
+      "fields": [
+        "effective_date",
+        "entity_name",
+        "filing_number",
+        "intent",
+        "jurisdiction",
+        "keywords",
+        "record_type",
+        "signatories",
+        "subject_matter"
+      ],
+      "subclasses": [
+        "articles_of_incorporation",
+        "bylaws",
+        "certificate_of_formation",
+        "charter_amendment",
+        "powers_of_attorney",
+        "subsidiary_list",
+        "rights_instrument",
+        "indenture",
+        "board_resolution",
+        "officer_certificate",
+        "other"
+      ]
+    },
+    {
+      "key": "correspondence",
+      "label": "Correspondence",
+      "schema": "CorrespondenceExtraction",
+      "specialist": "correspondence_specialist",
+      "fields": [
+        "action_items",
+        "additional_recipients",
+        "communication_date",
+        "communication_type",
+        "demand_amount",
+        "intent",
+        "keywords",
+        "recipient",
+        "sender",
+        "subject_matter",
+        "urgency"
+      ],
+      "subclasses": [
+        "email",
+        "memo",
+        "letter",
+        "notice",
+        "demand",
+        "attorney_demand",
+        "press_release",
+        "meeting_request",
+        "other"
+      ]
+    },
+    {
+      "key": "insurance_claim",
+      "label": "Insurance Claim",
+      "schema": "InsuranceClaimExtraction",
+      "specialist": "insurance_claims_specialist",
+      "fields": [
+        "adjuster",
+        "claim_checklist",
+        "claim_number",
+        "claim_type",
+        "claimed_amount",
+        "coverage_determination",
+        "damages_description",
+        "date_filed",
+        "date_of_loss",
+        "denial_reasons",
+        "insured_party",
+        "insurer",
+        "intent",
+        "keywords",
+        "policy_number",
+        "subject_matter",
+        "supporting_documents"
+      ],
+      "subclasses": [
+        "carrier",
+        "inpatient",
+        "outpatient",
+        "pde",
+        "property",
+        "auto"
+      ]
+    }
+  ],
+  "unknown_doc_class": "unknown",
+  "failure_classes": [
+    "llm_timeout",
+    "llm_auth",
+    "llm_rate_limit",
+    "llm_transient",
+    "io_error",
+    "schema_error",
+    "run_budget",
+    "unexpected"
+  ],
+  "scores": {
+    "configs": [
+      {
+        "name": "amount_exactness",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "class_correct",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "classification_attempts",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "classification_confidence",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "classification_correct",
+        "data_type": "CATEGORICAL",
+        "categories": [
+          "correct",
+          "ambiguous",
+          "incorrect"
+        ]
+      },
+      {
+        "name": "classification_quality",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "completeness",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "completeness_label",
+        "data_type": "CATEGORICAL",
+        "categories": [
+          "complete",
+          "partial",
+          "incomplete"
+        ]
+      },
+      {
+        "name": "confidence_calibration_error",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "content_topic_accuracy",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "content_topic_f1_macro",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "determination_consistency",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "entity_list_f1",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "entity_list_precision",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "entity_list_recall",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "estimated_cost_usd",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "expected_field_presence",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_attempts",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_category_presence",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_confidence",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_correctness",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_correctness_label",
+        "data_type": "CATEGORICAL",
+        "categories": [
+          "accurate",
+          "partial",
+          "inaccurate"
+        ]
+      },
+      {
+        "name": "extraction_f1",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_f2",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_field_score",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_hallucination_rate",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_needs_judge_review",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "extraction_overall_score",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_overall_verified_precision",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_precision",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "extraction_recall",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "guardrail_triggered",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "intake_changed_rate",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "intake_collapsed_blanks",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "intake_hyphen_unwraps",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "intake_messy_rate",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "intake_prep_completeness",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "judge_notes",
+        "data_type": "TEXT"
+      },
+      {
+        "name": "legalbench_accuracy",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "legalbench_calibration_error",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "legalbench_macro_f1",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "legalbench_n_questions",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "legalbench_task",
+        "data_type": "TEXT"
+      },
+      {
+        "name": "llm_call_count",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "maud_category_accuracy",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "maud_clause_presence",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "maud_question_accuracy",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "maud_question_macro_accuracy",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "maud_valid_class_rate",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "parse_error",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "run_aborted",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "run_duration_seconds",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "schema_valid",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "sentiment_accuracy",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "sentiment_f1_macro",
+        "data_type": "NUMERIC"
+      },
+      {
+        "name": "stage_completed",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "stage_correct",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "success_rate",
+        "data_type": "BOOLEAN"
+      },
+      {
+        "name": "total_tokens",
+        "data_type": "NUMERIC"
+      }
+    ],
+    "langfuse_aliases": {
+      "extraction_overall_verified_precision": "extraction_verified_precision"
+    }
+  },
+  "confidence": {
+    "high": 0.97,
+    "low": 0.88,
+    "retry_max": 2,
+    "judge_band_high": 0.95,
+    "arbiter_retry_max": 2,
+    "judge_max_passes": 3,
+    "conflict_threshold": 0.3,
+    "by_class": {
+      "contract": {
+        "high": 0.98,
+        "low": 0.9,
+        "judge_band_high": 0.97
+      },
+      "merger_agreement": {
+        "high": 0.98,
+        "low": 0.9,
+        "judge_band_high": 0.97
+      },
+      "insurance_claim": {
+        "high": 0.98,
+        "low": 0.9,
+        "judge_band_high": 0.97
+      },
+      "corporate_record": {
+        "high": 0.96,
+        "low": 0.86,
+        "judge_band_high": 0.94
+      },
+      "correspondence": {
+        "high": 0.95,
+        "low": 0.85,
+        "judge_band_high": 0.92
+      }
+    }
+  }
+}

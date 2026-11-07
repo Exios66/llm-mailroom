@@ -31,6 +31,9 @@ WAREHOUSE_SCHEMA_VERSION = "1"
 TERMINAL_STAGES = frozenset({"archived", "failed"})
 _MANIFEST_NAME = "manifest.json"
 _EXPORT_LOCK = threading.RLock()
+# Ids per IN clause. Leaves room for other binds under SQLite's 999-variable default
+# before 3.32; newer SQLite and asyncpg allow about 32k.
+_IN_CLAUSE_CHUNK_SIZE = 500
 
 
 @contextmanager
@@ -305,6 +308,15 @@ def _write_parquet_rows_unlocked(path: Path, rows: list[dict[str, Any]], *, merg
     return len(merged)
 
 
+def _doc_id_chunks(doc_ids: list[str]) -> list[list[str]]:
+    """Split ids for IN clauses; dedupe so no row comes back from two chunks."""
+    unique = list(dict.fromkeys(doc_ids))
+    return [
+        unique[start : start + _IN_CLAUSE_CHUNK_SIZE]
+        for start in range(0, len(unique), _IN_CLAUSE_CHUNK_SIZE)
+    ]
+
+
 async def fetch_terminal_documents(
     *,
     doc_ids: list[str] | None = None,
@@ -318,13 +330,16 @@ async def fetch_terminal_documents(
     ensure_schema()
     async with async_session() as session:
         if doc_ids:
-            result = await session.execute(
-                select(DocumentRecord).where(
-                    DocumentRecord.doc_id.in_(doc_ids),
-                    DocumentRecord.stage.in_(tuple(TERMINAL_STAGES)),
+            records: list = []
+            for chunk in _doc_id_chunks(doc_ids):
+                result = await session.execute(
+                    select(DocumentRecord).where(
+                        DocumentRecord.doc_id.in_(chunk),
+                        DocumentRecord.stage.in_(tuple(TERMINAL_STAGES)),
+                    )
                 )
-            )
-            return list(result.scalars().all())
+                records.extend(result.scalars().all())
+            return records
         query = select(DocumentRecord).where(
             DocumentRecord.stage.in_(tuple(TERMINAL_STAGES))
         )
@@ -359,12 +374,14 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
         return rows
     async with async_session() as session:
         Model = await event_log_model(session)
-        result = await session.execute(
-            select(Model)
-            .where(Model.doc_id.in_(doc_ids))
-            .order_by(Model.doc_id, Model.seq, Model.timestamp)
-        )
-        for rec in result.scalars().all():
+        records: list[Any] = []
+        for chunk in _doc_id_chunks(doc_ids):
+            result = await session.execute(
+                select(Model).where(Model.doc_id.in_(chunk))
+            )
+            records.extend(result.scalars().all())
+        records.sort(key=lambda rec: (rec.doc_id, rec.seq, rec.timestamp))
+        for rec in records:
             rows.append(
                 {
                     "entry_id": rec.entry_id,

@@ -164,3 +164,110 @@ def test_routine_export_from_running_loop_does_not_deadlock(warehouse_env, temp_
     t0 = time.monotonic()
     assert asyncio.run(handler()) is True
     assert time.monotonic() - t0 < 10
+
+
+# SQLite defaults to 32,766 bound variables per statement and asyncpg allows 32,767.
+_DRIVER_BIND_LIMIT = 32_766
+# SQLite before 3.32 defaults to 999; statements must fit there too.
+_OLD_SQLITE_BIND_LIMIT = 999
+
+
+def _ids_spanning_bind_limit(first: str, last: str) -> list[str]:
+    """Doc ids over the bind limit, in reverse sort order, with ``first``/``last`` repeated."""
+    missing = [f"missing-{n:06d}" for n in range(_DRIVER_BIND_LIMIT + 1)]
+    return [last, *reversed(missing), first, last, first]
+
+
+@pytest.fixture
+def statement_bind_counts():
+    """Record how many values each SQL statement binds, on any engine."""
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    counts: list[int] = []
+
+    def record(_conn, _cursor, _statement, parameters, _context, _executemany):
+        counts.append(len(parameters))
+
+    # On the class: storage.db builds a new async engine for each event loop.
+    event.listen(Engine, "before_cursor_execute", record)
+    yield counts
+    event.remove(Engine, "before_cursor_execute", record)
+
+
+def test_audit_fetch_splits_ids_over_the_driver_bind_limit(
+    warehouse_env, temp_base_dir, statement_bind_counts
+):
+    import asyncio
+
+    from storage.warehouse import fetch_audit_rows_for_doc_ids
+
+    _seed_terminal_doc(temp_base_dir, doc_id="wh-aaa")
+    statement_bind_counts.clear()
+
+    asyncio.run(fetch_audit_rows_for_doc_ids(_ids_spanning_bind_limit("wh-aaa", "wh-aaa")))
+
+    assert max(statement_bind_counts) <= _OLD_SQLITE_BIND_LIMIT
+
+
+def test_audit_fetch_over_the_limit_orders_by_doc_then_seq_without_duplicates(
+    warehouse_env, temp_base_dir
+):
+    import asyncio
+
+    from schemas.audit import build_audit_entry
+    from storage.audit_log import write_audit_entry
+    from storage.warehouse import fetch_audit_rows_for_doc_ids
+
+    _seed_terminal_doc(temp_base_dir, doc_id="a-doc")
+    _seed_terminal_doc(temp_base_dir, doc_id="z-doc")
+    asyncio.run(
+        write_audit_entry(
+            build_audit_entry(
+                doc_id="z-doc",
+                matter_id="M-WH",
+                event="reviewed",
+                actor="pipeline",
+                detail={},
+                prev_hash="",
+            )
+        )
+    )
+
+    rows = asyncio.run(fetch_audit_rows_for_doc_ids(_ids_spanning_bind_limit("a-doc", "z-doc")))
+
+    assert [(row["doc_id"], row["seq"]) for row in rows] == [
+        ("a-doc", 1),
+        ("z-doc", 1),
+        ("z-doc", 2),
+    ]
+
+
+def test_terminal_fetch_splits_ids_over_the_driver_bind_limit(
+    warehouse_env, temp_base_dir, statement_bind_counts
+):
+    import asyncio
+
+    from storage.warehouse import fetch_terminal_documents
+
+    _seed_terminal_doc(temp_base_dir, doc_id="wh-aaa")
+    statement_bind_counts.clear()
+
+    asyncio.run(fetch_terminal_documents(doc_ids=_ids_spanning_bind_limit("wh-aaa", "wh-aaa")))
+
+    assert max(statement_bind_counts) <= _OLD_SQLITE_BIND_LIMIT
+
+
+def test_terminal_fetch_over_the_limit_returns_each_document_once(warehouse_env, temp_base_dir):
+    import asyncio
+
+    from storage.warehouse import fetch_terminal_documents
+
+    _seed_terminal_doc(temp_base_dir, doc_id="a-doc")
+    _seed_terminal_doc(temp_base_dir, doc_id="z-doc")
+
+    records = asyncio.run(
+        fetch_terminal_documents(doc_ids=_ids_spanning_bind_limit("a-doc", "z-doc"))
+    )
+
+    assert sorted(record.doc_id for record in records) == ["a-doc", "z-doc"]
