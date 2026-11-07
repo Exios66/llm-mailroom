@@ -10,7 +10,8 @@ behavior**: the 13-node graph, agents, prompts, storage and API.
 section on demand ("Architecture", "Config gotchas", "Testing quirks", "Releases",
 "Source ownership") instead of guessing.
 
-**Always loaded with this file** (`.claude/rules/`), and binding on every task:
+**Binding on every task** (`.claude/rules/`; Claude Code loads these automatically, other
+tools must read them):
 
 - `orchestration.md` — Opus orchestrates; Sonnet and Haiku subagents do the work; 1–3
   adversarial review rounds; orchestrator re-verifies.
@@ -81,8 +82,8 @@ full suite and the experiment gate.
 |:---|:---|
 | Any Python | `.venv/bin/python -m compileall -q src`, then `affected_tests.py --run`, then the full suite before the PR is ready |
 | Graph, agents, routing, prompts | + `run_pilot.py --mock` and `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
-| Nodes, spans, agents, classes, score configs, thresholds | + `PYTHONPATH=src python src/scripts/export_contract.py --check` (`--write` to regenerate) |
-| `CHANGELOG.md` | + `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check` |
+| Nodes, spans, agents, classes, score configs, thresholds | + `PYTHONPATH=src .venv/bin/python src/scripts/export_contract.py --check` (`--write` to regenerate) |
+| `CHANGELOG.md` | + `PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check` |
 | Docs, README, prose with paths/versions | + `pytest src/tests/test_docs_truth.py -q` |
 | `landing/` | + `pytest src/tests/test_landing.py -q` and screenshots |
 | Dojo pin | the `/dojo-bump` skill (verifies against the real pinned revision) |
@@ -123,8 +124,9 @@ lint or type cleanliness.
 - Tests use `asyncio_mode = "auto"`, but graph nodes are sync. Node contract:
   `node(state: DocumentState) -> dict[str, Any]` (partial update).
 - New agent tests inject `agent.client = <mock>` and `agent.model = "test-model"`.
-- `test_wheel_runtime_catalog` shells out to `uv build` and needs network; in an offline
-  container it can be the only failure — say so instead of calling the suite red.
+- `test_wheel_runtime_catalog` runs `uv build --offline`, so uv's cache must already hold
+  setuptools and wheel (the test skips if `uv` is missing). With an empty cache it can be
+  the only failure — say so instead of calling the suite red.
 - Langfuse trace ids are deterministic per filename and tags are immutable: a re-run keeps
   the first run's tags and environment.
 - The suite is slow; use `affected_tests.py` while iterating, the full suite before "ready".
@@ -133,7 +135,7 @@ lint or type cleanliness.
 
 - `.env` (secrets; only `.env.example` is tracked) and `data/` (runtime bins).
 - `docs/changelog/` — edit `CHANGELOG.md`, then
-  `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py` (`--check` verifies).
+  `PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py` (`--check` verifies).
 - `docs/superpowers/baselines/experiment-baseline.json` — re-approve only with
   `run_experiment.py ... --write-baseline`, and only when the user asks.
 - Versions: use `python3 src/scripts/release.py cut X.Y.Z` (dry run unless `--apply`).

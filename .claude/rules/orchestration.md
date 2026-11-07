@@ -58,7 +58,8 @@ the orchestrator verifies it, and at most **three**. Size the rounds to the work
 | 2 | About 100 to 500 changed lines, several modules, or any behavior change. |
 | 3 | More than about 500 lines; or a public API, cross-repo contract, scoring or metric change, release, migration, security- or secrets-sensitive change. |
 
-Count lines with `git diff --stat <base>...HEAD`. Size and risk both count: a large
+Commit the work first, then count lines with `git diff --stat <base>...HEAD`, which does
+not see uncommitted files. Commit again before every later round. Size and risk both count: a large
 docs-only change is not tier 1. When in doubt, pick the higher tier.
 
 Each round is a **new** `adversarial-reviewer` instance (never resume a reviewer with
@@ -74,6 +75,8 @@ Each round is a **new** `adversarial-reviewer` instance (never resume a reviewer
 Between rounds, send BLOCKING and MAJOR findings back to an `implementer` (or fix them
 yourself if trivial), then start the next round on the updated diff. If BLOCKING
 findings remain after round 3, stop and report to the user; do not start a fourth round.
+A BLOCKING or MAJOR finding from the last round you run gets the same treatment: fix and
+re-verify it, or report it to the user. Never carry one silently into a PR.
 Record every round (lens, findings, what was fixed) for the PR's "Review log".
 
 ## Orchestrator verification (required)
@@ -85,4 +88,5 @@ Subagent reports are claims, not evidence. Before you tell the user anything is 
   (delegating the run to a `runner` is fine; reading its raw output is not optional);
 - check each item of `.claude/rules/evidence-contract.md` against what you hold.
 
-Then follow `.claude/rules/pr-flow.md` to get the change into a pull request.
+If the user asked for a push or a pull request, follow `.claude/rules/pr-flow.md`. If not,
+leave the change local and report it.
