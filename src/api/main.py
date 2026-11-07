@@ -132,13 +132,16 @@ def _require_token(request: Request) -> None:
     if not tokens:
         # A same-host reverse proxy also arrives on loopback; its forwarding
         # headers show the request came from elsewhere. So does a public Host
-        # (proxy, tunnel, DNS rebinding) or another site's Origin (a browser
-        # page posting to localhost).
+        # (proxy, tunnel, DNS rebinding), another site's Origin (a browser page
+        # posting to localhost) or a cross-site fetch (browsers send no Origin
+        # on a plain GET).
         headers = request.headers
         proxied = any(h in headers for h in _FORWARDING_HEADERS)
         host, origin = headers.get("host"), headers.get("origin")
-        local_names = (host is None or _url_names_loopback(f"//{host}")) and (
-            origin is None or _url_names_loopback(origin)
+        local_names = (
+            (host is None or _url_names_loopback(f"//{host}"))
+            and (origin is None or _url_names_loopback(origin))
+            and headers.get("sec-fetch-site") != "cross-site"
         )
         if not proxied and local_names and _listener_is_loopback(request.scope.get("server")):
             return  # loopback-only dev without a token

@@ -47,7 +47,7 @@ typed endpoints required.
   `UVICORN_PORT` also apply), skips the startup bind guard (with no live token, token-protected routes then
   answer 503 to requests arriving on a non-loopback address, carrying a forwarding
   header (`Forwarded`, `Via`, `X-Forwarded-*`, `X-Real-IP`, `True-Client-IP`,
-  `CF-Connecting-IP`), or naming a non-loopback `Host` or `Origin`; the health checks and
+  `CF-Connecting-IP`), naming a non-loopback `Host` or `Origin`, or sent as `Sec-Fetch-Site: cross-site`; the health checks and
   `/docs`, `/redoc`, `/openapi.json` stay open; behind any proxy set a token, since one
   that rewrites `Host` to loopback and adds no forwarding header looks local) and starts no pager (run `python -m pipeline.pager run` or
   the watchdog separately if alerts are on). Prefer `python -m api.main` on hosts
