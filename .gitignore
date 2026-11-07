@@ -28,6 +28,8 @@ Thumbs.db
 
 # Test artifacts
 .pytest_cache/
+# Cascade plans, JUnit, coverage and stage timing artifacts
+test-results/
 .mypy_cache/
 .ruff_cache/
 .coverage
