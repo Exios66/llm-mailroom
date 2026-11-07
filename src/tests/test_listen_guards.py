@@ -1,4 +1,4 @@
-"""Listen-port / bind guards for Railway + container deploys."""
+"""Listen-port / bind guards for container deploys (Railway retired)."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ def _reload_main(monkeypatch, **env):
         "MAILROOM_API_HOST",
         "MAILROOM_API_TOKEN",
         "MAILROOM_API_TOKENS",
-        "RAILWAY_ENVIRONMENT",
-        "RAILWAY_PROJECT_ID",
+        "SPACE_ID",
+        "HF_SPACE_ID",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
@@ -59,17 +59,17 @@ def test_default_port_is_8000(monkeypatch):
     assert main.listen_port() == 8000
 
 
-def test_off_loopback_without_token_exits_with_railway_hint(monkeypatch):
+def test_off_loopback_without_token_exits_with_space_hint(monkeypatch):
     main = _reload_main(
         monkeypatch,
         MAILROOM_API_HOST="0.0.0.0",
-        RAILWAY_ENVIRONMENT="production",
+        SPACE_ID="user/mailroom-producer",
     )
     with pytest.raises(SystemExit) as exc:
         main.assert_bind_allowed()
     msg = str(exc.value)
     assert "MAILROOM_API_TOKEN" in msg
-    assert "Railway" in msg
+    assert "Hugging Face Spaces" in msg
 
 
 def test_off_loopback_with_token_allowed(monkeypatch):
@@ -77,15 +77,12 @@ def test_off_loopback_with_token_allowed(monkeypatch):
         monkeypatch,
         MAILROOM_API_HOST="0.0.0.0",
         MAILROOM_API_TOKEN="secret",
-        RAILWAY_ENVIRONMENT="production",
+        SPACE_ID="user/mailroom-producer",
     )
     main.assert_bind_allowed()  # does not raise
 
 
-def test_railway_json_forces_dockerfile_builder():
-    import json
-
-    cfg = json.loads((REPO_ROOT / "railway.json").read_text(encoding="utf-8"))
-    assert cfg["build"]["builder"] == "DOCKERFILE"
-    assert cfg["build"]["dockerfilePath"] == "Dockerfile"
-    assert cfg["deploy"]["healthcheckPath"] == "/health"
+def test_railway_is_retired():
+    """Railway Config as Code and its nixpacks fallback are gone (The-Mailroom ADR-005)."""
+    for rel in ("railway.json", "railway.toml", ".railway", "nixpacks.toml"):
+        assert not (REPO_ROOT / rel).exists(), rel

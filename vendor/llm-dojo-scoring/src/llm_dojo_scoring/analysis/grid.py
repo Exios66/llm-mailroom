@@ -713,7 +713,8 @@ def _cell(value: Any) -> str:
     text = " ".join(str(value).split())
     for char in ("\\", "|", "*", "`"):
         text = text.replace(char, "\\" + char)
-    return text
+    # Raw HTML in Markdown can run in permissive viewers: entity-escape it.
+    return text.replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _md(header: Sequence[str], rows: Iterable[Sequence[str]]) -> list[str]:

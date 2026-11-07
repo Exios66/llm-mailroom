@@ -12,8 +12,8 @@
 [![SQLite first](https://img.shields.io/badge/storage-SQLite_first-6C63FF?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
-[![Release](https://img.shields.io/badge/release-v0.9.1-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1)
-[![Dojo](https://img.shields.io/badge/dojo-a82843e-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/a82843e808336e0078c7d5b27dcdb3ff8b698170)
+[![Release](https://img.shields.io/badge/release-v0.9.3-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.3)
+[![Dojo](https://img.shields.io/badge/dojo-00a2a7f-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
 [![Wiki](https://img.shields.io/badge/📖_wiki-deep_dives-555?style=flat-square)](https://github.com/Exios66/llm-mailroom/wiki)
@@ -72,8 +72,8 @@ imports committed revisions, the [sandbox](https://github.com/Exios66/local-mail
 executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
-[`v0.9.1`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.1). The
-dependency badge reflects this checkout's Dojo pin, **e35504d** (the Dojo v0.25.0 release merge commit).
+[`v0.9.3`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.3). The
+dependency badge reflects this checkout's Dojo pin, **00a2a7f** (the Dojo v0.28.1 release commit).
 
 <details>
 <summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
@@ -555,7 +555,7 @@ PYTHONPATH=src python src/scripts/sync_prompts.py --agent sorter
 
 The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
 
-Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14`, `contracts_specialist_v1…v33`) so eval loops can pin one version per experiment. Production is different: **sorter_v14** for classify, and sandbox / eval-environment **frozen v1** stems for every extract specialist (`llm/frozen_v1/`, `_bound_prompt_versions`). Mailroom wrappers resolve both through `get_managed_prompt` (`mailroom-<agent>`, `production` label) so LangGraph classify/extract nodes share the Langfuse surface.
+Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14`, `contracts_specialist_v1…v33`) so eval loops can pin one version per experiment. Production is different: **sorter_condensed_v5** for classify (the token-budgeted condensed sorter), and sandbox / eval-environment **frozen v1** stems for every extract specialist (`llm/frozen_v1/`, `_bound_prompt_versions`). Mailroom wrappers resolve both through `get_managed_prompt` (`mailroom-<agent>`, `production` label) so LangGraph classify/extract nodes share the Langfuse surface.
 
 ### Observability
 
@@ -872,7 +872,7 @@ For fully local/offline serving, see [Docker deployment](docs/pipeline-reference
 - [Configuration](docs/pipeline-reference-llm-mailroom/configuration.md) — config reference
 - [Agents](docs/agents.md) — agent specifications and personalities
 - [API Reference](docs/pipeline-reference-llm-mailroom/api.md) — complete API documentation
-- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Railway, Spaces, backup
+- [Deployment](docs/pipeline-reference-llm-mailroom/deployment/README.md) — laptop install, Spaces, other container hosts, backup
 - [Docker deployment](docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md) — compose matrix (Modes B / Mixed / A / M / G)
 - [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md) — `mailroom-vllm` serve and GPU-tier cutover
 - [Testing](docs/testing.md) — testing strategy and fixtures

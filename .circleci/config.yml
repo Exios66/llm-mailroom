@@ -1,17 +1,12 @@
 version: 2.1
 
-# Free-tier CircleCI gate: only the most critical, network-free, key-free checks.
-# Runs a single job once per push/PR. Mark "ci/circleci: test" as a required
-# check in GitHub branch protection for main to block merges.
-#
-# Usage burn: the job keys a "green" marker on the git TREE hash (file
-# contents, not commit SHA). A merge whose tree equals the PR head that already
-# passed (branch up to date with main), a re-push, or a branch carrying
-# identical files restores the marker and halts as a success in seconds,
-# before any install. The same code is never tested twice.
-#
-# Install with pip (NOT uv): pyproject [tool.uv.sources] points llm-dojo-scoring
-# at a hub workspace that does not exist in this standalone repo.
+# CircleCI is the CI hub. One small executor; scoped PR runs and one weekly
+# full/coverage backstop conserve free-tier credits. Keep ci/circleci: test
+# as the required check. A scoped green cache can never stand in for full.
+parameters:
+  full_suite:
+    type: boolean
+    default: false
 
 executors:
   py:
@@ -21,75 +16,112 @@ executors:
 
 jobs:
   test:
+    parameters:
+      force_full:
+        type: boolean
+        default: false
     executor: py
     steps:
       - checkout
-      - run:
-          name: Identify the code under test (git tree hash)
-          command: git rev-parse 'HEAD^{tree}' | tee .ci-tree
       - restore_cache:
           keys:
-            - ci-green-v1-{{ checksum ".ci-tree" }}
+            - ci-baseline-v1-{{ .Branch }}-
       - run:
-          name: Skip if this exact tree already passed
+          name: Plan smoke, affected or full tests
           command: |
-            if [ -f .ci-green/ok ]; then
-              echo "Tree $(cat .ci-tree) already passed CI; not re-running."
+            mkdir -p test-results
+            # Fetch failure is deliberately not fatal here: an unavailable
+            # comparison ref makes the planner choose the full suite.
+            git fetch origin main || true
+            if [ "$CIRCLE_BRANCH" = main ]; then
+              # Compare every commit since the last successful validation,
+              # not just HEAD^ (multi-commit pushes and failed builds matter).
+              base=$(cat test-results/baseline/revision 2>/dev/null || true)
+              if [ -z "$base" ] || ! git merge-base --is-ancestor "$base" HEAD; then
+                base=__unavailable_successful_baseline__
+              fi
+            else
+              base=origin/main
+            fi
+            full_arg=""
+            if [ "<< parameters.force_full >>" = true ]; then
+              full_arg="--full"
+            fi
+            printf 'export MAILROOM_TEST_BASE=%q\n' "$base" >> "$BASH_ENV"
+            printf 'export MAILROOM_TEST_FULL_ARG=%q\n' "$full_arg" >> "$BASH_ENV"
+            PYTHONPATH=src python src/scripts/ci_tests.py --base "$base" --branch "$CIRCLE_BRANCH" $full_arg
+            git rev-parse 'HEAD^{tree}' > test-results/tree
+      - restore_cache:
+          keys:
+            - ci-green-v2-{{ checksum "test-results/tree" }}-{{ checksum "test-results/plan-key" }}
+      - run:
+          name: Reuse only a pass for this exact tree and test scope
+          command: |
+            # Forced/weekly runs must execute even when this tree passed
+            # earlier; dependencies and execution environments can drift.
+            if [ "<< parameters.force_full >>" != true ] && [ -f test-results/green/ok ]; then
               circleci-agent step halt
             fi
       - restore_cache:
           keys:
             - pip-v1-{{ checksum "pyproject.toml" }}
       - run:
-          name: Install (dev extra)
+          name: Install dev dependencies
+          # pip honors the pinned Dojo dependency; uv workspace sources do not.
           command: pip install uv && pip install -e ".[dev]"
       - save_cache:
           key: pip-v1-{{ checksum "pyproject.toml" }}
           paths:
             - ~/.cache/pip
       - run:
-          # test_wheel_runtime_catalog runs `uv build --offline`, which can only read
-          # setuptools/wheel from uv's cache. Build once online so the cache has them.
-          name: Warm uv build cache (for the offline wheel test)
-          command: uv build --no-sources --wheel --out-dir /tmp/uv-warm .
+          name: Warm wheel build cache only when packaging tests are selected
+          command: |
+            if python -c 'import json; p=json.load(open("test-results/test-plan.json")); raise SystemExit(not (p["profile"] == "full" or "src/tests/test_wheel_runtime_catalog.py" in p["tests"]))'; then
+              uv build --no-sources --wheel --out-dir /tmp/uv-warm .
+            fi
       - run:
-          name: Prepare test results dir
-          command: mkdir -p test-results
-      - run:
-          name: Pytest (no network, no real LLM)
-          # Four known-failing tests deselected by exact node id so the gate
-          # catches NEW regressions instead of blocking every PR.
-          command: >-
-            python -m pytest src/tests -q -p no:cacheprovider --junitxml=test-results/junit.xml
-            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_charter_v0]"
-            --deselect "src/tests/test_corporate_flat9_candidates.py::test_actual_rendered_request_stays_flat9[corporate_records_specialist_flat9_poa_v0]"
-            --deselect "src/tests/test_prompt_mutation_lineage.py::test_extraction_doctrine_lists_exactly_the_current_schema_fields"
-            --deselect "src/tests/test_reconsideration.py::test_ground_truth_without_schema_fields_never_gates_coverage"
+          name: Execute the test cascade and relevant experiment gate
+          command: |
+            # Re-plan instead of trusting a saved plan that could be stale.
+            PYTHONPATH=src python src/scripts/ci_tests.py --base "$MAILROOM_TEST_BASE" --branch "$CIRCLE_BRANCH" $MAILROOM_TEST_FULL_ARG --run
           no_output_timeout: 20m
-      - run:
-          name: Hermetic experiment regression gate (mock)
-          command: >-
-            PYTHONPATH=src python src/scripts/run_experiment.py
-            --dataset mailroom-fixtures --mock
-            --baseline docs/superpowers/baselines/experiment-baseline.json
       - store_test_results:
           path: test-results
+      - store_artifacts:
+          path: test-results
+          destination: test-evidence
       - run:
-          # Only reached when every step above passed.
-          name: Mark this tree green
-          command: mkdir -p .ci-green && cp .ci-tree .ci-green/ok
+          name: Mark this tree and test scope green
+          command: mkdir -p test-results/green && cp test-results/plan-key test-results/green/ok
+      - run:
+          name: Record successful validation baseline
+          command: mkdir -p test-results/baseline && git rev-parse HEAD > test-results/baseline/revision
       - save_cache:
-          key: ci-green-v1-{{ checksum ".ci-tree" }}
+          key: ci-baseline-v1-{{ .Branch }}-{{ .Revision }}
           paths:
-            - .ci-green
+            - test-results/baseline
+      - save_cache:
+          key: ci-green-v2-{{ checksum "test-results/tree" }}-{{ checksum "test-results/plan-key" }}
+          paths:
+            - test-results/green
 
 workflows:
   ci:
     jobs:
       - test:
+          force_full: << pipeline.parameters.full_suite >>
           filters:
             branches:
-              ignore:
-                - gh-pages
+              ignore: gh-pages
             tags:
               ignore: /.*/
+  weekly-backstop:
+    triggers:
+      - schedule:
+          cron: "17 8 * * 0"
+          filters:
+            branches:
+              only: main
+    jobs:
+      - test:
+          force_full: true

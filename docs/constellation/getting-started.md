@@ -96,7 +96,7 @@ mailroom-web            # http://127.0.0.1:8001
 ## 6. Score extraction output
 
 ```bash
-pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@a82843e808336e0078c7d5b27dcdb3ff8b698170"
+pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f"
 ```
 
 ```python
@@ -113,7 +113,7 @@ The GitBook pipeline reference publishes the full operator manuals (they are lis
 
 - [Docker deployment](../pipeline-reference-llm-mailroom/deployment/docker-deployment.md) — compose matrix (OpenRouter, Ollama, llamafile, Mode G LiteLLM + Modal GPU tiers) and the The-Mailroom producer image
 - [Modal + vLLM](../pipeline-reference-llm-mailroom/deployment/modal-vllm.md) — `mailroom-vllm` serve, pipeline cutover, multi-tier GPUs
-- [Deployment](../pipeline-reference-llm-mailroom/deployment/README.md) — laptop Python install, Railway, Hugging Face Spaces, backup
+- [Deployment](../pipeline-reference-llm-mailroom/deployment/README.md) — laptop Python install, Hugging Face Spaces, container hosts, backup
 
 ```bash
 cp .env.example .env   # MAILROOM_API_TOKEN is required on every compose app

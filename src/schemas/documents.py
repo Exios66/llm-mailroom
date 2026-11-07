@@ -26,21 +26,32 @@ def _money(value: Any) -> Any:
 
 
 class ContractExtraction(BaseModel):
-    # Pared CUAD product: key entities + the fixed 41-category checklist.
-    # Open-ended key_obligations / termination_clauses are no longer extracted.
-    # MAUD merger agreements use MergerAgreementExtraction — these leftover
-    # merger_* / maud_* keys stay nullable so older CUAD payloads still parse.
+    # ContractExtraction v2 (llm-dojo-scoring 0.28.0, mailroom-dataset v10): the
+    # Dojo's 17 scored fields in its order (cuad_schema.CONTRACT_EXTRACTION_FIELDS).
+    # MAUD merger agreements use MergerAgreementExtraction — the v1 merger_* /
+    # maud_* keys stay nullable parse-compat fields: accepted, never scored.
     document_name: str | None = None
     parties: list[str] = Field(default_factory=list)
+    # "<party>: <role>", role in the Dojo CONTRACT_PARTY_ROLES vocabulary.
+    party_roles: list[str] = Field(default_factory=list)
+    signatories: list[str] = Field(default_factory=list)
+    agreement_date: str | None = None
     effective_date: str | None = None
+    expiration_date: str | None = None
     term_length: str | None = None
-    governing_law: str | None = None
-    contract_value: str | None = None
     renewal_terms: str | None = None
+    termination_notice_period: str | None = None
+    governing_law: str | None = None
+    dispute_forum: str | None = None
+    contract_value: str | None = None
+    payment_terms: str | None = None
+    territory: str | None = None
+    # Closed label: one of the 25 CUAD family keys or "other".
     cuad_family: str | None = None
-    merger_consideration: str | None = None
-    # Present CUAD / answered MAUD categories as "<label>: <evidence>" lines.
+    # Present CUAD categories as "<label>: <evidence>" lines.
     cuad_clauses: list[str] = Field(default_factory=list)
+    # Parse-compat (v1): always null / [] on CUAD contracts; not scored.
+    merger_consideration: str | None = None
     maud_clauses: list[str] = Field(default_factory=list)
     # Per-field reasoning trace (v24+ vendored schema): how each value was
     # found. A TRACE artifact, not clause content — excluded from scoring,
@@ -49,14 +60,29 @@ class ContractExtraction(BaseModel):
 
 
 class MergerAgreementExtraction(BaseModel):
-    # Dedicated MAUD schema (v0). CUAD family/clauses are not primary here.
+    # MergerAgreementExtraction v2 (llm-dojo-scoring 0.28.0, mailroom-dataset v10):
+    # the Dojo's 21 scored fields in its order (maud_schema.MergerAgreementExtraction).
     document_name: str | None = None
     parties: list[str] = Field(default_factory=list)
+    acquirer: str | None = None
+    target: str | None = None
+    merger_sub: list[str] = Field(default_factory=list)
+    signatories: list[str] = Field(default_factory=list)
     effective_date: str | None = None
     effective_time: str | None = None
     governing_law: str | None = None
+    per_share_cash_amount: str | None = None
+    exchange_ratio: str | None = None
+    target_termination_fee: str | None = None
+    parent_termination_fee: str | None = None
+    # ISO when stated as a date, else as printed when relative.
+    outside_date: str | None = None
+    financial_advisors: list[str] = Field(default_factory=list)
+    legal_counsel: list[str] = Field(default_factory=list)
+    # Closed label: all_cash | all_stock | mixed_cash_stock | mixed_cash_stock_election | other.
     merger_consideration: str | None = None
     maud_clauses: list[str] = Field(default_factory=list)
+    # Closed label: effect_merger | amend_merger | other (plan_of_merger is effect_merger).
     intent: str | None = None
     subject_matter: str | None = None
     keywords: list[str] = Field(default_factory=list)
@@ -81,11 +107,11 @@ class CorrespondenceExtraction(BaseModel):
     sender: str | None = None
     recipient: str | None = None
     additional_recipients: list[str] = Field(default_factory=list)
-    communication_type: str | None = None  # email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request
+    communication_type: str | None = None  # closed label: email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request, other
     communication_date: str | None = None
     demand_amount: float | None = None
     action_items: list[str] = Field(default_factory=list)  # capped ≤3
-    urgency: str | None = None  # routine, time-sensitive, urgent, critical
+    urgency: str | None = None  # closed label: routine, time-sensitive, urgent, critical (never null)
     intent: str | None = None
     subject_matter: str | None = None
     keywords: list[str] = Field(default_factory=list)
@@ -103,7 +129,7 @@ class InsuranceClaimExtraction(BaseModel):
     # 26–34 % on SAND-042 (auto 0/81, carrier 0/30 over SAND-032).
     insurer: str | None = None
     insured_party: str | None = None
-    claim_type: str | None = None  # pde, inpatient, outpatient, carrier, auto, property, liability, health, life, workers_comp, other
+    claim_type: str | None = None  # closed label (product line, Dojo INSURANCE_PRODUCT_LINES): auto, property, liability, health, life, workers_comp, other; a CMS row is health (its table token scores 0 here)
     date_of_loss: str | None = None
     date_filed: str | None = None
     claimed_amount: float | None = None
@@ -111,7 +137,7 @@ class InsuranceClaimExtraction(BaseModel):
     # (production HF pilot parked REVIEW when this field was a required str).
     adjuster: str | None = None
     damages_description: str | None = None
-    coverage_determination: str | None = None  # approved, denied, partial, pending
+    coverage_determination: str | None = None  # closed label: approved, denied, partial, pending
     denial_reasons: list[str] = Field(default_factory=list)
     supporting_documents: list[str] = Field(default_factory=list)
     intent: str | None = None

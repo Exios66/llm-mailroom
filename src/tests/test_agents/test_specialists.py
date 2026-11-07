@@ -1,6 +1,70 @@
 import pytest
 
-from schemas.documents import EXTRACTION_SCHEMAS, InsuranceClaimExtraction
+from schemas.documents import (
+    EXTRACTION_SCHEMAS,
+    ContractExtraction,
+    InsuranceClaimExtraction,
+    MergerAgreementExtraction,
+)
+
+
+@pytest.mark.parametrize(
+    ("doc_type", "model", "legacy_fields"),
+    [
+        ("contract", ContractExtraction, {
+            "reasoning", "document_name", "parties", "effective_date", "term_length",
+            "governing_law", "contract_value", "renewal_terms", "cuad_family",
+            "merger_consideration", "cuad_clauses", "maud_clauses", "confidence",
+        }),
+        ("merger_agreement", MergerAgreementExtraction, {
+            "reasoning", "document_name", "parties", "effective_date", "effective_time",
+            "governing_law", "merger_consideration", "maud_clauses", "intent",
+            "subject_matter", "keywords", "confidence",
+        }),
+    ],
+)
+def test_specialist_request_covers_document_model(doc_type, model, legacy_fields):
+    from langchain_agents.specialist_agents import get_extraction_schema
+
+    request = get_extraction_schema(doc_type)
+    properties = request["properties"]
+    assert legacy_fields <= properties.keys()
+    assert request["additionalProperties"] is False
+    assert set(properties) == set(request["required"])
+    for name, spec in model.model_json_schema()["properties"].items():
+        if name in {"reasoning", "confidence"}:
+            continue
+        assert name in properties
+        if spec.get("type") == "array":
+            assert properties[name]["type"] == "array"
+            assert properties[name]["items"]["type"] == "string"
+        else:
+            assert set(properties[name]["type"]) == {"string", "null"}
+
+
+def test_merger_request_and_result_preserve_scored_acquirer(mock_langchain_llm, mocker, monkeypatch):
+    from agents.merger_agreement_specialist import MergerAgreementSpecialist
+    from llm_dojo_scoring import field_scoring
+    from pipeline.config import load_config
+
+    mock_langchain_llm.extraction = {"acquirer": "Parent Inc.", "confidence": 0.9}
+    structured = mocker.spy(mock_langchain_llm, "with_structured_output")
+    result = MergerAgreementSpecialist().extract("Parent Inc. is the acquirer.")
+
+    schema = structured.call_args.args[0]
+    assert schema["properties"]["acquirer"]["type"] == ["string", "null"]
+    assert result["acquirer"] == "Parent Inc."
+    assert result["target"] is None
+    assert result["merger_sub"] == []
+    assert MergerAgreementExtraction.model_validate(result).acquirer == "Parent Inc."
+
+    monkeypatch.setattr(field_scoring, "_get_embedding", lambda: None)
+    field_types = next(row["field_types"] for row in load_config()["doc_classes"]
+                       if row["key"] == "merger_agreement")
+    score = field_scoring.score_extraction(
+        "merger_agreement", field_types, result, {"acquirer": "Parent Inc."}
+    )
+    assert score.field_scores["acquirer"] == 1.0
 
 
 def test_insurance_claim_schema_registered_and_validates():

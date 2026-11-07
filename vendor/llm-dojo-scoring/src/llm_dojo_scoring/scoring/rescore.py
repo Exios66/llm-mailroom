@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -57,6 +59,18 @@ def _headline(payload: Mapping[str, Any] | None) -> float | None:
         if _is_number(value):
             return float(value)
     return None
+
+
+def _extraction_headline(block: Mapping[str, Any]) -> float | None:
+    """An archive block's headline: ``headline_score`` when the type has one, else the field map.
+
+    Contract (CUAD) and merger (MAUD) rows are judged by ``headline_score``
+    (0.27.1); every other row keeps ``overall_score``.
+    """
+    value = block.get("headline_score")
+    if _is_number(value):
+        return float(value)
+    return _headline(block)
 
 
 def _is_number(value: Any) -> bool:
@@ -174,7 +188,7 @@ def _rescore_extraction(record: Mapping[str, Any], given: Mapping[str, Any] | No
         "doc_id": record.get("doc_id", record.get("id", record.get("item_id"))),
         "task": "extraction",
         "doc_class": str(doc_class),
-        "score": _headline(block),
+        "score": _extraction_headline(block),
         "payload": block,
         "provenance": block.get("provenance") or _provenance(given),
         "rescored_from": {
@@ -295,35 +309,55 @@ def rescore_record(
         and isinstance(stored_prov, Mapping)
         and str(stored_prov.get("scorer_version")) == SCORER_VERSION
     ):
-        # Re-running the output is a no-op, not a missing-evidence error.
+        # Re-running the output is a no-op, not a missing-evidence error. The headline
+        # comes from the same routing a fresh rescore would take.
+        route = _route(record, task)
+        if route == "reviewer":
+            score = _reviewer_headline(stored_payload)
+        elif route == "extraction":
+            score = _extraction_headline(stored_payload)
+        elif route == "classification":
+            score = _headline(stored_payload)
+        else:
+            # Taskless or ``"unknown"`` (this shortcut's own output): keep main's
+            # ``headline_score``-first behaviour.
+            score = _extraction_headline(stored_payload)
         return {
             "doc_id": record.get("doc_id", record.get("id", record.get("item_id"))),
             "task": task or "unknown",
             "doc_class": record.get("doc_class"),
-            "score": (
-                _reviewer_headline(stored_payload)
-                if task == "reviewer"
-                else _headline(stored_payload)
-            ),
+            "score": score,
             "payload": _finite(dict(stored_payload)),
             "provenance": dict(stored_prov),
             "rescored_from": record.get("rescored_from") or {},
             "already_current": True,
         }
-    if task in _EXTRACTION_TASKS or (
-        not task
-        and record.get("doc_class")
-        and isinstance(record.get("expected", record.get("expected_fields")), (Mapping, str))
-    ):
+    route = _route(record, task)
+    if route == "extraction":
         return _rescore_extraction(record, provenance)
-    if task in ("reviewer", "review_lane", "decision_reviewer"):
+    if route == "reviewer":
         return _rescore_reviewer(record, provenance)
-    if task in TASK_KINDS:
+    if route == "classification":
         return _rescore_classification({**record, "task": task}, provenance)
     raise RescoreError(
         f"unknown or missing task {task!r}; expected extraction, reviewer, or one of "
         f"{sorted(TASK_KINDS)}"
     )
+
+
+def _route(record: Mapping[str, Any], task: str) -> str | None:
+    """Which scorer a record goes to: extraction, reviewer, classification, or None."""
+    if task in _EXTRACTION_TASKS or (
+        not task
+        and record.get("doc_class")
+        and isinstance(record.get("expected", record.get("expected_fields")), (Mapping, str))
+    ):
+        return "extraction"
+    if task in ("reviewer", "review_lane", "decision_reviewer"):
+        return "reviewer"
+    if task in TASK_KINDS:
+        return "classification"
+    return None
 
 
 def rescore_records(
@@ -341,6 +375,11 @@ def rescore_records(
     results: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     for index, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            skipped.append(
+                {"index": index, "doc_id": None, "reason": f"record is {type(record).__name__}, not an object"}
+            )
+            continue
         try:
             results.append(_finite(rescore_record(record, provenance=provenance, force_rescore=force_rescore)))
         except ValueError as exc:  # RescoreError, or a scorer refusing a malformed row
@@ -433,6 +472,16 @@ def rescore_file(
     ``pred``, ``score``). ``dataset_path`` supplies GT by id. When a record
     already carries ``expected``/``predicted``, no dataset join is needed.
     """
+    source = Path(items_path)
+    target = Path(out_path or source.with_suffix(".rescored.jsonl"))
+    # Same path, or another name for the same file (a hard link): opening the
+    # output for writing would truncate the source either way.
+    if target.resolve() == source.resolve() or (
+        target.exists() and source.exists() and target.samefile(source)
+    ):
+        # The output omits raw predictions/truth: overwriting the source would
+        # make the run impossible to re-score again.
+        raise RescoreError(f"--out must differ from --items ({target})")
     items = _read_jsonl(Path(items_path))
     records = _join_dataset(items, Path(dataset_path)) if dataset_path else items
     for record in records:
@@ -442,11 +491,19 @@ def rescore_file(
             record["doc_class"] = doc_class
     # Joined GT may differ from what the stored payload was scored against.
     result = rescore_records(records, provenance=provenance, force_rescore=bool(dataset_path))
-    target = Path(out_path or Path(items_path).with_suffix(".rescored.jsonl"))
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as handle:
-        for record in result["records"]:
-            handle.write(json.dumps(_finite(record), sort_keys=True, default=str, allow_nan=False) + "\n")
+    # Write a sibling temp file and rename it over the target: a rename replaces the
+    # directory entry, never the file behind it, so even a hard link to the items
+    # created after the check above cannot be truncated.
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            for record in result["records"]:
+                handle.write(json.dumps(_finite(record), sort_keys=True, default=str, allow_nan=False) + "\n")
+        os.replace(tmp_name, target)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
     result["output"] = str(target)
     result["moves"] = diff_scorecards([record for record in records], result["records"])
     return result

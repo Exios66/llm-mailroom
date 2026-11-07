@@ -12,7 +12,7 @@ from __future__ import annotations
 
 # Vendor and source checkouts can coexist with unrelated installed metadata.
 # Report the version of the code actually loaded; release tests pin pyproject parity.
-__version__ = "0.27.1"
+__version__ = "0.28.1"
 from ._layout import install_legacy_aliases
 
 install_legacy_aliases()
@@ -55,6 +55,7 @@ from .schemas.intents import (
     INTENT_ALIASES,
     INTENT_DESCRIPTIONS,
     INTENT_LABELS,
+    MERGER_INTENTS,
     normalize_intent,
 )
 from .scoring.field_scoring import (
@@ -273,9 +274,13 @@ from .schemas.corporate_record_schema import (
 )
 from .schemas.schema_contract import contract_empty_payload, contract_violations
 from .schemas.scored_enums import (  # noqa: E402
-    SCORED_ENUM_FIELDS, enum_hint_violations, scored_enum_hint, scored_enum_schema,
-    scored_enum_schemas, scored_vocabulary,
+    SCORED_ENUM_FIELDS, canonical_label, enum_hint_violations, scored_enum_hint,
+    scored_enum_schema, scored_enum_schemas, scored_vocabulary,
 )
+from .schemas.v10_rows import (  # noqa: E402
+    V10_GT_CONFIGS, cuad_labels_from_long, gt_from_v10_row, maud_labels_from_long,
+)
+from .schemas.v10_rows import coverage_report as v10_coverage_report  # noqa: E402
 from .schemas.extraction_schemas import (  # noqa: E402
     ExtractionSchema, FieldSchema, extraction_schema,
     extraction_subtypes, iter_extraction_schemas, schema_coverage,
@@ -366,7 +371,7 @@ __all__ = [
     "get_field_types", "get_type_bands", "warm_embedding_model",
     "normalize_text", "parse_date", "parse_money", "score_category_presence",
     "is_entity_list", "get_ambiguous_band", "FIELD_SCORERS", "embed_texts",
-    "INTENT_LABELS", "INTENT_ALIASES", "INTENT_DESCRIPTIONS", "normalize_intent",
+    "INTENT_LABELS", "INTENT_ALIASES", "INTENT_DESCRIPTIONS", "MERGER_INTENTS", "normalize_intent",
     "extraction_binary_metrics", "mean_entity_list_f1", "merge_extraction_counts",
     "amount_exactness", "determination_consistency", "score_claims_extras",
     "Settings", "TraceKnobSettings", "clear_settings_cache", "configure", "configure_from_taxonomy",
@@ -425,8 +430,10 @@ __all__ = [
     "corporate_record_json_schema", "render_corporate_record_block",
     "corporate_record_field_types", "corporate_record_subclass_schema",
     "contract_empty_payload", "contract_violations",
-    "SCORED_ENUM_FIELDS", "enum_hint_violations", "scored_enum_hint", "scored_enum_schema",
-    "scored_enum_schemas", "scored_vocabulary",
+    "SCORED_ENUM_FIELDS", "canonical_label", "enum_hint_violations", "scored_enum_hint",
+    "scored_enum_schema", "scored_enum_schemas", "scored_vocabulary",
+    "V10_GT_CONFIGS", "cuad_labels_from_long", "gt_from_v10_row", "maud_labels_from_long",
+    "v10_coverage_report",
     "ExtractionSchema", "FieldSchema", "extraction_schema",
     "extraction_subtypes", "iter_extraction_schemas", "schema_coverage",
     "parse_gt_fields", "scoring_gt_fields", "normalize_field_values",

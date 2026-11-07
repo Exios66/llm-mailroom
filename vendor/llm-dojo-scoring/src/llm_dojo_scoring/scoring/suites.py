@@ -80,18 +80,27 @@ DOC_TYPE_ALIASES: dict[str, str] = {
 #: ``field_types=`` on ``score()``, or use
 #: :data:`LEGACY_FULL_EXTRACTION_FIELD_TYPES` for historical free-text dumps.
 DEFAULT_FIELD_TYPES: dict[str, dict[str, str]] = {
+    # ContractExtraction v2 (0.28.0, mailroom-dataset v10): the parse-compat
+    # ``merger_consideration`` / ``maud_clauses`` left the live map
+    # (``cuad_schema.CONTRACT_PARSE_COMPAT_FIELDS``) and the entity fields joined.
     "contract": {
         "document_name": "name",
         "parties": "entity_list:name",
+        "party_roles": "entity_list:free_text",
+        "signatories": "entity_list:name",
+        "agreement_date": "date",
         "effective_date": "date",
+        "expiration_date": "date",
         "term_length": "free_text",
-        "governing_law": "name",
-        "contract_value": "money",
         "renewal_terms": "free_text",
-        "cuad_family": "name",
-        "merger_consideration": "name",
+        "termination_notice_period": "free_text",
+        "governing_law": "name",
+        "dispute_forum": "name",
+        "contract_value": "money",
+        "payment_terms": "free_text",
+        "territory": "free_text",
+        "cuad_family": "label",
         "cuad_clauses": "entity_list:free_text",
-        "maud_clauses": "entity_list:free_text",
     },
     "corporate_record": {
         "entity_name": "name",
@@ -117,11 +126,11 @@ DEFAULT_FIELD_TYPES: dict[str, dict[str, str]] = {
         "sender": "name",
         "recipient": "name",
         "additional_recipients": "entity_list",
-        "communication_type": "name",
+        "communication_type": "label",
         "communication_date": "date",
         "demand_amount": "money",
         "action_items": "entity_list",
-        "urgency": "name",
+        "urgency": "label",
         "intent": "label",
         "subject_matter": "free_text",
         "keywords": "entity_list:name",
@@ -154,13 +163,13 @@ DEFAULT_FIELD_TYPES: dict[str, dict[str, str]] = {
         "policy_number": "id",
         "insurer": "name",
         "insured_party": "name",
-        "claim_type": "name",
+        "claim_type": "label",
         "date_of_loss": "date",
         "date_filed": "date",
         "claimed_amount": "money",
         "adjuster": "name",
         "damages_description": "free_text",
-        "coverage_determination": "name",
+        "coverage_determination": "label",
         "denial_reasons": "entity_list:free_text",
         "supporting_documents": "entity_list",
         "intent": "label",
@@ -168,15 +177,27 @@ DEFAULT_FIELD_TYPES: dict[str, dict[str, str]] = {
         "keywords": "entity_list:name",
         "claim_checklist": "entity_list:free_text",
     },
+    # MergerAgreementExtraction v2 (0.28.0, mailroom-dataset v10).
     "merger_agreement": {
         "document_name": "name",
         "parties": "entity_list:name",
+        "acquirer": "name",
+        "target": "name",
+        "merger_sub": "entity_list:name",
+        "signatories": "entity_list:name",
         "effective_date": "date",
         "effective_time": "free_text",
         "governing_law": "name",
-        "merger_consideration": "name",
+        "per_share_cash_amount": "money",
+        "exchange_ratio": "free_text",
+        "target_termination_fee": "money",
+        "parent_termination_fee": "money",
+        "outside_date": "date",
+        "financial_advisors": "entity_list:name",
+        "legal_counsel": "entity_list:name",
+        "merger_consideration": "label",
         "maud_clauses": "entity_list:free_text",
-        "intent": "name",
+        "intent": "label",
         "subject_matter": "free_text",
         "keywords": "entity_list:name",
     },
@@ -383,9 +404,12 @@ _HONEST_GAPS: dict[str, str] = {
         "(cms_source_table, derived for CMS rows from expected_subclass) are "
         "scored as separate fields (#93). On CMS rows adjuster and "
         "denial_reasons are documented-absent: an empty prediction is "
-        "correct, a stated value is a false positive. claim_checklist is "
-        "in the live map but no GT row populates it, so the headline is "
-        "partial (headline_scope); loss_report / other intents are unused."
+        "correct, a stated value is a false positive. claim_type and "
+        "coverage_determination are closed labels (0.28.0): exact match after "
+        "alias folding, no fuzzy name credit. claim_checklist is in the live "
+        "map but no published GT row populates it until mailroom-dataset v10, "
+        "so the headline is partial (headline_scope); loss_report / other "
+        "intents are unused."
     ),
     "due_diligence_specialist": (
         "HONEST GAP: due_diligence was RETIRED from the live llm-mailroom "
@@ -1383,9 +1407,15 @@ class ScoringSuite:
                 [
                     row
                     if isinstance(row, dict)
-                    else {"overall_score": getattr(row, "overall_score", None)}
+                    else {
+                        "overall_score": getattr(row, "overall_score", None),
+                        # field scores let the aggregate add headline scope
+                        # and the intent split for this class
+                        "field_scores": getattr(row, "field_scores", None),
+                    }
                     for row in extraction
-                ]
+                ],
+                doc_class=doc_class,
             )
             batch_quality["n_missing_predictions"] = n_missing_predictions
         if not extras and is_batch:

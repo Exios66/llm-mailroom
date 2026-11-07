@@ -12,8 +12,10 @@ surfaces that previously lived in separate places:
   CUAD folder surfaces that normalize to each, a short definition, the
   characteristically salient (high-prior) categories, and optional
   family-specific entity hints;
-* the **11 scored ContractExtraction fields** (:data:`CONTRACT_EXTRACTION_FIELDS`)
-  with scoring type, empty value, and description;
+* the **17 scored ContractExtraction v2 fields** (:data:`CONTRACT_EXTRACTION_FIELDS`,
+  0.28.0) with scoring type, empty value, and description, plus the two v1
+  parse-compat keys that are accepted but never scored
+  (:data:`CONTRACT_PARSE_COMPAT_FIELDS`);
 * helpers to look categories/families up, order questions per family, render a
   prompt-ready question block, and emit a JSON Schema for guided decoding.
 
@@ -24,7 +26,7 @@ Authority and invariants (checked at import — a mismatch raises
   (the ``cuad_clause_labels`` / ``cuad_clauses`` surface) as a set; the tuple
   order here is the CUAD / frozen-prompt order, not alphabetical;
 * family keys are exactly ``corpus.DOC_TYPE_SUBCLASSES["contract"]`` and the
-  folder surfaces cover ``corpus.CORPUS_SUBCLASS_SURFACES["contract"]``;
+  folder surfaces cover ``corpus.RAW_CORPUS_SUBCLASS_SURFACES["contract"]``;
 * the field descriptor reproduces ``DEFAULT_FIELD_TYPES["contract"]`` exactly.
 
 Documentation/prompt aids only: nothing here changes what is scored.
@@ -44,7 +46,7 @@ from typing import Any, Iterable
 
 from ..config import CONTRACT_SUBTYPE_LABELS, SUBTYPE_UNKNOWN
 from .corpus import (
-    CORPUS_SUBCLASS_SURFACES,
+    RAW_CORPUS_SUBCLASS_SURFACES,
     CUAD_CLAUSE_CATEGORIES,
     DOC_TYPE_SUBCLASSES,
 )
@@ -60,6 +62,8 @@ __all__ = [
     "CUAD_GROUPS",
     "CUAD_QUESTION_TEMPLATE",
     "CONTRACT_EXTRACTION_FIELDS",
+    "CONTRACT_PARSE_COMPAT_FIELDS",
+    "CONTRACT_PARTY_ROLES",
     "CONTRACT_FIELD_TYPES",
     "CuadCategory",
     "CuadFamily",
@@ -150,7 +154,7 @@ CUAD_CATEGORIES: tuple[CuadCategory, ...] = (
         "Agreement Date", "basic_info", "span",
         "The date of the contract",
         "What is the date the contract was made or signed?",
-        field="effective_date",
+        field="agreement_date",
     ),
     CuadCategory(
         "Effective Date", "basic_info", "span",
@@ -162,7 +166,7 @@ CUAD_CATEGORIES: tuple[CuadCategory, ...] = (
         "Expiration Date", "term_and_termination", "span",
         "On what date will the contract's initial term expire?",
         "When does the initial term expire, or how long does the agreement last?",
-        field="term_length",
+        field="expiration_date",
     ),
     CuadCategory(
         "Renewal Term", "term_and_termination", "span",
@@ -174,7 +178,7 @@ CUAD_CATEGORIES: tuple[CuadCategory, ...] = (
         "Notice Period To Terminate Renewal", "term_and_termination", "span",
         "What is the notice period required to terminate renewal?",
         "How much notice must be given to stop the contract renewing?",
-        field="renewal_terms",
+        field="termination_notice_period",
     ),
     CuadCategory(
         "Governing Law", "basic_info", "span",
@@ -411,7 +415,7 @@ CUAD_FAMILIES: tuple[CuadFamily, ...] = (
          "Renewal Term", "Expiration Date"),
         (_ff("principal_and_agent", "Which party is principal and which is agent"),
          _ff("commission_rate", "Commission rate or schedule", "contract_value"),
-         _ff("territory", "Territory the agent covers")),
+         _ff("territory", "Territory the agent covers", "territory")),
     ),
     CuadFamily(
         "collaboration", CONTRACT_SUBTYPE_LABELS["collaboration"],
@@ -460,7 +464,7 @@ CUAD_FAMILIES: tuple[CuadFamily, ...] = (
         ("License Grant", "Exclusivity", "Minimum Commitment", "Anti-Assignment", "Non-Compete",
          "Price Restrictions", "Termination For Convenience", "Rofr/Rofo/Rofn",
          "Competitive Restriction Exception", "Volume Restriction", "Governing Law", "Renewal Term"),
-        (_ff("territory", "Distribution territory"),
+        (_ff("territory", "Distribution territory", "territory"),
          _ff("distributed_products", "Products the distributor may sell"),
          _ff("minimum_purchase", "Minimum purchase or quota", "contract_value")),
     ),
@@ -482,7 +486,7 @@ CUAD_FAMILIES: tuple[CuadFamily, ...] = (
          "Renewal Term", "Cap On Liability", "License Grant", "Termination For Convenience",
          "Anti-Assignment", "Post-Termination Services", "Insurance", "No-Solicit Of Employees",
          "Rofr/Rofo/Rofn", "Governing Law"),
-        (_ff("territory", "Franchised territory"),
+        (_ff("territory", "Franchised territory", "territory"),
          _ff("franchise_fees", "Initial franchise fee and royalty rate", "contract_value"),
          _ff("franchised_system", "Brand or business system franchised")),
     ),
@@ -530,7 +534,7 @@ CUAD_FAMILIES: tuple[CuadFamily, ...] = (
          "Exclusivity", "Covenant Not To Sue", "Audit Rights", "Anti-Assignment",
          "Termination For Convenience", "Joint Ip Ownership", "Most Favored Nation"),
         (_ff("royalty_rate", "Royalty rate or license fee", "contract_value"),
-         _ff("territory", "Licensed territory"),
+         _ff("territory", "Licensed territory", "territory"),
          _ff("licensed_product", "Licensed technology, content or product"),
          _ff("license_scope", "Exclusive / non-exclusive, field of use, sublicensing")),
     ),
@@ -607,7 +611,7 @@ CUAD_FAMILIES: tuple[CuadFamily, ...] = (
          "Exclusivity", "Non-Transferable License", "Most Favored Nation",
          "Termination For Convenience", "Volume Restriction", "Rofr/Rofo/Rofn",
          "Competitive Restriction Exception", "Audit Rights", "Warranty Duration"),
-        (_ff("territory", "Reseller territory"),
+        (_ff("territory", "Reseller territory", "territory"),
          _ff("resold_products", "Products the reseller may resell"),
          _ff("reseller_discount", "Discount off list price", "contract_value")),
     ),
@@ -708,6 +712,16 @@ class CuadField:
         return self.empty_kind == "list"
 
 
+#: Roles a ``party_roles`` entry may name (mailroom-dataset v10 ``contract_party_role``).
+CONTRACT_PARTY_ROLES: tuple[str, ...] = (
+    "licensor", "licensee", "supplier", "customer", "distributor", "reseller",
+    "franchisor", "franchisee", "service_provider", "client", "sponsor", "agent",
+    "principal", "partner", "lender", "borrower", "other",
+)
+
+#: ContractExtraction v2 (0.28.0, mailroom-dataset v10 plan A1): the scored fields,
+#: in schema order. ``cuad_family`` is a closed ``label``; the entity fields from
+#: ``party_roles`` on are new in v2.
 CONTRACT_EXTRACTION_FIELDS: tuple[CuadField, ...] = (
     CuadField(
         "document_name", "name", "null",
@@ -718,40 +732,78 @@ CONTRACT_EXTRACTION_FIELDS: tuple[CuadField, ...] = (
         "Distinct named contracting parties: full legal name plus parenthetical alias when the text gives one.",
     ),
     CuadField(
+        "party_roles", "entity_list:free_text", "list",
+        "One '<party>: <role>' line per party; role is one of " + ", ".join(CONTRACT_PARTY_ROLES) + ".",
+    ),
+    CuadField(
+        "signatories", "entity_list:name", "list",
+        "Persons who sign the contract, as printed.",
+    ),
+    CuadField(
+        "agreement_date", "date", "null",
+        "The 'dated as of' or signature date as ISO YYYY-MM-DD.",
+    ),
+    CuadField(
         "effective_date", "date", "null",
         "Date the agreement takes effect as ISO YYYY-MM-DD; a defined Effective Date wins over the signature date.",
+    ),
+    CuadField(
+        "expiration_date", "date", "null",
+        "End of the initial term as ISO YYYY-MM-DD when the text states it as a date; else null.",
     ),
     CuadField(
         "term_length", "free_text", "null",
         "Duration of the agreement itself (commencement through end / earlier termination), not a sub-period.",
     ),
     CuadField(
+        "renewal_terms", "free_text", "null",
+        "Renewal, extension or rollover language, including evergreen 'continues until terminated on N days notice'.",
+    ),
+    CuadField(
+        "termination_notice_period", "free_text", "null",
+        "Notice needed to terminate the contract or to stop a renewal, as stated.",
+    ),
+    CuadField(
         "governing_law", "name", "null",
         "Only the sentence naming the jurisdiction whose laws govern; no forum, venue or attorneys' fees.",
+    ),
+    CuadField(
+        "dispute_forum", "name", "null",
+        "Courts or arbitral seat for disputes, kept separate from governing law.",
     ),
     CuadField(
         "contract_value", "money", "null",
         "Monetary consideration as a plain currency phrase ('$2,000,000'); $0 is a stated amount; never computed.",
     ),
     CuadField(
-        "renewal_terms", "free_text", "null",
-        "Renewal, extension or rollover language, including evergreen 'continues until terminated on N days notice'.",
+        "payment_terms", "free_text", "null",
+        "How and when the consideration is paid, as stated.",
     ),
     CuadField(
-        "cuad_family", "name", "null",
+        "territory", "free_text", "null",
+        "The stated territory of the grant, distribution or service.",
+    ),
+    CuadField(
+        "cuad_family", "label", "null",
         "Exactly one CUAD family key (25 families) or 'other'; null only when not a CUAD commercial contract.",
-    ),
-    CuadField(
-        "merger_consideration", "name", "null",
-        "Parse-compat only: always null on CUAD commercial contracts.",
     ),
     CuadField(
         "cuad_clauses", "entity_list:free_text", "list",
         "Present CUAD categories only, as '<Atticus category>: <short verbatim evidence span>'.",
     ),
+)
+
+#: Keys a contract prediction may still carry from ContractExtraction v1. They are
+#: accepted when parsing (never an extra-key adherence fault) but never scored on a
+#: contract, so the contract headline can reach ``full`` (v10 plan A1).
+CONTRACT_PARSE_COMPAT_FIELDS: tuple[CuadField, ...] = (
+    CuadField(
+        "merger_consideration", "name", "null",
+        "Parse-compat only: always null on CUAD commercial contracts; not scored.",
+    ),
     CuadField(
         "maud_clauses", "entity_list:free_text", "list",
-        "Parse-compat only: always [] on CUAD commercial contracts.",
+        "Parse-compat only: always [] on CUAD commercial contracts; not scored.",
     ),
 )
 
@@ -780,8 +832,8 @@ def _check_invariants() -> None:
     if set(CUAD_FAMILY_KEYS) != expected_keys or len(CUAD_FAMILY_KEYS) != 26:
         raise RuntimeError("cuad_schema families drifted from corpus.DOC_TYPE_SUBCLASSES['contract']")
     surfaces = {s for f in CUAD_FAMILIES for s in f.surfaces}
-    if surfaces != set(CORPUS_SUBCLASS_SURFACES["contract"]):
-        raise RuntimeError("cuad_schema family surfaces drifted from corpus.CORPUS_SUBCLASS_SURFACES")
+    if surfaces != set(RAW_CORPUS_SUBCLASS_SURFACES["contract"]):
+        raise RuntimeError("cuad_schema family surfaces drifted from corpus.RAW_CORPUS_SUBCLASS_SURFACES")
     for fam in CUAD_FAMILIES:
         stray = set(fam.salient) - set(CUAD_CATEGORY_NAMES)
         if stray or len(set(fam.salient)) != len(fam.salient):
@@ -1006,56 +1058,29 @@ def cuad_json_schema(*, include_trace: bool = True) -> dict[str, Any]:
     Built for vLLM guided decoding: nullable scalars are
     ``["string", "null"]``, lists default to ``[]``, ``cuad_family`` is the 25
     families + ``other`` (or ``null``), and each ``cuad_clauses`` item must
-    match ``^<Atticus category>: .+``. ``merger_consideration`` is pinned to
-    ``null`` and ``maud_clauses`` to ``[]`` (parse-compat keys, always empty on
-    CUAD contracts). Every scored field is required. ``include_trace`` adds the
-    prompt's unscored ``reasoning`` object and ``confidence`` number; set it
-    ``False`` for a schema over exactly the 11 scored keys.
+    match ``^<Atticus category>: .+``; dates are ISO-shaped. The v1 parse-compat
+    keys (``merger_consideration``, ``maud_clauses``) are not in the v2 schema:
+    a guided decoder never emits them. Every scored field is required.
+    ``include_trace`` adds the prompt's unscored ``reasoning`` object and
+    ``confidence`` number; set it ``False`` for a schema over exactly the 17
+    scored keys.
     """
-    string_or_null: dict[str, Any] = {"type": ["string", "null"], "default": None}
-    props: dict[str, Any] = {
-        "document_name": {**string_or_null, "description": CONTRACT_EXTRACTION_FIELDS[0].description},
-        "parties": {
-            "type": "array",
-            "items": {"type": "string", "minLength": 1},
-            "default": [],
-            "description": CONTRACT_EXTRACTION_FIELDS[1].description,
-        },
-        "effective_date": {
-            "type": ["string", "null"],
-            "pattern": r"^\d{4}-\d{2}-\d{2}$",
-            "default": None,
-            "description": CONTRACT_EXTRACTION_FIELDS[2].description,
-        },
-        "term_length": {**string_or_null, "description": CONTRACT_EXTRACTION_FIELDS[3].description},
-        "governing_law": {**string_or_null, "description": CONTRACT_EXTRACTION_FIELDS[4].description},
-        "contract_value": {**string_or_null, "description": CONTRACT_EXTRACTION_FIELDS[5].description},
-        "renewal_terms": {**string_or_null, "description": CONTRACT_EXTRACTION_FIELDS[6].description},
-        "cuad_family": {
-            "type": ["string", "null"],
-            "enum": [*CUAD_FAMILY_KEYS, None],
-            "default": None,
-            "description": CONTRACT_EXTRACTION_FIELDS[7].description,
-        },
-        "merger_consideration": {
-            "type": "null",
-            "default": None,
-            "description": CONTRACT_EXTRACTION_FIELDS[8].description,
-        },
-        "cuad_clauses": {
-            "type": "array",
-            "items": {"type": "string", "pattern": _clause_pattern()},
-            "default": [],
-            "description": CONTRACT_EXTRACTION_FIELDS[9].description,
-        },
-        "maud_clauses": {
-            "type": "array",
-            "items": {"type": "string"},
-            "maxItems": 0,
-            "default": [],
-            "description": CONTRACT_EXTRACTION_FIELDS[10].description,
-        },
-    }
+    iso_date = {"type": ["string", "null"], "pattern": r"^\d{4}-\d{2}-\d{2}$", "default": None}
+    props: dict[str, Any] = {}
+    for f in CONTRACT_EXTRACTION_FIELDS:
+        if f.name == "cuad_family":
+            prop: dict[str, Any] = {
+                "type": ["string", "null"], "enum": [*CUAD_FAMILY_KEYS, None], "default": None,
+            }
+        elif f.name == "cuad_clauses":
+            prop = {"type": "array", "items": {"type": "string", "pattern": _clause_pattern()}, "default": []}
+        elif f.is_list:
+            prop = {"type": "array", "items": {"type": "string", "minLength": 1}, "default": []}
+        elif f.scoring_type == "date":
+            prop = dict(iso_date)
+        else:
+            prop = {"type": ["string", "null"], "default": None}
+        props[f.name] = {**prop, "description": f.description}
     if props.keys() != CONTRACT_FIELD_TYPES.keys():  # pragma: no cover - guard
         raise RuntimeError("cuad_json_schema props drifted from the field descriptor")
     required = [f.name for f in CONTRACT_EXTRACTION_FIELDS]
