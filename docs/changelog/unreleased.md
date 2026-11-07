@@ -15,6 +15,12 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 
 Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md).
 
+## Security
+
+- **Tokenless API requests are served only on a loopback listener** (audit L-2). A direct `uvicorn api.main:app --host 0.0.0.0` never runs `assert_bind_allowed()`, so with no `MAILROOM_API_TOKEN` it served every route to the network. Token-protected routes now read the ASGI `server` address (the local socket the request arrived on) and answer `503` when no live token is configured and that address is not loopback; unix sockets and unknown addresses fail closed, and so does a loopback request that carries `Forwarded` / `X-Forwarded-For` / `X-Real-IP` (a same-host reverse proxy). A proxy that adds no forwarding headers still looks local: set a token behind any proxy. `/health`, FastAPI's `/docs` / `/redoc` / `/openapi.json` and live-token behaviour are unchanged. If you run the API off loopback without a token on purpose, set `MAILROOM_API_TOKEN`.
+- Tokenless loopback mode also refuses requests carrying `X-Forwarded-Proto` or `X-Forwarded-Host`, in addition to `Forwarded` / `X-Forwarded-For` / `X-Real-IP`, so a same-host proxy that sends only those two no longer looks local. A proxy that adds no forwarding header still does: set a token behind any proxy.
+- `MAILROOM_API_TOKEN` is now read per request, like `MAILROOM_API_TOKENS` and `MAILROOM_API_TOKEN_REVOKED`, instead of once at import. A token set after `api.main` is imported (as local-mailroom-sandbox's offline pilot does) now counts rather than leaving the app in tokenless mode.
+
 ## Added
 
 - **Display contract for The-Mailroom** (`contract/mailroom-contract.json`, `src/scripts/export_contract.py`).
@@ -27,13 +33,12 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
 ## Changed
 
-- **Dojo pin → v0.27.2** (`1cd4aba`, llm-dojo-scoring#121), from the 0.27.1 pin `a82843e`. The pin stays an exact commit (the `v0.27.2` tag's commit). 0.27.2 is a fix release:
-  - `score_document` never raises on deeply nested prediction text, and parses brace-heavy text in linear time.
-  - Any `Mapping` prediction counts as a dict payload for schema adherence.
-  - A prose-wrapped Python repr sets `prose_wrapper`.
-  - `rescore` reports the CUAD/MAUD `headline_score` as the extraction score.
-
-  Field-map, tier 0 and headline scores are unchanged. Moved with `bump_dojo_scoring.py --apply --tag 1cd4aba…`.
+- **Dojo pin → v0.28.0** (`cab9768`, llm-dojo-scoring#124), superseding the unreleased v0.27.2 pin (`1cd4aba`, whose fixes 0.28.0 includes). Step G2 of the mailroom-dataset v10 plan ([v10 consumer plan](https://github.com/Exios66/Mailroom-Corpus-EDA/blob/main/docs/plans/v10-consumer-patches.md)). The pin stays an exact commit (the `v0.28.0` tag's commit): `bump_dojo_scoring.py --apply --tag v0.28.0` now resolves a release tag to its commit itself (it used to write the tag, which `test_dojo_source.py` rejects), and the vendored fallback snapshot (`vendor/llm-dojo-scoring`) is the same commit.
+  - **Field maps mirror the Dojo.** `taxonomy.yaml` `field_types` for contract, merger, correspondence and insurance equal the Dojo 0.28.0 `DEFAULT_FIELD_TYPES` (the file hashes to blob `44e0ab59`, which the Dojo's `tests/fixtures/taxonomy_field_types.json` pins). `schemas/documents.py`: `ContractExtraction` v2 (17 scored fields: `party_roles`, `signatories`, `agreement_date`, `expiration_date`, `termination_notice_period`, `dispute_forum`, `payment_terms`, `territory` are new; the v1 `merger_consideration` / `maud_clauses` stay as parse-compat fields the Dojo accepts but never scores) and `MergerAgreementExtraction` v2 (21: `acquirer`, `target`, `merger_sub`, `signatories`, `per_share_cash_amount`, `exchange_ratio`, both termination fees, `outside_date`, `financial_advisors`, `legal_counsel`).
+  - **Closed labels.** `cuad_family`, `merger_consideration`, merger `intent`, `communication_type`, `urgency`, `claim_type` and `coverage_determination` are `label` fields: aliases fold, then exact match (no containment credit, so `demand` no longer matches `attorney_demand`).
+  - **Comparability.** `field_map_sha` changes for those four classes (corporate is unchanged); wrong closed labels score 0 where they had partial credit; contract rows no longer count spurious merger keys as false positives; `schema_valid` follows the larger v2 maps. v9 rows carry no GT for the new v2 fields, so contract and merger headlines read `partial` until v10.
+  - `bump_dojo_scoring.py` now also moves the README pin note's short-SHA form (dropping its stale "(the Dojo vX release commit)"), the architecture page's "library (vX," mention, and the "Latest" release rows (only forward, only when the pin is a newer release), which had stayed at v0.27.2.
+  - `contract/mailroom-contract.json` regenerated (`export_contract.py --write`).
 
 ## Removed
 

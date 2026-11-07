@@ -143,6 +143,8 @@ def test_token_set_after_import_is_live(monkeypatch, temp_base_dir):
         (b"x-forwarded-for", b"203.0.113.7"),
         (b"forwarded", b"for=203.0.113.7;proto=https"),
         (b"x-real-ip", b"203.0.113.7"),
+        (b"x-forwarded-proto", b"https"),
+        (b"x-forwarded-host", b"mailroom.example.com"),
     ],
 )
 def test_tokenless_proxied_request_on_loopback_gets_503(monkeypatch, temp_base_dir, header):
