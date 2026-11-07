@@ -635,7 +635,8 @@ SORTER_PROMPT_CONDENSED_V1 = (
 #: was run on v1.
 SORTER_CONDENSED_V1_BYLAW_RULE = "a board-adopted bylaw amendment is board_resolution"
 SORTER_CONDENSED_BYLAW_RULE = "a bylaw amendment is bylaws, never board_resolution"
-assert SORTER_PROMPT_CONDENSED_V1.count(SORTER_CONDENSED_V1_BYLAW_RULE) == 1
+if SORTER_PROMPT_CONDENSED_V1.count(SORTER_CONDENSED_V1_BYLAW_RULE) != 1:
+    raise RuntimeError("sorter_condensed_v1 must state its bylaw rule exactly once")
 SORTER_PROMPT_CONDENSED = SORTER_PROMPT_CONDENSED_V1.replace(
     SORTER_CONDENSED_V1_BYLAW_RULE, SORTER_CONDENSED_BYLAW_RULE
 )
@@ -662,6 +663,9 @@ SORTER_CONDENSED_GUARDS = (
 
 #: Every guard set a pinned default may carry; system_prompt enforces each one the default has.
 SORTER_GUARD_SETS = (SORTER_V15_GUARDS, SORTER_CONDENSED_GUARDS)
+
+#: Rules a later version reversed: a managed prompt that states one its pin does not is refused.
+SORTER_SUPERSEDED_RULES = (SORTER_CONDENSED_V1_BYLAW_RULE,)
 
 # =============================================================================
 # SORTER AGENT — Vision Classification (RVL-CDIP-style image pipeline)
@@ -3145,7 +3149,7 @@ PROMPT_VERSIONS = {
 
 # Production specialist aliases: sandbox / eval-environment frozen v1 stems.
 # Historical entity-extraction keys (contracts_specialist_v1…v33, sorter_v0…v14)
-# stay on this dict for eval loops. Sorter production is the frozen sorter_v15.
+# stay on this dict for eval loops. Sorter production is sorter_condensed_v5.
 from llm.frozen_v1 import bind_production_specialists  # noqa: E402
 
 bind_production_specialists(PROMPT_VERSIONS)
