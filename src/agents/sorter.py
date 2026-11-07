@@ -1,7 +1,7 @@
 """Sorter agent — LangChain version vendored from llm-entity-extraction.
 
 Re-exports ``langchain_agents.sorter_agent.SorterAgent`` (the eval-validated
-LangChain sorter with the contract-subtype dimension, ``sorter_v15`` prompt)
+LangChain sorter with the contract-subtype dimension, ``sorter_condensed_v1`` prompt)
 with mailroom defaults applied from ``config/taxonomy.yaml`` (model,
 temperature, max_tokens, max_input_chars) and page-image vision support.
 
@@ -47,8 +47,9 @@ class SorterAgent(_LangChainSorterAgent):
     - ``classify_json`` accepts page-image data-URIs; they are appended as
       multimodal content (additive, never replacing the text) when the
       configured model is vision-capable — attached to the FIRST window only.
-    - Runs the frozen ``sorter_v15`` prompt by default (V14 + the corpus class
-      boundaries); override with ``prompt_version=``. V14 is the known-broken
+    - Runs the production condensed prompt by default (``sorter_condensed_v1``,
+      ~1k tokens rendered); override with ``prompt_version=``. ``sorter_v15`` stays
+      frozen as a reference (V14 is the known-broken
       variant (indentures / rights instruments as contract, mailbox fragments
       as unknown). Production classify nodes serve it
       through ``get_managed_prompt`` (Langfuse ``mailroom-sorter``).
@@ -58,7 +59,7 @@ class SorterAgent(_LangChainSorterAgent):
         self,
         model: str | None = None,
         api_key: str | None = None,
-        prompt_version: str = "sorter_v15",
+        prompt_version: str = "sorter_condensed_v1",
     ):
         super().__init__(model=model, api_key=api_key, prompt_version=prompt_version)
         cfg = get_agent_config(self.agent_name)
@@ -71,7 +72,7 @@ class SorterAgent(_LangChainSorterAgent):
             self._reasoning_effort = cfg["reasoning_effort"]
 
     def system_prompt(self) -> str:
-        """Langfuse-managed sorter_v15 with live taxonomy catalogs compiled in.
+        """Langfuse-managed pinned prompt with live taxonomy catalogs compiled in.
 
         LangGraph ``classify`` / ``retry_classify`` call ``classify_json`` →
         ``_call_structured`` → this method. Eval pins via ``prompt_version=``
