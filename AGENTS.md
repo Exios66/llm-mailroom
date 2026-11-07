@@ -1,6 +1,46 @@
 # AGENTS.md
 
-Mailroom: a LangGraph state machine that processes legal documents through specialist LLM agents (classify → extract → report → archive) with filesystem bins, a SQLite catalog/audit log, and optional Langfuse/Braintrust tracing. Python 3.11+, no build step.
+Mailroom: a LangGraph state machine that processes legal documents through specialist LLM agents (intake → classify → extract → judge/arbiter → report → archive) with filesystem bins, a SQLite catalog/audit log, and optional Langfuse/Braintrust/Phoenix tracing. Python 3.11+, no build step.
+
+This is the long-form manual for every coding agent (Claude Code, Codex, Cursor, OpenCode) and for humans. Read it by section, on demand.
+
+## Start here (every agent, every task)
+
+1. **Read `CLAUDE.md` first**, whatever tool you are. It is the short, maintained summary
+   for all agents: purpose, constellation relationships, file map, setup, verification
+   gates, hard rules, gotchas and files you must not hand-edit. This manual expands on it.
+2. **Follow the agent workflow** in `.claude/rules/` (Claude Code loads these files
+   automatically; other tools must read them):
+   - `.claude/rules/evidence-contract.md` — what counts as proof before you call anything
+     done, fixed or passing, and how evidence (test output, screenshots, recordings)
+     reaches the PR.
+   - `.claude/rules/orchestration.md` — how work is delegated: the main session
+     orchestrates on the top model tier and never spawns a subagent on that tier; scoped
+     higher-level work goes to mid-tier subagents (Sonnet, effort high); simple tasks
+     (run, fetch, collect, mechanical edits) go to the small tier (Haiku, effort high);
+     every subagent change gets 1–3 adversarial review rounds sized to the change, then
+     the orchestrator re-verifies.
+   - `.claude/rules/pr-flow.md` — local gate → self-review → fresh-context pre-PR review
+     → draft PR → bot review (CodeRabbit, CodeAnt). Nothing is pushed for review unvetted.
+3. **Fill in `.github/pull_request_template.md`** for every PR: problem, change, evidence,
+   what was not verified, review log, cross-repo impact.
+
+Tools without named model tiers: use your strongest model only for orchestration and final
+verification, a mid-size model for implementation and review, and a small model for
+mechanical work. The subagent briefs in `.claude/agents/` work as prompts in any tool.
+
+## Contents
+
+- [Skills (all agents)](#skills-all-agents)
+- [Commands](#commands)
+- [Architecture (not obvious from filenames)](#architecture-not-obvious-from-filenames)
+- [Langfuse project configuration & tracing best practices](#langfuse-project-configuration--tracing-best-practices)
+- [Releases](#releases-srcscriptsreleasepy)
+- [Config gotchas](#config-gotchas)
+- [Testing quirks](#testing-quirks)
+- [Source ownership and Digital-Mailroom integration](#source-ownership-and-digital-mailroom-integration)
+- [Experiment-log sync](#experiment-log-sync-mirror-of-the-extraction-pipeline-repo)
+- [Documentation layout](#documentation-layout)
 
 ## Skills (all agents)
 
@@ -47,7 +87,7 @@ tag taxonomy (environment/run/source), environments on every trace,
 judge evaluators, synced dashboards, flush health counters (the v4 SDK has no `on_dropped` hook, so drops are not detected beyond SDK logs), and the
 mandatory self-audit loop (run end-to-end, fetch the trace fresh, audit
 against https://langfuse.com/docs/observability/best-practices — documented
-in the Langfuse section above). Running on langfuse 4.14.3 with the v4-
+in the Langfuse section below). Running on langfuse 4.14.3 with the v4-
 compatible API surface (`create_trace_id`, `propagate_attributes`,
 score-config categories).
 
@@ -95,9 +135,6 @@ PYTHONPATH=src python src/scripts/run_experiment.py --dataset mailroom-fixtures 
 PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --check   # network-free contract for the intent/subject_matter/keywords ground-truth labeler
 PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --dry-run # derive purpose/gist labels for corporate_record/correspondence/insurance_claim → data/hf_gt/ preview CSV
 PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --real --push  # LLM-label the mailroom-dataset ground_truth config (needs OPENROUTER_API_KEY + HF_TOKEN); re-pins FULL_CORPUS_REVISION
-PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --check   # network-free contract for the intent/subject_matter/keywords ground-truth labeler
-PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --dry-run # derive purpose/gist labels for corporate_record/correspondence/insurance_claim → data/hf_gt/ preview CSV
-PYTHONPATH=src python src/scripts/sync_hf_ground_truth.py --real --push  # LLM-label the mailroom-dataset ground_truth config (needs OPENROUTER_API_KEY + HF_TOKEN); re-pins FULL_CORPUS_REVISION
 PYTHONPATH=src python src/scripts/sync_evaluators.py          # create the LLM-as-a-Judge evaluator + observation rule in Langfuse
 PYTHONPATH=src python src/scripts/sync_dashboards.py          # sync the mailroom health dashboards into Langfuse (idempotent)
 PYTHONPATH=src python src/scripts/sync_langfuse_logs.py       # mirror Langfuse traces (obs+scores) into data/langfuse_logs/ (--since 7d, --trace-id)
@@ -109,8 +146,9 @@ PYTHONPATH=src python -m legalbench.cli --task contract_qa --n 30 --model qwen/q
 PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mock             # deterministic mock baseline (no API key)
 ```
 
-- Tests: `pytest -v` (whole suite), `pytest src/tests/test_agents/ -v`, `pytest src/tests/test_routing.py -v`, `pytest src/tests -k "sorter"` for single-agent. Coverage via `--cov=src --cov-report=html`.
-- No linter, formatter, or typechecker is configured — don't invent one.
+- Tests: `pytest -v` (whole suite, 10+ minutes), `pytest src/tests/test_agents/ -v`, `pytest src/tests/test_routing.py -v`, `pytest src/tests -k "sorter"` for single-agent. Coverage via `--cov=src --cov-report=html`. While iterating, `PYTHONPATH=src python src/scripts/affected_tests.py --run -- -q` runs only the tests that import the changed files (vs `origin/main`; `--depth 1` widens it); it is not a substitute for the full suite before a PR is marked ready.
+- Generated-file checks: `PYTHONPATH=src python src/scripts/export_contract.py --check` (display contract), `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check` (GitBook changelog), `python3 src/scripts/release.py check` (version chain).
+- No linter, formatter, or typechecker is configured — don't invent one. `python -m compileall -q src` is the static check to report in a PR.
 - Config is in `config/taxonomy.yaml`; copy `.env.example` → `.env`. `OPENROUTER_API_KEY` is required or `llm/client.py:get_llm` raises.
 
 ## Architecture (not obvious from filenames)
@@ -225,6 +263,16 @@ export hub patches into this repository.
 - **Integration:** Digital-Mailroom coordinates the board, imports committed
   standalone changes, and refreshes vendor snapshots. It is not the development
   source for feeder repositories. Never use hub-to-feeder development pushes.
+
+What crosses each boundary, and what a change here obliges you to do:
+
+| Sibling | Contract with this repo | When you change… | …you must |
+|:---|:---|:---|:---|
+| llm-dojo-scoring | `pyproject.toml` git pin (40-hex SHA); `vendor/llm-dojo-scoring/` fallback snapshot of the same commit, served by `src/dojo_source/`; public names listed in the Dojo's `docs/guides/PUBLIC_API.md` | a scoring rule, metric or suite | fix it in the Dojo first, release or pin an interim SHA, then bump here with `bump_dojo_scoring.py` and refresh the snapshot (`test_dojo_source.py` fails while they disagree) |
+| local-mailroom-sandbox | vendors this repo's committed source under its `vendor/` | anything | nothing here; note in the PR that the sandbox needs a vendor refresh if the change matters offline |
+| The-Mailroom | reads our Langfuse traces; calls `/v1/upload` and the review-resolve endpoints with `MAILROOM_PIPELINE_TOKEN` | spans, node order, agents, classes, thresholds, judge score names, API routes | regenerate `contract/mailroom-contract.json` (`export_contract.py --write`) and name the follow-up in its `mailroom_ui/pipeline_schema.py` / `trace_interpreter.py` in the PR |
+| mailroom-ml | optional `mailroom-ml` package for `agents/bert_intake.py` (fail-open, off by default) | the intake handoff shape | keep the fail-open path and the `intake.bert` manifest block |
+| Digital-Mailroom | imports our merged `main` | — | merge here first; never accept hub-to-feeder pushes |
 
 The hub's `[tool.uv.sources]` workspace redirects and shared lockfile are
 integration concerns. Preserve standalone published dependency pins until an

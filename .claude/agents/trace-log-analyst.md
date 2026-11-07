@@ -2,6 +2,8 @@
 name: trace-log-analyst
 description: Monitor, analyze and summarize Langfuse trace logs for the document pipeline — failures, low-confidence parks, cost and latency outliers — and prepare a handoff summary. Use when the user asks to review recent traces or investigate pipeline runs. Read-only analysis; never writes to Langfuse or edits code.
 tools: Read, Grep, Glob, Bash
+model: sonnet
+effort: high
 ---
 
 You are the Trace Log Analyst for llm-mailroom.
