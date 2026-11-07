@@ -1,223 +1,118 @@
-# Testing Guide
+# Testing guide
 
-## Test Structure
+CircleCI is the CI hub. The default job uses a conservative cascade so a small
+change does not pay for every notebook kernel, packaging build and unrelated
+test. The existing `affected_tests.py` import analyzer supplies the selection;
+`ci_tests.py` adds mandatory contracts and full-suite fallback rules.
 
-```
-tests/
-├── conftest.py                  # Shared fixtures and mocks
-├── test_agents/
-│   ├── __init__.py
-│   ├── test_sorter.py           # Sorter agent unit tests
-│   └── test_specialists.py      # All specialist + Boss unit tests
-├── test_routing.py              # Confidence-based routing logic
-├── test_audit_log.py            # Hash-chain integrity tests
-├── test_pipeline_e2e.py         # End-to-end pipeline tests
-└── fixtures/
-    ├── contract/                # 3 sample contracts (MSA, NDA, ambiguous)
-    ├── corporate_record/        # 2 sample corp records (bylaws, resolution)
-    ├── due_diligence/           # retired class (fixtures kept on disk)
-    ├── court_opinion/           # retired class (fixtures kept on disk)
-    ├── correspondence/          # 2 sample correspondences (demand letter, memo)
-    └── insurance_claim/         # FNOL / claim documentation
-```
-
----
-
-## Running Tests
+## Local development
 
 ```bash
-# All tests
-pytest -v
-
-# By test file
-pytest src/tests/test_agents/test_sorter.py -v
-pytest src/tests/test_agents/test_specialists.py -v
-pytest src/tests/test_routing.py -v
-pytest src/tests/test_audit_log.py -v
-pytest src/tests/test_pipeline_e2e.py -v
-
-# By test name pattern
-pytest -v -k "sorter"
-
-# With coverage
-pytest --cov=src --cov-report=html --cov-report=term
-
-# With verbose output
-pytest -v -s
+python -m pip install -e '.[dev]'
+# Inspect the plan for a branch, including uncommitted and untracked inputs:
+PYTHONPATH=src python src/scripts/ci_tests.py --base origin/main
+# Run the plan:
+PYTHONPATH=src python src/scripts/ci_tests.py --base origin/main --run
+# During a small edit, select explicit changed inputs:
+PYTHONPATH=src python src/scripts/ci_tests.py --files src/agents/intake.py --run
+# Explicit full validation, branch coverage, timing evidence and experiment:
+PYTHONPATH=src python src/scripts/ci_tests.py --full --run
 ```
 
----
+`--files` is an iteration aid: include every changed input. CI always derives
+inputs from Git. To test a single function directly, use ordinary pytest:
+`python -m pytest src/tests/test_routing.py -q -k classify`.
 
-## Test Categories
+## Cascade and escalation
 
-### Agent Unit Tests (`test_agents/`)
+| Scope | What runs |
+| --- | --- |
+| Every scoped run | Routing, output guards, graph-node contracts and compiled pipeline E2E smoke tests. The stronger `test_graph_contracts.py` suite joins automatically when present. |
+| Small mapped change | Smoke, then all transitively affected test files (including literal dynamic imports/monkeypatch targets). No smoke file is run twice. Runtime/script changes also run the hermetic experiment baseline. |
+| Markdown/reStructuredText | Smoke, documentation consistency checks, and any tests that reference changed filenames. |
+| Shared/high-risk or uncertain change | Full pytest suite with branch coverage, then the hermetic experiment baseline. |
+| Release branches, manual override, weekly backstop | Full validation, including notebooks and packaging. |
 
-**36 tests** covering:
-- Sorter: classification across all doc types, low-confidence cases, JSON parse errors, output validation
-- Contracts Specialist: extraction accuracy, confidence scoring
-- Corporate Records Specialist: entity/record extraction
-- Correspondence Specialist: action item extraction
-- Compliance Specialist: filing type identification
-- Insurance Claims Specialist: claim extraction, parse-error lane
-- Boss Agent: adjudication decisions, system metrics analysis
+Full escalation includes graph, schema, storage, LLM/provider/prompt, tracing,
+taxonomy, dependency, deployment, vendored code and shared-fixture changes;
+shared agent/sorter bases, LangChain integration, bins/environment/configuration
+and package initializers;
+CI/selector configuration; any `conftest.py`; deleted/renamed inputs; unknown
+file types; invalid Python; analyzer/ref failures; production files without a
+known test consumer; eight or more changed production files; or an affected
+area covering at least 65% of test files. The JSON plan states the reason.
+These are deliberately conservative initial boundaries, not size-based proof
+that a change is safe. New/dynamic dependencies may evade static analysis;
+mandatory graph contracts and periodic full runs are the backstops.
 
-All LLM calls are **mocked** — tests assert schema conformance and confidence-path branching without real API calls.
+Failures stop the cascade and fail CI. A later successful command cannot hide
+an earlier failure, including pytest's no-tests-collected exit. No tests are
+silently skipped because selection is unavailable: uncertainty expands scope.
+The fast path does not deselect individual tests inside an affected file.
+The lower-level `affected_tests.py --run` exits 5 on an empty selection; use
+`ci_tests.py` for automatic full-suite fallback instead of treating that as a pass.
 
-### Routing Tests (`test_routing.py`)
+## CircleCI and free-tier usage
 
-**33 tests** covering every conditional edge:
-- High confidence → proceed
-- Low confidence → retry → retry again → human review
-- Conflict detection → Boss escalation
-- Boss decision → compile_report or human review
-- Human review → approved or failed
+`.circleci/config.yml` uses one `small` executor with no paid service, parallel
+job fan-out, or automatic rerun loop. PRs compare with `origin/main`; builds of
+`main` compare with the last successfully validated revision restored from the
+branch baseline cache. This includes earlier commits in a multi-commit push
+and changes from failed builds. A missing/non-ancestor baseline forces full
+validation to bootstrap a new safe baseline. Changes to the policy itself run full validation.
 
-### Audit Log Tests (`test_audit_log.py`)
+Successful runs are cached by both source-tree hash and planned test scope.
+An affected-only pass cannot satisfy a full run, and a failed run never writes
+a green marker. Pip's dependency cache is retained. Wheel-cache warming runs
+only when the wheel tests or full suite are selected.
 
-**11 tests** covering:
-- Hash computation and chaining
-- Chain verification (valid chains)
-- Tamper detection (modified hash)
-- Broken link detection (wrong prev_hash)
-- Empty chain handling
-- Deterministic hashing
+A full backstop is scheduled once a week, Sunday at 08:17 UTC, and always
+bypasses the green-result cache. The pipeline parameter `full_suite: true`
+forces the same validation when manually triggering CircleCI. Legacy scheduled
+workflows require GitHub OAuth integration; for GitHub App integration, replace
+the scheduled workflow
+with a CircleCI schedule trigger passing that parameter, rather than adding a
+second scheduler. See [CircleCI's schedule support](https://circleci.com/docs/reference/configuration-reference/#schedule).
 
-### E2E Pipeline Tests (`test_pipeline_e2e.py`)
+The existing required check remains `ci/circleci: test`. Conservative scope
+rules and the weekly cadence can be adjusted after reviewing real duration and
+coverage artifacts; do not narrow them merely to get a green build.
 
-**6 tests** covering full pipeline runs:
-- Happy path: contract document → archived
-- Low confidence path: ambiguous document → review
-- Medium confidence path: route to human review
-- Ingest node: manifest creation and file reading
-- Full pipeline with mocked LLM: correspondence → archived
-- Ingest: real PDF bytes transcription
+## Coverage and evidence
 
-These tests spin up a complete LangGraph graph with all 13 nodes and mock the LLM layer, verifying:
-- State flows through all nodes correctly
-- Files move between bins
-- Archive paths are correct
-- Manifests are created
+CircleCI publishes `test-results/`:
 
----
+- `test-plan.json`: changed paths, selection reason, test files and profile.
+- `execution.json`: stage duration and exit status.
+- Stage JUnit XML and the 20 slowest pytest durations in job output.
+- `coverage.xml` on full runs: line and branch coverage of `src`, excluding
+  tests. Per-test execution contexts are retained in the local `.coverage`
+  database when running the full command.
 
-## Test Fixtures
+Full runs include the expensive headless notebook re-execution from both
+working directories; these remain intact. Small changes avoid unrelated
+notebook and wheel tests instead of weakening their assertions.
 
-### Pilot sample set
+Coverage is a diagnostic, not proof of correct behavior. There is no invented
+repository-wide percentage threshold before a baseline is measured. Use
+uncovered branches to add failure-path and boundary assertions, especially at
+node handoffs. Test counts alone are not evidence of meaningful coverage.
 
-For live end-to-end pilots (not the unit suite), see `docs/examples/samples/`: 25
-legal PDFs on the live manifest (real CC-BY-4.0 CUAD/Atticus contracts + LegalBench
-MAUD merger agreements + repo-written synthetic text including three
-`insurance_claim` coverage letters) with a ground-truth `manifest.csv`, built by
-`scripts/prepare_samples.py` (and `scripts/fetch_external_samples.py` for the
-external corpus) and evaluated by `scripts/run_pilot.py` (`--mock` for a
-deterministic run over the live 25-sample set, `--real` for actual LLM accuracy
-on the 15 real committed documents, `--baseline` to diff two runs, `--source
-<corpus>` to run one dataset). Real runs are restricted to the actual committed
-legal documents (CUAD/Atticus PDFs + LegalBench MAUD); the repo-written synthetic
-`.txt` samples (compliance / corporate / correspondence / insurance / ambiguous)
-are mock-only and are refused by `--real`. See `docs/examples/samples/README.md`.
-Per-agent isolation eval (no full graph) is `scripts/run_agent_eval.py`.
+## Writing useful tests
 
-### Shared Fixtures (`conftest.py`)
+Extend existing behavior suites before creating another issue-specific file.
+Use `temp_base_dir`, mocked model/provider fixtures and real local graph,
+routing, guards and persistence where those are the behavior under test.
+Keep all tests free of real model calls and external notifications.
 
-| Fixture | Description |
-|---|---|
-| `temp_base_dir` | Creates a temporary `MAILROOM_BASE_DIR` with all bin directories |
-| `mock_openai_client` | Mocks `llm.client.OpenAI` with a high-confidence contract response |
-| `mock_low_confidence_client` | Mocks with a low-confidence response |
-| `sample_*_text` | Reads fixture files for each doc type |
-| `all_fixture_files` | Dictionary of all fixture file contents |
+For deterministic preparation, assert complete expected text and preservation
+of facts. For graph changes, assert the exact route, what the next node receives,
+retry budgets, failure containment, and what reaches manifests/catalog/archive.
+Demonstrate regression sensitivity by injecting the relevant defect and seeing
+the assertion fail. Keep original bytes and audit history intact.
 
-### Document Fixtures (`src/tests/fixtures/`)
-
-| Fixture | Type | Purpose |
-|---|---|---|
-| `sample_msa.txt` | Contract | Full Master Services Agreement — happy path |
-| `sample_nda.txt` | Contract | NDA — simpler contract variant |
-| `ambiguous_doc.txt` | Contract | Deliberately vague — tests low-confidence path |
-| `sample_bylaws.txt` | Corporate Record | Full corporate bylaws |
-| `sample_resolution.txt` | Corporate Record | Board resolution |
-| `sample_dd_report.txt` | Due Diligence | Comprehensive DD report with risk flags |
-| `sample_checklist.txt` | Due Diligence | Simple DD checklist — tests sparse data |
-| `sample_demand_letter.txt` | Correspondence | Formal demand letter — action items |
-| `ambiguous_memo.txt` | Correspondence | Interoffice memo mixing multiple doc types |
-| `sample_10k.txt` | Compliance Filing | SEC 10-K filing |
-| `sample_state_filing.txt` | Compliance Filing | State annual report |
-| `sample_claim_approved.txt` | Insurance Claim | Local-pack approved hail claim (coverage determination contrast) |
-| `sample_claim_denied.txt` | Insurance Claim | Local-pack auto denial (lapse) |
-| `sample_claim_partial.txt` | Insurance Claim | Local-pack partial water + betterment exclusion |
-| `sample_opinion.txt` | Court Opinion | Appellate opinion — exercises suppression + weight-of-evidence issues |
-
----
-
-## Writing New Tests
-
-### Agent Unit Test Pattern
-
-```python
-class TestNewAgent:
-    def test_extract(self, sample_text, mock_openai_client):
-        # Set the mock response
-        mock_openai_client.chat.completions.create.return_value \
-            .choices[0].message.content = '{"field": "value", "confidence": 0.95}'
-
-        # Import and instantiate
-        from agents.new_specialist import NewSpecialist
-        agent = NewSpecialist()
-        agent.client = mock_openai_client
-        agent.model = "test-model"
-
-        # Call and assert
-        result = agent.extract(sample_text[:1000])
-        assert result.get("confidence", 0) >= 0.80
-        assert "value" in result.get("field", "")
-```
-
-### Routing Test Pattern
-
-```python
-from graph.routing import after_classify
-
-def test_routing_scenario():
-    state = {
-        "classification_confidence": 0.50,
-        "classification_attempts": 1,
-        "doc_type": "contract",
-    }
-    assert after_classify(state) == "retry_classify"
-```
-
-### E2E Test Pattern
-
-```python
-def test_full_pipeline(self, temp_base_dir, mock_openai_client):
-    from graph.build_graph import build_graph
-
-    # Create test file
-    inbox = temp_base_dir / "pipeline" / "inbox"
-    test_file = inbox / "test.txt"
-    test_file.write_text("Document content...")
-
-    # Build graph and run
-    graph = build_graph()
-    config = {"configurable": {"thread_id": "test-1"}}
-    result = graph.invoke(initial_state, config)
-
-    # Assert final state
-    assert result["stage"] == "archived"
-```
-
----
-
-## Test Configuration
-
-In `pyproject.toml`:
-
-```toml
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["src/tests"]
-pythonpath = ["src", "."]
-```
-
-Tests auto-discover asyncio fixtures. No `@pytest.mark.asyncio` decorator needed for sync tests — the graph now uses sync nodes.
+Tests should be independent of order. The audit conflict investigation found
+that enabling cached production loggers before `structlog.testing.capture_logs`
+can make log-event assertions fail in selected orders. Give such tests isolated
+logger state; do not remove event assertions or change production behavior just
+to make a selected order pass. A selector cannot repair test isolation.
