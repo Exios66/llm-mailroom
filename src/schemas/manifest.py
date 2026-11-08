@@ -70,6 +70,10 @@ class DocumentManifest(BaseModel):
     human_label: dict | None = None
     reject_reason: str | None = None
     file_location: str | None = None
+    # When the document entered the review queue. Set once per park; a later
+    # note, catalog write or replay of the review node does not move it, so the
+    # tray's age and SLA clock keep running. None on older manifests.
+    review_entered_at: datetime | None = None
     # Intake provenance (HUB-037): how the document entered the mailroom —
     # `source` (`gmail` / `upload`), plus channel metadata (message_id, sender,
     # subject, received_at / uploaded_at). None = a bare filesystem drop.

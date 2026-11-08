@@ -82,6 +82,20 @@ def _review_evidence(doc) -> dict[str, Any]:
     return evidence
 
 
+def _review_entered_at(doc) -> Any:
+    """When the document entered the review queue (ISO text), else None.
+
+    The manifest attribute, else the catalog's ``extracted_data["_review"]``
+    block. Unlike ``updated_at`` it is not reset by a later note or catalog write.
+    """
+    value = getattr(doc, "review_entered_at", None)
+    if value is None:
+        extracted = getattr(doc, "extracted_data", None)
+        block = extracted.get("_review") if isinstance(extracted, dict) else None
+        value = block.get("review_entered_at") if isinstance(block, dict) else None
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
 def with_review_evidence(extracted: Any, manifest) -> Any:
     """Catalog ``extracted_data`` carrying the manifest's reviewer evidence.
 
@@ -123,6 +137,7 @@ def serialize_document(doc) -> dict[str, Any]:
         "review_decision": getattr(doc, "review_decision", None),
         "extracted_data": getattr(doc, "extracted_data", None),
         **_review_evidence(doc),
+        "review_entered_at": _review_entered_at(doc),
         "created_at": created.isoformat() if hasattr(created, "isoformat") else created,
         "updated_at": updated.isoformat() if hasattr(updated, "isoformat") else updated,
     }
@@ -643,6 +658,10 @@ def model_snapshot(manifest: DocumentManifest) -> dict[str, Any]:
         "classification_confidence": manifest.classification_confidence,
         "extraction_confidence": manifest.extraction_confidence,
         "extracted_data": clean_extraction(manifest.extracted_data) or None,
+        # clean_extraction drops the "_parse_error" marker; keep what it said.
+        "parse_error": bool(
+            isinstance(manifest.extracted_data, dict) and manifest.extracted_data.get("_parse_error")
+        ),
         "reviewer_doc_type": manifest.reviewer_doc_type,
         "reviewer_doc_subclass": manifest.reviewer_doc_subclass,
         "reviewer_confidence": manifest.reviewer_confidence,
@@ -728,11 +747,19 @@ def plan_resolution(
     class_changed = (
         bool(class_override.get("doc_type")) and class_override["doc_type"] != before.doc_type
     )
+    # Subtype / subclass moved (or were cleared: a clear is not in class_override)
+    # while the doc_type stayed. The parked fields were extracted for the old ones.
+    details_changed = not class_changed and (
+        manifest.contract_subtype != before.contract_subtype
+        or manifest.doc_subclass != before.doc_subclass
+    )
+    classification_changed = class_changed or details_changed
     legacy = not resolution
 
     route = "reextract"
     extracted: dict[str, Any] | None = None
     corrections: dict[str, Any] = {}
+    removed: list[str] = []
 
     if legacy:
         disposition = (disposition or "resume").lower()
@@ -750,10 +777,14 @@ def plan_resolution(
                 raise ValueError("Document has no classification to complete; set override_doc_type")
             extracted = validate_operator_extraction(manifest.doc_type, extracted)
             corrections = {k: v for k, v in extracted.items() if k not in parked or parked[k] != v}
-            resolution = "correct" if (corrections or class_changed) else "approve_as_is"
+            # The posted object is a FULL replacement: a parked field it leaves out is gone.
+            removed = sorted(
+                k for k in parked if k not in extracted and k not in _META_EXTRACT_KEYS
+            )
+            resolution = "correct" if (corrections or removed or class_changed) else "approve_as_is"
             route = "archive"
         else:
-            resolution = "reclassify" if class_changed else "approve_as_is"
+            resolution = "reclassify" if classification_changed else "approve_as_is"
     else:
         resolution = str(resolution).strip().lower()
         if resolution not in RESOLUTIONS:
@@ -782,12 +813,22 @@ def plan_resolution(
                         "the parked fields belong to the old class; use resolution=reclassify "
                         "to change doc_type"
                     )
+                if details_changed and parked:
+                    raise ValueError(
+                        "the parked fields were extracted for the old subtype/subclass; use "
+                        "resolution=reclassify to change it"
+                    )
                 if parked:
                     route = "archive"
                     extracted = parked
             elif resolution == "correct":
                 if class_changed:
                     raise ValueError("resolution=correct cannot change doc_type; use resolution=reclassify")
+                if details_changed and parked:
+                    raise ValueError(
+                        "resolution=correct cannot change the subtype/subclass of parked fields; "
+                        "use resolution=reclassify"
+                    )
                 if not corrections_in:
                     raise ValueError("resolution=correct requires non-empty field_corrections")
                 route = "archive"
@@ -796,7 +837,7 @@ def plan_resolution(
             else:  # reclassify
                 if corrections_in:
                     raise ValueError("reclassify takes no field_corrections (the document is re-extracted)")
-                if not class_override:
+                if not class_override and not classification_changed:
                     raise ValueError(
                         "resolution=reclassify requires doc_type (or override_doc_type), "
                         "doc_subclass or contract_subtype"
@@ -824,6 +865,8 @@ def plan_resolution(
         "class_override": class_override or None,
         "legacy_request": legacy,
     }
+    if removed:
+        label["removed_fields"] = removed
     return ResolutionPlan(
         decision=decision,
         resolution=resolution,

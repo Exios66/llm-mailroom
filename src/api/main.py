@@ -752,7 +752,17 @@ async def resolve_review(doc_id: str, request: Request):
         if resolution not in RESOLUTIONS:
             raise HTTPException(400, f"resolution must be one of {sorted(RESOLUTIONS)}")
         if disposition not in {"resume", "complete"}:
-            raise HTTPException(400, "resolution only applies to disposition=resume")
+            raise HTTPException(
+                400, "resolution only applies to disposition=resume or disposition=complete"
+            )
+        if disposition == "complete" and payload.get("extracted_data"):
+            # plan_resolution works from the parked fields plus field_corrections;
+            # a posted extracted_data would be dropped without a word.
+            raise HTTPException(
+                400,
+                "extracted_data is not used with a resolution; send field_corrections "
+                "with resolution=correct (or omit resolution for the legacy complete)",
+            )
         decision = decision or ("rejected" if resolution == "reject" else "approved")
         payload["decision"] = decision
     if decision not in DECISIONS:
@@ -935,10 +945,25 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
     audit_event = {"archive": "review_completed", "reextract": "review_approved", "failed": "review_rejected"}[
         plan.route
     ]
+    # Where this run's audit entries start (see ``_archived_path``).
+    audit_mark = await _audit_entry_count(doc_id) if plan.route == "archive" else None
+    # The graph runs in a worker thread that a cancelled request cannot stop.
+    # Keep the per-document lock held until that thread ends, so a second
+    # resolve cannot run the same document while the first is still going.
+    graph_run = asyncio.ensure_future(
+        asyncio.to_thread(resume_from_review, manifest, review_file, notes, resolution=plan.payload())
+    )
+    graph_run.add_done_callback(lambda fut: fut.cancelled() or fut.exception())
     try:
-        result = await asyncio.to_thread(
-            resume_from_review, manifest, review_file, notes, resolution=plan.payload()
-        )
+        try:
+            result = await asyncio.shield(graph_run)
+        except asyncio.CancelledError:
+            while not graph_run.done():
+                try:
+                    await asyncio.wait({graph_run})
+                except asyncio.CancelledError:
+                    continue
+            raise
     except ValueError as exc:
         raise HTTPException(409, str(exc))
     except Exception as exc:
@@ -974,9 +999,20 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
                 k: v for k, v in (result.get("extracted_data") or {}).items() if k != "_report"
             },
         }
-        archive_path = await _archived_path(doc_id)
-        if archive_path:
-            body["complete"]["archive_path"] = archive_path
+        if result.get("stage") == PipelineStage.ARCHIVED.value:
+            archive_path = await _archived_path(doc_id, after=audit_mark)
+            if archive_path:
+                body["complete"]["archive_path"] = archive_path
+        else:
+            # The tail did not archive (report failure re-parked it, or the run
+            # aborted): the decision stands, the completion does not. Record it
+            # as an approval, not as ``review_completed``.
+            audit_event = "review_approved"
+            detail["archived"] = False
+            body["warning"] = (
+                f"document did not reach the archive (stage: {result.get('stage')}); "
+                "see complete.stage"
+            )
     elif plan.route == "reextract":
         detail["resumed_stage"] = result.get("stage")
         body["resume"] = {
@@ -1044,12 +1080,29 @@ async def document_source(doc_id: str, download: bool = False):
 
 
 
-async def _archived_path(doc_id: str) -> str | None:
-    """Where the archivist put the file (latest ``archived`` audit entry), or None."""
+async def _audit_entry_count(doc_id: str) -> int | None:
+    """Length of the document's audit chain now (None when it cannot be read)."""
     try:
         from storage.audit_log import get_audit_chain
 
-        for entry in reversed(await get_audit_chain(doc_id)):
+        return len(await get_audit_chain(doc_id))
+    except Exception:
+        logger.warning("review_audit_mark_failed", doc_id=doc_id, exc_info=True)
+        return None
+
+
+async def _archived_path(doc_id: str, after: int | None = None) -> str | None:
+    """Where the archivist put the file (latest ``archived`` audit entry), or None.
+
+    ``after`` is the chain length taken before the run: only entries written
+    since then count, so an earlier archive of the same document is never
+    reported as this run's. Without it (mark unreadable) the whole chain is used.
+    """
+    try:
+        from storage.audit_log import get_audit_chain
+
+        chain = await get_audit_chain(doc_id)
+        for entry in reversed(chain[after or 0:]):
             if entry.get("event") == "archived":
                 return (entry.get("detail") or {}).get("archive_path")
     except Exception:
