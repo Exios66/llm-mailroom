@@ -3229,8 +3229,11 @@ def _run_coro(coro):
 
     # get_running_loop() only sees a loop running in THIS thread; blocking on
     # a future scheduled onto it would deadlock, so use a helper thread.
+    # No timeout: the ``with`` block waits for the thread anyway, and a write
+    # under ``storage.db.run_write_with_retry`` can legitimately take ~30 s.
+    # A timeout here raised after the write had committed, logging a false error.
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro()).result(timeout=10)
+        return pool.submit(asyncio.run, coro()).result()
 
 
 def _file_sha256(path) -> str:
