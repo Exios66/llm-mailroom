@@ -221,13 +221,38 @@ def _extraction_is_unsupported(state: dict) -> bool:
     return all(str(k).startswith("_") or k == "reasoning" for k in extracted)
 
 
+def _chunks_lost(state: Mapping[str, Any]) -> bool:
+    """True when a chunked extraction lost at least one window.
+
+    Hard evidence of missing data. The specialists already cap the merged
+    confidence below the class ``low`` threshold, but routing must not depend
+    on that number: a threshold-lookup fallback, a lower per-class ``low`` or a
+    judge that saw only the text it was given could otherwise let a partial
+    extraction archive. It retries, then goes to a person.
+    """
+    extracted = state.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return False
+    value = extracted.get("_failed_chunks")
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    try:
+        return int(value or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _judge_can_review(state: dict) -> bool:
     """True when an unsure extraction should reach the judge before a person.
 
     A guardrail failure or an empty extraction is hard evidence, so a judge
-    verdict must not clear it. Without a judge lane the fallback stays human.
+    verdict must not clear it, and neither must it clear a lost chunk. Without
+    a judge lane the fallback stays human.
     """
     import os
+
+    if _chunks_lost(state):
+        return False
 
     if os.environ.get("MAILROOM_JUDGE_VERIFY", "on").lower() in ("off", "false", "0", "no"):
         return False
@@ -246,6 +271,8 @@ def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
     clears this. Otherwise the judge and arbiter may send it back for a
     re-extraction, which has to earn its own confidence, or it goes to a person.
     """
+    if _chunks_lost(state):
+        return True  # no verdict clears missing windows
     if state.get("judge_source_verified"):
         return False
     confidence = state.get("extraction_confidence")
@@ -314,6 +341,23 @@ def after_extraction(state: dict) -> Literal[
             return "retry_extract"
         logger.info(
             "extraction_hollow_review",
+            doc_id=state.get("doc_id"),
+            attempts=attempts,
+        )
+        return "human_review"
+
+    if _chunks_lost(state):
+        # A window of the document was never extracted. Retry (a fresh pass may
+        # succeed), then a person; never archive, whatever the confidence says.
+        if attempts <= retry_max:
+            logger.info(
+                "extraction_chunk_lost_retry",
+                doc_id=state.get("doc_id"),
+                attempts=attempts,
+            )
+            return "retry_extract"
+        logger.info(
+            "extraction_chunk_lost_review",
             doc_id=state.get("doc_id"),
             attempts=attempts,
         )

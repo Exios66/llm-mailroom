@@ -174,7 +174,9 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
                     raise KeyError("matter_id" if "matter_id" not in doc_data else "original_filename")
                 await session.commit()
                 return await session.get(DocumentRecord, doc_data["doc_id"])
-            stmt = insert(DocumentRecord).values(**_doc_insert_values(doc_data), updated_at=now)
+            stmt = insert(DocumentRecord).values(
+                **_doc_insert_values(doc_data), created_at=now, updated_at=now
+            )
             stmt = stmt.on_conflict_do_update(
                 index_elements=[DocumentRecord.doc_id],
                 set_={**{k: doc_data[k] for k in _DOC_UPDATE_KEYS if k in doc_data}, "updated_at": now},

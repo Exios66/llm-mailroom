@@ -88,6 +88,9 @@ def _finalize_claimed_on_error(
 # name because `claim_file` moves the file (path changes mid-run).
 _active_files: set[str] = set()
 _active_lock = threading.Lock()
+# Name a pool worker has already marked active on behalf of the handler it is
+# about to call (see ``_DispatchPool._admit``); consumed by ``_mark_active``.
+_admitted = threading.local()
 
 TERMINAL_STAGES = ("archived", "failed", "review")
 
@@ -346,6 +349,12 @@ def embed_watcher_enabled() -> bool:
 
 
 def _mark_active(name: str) -> bool:
+    if getattr(_admitted, "name", None) == name:
+        # A pool worker marked this name active when it took it off the queue
+        # (one critical section, so it is never "neither queued nor active");
+        # the handler takes over that mark and unmarks it in its own finally.
+        _admitted.name = None
+        return True
     with _active_lock:
         if name in _active_files:
             return False
@@ -363,7 +372,9 @@ def _is_in_flight(name: str) -> bool:
     with _active_lock:
         if name in _active_files:
             return True
-    return _dispatch.is_queued(name)
+        # Same lock order as submit()/_admit(): the queued->active hand-off
+        # happens under both locks, so this snapshot cannot miss the name.
+        return _dispatch.is_queued(name)
 
 
 class _DispatchPool:
@@ -379,7 +390,12 @@ class _DispatchPool:
     ``close`` (called from ``Watcher.stop``) discards everything that has not
     started; those files stay in the inbox for the next watcher. Each close
     retires the queue and its workers together, so a later ``reopen`` starts
-    from a clean slate. Workers are daemon threads, matching the per-file
+    with a fresh queue. A retired worker that is still running a document
+    (the shutdown drain timed out) keeps counting against the cap until it
+    exits, so a replacement pool never runs more than the cap in total.
+    A worker moves a name from queued to active under both locks (see
+    ``_admit``), so the name is never invisible to ``_is_in_flight`` or to
+    the shutdown drain. Workers are daemon threads, matching the per-file
     threads this replaces.
     """
 
@@ -388,6 +404,10 @@ class _DispatchPool:
         self._queue: queue.SimpleQueue = queue.SimpleQueue()
         self._queued: set[str] = set()
         self._threads: list[threading.Thread] = []
+        # Workers retired by close() that are still finishing a document (a
+        # drain timeout leaves them running). They keep counting against the
+        # concurrency cap until they exit.
+        self._retiring: list[threading.Thread] = []
         self._closed = False
 
     def is_queued(self, name: str) -> bool:
@@ -404,20 +424,24 @@ class _DispatchPool:
 
     def submit(self, name: str, fn, path: Path) -> bool:
         """Queue ``fn(path)``; False when closed or ``name`` is already in flight."""
+        # Lock order everywhere: _active_lock, then self._lock.
         with _active_lock:
-            running = name in _active_files
-        with self._lock:
-            if self._closed or running or name in self._queued:
-                return False
-            self._queued.add(name)
-            self._ensure_workers_locked()
-            self._queue.put((name, fn, path))
+            with self._lock:
+                if self._closed or name in _active_files or name in self._queued:
+                    return False
+                self._queued.add(name)
+                self._ensure_workers_locked()
+                self._queue.put((name, fn, path))
         return True
 
     def _ensure_workers_locked(self) -> None:
+        current = threading.current_thread()
         self._threads = [t for t in self._threads if t.is_alive()]
+        self._retiring = [t for t in self._retiring if t.is_alive() and t is not current]
         size = get_max_concurrent_docs()
-        while len(self._threads) < size:
+        # Survivors of a previous close() are still running documents, so they
+        # use up slots: the cap bounds live workers, not just current ones.
+        while len(self._threads) + len(self._retiring) < size:
             worker = threading.Thread(
                 target=self._worker,
                 args=(self._queue,),
@@ -427,21 +451,55 @@ class _DispatchPool:
             self._threads.append(worker)
             worker.start()
 
-    def _worker(self, q: queue.SimpleQueue) -> None:
-        while True:
-            item = q.get()
-            if item is None:  # close() sentinel
-                return
-            name, fn, path = item
+    def _admit(self, q: queue.SimpleQueue, name: str) -> bool:
+        """Take ``name`` off the queue and mark it active in ONE critical section.
+
+        Dequeue and mark-active used to be separate steps: in between the name
+        was neither queued nor active, so the 1-second rescan could queue it
+        again, and ``close()`` could release the watcher lock while a worker
+        was about to claim the file. Now a name that is not admitted here is
+        dropped (pool closed or this worker retired); one that is admitted is
+        already visible to ``_is_in_flight`` and to the shutdown drain.
+        """
+        with _active_lock:
             with self._lock:
                 if self._closed or q is not self._queue:
-                    continue  # retired by close(): leave the file in the inbox
+                    return False  # retired by close(): leave the file in the inbox
                 self._queued.discard(name)
-            try:
-                fn(path)
-            except Exception:
-                # fn handles and finalizes its own failures; never kill a slot.
-                logger.exception("dispatch_worker_error", file=str(path))
+                if name in _active_files:
+                    return False  # a direct caller is already running it
+                _active_files.add(name)
+        _admitted.name = name
+        return True
+
+    def _worker(self, q: queue.SimpleQueue) -> None:
+        try:
+            while True:
+                item = q.get()
+                if item is None:  # close() sentinel
+                    return
+                name, fn, path = item
+                if not self._admit(q, name):
+                    continue
+                try:
+                    fn(path)
+                except Exception:
+                    # fn handles and finalizes its own failures; never kill a slot.
+                    logger.exception("dispatch_worker_error", file=str(path))
+                finally:
+                    if getattr(_admitted, "name", None) == name:
+                        # fn never took over the mark (it does not call
+                        # _mark_active): release it here so the name is not leaked.
+                        _admitted.name = None
+                        _unmark_active(name)
+        finally:
+            self._on_worker_exit()
+
+    def _on_worker_exit(self) -> None:
+        """A retired worker freed a slot: let waiting work use it."""
+        with self._lock:
+            if not self._closed and self._queued:
+                self._ensure_workers_locked()
 
     def close(self) -> int:
         """Stop accepting work and drop everything not yet started."""
@@ -451,6 +509,7 @@ class _DispatchPool:
             self._queued.clear()
             old_queue, self._queue = self._queue, queue.SimpleQueue()
             threads, self._threads = self._threads, []
+            self._retiring = [t for t in self._retiring if t.is_alive()] + threads
         for _ in threads:
             old_queue.put(None)
         if dropped:
