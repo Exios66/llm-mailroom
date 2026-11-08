@@ -271,10 +271,6 @@ def after_extraction(state: dict) -> Literal[
     retry_max = thresholds.get("retry_max", 2)
     conflict = state.get("conflict_detected", False)
 
-    if conflict:
-        logger.info("conflict_escalation", doc_id=state.get("doc_id"))
-        return "boss_escalation"
-
     # Schema gate: an extraction that fails the doc type's pydantic schema
     # (parse error, wrong types, fabricated shape) must never archive — retry
     # once, then human review, regardless of the model's stated confidence.
@@ -343,6 +339,14 @@ def after_extraction(state: dict) -> Literal[
         return "human_review"
 
     if confidence is not None and confidence >= low:
+        # A matter conflict is adjudicated only once the extraction itself is
+        # sound: it has passed the transient, schema, hollow, coverage and
+        # `low` confidence gates above. Escalating earlier let the Boss
+        # approve (-> compile_report) an extraction that was schema-invalid or
+        # near-zero confidence, skipping its retry / judge / review path.
+        if conflict:
+            logger.info("conflict_escalation", doc_id=state.get("doc_id"))
+            return "boss_escalation"
         return "compile_report"
 
     if attempts <= retry_max:
