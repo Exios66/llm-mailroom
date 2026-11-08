@@ -26,7 +26,8 @@ report / archive nodes are never run, so ``observed.full_information`` covers th
 sorter, reviewer, extraction and judge branches ONLY. A route that needs an arbiter
 ruling or the boss stays unobserved on every record, ``full_information`` or not, and
 policy replay reports it as ``unobserved`` (``diagnostics.unobserved_branches`` names
-them); see ``schemas/run_record.py``.
+them, plus ``judge_on_retry_attempts`` unless ``--judge-attempts all``); see
+``schemas/run_record.py``.
 
 Usage:
     PYTHONPATH=src python src/scripts/run_calibration_sweep.py \\
@@ -659,7 +660,8 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         "judge_attempts": ctx.judge_attempts,
         "field_scoring_embedding": ctx.field_scoring_embedding,
         "known_gaps": list(KNOWN_GAPS),
-        "unobserved_branches": list(UNOBSERVED_BRANCHES),
+        "unobserved_branches": list(UNOBSERVED_BRANCHES)
+        + ([] if ctx.judge_attempts == "all" else ["judge_on_retry_attempts"]),
         "max_extraction_candidates": ctx.max_candidates,
         "gold_meta": doc.gold_meta,
         "node_errors": [],

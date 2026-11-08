@@ -577,6 +577,17 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
     # ---- extract / judge / arbiter / report -------------------------------
     cls = state.get("doc_type")
     w.final_class = cls
+    # The sweep extracts each class once, on its first candidate. When a later candidate
+    # of the same class had another subclass, its extraction was not run: a route that
+    # arrives with that subclass cannot reuse the first candidate's extraction.
+    for c in record.diagnostics.get("extraction_candidates_collapsed") or []:
+        if (
+            isinstance(c, dict)
+            and c.get("doc_type") == cls
+            and c.get("subclass_differs")
+            and state.get("doc_subclass") != c.get("extracted_doc_subclass")
+        ):
+            return w.unobserved("extraction_subclass_not_observed")
     k = 1
     judge_passes = 0
     arbiter_retries = 0
