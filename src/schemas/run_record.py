@@ -118,6 +118,19 @@ class JudgeObservation(_Model):
     latency_s: float = 0.0
 
 
+class ArbiterObservation(_Model):
+    """The arbiter's ruling after a judge pass on extraction attempt ``on_attempt``."""
+
+    ran: bool = False
+    on_attempt: int | None = None
+    # accept_with_caveats | retry_extraction | human_review (build_graph.arbiter_node)
+    decision: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_s: float = 0.0
+
+
 class Observed(_Model):
     """Which branches were actually executed for this document."""
 
@@ -150,6 +163,13 @@ class RunRecord(_Model):
     reviewer: ReviewerObservation = Field(default_factory=ReviewerObservation)
     extraction: list[ExtractionAttempt] = Field(default_factory=list)
     judge: JudgeObservation = Field(default_factory=JudgeObservation)
+    # Optional extra judge observations, one per extraction attempt the judge ran on
+    # (``on_attempt``). ``judge`` stays the primary one. A full-information sweep
+    # fills this so replay can send ANY attempt to the judge without guessing.
+    judges: list[JudgeObservation] = Field(default_factory=list)
+    # Optional: the arbiter's ruling per judged attempt. Without it a judge verdict of
+    # partial/incomplete cannot be replayed (the arbiter is not guessed).
+    arbiters: list[ArbiterObservation] = Field(default_factory=list)
     observed: Observed = Field(default_factory=Observed)
     actual: ActualRoute = Field(default_factory=ActualRoute)
     thresholds_in_force: dict[str, Any] = Field(default_factory=dict)
