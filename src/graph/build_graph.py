@@ -1710,13 +1710,92 @@ def _fetch_matter_context(state: dict) -> list[dict]:
         return []
 
 
-def _normalized_compare(a, b) -> bool:
-    """Normalized value comparison for conflict detection (list-aware)."""
+_MONTHS = {
+    name.lower(): index
+    for index, name in enumerate(
+        ["january", "february", "march", "april", "may", "june", "july",
+         "august", "september", "october", "november", "december"],
+        start=1,
+    )
+}
+_MONTHS.update({name[:3]: index for name, index in list(_MONTHS.items())})
+_MONTHS["sept"] = 9
+_ORDINAL = r"(?:st|nd|rd|th)?"
+_DATE_ISO = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?")
+_DATE_SLASH = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+_DATE_MDY = re.compile(rf"([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_ORDINAL},?\s+(\d{{4}})")
+_DATE_DMY = re.compile(rf"(\d{{1,2}}){_ORDINAL}\s+(?:of\s+)?([A-Za-z]{{3,9}})\.?,?\s+(\d{{4}})")
+# Words that decorate a jurisdiction without naming it ("the laws of the State
+# of Delaware" -> "delaware"). Deliberately short: "West Virginia" must stay
+# different from "Virginia", so only filler is ever dropped, never a name part.
+_JURISDICTION_FILLER = frozenset({"state", "of", "the", "commonwealth", "province", "laws", "law"})
+_JURISDICTION_FIELD_HINTS = ("governing_law", "jurisdiction", "venue", "forum", "court")
+
+
+def _full_date(value):
+    """A complete calendar date from a string, else None.
+
+    Strict on purpose: a bare year, month or number is not a date here (the
+    Dojo's lenient ``parse_date`` fills missing parts from today's date, which
+    would make equality time-dependent). Slash dates that read differently as
+    M/D and D/M (``01/02/2024``) are left to the string comparison.
+    """
+    import datetime
+
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    try:
+        if m := _DATE_ISO.fullmatch(text):
+            year, month, day = int(m[1]), int(m[2]), int(m[3])
+        elif m := _DATE_SLASH.fullmatch(text):
+            first, second, year = int(m[1]), int(m[2]), int(m[3])
+            if first <= 12 and second <= 12 and first != second:
+                return None
+            month, day = (first, second) if first <= 12 else (second, first)
+        elif m := _DATE_MDY.fullmatch(text):
+            month, day, year = _MONTHS.get(m[1].lower()), int(m[2]), int(m[3])
+        elif m := _DATE_DMY.fullmatch(text):
+            day, month, year = int(m[1]), _MONTHS.get(m[2].lower()), int(m[3])
+        else:
+            return None
+        return datetime.date(year, month, day) if month else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _jurisdiction_key(value) -> str:
+    tokens = re.findall(r"[a-z0-9]+", _norm_str(value).lower())
+    core = [t for t in tokens if t not in _JURISDICTION_FILLER]
+    return " ".join(core or tokens)
+
+
+def _conflict_key(value, field: str | None) -> str:
+    """Canonical comparison key: ISO date, jurisdiction core, or normalized text."""
+    day = _full_date(value)
+    if day is not None:
+        return day.isoformat()
+    if field and any(hint in field.lower() for hint in _JURISDICTION_FIELD_HINTS):
+        return _jurisdiction_key(value)
+    return _norm_str(value)
+
+
+def _normalized_compare(a, b, field: str | None = None) -> bool:
+    """Value comparison for conflict detection (list-aware, format-tolerant).
+
+    Equal means "the same fact stated differently": dates compare as calendar
+    dates ("2024-01-05" == "January 5, 2024"); jurisdiction-like fields ignore
+    filler words ("Delaware" == "State of Delaware") but still differ on any
+    name part ("Virginia" != "West Virginia"); lists are equal when one
+    normalized set contains the other (a second extraction that finds more or
+    fewer parties is not a contradiction). Everything else keeps exact
+    normalized-text equality.
+    """
     if isinstance(a, list) and isinstance(b, list):
-        na = {_norm_str(x) for x in a}
-        nb = {_norm_str(x) for x in b}
-        return na == nb
-    return _norm_str(a) == _norm_str(b)
+        na = {_conflict_key(x, field) for x in a}
+        nb = {_conflict_key(x, field) for x in b}
+        return na <= nb or nb <= na
+    return _conflict_key(a, field) == _conflict_key(b, field)
 
 
 def _norm_str(v) -> str:
@@ -1783,7 +1862,7 @@ def _detect_conflict(state: dict, extracted_data: dict | None) -> tuple[bool, li
                 continue
             if isinstance(old_val, (list, dict)) and not old_val:
                 continue
-            if _normalized_compare(new_val, old_val):
+            if _normalized_compare(new_val, old_val, field=field):
                 continue
             details.append(
                 f"field '{field}' differs from archived record "
