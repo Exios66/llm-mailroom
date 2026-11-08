@@ -84,12 +84,14 @@ def is_real_sample(row: dict) -> bool:
     Real samples are either a CUAD/Atticus PDF committed under
     examples/samples/contract/ (source starts with "CUAD") or an external
     LegalBench / Pile of Law source committed under examples/external/ (source
-    starts with "external/"). Everything else is a repo-written synthetic .txt
+    starts with "external/"), or a document of the pinned Hugging Face corpus
+    that ``run_pilot.py --dataset hf`` draws (source starts with "hf/").
+    Everything else is a repo-written synthetic .txt
     under examples/sources/ that is rendered to PDF only for mock runs — it
     must never be processed by a real (non-mock) pilot run.
     """
     source = (row.get("source") or "").strip()
-    return source.startswith("CUAD") or source.startswith("external/")
+    return source.startswith("CUAD") or source.startswith("external/") or source.startswith("hf/")
 
 
 def prepare_samples(base_dir: Path | None = None) -> Path:
