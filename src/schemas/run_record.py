@@ -194,13 +194,15 @@ class RunRecord(_Model):
 def to_review_record(record: RunRecord) -> dict[str, Any]:
     """Map a run record onto ``llm_dojo_scoring`` ``ReviewRecord`` keys.
 
-    Uses the first sorter attempt as the sorter opinion, with post-guard
-    confidence; absent sorter attempts yield ``None`` sorter fields. Reviewer
-    opinion fields are ``None`` unless it ran. Its causes, token counts, and
-    cost are copied regardless. ``route`` is left unset: it is a property of
-    the policy, which replay decides.
+    Uses sorter attempt 1 (whatever its position in the list) as the sorter
+    opinion, with post-guard confidence; a missing attempt 1 yields ``None``
+    sorter fields. Reviewer opinion fields, token counts and cost are ``None``
+    unless it ran (an unrun reviewer is unpriced, not free); its causes are
+    copied regardless. ``route`` is left unset: it is a property of the policy,
+    which replay decides (``calibrate_thresholds`` fills it from
+    ``policy_replay.reviewer_route``).
     """
-    first = record.sorter[0] if record.sorter else None
+    first = next((a for a in record.sorter if a.attempt == 1), None)
     rev = record.reviewer
     return {
         "doc_id": record.doc_id,
@@ -217,9 +219,9 @@ def to_review_record(record: RunRecord) -> dict[str, Any]:
         "human_decision": record.gold.human_decision,
         "human_doc_type": record.gold.human_doc_type,
         "human_doc_subclass": record.gold.human_doc_subclass,
-        "prompt_tokens": rev.prompt_tokens,
-        "completion_tokens": rev.completion_tokens,
-        "cost_usd": rev.cost_usd,
+        "prompt_tokens": rev.prompt_tokens if rev.ran else None,
+        "completion_tokens": rev.completion_tokens if rev.ran else None,
+        "cost_usd": rev.cost_usd if rev.ran else None,
         "dataset_revision": record.run.dataset_revision,
         "split": record.run.split,
     }

@@ -16,9 +16,9 @@ Per class, ``SORTER_CURVES`` / ``EXTRACTION_CURVES`` give monotone
 piecewise-linear knots ``(stated confidence, true P(correct))``. Several have an
 overconfident region (true accuracy below the stated confidence just under the
 cutoff). ``planted_cutoff`` integrates the curve against the confidence
-density exactly and returns the population analogue of the Dojo's
-``cutoff_at_target``: the lowest confidence whose accepted set reaches the
-target accuracy. Attempts, the reviewer and the judge are independent draws
+density on a fine grid and returns the population analogue of the Dojo's
+``cutoff_at_target``: the lowest grid confidence whose accepted set reaches the
+target accuracy (grid resolution, not exact; see its docstring). Attempts, the reviewer and the judge are independent draws
 (a deliberate simplification); the field floor the extraction curve was planted
 against is 0.80 (successes score in [0.85, 1.0], failures in [0.20, 0.75]).
 
@@ -101,11 +101,16 @@ def _draw_conf(rng: random.Random, kind: str) -> float:
 
 
 def planted_cutoff(cls: str, target: float, kind: str = "sorter", *, grid: int = 4000) -> float | None:
-    """Population cutoff: lowest confidence whose accepted set reaches ``target``.
+    """Population cutoff: lowest grid confidence whose accepted set reaches ``target``.
 
-    Exact integration of the planted curve against the confidence density (the
-    population analogue of ``cutoff_at_target``). ``None`` when even the top of
-    the range does not reach the target.
+    A numerical approximation of the population analogue of ``cutoff_at_target``,
+    not an exact value: the planted curve is evaluated at each grid cell's
+    midpoint and the answer is the left edge of a cell (``grid`` cells over the
+    confidence range, so it is within one cell width, ``(1 - lo) / grid``, of the
+    continuous cutoff). It returns ``None`` when no cell's accepted set reaches
+    ``target``, which includes a target the curve only reaches inside the last
+    cell, where the midpoint accuracy can fall just short of it. Raise ``grid``
+    to tighten both effects.
     """
     knots = (SORTER_CURVES if kind == "sorter" else EXTRACTION_CURVES)[cls]
     lo = CONF_MIN[kind]
@@ -251,6 +256,8 @@ def generate_records(
     from pipeline.policy_replay import llm_review_verdict
 
     names = tuple(classes) if classes is not None else tuple(SORTER_CURVES)
+    if len(set(names)) == 1:  # _other() needs a second class to name when the sorter is wrong
+        raise ValueError(f"need at least two distinct classes, got {sorted(set(names))}")
     unknown = [c for c in names if c not in SORTER_CURVES]
     if unknown:
         raise ValueError(f"no planted curve for class(es): {unknown}")
