@@ -28,6 +28,8 @@ from graph.routing import (
     after_classification_arbiter,
     after_boss,
     after_human_review,
+    human_fields_applied,
+    HUMAN_APPLIED,
     after_report,
     judge_gate,
     judge_should_run,
@@ -275,6 +277,16 @@ def entry_route(state: dict) -> str:
         and state.get("doc_type")
     ):
         return "extract"
+    # Stateless fallback for a human-applied review (the interrupt checkpoint
+    # is gone after a restart): the reviewer's fields enter the same tail the
+    # live interrupt resume reaches. Guarded by the explicit token + provenance,
+    # like the "approved" branch above.
+    if (
+        state.get("resume_extraction")
+        and state.get("doc_type")
+        and human_fields_applied(state)
+    ):
+        return "compile_report"
     return "intake"
 
 
@@ -2436,6 +2448,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
 
     dest: Path | None = None
     newly_parked = False
+    manifest: DocumentManifest | None = None
     parked_extracted_data = {
         **(state.get("extracted_data") if isinstance(state.get("extracted_data"), dict) else {}),
         "_lane_b": _lane_b_manifest_fields(state),
@@ -2460,6 +2473,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             review_decision="pending_review",
             checkpoint_thread_id=thread_id or None,
             intake=state.get("intake_meta") or None,
+            human_label=state.get("human_label") or None,
             **_lane_b_manifest_fields(state),
             **_review_evidence_fields(state, causes),
         )
@@ -2504,15 +2518,18 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     # Completion echo (HUB-037): a Gmail-intake document parked for review
     # still reports its outcome on the source email thread — dispatched AFTER
     # the routed_to_review audit entry so the echo's audit trail is complete.
-    from pipeline.gmail_intake import dispatch_intake_echo
+    # ``manifest`` is only built when a file path is present; a state with no
+    # file_path used to raise UnboundLocalError here.
+    if manifest is not None:
+        from pipeline.gmail_intake import dispatch_intake_echo
 
-    dispatch_intake_echo(manifest.model_dump(mode="json"))
+        dispatch_intake_echo(manifest.model_dump(mode="json"))
 
-    # Relations clerk (HUB-040): the post-archive association pass — off the
-    # document path (daemon thread), advisory, fail-soft.
-    from pipeline.relations import dispatch_relations_scan
+        # Relations clerk (HUB-040): the post-archive association pass — off the
+        # document path (daemon thread), advisory, fail-soft.
+        from pipeline.relations import dispatch_relations_scan
 
-    dispatch_relations_scan(manifest.model_dump(mode="json"))
+        dispatch_relations_scan(manifest.model_dump(mode="json"))
 
     payload = {
         "action": "human_review",
@@ -2524,6 +2541,9 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         "review_causes": list(causes or []),
         "classification_confidence": state.get("classification_confidence"),
         "extraction_confidence": state.get("extraction_confidence"),
+        # What a reviewer may answer with (Command(resume={"resolution": ...})).
+        "resolutions": ["approve_as_is", "correct", "reclassify", "reject"],
+        "extraction_present": bool(state.get("extracted_data")),
     }
     decision = None
     while decision is None:
@@ -2536,9 +2556,43 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
                 "detail": "decision must be approved or rejected",
             }
 
-    notes = ""
-    if isinstance(raw, dict):
-        notes = str(raw.get("notes") or "")
+    resume = raw if isinstance(raw, dict) else {}
+    notes = str(resume.get("notes") or "")
+    resolution = resume.get("resolution")
+    human_label = resume.get("human_label") if isinstance(resume.get("human_label"), dict) else None
+    human_data = resume.get("extracted_data")
+
+    if human_label is not None:
+        # The reviewer's decision is on the audit chain BEFORE any downstream
+        # node (compile_report, archive, ...) adds its own entry.
+        _write_review_resolved_audit(doc_id, state.get("matter_id", "DEFAULT"), human_label)
+
+    if (
+        decision == "approved"
+        and resolution in ("approve_as_is", "correct")
+        and isinstance(human_data, dict)
+        and human_data
+    ):
+        # The reviewer approved or corrected the parked fields: no LLM, the
+        # fields go straight through compile_report → catalog_write → archive.
+        # extraction_confidence stays the MODEL's number (it is evidence about
+        # the model, not about the human's edit); ``extraction_source`` marks
+        # the fields so calibration can exclude them.
+        logger.info("human_review_fields_applied", doc_id=doc_id, resolution=resolution)
+        return {
+            "stage": PipelineStage.CLASSIFIED.value,
+            "escalation_reason": None,
+            "review_causes": causes,
+            "review_decision": HUMAN_APPLIED,
+            "extracted_data": human_data,
+            "extraction_source": "human",
+            "human_label": human_label,
+            "conflict_detected": False,
+            "conflict_details": [],
+            "file_path": str(dest) if dest is not None else file_path_str,
+            "checkpoint_thread_id": thread_id or None,
+            "transient_error": False,
+        }
 
     if decision == "approved":
         logger.info("human_review_approved", doc_id=doc_id)
@@ -2561,22 +2615,117 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "file_path": str(dest) if dest is not None else file_path_str,
             "checkpoint_thread_id": thread_id or None,
             "transient_error": False,
+            **({"human_label": human_label} if human_label is not None else {}),
         }
 
     logger.info("human_review_rejected", doc_id=doc_id, notes=notes[:200] or None)
-    failed_path = str(dest) if dest is not None else file_path_str
+    outcome = _finalize_human_rejection(
+        doc_id=doc_id,
+        matter_id=state.get("matter_id", "DEFAULT"),
+        original_filename=state.get("original_filename", ""),
+        doc_type=state.get("doc_type"),
+        classification_confidence=state.get("classification_confidence"),
+        extraction_confidence=state.get("extraction_confidence"),
+        trace_id=state.get("trace_id"),
+        esc_reason=esc_reason,
+        catalog_extracted=parked_extracted_data,
+        dest=dest,
+        fallback_path=file_path_str,
+        reject_reason=resume.get("reject_reason"),
+        human_label=human_label,
+    )
+    return {
+        "stage": PipelineStage.FAILED.value,
+        "escalation_reason": esc_reason,
+        "review_causes": causes,
+        "review_decision": "rejected",
+        "file_path": outcome["file_path"],
+        "checkpoint_thread_id": thread_id or None,
+        **({"human_label": human_label} if human_label is not None else {}),
+    }
+
+
+def _write_review_resolved_audit(doc_id: str, matter_id: str, label: dict) -> None:
+    """Append the single ``review_resolved`` entry for a human decision.
+
+    The detail is the ``human_label`` itself (decision, resolution, final class,
+    field corrections, model snapshot, reviewer, UTC time, notes, reject_reason)
+    and the actor is the reviewer's identity. Best-effort like every audit write
+    here; a failure is logged with the event name (AUDIT_GAP).
+    """
+    if not doc_id:
+        return
+    try:
+        from schemas.audit import build_audit_entry
+
+        entry = build_audit_entry(
+            doc_id=doc_id,
+            matter_id=matter_id or "DEFAULT",
+            event="review_resolved",
+            actor=str(label.get("reviewer") or "human_reviewer"),
+            detail=dict(label),
+            prev_hash=_latest_audit_hash(doc_id),
+        )
+        _write_audit_log(entry)
+    except Exception:
+        logger.warning("audit_gap", event="review_resolved", doc_id=doc_id, exc_info=True)
+
+
+def _finalize_human_rejection(
+    *,
+    doc_id: str,
+    matter_id: str,
+    original_filename: str,
+    doc_type: str | None,
+    classification_confidence: float | None,
+    extraction_confidence: float | None,
+    trace_id: str | None,
+    esc_reason: str | None,
+    catalog_extracted: dict | None,
+    dest: Path | None,
+    fallback_path: str = "",
+    reject_reason: str | None = None,
+    human_label: dict | None = None,
+) -> dict[str, Any]:
+    """Terminal bookkeeping for a human rejection (live node and stateless path).
+
+    Moves the file to ``failed/`` through the bins helper, flips the catalog row
+    and the manifest to FAILED with the reject reason and label, and exports to
+    the warehouse. A failed move is NOT swallowed: it is logged as an error and
+    the manifest records where the file actually still is (``file_location``)
+    with the move error appended to ``escalation_reason``, so the record never
+    claims the file is in ``failed/`` when it is not.
+    """
+    file_path = str(dest) if dest is not None else fallback_path
+    move_error: str | None = None
     if dest is not None and dest.exists():
-        failed_path = str(move_to_failed(dest))
+        try:
+            file_path = str(move_to_failed(dest))
+        except Exception as exc:
+            move_error = f"{type(exc).__name__}: {exc}"
+            logger.error(
+                "review_reject_move_failed",
+                doc_id=doc_id,
+                file=str(dest),
+                error=move_error,
+            )
+    reason = esc_reason
+    if move_error:
+        reason = f"{esc_reason}; reject move failed ({move_error})" if esc_reason else (
+            f"reject move failed ({move_error})"
+        )
     _catalog_upsert(
         {
             "doc_id": doc_id,
-            "matter_id": state.get("matter_id", "DEFAULT"),
-            "original_filename": state.get("original_filename", ""),
-            "doc_type": state.get("doc_type"),
+            "matter_id": matter_id,
+            "original_filename": original_filename,
+            "doc_type": doc_type,
+            "classification_confidence": classification_confidence,
+            "extraction_confidence": extraction_confidence,
             "stage": PipelineStage.FAILED.value,
-            "extracted_data": parked_extracted_data,
-            "escalation_reason": esc_reason,
-            "trace_id": state.get("trace_id"),
+            "extracted_data": catalog_extracted,
+            "escalation_reason": reason,
+            "trace_id": trace_id,
         },
         stage=PipelineStage.FAILED.value,
     )
@@ -2588,19 +2737,18 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             if manifest is not None:
                 manifest.stage = PipelineStage.FAILED
                 manifest.review_decision = "rejected"
+                manifest.reject_reason = reject_reason or None
+                if human_label is not None:
+                    manifest.human_label = human_label
+                manifest.file_location = file_path or None
+                if move_error:
+                    manifest.escalation_reason = reason
                 manifest.touch()
                 save_manifest(manifest)
         except Exception:
             logger.exception("review_reject_manifest_failed", doc_id=doc_id)
     _maybe_export_warehouse(doc_id)
-    return {
-        "stage": PipelineStage.FAILED.value,
-        "escalation_reason": esc_reason,
-        "review_causes": causes,
-        "review_decision": "rejected",
-        "file_path": failed_path,
-        "checkpoint_thread_id": thread_id or None,
-    }
+    return {"file_path": file_path, "move_error": move_error}
 
 
 def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
@@ -2867,10 +3015,20 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         extraction_confidence=state.get("extraction_confidence"),
         trace_id=state.get("trace_id"),
         escalation_reason=state.get("escalation_reason"),
-        review_decision=state.get("review_decision"),
+        # The graph-internal "human_applied" token reads as "approved" on the
+        # manifest and audit trail: same consumer contract as every other
+        # human-approved archive. Provenance rides on extraction_source and
+        # human_label, not on this flag.
+        review_decision=(
+            "approved"
+            if state.get("review_decision") == HUMAN_APPLIED
+            else state.get("review_decision")
+        ),
         classification_attempts=state.get("classification_attempts", 0),
         extraction_attempts=state.get("extraction_attempts", 0),
         intake=state.get("intake_meta") or None,
+        extraction_source=state.get("extraction_source") or None,
+        human_label=state.get("human_label") or None,
         **_lane_b_manifest_fields(state),
         **_review_evidence_fields(state, state.get("review_causes")),
     )
@@ -3250,6 +3408,7 @@ def build_graph(checkpointer=None):
     workflow.add_conditional_edges(START, entry_route, {
         "intake": "intake",
         "extract": "extract",
+        "compile_report": "compile_report",  # stateless human-applied review
     })
     workflow.add_edge("intake", "classify")
 
@@ -3322,6 +3481,7 @@ def build_graph(checkpointer=None):
 
     workflow.add_conditional_edges("human_review", after_human_review, {
         "extract": "extract",
+        "compile_report": "compile_report",  # reviewer's fields, no LLM
         "failed": END,
     })
 
@@ -3567,6 +3727,11 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
         return
     if result.get("stage") in ("review", "failed"):
         logger.info("pipeline_result_suppressed_non_terminal_stage", stage=result.get("stage"))
+        return
+    if result.get("extraction_source") == "human":
+        # The evaluator grades model output; a reviewer's approved or corrected
+        # fields are not model output and would skew its verdicts.
+        logger.info("pipeline_result_suppressed_human_fields")
         return
     if judge_required is False:
         logger.info("pipeline_result_suppressed_deterministic_verdict")
@@ -4042,19 +4207,246 @@ def run_pipeline(
     )
 
 
-def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str, Any]:
-    """Resume a human-approved review document with a FRESH extraction.
+def _manifest_evidence_state(manifest) -> dict[str, Any]:
+    """Reviewer opinion + Lane B trail from a parked manifest, as state keys.
 
-    Prefers LangGraph ``Command(resume=...)`` on the parked ``interrupt()``
-    checkpoint (same process, MemorySaver still live). If the checkpoint is
-    gone (process restart + MemorySaver), falls back to the stateless
-    re-invoke: requeue from the review bin and start at extract under the
-    original ``doc_id``. Both paths use the manifest's classification,
-    including any human override. The fallback retains reviewer evidence if the
-    document parks again. Raises ValueError if the manifest has no class;
-    file requeue errors propagate.
+    Reviewer opinion is evidence, not routing state: restoring it from the
+    manifest keeps a re-park (or the archive manifest) from overwriting it with
+    None. Attempt counters are reset so a corrected run gets a fair QA budget.
     """
+    return {
+        "reviewer_doc_type": getattr(manifest, "reviewer_doc_type", None),
+        "reviewer_contract_subtype": None,
+        "reviewer_doc_subclass": getattr(manifest, "reviewer_doc_subclass", None),
+        "reviewer_confidence": getattr(manifest, "reviewer_confidence", None),
+        "review_verdict": getattr(manifest, "review_verdict", None),
+        "reviewer_model": getattr(manifest, "reviewer_model", None),
+        "review_causes": list(getattr(manifest, "review_causes", None) or []),
+        "reviewer_causes": [
+            t
+            for t in (getattr(manifest, "review_causes", None) or [])
+            if t in _reviewer_cause_tokens()
+        ],
+        "judge_verdict": getattr(manifest, "judge_verdict", None),
+        "judge_score": getattr(manifest, "judge_score", None),
+        "judge_findings": list(getattr(manifest, "judge_findings", None) or []),
+        "judge_pass_count": 0,
+        "classification_arbiter_decision": getattr(manifest, "classification_arbiter_decision", None),
+        "classification_arbiter_confidence": getattr(manifest, "classification_arbiter_confidence", None),
+        "classification_arbiter_reasoning": getattr(manifest, "classification_arbiter_reasoning", None),
+        "arbiter_decision": getattr(manifest, "arbiter_decision", None),
+        "arbiter_reasoning": getattr(manifest, "arbiter_reasoning", None),
+        "arbiter_handoff": getattr(manifest, "arbiter_handoff", None),
+        "arbiter_fields_to_fix": list(getattr(manifest, "arbiter_fields_to_fix", None) or []),
+        "arbiter_retry_count": 0,
+    }
+
+
+def _applies_human_fields(payload: dict) -> bool:
+    """True when the structured resolution carries reviewer fields to archive."""
+    return (
+        payload.get("decision") != "rejected"
+        and payload.get("resolution") in ("approve_as_is", "correct")
+        and isinstance(payload.get("extracted_data"), dict)
+        and bool(payload.get("extracted_data"))
+    )
+
+
+def _live_resume(manifest, thread_id: str, payload: dict) -> dict[str, Any]:
+    """Resume the paused ``interrupt()`` with the structured human decision."""
     from pipeline import limits
+
+    deadline = time.time() + float(limits.get_deadline_seconds())
+    logger.info(
+        "review_interrupt_resume",
+        doc_id=manifest.doc_id,
+        thread_id=thread_id,
+        resolution=payload.get("resolution"),
+    )
+    return _execute_run(
+        {
+            "doc_id": manifest.doc_id,
+            "matter_id": manifest.matter_id,
+            "original_filename": manifest.original_filename,
+            "doc_type": manifest.doc_type,
+            "checkpoint_thread_id": thread_id,
+            "review_decision": "approved" if payload.get("decision") != "rejected" else "rejected",
+        },
+        seed=Path(manifest.original_filename).stem,
+        attempt=0,
+        thread_id=thread_id,
+        invoke_input=Command(
+            resume=payload,
+            # The manifest holds the operator's class override; replace the
+            # checkpointed sorter label so extract dispatches on it.
+            update={
+                "run_deadline": deadline,
+                "doc_type": manifest.doc_type,
+                "contract_subtype": manifest.contract_subtype,
+                "doc_subclass": getattr(manifest, "doc_subclass", None),
+                "classification_confidence": manifest.classification_confidence,
+            },
+        ),
+        trace_input={
+            "filename": manifest.original_filename,
+            "matter_id": manifest.matter_id,
+            "resumed": True,
+            "interrupt_resume": True,
+        },
+    )
+
+
+def _resolve_rejection(manifest, review_file: Path, payload: dict) -> dict[str, Any]:
+    """Reject a parked review: nothing may leak.
+
+    A live interrupt is resumed with the rejection so the node itself finalizes
+    (file to ``failed/``, catalog, manifest) and the run's terminal ``failed``
+    stage discards the checkpoint thread. Without a live checkpoint (restart)
+    the same bookkeeping runs directly and any stale thread is discarded.
+    """
+    _ensure_dirs()
+    thread_id = getattr(manifest, "checkpoint_thread_id", None) or ""
+    graph = get_compiled_graph()
+    if thread_id and _thread_is_interrupted(graph, thread_id):
+        return _live_resume(manifest, thread_id, payload)
+
+    from pipeline.review_resolve import with_review_evidence
+
+    label = payload.get("human_label")
+    if isinstance(label, dict):
+        _write_review_resolved_audit(manifest.doc_id, manifest.matter_id, label)
+    outcome = _finalize_human_rejection(
+        doc_id=manifest.doc_id,
+        matter_id=manifest.matter_id,
+        original_filename=manifest.original_filename,
+        doc_type=manifest.doc_type,
+        classification_confidence=manifest.classification_confidence,
+        extraction_confidence=manifest.extraction_confidence,
+        trace_id=manifest.trace_id,
+        esc_reason=manifest.escalation_reason,
+        catalog_extracted=with_review_evidence(manifest.extracted_data, manifest),
+        dest=review_file,
+        fallback_path=str(review_file) if review_file else "",
+        reject_reason=payload.get("reject_reason"),
+        human_label=label if isinstance(label, dict) else None,
+    )
+    if thread_id:
+        _discard_checkpoints(graph, thread_id)
+    logger.info("review_stateless_reject", doc_id=manifest.doc_id)
+    return {
+        "doc_id": manifest.doc_id,
+        "stage": PipelineStage.FAILED.value,
+        "doc_type": manifest.doc_type,
+        "review_decision": "rejected",
+        "file_path": outcome["file_path"],
+    }
+
+
+def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> dict[str, Any]:
+    """Archive reviewer-approved/corrected fields when no checkpoint is live.
+
+    Design choice: a fresh graph run that STARTS at ``compile_report`` (see
+    ``entry_route``) rather than calling the tail nodes by hand. The same three
+    nodes therefore run as on the live-interrupt path, wrapped the same way
+    (run deadline, tracing, scores, checkpoint discard), so the two paths cannot
+    drift apart. The review-bin file is archived in place by ``archive_node``
+    (``move_to_archive``); nothing is requeued, and no LLM is called.
+    """
+    label = payload.get("human_label")
+    if isinstance(label, dict):
+        _write_review_resolved_audit(manifest.doc_id, manifest.matter_id, label)
+
+    initial_state: DocumentState = {
+        "doc_id": manifest.doc_id,
+        "matter_id": manifest.matter_id,
+        "original_filename": manifest.original_filename,
+        "stage": PipelineStage.CLASSIFIED.value,
+        "doc_type": manifest.doc_type,
+        "contract_subtype": manifest.contract_subtype,
+        "doc_subclass": getattr(manifest, "doc_subclass", None),
+        "classification_confidence": manifest.classification_confidence,
+        "classification_attempts": manifest.classification_attempts,
+        "extracted_data": payload["extracted_data"],
+        # The model's own number about the model's own extraction; the human
+        # provenance is extraction_source, never a fabricated 1.0.
+        "extraction_confidence": manifest.extraction_confidence,
+        "extraction_attempts": manifest.extraction_attempts,
+        "trace_id": None,
+        "escalation_reason": None,
+        "review_decision": HUMAN_APPLIED,
+        "extraction_source": "human",
+        "human_label": label if isinstance(label, dict) else None,
+        "retry_count": 0,
+        "conflict_detected": False,
+        "file_path": str(review_file),
+        "doc_text": "",
+        "doc_pages": [],
+        "error_message": None,
+        "messages": [],
+        "resume_extraction": True,
+        "transient_error": False,
+        "run_attempt": 0,
+        **_manifest_evidence_state(manifest),
+    }
+    if manifest.intake:
+        initial_state["intake_meta"] = dict(manifest.intake)
+
+    logger.info(
+        "review_stateless_human_applied",
+        doc_id=manifest.doc_id,
+        resolution=payload.get("resolution"),
+        reason="no interrupt checkpoint",
+    )
+    result = _execute_run(
+        initial_state,
+        seed=f"{Path(manifest.original_filename).stem}-resume-{manifest.doc_id[:8]}",
+        attempt=0,
+        trace_input={
+            "filename": manifest.original_filename,
+            "matter_id": manifest.matter_id,
+            "resumed": True,
+            "human_applied": True,
+        },
+    )
+    stale = getattr(manifest, "checkpoint_thread_id", None) or ""
+    if stale:
+        _discard_checkpoints(get_compiled_graph(), stale)
+    return result
+
+
+def resume_from_review(
+    manifest,
+    review_file: Path,
+    notes: str = "",
+    *,
+    resolution: dict | None = None,
+) -> dict[str, Any]:
+    """Apply a human decision to a parked review document.
+
+    ``resolution`` is the structured decision from the resolve API
+    (``review_resolve.ResolutionPlan.payload()``): ``decision``, ``resolution``
+    (approve_as_is | correct | reclassify | reject), the final ``extracted_data``
+    for the first two, ``human_label``, ``reject_reason``, ``notes``. Without it
+    this is the legacy plain approval: a FRESH extraction.
+
+    Routes (live ``Command(resume=...)`` when the interrupt checkpoint exists,
+    otherwise a stateless equivalent after a restart):
+
+    - **reject** — file to ``failed/``, nothing left in the checkpointer.
+    - **approve_as_is / correct with fields** — the reviewer's fields go through
+      compile_report → catalog_write → archive with no LLM call.
+    - **otherwise** (plain approval, reclassify, or a class-confirm of a
+      pre-extraction park) — re-extraction under the manifest's class.
+
+    Raises ValueError if an approval has no class; file requeue errors propagate.
+    """
+    payload = dict(resolution or {})
+    payload["decision"] = payload.get("decision") or "approved"
+    payload["notes"] = payload.get("notes") or notes or ""
+
+    if payload["decision"] == "rejected":
+        return _resolve_rejection(manifest, review_file, payload)
+
     from pipeline.bins import requeue_from_review, get_worker_id
 
     if not manifest.doc_type:
@@ -4066,43 +4458,14 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
     thread_id = getattr(manifest, "checkpoint_thread_id", None) or ""
     graph = get_compiled_graph()
     if thread_id and _thread_is_interrupted(graph, thread_id):
-        deadline = time.time() + float(limits.get_deadline_seconds())
-        logger.info(
-            "review_interrupt_resume",
-            doc_id=manifest.doc_id,
-            thread_id=thread_id,
-        )
-        return _execute_run(
-            {
-                "doc_id": manifest.doc_id,
-                "matter_id": manifest.matter_id,
-                "original_filename": manifest.original_filename,
-                "doc_type": manifest.doc_type,
-                "checkpoint_thread_id": thread_id,
-                "review_decision": "approved",
-            },
-            seed=Path(manifest.original_filename).stem,
-            attempt=0,
-            thread_id=thread_id,
-            invoke_input=Command(
-                resume={"decision": "approved", "notes": notes or ""},
-                # The manifest holds the operator's class override; replace the
-                # checkpointed sorter label so extract dispatches on it.
-                update={
-                    "run_deadline": deadline,
-                    "doc_type": manifest.doc_type,
-                    "contract_subtype": manifest.contract_subtype,
-                    "doc_subclass": getattr(manifest, "doc_subclass", None),
-                    "classification_confidence": manifest.classification_confidence,
-                },
-            ),
-            trace_input={
-                "filename": manifest.original_filename,
-                "matter_id": manifest.matter_id,
-                "resumed": True,
-                "interrupt_resume": True,
-            },
-        )
+        return _live_resume(manifest, thread_id, payload)
+
+    if _applies_human_fields(payload):
+        return _run_human_applied_stateless(manifest, review_file, payload)
+
+    label = payload.get("human_label")
+    if isinstance(label, dict):
+        _write_review_resolved_audit(manifest.doc_id, manifest.matter_id, label)
 
     worker_id = get_worker_id()
     queued = requeue_from_review(review_file, worker_id, original_filename=manifest.original_filename)
@@ -4143,41 +4506,25 @@ def resume_from_review(manifest, review_file: Path, notes: str = "") -> dict[str
         # reset attempt counters so the corrected run gets a fair QA budget.
         # Reviewer opinion is evidence, not routing state: restore it from the
         # manifest so a re-park does not overwrite it with None.
-        "reviewer_doc_type": getattr(manifest, "reviewer_doc_type", None),
-        "reviewer_contract_subtype": None,
-        "reviewer_doc_subclass": getattr(manifest, "reviewer_doc_subclass", None),
-        "reviewer_confidence": getattr(manifest, "reviewer_confidence", None),
-        "review_verdict": getattr(manifest, "review_verdict", None),
-        "reviewer_model": getattr(manifest, "reviewer_model", None),
-        "review_causes": list(getattr(manifest, "review_causes", None) or []),
-        "reviewer_causes": [
-            t
-            for t in (getattr(manifest, "review_causes", None) or [])
-            if t in _reviewer_cause_tokens()
-        ],
-        "judge_verdict": getattr(manifest, "judge_verdict", None),
-        "judge_score": getattr(manifest, "judge_score", None),
-        "judge_findings": list(getattr(manifest, "judge_findings", None) or []),
-        "judge_pass_count": 0,
-        "classification_arbiter_decision": getattr(manifest, "classification_arbiter_decision", None),
-        "classification_arbiter_confidence": getattr(manifest, "classification_arbiter_confidence", None),
-        "classification_arbiter_reasoning": getattr(manifest, "classification_arbiter_reasoning", None),
-        "arbiter_decision": getattr(manifest, "arbiter_decision", None),
-        "arbiter_reasoning": getattr(manifest, "arbiter_reasoning", None),
-        "arbiter_handoff": getattr(manifest, "arbiter_handoff", None),
-        "arbiter_fields_to_fix": list(getattr(manifest, "arbiter_fields_to_fix", None) or []),
-        "arbiter_retry_count": 0,
+        **_manifest_evidence_state(manifest),
         "run_attempt": 0,
     }
+    if isinstance(label, dict):
+        initial_state["human_label"] = label
 
     logger.info(
         "review_stateless_resume",
         doc_id=manifest.doc_id,
         reason="no interrupt checkpoint",
     )
-    return _execute_run(
+    result = _execute_run(
         initial_state,
         seed=f"{queued.stem}-resume-{manifest.doc_id[:8]}",
         attempt=0,
         trace_input={"filename": queued.name, "matter_id": manifest.matter_id, "resumed": True},
     )
+    if thread_id:
+        # The parked thread (if any survived) can no longer resume: its work
+        # moved to the fresh run above.
+        _discard_checkpoints(graph, thread_id)
+    return result

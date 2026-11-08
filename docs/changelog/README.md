@@ -34,10 +34,14 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-11-07" tags="fix" %}
+{% update date="2026-11-07" tags="feature,fix" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.
+
+### Added
+
+- **A human review decision now flows back into the graph as data.** `POST /review/{doc_id}/resolve` accepts `resolution` (`approve_as_is` | `correct` | `reclassify` | `reject`) with `field_corrections`, `reviewer` (or the `X-Reviewer` header) and `reject_reason` (`not_a_legal_document`, `duplicate`, `unreadable`, `out_of_scope`, `wrong_matter`, `spam`, `other`). Approved or corrected fields go through the normal tail (`human_review` -> `compile_report` -> `catalog_write` -> `archive`) with no LLM call, so the report, catalog row, scores and `archived` audit event exist; the new `human_review -> compile_report` edge is gated on `review_decision == "human_applied"`, and a restart (no live checkpoint) enters at `compile_report` through the START router. Legacy `decision` + `disposition` requests still work: `approved`+`resume` re-extracts, `rejected`+`resume` rejects, `approved`+`complete` is `correct` (posted `extracted_data` replaces the parked fields) or `approve_as_is`. The manifest gains `human_label` (decision, resolution, final class, field corrections, a snapshot of the model output taken before the override, reviewer, UTC time, notes, reject reason), `extraction_source: "human"`, `reject_reason` and `file_location`; one `review_resolved` audit entry (actor = reviewer) precedes the tail. `extraction_confidence` stays the model's own value, never 1.0.
 
 ### Fixed
 
@@ -49,6 +53,9 @@ Work landed on `main` since the last tagged release.
 - **Watcher concurrency is bounded.** Every watchdog event, startup-scan file and rescan tick used to start its own pipeline thread (400 inbox files ran 400 pipelines at once). Files now wait in a de-duplicated queue served by `watcher.max_concurrent_docs` workers (taxonomy.yaml, default 4; env `MAILROOM_MAX_CONCURRENT_DOCS`). `Watcher.stop()` discards files that have not started; they stay in the inbox. Needs a watcher/API restart.
 - **Stale-claim reconcile no longer hijacks in-flight documents.** `claim_file` / `requeue_from_review` stamp the claim time (the hard link kept the upload's old mtime, so a document that waited in a backlog looked orphaned at once), and the periodic reconcile skips files this process is running or has queued.
 - **Catalog writes are race-free upserts.** `write_matter_record` / `write_document_record` use one `INSERT ... ON CONFLICT DO UPDATE` (SQLite and PostgreSQL; other dialects keep the old path), so concurrent runs no longer fail with `UNIQUE constraint failed` and drop the stage update. Transient SQLite `database is locked` errors are retried with jittered backoff, and `busy_timeout` is now set before the WAL pragma (`SQLITE_BUSY_TIMEOUT_MS`, default 5000).
+- A rejected review now resolves its interrupt checkpoint instead of leaking it, and a failed move to `failed/` is logged and recorded on the manifest (`file_location`) instead of swallowed.
+- Resolving the same document twice (concurrently or late) returns a clean HTTP 409 instead of racing or a 400 with an enum repr; manifests are written atomically (temp file + `os.replace`).
+- `human_review_node` no longer raises `UnboundLocalError` when the state has no `file_path`.
 
 <a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}

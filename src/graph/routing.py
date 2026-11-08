@@ -455,17 +455,41 @@ def after_boss(state: dict) -> Literal["boss_escalation", "compile_report", "hum
     return "human_review"
 
 
-def after_human_review(state: dict) -> Literal["extract", "failed"]:
+# review_decision token set by ``human_review_node`` when a reviewer's own
+# fields (approved as-is or corrected) are applied instead of re-extracting.
+# Like ``"approved"``, only that node sets it, so a crashed or partial run can
+# never be mistaken for a human-applied one and skip extraction.
+HUMAN_APPLIED = "human_applied"
+
+
+def human_fields_applied(state: dict) -> bool:
+    """True when ``state`` carries a reviewer's fields ready for compile_report."""
+    extracted = state.get("extracted_data")
+    return (
+        state.get("review_decision") == HUMAN_APPLIED
+        and state.get("extraction_source") == "human"
+        and isinstance(extracted, dict)
+        and bool(extracted)
+    )
+
+
+def after_human_review(state: dict) -> Literal["extract", "compile_report", "failed"]:
     """Route a resolved HITL interrupt.
 
-    Approved reviews re-enter extraction (fresh fields, never the reviewed
-    payload) — the same contract as ``resume_from_review``. Rejected (or
-    still-pending, which should not happen after ``interrupt()`` returns)
-    ends the run; the node already moved the file to ``failed/``.
+    - ``approved`` re-enters extraction (fresh fields, never the reviewed
+      payload): a class-confirm or reclassify — the same contract as
+      ``resume_from_review``.
+    - ``human_applied`` (explicit token, mirroring the ``approved`` guard) sends
+      the reviewer's approved or corrected fields through the normal tail —
+      compile_report → catalog_write → archive — with no LLM call.
+    - Rejected (or still-pending, which should not happen after ``interrupt()``
+      returns) ends the run; the node already moved the file to ``failed/``.
     """
     decision = state.get("review_decision")
     if decision == "approved":
         return "extract"
+    if human_fields_applied(state):
+        return "compile_report"
     return "failed"
 
 
