@@ -120,6 +120,120 @@ def test_queued_files_do_not_start_after_stop(watcher_env, monkeypatch):
     assert len(list(bins.inbox_dir().glob("q*.txt"))) == 11
 
 
+def _fresh_pool(watcher, monkeypatch, cap):
+    """An isolated pool wired in as the module's dispatcher."""
+    monkeypatch.setenv("MAILROOM_MAX_CONCURRENT_DOCS", str(cap))
+    pool = watcher._DispatchPool()
+    monkeypatch.setattr(watcher, "_dispatch", pool)
+    return pool
+
+
+def test_admitted_name_is_never_neither_queued_nor_active(watcher_env, monkeypatch):
+    """CR4 / T47: a worker used to drop the name from the queue before the
+    handler marked it active, so the rescan saw it as idle and queued it
+    again. Admission must be one critical section: queued -> active."""
+    watcher = watcher_env
+    pool = _fresh_pool(watcher, monkeypatch, 1)
+    at_entry: dict[str, object] = {}
+    entered, go = threading.Event(), threading.Event()
+
+    def handler(path):
+        at_entry["in_flight"] = watcher._is_in_flight(path.name)
+        at_entry["queued"] = pool.is_queued(path.name)
+        entered.set()
+        go.wait(timeout=10)
+        assert watcher._mark_active(path.name)  # the real handlers' first step
+        try:
+            pass
+        finally:
+            watcher._unmark_active(path.name)
+
+    try:
+        assert pool.submit("a.txt", handler, Path("a.txt"))
+        assert entered.wait(10)
+        assert at_entry["in_flight"] is True, "name vanished between dequeue and mark-active"
+        assert at_entry["queued"] is False
+        # a rescan during that window must not queue a duplicate
+        assert not pool.submit("a.txt", handler, Path("a.txt"))
+    finally:
+        go.set()
+        pool.close()
+    assert _wait_for(lambda: "a.txt" not in watcher._active_files)
+
+
+def test_pool_releases_names_for_handlers_that_never_mark_active(watcher_env, monkeypatch):
+    watcher = watcher_env
+    pool = _fresh_pool(watcher, monkeypatch, 1)
+    done = threading.Event()
+    try:
+        assert pool.submit("plain.txt", lambda p: done.set(), Path("plain.txt"))
+        assert done.wait(10)
+        assert _wait_for(lambda: not watcher._is_in_flight("plain.txt"))
+        # and the name can be submitted again afterwards
+        done.clear()
+        assert pool.submit("plain.txt", lambda p: done.set(), Path("plain.txt"))
+        assert done.wait(10)
+    finally:
+        pool.close()
+
+
+def test_admitted_document_is_visible_to_drain_when_close_races_the_start(watcher_env, monkeypatch):
+    """T47: close() right after admission must find the document in
+    ``_active_files`` (so ``Watcher.stop`` drains it) instead of releasing
+    ownership while its handler is about to claim the file."""
+    watcher = watcher_env
+    pool = _fresh_pool(watcher, monkeypatch, 1)
+    entered, go = threading.Event(), threading.Event()
+
+    def handler(path):
+        entered.set()
+        go.wait(timeout=10)
+        watcher._mark_active(path.name)
+        watcher._unmark_active(path.name)
+
+    try:
+        pool.submit("raced.txt", handler, Path("raced.txt"))
+        assert entered.wait(10)
+        pool.close()
+        assert "raced.txt" in watcher._active_files
+    finally:
+        go.set()
+    assert _wait_for(lambda: "raced.txt" not in watcher._active_files)
+
+
+def test_workers_that_outlive_close_still_count_against_the_cap(watcher_env, monkeypatch):
+    """T48: after a drain timeout the old workers are still running documents.
+    A replacement pool must not add a full set of workers on top of them."""
+    watcher = watcher_env
+    cap = 2
+    pool = _fresh_pool(watcher, monkeypatch, cap)
+    release = threading.Event()
+    running = []
+    lock = threading.Lock()
+
+    def slow(path):
+        with lock:
+            running.append(path.name)
+        release.wait(timeout=20)
+
+    try:
+        for i in range(cap):
+            pool.submit(f"old{i}.txt", slow, Path(f"old{i}.txt"))
+        assert _wait_for(lambda: len(running) == cap)
+        pool.close()
+        pool.reopen()
+        for i in range(cap):
+            pool.submit(f"new{i}.txt", slow, Path(f"new{i}.txt"))
+        time.sleep(0.4)
+        assert sorted(running) == ["old0.txt", "old1.txt"], running  # new work waits for a free slot
+        release.set()
+        # once the survivors finish, the waiting documents run (no stall)
+        assert _wait_for(lambda: len(running) == 2 * cap), running
+    finally:
+        release.set()
+        pool.close()
+
+
 def test_max_concurrent_docs_config_and_env_override(monkeypatch):
     from pipeline.config import get_max_concurrent_docs
 
@@ -319,9 +433,14 @@ def test_32_threads_mixed_catalog_ops_lose_nothing(catalog_db):
     [t.join(timeout=300) for t in threads]
 
     assert errors == []
-    rows = _rows(catalog_db, "SELECT doc_id, stage, doc_type FROM documents")
+    rows = _rows(catalog_db, "SELECT doc_id, stage, doc_type, scores FROM documents")
     assert len(rows) == n_threads * docs_each
-    assert {(stage, dtype) for _d, stage, dtype in rows} == {("archived", "contract")}
+    assert {(stage, dtype) for _d, stage, dtype, _s in rows} == {("archived", "contract")}
+    # the archive upsert names no `scores` key, so the score written between
+    # the two upserts must survive it on every row
+    import json
+
+    assert [doc for doc, _st, _ty, scores in rows if json.loads(scores or "null") != {"success_rate": 1.0}] == []
     assert len(_rows(catalog_db, "SELECT matter_id FROM matters")) == 1
 
 
@@ -370,6 +489,24 @@ def test_upsert_keeps_unspecified_columns_and_returns_the_row(catalog_db):
     asyncio.run(run())
 
 
+def test_first_insert_stamps_created_and_updated_with_one_timestamp(catalog_db):
+    """T55: a new row's created_at and updated_at come from the same instant;
+    an update moves updated_at only."""
+    from storage.catalog import get_document, write_document_record
+
+    async def run():
+        first = {"doc_id": "TS1", "matter_id": "M", "original_filename": "t.txt", "stage": "inbox"}
+        await write_document_record(first)
+        row = await get_document("TS1")
+        assert row.created_at == row.updated_at
+        created = row.created_at
+        await write_document_record({**first, "stage": "archived"})
+        row = await get_document("TS1")
+        assert row.created_at == created and row.updated_at > created
+
+    asyncio.run(run())
+
+
 def test_write_retries_on_database_is_locked(catalog_db, monkeypatch):
     import sqlite3
 
@@ -393,17 +530,45 @@ def test_write_retries_on_database_is_locked(catalog_db, monkeypatch):
     assert asyncio.run(db.run_write_with_retry(flaky)) == "ok"
     assert calls["n"] == 3 and len(sleeps) == 2 and all(0 < s <= 2.0 for s in sleeps)
 
+    calls["n"] = 0
+    sleeps.clear()
+
     async def broken():
+        calls["n"] += 1
         raise OperationalError("INSERT", {}, sqlite3.OperationalError("no such table: x"))
 
     with pytest.raises(OperationalError):
         asyncio.run(db.run_write_with_retry(broken))  # not a lock error: no retry
+    assert calls["n"] == 1 and sleeps == []
+
+    calls["n"] = 0
+    sleeps.clear()
 
     async def always_locked():
+        calls["n"] += 1
         raise OperationalError("INSERT", {}, sqlite3.OperationalError("database is locked"))
 
     with pytest.raises(OperationalError):
         asyncio.run(db.run_write_with_retry(always_locked, attempts=3))
+    # every attempt ran, with a backoff between consecutive attempts only
+    assert calls["n"] == 3 and len(sleeps) == 2
+
+
+@pytest.mark.parametrize("attempts", [0, -1])
+def test_write_retry_rejects_a_non_positive_attempt_count(attempts):
+    """T74: ``attempts < 1`` skipped the loop and returned None, i.e. the write
+    was silently never attempted. It must fail loudly without running ``op``."""
+    from storage import db
+
+    ran = {"n": 0}
+
+    async def op():
+        ran["n"] += 1
+        return "written"
+
+    with pytest.raises(ValueError, match="attempts"):
+        asyncio.run(db.run_write_with_retry(op, attempts=attempts))
+    assert ran["n"] == 0
 
 
 def test_sqlite_connections_set_busy_timeout_before_wal(catalog_db):
