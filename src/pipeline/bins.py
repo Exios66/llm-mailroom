@@ -33,9 +33,11 @@ def list_stale_processing_files(stale_minutes: int = 60) -> list[Path]:
     """Files stranded in processing/<worker_id>/ by a crashed process (L-1/A-18).
 
     A file claimed by a worker that died mid-run stays in its worker dir
-    forever (no SIGTERM handler, no reclaim path). Anything older than
-    ``stale_minutes`` is presumed orphaned — return it for re-queueing or
-    finalizing as failed.
+    forever (no SIGTERM handler, no reclaim path). Anything whose claim is
+    older than ``stale_minutes`` is presumed orphaned — return it for
+    re-queueing or finalizing as failed. Age is the file's mtime, which
+    ``claim_file`` / ``requeue_from_review`` reset to the claim time; callers
+    that run documents in-process must still skip the names they are running.
     """
     import time as _time
 
@@ -244,6 +246,7 @@ def claim_file(file_path: Path, worker_id: str) -> Path:
     dest = processing / file_path.name
     # Reused workers must never replace an abandoned document's bytes.
     _move_review_file_no_clobber(file_path, dest)
+    _stamp_claim_time(dest)
     return dest
 
 
@@ -267,6 +270,7 @@ def requeue_from_review(file_path: Path, worker_id: str, *, original_filename: s
     name = _safe_bin_component(original_filename or file_path.name, "original_filename")
     dest = processing / name
     _move_review_file_no_clobber(file_path, dest)
+    _stamp_claim_time(dest)
     return dest
 
 
@@ -348,6 +352,20 @@ def _owned_bin_file_path(manifest, base: Path) -> Path:
             # The document-ID path remains usable without scanning manifests.
             return owned
     return legacy
+
+
+def _stamp_claim_time(dest: Path) -> None:
+    """Make the claimed file's mtime mean "claimed at", not "uploaded at".
+
+    ``_move_review_file_no_clobber`` hard-links, so the claim keeps the
+    upload's mtime. A document that waited in a backlog for longer than the
+    stale cutoff would then look orphaned the moment it was claimed, and the
+    periodic reconcile would move it back to the inbox mid-run.
+    """
+    try:
+        os.utime(dest, None)
+    except OSError:
+        logger.warning("claim_time_stamp_failed", path=str(dest))
 
 
 def _move_review_file_no_clobber(src: Path, dest: Path) -> None:

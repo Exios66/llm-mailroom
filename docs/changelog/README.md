@@ -34,12 +34,16 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-11-07" tags="improvement" %}
+{% update date="2026-11-07" tags="fix" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.
 
+### Fixed
 
+- **Watcher concurrency is bounded.** Every watchdog event, startup-scan file and rescan tick used to start its own pipeline thread (400 inbox files ran 400 pipelines at once). Files now wait in a de-duplicated queue served by `watcher.max_concurrent_docs` workers (taxonomy.yaml, default 4; env `MAILROOM_MAX_CONCURRENT_DOCS`). `Watcher.stop()` discards files that have not started; they stay in the inbox. Needs a watcher/API restart.
+- **Stale-claim reconcile no longer hijacks in-flight documents.** `claim_file` / `requeue_from_review` stamp the claim time (the hard link kept the upload's old mtime, so a document that waited in a backlog looked orphaned at once), and the periodic reconcile skips files this process is running or has queued.
+- **Catalog writes are race-free upserts.** `write_matter_record` / `write_document_record` use one `INSERT ... ON CONFLICT DO UPDATE` (SQLite and PostgreSQL; other dialects keep the old path), so concurrent runs no longer fail with `UNIQUE constraint failed` and drop the stage update. Transient SQLite `database is locked` errors are retried with jittered backoff, and `busy_timeout` is now set before the WAL pragma (`SQLITE_BUSY_TIMEOUT_MS`, default 5000).
 
 <a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}
