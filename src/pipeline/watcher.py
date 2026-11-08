@@ -1,5 +1,6 @@
 import os
 import signal
+import queue
 import socket
 import time
 import threading
@@ -9,6 +10,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from .env import load_env
+from .config import get_max_concurrent_docs
 
 load_env()
 from pipeline.env import default_environment
@@ -354,6 +356,109 @@ def _mark_active(name: str) -> bool:
 def _unmark_active(name: str) -> None:
     with _active_lock:
         _active_files.discard(name)
+
+
+def _is_in_flight(name: str) -> bool:
+    """True when this process is running, or has queued, a file of this name."""
+    with _active_lock:
+        if name in _active_files:
+            return True
+    return _dispatch.is_queued(name)
+
+
+class _DispatchPool:
+    """Bounded worker pool for inbox documents (volume hardening).
+
+    Previously every watchdog event, startup-scan file and rescan tick started
+    its own thread, so a 400-file backlog ran 400 pipelines (and 400 LLM
+    streams) at once. Files now wait in a FIFO and at most
+    ``get_max_concurrent_docs()`` run at a time. ``submit`` de-duplicates:
+    a name that is queued or already running is not queued again, so the
+    1-second rescan loop cannot pile up copies of a waiting file.
+
+    ``close`` (called from ``Watcher.stop``) discards everything that has not
+    started; those files stay in the inbox for the next watcher. Each close
+    retires the queue and its workers together, so a later ``reopen`` starts
+    from a clean slate. Workers are daemon threads, matching the per-file
+    threads this replaces.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._queue: queue.SimpleQueue = queue.SimpleQueue()
+        self._queued: set[str] = set()
+        self._threads: list[threading.Thread] = []
+        self._closed = False
+
+    def is_queued(self, name: str) -> bool:
+        with self._lock:
+            return name in self._queued
+
+    def queued_count(self) -> int:
+        with self._lock:
+            return len(self._queued)
+
+    def reopen(self) -> None:
+        with self._lock:
+            self._closed = False
+
+    def submit(self, name: str, fn, path: Path) -> bool:
+        """Queue ``fn(path)``; False when closed or ``name`` is already in flight."""
+        with _active_lock:
+            running = name in _active_files
+        with self._lock:
+            if self._closed or running or name in self._queued:
+                return False
+            self._queued.add(name)
+            self._ensure_workers_locked()
+            self._queue.put((name, fn, path))
+        return True
+
+    def _ensure_workers_locked(self) -> None:
+        self._threads = [t for t in self._threads if t.is_alive()]
+        size = get_max_concurrent_docs()
+        while len(self._threads) < size:
+            worker = threading.Thread(
+                target=self._worker,
+                args=(self._queue,),
+                name=f"mailroom-doc-worker-{len(self._threads)}",
+                daemon=True,
+            )
+            self._threads.append(worker)
+            worker.start()
+
+    def _worker(self, q: queue.SimpleQueue) -> None:
+        while True:
+            item = q.get()
+            if item is None:  # close() sentinel
+                return
+            name, fn, path = item
+            with self._lock:
+                if self._closed or q is not self._queue:
+                    continue  # retired by close(): leave the file in the inbox
+                self._queued.discard(name)
+            try:
+                fn(path)
+            except Exception:
+                # fn handles and finalizes its own failures; never kill a slot.
+                logger.exception("dispatch_worker_error", file=str(path))
+
+    def close(self) -> int:
+        """Stop accepting work and drop everything not yet started."""
+        with self._lock:
+            self._closed = True
+            dropped = len(self._queued)
+            self._queued.clear()
+            old_queue, self._queue = self._queue, queue.SimpleQueue()
+            threads, self._threads = self._threads, []
+        for _ in threads:
+            old_queue.put(None)
+        if dropped:
+            logger.info("watcher_queue_discarded", queued_files=dropped)
+        return dropped
+
+
+_dispatch = _DispatchPool()
 
 
 def _is_already_processed(path: Path) -> bool:
@@ -1025,7 +1130,8 @@ class InboxHandler(FileSystemEventHandler):
             return
         self._debounce[path.name] = now
         logger.info("inbox_file_detected", file=str(path))
-        threading.Thread(target=self._process, args=(path,), daemon=True).start()
+        # Bounded pool: waits for a free slot instead of starting a thread per event.
+        _dispatch.submit(path.name, self._process, path)
 
     def on_created(self, event):
         if event.is_directory:
@@ -1141,11 +1247,10 @@ class Watcher:
             # O(1) lookups instead of O(n) per file.
             _build_manifest_index()
 
+            _dispatch.reopen()
             for f in list_inbox_files():
                 logger.info("existing_inbox_file", file=str(f))
-                threading.Thread(
-                    target=self._process_existing, args=(f,), daemon=True
-                ).start()
+                _dispatch.submit(f.name, self._process_existing, f)
 
             handler = InboxHandler(self.worker_id)
             self.observer.schedule(handler, str(inbox), recursive=False)
@@ -1191,12 +1296,19 @@ class Watcher:
 
     def _reconcile_stale_claims(self) -> None:
         """Re-queue (or retire) processing/<worker_id>/ files orphaned by a
-        crashed process (L-1/A-18). Runs once at startup before the inbox
-        scan. Terminal manifests (archived/failed/review) retire the copy
-        to failed/ so it cannot orphan in the inbox.
+        crashed process (L-1/A-18). Runs at startup before the inbox scan and
+        again every ``STALE_RECONCILE_INTERVAL_SECONDS`` from the rescan loop.
+        Terminal manifests (archived/failed/review) retire the copy to
+        failed/ so it cannot orphan in the inbox.
+
+        Never touches a document this process is running or has queued: those
+        are in flight by definition, however old their file mtime is.
         """
         stale = list_stale_processing_files(stale_minutes=STALE_CLAIM_MINUTES)
         for f in stale:
+            if _is_in_flight(f.name):
+                logger.info("stale_claim_skipped_in_flight", file=str(f))
+                continue
             try:
                 action, dest = reconcile_stale_processing_file(f)
                 logger.warning(
@@ -1232,11 +1344,10 @@ class Watcher:
                 self._reconcile_stale_claims()
                 last_stale_check = now
             for f in list_inbox_files():
-                if f.name in _active_files:
+                # Running or already queued for a slot: do not queue it again.
+                if _is_in_flight(f.name):
                     continue
-                threading.Thread(
-                    target=self._process_existing, args=(f,), daemon=True
-                ).start()
+                _dispatch.submit(f.name, self._process_existing, f)
 
     def stop(self, drain_timeout: float | None = None):
         global _watcher_owned
@@ -1256,6 +1367,9 @@ class Watcher:
             self.observer.join(timeout=5)
             self._running = False
             logger.info("watcher_stopped")
+        # Files still waiting for a worker slot never start; they stay in the
+        # inbox for the next watcher. Only in-flight documents are drained.
+        _dispatch.close()
         # Drain: wait for in-flight documents to finish (SIGTERM hardening).
         timeout = drain_timeout if drain_timeout is not None else DRAIN_TIMEOUT_SECONDS
         deadline = time.time() + timeout

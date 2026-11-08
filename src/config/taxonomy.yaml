@@ -159,6 +159,14 @@ pager:
     log: true                    # <base_dir>/pager_log.jsonl
     webhook_url: ""              # env MAILROOM_PAGER_WEBHOOK_URL (+ MAILROOM_PAGER_WEBHOOK_SECRET)
 
+# Inbox watcher scaling. At most this many documents run through the pipeline
+# at once; the rest wait (queued, de-duplicated) in a bounded worker pool, so
+# a backlog of hundreds of files cannot start hundreds of concurrent LLM
+# pipelines. Env override: MAILROOM_MAX_CONCURRENT_DOCS. Needs a watcher/API
+# restart (config is cached).
+watcher:
+  max_concurrent_docs: 4
+
 run_limits:
   # Hard wall-clock cutoff per document run (abort past this).
   deadline_seconds: 3600

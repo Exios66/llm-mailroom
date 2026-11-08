@@ -1,9 +1,9 @@
 import structlog
 from datetime import datetime, timezone
-from sqlalchemy import String, Float, DateTime, JSON, Text, select
+from sqlalchemy import String, Float, DateTime, JSON, Text, func, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .db import Base, async_session, ensure_schema
+from .db import Base, async_session, ensure_schema, run_write_with_retry
 
 logger = structlog.get_logger(__name__)
 
@@ -56,63 +56,152 @@ class DocumentRecord(Base):
     )
 
 
+def _insert_for(session):
+    """Dialect-specific ``insert`` that supports ON CONFLICT (None if neither)."""
+    dialect = session.get_bind().dialect.name
+    if dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert
+    elif dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        return None
+    return insert
+
+
+# Document columns an update overwrites when the caller supplies the key
+# (an absent key keeps the stored value; an explicit None clears it).
+_DOC_UPDATE_KEYS = (
+    "stage",
+    "doc_type",
+    "contract_subtype",
+    "doc_subclass",
+    "classification_confidence",
+    "extraction_confidence",
+    "extracted_data",
+    "escalation_reason",
+    "trace_id",
+    "file_sha256",
+)
+
+
 async def write_matter_record(matter_data) -> MatterRecord:
+    """Insert or update a matter as ONE atomic upsert.
+
+    The old get-then-insert raced under concurrent pipelines (UNIQUE
+    ``matters.matter_id``). Blank ``name`` / ``client_name`` keep the stored
+    values; ``practice_area`` / ``opened_at`` are set on first insert only.
+    """
     ensure_schema()
-    async with async_session() as session:
-        existing = await session.get(MatterRecord, matter_data.matter_id)
-        if existing:
-            existing.name = matter_data.name or existing.name
-            existing.client_name = matter_data.client_name or existing.client_name
-            existing.updated_at = datetime.now(timezone.utc)
-        else:
-            existing = MatterRecord(
+
+    async def _op() -> MatterRecord:
+        async with async_session() as session:
+            insert = _insert_for(session)
+            now = datetime.now(timezone.utc)
+            if insert is None:  # unknown dialect: legacy get-then-write
+                existing = await session.get(MatterRecord, matter_data.matter_id)
+                if existing:
+                    existing.name = matter_data.name or existing.name
+                    existing.client_name = matter_data.client_name or existing.client_name
+                    existing.updated_at = now
+                else:
+                    existing = MatterRecord(
+                        matter_id=matter_data.matter_id,
+                        name=matter_data.name,
+                        client_name=matter_data.client_name,
+                        practice_area=matter_data.practice_area,
+                        opened_at=matter_data.opened_at,
+                    )
+                    session.add(existing)
+                await session.commit()
+                return existing
+            stmt = insert(MatterRecord).values(
                 matter_id=matter_data.matter_id,
                 name=matter_data.name,
                 client_name=matter_data.client_name,
                 practice_area=matter_data.practice_area,
                 opened_at=matter_data.opened_at,
+                updated_at=now,
             )
-            session.add(existing)
-        await session.commit()
-        return existing
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[MatterRecord.matter_id],
+                set_={
+                    "name": func.coalesce(func.nullif(stmt.excluded.name, ""), MatterRecord.name),
+                    "client_name": func.coalesce(
+                        func.nullif(stmt.excluded.client_name, ""), MatterRecord.client_name
+                    ),
+                    "updated_at": now,
+                },
+            )
+            await session.execute(stmt)
+            await session.commit()
+            return await session.get(MatterRecord, matter_data.matter_id)
+
+    return await run_write_with_retry(_op)
 
 
 async def write_document_record(doc_data: dict) -> DocumentRecord:
+    """Insert or update a document row as ONE atomic upsert (see
+    ``write_matter_record``); concurrent writers of the same ``doc_id`` can no
+    longer fail with a UNIQUE violation and drop the stage update."""
     ensure_schema()
-    async with async_session() as session:
-        existing = await session.get(DocumentRecord, doc_data["doc_id"])
-        if existing:
-            existing.stage = doc_data.get("stage", existing.stage)
-            existing.doc_type = doc_data.get("doc_type", existing.doc_type)
-            existing.contract_subtype = doc_data.get("contract_subtype", existing.contract_subtype)
-            if "doc_subclass" in doc_data:
-                existing.doc_subclass = doc_data.get("doc_subclass")
-            existing.classification_confidence = doc_data.get("classification_confidence", existing.classification_confidence)
-            existing.extraction_confidence = doc_data.get("extraction_confidence", existing.extraction_confidence)
-            existing.extracted_data = doc_data.get("extracted_data", existing.extracted_data)
-            existing.escalation_reason = doc_data.get("escalation_reason", existing.escalation_reason)
-            existing.trace_id = doc_data.get("trace_id", existing.trace_id)
-            existing.file_sha256 = doc_data.get("file_sha256", existing.file_sha256)
-            existing.updated_at = datetime.now(timezone.utc)
-        else:
-            record = DocumentRecord(
-                doc_id=doc_data["doc_id"],
-                matter_id=doc_data["matter_id"],
-                original_filename=doc_data["original_filename"],
-                stage=doc_data.get("stage", "inbox"),
-                doc_type=doc_data.get("doc_type"),
-                contract_subtype=doc_data.get("contract_subtype"),
-                doc_subclass=doc_data.get("doc_subclass"),
-                classification_confidence=doc_data.get("classification_confidence"),
-                extraction_confidence=doc_data.get("extraction_confidence"),
-                extracted_data=doc_data.get("extracted_data"),
-                escalation_reason=doc_data.get("escalation_reason"),
-                trace_id=doc_data.get("trace_id"),
-                file_sha256=doc_data.get("file_sha256"),
+
+    async def _op() -> DocumentRecord:
+        async with async_session() as session:
+            insert = _insert_for(session)
+            now = datetime.now(timezone.utc)
+            if insert is None:  # unknown dialect: legacy get-then-write
+                existing = await session.get(DocumentRecord, doc_data["doc_id"])
+                if existing:
+                    for key in _DOC_UPDATE_KEYS:
+                        if key in doc_data:
+                            setattr(existing, key, doc_data[key])
+                    existing.updated_at = now
+                else:
+                    existing = DocumentRecord(**_doc_insert_values(doc_data))
+                    session.add(existing)
+                await session.commit()
+                return existing
+            if "matter_id" not in doc_data or "original_filename" not in doc_data:
+                # Update-only caller (e.g. recover_processing passes just
+                # doc_id + stage): never inserts, exactly like the old path.
+                values = {k: doc_data[k] for k in _DOC_UPDATE_KEYS if k in doc_data}
+                result = await session.execute(
+                    update(DocumentRecord)
+                    .where(DocumentRecord.doc_id == doc_data["doc_id"])
+                    .values(**values, updated_at=now)
+                )
+                if result.rowcount == 0:
+                    raise KeyError("matter_id" if "matter_id" not in doc_data else "original_filename")
+                await session.commit()
+                return await session.get(DocumentRecord, doc_data["doc_id"])
+            stmt = insert(DocumentRecord).values(**_doc_insert_values(doc_data), updated_at=now)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[DocumentRecord.doc_id],
+                set_={**{k: doc_data[k] for k in _DOC_UPDATE_KEYS if k in doc_data}, "updated_at": now},
             )
-            session.add(record)
-        await session.commit()
-        return existing if existing else record
+            await session.execute(stmt)
+            await session.commit()
+            return await session.get(DocumentRecord, doc_data["doc_id"])
+
+    return await run_write_with_retry(_op)
+
+
+def _doc_insert_values(doc_data: dict) -> dict:
+    return {
+        "doc_id": doc_data["doc_id"],
+        "matter_id": doc_data["matter_id"],
+        "original_filename": doc_data["original_filename"],
+        "stage": doc_data.get("stage", "inbox"),
+        "doc_type": doc_data.get("doc_type"),
+        "contract_subtype": doc_data.get("contract_subtype"),
+        "doc_subclass": doc_data.get("doc_subclass"),
+        "classification_confidence": doc_data.get("classification_confidence"),
+        "extraction_confidence": doc_data.get("extraction_confidence"),
+        "extracted_data": doc_data.get("extracted_data"),
+        "escalation_reason": doc_data.get("escalation_reason"),
+        "trace_id": doc_data.get("trace_id"),
+        "file_sha256": doc_data.get("file_sha256"),
+    }
 
 
 async def get_document(doc_id: str) -> DocumentRecord | None:
