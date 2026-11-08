@@ -129,6 +129,60 @@ def test_f1_merged_confidence_is_min_not_max(make, mock_openai_client):
     assert result["_n_chunks"] == 4
 
 
+def _a_field(agent) -> dict:
+    """One populated public field (scripted results bypass schema checks on
+    the mailroom path; ``parties`` is in the vendored contracts schema)."""
+    return {"parties": ["Acme Corp."]}
+
+
+@_MAKERS
+def test_cr6_fieldless_boilerplate_window_does_not_set_the_confidence(make, mock_openai_client):
+    """CR6: a window that produced no fields (signature page, exhibit) carries
+    no evidence about extraction quality; its low stated confidence must not
+    drag a document whose other windows are all 0.92 below the retry line."""
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(
+        agent,
+        [
+            {**good, "confidence": 0.92},
+            {**good, "confidence": 0.92},
+            {"confidence": 0.4},  # boilerplate window: nothing extracted
+            {**good, "confidence": 0.92},
+        ],
+    )
+    result = agent.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert result["_failed_chunks"] == 0
+    assert result["confidence"] == pytest.approx(0.92)
+    assert result["confidence"] >= _low(agent.agent_name)  # not sent to retry/review
+    # a field-less window that comes FIRST is ignored just the same
+    agent2 = make(mock_openai_client)
+    _script(agent2, [{"confidence": 0.4}, {**good, "confidence": 0.92}, {**good, "confidence": 0.9}, {**good, "confidence": 0.95}])
+    assert agent2.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)["confidence"] == pytest.approx(0.9)
+
+
+@_MAKERS
+def test_cr6_windows_with_fields_still_take_the_weakest_confidence(make, mock_openai_client):
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(agent, [{**good, "confidence": c} for c in (0.98, 0.95, 0.60, 0.97)])
+    result = agent.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert result["confidence"] == pytest.approx(0.60)
+
+
+@_MAKERS
+def test_cr6_failed_chunk_still_caps_when_other_windows_are_fieldless(make, mock_openai_client):
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(
+        agent,
+        [{**good, "confidence": 0.99}, {"confidence": 0.3}, {"_parse_error": True}, {**good, "confidence": 0.99}],
+    )
+    result = agent.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert result["_failed_chunks"] == 1
+    assert result["confidence"] < _low(agent.agent_name)
+
+
 def test_f1_single_chunk_unchanged(mock_openai_client):
     agent = _mailroom_agent(mock_openai_client)
     agent.extract = lambda *a, **k: {"claim": "1", "confidence": 0.8}
@@ -217,11 +271,13 @@ def _conflict_state(**over):
     return state
 
 
-def test_f3_conflict_with_schema_invalid_extraction_retries_not_boss():
+@pytest.mark.parametrize("confidence", [0.1, 0.99])
+def test_f3_conflict_with_schema_invalid_extraction_retries_not_boss(confidence):
+    """The schema gate holds below AND above the confidence gate."""
     from graph.routing import after_extraction
 
     state = _conflict_state(
-        extracted_data={"parties": "not-a-list"}, extraction_confidence=0.1
+        extracted_data={"parties": "not-a-list"}, extraction_confidence=confidence
     )
     assert after_extraction(state) == "retry_extract"
     assert after_extraction({**state, "extraction_attempts": 3}) == "human_review"
@@ -371,6 +427,38 @@ def test_transient_counter_is_a_run_record_not_reset_on_success():
     assert "NOT reset on success" in (_transient_decision.__doc__ or "")
 
 
+def test_transient_counter_survives_a_successful_extract_node_pass(monkeypatch):
+    """T80: same contract, driven through ``extract_node`` itself. A transient
+    failure then a success: the merged state keeps the retry counter, so the
+    run is not a first-pass success."""
+    from graph import build_graph as bg
+    from observability.scores import first_pass_success
+
+    calls = {"n": 0}
+
+    def flaky_contracts(doc_text, pages=None, handoff_context=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _conn_error()
+        return {"parties": ["Acme Corp.", "Beta LLC"], "governing_law": "NY", "confidence": 0.95}
+
+    monkeypatch.setattr(bg, "_extract_contracts", flaky_contracts)
+    state = {
+        "doc_id": "d-transient",
+        "doc_text": "MASTER SERVICES AGREEMENT between Acme Corp. and Beta LLC.",
+        "doc_type": "contract",
+        "stage": "classified",
+    }
+    state.update(bg.extract_node(state))
+    assert state["transient_error"] is True and state["transient_retries_extract"] == 1
+
+    state.update(bg.extract_node(state))  # the self-loop retry succeeds
+    assert state["transient_error"] is False
+    assert state["extracted_data"]["parties"] == ["Acme Corp.", "Beta LLC"]
+    assert state["transient_retries_extract"] == 1  # not reset by the success
+    assert not first_pass_success({**state, "stage": "archived", "extraction_attempts": 1})
+
+
 def test_f2_single_window_path_is_identical():
     from agents.sorter import _merge_sorter_reads
 
@@ -386,5 +474,64 @@ def test_conflict_on_judge_tail_never_archives_unadjudicated():
     assert after_judge({**base, "judge_verdict": "complete"}) == "human_review"
     assert after_arbiter({**base, "arbiter_decision": "accept_with_caveats"}) == "human_review"
     clean = {**base, "conflict_detected": False}
+    assert after_judge({**clean, "judge_verdict": "complete"}) == "compile_report"
+    assert after_arbiter({**clean, "arbiter_decision": "accept_with_caveats"}) == "compile_report"
+
+
+# ---------------------------------------------------------------------------
+# T64 / T65 - a lost extraction window never auto-archives, whatever its score
+# ---------------------------------------------------------------------------
+
+
+def _lost_chunk_state(**over):
+    state = {
+        "doc_type": "contract",
+        "extracted_data": {"parties": ["Acme"], "governing_law": "Delaware", "_failed_chunks": 1, "_n_chunks": 4},
+        "extraction_confidence": 0.99,  # as if the ceiling were above the class low
+        "extraction_attempts": 1,
+    }
+    state.update(over)
+    return state
+
+
+def test_t64_failed_chunk_retries_then_reviews_regardless_of_confidence():
+    from graph.routing import after_extraction, after_extraction_gated
+
+    state = _lost_chunk_state()
+    assert after_extraction(state) == "retry_extract"
+    assert after_extraction_gated(state) == "retry_extract"
+    spent = {**state, "extraction_attempts": 3}
+    # retries spent: straight to a person; no judge/boss/compile can clear a lost window
+    assert after_extraction(spent) == "human_review"
+    assert after_extraction_gated(spent) == "human_review"
+
+
+def test_t64_failed_chunk_beats_the_conflict_and_judge_band_arms():
+    from graph.routing import after_extraction
+
+    assert after_extraction(_lost_chunk_state(conflict_detected=True, extraction_confidence=0.99)) == "retry_extract"
+    assert after_extraction(_lost_chunk_state(extraction_confidence=0.86, extraction_attempts=3)) == "human_review"
+
+
+def test_t64_no_lost_chunk_keeps_every_existing_route():
+    from graph.routing import after_extraction
+
+    clean = _lost_chunk_state()
+    clean["extracted_data"] = {**clean["extracted_data"], "_failed_chunks": 0}
+    assert after_extraction(clean) == "compile_report"
+    assert after_extraction({**clean, "conflict_detected": True}) == "boss_escalation"
+
+
+def test_t65_judge_and_arbiter_cannot_clear_a_lost_window():
+    from graph.routing import after_arbiter, after_judge, judge_should_run
+
+    state = _lost_chunk_state(judge_source_verified=True)
+    assert after_judge({**state, "judge_verdict": "complete"}) == "human_review"
+    assert after_judge({**state, "judge_verdict": "skipped"}) == "human_review"
+    assert after_arbiter({**state, "arbiter_decision": "accept_with_caveats"}) == "human_review"
+    # the judge cannot clear it, so it is not run for it
+    assert not judge_should_run({**state, "extraction_confidence": 0.5, "judge_source_verified": False})
+
+    clean = {**state, "extracted_data": {"parties": ["Acme"], "_failed_chunks": 0}}
     assert after_judge({**clean, "judge_verdict": "complete"}) == "compile_report"
     assert after_arbiter({**clean, "arbiter_decision": "accept_with_caveats"}) == "compile_report"

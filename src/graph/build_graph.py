@@ -1776,10 +1776,33 @@ def _full_date(value):
         return None
 
 
+# Jurisdictions whose "State of" is part of the name: dropping it would make them
+# the same key as a different jurisdiction ("State of Mexico", a Mexican state,
+# versus "Mexico", the country). Matched on the token string, replaced by a
+# single non-filler token.
+_JURISDICTION_NAME_PHRASES = {("state", "of", "mexico"): "state_of_mexico"}
+
+
 def _jurisdiction_key(value) -> str:
     tokens = re.findall(r"[a-z0-9]+", _norm_str(value).lower())
+    for phrase, token in _JURISDICTION_NAME_PHRASES.items():
+        tokens = _replace_token_run(tokens, phrase, token)
     core = [t for t in tokens if t not in _JURISDICTION_FILLER]
     return " ".join(core or tokens)
+
+
+def _replace_token_run(tokens: list[str], phrase: tuple[str, ...], token: str) -> list[str]:
+    width = len(phrase)
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if tuple(tokens[i : i + width]) == phrase:
+            out.append(token)
+            i += width
+        else:
+            out.append(tokens[i])
+            i += 1
+    return out
 
 
 def _conflict_key(value, field: str | None) -> str:
@@ -2449,10 +2472,14 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     dest: Path | None = None
     newly_parked = False
     manifest: DocumentManifest | None = None
+    entered_at = _review_entered_at(doc_id) if file_path_str else None
     parked_extracted_data = {
         **(state.get("extracted_data") if isinstance(state.get("extracted_data"), dict) else {}),
         "_lane_b": _lane_b_manifest_fields(state),
-        "_review": _review_evidence_fields(state, causes),
+        "_review": {
+            **_review_evidence_fields(state, causes),
+            **({"review_entered_at": entered_at.isoformat()} if entered_at else {}),
+        },
     }
     if file_path_str:
         manifest = DocumentManifest(
@@ -2474,6 +2501,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             checkpoint_thread_id=thread_id or None,
             intake=state.get("intake_meta") or None,
             human_label=state.get("human_label") or None,
+            # Human-applied fields that were re-parked (e.g. the report failed)
+            # keep their provenance, as archive_node keeps it.
+            extraction_source=state.get("extraction_source") or None,
+            review_entered_at=entered_at,
             **_lane_b_manifest_fields(state),
             **_review_evidence_fields(state, causes),
         )
@@ -2520,7 +2551,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     # the routed_to_review audit entry so the echo's audit trail is complete.
     # ``manifest`` is only built when a file path is present; a state with no
     # file_path used to raise UnboundLocalError here.
-    if manifest is not None:
+    # LangGraph restarts this node from the top on every Command(resume=...), so
+    # only the run that actually parked the file may announce it; a replay would
+    # re-send the echo and re-run the scan on each resolution.
+    if manifest is not None and newly_parked:
         from pipeline.gmail_intake import dispatch_intake_echo
 
         dispatch_intake_echo(manifest.model_dump(mode="json"))
@@ -2541,7 +2575,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         "review_causes": list(causes or []),
         "classification_confidence": state.get("classification_confidence"),
         "extraction_confidence": state.get("extraction_confidence"),
-        # What a reviewer may answer with (Command(resume={"resolution": ...})).
+        # What a reviewer may answer with. Build it with ResolutionPlan.payload(); the
+        # shape is Command(resume={"decision": "approved", "resolution": "correct",
+        # "extracted_data": {...}}). "decision" is required: a bare {"resolution": ...}
+        # is re-asked as human_review_invalid. "extracted_data" must pass the class schema.
         "resolutions": ["approve_as_is", "correct", "reclassify", "reject"],
         "extraction_present": bool(state.get("extracted_data")),
     }

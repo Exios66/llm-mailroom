@@ -91,6 +91,32 @@ def _min_confidence(acc, new):
     return min(values)
 
 
+def _window_confidence(acc: dict, chunk: dict):
+    """Confidence of ``acc`` merged with the next window ``chunk``.
+
+    Windows that extracted fields are combined by their weakest confidence (a
+    document is only as reliable as its weakest productive window). A window
+    that produced NO fields (signature page, exhibit, boilerplate) says nothing
+    about extraction quality, only that the model found nothing there, and its
+    low stated confidence used to drag a clean document below the retry line.
+    It is ignored whenever the other side holds fields; when neither does, the
+    plain minimum applies (a document that yields nothing stays low). A window
+    that FAILED never reaches the merge: ``finalize_chunked_merge`` caps the
+    result below the class ``low`` threshold for it, independent of this rule.
+    "No fields" is exactly what routing calls hollow, so the two agree.
+    """
+    from pipeline.reconsideration import extraction_is_hollow
+
+    old, new = acc.get("confidence"), chunk.get("confidence")
+    acc_has_fields = not extraction_is_hollow(acc)
+    chunk_has_fields = not extraction_is_hollow(chunk)
+    if acc_has_fields != chunk_has_fields:
+        winner = old if acc_has_fields else new
+        if isinstance(winner, (int, float)) and not isinstance(winner, bool):
+            return winner
+    return _min_confidence(old, new)
+
+
 def _norm(text: str) -> str:
     """Normalize clause text for dedupe: whitespace-collapse + casefold.
 
@@ -474,7 +500,7 @@ class _SpecialistBase(BaseAgent):
         chunking can never change small-document output. Longer documents
         are split, each window extracted in its own call, and merged: list
         fields union with normalized dedupe, scalars keep the first non-null
-        value, confidence takes the MIN. A chunk that fails to parse (or
+        value, confidence takes the MIN over windows that produced fields. A chunk that fails to parse (or
         raises a non-transient error) is counted in ``_failed_chunks`` and caps
         the merged confidence below the class ``low`` threshold; a transient
         provider error is re-raised so the node retries instead of archiving
@@ -592,18 +618,24 @@ class _SpecialistBase(BaseAgent):
         List fields union with normalized dedupe (case/whitespace-insensitive,
         so the overlap window re-quoting a clause is a no-op); scalar fields
         keep the FIRST non-null value in document order; confidence takes the
-        MIN across chunks (a document is only as reliable as its weakest
-        window; the failed-window cap is applied by ``finalize_chunked_merge``).
+        MIN across the windows that produced fields (a document is only as
+        reliable as its weakest productive window; a field-less window is
+        ignored, see ``_window_confidence``; the failed-window cap is applied
+        by ``finalize_chunked_merge``).
         ``reasoning`` is a TRACE: its entries union across chunks (dedupe by
         field, the first-witness evidence + section reference wins — the chunk
         that first located the value holds the evidence) and the summaries
         join with chunk markers, so the merged trace covers the whole
         document instead of only the first window.
         """
+        # Decide the confidence BEFORE merging fields: the list union below
+        # appends into ``acc``'s own lists (the copy is shallow), which would
+        # make a field-less accumulator look populated by this very window.
+        window_confidence = _window_confidence(acc, chunk) if "confidence" in chunk else None
         merged = dict(acc)
         for key, value in chunk.items():
             if key == "confidence":
-                merged["confidence"] = _min_confidence(merged.get("confidence"), value)
+                merged["confidence"] = window_confidence
                 continue
             if key == "_parse_error":
                 continue

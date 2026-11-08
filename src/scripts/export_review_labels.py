@@ -5,7 +5,9 @@ Reads every manifest under the manifests bin that carries a ``human_label``
 (written when a person resolves a parked document) and emits one ``RunRecord``
 JSONL row per document (``run.mode="real"``, ``gold.label_source="human"``),
 so ``calibrate_thresholds.py`` and ``hillclimb_eval.py`` can fit thresholds
-against what reviewers actually decided. A summary says how much review effort
+against what reviewers actually decided. The snapshot keeps only the LAST value of
+each stage, so a sorter attempt 1 that a retry or a winning reviewer verdict replaced
+is exported as unobserved (see ``sorter_attempt_one``), never as attempt 1. A summary says how much review effort
 was wasted (the model was right and the person only confirmed it).
 
 Usage::
@@ -38,6 +40,8 @@ from schemas.run_record import (
 )
 
 _SOURCE_HUMAN = "human"
+# review_classify_node re-labels the document (class AND classification_confidence) only on these.
+_REVIEWER_WON = ("reviewer_agrees_high", "reviewer_overrides")
 
 
 def _parse_ts(value: Any) -> dt.datetime | None:
@@ -84,16 +88,32 @@ def load_labelled_manifests(
     return [data for _, data in rows]
 
 
+def _subclass(value: Any) -> str | None:
+    return str(value).strip() or None if value is not None else None
+
+
+def _subclass_edited(label: dict[str, Any], snap: dict[str, Any]) -> bool:
+    """A person set, changed or cleared the subclass the model proposed.
+
+    Snapshots written before ``doc_subclass`` was captured carry no such key; they say nothing.
+    """
+    if "doc_subclass" not in snap:
+        return False
+    return _subclass(label.get("doc_subclass")) != _subclass(snap.get("doc_subclass"))
+
+
 def is_corrected(label: dict[str, Any]) -> bool:
     snap = label.get("model_snapshot") or {}
     if label.get("field_corrections"):
         return True
     human_class = label.get("doc_type")
-    return bool(human_class and snap.get("doc_type") and human_class != snap.get("doc_type"))
+    if human_class and snap.get("doc_type") and human_class != snap.get("doc_type"):
+        return True
+    return _subclass_edited(label, snap)
 
 
 def is_wasted(label: dict[str, Any]) -> bool:
-    """Model class confirmed, nothing edited, approved as is: the review added nothing."""
+    """Model class and subclass confirmed, nothing edited, approved as is: the review added nothing."""
     snap = label.get("model_snapshot") or {}
     human_class = label.get("doc_type")
     return bool(
@@ -101,7 +121,46 @@ def is_wasted(label: dict[str, Any]) -> bool:
         and label.get("resolution") == "approve_as_is"
         and human_class
         and human_class == snap.get("doc_type")
+        and not _subclass_edited(label, snap)
         and not label.get("field_corrections")
+    )
+
+
+def sorter_attempt_one(manifest: dict[str, Any], snap: dict[str, Any]) -> tuple[SorterAttempt | None, str | None]:
+    """The first sorter attempt as the snapshot still shows it, or what is left of it.
+
+    ``model_snapshot`` is the manifest as parked, and the manifest keeps only the LAST value of each
+    stage: a ``retry_classify`` (``classification_attempts`` > 1) replaces attempt 1, and a winning
+    reviewer verdict overwrites ``doc_type``, ``doc_subclass`` and ``classification_confidence`` with
+    its own. Labelling those later values "attempt 1" would calibrate the sorter on another model's
+    confidence. So the fields that no longer belong to attempt 1 are left unobserved (``None``), and
+    with nothing left no attempt is exported. Returns ``(attempt | None, reason | None)``.
+    """
+    attempts = manifest.get("classification_attempts")
+    if isinstance(attempts, int) and not isinstance(attempts, bool) and attempts > 1:
+        return None, "sorter_attempt_1_replaced_by_retry"
+    reviewer_type = snap.get("reviewer_doc_type")
+    verdict = manifest.get("review_verdict")
+    if reviewer_type is not None:
+        conf, rconf = _num(snap.get("classification_confidence")), _num(snap.get("reviewer_confidence"))
+        overwritten = (
+            verdict in _REVIEWER_WON
+            or manifest.get("review_route") == "extract"
+            # Older manifests carry no verdict: the snapshot then showing the reviewer's own pair is the tell.
+            or (verdict is None and snap.get("doc_type") == reviewer_type and conf is not None and conf == rconf)
+        )
+        if overwritten:
+            if verdict == "reviewer_agrees_high":  # same class by definition; only the numbers moved
+                return SorterAttempt(attempt=1, doc_type=snap.get("doc_type")), "sorter_confidence_overwritten_by_reviewer"
+            return None, "sorter_attempt_1_overwritten_by_reviewer"
+    return (
+        SorterAttempt(
+            attempt=1,
+            doc_type=snap.get("doc_type"),
+            doc_subclass=snap.get("doc_subclass"),
+            confidence=_num(snap.get("classification_confidence")),
+        ),
+        None,
     )
 
 
@@ -109,14 +168,8 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
     label = manifest["human_label"]
     snap = label.get("model_snapshot") or {}
     human_fields = label.get("field_corrections")
-    sorter = [
-        SorterAttempt(
-            attempt=1,
-            doc_type=snap.get("doc_type"),
-            doc_subclass=snap.get("doc_subclass"),
-            confidence=_num(snap.get("classification_confidence")),
-        )
-    ]
+    first, unobserved_reason = sorter_attempt_one(manifest, snap)
+    sorter = [first] if first is not None else []
     reviewer_ran = snap.get("reviewer_doc_type") is not None
     reviewer = ReviewerObservation(
         ran=reviewer_ran,
@@ -125,7 +178,9 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
         causes=[c for c in (manifest.get("review_causes") or []) if isinstance(c, str)],
     )
     extraction: list[ExtractionAttempt] = []
-    # A person-supplied extraction carries no model confidence worth calibrating.
+    # A person-supplied extraction carries no model confidence worth calibrating. The snapshot has no
+    # provenance field of its own (review_resolve.model_snapshot), so the manifest's final
+    # extraction_source is the only signal: when it is human the snapshot's confidence is not trusted.
     if manifest.get("extraction_source") != _SOURCE_HUMAN and _num(
         snap.get("extraction_confidence")
     ) is not None:
@@ -149,7 +204,7 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
         reviewer=reviewer,
         extraction=extraction,
         observed=Observed(
-            sorter_attempts=1,
+            sorter_attempts=len(sorter),
             reviewer=reviewer_ran,
             extraction_attempts=len(extraction),
             full_information=False,
@@ -158,6 +213,7 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
             final_stage=str(manifest.get("stage") or "") or None,
             review_causes=list(reviewer.causes),
         ),
+        diagnostics={"sorter_attempt_1": unobserved_reason} if unobserved_reason else {},
     )
 
 

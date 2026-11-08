@@ -163,7 +163,15 @@ async def run_write_with_retry(op, *, attempts: int = 6, base_delay: float = 0.0
     locked``; before this retry the catalog dropped those writes silently.
     ``op`` must open its own session so each attempt starts a fresh
     transaction. Any other error, and the last lock error, propagates.
+
+    Worst case a single call waits ``attempts`` x ``busy_timeout`` (default
+    5 s each) plus the backoff, so about 30 s with the defaults. A sync caller
+    that bounds the wait (``build_graph._run_coro``) must allow for that.
+    ``attempts`` below 1 is a programming error: the loop would never run and
+    the write would be silently skipped.
     """
+    if attempts < 1:
+        raise ValueError(f"attempts must be >= 1, got {attempts}")
     for attempt in range(1, attempts + 1):
         try:
             return await op()
