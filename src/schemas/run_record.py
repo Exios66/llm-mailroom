@@ -159,8 +159,11 @@ class RunRecord(_Model):
 def to_review_record(record: RunRecord) -> dict[str, Any]:
     """Map a run record onto ``llm_dojo_scoring`` ``ReviewRecord`` keys.
 
-    Uses the first sorter attempt as the sorter opinion. ``route`` is left
-    unset: it is a property of the policy, which replay decides.
+    Uses the first sorter attempt as the sorter opinion, with post-guard
+    confidence; absent sorter attempts yield ``None`` sorter fields. Reviewer
+    opinion fields are ``None`` unless it ran. Its causes, token counts, and
+    cost are copied regardless. ``route`` is left unset: it is a property of
+    the policy, which replay decides.
     """
     first = record.sorter[0] if record.sorter else None
     rev = record.reviewer
