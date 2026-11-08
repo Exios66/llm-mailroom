@@ -200,6 +200,93 @@ def test_f2_vote_vector_recorded_under_ignored_key():
     assert merged["_window_votes"] == {"contract": 2, "unknown": 1}
 
 
+# ---------------------------------------------------------------------------
+# F3 - conflict escalation runs after every quality gate
+# ---------------------------------------------------------------------------
+
+
+def _conflict_state(**over):
+    state = {
+        "doc_type": "contract",
+        "extracted_data": {"parties": ["Acme"], "governing_law": "Delaware"},
+        "extraction_confidence": 0.99,
+        "extraction_attempts": 1,
+        "conflict_detected": True,
+    }
+    state.update(over)
+    return state
+
+
+def test_f3_conflict_with_schema_invalid_extraction_retries_not_boss():
+    from graph.routing import after_extraction
+
+    state = _conflict_state(
+        extracted_data={"parties": "not-a-list"}, extraction_confidence=0.1
+    )
+    assert after_extraction(state) == "retry_extract"
+    assert after_extraction({**state, "extraction_attempts": 3}) == "human_review"
+
+
+def test_f3_conflict_with_low_confidence_retries_not_boss():
+    from graph.routing import after_extraction
+
+    state = _conflict_state(extraction_confidence=0.1)
+    assert after_extraction(state) == "retry_extract"
+
+
+def test_f3_conflict_with_hollow_extraction_retries_not_boss():
+    from graph.routing import after_extraction
+
+    state = _conflict_state(extracted_data={"confidence": 0.9, "_n_chunks": 2})
+    assert after_extraction(state) == "retry_extract"
+
+
+def test_f3_conflict_with_low_confidence_retries_spent_goes_to_review_or_judge():
+    from graph.routing import after_extraction
+
+    state = _conflict_state(extraction_confidence=0.1, extraction_attempts=3)
+    assert after_extraction(state) in {"judge_verify", "human_review"}
+    assert after_extraction(state) != "boss_escalation"
+
+
+def test_f3_clean_conflict_still_escalates_to_boss():
+    from graph.routing import after_extraction, after_extraction_gated
+
+    state = _conflict_state()
+    assert after_extraction(state) == "boss_escalation"
+    assert after_extraction_gated(state) == "boss_escalation"
+
+
+def test_f3_conflict_in_judge_band_still_escalates_to_boss():
+    from graph.routing import after_extraction_gated
+
+    # Ambiguous-band confidence (low <= c < judge_band_high): the Boss ruling
+    # on the conflict was never judge-gated and still is not.
+    state = _conflict_state(extraction_confidence=0.91)
+    assert after_extraction_gated(state) == "boss_escalation"
+
+
+def test_f3_no_conflict_paths_unchanged():
+    from graph.routing import after_extraction
+
+    assert after_extraction(_conflict_state(conflict_detected=False)) == "compile_report"
+
+
+def test_f3_graph_edge_maps_still_valid():
+    import typing
+
+    from graph import routing
+    from graph.build_graph import build_graph
+
+    branches = build_graph().builder.branches
+    for node, fn in (
+        ("extract", routing.after_extraction_gated),
+        ("retry_extract", routing.after_retry_extraction_gated),
+    ):
+        declared = set(typing.get_args(typing.get_type_hints(fn)["return"]))
+        assert declared <= set(branches[node][fn.__name__].ends), (node, declared)
+
+
 def test_f2_single_window_path_is_identical():
     from agents.sorter import _merge_sorter_reads
 
