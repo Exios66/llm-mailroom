@@ -587,6 +587,19 @@ def after_review_classify(state: dict) -> Literal[
     return "human_review"
 
 
+def _unadjudicated_conflict(state: dict) -> bool:
+    """A matter conflict that reached the judge/arbiter tail without the Boss.
+
+    Conflict escalation runs only on the ``>= low`` arm of ``after_extraction``;
+    an extraction that went retry -> judge -> arbiter instead must not archive
+    an unadjudicated conflict. Those edges have no Boss route, so it parks.
+    """
+    if state.get("conflict_detected") and state.get("review_decision") != "approved":
+        logger.info("conflict_unadjudicated_review", doc_id=state.get("doc_id"))
+        return True
+    return False
+
+
 def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbiter", "human_review"]:
     """KANBAN-063 (Lane B): judge outcome router.
 
@@ -605,7 +618,9 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     if verdict in ("judge_error",):
         return "human_review"
     if verdict in (None, "", "skipped", "complete"):
-        return "human_review" if _extraction_still_unsure(state) else "compile_report"
+        if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
+            return "human_review"
+        return "compile_report"
     thresholds = _thresholds_for(state)
     raw_max_passes = thresholds.get("judge_max_passes")
     max_passes = int(raw_max_passes) if raw_max_passes is not None else 3
@@ -645,7 +660,9 @@ def after_arbiter(state: dict) -> Literal[
         return "human_review"
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
-        return "human_review" if _extraction_still_unsure(state) else "compile_report"
+        if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
+            return "human_review"
+        return "compile_report"
     thresholds = _thresholds_for(state)
     raw_retry_max = thresholds.get("arbiter_retry_max")
     arbiter_retry_max = int(raw_retry_max) if raw_retry_max is not None else 2

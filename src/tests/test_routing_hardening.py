@@ -376,3 +376,15 @@ def test_f2_single_window_path_is_identical():
 
     one = _read("contract", 0.91)
     assert _merge_sorter_reads([one]) is one
+
+
+def test_conflict_on_judge_tail_never_archives_unadjudicated():
+    from graph.routing import after_arbiter, after_judge
+
+    base = {"doc_type": "contract", "conflict_detected": True, "judge_source_verified": True,
+            "extraction_confidence": 0.99}
+    assert after_judge({**base, "judge_verdict": "complete"}) == "human_review"
+    assert after_arbiter({**base, "arbiter_decision": "accept_with_caveats"}) == "human_review"
+    clean = {**base, "conflict_detected": False}
+    assert after_judge({**clean, "judge_verdict": "complete"}) == "compile_report"
+    assert after_arbiter({**clean, "arbiter_decision": "accept_with_caveats"}) == "compile_report"
