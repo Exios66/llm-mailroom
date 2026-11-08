@@ -88,6 +88,10 @@ class ReviewerObservation(_Model):
 
 class ExtractionAttempt(_Model):
     attempt: int  # 1 = extract, 2+ = retry_extract
+    # Class this extraction ran as. A full-information sweep extracts once per
+    # distinct candidate class (sorter attempt 1 / reviewer / sorter retry),
+    # so attempt numbers restart at 1 for each class. None on older records.
+    doc_type: str | None = None
     confidence_raw: float | None = None
     confidence: float | None = None  # post-guard, what routing saw
     schema_valid: bool | None = None
@@ -109,6 +113,7 @@ class ExtractionAttempt(_Model):
 class JudgeObservation(_Model):
     ran: bool = False
     on_attempt: int | None = None
+    doc_type: str | None = None  # class of the extraction that was judged
     verdict: str | None = None  # complete | partial | incomplete | judge_error
     score: float | None = None
     source_verified: bool = False
@@ -150,10 +155,16 @@ class RunRecord(_Model):
     reviewer: ReviewerObservation = Field(default_factory=ReviewerObservation)
     extraction: list[ExtractionAttempt] = Field(default_factory=list)
     judge: JudgeObservation = Field(default_factory=JudgeObservation)
+    # Further judge passes (other candidate classes, or later attempts when the
+    # sweep ran ``--judge-attempts all``); each names its ``doc_type`` / ``on_attempt``.
+    judge_alt: list[JudgeObservation] = Field(default_factory=list)
     observed: Observed = Field(default_factory=Observed)
     actual: ActualRoute = Field(default_factory=ActualRoute)
     thresholds_in_force: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    # Free-form sweep provenance that has no schema slot of its own: extraction
+    # candidates, windows/chunks, downstream truncation, intake cost, known gaps.
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 def to_review_record(record: RunRecord) -> dict[str, Any]:
