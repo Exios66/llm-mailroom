@@ -287,6 +287,73 @@ def test_f3_graph_edge_maps_still_valid():
         assert declared <= set(branches[node][fn.__name__].ends), (node, declared)
 
 
+# ---------------------------------------------------------------------------
+# F4 - conflict detection is not exact string equality
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("field", "a", "b"),
+    [
+        ("governing_law", "Delaware", "State of Delaware"),
+        ("governing_law", "New York", "the laws of the State of New York"),
+        ("governing_law", "Commonwealth of Virginia", "Virginia"),
+        ("effective_date", "2024-01-05", "January 5, 2024"),
+        ("effective_date", "2024-01-05", "5th January 2024"),
+        ("agreement_date", "01/15/2024", "2024-01-15"),
+        ("parties", ["Acme Corp", "Beta LLC"], ["acme corp.", "BETA LLC", "Gamma Inc"]),
+    ],
+)
+def test_f4_equivalent_values_are_not_conflicts(field, a, b):
+    from graph.build_graph import _normalized_compare
+
+    assert _normalized_compare(a, b, field=field)
+    assert _normalized_compare(b, a, field=field)
+
+
+@pytest.mark.parametrize(
+    ("field", "a", "b"),
+    [
+        ("governing_law", "Delaware", "New York"),
+        ("governing_law", "State of New York", "State of New Jersey"),
+        ("governing_law", "Virginia", "West Virginia"),
+        ("effective_date", "2024-01-05", "2024-01-06"),
+        ("effective_date", "2024-01-05", "January 6, 2024"),
+        ("agreement_date", "01/02/2024", "2024-02-01"),
+        ("parties", ["Acme Corp"], ["Beta LLC"]),
+        ("document_name", "Master Services Agreement", "Lease Agreement"),
+    ],
+)
+def test_f4_real_conflicts_still_fire(field, a, b):
+    from graph.build_graph import _normalized_compare
+
+    assert not _normalized_compare(a, b, field=field)
+
+
+def test_f4_field_argument_is_optional():
+    from graph.build_graph import _normalized_compare
+
+    assert _normalized_compare("2024-01-05", "January 5, 2024")
+    assert not _normalized_compare("Delaware", "New York")
+
+
+def test_f4_detect_conflict_end_to_end(monkeypatch):
+    from graph import build_graph as bg
+
+    prior = {
+        "doc_id": "old",
+        "doc_type": "contract",
+        "extracted_data": {"governing_law": "State of Delaware", "effective_date": "January 5, 2024"},
+    }
+    monkeypatch.setattr(bg, "_fetch_matter_context", lambda state: [prior])
+    state = {"doc_type": "contract", "doc_id": "new", "matter_id": "m1"}
+    same = {"governing_law": "Delaware", "effective_date": "2024-01-05"}
+    assert bg._detect_conflict(state, same) == (False, [])
+    differs = {"governing_law": "New York", "effective_date": "2024-01-05"}
+    detected, details = bg._detect_conflict(state, differs)
+    assert detected and "governing_law" in details[0]
+
+
 def test_f2_single_window_path_is_identical():
     from agents.sorter import _merge_sorter_reads
 
