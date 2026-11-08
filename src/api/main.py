@@ -640,16 +640,19 @@ async def review_queue():
             payload["actions"] = tray_actions_for(payload.get("stage"))
             items[doc_id] = payload
 
-    docs = sorted(
-        items.values(),
-        key=lambda d: d.get("updated_at") or d.get("created_at") or "",
-        reverse=True,
-    )
+    from pipeline.review_priority import oldest_age_hours, sort_queue
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # Highest priority first, then oldest first; ``priority`` and ``sla_breached``
+    # are added to each item (existing fields unchanged).
+    docs = sort_queue(list(items.values()), now)
     return {
         "review_queue": len(docs),
         "documents": docs,
         "dispositions": ["resume", "record", "requeue", "complete"],
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "oldest_age_hours": oldest_age_hours(docs),
+        "sla_breached": sum(1 for d in docs if d.get("sla_breached")),
+        "timestamp": now.isoformat(),
     }
 
 
