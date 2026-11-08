@@ -655,17 +655,51 @@ def after_review_classify(state: dict) -> Literal[
     return "human_review"
 
 
+def conflict_fingerprint(details: object) -> str:
+    """Stable sha256 of a conflict: the sorted, de-duplicated, whitespace- and
+    case-normalized ``conflict_details`` strings.
+
+    The Boss stores this when it rules, so routing can tell "the conflict the
+    Boss adjudicated" from "a new conflict a retry extraction produced".
+    """
+    import hashlib
+    import json
+
+    items = details if isinstance(details, (list, tuple, set)) else []
+    normalized = sorted({" ".join(str(item).split()).casefold() for item in items})
+    return hashlib.sha256(
+        json.dumps(normalized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 def _unadjudicated_conflict(state: dict) -> bool:
     """A matter conflict that reached the judge/arbiter tail without the Boss.
 
     Conflict escalation runs only on the ``>= low`` arm of ``after_extraction``;
     an extraction that went retry -> judge -> arbiter instead must not archive
     an unadjudicated conflict. Those edges have no Boss route, so it parks.
+
+    ``review_decision == "approved"`` alone does not prove the CURRENT conflict
+    was adjudicated: the Boss (and a human re-extract approval) set it, and a
+    retry extraction can then produce a different conflict. So the Boss stores
+    ``boss_conflict_fingerprint`` (see ``conflict_fingerprint``) and the
+    conflict counts as adjudicated only when the current ``conflict_details``
+    fingerprint equals it. A state that predates the field (the key is absent,
+    e.g. a checkpoint resumed after deploy) keeps the legacy rule, so an
+    in-flight Boss approval still holds; every fresh state carries the key
+    (None until the Boss rules), so human-approval resets never count.
     """
-    if state.get("conflict_detected") and state.get("review_decision") != "approved":
-        logger.info("conflict_unadjudicated_review", doc_id=state.get("doc_id"))
-        return True
-    return False
+    if not state.get("conflict_detected"):
+        return False
+    if state.get("review_decision") == "approved":
+        if "boss_conflict_fingerprint" not in state:
+            return False  # legacy state: Boss/approval assumed to cover it
+        if state.get("boss_conflict_fingerprint") == conflict_fingerprint(
+            state.get("conflict_details")
+        ):
+            return False
+    logger.info("conflict_unadjudicated_review", doc_id=state.get("doc_id"))
+    return True
 
 
 def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbiter", "human_review"]:

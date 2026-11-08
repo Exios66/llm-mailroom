@@ -27,6 +27,7 @@ from graph.routing import (
     after_arbiter,
     after_classification_arbiter,
     after_boss,
+    conflict_fingerprint,
     after_human_review,
     human_fields_applied,
     HUMAN_APPLIED,
@@ -771,6 +772,7 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
         "extraction_attempts": 0,
         "retry_count": 0,
         "conflict_detected": False,
+        "boss_conflict_fingerprint": None,
         "error_message": None if text_ok else f"Could not extract text from {file_path.suffix} file",
         "file_sha256": file_hash,
         "size_bytes": _file_size(file_path),
@@ -2675,6 +2677,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "human_label": human_label,
             "conflict_detected": False,
             "conflict_details": [],
+            "boss_conflict_fingerprint": None,
             "file_path": str(dest) if dest is not None else file_path_str,
             "checkpoint_thread_id": thread_id or None,
             "transient_error": False,
@@ -2701,6 +2704,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "resume_extraction": True,
             "conflict_detected": False,
             "conflict_details": [],
+            "boss_conflict_fingerprint": None,
             "file_path": str(dest) if dest is not None else file_path_str,
             "checkpoint_thread_id": thread_id or None,
             "transient_error": False,
@@ -2908,6 +2912,9 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
     result = {
         "review_decision": decision,
         "escalation_reason": f"Boss: {reasoning}",
+        # Bind the ruling to the conflict it ruled on: routing treats a later
+        # conflict as adjudicated only when its fingerprint matches this one.
+        "boss_conflict_fingerprint": conflict_fingerprint(state.get("conflict_details")),
         "transient_error": False,
     }
     # A-1: Boss adjudication is part of the compliance record ("who decided
@@ -4291,6 +4298,7 @@ def run_pipeline(
         "review_decision": None,
         "retry_count": 0,
         "conflict_detected": False,
+        "boss_conflict_fingerprint": None,
         "file_path": str(file_path),
         "doc_text": "",
         "doc_pages": [],
@@ -4509,6 +4517,7 @@ def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> 
         "human_label": label if isinstance(label, dict) else None,
         "retry_count": 0,
         "conflict_detected": False,
+        "boss_conflict_fingerprint": None,
         "file_path": str(review_file),
         "doc_text": "",
         "doc_pages": [],
@@ -4624,6 +4633,7 @@ def resume_from_review(
         "review_decision": "approved",
         "retry_count": 0,
         "conflict_detected": False,
+        "boss_conflict_fingerprint": None,
         "file_path": str(queued),
         "doc_text": doc_text,
         "doc_pages": doc_pages,
