@@ -1,0 +1,538 @@
+diff --git a/.env.example b/.env.example
+index a9cf080..a9393f0 100644
+--- a/.env.example
++++ b/.env.example
+@@ -100,6 +100,7 @@ WATCHER_POLL_INTERVAL_SECONDS=1
+ # MAILROOM_EMBED_WATCHER=1
+ # WATCHER_STALE_SECONDS=15          # /health checks.watcher lamp (live/stale/missing)
+ # WATCHER_STALE_CLAIM_MINUTES=60    # reclaim inbox files untouched this long
++# MAILROOM_MAX_CONCURRENT_DOCS=4     # max documents the watcher runs through the pipeline at once (default: taxonomy.yaml watcher.max_concurrent_docs)
+ OPS_MONITOR_INTERVAL_SECONDS=300
+ # MAILROOM_CHECKPOINTER=sqlite      # on-disk SqliteSaver at <base>/checkpoints.db (default: memory)
+ # MAILROOM_JUDGE_VERIFY=off         # kill-switch for the judge-verify lane (KANBAN-063)
+diff --git a/src/config/taxonomy.yaml b/src/config/taxonomy.yaml
+index 44e0ab5..e5451c3 100644
+--- a/src/config/taxonomy.yaml
++++ b/src/config/taxonomy.yaml
+@@ -159,6 +159,14 @@ pager:
+     log: true                    # <base_dir>/pager_log.jsonl
+     webhook_url: ""              # env MAILROOM_PAGER_WEBHOOK_URL (+ MAILROOM_PAGER_WEBHOOK_SECRET)
+ 
++# Inbox watcher scaling. At most this many documents run through the pipeline
++# at once; the rest wait (queued, de-duplicated) in a bounded worker pool, so
++# a backlog of hundreds of files cannot start hundreds of concurrent LLM
++# pipelines. Env override: MAILROOM_MAX_CONCURRENT_DOCS. Needs a watcher/API
++# restart (config is cached).
++watcher:
++  max_concurrent_docs: 4
++
+ run_limits:
+   # Hard wall-clock cutoff per document run (abort past this).
+   deadline_seconds: 3600
+diff --git a/src/pipeline/bins.py b/src/pipeline/bins.py
+index e6a0ae9..2414f67 100644
+--- a/src/pipeline/bins.py
++++ b/src/pipeline/bins.py
+@@ -33,9 +33,11 @@ def list_stale_processing_files(stale_minutes: int = 60) -> list[Path]:
+     """Files stranded in processing/<worker_id>/ by a crashed process (L-1/A-18).
+ 
+     A file claimed by a worker that died mid-run stays in its worker dir
+-    forever (no SIGTERM handler, no reclaim path). Anything older than
+-    ``stale_minutes`` is presumed orphaned — return it for re-queueing or
+-    finalizing as failed.
++    forever (no SIGTERM handler, no reclaim path). Anything whose claim is
++    older than ``stale_minutes`` is presumed orphaned — return it for
++    re-queueing or finalizing as failed. Age is the file's mtime, which
++    ``claim_file`` / ``requeue_from_review`` reset to the claim time; callers
++    that run documents in-process must still skip the names they are running.
+     """
+     import time as _time
+ 
+@@ -244,6 +246,7 @@ def claim_file(file_path: Path, worker_id: str) -> Path:
+     dest = processing / file_path.name
+     # Reused workers must never replace an abandoned document's bytes.
+     _move_review_file_no_clobber(file_path, dest)
++    _stamp_claim_time(dest)
+     return dest
+ 
+ 
+@@ -267,6 +270,7 @@ def requeue_from_review(file_path: Path, worker_id: str, *, original_filename: s
+     name = _safe_bin_component(original_filename or file_path.name, "original_filename")
+     dest = processing / name
+     _move_review_file_no_clobber(file_path, dest)
++    _stamp_claim_time(dest)
+     return dest
+ 
+ 
+@@ -350,6 +354,20 @@ def _owned_bin_file_path(manifest, base: Path) -> Path:
+     return legacy
+ 
+ 
++def _stamp_claim_time(dest: Path) -> None:
++    """Make the claimed file's mtime mean "claimed at", not "uploaded at".
++
++    ``_move_review_file_no_clobber`` hard-links, so the claim keeps the
++    upload's mtime. A document that waited in a backlog for longer than the
++    stale cutoff would then look orphaned the moment it was claimed, and the
++    periodic reconcile would move it back to the inbox mid-run.
++    """
++    try:
++        os.utime(dest, None)
++    except OSError:
++        logger.warning("claim_time_stamp_failed", path=str(dest))
++
++
+ def _move_review_file_no_clobber(src: Path, dest: Path) -> None:
+     """Publish complete bytes with an atomic link, then retire the source.
+ 
+diff --git a/src/pipeline/config.py b/src/pipeline/config.py
+index b2d6b26..7d8f112 100644
+--- a/src/pipeline/config.py
++++ b/src/pipeline/config.py
+@@ -67,6 +67,33 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
+     return base
+ 
+ 
++DEFAULT_MAX_CONCURRENT_DOCS = 4
++
++
++def get_max_concurrent_docs() -> int:
++    """Cap on pipeline runs the watcher executes at once.
++
++    ``MAILROOM_MAX_CONCURRENT_DOCS`` overrides taxonomy.yaml
++    ``watcher.max_concurrent_docs``. A missing, non-integer or non-positive
++    value falls back to the next source and finally to the default (4): a bad
++    value must never disable the cap or stall the watcher at zero workers.
++    """
++    import os
++
++    candidates: list[object] = [os.environ.get("MAILROOM_MAX_CONCURRENT_DOCS")]
++    block = load_config().get("watcher")
++    if isinstance(block, dict):
++        candidates.append(block.get("max_concurrent_docs"))
++    for raw in candidates:
++        try:
++            value = int(str(raw).strip())
++        except (TypeError, ValueError):
++            continue
++        if value >= 1:
++            return value
++    return DEFAULT_MAX_CONCURRENT_DOCS
++
++
+ def get_reviewer_config() -> dict:
+     """Lane A reviewer mode block from taxonomy.yaml ``reviewer:``.
+ 
+diff --git a/src/pipeline/watcher.py b/src/pipeline/watcher.py
+index 913e7c2..78c8252 100644
+--- a/src/pipeline/watcher.py
++++ b/src/pipeline/watcher.py
+@@ -1,5 +1,6 @@
+ import os
+ import signal
++import queue
+ import socket
+ import time
+ import threading
+@@ -9,6 +10,7 @@ from watchdog.observers import Observer
+ from watchdog.events import FileSystemEventHandler
+ 
+ from .env import load_env
++from .config import get_max_concurrent_docs
+ 
+ load_env()
+ from pipeline.env import default_environment
+@@ -356,6 +358,109 @@ def _unmark_active(name: str) -> None:
+         _active_files.discard(name)
+ 
+ 
++def _is_in_flight(name: str) -> bool:
++    """True when this process is running, or has queued, a file of this name."""
++    with _active_lock:
++        if name in _active_files:
++            return True
++    return _dispatch.is_queued(name)
++
++
++class _DispatchPool:
++    """Bounded worker pool for inbox documents (volume hardening).
++
++    Previously every watchdog event, startup-scan file and rescan tick started
++    its own thread, so a 400-file backlog ran 400 pipelines (and 400 LLM
++    streams) at once. Files now wait in a FIFO and at most
++    ``get_max_concurrent_docs()`` run at a time. ``submit`` de-duplicates:
++    a name that is queued or already running is not queued again, so the
++    1-second rescan loop cannot pile up copies of a waiting file.
++
++    ``close`` (called from ``Watcher.stop``) discards everything that has not
++    started; those files stay in the inbox for the next watcher. Each close
++    retires the queue and its workers together, so a later ``reopen`` starts
++    from a clean slate. Workers are daemon threads, matching the per-file
++    threads this replaces.
++    """
++
++    def __init__(self) -> None:
++        self._lock = threading.Lock()
++        self._queue: queue.SimpleQueue = queue.SimpleQueue()
++        self._queued: set[str] = set()
++        self._threads: list[threading.Thread] = []
++        self._closed = False
++
++    def is_queued(self, name: str) -> bool:
++        with self._lock:
++            return name in self._queued
++
++    def queued_count(self) -> int:
++        with self._lock:
++            return len(self._queued)
++
++    def reopen(self) -> None:
++        with self._lock:
++            self._closed = False
++
++    def submit(self, name: str, fn, path: Path) -> bool:
++        """Queue ``fn(path)``; False when closed or ``name`` is already in flight."""
++        with _active_lock:
++            running = name in _active_files
++        with self._lock:
++            if self._closed or running or name in self._queued:
++                return False
++            self._queued.add(name)
++            self._ensure_workers_locked()
++            self._queue.put((name, fn, path))
++        return True
++
++    def _ensure_workers_locked(self) -> None:
++        self._threads = [t for t in self._threads if t.is_alive()]
++        size = get_max_concurrent_docs()
++        while len(self._threads) < size:
++            worker = threading.Thread(
++                target=self._worker,
++                args=(self._queue,),
++                name=f"mailroom-doc-worker-{len(self._threads)}",
++                daemon=True,
++            )
++            self._threads.append(worker)
++            worker.start()
++
++    def _worker(self, q: queue.SimpleQueue) -> None:
++        while True:
++            item = q.get()
++            if item is None:  # close() sentinel
++                return
++            name, fn, path = item
++            with self._lock:
++                if self._closed or q is not self._queue:
++                    continue  # retired by close(): leave the file in the inbox
++                self._queued.discard(name)
++            try:
++                fn(path)
++            except Exception:
++                # fn handles and finalizes its own failures; never kill a slot.
++                logger.exception("dispatch_worker_error", file=str(path))
++
++    def close(self) -> int:
++        """Stop accepting work and drop everything not yet started."""
++        with self._lock:
++            self._closed = True
++            dropped = len(self._queued)
++            self._queued.clear()
++            old_queue, self._queue = self._queue, queue.SimpleQueue()
++            threads, self._threads = self._threads, []
++        for _ in threads:
++            old_queue.put(None)
++        if dropped:
++            logger.info("watcher_queue_discarded", queued_files=dropped)
++        return dropped
++
++
++_dispatch = _DispatchPool()
++
++
+ def _is_already_processed(path: Path) -> bool:
+     """Skip files that already reached a terminal stage.
+ 
+@@ -1025,7 +1130,8 @@ class InboxHandler(FileSystemEventHandler):
+             return
+         self._debounce[path.name] = now
+         logger.info("inbox_file_detected", file=str(path))
+-        threading.Thread(target=self._process, args=(path,), daemon=True).start()
++        # Bounded pool: waits for a free slot instead of starting a thread per event.
++        _dispatch.submit(path.name, self._process, path)
+ 
+     def on_created(self, event):
+         if event.is_directory:
+@@ -1141,11 +1247,10 @@ class Watcher:
+             # O(1) lookups instead of O(n) per file.
+             _build_manifest_index()
+ 
++            _dispatch.reopen()
+             for f in list_inbox_files():
+                 logger.info("existing_inbox_file", file=str(f))
+-                threading.Thread(
+-                    target=self._process_existing, args=(f,), daemon=True
+-                ).start()
++                _dispatch.submit(f.name, self._process_existing, f)
+ 
+             handler = InboxHandler(self.worker_id)
+             self.observer.schedule(handler, str(inbox), recursive=False)
+@@ -1191,12 +1296,19 @@ class Watcher:
+ 
+     def _reconcile_stale_claims(self) -> None:
+         """Re-queue (or retire) processing/<worker_id>/ files orphaned by a
+-        crashed process (L-1/A-18). Runs once at startup before the inbox
+-        scan. Terminal manifests (archived/failed/review) retire the copy
+-        to failed/ so it cannot orphan in the inbox.
++        crashed process (L-1/A-18). Runs at startup before the inbox scan and
++        again every ``STALE_RECONCILE_INTERVAL_SECONDS`` from the rescan loop.
++        Terminal manifests (archived/failed/review) retire the copy to
++        failed/ so it cannot orphan in the inbox.
++
++        Never touches a document this process is running or has queued: those
++        are in flight by definition, however old their file mtime is.
+         """
+         stale = list_stale_processing_files(stale_minutes=STALE_CLAIM_MINUTES)
+         for f in stale:
++            if _is_in_flight(f.name):
++                logger.info("stale_claim_skipped_in_flight", file=str(f))
++                continue
+             try:
+                 action, dest = reconcile_stale_processing_file(f)
+                 logger.warning(
+@@ -1232,11 +1344,10 @@ class Watcher:
+                 self._reconcile_stale_claims()
+                 last_stale_check = now
+             for f in list_inbox_files():
+-                if f.name in _active_files:
++                # Running or already queued for a slot: do not queue it again.
++                if _is_in_flight(f.name):
+                     continue
+-                threading.Thread(
+-                    target=self._process_existing, args=(f,), daemon=True
+-                ).start()
++                _dispatch.submit(f.name, self._process_existing, f)
+ 
+     def stop(self, drain_timeout: float | None = None):
+         global _watcher_owned
+@@ -1256,6 +1367,9 @@ class Watcher:
+             self.observer.join(timeout=5)
+             self._running = False
+             logger.info("watcher_stopped")
++        # Files still waiting for a worker slot never start; they stay in the
++        # inbox for the next watcher. Only in-flight documents are drained.
++        _dispatch.close()
+         # Drain: wait for in-flight documents to finish (SIGTERM hardening).
+         timeout = drain_timeout if drain_timeout is not None else DRAIN_TIMEOUT_SECONDS
+         deadline = time.time() + timeout
+diff --git a/src/tests/test_volume_hardening.py b/src/tests/test_volume_hardening.py
+new file mode 100644
+index 0000000..641f333
+--- /dev/null
++++ b/src/tests/test_volume_hardening.py
+@@ -0,0 +1,206 @@
++"""Volume hardening regressions: bounded watcher concurrency, stale-claim
++reconcile safety, and race-free catalog upserts.
++
++Every test here fails on the pre-hardening code (see the commit messages for
++the red output) and uses only fake pipelines / temp SQLite files.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import os
++import threading
++import time
++from collections import Counter
++from pathlib import Path
++
++import pytest
++
++
++def _wait_for(predicate, timeout=30.0):
++    deadline = time.time() + timeout
++    while time.time() < deadline:
++        if predicate():
++            return True
++        time.sleep(0.02)
++    return False
++
++
++# ---------------------------------------------------------------------------
++# H1 — bounded watcher concurrency
++# ---------------------------------------------------------------------------
++
++
++@pytest.fixture
++def watcher_env(temp_base_dir, monkeypatch):
++    monkeypatch.setenv("WATCHER_POLL_INTERVAL_SECONDS", "0.05")
++    monkeypatch.setenv("MAILROOM_WATCHDOG", "0")
++    import pipeline.watcher as watcher
++
++    watcher._active_files.clear()
++    yield watcher
++    watcher._active_files.clear()
++
++
++def test_watcher_concurrency_is_bounded_and_each_file_runs_once(watcher_env, monkeypatch):
++    watcher = watcher_env
++    from pipeline import bins
++
++    cap = 3
++    monkeypatch.setenv("MAILROOM_MAX_CONCURRENT_DOCS", str(cap))
++    inbox = bins.inbox_dir()
++    n_files = 40
++    for i in range(n_files):
++        (inbox / f"doc{i:03d}.txt").write_text(f"document {i}")
++
++    lock = threading.Lock()
++    state = {"cur": 0, "peak": 0}
++    seen: Counter[str] = Counter()
++
++    def fake_run_pipeline(claimed, matter_id, **kwargs):
++        with lock:
++            state["cur"] += 1
++            state["peak"] = max(state["peak"], state["cur"])
++            seen[Path(claimed).name] += 1
++        time.sleep(0.05)
++        with lock:
++            state["cur"] -= 1
++        return {"doc_id": Path(claimed).stem}
++
++    monkeypatch.setattr(watcher, "run_pipeline", fake_run_pipeline)
++    w = watcher.Watcher()
++    w.start()
++    try:
++        assert _wait_for(lambda: sum(seen.values()) >= n_files), dict(seen)
++        # let any (buggy) duplicate dispatch surface before asserting
++        time.sleep(0.5)
++    finally:
++        w.stop(drain_timeout=10)
++
++    assert state["peak"] <= cap, f"peak concurrency {state['peak']} exceeded cap {cap}"
++    assert len(seen) == n_files
++    assert set(seen.values()) == {1}, {k: v for k, v in seen.items() if v != 1}
++
++
++def test_queued_files_do_not_start_after_stop(watcher_env, monkeypatch):
++    watcher = watcher_env
++    from pipeline import bins
++
++    monkeypatch.setenv("MAILROOM_MAX_CONCURRENT_DOCS", "1")
++    inbox = bins.inbox_dir()
++    for i in range(12):
++        (inbox / f"q{i:02d}.txt").write_text("x")
++
++    started: list[str] = []
++    release = threading.Event()
++
++    def fake_run_pipeline(claimed, matter_id, **kwargs):
++        started.append(Path(claimed).name)
++        release.wait(timeout=10)
++        return {"doc_id": "x"}
++
++    monkeypatch.setattr(watcher, "run_pipeline", fake_run_pipeline)
++    w = watcher.Watcher()
++    w.start()
++    try:
++        assert _wait_for(lambda: len(started) == 1)
++        time.sleep(0.3)  # the other 11 are queued behind the single slot
++        assert len(started) == 1
++        stopper = threading.Thread(target=lambda: w.stop(drain_timeout=10))
++        stopper.start()
++        time.sleep(0.3)
++        release.set()  # in-flight doc finishes; queued docs must NOT start
++        stopper.join(timeout=15)
++        assert not stopper.is_alive()
++        time.sleep(0.5)
++    finally:
++        release.set()
++    assert len(started) == 1, started
++    # untouched files stay in the inbox for the next watcher run
++    assert len(list(bins.inbox_dir().glob("q*.txt"))) == 11
++
++
++def test_max_concurrent_docs_config_and_env_override(monkeypatch):
++    from pipeline.config import get_max_concurrent_docs
++
++    monkeypatch.delenv("MAILROOM_MAX_CONCURRENT_DOCS", raising=False)
++    assert get_max_concurrent_docs() == 4  # taxonomy.yaml watcher.max_concurrent_docs
++    monkeypatch.setenv("MAILROOM_MAX_CONCURRENT_DOCS", "7")
++    assert get_max_concurrent_docs() == 7
++    for bad in ("0", "-3", "abc", ""):
++        monkeypatch.setenv("MAILROOM_MAX_CONCURRENT_DOCS", bad)
++        assert get_max_concurrent_docs() == 4
++
++
++# ---------------------------------------------------------------------------
++# H2 — stale-claim reconcile must not hijack in-flight documents
++# ---------------------------------------------------------------------------
++
++
++def _age(path: Path, seconds: float) -> None:
++    old = time.time() - seconds
++    os.utime(path, (old, old))
++
++
++def test_claim_stamps_claim_time_not_upload_time(temp_base_dir):
++    from pipeline import bins
++
++    upload = bins.inbox_dir() / "backlogged.txt"
++    upload.write_text("hello")
++    _age(upload, 2 * 3600)  # waited two hours in the inbox backlog
++
++    claimed = bins.claim_file(upload, "worker-A")
++
++    assert time.time() - claimed.stat().st_mtime < 60
++    assert bins.list_stale_processing_files(60) == []
++
++
++def test_requeue_from_review_stamps_claim_time(temp_base_dir):
++    from pipeline import bins
++
++    parked = bins.review_dir() / "parked.txt"
++    parked.write_text("hello")
++    _age(parked, 5 * 3600)
++
++    resumed = bins.requeue_from_review(parked, "worker-A")
++
++    assert time.time() - resumed.stat().st_mtime < 60
++    assert bins.list_stale_processing_files(60) == []
++
++
++def test_reconcile_leaves_active_document_in_processing(temp_base_dir):
++    import pipeline.watcher as watcher
++    from pipeline import bins
++
++    upload = bins.inbox_dir() / "backlogged.txt"
++    upload.write_text("hello")
++    _age(upload, 2 * 3600)
++    claimed = bins.claim_file(upload, "worker-A")
++    # Even if the claim looks old (clock skew, utime unsupported), a document
++    # this process is running must not be moved back to the inbox.
++    _age(claimed, 2 * 3600)
++
++    assert watcher._mark_active("backlogged.txt")
++    try:
++        watcher.Watcher()._reconcile_stale_claims()
++    finally:
++        watcher._unmark_active("backlogged.txt")
++
++    assert claimed.exists()
++    assert not (bins.inbox_dir() / "backlogged.txt").exists()
++
++
++def test_reconcile_still_requeues_orphans_of_a_dead_worker(temp_base_dir):
++    import pipeline.watcher as watcher
++    from pipeline import bins
++
++    orphan_dir = bins.processing_dir("dead-worker")
++    orphan_dir.mkdir(parents=True, exist_ok=True)
++    orphan = orphan_dir / "orphan.txt"
++    orphan.write_text("stranded")
++    _age(orphan, 2 * 3600)
++
++    watcher.Watcher()._reconcile_stale_claims()
++
++    assert not orphan.exists()
++    assert (bins.inbox_dir() / "orphan.txt").exists()
