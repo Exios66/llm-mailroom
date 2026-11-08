@@ -48,7 +48,7 @@ objectives:
       - G2 per-class wrong-auto rate <= 0.05 (classes with >= 30 auto-archives)
       - G3 unobserved share <= 0.01 (replay fidelity)
       - G4 mean LLM USD/doc within budget (when set)
-      - paired-bootstrap 95% CI of delta U vs the baseline policy excludes 0
+      - paired-bootstrap 95% CI of delta U vs the baseline policy has a lower bound > 0
     evidence:
       - full-information RunRecord JSONL from run_calibration_sweep.py on the corpus
         train and test splits, run.gt_in_state false, mode real (owner-run)

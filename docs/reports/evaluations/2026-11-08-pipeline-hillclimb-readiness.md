@@ -50,22 +50,22 @@ Guards (any failure → exit 2, the change is discarded):
 | G4 | mean LLM USD/doc ≤ `--cost-budget-usd` (off by default) |
 
 Keep/discard: tune on `split=train`, score on `split=test`, and keep a change only when
-the paired-bootstrap 95% interval of ΔU (`--baseline-policy`) excludes 0 and all guards
-pass. Most gains come early; five flat iterations means the ceiling is architectural.
+the paired-bootstrap 95% interval of ΔU (`--baseline-policy`) has a positive lower bound
+and all guards pass. Most gains come early; five flat iterations means the ceiling is architectural.
 
 ## Next week's protocol
 
 1. **Collect** full-information records — every branch is run on every document
    (sorter attempt 1 and the retry, the reviewer, each extraction attempt, the judge),
    with no ground truth in the routing state and no input truncation:
-   `src/scripts/run_calibration_sweep.py --hf-split train --per-class N --real --out train.jsonl`
+   `PYTHONPATH=src .venv/bin/python src/scripts/run_calibration_sweep.py --hf-split train --per-class N --real --out train.jsonl`
    (refused unless `MAILROOM_ALLOW_REAL=1`; the owner runs it), then the same with
    `--hf-split test`.
-2. **Calibrate** on train: `src/scripts/calibrate_thresholds.py --records train.jsonl
+2. **Calibrate** on train: `PYTHONPATH=src .venv/bin/python src/scripts/calibrate_thresholds.py --records train.jsonl
    --split train --out candidate.yaml`. It proposes per-class cutoffs only where the
    held-out Wilson bound clears the target and the sample suffices; other classes keep
    the taxonomy value and are marked `insufficient_evidence`.
-3. **Score** on test: `src/scripts/hillclimb_eval.py --records test.jsonl --split test
+3. **Score** on test: `PYTHONPATH=src .venv/bin/python src/scripts/hillclimb_eval.py --records test.jsonl --split test
    --policy candidate.yaml --baseline-policy <current>`.
 4. **Iterate** on the policy file only, gating every iteration with
    `src/scripts/autoresearch_gate.py --objective thresholds` (core guards first, then the
@@ -93,7 +93,7 @@ Verified in code; "fixed" items have regression tests on this branch.
 | Routing | Classify gets 1 retry although `retry_max: 2`; after the retry, low confidence skips the cheaper reviewer | open — a hill-climb lever, decide with data |
 | Routing | Ground truth in routing state (above) | sweep keeps it out; live flag still open |
 | Volume | Unbounded concurrency (a thread per inbox file) | fixed: capped worker pool (`watcher.max_concurrent_docs`, default 4) |
-| Volume | Stale-claim reconcile can pull back a document that is still running | fixed: claim stamps claim time; reconcile skips in-flight files |
+| Volume | Stale-claim reconcile can pull back a document that is still running | fixed for the watcher's own reconcile: claim stamps claim time and the reconcile skips files this process is running or has queued. The separate `recover_processing.py --apply` CLI cannot see another process's in-flight set and relies on the claim time vs `--stale-minutes` only; run it with the watcher stopped |
 | Volume | Concurrent catalog and audit writes lost (`UNIQUE` races, `database is locked`) | fixed: upserts plus lock retry; 0 failed ops at 128 threads |
 | Volume | Crash re-run creates duplicate rows; Docker stop grace below the drain timeout; outage parks everything to review; tracing outage slows each document ~20× | open |
 | Review | Approving re-runs extraction instead of archiving what the person checked; corrections are not stored as labels | fixed: `approve_as_is` / `correct` archive through the normal tail with no LLM call; `human_label` persisted; `export_review_labels.py` turns reviews into calibration records |
