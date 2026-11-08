@@ -390,7 +390,12 @@ class _DispatchPool:
     ``close`` (called from ``Watcher.stop``) discards everything that has not
     started; those files stay in the inbox for the next watcher. Each close
     retires the queue and its workers together, so a later ``reopen`` starts
-    from a clean slate. Workers are daemon threads, matching the per-file
+    with a fresh queue. A retired worker that is still running a document
+    (the shutdown drain timed out) keeps counting against the cap until it
+    exits, so a replacement pool never runs more than the cap in total.
+    A worker moves a name from queued to active under both locks (see
+    ``_admit``), so the name is never invisible to ``_is_in_flight`` or to
+    the shutdown drain. Workers are daemon threads, matching the per-file
     threads this replaces.
     """
 
