@@ -88,13 +88,27 @@ Verified in code; "fixed" items have regression tests on this branch.
 | Routing | Conflict detection flagged "Delaware" vs "State of Delaware" and differently formatted dates | fixed: date and jurisdiction-aware comparison |
 | Routing | Classify gets 1 retry although `retry_max: 2`; after the retry, low confidence skips the cheaper reviewer | open — a hill-climb lever, decide with data |
 | Routing | Ground truth in routing state (above) | sweep keeps it out; live flag still open |
-| Volume | Unbounded concurrency (a thread per inbox file) | in progress |
-| Volume | Stale-claim reconcile can pull back a document that is still running | in progress |
-| Volume | Concurrent catalog writes lost (`UNIQUE` races, `database is locked`) | in progress |
+| Volume | Unbounded concurrency (a thread per inbox file) | fixed: capped worker pool (`watcher.max_concurrent_docs`, default 4) |
+| Volume | Stale-claim reconcile can pull back a document that is still running | fixed: claim stamps claim time; reconcile skips in-flight files |
+| Volume | Concurrent catalog and audit writes lost (`UNIQUE` races, `database is locked`) | fixed: upserts plus lock retry; 0 failed ops at 128 threads |
 | Volume | Crash re-run creates duplicate rows; Docker stop grace below the drain timeout; outage parks everything to review; tracing outage slows each document ~20× | open |
-| Review | Approving re-runs extraction instead of archiving what the person checked; corrections are not stored as labels | in progress |
-| Review | Most routes into review record no cause; queue is newest-first with no priority | in progress |
-| Review | Reject/complete leak the interrupted checkpoint; concurrent resolves are unguarded | in progress |
+| Review | Approving re-runs extraction instead of archiving what the person checked; corrections are not stored as labels | fixed: `approve_as_is` / `correct` archive through the normal tail with no LLM call; `human_label` persisted; `export_review_labels.py` turns reviews into calibration records |
+| Review | Most routes into review record no cause; queue is newest-first with no priority | fixed: cause coverage 85.1% → 100% on 13,692 reachable states; priority-then-age queue with SLA flags |
+| Review | Reject/complete leak the interrupted checkpoint; concurrent resolves are unguarded | fixed: checkpoint discarded; per-document lock with 409; atomic manifest writes |
+
+## Scale evaluator
+
+`src/scripts/stress_test.py` is the scale hill-climb evaluator (mock LLM, integrity
+gates, one `SCORE:` line). Same 8-document run (threads 1,4) before and after this
+branch's fixes:
+
+| Gate | Before | After |
+|:--|--:|--:|
+| lost_docs | 8 | 0 |
+| inflight_hijacked | 3 | 0 |
+| peak concurrent pipelines (cap 4) | 8 | 4 |
+| db_failed_ops (32 + 128 threads) | 102 | 0 |
+| duplicate_catalog_rows / duplicate_chains (crash recovery) | 4 / 4 | 4 / 4 (open) |
 
 ## Not verified
 
