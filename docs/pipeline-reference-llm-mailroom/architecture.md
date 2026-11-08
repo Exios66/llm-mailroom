@@ -149,7 +149,7 @@ flowchart LR
 * One graph execution per document
 * **13 nodes** forming a directed state machine: `intake` (ingest specialist), `classify`, `retry_classify`, `review_classify` (agent second opinion on exhausted medium-band classifications — KANBAN-062 Lane A), `extract`, `retry_extract`, `judge_verify` + `arbiter` (gated completeness verification + arbitration — KANBAN-063 Lane B), `human_review`, `boss_escalation`, `compile_report`, `catalog_write`, `archive`
 * Two auxiliary flows operate **outside** the graph: the Gmail triage lane (free model swarm for single-document emails, run by `pipeline/watcher.py:_run_triage_lane`, which archives or parks for review itself and never enters `classify`) and the relations clerk (association scanning, dispatched on a daemon thread from `archive`, `human_review`, `_finalize_aborted` and the triage lane). The full chart, with every edge, is in [Pipeline flowchart](../the-pipeline-in-depth/flowchart.md)
-* MemorySaver by default, held on a **process-level compiled graph** so `interrupt()` HITL can `Command(resume=...)` in the same process (the API embeds the watcher). The filesystem review bin remains the durable park across process restart; `resume_from_review` falls back to a fresh extract invoke when the checkpoint is gone. Opt into on-disk `SqliteSaver` (`data/checkpoints.db`) via `MAILROOM_CHECKPOINTER=sqlite`.
+* MemorySaver by default, held on a **process-level compiled graph** so `interrupt()` HITL can `Command(resume=...)` in the same process (the API embeds the watcher). The filesystem review bin remains the durable park across process restart; `resume_from_review` falls back to a fresh invoke when the checkpoint is gone: from extract to re-extract, or straight to `compile_report` (no LLM call) when the reviewer approved or corrected the fields. Opt into on-disk `SqliteSaver` (`data/checkpoints.db`) via `MAILROOM_CHECKPOINTER=sqlite`.
 
 ### LLM Client (`llm/client.py`, `llm/providers.py`, `llm/retry.py`, `llm/prompts.py`)
 
@@ -305,7 +305,7 @@ human_review ─┬─ interrupt() pause (file parked in review/)
 
 ## Checkpointing
 
-LangGraph checkpoints the full state after each node. The checkpointer is **MemorySaver by default**, held on a process-level compiled graph so `human_review_node` can pause with LangGraph `interrupt()` and resume with `Command(resume={"decision": "approved"})` without losing the thread. The filesystem review bin is still the durable park: after a process restart the MemorySaver is empty and `resume_from_review` re-invokes from extract using the manifest (this also keeps per-doc checkpoint growth bounded). Set `MAILROOM_CHECKPOINTER=sqlite` to opt into the on-disk SqliteSaver at `data/checkpoints.db` for debugging/resume-across-restart experiments.
+LangGraph checkpoints the full state after each node. The checkpointer is **MemorySaver by default**, held on a process-level compiled graph so `human_review_node` can pause with LangGraph `interrupt()` and resume with `Command(resume={"decision": "approved"})` without losing the thread. The filesystem review bin is still the durable park: after a process restart the MemorySaver is empty and `resume_from_review` re-invokes from the manifest: from extract for a re-extraction, or from `compile_report` with the reviewer's fields for `approve_as_is` / `correct` (this also keeps per-doc checkpoint growth bounded). Set `MAILROOM_CHECKPOINTER=sqlite` to opt into the on-disk SqliteSaver at `data/checkpoints.db` for debugging/resume-across-restart experiments.
 
 ## Audit Trail
 

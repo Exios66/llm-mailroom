@@ -227,9 +227,9 @@ One row per LangGraph node, in the order they are registered in `build_graph()`.
 | `retry_extract` | `retry_extract_node`; same specialist | Re-extracts with the previous attempt, recent agent memory and, after an arbiter decision, the arbiter's `fields_to_fix` in the prompt. | `after_retry_extraction_gated`: `retry_extract` (transient or another quality retry), `judge_verify`, `compile_report`, `boss_escalation`, `human_review`. |
 | `judge_verify` | `judge_verify_node`; [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py) (`CompletenessJudge`) | Lane B (KANBAN-063). Scores completeness of the extraction against the document. Increments `judge_pass_count`. Returns `skipped` if `judge_gate` is false, `judge_error` on a hard failure. | `after_judge`: `judge_verify` (transient), `compile_report`, `arbiter`, `human_review`. |
 | `arbiter` | `arbiter_node`; [`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py) (`ArbiterAgent`) | Decides on a partial or incomplete judge verdict: `accept_with_caveats`, `retry_extraction` (with a fix-list; increments `arbiter_retry_count`) or `human_review`. Writes the `arbiter_decided` audit entry. | `after_arbiter`: `arbiter` (transient), `compile_report`, `retry_extract`, `human_review`. |
-| `human_review` | `human_review_node`; `pipeline/bins.park_for_review`, `pipeline/reconsideration.collect_review_causes` | Parks the file in the review bin with a `pending_review` manifest and the review causes, upserts the catalog, writes `routed_to_review` (first park only), fires the Gmail echo and relations scan, then pauses with `interrupt()`. On rejection it moves the file to the failed bin. | `after_human_review`: `extract` (approved) or END (rejected). |
+| `human_review` | `human_review_node`; `pipeline/bins.park_for_review`, `pipeline/reconsideration.collect_review_causes` | Parks the file in the review bin with a `pending_review` manifest and the review causes, upserts the catalog, writes `routed_to_review` (first park only), fires the Gmail echo and relations scan, then pauses with `interrupt()`. On rejection it moves the file to the failed bin. On `approve_as_is` or `correct` it applies the reviewer's fields (`extraction_source: "human"`, `review_decision: "human_applied"`). | `after_human_review`: `compile_report` (human fields applied, no LLM call), `extract` (approved, re-extract) or END (rejected). |
 | `boss_escalation` | `boss_escalation_node`; [`agents/boss.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/boss.py) (`BossAgent`) | Adjudicates a field conflict with archived matter records, using the matter context from `_fetch_matter_context`. A non-transient failure defaults to `review`. Writes `boss_adjudicated`. | `after_boss`: `boss_escalation` (transient), `compile_report`, `human_review`. |
-| `compile_report` | `compile_report_node`; [`agents/reporter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/reporter.py) (`compile_matter_record`) | Builds the structured matter record procedurally (the reporter LLM is retired) and stores it as `extracted_data._report`. A crash produces a fallback report with `error: True`. | `after_report`: `catalog_write` or `human_review`. |
+| `compile_report` | `compile_report_node`; [`agents/reporter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/reporter.py) (`compile_matter_record`) | Builds the structured matter record procedurally (the reporter LLM is retired) and stores it as `extracted_data._report`. A crash produces a fallback report with `error: True`. | `after_report`: `catalog_write` or `human_review`. Entered from `judge_verify`, `arbiter`, `extract`, `retry_extract`, `boss_escalation`, from `human_review` when the reviewer's fields were applied, and from START when such a resolution is replayed after a restart. |
 | `catalog_write` | `catalog_write_node`; `storage/catalog` | Upserts the document and matter rows with final type, confidences and extraction. | Always `archive` (plain edge). |
 | `archive` | `archive_node`; [`agents/archivist.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/archivist.py) (`archive_document`) | Moves the file to `archive/<matter_id>/<doc_type>/`, writes the manifest and a JSON sidecar, hashes the file, appends the `archived` audit entry, sets the catalog row to archived, fires the Gmail echo and relations scan, and exports to the warehouse if enabled. | Always END (plain edge). |
 
@@ -301,7 +301,7 @@ The triage lane writes its own audit vocabulary: `triage_ingested`, `triage_clas
 
 ## Human review resolve
 
-A parked document leaves the review bin through `POST /review/{doc_id}/resolve` in [`api/main.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/api/main.py), with helpers in [`pipeline/review_resolve.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/pipeline/review_resolve.py). The `disposition` field picks the path; `resume` is the default.
+A parked document leaves the review bin through `POST /review/{doc_id}/resolve` in [`api/main.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/api/main.py), with helpers in [`pipeline/review_resolve.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/pipeline/review_resolve.py). The `disposition` field picks the path; `resume` is the default. An optional `resolution` (`approve_as_is` \| `correct` \| `reclassify` \| `reject`, with `field_corrections`, `reviewer` or the `X-Reviewer` header, and `reject_reason`) states the reviewer's decision directly; legacy `decision` + `disposition` requests map onto it (`approved`+`complete` is `correct` or `approve_as_is`, `approved`+`resume` re-extracts, `rejected` rejects).
 
 ```mermaid
 flowchart TD
@@ -309,17 +309,19 @@ flowchart TD
     DISP{"disposition"}
     REC["record: audit entry review_recorded,<br/>file stays where it is"]
     REQ_IN["requeue: copy source file to inbox,<br/>audit entry review_requeued"]
-    COMP["complete (approved only):<br/>operator extraction validated,<br/>file archived with no LLM call"]
+    COMP["complete / approve_as_is / correct:<br/>reviewer fields validated, then<br/>human_review, compile_report, catalog_write, archive<br/>(no LLM call)"]
     DEC{"resume: decision"}
     REJ["rejected: manifest FAILED,<br/>file to failed bin, review_rejected"]
     RFR{"resume_from_review:<br/>interrupt checkpoint still live?"}
     CMD["Command resume = approved<br/>human_review returns approved, then extract"]
     FRESH["Requeue from review bin,<br/>new invoke: START, entry_route, extract"]
+    FRESHC["new invoke: START, compile_report<br/>(human fields, no LLM call)"]
 
     REQ --> DISP
     DISP -- "record" --> REC
     DISP -- "requeue" --> REQ_IN
     DISP -- "complete" --> COMP
+    COMP -- "checkpoint gone (restart)" --> FRESHC
     DISP -- "resume" --> DEC
     DEC -- "rejected" --> REJ
     DEC -- "approved" --> RFR
@@ -327,7 +329,7 @@ flowchart TD
     RFR -- "no (process restarted)" --> FRESH
 ```
 
-`record` and `requeue` work at any stage. `complete` and `resume` need the document to be in the review stage. A classification override (`doc_type` or `override_doc_type`) can be written onto the manifest before a resume.
+`record` and `requeue` work at any stage. `complete` and `resume` need the document to be in the review stage (400 otherwise; a second resolve while one is in flight gets 409). Every resolution is stored on the manifest as `human_label`, with a snapshot of the model's output taken before the override. A classification override (`doc_type` or `override_doc_type`) can be written onto the manifest before a resume.
 
 ## Sources
 
