@@ -7,8 +7,11 @@ Pure: no I/O, no clock reads. The weights live in ``taxonomy.yaml`` under
     base     = severity * class_tier_weight[doc_type]
     score    = base * (1 + age_term),  age_term = 1 - 0.5 ** (age_hours / half_life)
 
-``tier`` comes from ``base`` (age never promotes a tier, it only reorders within
-one), and ``sla_breached`` compares age with that tier's ``sla_hours``.
+``tier`` comes from ``base``, so age never changes a document's tier. The tray is
+sorted by the global ``score`` though, and age scales it: a long-waiting low-tier
+item can rank above a fresh higher-tier one. ``sla_breached`` compares age with
+that tier's ``sla_hours``. Age counts from ``review_entered_at`` (when the document
+was parked), else ``updated_at``, else ``created_at``.
 """
 
 from __future__ import annotations
@@ -45,14 +48,24 @@ def _ts(value: Any) -> dt.datetime | None:
 def _causes(item: Mapping[str, Any]) -> list[str]:
     causes = item.get("review_causes")
     if not causes:
-        review = (item.get("extracted_data") or {}).get("_review")
+        extracted = item.get("extracted_data")
+        review = extracted.get("_review") if isinstance(extracted, dict) else None
         causes = review.get("review_causes") if isinstance(review, dict) else None
     return [c for c in (causes or []) if isinstance(c, str) and c]
 
 
+def _since(item: Mapping[str, Any]) -> dt.datetime | None:
+    """When the clock started: review entry, else last update, else creation."""
+    return (
+        _ts(item.get("review_entered_at"))
+        or _ts(item.get("updated_at"))
+        or _ts(item.get("created_at"))
+    )
+
+
 def age_hours(item: Mapping[str, Any], now: dt.datetime) -> float | None:
-    """Hours since the document was parked (``updated_at``, else ``created_at``)."""
-    since = _ts(item.get("updated_at")) or _ts(item.get("created_at"))
+    """Hours since the document entered review (see :func:`_since`)."""
+    since = _since(item)
     if since is None:
         return None
     return max(0.0, (now - since).total_seconds() / 3600.0)
@@ -116,7 +129,7 @@ def sort_queue(
         items,
         key=lambda d: (
             -d["priority"]["score"],
-            _ts(d.get("updated_at")) or _ts(d.get("created_at")) or far,
+            _since(d) or far,
         ),
     )
 

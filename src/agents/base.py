@@ -260,7 +260,7 @@ class BaseAgent(ABC):
         chunking never changes small-document output. Longer documents are
         split on paragraph boundaries (vendored ``_SpecialistBase`` splitter),
         each window extracted, and merged (list union + first-non-null scalar
-        + MIN confidence). A transient provider error is re-raised so the
+        + MIN confidence over the windows that produced fields). A transient provider error is re-raised so the
         node's transient routing retries; a chunk that fails to parse (or
         raises a non-transient error) is counted in ``_failed_chunks`` and caps
         the merged confidence below the class ``low`` threshold.

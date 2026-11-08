@@ -18,10 +18,13 @@ What is proposed, per class, and from which pairs::
                      only extraction evidence moves it
 
 Evidence gate (a class is NEVER given a cutoff it has not earned): the cross-fit
-held-out Wilson lower bound must reach the target, and the number of accepted
+held-out Wilson lower bound (scored on the cutoff as emitted: rounded up to 3 places and
+clamped, not the raw tuned value) must reach the target, and the number of accepted
 documents must meet ``required_samples(errors, risk)`` (Clopper-Pearson, ``--risk``).
 Anything else keeps the current taxonomy value and is marked
-``insufficient_evidence`` with the reason and the sample shortfall.
+``insufficient_evidence`` with the reason and the sample shortfall. A calibrated cut that
+would leave the emitted policy with ``low`` at or above ``high`` or ``judge_band_high`` is
+refused too (``low_not_below_*`` / ``*_not_above_low``).
 
 The reviewer lane is scored with the Dojo's ``score_review_lane`` (evidence only;
 no reviewer cutoff is proposed).
@@ -37,6 +40,7 @@ from __future__ import annotations
 import argparse
 import copy
 import math
+import random
 import sys
 from collections import Counter
 from pathlib import Path
@@ -64,10 +68,54 @@ def _ceil3(x: float) -> float:
     return math.ceil(x * 1000.0 - 1e-9) / 1000.0
 
 
+def deployed_cutoff(cutoff: float) -> float:
+    """The cutoff as it is emitted in the candidate policy: rounded up to 3 places, then clamped."""
+    return min(max(_ceil3(cutoff), CLAMP_LO), CLAMP_HI)
+
+
+def deployed_cross_fit(
+    pairs: Sequence[tuple[float, bool]], tune_target: float, *, folds: int, seed: int, confidence: float
+) -> dict[str, Any]:
+    """Held-out accuracy of the cutoff AS EMITTED (rounded up and clamped), not the raw tuned one.
+
+    The Dojo's ``cross_fit_cutoffs`` tunes each fold's cutoff on the other folds and scores the
+    held-out fold with that raw value. The policy carries ``deployed_cutoff(cutoff)`` instead, which
+    can accept a different set (the clamp at ``CLAMP_HI`` widens it). The folds are the Dojo's own
+    (same seeded shuffle, ``fold::folds`` slices); only the fold cutoff is transformed, so the
+    evidence gate judges the set that would actually be deployed.
+    """
+    from statistics import NormalDist
+
+    from llm_dojo_scoring.analysis.calibration import cutoff_at_target, wilson_ci
+
+    shuffled = list(pairs)
+    random.Random(seed).shuffle(shuffled)
+    right = kept = 0
+    for fold in range(folds):
+        held = shuffled[fold::folds]
+        training = [row for index, row in enumerate(shuffled) if index % folds != fold]
+        fold_cutoff = cutoff_at_target(training, tune_target)
+        if fold_cutoff is None:
+            continue
+        cut = deployed_cutoff(fold_cutoff)
+        accepted = [ok for conf, ok in held if conf >= cut]
+        right += sum(1 for ok in accepted if ok)
+        kept += len(accepted)
+    z = NormalDist().inv_cdf(0.5 + confidence / 2.0)
+    return {
+        "holdout_accepted": kept,
+        "holdout_accuracy": right / kept if kept else None,
+        "holdout_accuracy_ci": wilson_ci(right / kept, kept, z=z) if kept else None,
+        "holdout_share_accepted": kept / len(shuffled) if shuffled else None,
+    }
+
+
 def effective_value(policy: Mapping[str, Any], cls: str, key: str) -> float | None:
     """The value routing would use for ``cls``: the by_class entry, else the global."""
     entry = (policy.get("by_class") or {}).get(cls) or {}
-    value = entry.get(key, policy.get(key))
+    value = entry.get(key)
+    if value is None:  # routing skips a null class override (pipeline.config.get_confidence_thresholds)
+        value = policy.get(key)
     return float(value) if value is not None else None
 
 
@@ -161,13 +209,17 @@ def _evidence_at(
         out["shortfall"] = None
         return out
     cf = cross_fit_cutoffs(list(pairs), target=tune_target, folds=min(folds, n), seed=seed, confidence=confidence)
+    if cf.get("cutoff") is not None:
+        # Gate on the cutoff as emitted (rounded up, clamped), not the raw tuned value.
+        cf = {k: v for k, v in cf.items() if k != "meets_target"}  # raw-cutoff verdict; the gate below decides
+        cf = {**cf, **deployed_cross_fit(pairs, tune_target, folds=min(folds, n), seed=seed, confidence=confidence)}
     out["cross_fit"] = cf
     cutoff = cutoff_at_target(list(pairs), tune_target)
     out["cutoff"] = cutoff
     if cutoff is None:
         out["reason"] = "no_cutoff_reaches_target"
         return out
-    proposed = min(max(_ceil3(cutoff), CLAMP_LO), CLAMP_HI)
+    proposed = deployed_cutoff(cutoff)
     out["clamped"] = proposed != _ceil3(cutoff)
     accepted = [ok for c, ok in pairs if c >= proposed]
     out["n_accepted"] = len(accepted)
@@ -232,6 +284,46 @@ def _reviewer_summary(records: Sequence[RunRecord], base_policy: Mapping[str, An
     return summary
 
 
+def _in_force(ev: Mapping[str, Any]) -> float | None:
+    """The value the candidate policy will carry for one key: the calibrated cut, else the current one."""
+    return ev["proposed"] if ev["status"] == "calibrated" else ev["current"]
+
+
+def _demote(ev: dict[str, Any], reason: str) -> None:
+    ev.update(status="insufficient_evidence", proposed=None, reason=reason)
+
+
+def _reconcile_bands(entry: dict[str, dict[str, Any]]) -> None:
+    """Keep ``low < judge_band_high`` and ``low < high`` in the values the candidate will carry.
+
+    ``low`` is one key shared by the sorter band (retry below it, ``high`` and up accepted) and the
+    extraction band (the judge fires between ``low`` and ``judge_band_high``), so an inverted pair
+    breaks routing in either lane. The comparison uses the value IN FORCE for each key (calibrated
+    cut, else the current value), so a calibrated ``high`` or ``judge_band_high`` that lands under
+    an uncalibrated ``low`` is caught too. A calibrated ``low`` is demoted first (the weaker, more
+    shared evidence); otherwise the calibrated upper cut is. A pair already inverted in the base
+    policy with nothing calibrated is left as it is (nothing here caused it).
+    """
+    low = entry["low"]
+    for upper_key, reason_low, reason_upper in (
+        ("judge_band_high", "low_not_below_judge_band_high", "judge_band_high_not_above_low"),
+        ("high", "low_not_below_high", "high_not_above_low"),
+    ):
+        upper = entry[upper_key]
+        # Demoting `low` falls back to its current value, which can still sit above a calibrated
+        # upper cut, so look again before moving on.
+        for _ in range(2):
+            lo_v, up_v = _in_force(low), _in_force(upper)
+            if lo_v is None or up_v is None or lo_v < up_v:
+                break
+            if low["status"] == "calibrated":
+                _demote(low, reason_low)
+            elif upper["status"] == "calibrated":
+                _demote(upper, reason_upper)
+            else:
+                break
+
+
 def calibrate(
     records: Sequence[RunRecord],
     base_policy: Mapping[str, Any],
@@ -272,11 +364,8 @@ def calibrate(
             target_step=target_step, max_target=target, **kw
         )
         low["current"] = effective_value(base_policy, cls, "low")
-        # `low` must sit under the auto-archive cut that will be in force.
-        band_high = jbh["proposed"] if jbh["status"] == "calibrated" else jbh["current"]
-        if low["status"] == "calibrated" and band_high is not None and low["proposed"] >= band_high:
-            low.update(status="insufficient_evidence", proposed=None, reason="low_not_below_judge_band_high")
         entry["low"] = low
+        _reconcile_bands(entry)
 
         changed: dict[str, float] = {}
         for key in ("high", "judge_band_high", "low"):
