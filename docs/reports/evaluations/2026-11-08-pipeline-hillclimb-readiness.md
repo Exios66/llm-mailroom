@@ -67,7 +67,11 @@ pass. Most gains come early; five flat iterations means the ceiling is architect
    the taxonomy value and are marked `insufficient_evidence`.
 3. **Score** on test: `src/scripts/hillclimb_eval.py --records test.jsonl --split test
    --policy candidate.yaml --baseline-policy <current>`.
-4. **Iterate** on the policy file only; promote to `taxonomy.yaml` by a reviewed change.
+4. **Iterate** on the policy file only, gating every iteration with
+   `src/scripts/autoresearch_gate.py --objective thresholds` (core guards first, then the
+   eval's guards and the ΔU interval; registry `experiments/autoresearch/objectives.yaml`,
+   protocol `experiments/autoresearch/instructions.md`). Promote to `taxonomy.yaml` by a
+   reviewed change.
 
 Sample size: to show a wrong-accept rate ≤ 1% at 95% confidence a class needs 299
 accepted documents with zero errors (473 with one, 628 with two; Dojo
