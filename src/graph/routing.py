@@ -23,7 +23,11 @@ def _transient_decision(state: dict, *, retry_target: str) -> Literal["retry", "
 
     L-13: the transient budget is PER NODE — classify failures must not
     exhaust the counter that extract later needs. Each node tracks its own
-    `transient_retries_<node>` key, reset on success.
+    `transient_retries_<node>` key. It is NOT reset on success: the counter is
+    the run's record of provider blips at that node, and
+    `observability.scores.first_pass_success` reads it to keep a document that
+    needed a transient retry out of the first-pass KPI. Clearing it would turn
+    that KPI true for flaky-provider runs.
 
     The node keeps `classification_attempts`/`extraction_attempts` unchanged on
     transient failures, so a flaky provider never burns the confidence retry
@@ -271,10 +275,6 @@ def after_extraction(state: dict) -> Literal[
     retry_max = thresholds.get("retry_max", 2)
     conflict = state.get("conflict_detected", False)
 
-    if conflict:
-        logger.info("conflict_escalation", doc_id=state.get("doc_id"))
-        return "boss_escalation"
-
     # Schema gate: an extraction that fails the doc type's pydantic schema
     # (parse error, wrong types, fabricated shape) must never archive — retry
     # once, then human review, regardless of the model's stated confidence.
@@ -343,6 +343,14 @@ def after_extraction(state: dict) -> Literal[
         return "human_review"
 
     if confidence is not None and confidence >= low:
+        # A matter conflict is adjudicated only once the extraction itself is
+        # sound: it has passed the transient, schema, hollow, coverage and
+        # `low` confidence gates above. Escalating earlier let the Boss
+        # approve (-> compile_report) an extraction that was schema-invalid or
+        # near-zero confidence, skipping its retry / judge / review path.
+        if conflict:
+            logger.info("conflict_escalation", doc_id=state.get("doc_id"))
+            return "boss_escalation"
         return "compile_report"
 
     if attempts <= retry_max:
@@ -579,6 +587,19 @@ def after_review_classify(state: dict) -> Literal[
     return "human_review"
 
 
+def _unadjudicated_conflict(state: dict) -> bool:
+    """A matter conflict that reached the judge/arbiter tail without the Boss.
+
+    Conflict escalation runs only on the ``>= low`` arm of ``after_extraction``;
+    an extraction that went retry -> judge -> arbiter instead must not archive
+    an unadjudicated conflict. Those edges have no Boss route, so it parks.
+    """
+    if state.get("conflict_detected") and state.get("review_decision") != "approved":
+        logger.info("conflict_unadjudicated_review", doc_id=state.get("doc_id"))
+        return True
+    return False
+
+
 def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbiter", "human_review"]:
     """KANBAN-063 (Lane B): judge outcome router.
 
@@ -597,7 +618,9 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     if verdict in ("judge_error",):
         return "human_review"
     if verdict in (None, "", "skipped", "complete"):
-        return "human_review" if _extraction_still_unsure(state) else "compile_report"
+        if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
+            return "human_review"
+        return "compile_report"
     thresholds = _thresholds_for(state)
     raw_max_passes = thresholds.get("judge_max_passes")
     max_passes = int(raw_max_passes) if raw_max_passes is not None else 3
@@ -637,7 +660,9 @@ def after_arbiter(state: dict) -> Literal[
         return "human_review"
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
-        return "human_review" if _extraction_still_unsure(state) else "compile_report"
+        if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
+            return "human_review"
+        return "compile_report"
     thresholds = _thresholds_for(state)
     raw_retry_max = thresholds.get("arbiter_retry_max")
     arbiter_retry_max = int(raw_retry_max) if raw_retry_max is not None else 2
