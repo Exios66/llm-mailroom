@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pilot-test the pipeline against examples/samples/manifest.csv.
+"""Pilot-test the pipeline against examples/samples/manifest.csv or the pinned HF corpus.
 
 Feeds each sample through the real LangGraph pipeline, records per-document
 outcomes (stage, doc_type, confidence, retries, LLM call count, wall time), and
@@ -14,8 +14,27 @@ scores them against the ground truth in the manifest. Two modes:
 Use --baseline <report.json> to diff two runs (e.g. before/after a procedural
 change) and quantify accuracy/time/call deltas.
 
+Two document sources (``--dataset``):
+
+  samples  the monorepo's docs/examples/samples/manifest.csv (the default when
+           that file exists; nothing about this path changes).
+  hf       REAL documents from the pinned Hugging Face corpus
+           Lucius-Morningstar/mailroom-dataset, loaded only through
+           ``pipeline.hf_corpus_loader.load_corpus`` (a public, anonymous READ at
+           the pinned revision; parquet is cached under
+           ``<MAILROOM_BASE_DIR>/hf_cache/``). ``--per-class N`` documents of each
+           class are drawn with ``--seed`` from ``--split`` and written, in full
+           (never truncated), as .txt files under ``<MAILROOM_BASE_DIR>/samples/hf/``
+           so the pipeline ingests them like any inbox file. Nothing is written to
+           Hugging Face. Chosen automatically (with a notice) for --mock when
+           manifest.csv is absent, i.e. in a standalone checkout.
+
+The mock LLM returns each sample's expected class, so a --mock run checks the
+pipeline wiring on real document text, not classifier quality.
+
 Usage:
     python scripts/run_pilot.py --mock
+    python scripts/run_pilot.py --mock --dataset hf --per-class 2
     python scripts/run_pilot.py --real
     python scripts/run_pilot.py --mock --baseline data/pilot_report_baseline.json
     python scripts/run_pilot.py --mock --include contract
@@ -197,6 +216,22 @@ def _real_get_llm(agent_name: str):
 from llm.client import get_llm as _REAL_GET_LLM  # noqa: E402
 
 
+def _mock_subclass(expect: dict) -> dict:
+    """``{"doc_subclass": ...}`` when the sample supplies one (corpus rows), else ``{}``.
+
+    The classification guard clamps a catalog class answered without a valid
+    ``doc_subclass`` (``doc_subclass_missing``), which routes every such mock
+    document to review. Committed-manifest samples carry no subclass and keep
+    the historical payload; ``--dataset hf`` rows set ``expect["subclass"]``.
+    """
+    return {"doc_subclass": expect["subclass"]} if expect.get("subclass") else {}
+
+
+def _mock_fields(expect: dict) -> dict:
+    """The sample's expected extraction fields, when the mock answers as an oracle (corpus rows)."""
+    return dict(expect.get("fields") or {})
+
+
 def _fake_client(expect: dict) -> MagicMock:
     def create(**kwargs):
         start = time.perf_counter()
@@ -212,6 +247,7 @@ def _fake_client(expect: dict) -> MagicMock:
                 "doc_type": expect["doc_type"],
                 "confidence": expect["conf"],
                 "reasoning": "mock",
+                **_mock_subclass(expect),
             })
         elif "ADJUDICATION REQUEST" in user_content:
             content = json.dumps({"decision": "approved", "reasoning": "mock", "resolution_notes": ""})
@@ -220,6 +256,7 @@ def _fake_client(expect: dict) -> MagicMock:
                 "confidence": expect["conf"],
                 "document_name": "Mock Agreement",
                 "parties": ["Mock Party"],
+                **_mock_fields(expect),
             })
         resp = MagicMock()
         resp.choices = [MagicMock()]
@@ -264,11 +301,13 @@ def _make_mock_langchain_llm(expect: dict):
                 "contract_subtype": "other" if expect["doc_type"] == "contract" else None,
                 "confidence": expect["conf"],
                 "reasoning": "mock",
+                **_mock_subclass(expect),
             },
             extraction={
                 "confidence": expect["conf"],
                 "document_name": "Mock Agreement",
                 "parties": ["Mock Party"],
+                **_mock_fields(expect),
             },
             on_call=_on_call,
         )
@@ -369,6 +408,18 @@ def run_sample(
         if sample["id"] == "ambiguous_01"
         else 0.95 + (sum(sample["id"].encode()) % 5) / 100,
     }
+    if sample.get("mock_oracle"):
+        # Corpus rows (--dataset hf): the fake LLM answers from the sample's own labels so a
+        # healthy pipeline archives it. Class, a valid catalog subclass, a confidence at or
+        # above the class's confidence.high (taxonomy.yaml), and the expected fields as the extraction. The committed
+        # manifest keeps its historical payload (this branch never runs for it).
+        from pipeline.config import get_confidence_thresholds
+
+        bar = get_confidence_thresholds(sample["expected_doc_class"])
+        floor = max(float(bar.get("high", 0.97)), float(bar.get("judge_band_high", 0.0)))
+        expect["conf"] = min(0.99, round(floor + (sum(sample["id"].encode()) % 2) / 100, 2))
+        expect["subclass"] = sample.get("mock_subclass") or None
+        expect["fields"] = _parse_expected_fields(sample) or {}
 
     _LLM_METRICS["calls"] = 0
     _LLM_METRICS["seconds"] = 0.0
@@ -452,6 +503,89 @@ def _parse_expected_fields(sample: dict) -> dict | None:
     except json.JSONDecodeError:
         logger.error("expected_fields_invalid", filename=sample.get("filename"))
         return None
+
+
+HF_SOURCE_PREFIX = "hf/"  # manifest ``source`` of corpus rows; is_real_sample() treats it as real
+
+
+def _samples_base_dir() -> Path:
+    return Path(os.environ.get("MAILROOM_BASE_DIR", "./data"))
+
+
+def build_hf_manifest(
+    split: str = "train", per_class: int = 3, seed: int = 0, base_dir: Path | None = None
+) -> tuple[list[dict], dict]:
+    """Manifest rows for a seeded per-class draw of the pinned HF corpus.
+
+    Documents come only from ``pipeline.hf_corpus_loader.load_corpus`` (via
+    ``run_calibration_sweep.load_hf_docs``, which owns the column mapping and the
+    seeded sampling). Each document's full text is written, untruncated, to
+    ``<base_dir>/samples/hf/<name>.txt`` where ``run_sample`` expects it. Returns
+    ``(rows, provenance)``; rows carry exactly the keys the manifest consumers read.
+    """
+    from scripts import run_hf_pilot as hp
+    from scripts.run_calibration_sweep import load_hf_docs, mock_expectation
+
+    if per_class < 1:
+        raise SystemExit("--per-class must be at least 1")
+    docs, provenance = load_hf_docs(split, per_class, seed)
+    out_dir = Path(base_dir if base_dir is not None else _samples_base_dir()) / "samples" / "hf"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    trace_source = hp._trace_source()
+    used: set[str] = set()
+    rows: list[dict] = []
+    for doc in docs:
+        filename = hp._unique_name(hp._inbox_filename(doc.filename), used)
+        (out_dir / filename).write_bytes(doc.text.encode("utf-8"))
+        rows.append({
+            "id": Path(filename).stem,
+            "subdir": "hf",
+            "filename": filename,
+            "source": f"{HF_SOURCE_PREFIX}{provenance['dataset_id']}/{doc.filename}",
+            "dataset": trace_source,
+            "expected_doc_class": doc.gold_class,
+            "expected_subclass": doc.gold_subclass or "",
+            "expected_stage": doc.expected_stage or "archived",
+            # "{}" (not "") when the corpus has no field truth: the manifest
+            # validator rejects an absent expected_fields column.
+            "expected_fields": json.dumps(doc.expected_fields or {}),
+            # The fake LLM answers from these labels (see run_sample): a valid catalog subclass.
+            "mock_oracle": "1",
+            "mock_subclass": mock_expectation(doc)["subclass"] or "",
+            "size_tier": "hf",
+            "chars": str(len(doc.text)),
+        })
+    return rows, provenance
+
+
+def resolve_dataset(requested: str | None, mock_mode: bool) -> tuple[str, str | None]:
+    """Pick the document source. Returns ``(dataset, notice)``.
+
+    ``requested`` is the ``--dataset`` value (None when omitted). An omitted flag
+    keeps the committed-manifest behaviour whenever manifest.csv exists and falls
+    back to the HF corpus only for mock runs: a real run must name ``--dataset hf``
+    itself, because it spends money on the chosen documents.
+    """
+    if requested == "hf":
+        return "hf", None
+    if requested == "samples":
+        if not MANIFEST.exists():
+            raise SystemExit(
+                f"--dataset samples needs {MANIFEST}, which only the monorepo has; "
+                "use --dataset hf for the pinned Hugging Face corpus."
+            )
+        return "samples", None
+    if MANIFEST.exists():
+        return "samples", None
+    if not mock_mode:
+        raise SystemExit(
+            f"{MANIFEST} is absent (standalone checkout). A --real run never falls back "
+            "to another corpus on its own: pass --dataset hf explicitly."
+        )
+    return "hf", (
+        f"{MANIFEST} not found (standalone checkout): falling back to --dataset hf "
+        "(pinned Hugging Face corpus, public read)."
+    )
 
 
 def filter_real_samples(manifest: list[dict], *, mock_mode: bool) -> list[dict]:
@@ -713,12 +847,13 @@ def diff_report(new: dict, baseline: dict) -> dict:
 
 
 def print_rows(rows: list[dict]) -> None:
-    header = f"{'id':<24}{'class':<18}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
+    id_w = max([24] + [len(str(r["id"])) + 1 for r in rows])  # corpus ids can be long
+    header = f"{'id':<{id_w}}{'class':<18}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
     print(header)
     print("-" * len(header))
     for r in rows:
         print(
-            f"{r['id']:<24}{r['expected_doc_class']:<18}{r['expected_stage']:<10}{str(r['stage']):<10}"
+            f"{r['id']:<{id_w}}{r['expected_doc_class']:<18}{r['expected_stage']:<10}{str(r['stage']):<10}"
             f"{r['expected_doc_class']:<18}{str(r['actual_doc_class']):<18}"
             f"{str(r['classification_confidence']):<5}{r['llm_calls']:<6}{r['wall_time_s']:<8}"
         )
@@ -770,6 +905,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-docs", type=int, default=None, help="Limit the run to the first N samples.")
     parser.add_argument("--baseline", help="Path to a previous pilot report JSON to diff against.")
     parser.add_argument(
+        "--dataset",
+        choices=("samples", "hf"),
+        default=None,
+        help="Document source: 'samples' = docs/examples/samples/manifest.csv (monorepo); 'hf' = real "
+        "documents from the pinned Hugging Face corpus. Default: samples when manifest.csv exists, "
+        "else hf for --mock.",
+    )
+    parser.add_argument("--per-class", type=int, default=3, help="--dataset hf: documents drawn per class (default 3).")
+    parser.add_argument("--seed", type=int, default=0, help="--dataset hf: sampling seed (default 0).")
+    parser.add_argument("--split", default="train", help="--dataset hf: corpus split (default train).")
+    parser.add_argument(
         "--scores",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -808,7 +954,12 @@ def main(argv: list[str] | None = None) -> int:
             )
     scores_enabled = args.scores if args.scores is not None else (not mock_mode)
 
-    prepare_samples()
+    dataset, dataset_notice = resolve_dataset(args.dataset, mock_mode)
+    if dataset_notice:
+        print(dataset_notice)
+        logger.warning("dataset_fallback_hf", reason="manifest_missing")
+    if dataset == "samples":
+        prepare_samples()
 
     # One Langfuse session per pilot RUN (not per sample): every document trace
     # of this run lands in `pilot-<mode>-<timestamp>` in the Sessions view.
@@ -817,8 +968,17 @@ def main(argv: list[str] | None = None) -> int:
     run_id = datetime.now(timezone.utc).isoformat()
     session_id = f"pilot-{'real' if not mock_mode else 'mock'}-{run_id}"
 
-    with MANIFEST.open() as fh:
-        manifest = list(csv.DictReader(fh))
+    hf_provenance = None
+    if dataset == "hf":
+        manifest, hf_provenance = build_hf_manifest(args.split, args.per_class, args.seed)
+        print(
+            f"dataset: hf ({hf_provenance['dataset_id']} revision={hf_provenance['dataset_revision']} "
+            f"split={args.split} per_class={args.per_class} seed={args.seed}) -> {len(manifest)} documents"
+        )
+        logger.info("dataset_hf", **hf_provenance, per_class=args.per_class, seed=args.seed, documents=len(manifest))
+    else:
+        with MANIFEST.open() as fh:
+            manifest = list(csv.DictReader(fh))
     if args.include:
         manifest = [m for m in manifest if m["expected_doc_class"] == args.include]
     if args.source:
@@ -894,6 +1054,8 @@ def main(argv: list[str] | None = None) -> int:
         "misfile_candidates": misfile_candidates(rows, report=None),
         "errors": [r for r in rows if r.get("status") == "error"],
     }
+    if hf_provenance is not None:
+        report["dataset"] = {**hf_provenance, "per_class": args.per_class, "seed": args.seed}
     if scores_enabled:
         report["scores"] = {
             "samples": [
