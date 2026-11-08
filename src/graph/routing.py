@@ -23,7 +23,11 @@ def _transient_decision(state: dict, *, retry_target: str) -> Literal["retry", "
 
     L-13: the transient budget is PER NODE — classify failures must not
     exhaust the counter that extract later needs. Each node tracks its own
-    `transient_retries_<node>` key, reset on success.
+    `transient_retries_<node>` key. It is NOT reset on success: the counter is
+    the run's record of provider blips at that node, and
+    `observability.scores.first_pass_success` reads it to keep a document that
+    needed a transient retry out of the first-pass KPI. Clearing it would turn
+    that KPI true for flaky-provider runs.
 
     The node keeps `classification_attempts`/`extraction_attempts` unchanged on
     transient failures, so a flaky provider never burns the confidence retry
