@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import pathlib
 import sys
 import threading
 from unittest.mock import MagicMock
@@ -126,6 +127,8 @@ def test_approve_as_is_archives_through_tail_without_llm(api, temp_base_dir, llm
     r = _resolve(api, doc_id, resolution="approve_as_is", reviewer="pat", notes="ok")
     assert r.status_code == 200, r.text
     assert r.json()["resolution"] == "approve_as_is"
+    archive_path = r.json()["complete"]["archive_path"]  # legacy response key kept
+    assert archive_path and pathlib.Path(archive_path).exists()
     m = load_manifest(doc_id)
     assert m.stage.value == "archived"
     assert m.extraction_source == "human"
@@ -227,12 +230,15 @@ def test_concurrent_double_approve_archives_once(api, temp_base_dir, llm, mocker
     threads = [threading.Thread(target=go) for _ in range(2)]
     [t.start() for t in threads]
     [t.join() for t in threads]
-    assert sorted(r.status_code for r in out) == [200, 409], [r.text for r in out]
-    loser = next(r for r in out if r.status_code == 409)
+    codes = sorted(r.status_code for r in out)
+    # The loser either collides with the held lock (409) or arrives after the
+    # winner archived the document (legacy 400, stage named).
+    assert codes in ([200, 400], [200, 409]), [r.text for r in out]
+    loser = next(r for r in out if r.status_code != 200)
     assert "PipelineStage" not in loser.text
     assert _events(doc_id).count("archived") == 1
     late = _resolve(api, doc_id, resolution="approve_as_is")
-    assert late.status_code == 409 and "archived" in late.text and "PipelineStage" not in late.text
+    assert late.status_code == 400 and "archived" in late.text and "PipelineStage" not in late.text
 
 
 def test_legacy_requests_keep_their_meaning(api, temp_base_dir, llm):

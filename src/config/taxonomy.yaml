@@ -284,19 +284,6 @@ reviewer:
   default_mode: llm
   by_class: {}
 
-# Deterministic field-type-aware extraction scoring (issues #4/#5). The scorer
-# normalizes each field by its type (date/money/id exact-after-normalize, name
-# fuzzy match, free-text token F1, entity-list bipartite matching) and, for
-# ambiguous free-text/name fields, uses embedding cosine similarity
-# (sentence-transformers) as a second signal. `ambiguous_band` is the judge
-# escalation gate: fields scoring inside the band trigger the LLM judge; runs
-# scoring clearly above or below the band skip the judge entirely (2 evaluator
-# calls saved per run). `type_bands` overrides the band per field type —
-# calibrated by scripts/calibrate_field_scoring.py (issue #4): date/id/money/
-# free_text have a real deterministic cutoff, while name and entity_list
-# types are too lenient for a deterministic reject (Jaro-Winkler/token-set are
-# typo-tolerant by design), so every such field escalates to the judge
-# ("always"). See observability/field_scoring.py.
 review_queue:
   # Order of the human review tray (pipeline/review_priority.py). Score =
   # severity * class weight * (1 + age term); the tray sorts by score, then oldest.
@@ -333,6 +320,19 @@ review_queue:
   age_half_life_hours: 24          # age term = 1 - 0.5 ** (age / half_life), in [0, 1)
   sla_hours: {high: 4, normal: 24, low: 72}  # older than this: sla_breached
 
+# Deterministic field-type-aware extraction scoring (issues #4/#5). The scorer
+# normalizes each field by its type (date/money/id exact-after-normalize, name
+# fuzzy match, free-text token F1, entity-list bipartite matching) and, for
+# ambiguous free-text/name fields, uses embedding cosine similarity
+# (sentence-transformers) as a second signal. `ambiguous_band` is the judge
+# escalation gate: fields scoring inside the band trigger the LLM judge; runs
+# scoring clearly above or below the band skip the judge entirely (2 evaluator
+# calls saved per run). `type_bands` overrides the band per field type —
+# calibrated by scripts/calibrate_field_scoring.py (issue #4): date/id/money/
+# free_text have a real deterministic cutoff, while name and entity_list
+# types are too lenient for a deterministic reject (Jaro-Winkler/token-set are
+# typo-tolerant by design), so every such field escalates to the judge
+# ("always"). See observability/field_scoring.py.
 field_scoring:
   ambiguous_band: [0.5, 0.85]
   type_bands:

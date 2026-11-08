@@ -467,6 +467,10 @@ def complete_human_extraction(
 ) -> dict[str, Any]:
     """Archive a parked review with operator-supplied extraction (no LLM).
 
+    Not used by ``POST /review/{doc_id}/resolve`` any more: ``disposition=complete``
+    now archives through the graph tail (``human_review -> compile_report``), so
+    the report, scores and catalog row exist. Kept for direct callers.
+
     Filesystem + manifest only — the API awaits the catalog upsert separately
     so we never deadlock the FastAPI event loop.
     """

@@ -883,10 +883,11 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
 
     # Remaining dispositions require a parked review document. The stage is
     # re-checked here, inside the per-document lock, so a late resolve (the
-    # first already archived/failed the document) is a clean 409.
+    # first already archived/failed the document) gets the legacy 400 with the
+    # current stage named; a resolve racing one in flight gets 409 from the lock.
     if manifest.stage != PipelineStage.REVIEW:
         raise HTTPException(
-            409,
+            400,
             f"Document is not in review (current stage: {stage_name(manifest.stage)}); "
             "use disposition=record or disposition=requeue",
         )
@@ -973,6 +974,9 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
                 k: v for k, v in (result.get("extracted_data") or {}).items() if k != "_report"
             },
         }
+        archive_path = await _archived_path(doc_id)
+        if archive_path:
+            body["complete"]["archive_path"] = archive_path
     elif plan.route == "reextract":
         detail["resumed_stage"] = result.get("stage")
         body["resume"] = {
@@ -1038,6 +1042,19 @@ async def document_source(doc_id: str, download: bool = False):
         raise HTTPException(500, f"Source read failed: {exc}")
 
 
+
+
+async def _archived_path(doc_id: str) -> str | None:
+    """Where the archivist put the file (latest ``archived`` audit entry), or None."""
+    try:
+        from storage.audit_log import get_audit_chain
+
+        for entry in reversed(await get_audit_chain(doc_id)):
+            if entry.get("event") == "archived":
+                return (entry.get("detail") or {}).get("archive_path")
+    except Exception:
+        logger.warning("review_archive_path_lookup_failed", doc_id=doc_id, exc_info=True)
+    return None
 
 
 async def _write_review_audit_entry(
