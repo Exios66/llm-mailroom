@@ -20,11 +20,12 @@ router would have done, so every branch is observed for every document:
 
 Gold labels never enter node state (``run.gt_in_state`` is False); they are
 attached to the record afterwards and used only for offline Dojo scoring.
-Boss / arbiter / human review / report / archive nodes are never run.
-
-Replay of any threshold policy over the records is exact for every branch the
-record marks as observed (``observed.full_information``); see
-``schemas/run_record.py``.
+Boss / arbiter (classification_arbiter and the Lane B arbiter) / human review /
+report / archive nodes are never run, so ``observed.full_information`` covers the
+sorter, reviewer, extraction and judge branches ONLY. A route that needs an arbiter
+ruling or the boss stays unobserved on every record, ``full_information`` or not, and
+policy replay reports it as ``unobserved`` (``diagnostics.unobserved_branches`` names
+them); see ``schemas/run_record.py``.
 
 Usage:
     PYTHONPATH=src python src/scripts/run_calibration_sweep.py \\
@@ -100,9 +101,15 @@ KNOWN_GAPS = [
     "gate forced open; the live graph judges whichever attempt the router stopped on",
     "extraction handoff context carries the classification confidence of the candidate's source "
     "stage; candidates sharing a class are collapsed onto the first source",
-    "failed_chunks is not observable (a local in langchain_agents.specialist_agents.extract_chunked)",
     "reviewer and judge truncate long inputs exactly as live (see diagnostics.downstream_truncation)",
+    "arbiter nodes (classification_arbiter, Lane B arbiter) are never run: routes that need an arbiter "
+    "ruling stay unobserved even when full_information is true",
+    "candidates that share a class are extracted once, on the first source; when their subclass differs "
+    "the record is not full_information, a confidence-only difference (the handoff prints it to 2 "
+    "decimals) is listed in diagnostics.extraction_candidates_collapsed",
 ]
+# Branches the sweep never runs; replay reports a route that needs one as unobserved.
+UNOBSERVED_BRANCHES = ["classification_arbiter", "arbiter", "boss"]
 
 
 # --------------------------------------------------------------------------------------
@@ -494,8 +501,10 @@ def _extraction_attempt(doc: Doc, n: int, doc_type: str, step: Step, text: str, 
     extracted = u.get("extracted_data") if not step.transient_error else None
     raw = step.cap.extract_conf[-1] if step.cap.extract_conf else None
     n_chunks = 1
-    for agent in step.cap.agents:
+    failed_chunks = 0
+    for agent in step.cap.agents:  # both specialist implementations keep the counts on the instance
         n_chunks = max(n_chunks, int(getattr(agent, "_last_n_chunks", 1) or 1))
+        failed_chunks = max(failed_chunks, int(getattr(agent, "_last_failed_chunks", 0) or 0))
     schema_valid = None
     if extracted:
         try:
@@ -513,6 +522,7 @@ def _extraction_attempt(doc: Doc, n: int, doc_type: str, step: Step, text: str, 
         guardrail_issues=[str(i) for i in (u.get("extraction_guardrail") or [])],
         conflict_detected=bool(u.get("conflict_detected")),
         n_chunks=n_chunks,
+        failed_chunks=failed_chunks,
         extraction_score=score,
         hallucination_rate=halluc,
         transient_error=step.transient_error,
@@ -575,23 +585,50 @@ def _fresh_extraction_state(cand_state: dict) -> dict:
     return out
 
 
-def _pick_candidates(states: list[tuple[str, dict]], cap: int) -> tuple[list[tuple[str, dict]], list[str]]:
-    """Distinct extractable classes in priority order; returns (kept, dropped classes)."""
+def _handoff_conf(st: dict) -> str | None:
+    """The classification confidence exactly as the extraction handoff prints it (``confidence=0.93``)."""
+    conf = _num(st.get("classification_confidence"))
+    return None if conf is None else f"{conf:.2f}"
+
+
+def _pick_candidates(
+    states: list[tuple[str, dict]], cap: int
+) -> tuple[list[tuple[str, dict]], list[str], list[dict]]:
+    """Distinct extractable classes in priority order.
+
+    Returns ``(kept, dropped classes, collapsed)``. ``collapsed`` lists every later candidate
+    that shares a class with an earlier one but would hand the specialist a different
+    subclass or confidence; its extraction is NOT run (attempts are keyed by class), so it
+    is reported rather than silently treated as the same extraction.
+    """
     from pipeline.config import is_extractable_doc_type
 
-    seen: set[str] = set()
+    first: dict[str, tuple[str, dict]] = {}
     kept: list[tuple[str, dict]] = []
     dropped: list[str] = []
+    collapsed: list[dict] = []
     for source, st in states:
         cls = st.get("doc_type")
-        if not isinstance(cls, str) or not is_extractable_doc_type(cls) or cls in seen:
+        if not isinstance(cls, str) or not is_extractable_doc_type(cls):
             continue
-        seen.add(cls)
+        if cls in first:
+            base_source, base = first[cls]
+            same_sub = _subclass_of(base) == _subclass_of(st)
+            same_conf = _handoff_conf(base) == _handoff_conf(st)
+            if not (same_sub and same_conf):
+                collapsed.append({
+                    "doc_type": cls, "source": source, "collapsed_onto": base_source,
+                    "doc_subclass": _subclass_of(st), "handoff_confidence": _handoff_conf(st),
+                    "extracted_doc_subclass": _subclass_of(base), "extracted_handoff_confidence": _handoff_conf(base),
+                    "subclass_differs": not same_sub,
+                })
+            continue
+        first[cls] = (source, st)
         if len(kept) < cap:
             kept.append((source, st))
         else:
             dropped.append(cls)
-    return kept, dropped
+    return kept, dropped, collapsed
 
 
 def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
@@ -620,11 +657,14 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         "judge_attempts": ctx.judge_attempts,
         "field_scoring_embedding": ctx.field_scoring_embedding,
         "known_gaps": list(KNOWN_GAPS),
+        "unobserved_branches": list(UNOBSERVED_BRANCHES),
+        "max_extraction_candidates": ctx.max_candidates,
         "gold_meta": doc.gold_meta,
         "node_errors": [],
     }
     record.diagnostics = diag
     complete = True
+    transient: list[str] = []  # stages whose transient-error retries were exhausted
     try:
         path = _materialise(doc, ctx)
         state = build_initial_state(path, f"SWEEP-{doc.doc_id}")
@@ -675,6 +715,7 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
                 if s.update.get(key):
                     diag["node_errors"].append(f"sorter{n}: {s.update[key]}")
         complete &= not (step1.transient_error or step2.transient_error)
+        transient += [f"sorter#{n}" for n, s in ((1, step1), (2, step2)) if s.transient_error]
 
         # -- reviewer (always) -------------------------------------------------
         mode = get_review_mode(state2.get("doc_type"))
@@ -685,6 +726,8 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         if rstep.update.get("escalation_reason") and not record.reviewer.ran:
             diag["node_errors"].append(f"reviewer: {str(rstep.update['escalation_reason'])[:200]}")
         complete &= record.reviewer.ran
+        if rstep.transient_error:
+            transient.append("reviewer")
 
         # -- extraction candidates ---------------------------------------------
         cand_states: list[tuple[str, dict]] = []
@@ -700,7 +743,7 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
             }))
         if not step2.transient_error:
             cand_states.append(("sorter_2", state2))
-        kept, dropped = _pick_candidates(cand_states, ctx.max_candidates)
+        kept, dropped, collapsed = _pick_candidates(cand_states, ctx.max_candidates)
         diag["extraction_candidates"] = [
             {"source": src, "doc_type": st["doc_type"], "doc_subclass": _subclass_of(st),
              "handoff_confidence": _num(st.get("classification_confidence"))}
@@ -709,6 +752,13 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         if dropped:
             diag["extraction_candidates_dropped"] = dropped
             complete = False
+        if collapsed:
+            diag["extraction_candidates_collapsed"] = collapsed
+            # A different subclass changes the handoff hint the specialist sees, so that extraction
+            # was not observed. A confidence-only difference (printed to 2 decimals) is listed above
+            # but does not demote the record: it is below the run-to-run noise of the model itself.
+            if any(c["subclass_differs"] for c in collapsed):
+                complete = False
 
         min_attempts: int | None = None
         all_judged = True
@@ -725,6 +775,7 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
                     diag["node_errors"].append(f"extract[{cls}#{n}]: {estep.update['error_message']}"[:240])
                 complete &= not estep.transient_error
                 if estep.transient_error:
+                    transient.append(f"extract[{cls}#{n}]")
                     break  # the chain needs a real extraction to build on
                 ext_state = estep.state
                 done = n
@@ -736,6 +787,8 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
                     else:
                         record.judges.append(obs)
                     all_judged &= obs.ran
+                    if jstep.transient_error:
+                        transient.append(f"judge[{cls}#{n}]")
             min_attempts = done if min_attempts is None else min(min_attempts, done)
             complete &= done == n_ext
         if kept:
@@ -747,6 +800,11 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
             judge=bool(kept) and all_judged,
             full_information=bool(complete and len(record.sorter) == SORTER_ATTEMPTS),
         )
+        if transient:
+            # Keep every usable observation, but make the document retryable (--resume
+            # --retry-errors) and countable in the summary like any other errored record.
+            diag["transient_exhausted"] = transient
+            record.error = "transient_error_exhausted: " + ", ".join(transient)
     except Exception as exc:  # one bad document must not stop the sweep
         record.error = f"{type(exc).__name__}: {str(exc)[:300]}"
         record.observed = Observed(
@@ -920,9 +978,9 @@ def thresholds_snapshot() -> dict:
     return json.loads(json.dumps(snap, default=str))
 
 
-def read_existing(out: Path) -> tuple[list[dict], int]:
-    """Parsed lines of an existing output file; unparsable lines (a torn last write) are counted."""
-    rows: list[dict] = []
+def read_existing_lines(out: Path) -> tuple[list[tuple[str, dict]], int]:
+    """``(raw line, parsed row)`` for every usable line of an existing output; unusable ones are counted."""
+    rows: list[tuple[str, dict]] = []
     bad = 0
     if not out.exists():
         return rows, bad
@@ -935,10 +993,104 @@ def read_existing(out: Path) -> tuple[list[dict], int]:
             bad += 1
             continue
         if isinstance(row, dict) and row.get("doc_id"):
-            rows.append(row)
+            rows.append((line, row))
         else:
             bad += 1
     return rows, bad
+
+
+def read_existing(out: Path) -> tuple[list[dict], int]:
+    """Parsed lines of an existing output file; unparsable lines (a torn last write) are counted."""
+    rows, bad = read_existing_lines(out)
+    return [row for _line, row in rows], bad
+
+
+def atomic_write_lines(path: Path, lines: list[str]) -> None:
+    """Replace ``path`` with ``lines`` (one JSON object each) or leave it exactly as it was.
+
+    Written to a temporary file in the same directory (same filesystem, so ``os.replace`` is
+    atomic), flushed and fsynced first: a crash or error mid-rewrite never costs the records
+    already on disk.
+    """
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as fh:
+            fh.write("".join(line + "\n" for line in lines))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        raise
+
+
+def _ends_with_newline(path: Path) -> bool:
+    if not path.exists() or path.stat().st_size == 0:
+        return True
+    with open(path, "rb") as fh:
+        fh.seek(-1, os.SEEK_END)
+        return fh.read(1) == b"\n"
+
+
+def _file_sha256(path: Path) -> str | None:
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str | None:
+    """Why ``existing`` records cannot be continued by this invocation, or ``None`` when they can.
+
+    A resume skips documents by ``doc_id`` alone, so it is only sound when the saved records
+    came from the same inputs and settings. ``current`` holds this run's ``mode``,
+    ``dataset_id``, ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``judge_attempts``,
+    ``max_extraction_candidates`` and ``thresholds``. A saved record that lacks a recorded value
+    cannot be validated and is refused too: start a new output file.
+    """
+    run_keys = ("mode", "dataset_id", "dataset_revision", "split", "taxonomy_sha256")
+    diffs: dict[str, str] = {}
+    for row in existing:
+        run = row.get("run") or {}
+        diag = row.get("diagnostics") or {}
+        if run.get("gt_in_state"):
+            diffs["gt_in_state"] = "saved records have ground truth in state"
+        for key in run_keys:
+            if key not in run:
+                diffs.setdefault(key, "not recorded in the saved records")
+            elif run[key] != current[key]:
+                diffs.setdefault(key, f"saved {run[key]!r}, now {current[key]!r}")
+        if "judge_attempts" not in diag:
+            diffs.setdefault("judge_attempts", "not recorded in the saved records")
+        elif diag["judge_attempts"] != current["judge_attempts"]:
+            diffs.setdefault("judge_attempts", f"saved {diag['judge_attempts']!r}, now {current['judge_attempts']!r}")
+        if "max_extraction_candidates" in diag and diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
+            diffs.setdefault("max_extraction_candidates",
+                             f"saved {diag['max_extraction_candidates']!r}, now {current['max_extraction_candidates']!r}")
+        if "thresholds_in_force" not in row:
+            diffs.setdefault("thresholds_in_force", "not recorded in the saved records")
+        elif row["thresholds_in_force"] != current["thresholds"]:
+            diffs.setdefault("thresholds_in_force", "the confidence/reviewer thresholds differ")
+    by_id = {d.doc_id: d for d in docs}
+    changed = []
+    for row in existing:
+        doc = by_id.get(row.get("doc_id"))
+        saved = row.get("content_sha256")
+        if doc is None or not saved:
+            continue
+        now = doc.content_sha256 or (_file_sha256(doc.path) if doc.path is not None else None)
+        if now and now != saved:
+            changed.append(doc.doc_id)
+    if changed:
+        diffs["content_sha256"] = f"{len(changed)} document(s) changed since they were swept, e.g. {changed[:3]}"
+    if not diffs:
+        return None
+    return "; ".join(f"{k}: {v}" for k, v in diffs.items())
 
 
 class _Writer:
@@ -983,7 +1135,11 @@ def sweep_environment(mock: bool, base_dir: Path | None) -> Iterator[Path]:
             base_dir = created
     overrides["MAILROOM_BASE_DIR"] = str(base_dir)
     overrides.setdefault("MAILROOM_FIELD_SCORING_EMBEDDING", os.environ.get("MAILROOM_FIELD_SCORING_EMBEDDING", "0"))
-    saved = {k: os.environ.get(k) for k in overrides}
+    # The sweep's intake writes catalog rows and audit entries: they must land in the scratch
+    # base dir's SQLite file, never in a live database a DATABASE_URL points at.
+    saved = {k: os.environ.get(k) for k in (*overrides, *ISOLATED_UNSET)}
+    for key in ISOLATED_UNSET:
+        os.environ.pop(key, None)
     os.environ.update(overrides)
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -996,6 +1152,9 @@ def sweep_environment(mock: bool, base_dir: Path | None) -> Iterator[Path]:
                 os.environ[key] = old
         if created is not None:
             shutil.rmtree(created, ignore_errors=True)
+
+
+ISOLATED_UNSET = ("DATABASE_URL",)
 
 
 def estimate_calls(n_docs: int, retry_max: int = 2, candidates: int = 2, judge_attempts: str = "first") -> dict:
@@ -1048,7 +1207,13 @@ def main(argv: list[str] | None = None) -> int:
     mock = bool(args.mock)
     from pipeline.env import load_env
 
+    explicit_base = os.environ.get("MAILROOM_BASE_DIR")
     load_env()  # before the real-run guard reads OPENROUTER_API_KEY; exported vars still win
+    if explicit_base is None:
+        # A base dir that only .env supplied is the live data dir (.env.example: ./data); the sweep
+        # writes catalog rows and audit entries there, so it takes a scratch dir unless the operator
+        # exported MAILROOM_BASE_DIR for this invocation.
+        os.environ.pop("MAILROOM_BASE_DIR", None)
     if args.concurrency < 1 or args.max_extraction_candidates < 1:
         print("--concurrency and --max-extraction-candidates must be >= 1", file=sys.stderr)
         return 2
@@ -1082,19 +1247,28 @@ def main(argv: list[str] | None = None) -> int:
             print("duplicate doc_ids in the selected documents", file=sys.stderr)
             return 2
 
-        existing, torn = read_existing(args.out)
+        raw_existing, torn = read_existing_lines(args.out)
+        existing = [row for _line, row in raw_existing]
+        thresholds = thresholds_snapshot()
         run_id = existing[0].get("run", {}).get("run_id") if existing and args.resume else None
         if args.resume:
-            for row in existing:
-                run = row.get("run") or {}
-                if run.get("mode") != ("mock" if mock else "real") or run.get("gt_in_state"):
-                    print(f"refusing --resume: {args.out} holds records from a different mode or with gt_in_state",
-                          file=sys.stderr)
-                    return 2
-            if args.retry_errors:
-                keep = [r for r in existing if not r.get("error")]
-                args.out.write_text("".join(json.dumps(r) + "\n" for r in keep), encoding="utf-8")
-                existing = keep
+            current = {
+                "mode": "mock" if mock else "real", "dataset_id": ds["dataset_id"],
+                "dataset_revision": ds["dataset_revision"], "split": ds["split"],
+                "taxonomy_sha256": _taxonomy_sha256(), "judge_attempts": args.judge_attempts,
+                "max_extraction_candidates": args.max_extraction_candidates, "thresholds": thresholds,
+            }
+            why = resume_mismatch(existing, docs, current)
+            if why:
+                print(f"refusing --resume: {args.out} was not produced by this configuration ({why}); "
+                      "use a new --out", file=sys.stderr)
+                return 2
+            keep = [(line, row) for line, row in raw_existing if not (args.retry_errors and row.get("error"))]
+            if args.retry_errors or torn or not _ends_with_newline(args.out):
+                # Drop errored (--retry-errors) and torn lines and restore the newline delimiter, so
+                # the next append starts on its own line; atomic, the original survives a failure.
+                atomic_write_lines(args.out, [line for line, _row in keep])
+            existing = [row for _line, row in keep]
             done = {r["doc_id"] for r in existing}
             todo = [d for d in docs if d.doc_id not in done]
         elif existing:
@@ -1114,7 +1288,7 @@ def main(argv: list[str] | None = None) -> int:
         ctx = SweepContext(
             run=run, base_dir=base_dir, mock=mock, judge_attempts=args.judge_attempts,
             max_candidates=args.max_extraction_candidates, concurrency=args.concurrency,
-            thresholds=thresholds_snapshot(),
+            thresholds=thresholds,
             field_scoring_embedding=os.environ.get("MAILROOM_FIELD_SCORING_EMBEDDING", "0").lower() not in ("0", "false", "no"),
         )
         if not mock:
