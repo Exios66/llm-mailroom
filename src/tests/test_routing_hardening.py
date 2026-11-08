@@ -354,6 +354,23 @@ def test_f4_detect_conflict_end_to_end(monkeypatch):
     assert detected and "governing_law" in details[0]
 
 
+# ---------------------------------------------------------------------------
+# transient_retries_* counters: cumulative by design
+# ---------------------------------------------------------------------------
+
+
+def test_transient_counter_is_a_run_record_not_reset_on_success():
+    """``first_pass_success`` reads the counters, so they must survive a
+    successful call; the routing docstring must not claim otherwise."""
+    from graph.routing import _transient_decision
+    from observability.scores import first_pass_success
+
+    archived = {"stage": "archived", "scores": None}
+    assert first_pass_success(archived)
+    assert not first_pass_success({**archived, "transient_retries_extract": 1})
+    assert "NOT reset on success" in (_transient_decision.__doc__ or "")
+
+
 def test_f2_single_window_path_is_identical():
     from agents.sorter import _merge_sorter_reads
 
