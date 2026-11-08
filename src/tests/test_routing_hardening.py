@@ -142,3 +142,66 @@ def test_f1_chunk_metadata_is_ignored_by_hollow_check():
     from pipeline.reconsideration import extraction_is_hollow
 
     assert extraction_is_hollow({"_failed_chunks": 1, "_n_chunks": 4, "confidence": 0.5})
+
+
+# ---------------------------------------------------------------------------
+# F2 - sorter window disagreement lowers confidence
+# ---------------------------------------------------------------------------
+
+
+def _read(cls, conf=0.99, **extra):
+    return {"doc_type": cls, "confidence": conf, "reasoning": f"r-{cls}", **extra}
+
+
+def test_f2_three_way_disagreement_is_not_confident():
+    from agents.sorter import _merge_sorter_reads
+    from pipeline.config import get_confidence_thresholds
+
+    merged = _merge_sorter_reads(
+        [_read("contract"), _read("corporate_record"), _read("correspondence")]
+    )
+    # 1 agreeing of 3 non-unknown windows: 0.99 * 1/3
+    assert merged["confidence"] == pytest.approx(0.33, abs=0.005)
+    assert merged["confidence"] < get_confidence_thresholds(merged["doc_type"])["low"]
+
+
+def test_f2_lone_class_among_unknown_windows_is_capped_below_low():
+    from agents.sorter import _merge_sorter_reads
+    from pipeline.config import get_confidence_thresholds
+
+    merged = _merge_sorter_reads([_read("contract")] + [_read("unknown", 0.9)] * 4)
+    assert merged["doc_type"] == "contract"
+    assert merged["confidence"] < get_confidence_thresholds("contract")["low"]
+
+
+def test_f2_unanimous_windows_keep_mean_confidence():
+    from agents.sorter import _merge_sorter_reads
+
+    merged = _merge_sorter_reads([_read("contract", 0.98), _read("contract", 0.96)])
+    assert merged["doc_type"] == "contract"
+    assert merged["confidence"] == pytest.approx(0.97)
+
+
+def test_f2_majority_with_one_dissent_is_scaled_not_capped():
+    from agents.sorter import _merge_sorter_reads
+
+    merged = _merge_sorter_reads(
+        [_read("contract", 0.99)] * 3 + [_read("correspondence", 0.99)]
+    )
+    # 3 agreeing of 4 non-unknown, winner holds >= half of all windows
+    assert merged["doc_type"] == "contract"
+    assert merged["confidence"] == pytest.approx(0.99 * 3 / 4, abs=0.005)
+
+
+def test_f2_vote_vector_recorded_under_ignored_key():
+    from agents.sorter import _merge_sorter_reads
+
+    merged = _merge_sorter_reads([_read("contract"), _read("contract"), _read("unknown", 0.5)])
+    assert merged["_window_votes"] == {"contract": 2, "unknown": 1}
+
+
+def test_f2_single_window_path_is_identical():
+    from agents.sorter import _merge_sorter_reads
+
+    one = _read("contract", 0.91)
+    assert _merge_sorter_reads([one]) is one

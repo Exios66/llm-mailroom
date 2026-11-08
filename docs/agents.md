@@ -49,7 +49,7 @@ Key design points:
 
 The Sorter is the first LLM call in the pipeline. It reads the document text and determines which of the configured document classes it belongs to. The list of available classes is dynamically read from `config/taxonomy.yaml`, so adding a new document type automatically expands the Sorter's options.
 
-The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `langchain_agents.sorter_agent.SorterAgent`): it classifies via `with_structured_output` against the `SORTER_SCHEMA`, uses the production `sorter_condensed_v5` prompt, and adds a **contract-subtype dimension** — for contracts it assigns one of 25 CUAD agreement families (affiliate, license, distributor, franchise, …) plus `other` (`CONTRACT_SUBTYPE_KEYS`, normalized via `normalize_subtype`; non-contracts carry `contract_subtype=None`). `classify()` returns a 4-tuple `(doc_type, contract_subtype, confidence, reasoning)`; the subtype flows into state, the classification guard, the extraction handoff context, the report, and the catalog. **No-truncation doctrine (HUB-038):** the mailroom subclass bypasses the upstream HEAD+TAIL truncation — documents past the input budget are classified in overlapping sliding windows (every character read) and merged deterministically (plurality vote among non-unknown classes, mean confidence of agreeing windows, first non-null subtype/subclass, joined reasoning; `WINDOW i OF n` markers per call). The advisory intake read rides every window as a labeled prior; page images attach to the first window only.
+The Sorter is a **vendored LangChain agent** (`agents/sorter.py` re-exports `langchain_agents.sorter_agent.SorterAgent`): it classifies via `with_structured_output` against the `SORTER_SCHEMA`, uses the production `sorter_condensed_v5` prompt, and adds a **contract-subtype dimension** — for contracts it assigns one of 25 CUAD agreement families (affiliate, license, distributor, franchise, …) plus `other` (`CONTRACT_SUBTYPE_KEYS`, normalized via `normalize_subtype`; non-contracts carry `contract_subtype=None`). `classify()` returns a 4-tuple `(doc_type, contract_subtype, confidence, reasoning)`; the subtype flows into state, the classification guard, the extraction handoff context, the report, and the catalog. **No-truncation doctrine (HUB-038):** the mailroom subclass bypasses the upstream HEAD+TAIL truncation — documents past the input budget are classified in overlapping sliding windows (every character read) and merged deterministically (plurality vote among non-unknown classes, mean confidence of agreeing windows scaled by the agreeing share and capped below the class `low` when the winner holds under half the windows, first non-null subtype/subclass, joined reasoning; `WINDOW i OF n` markers per call). The advisory intake read rides every window as a labeled prior; page images attach to the first window only.
 
 ---
 
@@ -311,7 +311,7 @@ section offsets are translated to document-absolute positions and
 overlap-deduped, and partial-window cleaning is never spliced back. The same
 doctrine governs the sorter: `agents/sorter.py` bypasses the vendored
 HEAD+TAIL truncation — over-budget documents are classified window-by-window
-and the reads merge (plurality vote, mean confidence of the agreeing windows,
+and the reads merge (plurality vote, mean confidence of the agreeing windows scaled by the agreeing share and capped below the class `low` when the winner holds under half the windows,
 first non-null subtype, joined reasoning; `WINDOW i OF n` markers on every
 call).
 
