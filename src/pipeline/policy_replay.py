@@ -309,13 +309,19 @@ def _conf(att: SorterAttempt | ExtractionAttempt) -> float | None:
     return att.confidence if att.confidence is not None else att.confidence_raw
 
 
-def _judge_for(record: RunRecord, k: int) -> JudgeObservation | None:
-    """The judge observation that judged extraction attempt ``k`` (never another's)."""
-    ran = [j for j in [record.judge, *record.judges] if j.ran]
+def _for_class(items: Sequence[Any], cls: str | None) -> list[Any]:
+    """Observations of class ``cls``: a sweep extracts once per candidate class and
+    restarts attempt numbers per class. Untyped (older) observations match any class."""
+    return [i for i in items if getattr(i, "doc_type", None) in (None, cls)]
+
+
+def _judge_for(record: RunRecord, k: int, cls: str | None = None) -> JudgeObservation | None:
+    """The judge observation that judged extraction attempt ``k`` of class ``cls``."""
+    ran = [j for j in _for_class([record.judge, *record.judges], cls) if j.ran]
     for j in ran:
         if j.on_attempt == k:
             return j
-    last = max((a.attempt for a in record.extraction), default=None)
+    last = max((a.attempt for a in _for_class(record.extraction, cls)), default=None)
     for j in ran:
         if j.on_attempt is None and k == last:
             return j
@@ -537,7 +543,7 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
     arbiter_retries = 0
     judge_verified = False  # judge_source_verified persists in state across attempts
     while True:
-        att = _att(record.extraction, k)
+        att = _att(_for_class(record.extraction, cls), k)
         if att is None:
             return w.unobserved(f"extraction_attempt_{k}_not_observed")
         w.visit("extract" if k == 1 else "retry_extract", att.cost_usd, calls=max(1, att.n_chunks))
@@ -566,7 +572,7 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
             k += 1
             continue
         if dest == "judge_verify":
-            j = _judge_for(record, k)
+            j = _judge_for(record, k, cls)
             if j is None:
                 return w.unobserved(f"judge_not_observed_on_attempt_{k}")
             w.visit("judge_verify", j.cost_usd)
