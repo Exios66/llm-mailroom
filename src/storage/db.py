@@ -1,5 +1,6 @@
 import asyncio
 import os
+import random
 import threading
 from weakref import WeakKeyDictionary
 import structlog
@@ -41,6 +42,15 @@ def _engine_kwargs(url: str) -> dict:
     return kwargs
 
 
+def _sqlite_busy_timeout_ms() -> int:
+    """How long a SQLite writer waits on a lock (``SQLITE_BUSY_TIMEOUT_MS``)."""
+    try:
+        value = int(os.environ.get("SQLITE_BUSY_TIMEOUT_MS", "") or 5000)
+    except ValueError:
+        return 5000
+    return value if value >= 0 else 5000
+
+
 def _apply_sqlite_pragmas(dbapi_conn, _connection_record=None) -> None:
     """WAL + busy_timeout + FK enforcement on every SQLite connection
     (audit A-15/A-5). Previously ``journal_mode=delete`` with no busy timeout
@@ -50,8 +60,11 @@ def _apply_sqlite_pragmas(dbapi_conn, _connection_record=None) -> None:
     of failing; foreign_keys=ON enforces the audit FK (A-5)."""
     try:
         cur = dbapi_conn.cursor()
+        # busy_timeout FIRST: the WAL switch itself needs a lock, and under
+        # many concurrent writers it failed instantly ("database is locked")
+        # on a connection that had not yet armed the timeout.
+        cur.execute(f"PRAGMA busy_timeout={_sqlite_busy_timeout_ms()}")
         cur.execute("PRAGMA journal_mode=WAL")
-        cur.execute("PRAGMA busy_timeout=5000")
         cur.execute("PRAGMA foreign_keys=ON")
         cur.close()
     except Exception:
@@ -129,6 +142,38 @@ async def acquire_write_lock(session: AsyncSession, key: str) -> None:
         await session.execute(
             text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key}
         )
+
+
+def _is_transient_lock_error(exc: BaseException) -> bool:
+    """SQLite "database is locked" / "table is locked" (SQLITE_BUSY/LOCKED)."""
+    from sqlalchemy.exc import OperationalError
+
+    if not isinstance(exc, OperationalError):
+        return False
+    message = str(getattr(exc, "orig", exc)).lower()
+    return "database is locked" in message or "database table is locked" in message
+
+
+async def run_write_with_retry(op, *, attempts: int = 6, base_delay: float = 0.05, max_delay: float = 1.0):
+    """Run ``await op()`` (one self-contained write transaction), retrying
+    transient SQLite lock errors with jittered exponential backoff.
+
+    ``busy_timeout`` covers most contention, but a read-then-write upgrade in
+    WAL mode (or a very busy writer queue) can still surface ``database is
+    locked``; before this retry the catalog dropped those writes silently.
+    ``op`` must open its own session so each attempt starts a fresh
+    transaction. Any other error, and the last lock error, propagates.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return await op()
+        except Exception as exc:
+            if attempt >= attempts or not _is_transient_lock_error(exc):
+                raise
+            delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+            delay *= 0.5 + random.random()  # jitter: de-synchronize contenders
+            logger.warning("sqlite_write_retry", attempt=attempt, sleep_s=round(delay, 3))
+            await asyncio.sleep(delay)
 
 
 class Base(DeclarativeBase):
