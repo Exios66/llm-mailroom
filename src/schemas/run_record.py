@@ -88,6 +88,10 @@ class ReviewerObservation(_Model):
 
 class ExtractionAttempt(_Model):
     attempt: int  # 1 = extract, 2+ = retry_extract
+    # Class this extraction ran as. A full-information sweep extracts once per
+    # distinct candidate class (sorter attempt 1 / reviewer / sorter retry),
+    # so attempt numbers restart at 1 for each class. None on older records.
+    doc_type: str | None = None
     confidence_raw: float | None = None
     confidence: float | None = None  # post-guard, what routing saw
     schema_valid: bool | None = None
@@ -109,6 +113,7 @@ class ExtractionAttempt(_Model):
 class JudgeObservation(_Model):
     ran: bool = False
     on_attempt: int | None = None
+    doc_type: str | None = None  # class of the extraction that was judged
     verdict: str | None = None  # complete | partial | incomplete | judge_error
     score: float | None = None
     source_verified: bool = False
@@ -164,7 +169,7 @@ class RunRecord(_Model):
     extraction: list[ExtractionAttempt] = Field(default_factory=list)
     judge: JudgeObservation = Field(default_factory=JudgeObservation)
     # Optional extra judge observations, one per extraction attempt the judge ran on
-    # (``on_attempt``). ``judge`` stays the primary one. A full-information sweep
+    # (``on_attempt``, and ``doc_type`` when the sweep extracted several classes). ``judge`` stays the primary one. A full-information sweep
     # fills this so replay can send ANY attempt to the judge without guessing.
     judges: list[JudgeObservation] = Field(default_factory=list)
     # Optional: the arbiter's ruling per judged attempt. Without it a judge verdict of
@@ -174,6 +179,9 @@ class RunRecord(_Model):
     actual: ActualRoute = Field(default_factory=ActualRoute)
     thresholds_in_force: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    # Free-form sweep provenance that has no schema slot of its own: extraction
+    # candidates, windows/chunks, downstream truncation, intake cost, known gaps.
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 def to_review_record(record: RunRecord) -> dict[str, Any]:

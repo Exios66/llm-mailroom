@@ -480,3 +480,14 @@ def test_cli_runs_as_a_script(tmp_path):
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().splitlines()[-1] == "SCORE: 1.0000"
+
+
+def test_replay_uses_only_the_routed_class_extractions():
+    """A sweep restarts attempt numbers per candidate class; replay must not mix them."""
+    from pipeline.policy_replay import _att, _for_class
+    from schemas.run_record import ExtractionAttempt
+
+    items = [ExtractionAttempt(attempt=1, doc_type="correspondence", confidence=0.1),
+             ExtractionAttempt(attempt=1, doc_type="contract", confidence=0.99)]
+    assert _att(_for_class(items, "contract"), 1).confidence == 0.99
+    assert _att(_for_class(items, "correspondence"), 1).confidence == 0.1
