@@ -67,3 +67,6 @@ graphify-out/
 
 # PR evidence captured locally (screenshots, recordings); published via the pr-evidence branch
 .evidence/
+
+# autoresearch caches (real corpus labels; never commit)
+.autoresearch_cache/
