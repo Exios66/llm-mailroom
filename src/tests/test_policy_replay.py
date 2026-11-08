@@ -12,6 +12,7 @@ import pipeline.config as pconfig
 from pipeline import policy_replay as pr
 from schemas.run_record import (
     ArbiterObservation,
+    ClassificationArbiterObservation,
     ExtractionAttempt,
     Gold,
     JudgeObservation,
@@ -193,9 +194,128 @@ def test_judge_complete_archives_and_partial_follows_the_arbiter():
     assert out.path.count("retry_extract") == 1 and "arbiter" in out.path
 
 
+def test_arbiter_ruling_for_another_class_or_attempt_is_not_borrowed():
+    base = dict(sorters=[sorter(0.97)], extractions=[extract(0.85, doc_type="contract")])
+    other_class = ArbiterObservation(ran=True, on_attempt=1, doc_type="correspondence", decision="accept_with_caveats")
+    out = pr.replay(record(**base, judges=[judge("partial")], arbiters=[other_class]), POLICY)
+    assert out.reasons == ["arbiter_not_observed_on_attempt_1"]
+    own = ArbiterObservation(ran=True, on_attempt=1, doc_type="contract", decision="accept_with_caveats")
+    assert pr.replay(record(**base, judges=[judge("partial")], arbiters=[other_class, own]), POLICY).outcome == pr.AUTO
+    later = ArbiterObservation(ran=True, on_attempt=2, doc_type="contract", decision="accept_with_caveats")
+    assert pr.replay(record(**base, judges=[judge("partial")], arbiters=[later]), POLICY).outcome == pr.UNOBSERVED
+
+
+def test_records_written_before_the_arbiters_were_swept_still_load_and_replay_the_same():
+    rec = record(sorters=[sorter(0.97)], extractions=[extract(0.85)], judges=[judge("partial")],
+                 arbiters=[arbiter("accept_with_caveats")])
+    before = pr.replay(rec, POLICY)
+    old = rec.model_dump(mode="json")
+    del old["classification_arbiter"]
+    del old["observed"]["arbiter"], old["observed"]["classification_arbiter"]
+    del old["arbiters"][0]["doc_type"]
+    loaded = RunRecord.model_validate(old)
+    assert loaded.classification_arbiter.ran is False and loaded.observed.arbiter is False
+    assert loaded.arbiters[0].doc_type is None
+    after = pr.replay(loaded, POLICY)
+    assert (after.outcome, after.path, after.reasons) == (before.outcome, before.path, before.reasons) == (
+        pr.AUTO, before.path, [])
+    assert pr.replay(record(sorters=[sorter(0.97)], extractions=[extract(0.85)], judges=[judge("partial")]),
+                     POLICY).outcome == pr.UNOBSERVED  # still never guessed without a ruling
+
+
 def test_judge_observation_for_another_attempt_is_not_borrowed():
     rec = record(sorters=[sorter(0.97)], extractions=[extract(0.85)], judges=[judge("complete", attempt=2)])
     assert pr.replay(rec, POLICY).outcome == pr.UNOBSERVED
+
+
+# ---- the classification arbiter -----------------------------------------------------------
+
+
+@pytest.fixture
+def decision_lane(monkeypatch):
+    """Every class is reviewed by the decision model, as with ``reviewer.by_class.<class>.mode: decision_only``."""
+    monkeypatch.setattr(pconfig, "get_review_mode", lambda doc_type=None: "decision_only")
+    monkeypatch.setattr(routing, "get_review_mode", lambda doc_type=None: "decision_only")
+
+
+def parked_review(**kw):
+    return ReviewerObservation(
+        ran=True, mode="decision_only", reviewer_doc_type="correspondence", reviewer_confidence=0.8,
+        reviewer_verdict="reviewer_conflicts", review_route="human_review", causes=["reviewer_disagreement"], **kw
+    )
+
+
+def cls_arbiter(decision, confidence=0.97, cost=0.0, **kw):
+    fields = dict(ran=True, decision=decision, confidence=confidence, sorter_doc_type="contract",
+                  sorter_doc_subclass=None, reviewer_doc_type="correspondence", cost_usd=cost)
+    return ClassificationArbiterObservation(**{**fields, **kw})
+
+
+def parked_record(carb, **kw):
+    return record(
+        sorters=[sorter(0.97)],
+        reviewer=parked_review(),
+        extractions=[extract(0.95, doc_type="correspondence"), extract(0.95, doc_type="contract")],
+        gold="correspondence",
+    ).model_copy(update={"classification_arbiter": carb, **kw})
+
+
+def test_a_parked_decision_review_is_unobserved_without_a_recorded_arbiter(decision_lane):
+    out = pr.replay(parked_record(ClassificationArbiterObservation()), POLICY)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["classification_arbiter_not_observed"]
+
+
+def test_an_accepted_arbiter_class_continues_to_extraction_in_that_class(decision_lane):
+    out = pr.replay(parked_record(cls_arbiter("accept_reviewer", cost=0.01)), POLICY)
+    assert out.outcome == pr.AUTO and out.final_class == "correspondence"
+    assert out.path[:4] == ["classify", "review_classify", "classification_arbiter", "extract"]
+    assert out.llm_cost_usd == pytest.approx(0.01)
+    # Accepting the sorter's contract needs its subtype, as the live node requires.
+    bare = pr.replay(parked_record(cls_arbiter("accept_sorter")), POLICY)
+    assert bare.outcome == pr.HUMAN and bare.final_class == "contract"
+    typed = parked_record(cls_arbiter("accept_sorter", sorter_doc_subclass="nda"))
+    typed.sorter[0].doc_subclass = "nda"
+    out = pr.replay(typed, POLICY)
+    assert out.outcome == pr.AUTO and out.final_class == "contract" and "classification_arbiter" in out.path
+
+
+def test_the_arbiter_cutoff_is_applied_under_the_policy_being_replayed(decision_lane):
+    """The record keeps the agent's raw confidence; the class ``high`` it must clear is the policy's."""
+    rec = parked_record(cls_arbiter("accept_reviewer", confidence=0.96))
+    assert pr.replay(rec, POLICY).outcome == pr.AUTO  # 0.96 >= high 0.95
+    strict = pr.merge_policy(POLICY, {"by_class": {"correspondence": {"high": 0.99, "low": 0.80}}})
+    out = pr.replay(rec, strict)
+    assert out.outcome == pr.HUMAN and out.path[-2:] == ["classification_arbiter", "human_review"]
+
+
+def test_an_arbiter_that_defers_or_is_unsure_parks_the_document(decision_lane):
+    assert pr.replay(parked_record(cls_arbiter("human_review", confidence=None)), POLICY).outcome == pr.HUMAN
+    assert pr.replay(parked_record(cls_arbiter("accept_reviewer", confidence=0.4)), POLICY).outcome == pr.HUMAN
+
+
+def test_a_ruling_is_not_reused_for_another_pair_of_answers(decision_lane):
+    other_sorter = cls_arbiter("accept_reviewer", sorter_doc_type="license")
+    out = pr.replay(parked_record(other_sorter), POLICY)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["classification_arbiter_inputs_differ"]
+    other_subclass = cls_arbiter("accept_reviewer", sorter_doc_subclass="nda")
+    assert pr.replay(parked_record(other_subclass), POLICY).reasons == ["classification_arbiter_inputs_differ"]
+
+
+def test_a_transient_arbiter_failure_is_unobserved(decision_lane):
+    """The sweep records a transient failure as not run, so replay never guesses its ruling."""
+    out = pr.replay(parked_record(cls_arbiter("accept_reviewer", ran=False, transient_error=True)), POLICY)
+    assert out.outcome == pr.UNOBSERVED
+    assert out.reasons == ["classification_arbiter_not_observed"]
+
+
+def test_the_replay_arbiter_never_calls_a_model(decision_lane, monkeypatch):
+    import agents.arbiter as arbiter_agents
+
+    def boom(self, *args, **kwargs):
+        raise AssertionError("replay must not call the arbiter agent")
+
+    monkeypatch.setattr(arbiter_agents.ArbiterAgent, "_call_structured", boom)
+    assert pr.replay(parked_record(cls_arbiter("accept_reviewer")), POLICY).outcome == pr.AUTO
 
 
 # ---- (b) replay really calls the routing functions ------------------------------------

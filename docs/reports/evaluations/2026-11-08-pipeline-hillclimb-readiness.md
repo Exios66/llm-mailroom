@@ -56,11 +56,30 @@ and all guards pass. Most gains come early; five flat iterations means the ceili
 ## Next week's protocol
 
 1. **Collect** full-information records — every branch is run on every document
-   (sorter attempt 1 and the retry, the reviewer, each extraction attempt, the judge),
-   with no ground truth in the routing state and no input truncation:
+   (sorter attempt 1 and the retry, the reviewer, each extraction attempt, the judge,
+   and the two arbiters), with no ground truth in the routing state and no input truncation:
    `PYTHONPATH=src .venv/bin/python src/scripts/run_calibration_sweep.py --hf-split train --per-class N --real --out train.jsonl`
    (refused unless `MAILROOM_ALLOW_REAL=1`; the owner runs it), then the same with
    `--hf-split test`.
+   - **Arbiters (`--arbiter on`, the default).** The Lane B `arbiter` runs after every judge
+     pass whose verdict is `partial` or `incomplete`, and the `classification_arbiter` runs
+     once when a decision-lane reviewer (`reviewer.by_class.<class>.mode: decision_only`)
+     parks the document and `routing.after_review_classify` would send it there. Replay
+     then resolves those routes from the recorded ruling instead of counting them as
+     `unobserved` in guard G3. This adds LLM calls and, with `--real`, real spend: at most
+     one Lane B call per judged attempt (one per candidate class with the default
+     `--judge-attempts first`, three per class with `all`) plus one classification-arbiter
+     call, and none when every judge verdict is `complete`. The sweep prints the bound and
+     records the spend in `diagnostics.cost_usd_total`. `--arbiter off` keeps the earlier,
+     cheaper behaviour (those routes stay `unobserved`); `--resume` refuses a file swept
+     with the other setting. The taxonomy ships `reviewer.by_class: {}`, so the
+     classification arbiter is only reached after a class is switched to `decision_only`.
+   - **Still unobserved:** the boss (each document gets its own matter, so no conflict is
+     ever detected), judge passes on retry attempts without `--judge-attempts all`, and the
+     arbiter's `retry_extraction` follow-up: the sweep's next extraction attempt carries no
+     arbiter fix-list, unlike the live retry, so a route through it replays an attempt the
+     live graph would have prompted differently. The Lane B ruling is recorded for every
+     failed verdict regardless of `judge_max_passes` (a candidate policy may allow the pass).
 2. **Calibrate** on train: `PYTHONPATH=src .venv/bin/python src/scripts/calibrate_thresholds.py --records train.jsonl
    --split train --out candidate.yaml`. It proposes per-class cutoffs only where the
    held-out Wilson bound clears the target and the sample suffices; other classes keep

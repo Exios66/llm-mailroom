@@ -45,13 +45,27 @@ def _lines(path: Path) -> list[dict]:
 # -- T34 / T37: what full_information does and does not cover -------------------------------
 
 
-def test_docs_and_diagnostics_say_arbiters_are_never_observed(ctx, mocked):
-    assert "classification_arbiter" in sw.__doc__ and "ONLY" in sw.__doc__
-    assert any("arbiter" in gap for gap in sw.KNOWN_GAPS)
+def test_docs_and_diagnostics_say_what_the_arbiters_cover(ctx, mocked):
+    assert "classification_arbiter" in sw.__doc__ and "ONLY" in sw.__doc__ and "--arbiter" in sw.__doc__
+    assert any("Lane B arbiter" in gap and "judge_max_passes" in gap for gap in sw.KNOWN_GAPS)
+    assert any("classification_arbiter" in gap for gap in sw.KNOWN_GAPS)
     rec = sw.sweep_document(_doc(), ctx)
     assert rec.observed.full_information is True
-    assert rec.diagnostics["unobserved_branches"] == ["classification_arbiter", "arbiter", "boss", "judge_on_retry_attempts"]
-    assert rec.arbiters == []
+    # Only the boss is never run; the arbiters are (vacuously observed here: the mock judge says complete).
+    assert rec.diagnostics["unobserved_branches"] == ["boss", "judge_on_retry_attempts"]
+    assert rec.diagnostics["arbiter"] == "on"
+    assert rec.observed.arbiter and rec.observed.classification_arbiter
+    assert rec.arbiters == [] and rec.classification_arbiter.ran is False
+
+
+def test_arbiter_off_leaves_both_arbiters_unobserved(ctx, mocked):
+    ctx.arbiter = False
+    rec = sw.sweep_document(_doc(), ctx)
+    assert rec.diagnostics["unobserved_branches"] == [
+        "classification_arbiter", "arbiter", "boss", "judge_on_retry_attempts"]
+    assert rec.diagnostics["arbiter"] == "off"
+    assert not rec.observed.arbiter and not rec.observed.classification_arbiter
+    assert rec.observed.full_information is True  # as before the arbiters were swept
 
 
 # -- T52: failed chunks are recorded per attempt ---------------------------------------------
@@ -206,6 +220,25 @@ def test_resume_refuses_other_judge_settings(tmp_path, capsys, temp_base_dir):
     out = _first_run(tmp_path, capsys)
     err = _refused([*FIXTURE_ARGS, "--limit", "3", "--resume", "--judge-attempts", "all", "--out", str(out)], out, capsys)
     assert "judge_attempts" in err
+
+
+def test_resume_refuses_other_arbiter_settings_and_records_without_one(tmp_path, capsys, temp_base_dir):
+    out = _first_run(tmp_path, capsys)
+    assert "arbiter" in _refused([*FIXTURE_ARGS, "--limit", "3", "--resume", "--arbiter", "off", "--out", str(out)],
+                                 out, capsys)
+    rows = _lines(out)
+    del rows[0]["diagnostics"]["arbiter"]  # a file from before the arbiters were swept
+    out.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    assert "arbiter: not recorded" in _refused([*FIXTURE_ARGS, "--limit", "3", "--resume", "--out", str(out)],
+                                               out, capsys)
+
+
+def test_cli_arbiter_off_is_recorded_and_announced(tmp_path, capsys, temp_base_dir):
+    out = tmp_path / "off.jsonl"
+    code, cap = _run([*FIXTURE_ARGS, "--limit", "1", "--arbiter", "off", "--out", str(out)], capsys)
+    row = _lines(out)[0]
+    assert code == 0 and row["diagnostics"]["arbiter"] == "off" and row["observed"]["arbiter"] is False
+    assert "classification_arbiter" in row["diagnostics"]["unobserved_branches"]
 
 
 def test_resume_refuses_a_changed_taxonomy(tmp_path, capsys, temp_base_dir, monkeypatch):

@@ -97,6 +97,220 @@ def test_distinct_candidate_classes_each_get_extraction_and_judge(ctx, mocked, m
     assert capped.observed.full_information is False  # a branch the replay may need was not run
 
 
+# ── the arbiters are observed ────────────────────────────────────────────
+
+
+def _judge_says(monkeypatch, label: str, *, arbiter: dict | None = None, classification: dict | None = None):
+    """Make the mock judge return ``label`` and, optionally, canned arbiter rulings."""
+    real = sw._special_mock_content
+
+    def canned(text, expect):
+        if "Evaluate extraction completeness" in text:
+            return json.dumps({"completeness": 0.4, "completeness_label": label, "reasoning": "mock gap"})
+        if "JUDGE VERDICT:" in text and arbiter is not None:
+            return json.dumps({"fields_to_fix": [], "reasoning": "mock", "handoff_summary": "mock", **arbiter})
+        if "SORTER ANSWER" in text and classification is not None:
+            return json.dumps({"reasoning": "mock", **classification})
+        return real(text, expect)
+
+    monkeypatch.setattr(sw, "_special_mock_content", canned)
+
+
+@pytest.mark.parametrize("label", ["partial", "incomplete"])
+def test_a_failed_judge_verdict_is_followed_by_the_lane_b_arbiter(ctx, mocked, monkeypatch, label):
+    _judge_says(monkeypatch, label, arbiter={"decision": "retry_extraction"})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert rec.error is None and rec.judge.verdict == label
+    assert len(rec.arbiters) == 1  # --judge-attempts first: one judge pass, so one ruling
+    arb = rec.arbiters[0]
+    assert (arb.ran, arb.on_attempt, arb.doc_type, arb.decision) == (True, 1, "contract", "retry_extraction")
+    assert arb.prompt_tokens > 0 and arb.completion_tokens > 0  # metered like every other node
+    assert rec.observed.arbiter and rec.observed.classification_arbiter and rec.observed.full_information
+    assert rec.classification_arbiter.ran is False  # the llm reviewer lane never reaches it
+    assert "arbiter" not in rec.diagnostics["unobserved_branches"]
+    assert "boss" in rec.diagnostics["unobserved_branches"]
+
+
+def test_a_complete_verdict_needs_no_arbiter_and_costs_no_call(ctx, mocked):
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert rec.judge.verdict == "complete" and rec.arbiters == []
+    assert rec.observed.arbiter is True  # nothing needed one: vacuously observed
+
+
+def test_judge_attempts_all_arbitrates_every_failed_attempt(ctx, mocked, monkeypatch):
+    ctx.judge_attempts = "all"
+    _judge_says(monkeypatch, "partial", arbiter={"decision": "accept_with_caveats"})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert [a.on_attempt for a in rec.arbiters] == list(range(1, _n_extractions("contract") + 1))
+    assert {a.doc_type for a in rec.arbiters} == {"contract"}
+    assert rec.observed.full_information
+
+
+def test_each_candidate_class_gets_its_own_arbiter_ruling(ctx, mocked, monkeypatch):
+    real = sw._special_mock_content
+
+    def disagreeing_reviewer(text, expect):
+        if "CLASSIFY THIS DOCUMENT" in text:
+            return json.dumps({"doc_type": "correspondence", "contract_subtype": None, "doc_subclass": "letter",
+                               "confidence": 0.91, "reasoning": "mock"})
+        return real(text, expect)
+
+    monkeypatch.setattr(sw, "_special_mock_content", disagreeing_reviewer)
+    _judge_says(monkeypatch, "partial", arbiter={"decision": "human_review"})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert sorted((a.doc_type, a.on_attempt) for a in rec.arbiters) == [("contract", 1), ("correspondence", 1)]
+
+
+def test_arbiter_off_runs_no_arbiter_even_on_a_failed_verdict(ctx, mocked, monkeypatch):
+    ctx.arbiter = False
+    _judge_says(monkeypatch, "partial", arbiter={"decision": "retry_extraction"})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert rec.judge.verdict == "partial" and rec.arbiters == []
+    assert not rec.observed.arbiter and rec.observed.full_information
+    assert {"arbiter", "classification_arbiter"} <= set(rec.diagnostics["unobserved_branches"])
+
+
+def test_an_exhausted_transient_arbiter_marks_the_record_retryable(ctx, mocked, monkeypatch):
+    _judge_says(monkeypatch, "partial")
+    monkeypatch.setattr(bg, "arbiter_node", lambda state: {"transient_error": True, "error_message": "429"})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert rec.arbiters[0].ran is False and rec.arbiters[0].decision is None
+    assert rec.error == "transient_error_exhausted: arbiter[contract#1]"
+    assert not rec.observed.arbiter and not rec.observed.full_information
+
+
+def test_arbiter_spend_is_part_of_the_recorded_cost(ctx, mocked, monkeypatch):
+    _judge_says(monkeypatch, "partial", arbiter={"decision": "accept_with_caveats"})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    base = sw._record_cost(rec)
+    rec.arbiters[0].cost_usd += 0.5
+    rec.classification_arbiter.cost_usd += 0.25
+    assert sw._record_cost(rec) == pytest.approx(base + 0.75)
+    assert sw.estimate_arbiter_calls(candidates=2, judge_attempts="first") == 3
+    assert sw.estimate_arbiter_calls(retry_max=2, candidates=2, judge_attempts="all") == 7
+
+
+def _decision_lane(monkeypatch, *, causes=("reviewer_disagreement",), route="human_review"):
+    """A reviewer in the decision lane that parks the document (as a calibrated decision review does)."""
+    import graph.routing as routing
+    import pipeline.config as pconfig
+
+    monkeypatch.setattr(pconfig, "get_review_mode", lambda doc_type=None: "decision_only")
+    monkeypatch.setattr(routing, "get_review_mode", lambda doc_type=None: "decision_only")
+    monkeypatch.setattr(bg, "review_classify_node", lambda state: {
+        "reviewer_doc_type": "correspondence", "reviewer_doc_subclass": "letter", "reviewer_confidence": 0.8,
+        "review_verdict": "reviewer_conflicts", "review_route": route, "reviewer_causes": list(causes),
+        "reviewer_model": "mock-model", "stage": "classified", "transient_error": False})
+
+
+def test_a_parked_decision_review_gets_the_classification_arbiter(ctx, mocked, monkeypatch):
+    _decision_lane(monkeypatch)
+    _judge_says(monkeypatch, "complete", classification={"decision": "accept_reviewer", "confidence": 0.97})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    car = rec.classification_arbiter
+    assert rec.error is None and rec.reviewer.mode == "decision_only" and rec.reviewer.review_route == "human_review"
+    assert (car.ran, car.decision, car.confidence) == (True, "accept_reviewer", 0.97)
+    assert (car.sorter_doc_type, car.reviewer_doc_type, car.reviewer_doc_subclass) == ("contract", "correspondence", "letter")
+    assert car.prompt_tokens > 0
+    assert rec.observed.classification_arbiter and rec.observed.full_information
+
+
+def test_the_classification_arbiter_keeps_its_raw_ruling_below_the_cutoff(ctx, mocked, monkeypatch):
+    """The node folds a ruling under the class cutoff into human_review; the record keeps what the agent said."""
+    _decision_lane(monkeypatch)
+    _judge_says(monkeypatch, "complete", classification={"decision": "accept_sorter", "confidence": 0.5})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert (rec.classification_arbiter.decision, rec.classification_arbiter.confidence) == ("accept_sorter", 0.5)
+
+
+def test_an_accepting_or_unreadable_decision_review_never_reaches_the_classification_arbiter(ctx, mocked, monkeypatch):
+    _decision_lane(monkeypatch, route="extract")
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert rec.classification_arbiter.ran is False and rec.observed.classification_arbiter
+    _decision_lane(monkeypatch, causes=("reviewer_no_text",))
+    rec = sw.sweep_document(_text_doc("d2"), ctx)
+    assert rec.classification_arbiter.ran is False  # routing sends a document with no text straight to a person
+
+
+def _arbiter_call_raises(monkeypatch, exc: Exception):
+    from agents.arbiter import ClassificationArbiterAgent
+
+    def boom(self, *args, **kwargs):
+        raise exc
+
+    monkeypatch.setattr(ClassificationArbiterAgent, "_call_structured", boom, raising=False)
+
+
+def test_a_failed_classification_arbiter_call_is_a_human_review_ruling(ctx, mocked, monkeypatch):
+    _decision_lane(monkeypatch)
+    _arbiter_call_raises(monkeypatch, ValueError("bad json"))
+    rec = sw.sweep_document(_text_doc(), ctx)
+    car = rec.classification_arbiter
+    assert (car.ran, car.decision, car.confidence, car.transient_error) == (True, "human_review", None, False)
+    assert rec.error is None
+
+
+def test_a_transient_classification_arbiter_failure_is_retryable(ctx, mocked, monkeypatch):
+    _decision_lane(monkeypatch)
+    _arbiter_call_raises(monkeypatch, TimeoutError("provider timed out"))
+    monkeypatch.setattr("llm.retry.is_transient_error", lambda exc: isinstance(exc, TimeoutError))
+    rec = sw.sweep_document(_text_doc(), ctx)
+    car = rec.classification_arbiter
+    assert (car.ran, car.transient_error, car.decision) == (False, True, None)
+    assert rec.error == "transient_error_exhausted: classification_arbiter"
+    assert not rec.observed.classification_arbiter and not rec.observed.full_information
+
+
+# ── what the sweep records is what replay needs ──────────────────────────
+
+
+def _force_the_judge(cls="contract"):
+    """A policy that accepts the mock sorter outright and whose judge band covers any extraction confidence."""
+    from pipeline import policy_replay as pr
+
+    return pr.merge_policy(pr.current_policy(), {"by_class": {cls: {"high": 0.9, "low": 0.5, "judge_band_high": 1.01}}})
+
+
+def test_replay_resolves_a_partial_verdict_through_the_recorded_arbiter(ctx, mocked, monkeypatch):
+    """Red before the sweep ran the arbiter: replay stopped at ``arbiter_not_observed_on_attempt_1``."""
+    from pipeline import policy_replay as pr
+
+    _judge_says(monkeypatch, "partial", arbiter={"decision": "accept_with_caveats"})
+    policy = _force_the_judge()
+    ctx.arbiter = False
+    blind = pr.replay(sw.sweep_document(_text_doc("blind"), ctx), policy)
+    assert (blind.outcome, blind.reasons) == (pr.UNOBSERVED, ["arbiter_not_observed_on_attempt_1"])
+    assert blind.path == ["classify", "extract", "judge_verify"]
+
+    ctx.arbiter = True
+    rec = sw.sweep_document(_text_doc("seen"), ctx)
+    out = pr.replay(rec, policy)
+    assert out.outcome == pr.AUTO and out.reasons == []
+    assert out.path[:4] == ["classify", "extract", "judge_verify", "arbiter"]
+    # The recorded ruling drives the route: a deferral parks the document, a retry order re-extracts.
+    rec.arbiters[0].decision = "human_review"
+    assert pr.replay(rec, policy).outcome == pr.HUMAN
+    rec.arbiters[0].decision = "retry_extraction"
+    retried = pr.replay(rec, policy)
+    assert retried.path.count("retry_extract") >= 1 and "arbiter" in retried.path
+
+
+def test_replay_resolves_a_parked_decision_review_through_the_recorded_classification_arbiter(ctx, mocked, monkeypatch):
+    from pipeline import policy_replay as pr
+
+    _decision_lane(monkeypatch)
+    _judge_says(monkeypatch, "complete", classification={"decision": "accept_reviewer", "confidence": 0.99})
+    rec = sw.sweep_document(_text_doc(), ctx)
+    assert rec.observed.full_information
+    out = pr.replay(rec, pr.current_policy())
+    assert out.reasons == [] and "classification_arbiter" in out.path
+    assert out.final_class == "correspondence"
+
+    ctx.arbiter = False
+    blind = pr.replay(sw.sweep_document(_text_doc("d2"), ctx), pr.current_policy())
+    assert blind.outcome == pr.UNOBSERVED and blind.reasons == ["classification_arbiter_not_observed"]
+
+
 def test_raw_confidence_is_kept_beside_the_guarded_one(ctx, mocked, monkeypatch):
     """The sorter's own confidence survives ``apply_classification_guard`` clamping."""
     real = sw.mock_expectation

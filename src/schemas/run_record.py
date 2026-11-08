@@ -15,11 +15,15 @@ confidence and the gold labels *outside* the routing state.
 A *full-information* record observes the sorter, reviewer, extraction and judge
 branches (sorter attempt 1 and the retry, the reviewer, every extraction attempt
 and the judge on extraction attempt 1, or on every attempt when swept with
-``--judge-attempts all``), so replay of those branches under any thresholds is
+``--judge-attempts all``), plus, unless the sweep ran with ``--arbiter off``, the
+two arbiters that follow them: the Lane B ``arbiter`` after every judge pass whose
+verdict is ``partial`` or ``incomplete`` (``arbiters``), and the
+``classification_arbiter`` after a decision-lane reviewer that did not accept
+(``classification_arbiter``). Replay of those branches under any thresholds is
 exact, not counterfactual. A route that sends a later, unjudged attempt to the
 judge is replayed as ``unobserved``, and so is a route that reaches extraction
-with a subclass the sweep did not extract (``extraction_candidates_collapsed``). The classification arbiter, the Lane B arbiter and the boss are
-never run by the sweep, so a route that needs one of them stays unobserved even
+with a subclass the sweep did not extract (``extraction_candidates_collapsed``).
+The boss is never run by the sweep, so a route that needs it stays unobserved even
 on a full-information record. ``observed`` says which branches were run; replay
 counts a route that needs an unobserved branch as ``unobserved`` instead of
 guessing its outcome.
@@ -141,8 +145,41 @@ class ArbiterObservation(_Model):
 
     ran: bool = False
     on_attempt: int | None = None
+    # Class of the extraction whose judge verdict was arbitrated (a sweep extracts
+    # several candidate classes and restarts attempt numbers per class). None on
+    # older records: they match any class.
+    doc_type: str | None = None
     # accept_with_caveats | retry_extraction | human_review (build_graph.arbiter_node)
     decision: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float = 0.0
+    latency_s: float = 0.0
+
+
+class ClassificationArbiterObservation(_Model):
+    """The classification arbiter's ruling on a parked decision-lane review.
+
+    Stores the agent's RAW answer, not the graph's verdict: whether the ruling is
+    accepted depends on the class cutoff (``reviewer.by_class.<class>.arbiter_cutoff``,
+    else the class's ``high``), which a policy changes, so replay re-applies the
+    cutoff through the real node. ``sorter_*`` / ``reviewer_*`` are the two answers the
+    arbiter was shown; replay uses the ruling only for a route that shows it the same
+    pair. Default (``ran=False``): the sweep did not run it, or no review needed it.
+    """
+
+    ran: bool = False
+    # accept_sorter | accept_reviewer | human_review, as the agent answered
+    # (``human_review`` with no confidence when the call failed or the document
+    # was too long to arbitrate).
+    decision: str | None = None
+    confidence: float | None = None
+    reasoning: str | None = None
+    sorter_doc_type: str | None = None
+    sorter_doc_subclass: str | None = None
+    reviewer_doc_type: str | None = None
+    reviewer_doc_subclass: str | None = None
+    transient_error: bool = False
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cost_usd: float = 0.0
@@ -156,6 +193,13 @@ class Observed(_Model):
     reviewer: bool = False
     extraction_attempts: int = 0
     judge: bool = False
+    # Lane B arbiter ran after every partial/incomplete judge verdict (vacuously
+    # true when there was none). False on records from before the arbiter was swept
+    # and when swept with ``--arbiter off``.
+    arbiter: bool = False
+    # The classification arbiter ran wherever the live router would reach it
+    # (vacuously true when no review needed it); same False cases as ``arbiter``.
+    classification_arbiter: bool = False
     full_information: bool = False
 
 
@@ -185,9 +229,15 @@ class RunRecord(_Model):
     # (``on_attempt``, and ``doc_type`` when the sweep extracted several classes). ``judge`` stays the primary one. A full-information sweep
     # fills this so replay can send ANY attempt to the judge without guessing.
     judges: list[JudgeObservation] = Field(default_factory=list)
-    # Optional: the arbiter's ruling per judged attempt. Without it a judge verdict of
-    # partial/incomplete cannot be replayed (the arbiter is not guessed).
+    # Optional: the Lane B arbiter's ruling per judged attempt (``on_attempt``, and
+    # ``doc_type`` when the sweep extracted several classes). Without it a judge verdict
+    # of partial/incomplete cannot be replayed (the arbiter is not guessed).
     arbiters: list[ArbiterObservation] = Field(default_factory=list)
+    # Optional: the classification arbiter's ruling after a decision-lane reviewer that
+    # did not accept. Without it that route cannot be replayed.
+    classification_arbiter: ClassificationArbiterObservation = Field(
+        default_factory=ClassificationArbiterObservation
+    )
     observed: Observed = Field(default_factory=Observed)
     actual: ActualRoute = Field(default_factory=ActualRoute)
     thresholds_in_force: dict[str, Any] = Field(default_factory=dict)

@@ -7,8 +7,8 @@ no audit, and pilot runs put ``ground_truth`` into state, which changes routing
 (``pipeline.reconsideration.class_misses_ground_truth`` / ``coverage_below_floor``).
 A confidence threshold cannot be calibrated from such runs. This sweep runs the
 REAL node functions of ``graph/build_graph.py`` in a fixed order, whatever the
-router would have done, so every sorter, reviewer, extraction and judge branch
-is observed for every document (arbiter and boss branches never are; see below):
+router would have done, so every sorter, reviewer, extraction, judge and arbiter
+branch is observed for every document (the boss never is; see below):
 
     intake_node
       -> classify_node (sorter attempt 1)
@@ -17,17 +17,30 @@ is observed for every document (arbiter and boss branches never are; see below):
       -> per candidate class (sorter attempt 1 / reviewer / sorter attempt 2,
          distinct classes, at most ``--max-extraction-candidates``):
            extract_node, then retry_extract_node ``retry_max`` more times,
-           judge_verify_node on attempt 1 (``--judge-attempts all``: every attempt)
+           judge_verify_node on attempt 1 (``--judge-attempts all``: every attempt),
+           then arbiter_node after every judge pass whose verdict is partial or
+           incomplete (``--arbiter on``, the default)
+      -> classification_arbiter_node once, when a decision-lane reviewer
+         (``reviewer.by_class.<class>.mode: decision_only``) did not accept and the
+         live router (``routing.after_review_classify``) would send the document there
 
 Gold labels never enter node state (``run.gt_in_state`` is False); they are
 attached to the record afterwards and used only for offline Dojo scoring.
-Boss / arbiter (classification_arbiter and the Lane B arbiter) / human review /
-report / archive nodes are never run, so ``observed.full_information`` covers the
-sorter, reviewer, extraction and judge branches ONLY. A route that needs an arbiter
-ruling or the boss stays unobserved on every record, ``full_information`` or not, and
-policy replay reports it as ``unobserved`` (``diagnostics.unobserved_branches`` names
-them, plus ``judge_on_retry_attempts`` unless ``--judge-attempts all``); see
-``schemas/run_record.py``.
+Boss / human review / report / archive nodes are never run, so
+``observed.full_information`` covers the sorter, reviewer, extraction, judge and (unless
+``--arbiter off``) both arbiter branches ONLY. A route that needs the boss stays
+unobserved on every record, ``full_information`` or not, and policy replay reports it as
+``unobserved`` (``diagnostics.unobserved_branches`` names it, plus
+``judge_on_retry_attempts`` unless ``--judge-attempts all``, plus the two arbiters with
+``--arbiter off``); see ``schemas/run_record.py``.
+
+Cost: ``--arbiter on`` adds one LLM call per judged attempt with a partial or incomplete
+verdict (at most one per candidate class, or one per attempt with ``--judge-attempts all``)
+and at most one classification-arbiter call per document; none when every judge verdict is
+``complete``. The calls are included in each record's ``diagnostics.cost_usd_total``. The
+Lane B ruling does not depend on thresholds, so it is run for every such verdict even when
+the sweep's own ``judge_max_passes`` would have sent it to a person: a candidate policy
+with a higher cap needs it.
 
 Usage:
     PYTHONPATH=src python src/scripts/run_calibration_sweep.py \\
@@ -73,6 +86,8 @@ REPO_ROOT = SRC_DIR.parent
 sys.path.insert(0, str(SRC_DIR))
 
 from schemas.run_record import (  # noqa: E402
+    ArbiterObservation,
+    ClassificationArbiterObservation,
     ExtractionAttempt,
     Gold,
     JudgeObservation,
@@ -104,14 +119,22 @@ KNOWN_GAPS = [
     "extraction handoff context carries the classification confidence of the candidate's source "
     "stage; candidates sharing a class are collapsed onto the first source",
     "reviewer and judge truncate long inputs exactly as live (see diagnostics.downstream_truncation)",
-    "arbiter nodes (classification_arbiter, Lane B arbiter) are never run: routes that need an arbiter "
-    "ruling stay unobserved even when full_information is true",
+    "the Lane B arbiter runs after every partial/incomplete judge pass without the live graph's "
+    "judge_max_passes gate (a policy decides that), and a retry_extraction ruling is not fed back: the next "
+    "extraction attempt carries no arbiter fix-list, unlike the live retry; with --arbiter off neither arbiter "
+    "is run and routes that need one stay unobserved",
+    "classification_arbiter runs once, on the reviewer's pair of answers for the second sorter attempt; "
+    "a route that reaches the reviewer from another sorter attempt shows it another pair and is "
+    "unobserved (classification_arbiter_inputs_differ), and its accepted class is extracted with the "
+    "candidate's source-stage confidence, not the arbiter's",
     "candidates that share a class are extracted once, on the first source; when their subclass differs "
     "the record is not full_information, a confidence-only difference (the handoff prints it to 2 "
     "decimals) is listed in diagnostics.extraction_candidates_collapsed",
 ]
 # Branches the sweep never runs; replay reports a route that needs one as unobserved.
-UNOBSERVED_BRANCHES = ["classification_arbiter", "arbiter", "boss"]
+UNOBSERVED_BRANCHES = ["boss"]
+# Not run either with --arbiter off.
+ARBITER_BRANCHES = ["classification_arbiter", "arbiter"]
 
 
 # --------------------------------------------------------------------------------------
@@ -142,6 +165,7 @@ class SweepContext:
     base_dir: Path
     mock: bool
     judge_attempts: str = "first"
+    arbiter: bool = True  # run the Lane B and classification arbiters (extra LLM calls)
     max_candidates: int = 2
     concurrency: int = 1
     thresholds: dict = field(default_factory=dict)
@@ -159,6 +183,7 @@ class _Capture:
     def __init__(self) -> None:
         self.sorter: list[dict] = []
         self.reviewer: list[dict] = []
+        self.cls_arbiter: list[dict] = []
         self.extract_conf: list[float | None] = []
         self.agents: list[Any] = []
         self.raw_chars: int | None = None
@@ -195,6 +220,8 @@ def installed_hooks() -> Iterator[None]:
 
     * ``SorterAgent.classify_json`` / ``SorterReviewerAgent.review``: the model's
       own confidence, before ``apply_classification_guard`` clamps it.
+    * ``ClassificationArbiterAgent.arbitrate_classification``: the agent's raw ruling (the node
+      folds a ruling below the class cutoff into ``human_review``) and whether it failed transiently.
     * ``_enrich_contract_result``: the extraction's raw ``confidence`` (the node
       pops it from the result and replaces it with the post-guard value).
     * ``_instantiate_specialist``: the agent, for ``_last_n_chunks``.
@@ -204,11 +231,13 @@ def installed_hooks() -> Iterator[None]:
     """
     import graph.build_graph as bg
     import langchain_agents.memory as memory
+    from agents.arbiter import ClassificationArbiterAgent
     from agents.sorter import SorterAgent
     from agents.sorter_reviewer import SorterReviewerAgent
 
     orig_classify = SorterAgent.classify_json
     orig_review = SorterReviewerAgent.review
+    orig_arbitrate = ClassificationArbiterAgent.arbitrate_classification
     orig_enrich = bg._enrich_contract_result
     orig_instantiate = bg._instantiate_specialist
     orig_read = bg._read_file_text
@@ -229,6 +258,21 @@ def installed_hooks() -> Iterator[None]:
         cap = _cap()
         if cap is not None and isinstance(out, dict):
             cap.reviewer.append({"confidence": _num(out.get("confidence")), "doc_type": out.get("doc_type")})
+        return out
+
+    def arbitrate_classification(self, *args, **kwargs):
+        cap = _cap()
+        try:
+            out = orig_arbitrate(self, *args, **kwargs)
+        except Exception as exc:
+            from llm.retry import is_transient_error  # the same predicate the nodes use
+
+            if cap is not None:
+                cap.cls_arbiter.append({"error": type(exc).__name__, "transient": bool(is_transient_error(exc))})
+            raise
+        if cap is not None and isinstance(out, dict):
+            cap.cls_arbiter.append({"decision": out.get("decision"), "confidence": _num(out.get("confidence")),
+                                    "reasoning": str(out.get("reasoning") or "")[:400]})
         return out
 
     def enrich(result, state):
@@ -254,6 +298,8 @@ def installed_hooks() -> Iterator[None]:
     with contextlib.ExitStack() as stack:
         stack.enter_context(patch.object(SorterAgent, "classify_json", classify_json))
         stack.enter_context(patch.object(SorterReviewerAgent, "review", review))
+        stack.enter_context(patch.object(ClassificationArbiterAgent, "arbitrate_classification",
+                                         arbitrate_classification))
         stack.enter_context(patch.object(bg, "_enrich_contract_result", enrich))
         stack.enter_context(patch.object(bg, "_instantiate_specialist", instantiate))
         stack.enter_context(patch.object(bg, "_read_file_text", read_file_text))
@@ -299,7 +345,7 @@ def _mock_response(content: str):
 
 
 def _special_mock_content(user_text: str, expect: dict) -> str | None:
-    """Canned JSON for the reviewer and judge prompts, which ``run_pilot._fake_client`` ignores."""
+    """Canned JSON for the reviewer, judge and arbiter prompts, which ``run_pilot._fake_client`` ignores."""
     if "CLASSIFY THIS DOCUMENT" in user_text:
         is_contract = expect["doc_type"] == "contract"
         return json.dumps({
@@ -314,6 +360,11 @@ def _special_mock_content(user_text: str, expect: dict) -> str | None:
     if "Audit the factual accuracy" in user_text:
         return json.dumps({"extraction_correctness": 1.0, "extraction_correctness_label": "accurate",
                            "reasoning": "mock"})
+    if "JUDGE VERDICT:" in user_text:  # Lane B arbiter (the mock judge says complete, so it rarely fires)
+        return json.dumps({"decision": "accept_with_caveats", "fields_to_fix": [], "reasoning": "mock",
+                           "handoff_summary": "mock"})
+    if "SORTER ANSWER" in user_text:  # classification arbiter
+        return json.dumps({"decision": "accept_sorter", "confidence": 0.99, "reasoning": "mock"})
     return None
 
 
@@ -553,6 +604,46 @@ def _judge_observation(step: Step, *, doc_type: str, attempt: int) -> JudgeObser
     )
 
 
+def _arbiter_observation(step: Step, *, doc_type: str, attempt: int) -> ArbiterObservation:
+    decision = step.update.get("arbiter_decision")
+    ran = (not step.transient_error) and decision in ("accept_with_caveats", "retry_extraction", "human_review")
+    return ArbiterObservation(
+        ran=bool(ran),
+        on_attempt=attempt,
+        doc_type=doc_type,
+        decision=decision if ran else None,
+        prompt_tokens=step.prompt_tokens,
+        completion_tokens=step.completion_tokens,
+        cost_usd=step.cost_usd,
+        latency_s=round(step.latency_s, 4),
+    )
+
+
+def _classification_arbiter_observation(state_in: dict, step: Step) -> ClassificationArbiterObservation:
+    """The agent's raw ruling (not the node's cutoff-filtered one) and the pair of answers it saw."""
+    raw = step.cap.cls_arbiter[-1] if step.cap.cls_arbiter else {}
+    transient = bool(raw.get("transient"))
+    if "decision" not in raw:  # the call failed: the node folded it into human_review
+        raw = {"decision": step.update.get("classification_arbiter_decision"),
+               "confidence": _num(step.update.get("classification_arbiter_confidence")),
+               "reasoning": str(step.update.get("classification_arbiter_reasoning") or "")[:400]}
+    return ClassificationArbiterObservation(
+        ran=not transient,
+        decision=None if transient else raw.get("decision"),
+        confidence=None if transient else raw.get("confidence"),
+        reasoning=None if transient else raw.get("reasoning"),
+        sorter_doc_type=state_in.get("doc_type"),
+        sorter_doc_subclass=state_in.get("doc_subclass") or state_in.get("contract_subtype"),
+        reviewer_doc_type=state_in.get("reviewer_doc_type"),
+        reviewer_doc_subclass=state_in.get("reviewer_doc_subclass"),
+        transient_error=transient,
+        prompt_tokens=step.prompt_tokens,
+        completion_tokens=step.completion_tokens,
+        cost_usd=step.cost_usd,
+        latency_s=round(step.latency_s, 4),
+    )
+
+
 def _reviewer_observation(state_in: dict, step: Step, mode: str) -> ReviewerObservation:
     u = step.update
     if mode == "decision_only":
@@ -634,9 +725,10 @@ def _pick_candidates(
 
 
 def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
-    """Run the sorter, reviewer, extraction and judge branches for one document and return its
-    record (never raises). Arbiter and boss branches are not run."""
+    """Run the sorter, reviewer, extraction, judge and (``ctx.arbiter``) arbiter branches for one
+    document and return its record (never raises). The boss branch is not run."""
     import graph.build_graph as bg
+    import graph.routing as routing
     from pipeline.config import get_agent_config, get_confidence_thresholds, get_review_mode
 
     started = time.perf_counter()
@@ -660,7 +752,8 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         "judge_attempts": ctx.judge_attempts,
         "field_scoring_embedding": ctx.field_scoring_embedding,
         "known_gaps": list(KNOWN_GAPS),
-        "unobserved_branches": list(UNOBSERVED_BRANCHES)
+        "arbiter": "on" if ctx.arbiter else "off",
+        "unobserved_branches": ([] if ctx.arbiter else list(ARBITER_BRANCHES)) + list(UNOBSERVED_BRANCHES)
         + ([] if ctx.judge_attempts == "all" else ["judge_on_retry_attempts"]),
         "max_extraction_candidates": ctx.max_candidates,
         "gold_meta": doc.gold_meta,
@@ -733,6 +826,16 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         if rstep.transient_error:
             transient.append("reviewer")
 
+        # -- classification arbiter (once, where the live router would send the review) ----
+        cls_arbiter_ok = True
+        if ctx.arbiter and record.reviewer.ran and not rstep.transient_error:
+            if routing.after_review_classify(rstep.state) == "classification_arbiter":
+                cstep = run_node("classification_arbiter_node", rstep.state)
+                record.classification_arbiter = _classification_arbiter_observation(rstep.state, cstep)
+                cls_arbiter_ok = record.classification_arbiter.ran
+                if record.classification_arbiter.transient_error:
+                    transient.append("classification_arbiter")
+
         # -- extraction candidates ---------------------------------------------
         cand_states: list[tuple[str, dict]] = []
         if not step1.transient_error:
@@ -766,6 +869,7 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
 
         min_attempts: int | None = None
         all_judged = True
+        arbiters_ok = True
         first_judge = True
         for _src, cand in kept:
             cls = cand["doc_type"]
@@ -793,15 +897,28 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
                     all_judged &= obs.ran
                     if jstep.transient_error:
                         transient.append(f"judge[{cls}#{n}]")
+                    elif ctx.arbiter and obs.verdict in ("partial", "incomplete"):
+                        # The verdicts after_judge sends to the arbiter. judge_max_passes is a policy
+                        # knob, so it is not applied here: a candidate policy may allow the pass.
+                        astep = run_node("arbiter_node", jstep.state)
+                        aobs = _arbiter_observation(astep, doc_type=cls, attempt=n)
+                        record.arbiters.append(aobs)
+                        arbiters_ok &= aobs.ran
+                        if astep.transient_error:
+                            transient.append(f"arbiter[{cls}#{n}]")
             min_attempts = done if min_attempts is None else min(min_attempts, done)
             complete &= done == n_ext
         if kept:
             complete &= all_judged
+        if ctx.arbiter:
+            complete &= arbiters_ok and cls_arbiter_ok
         record.observed = Observed(
             sorter_attempts=len(record.sorter),
             reviewer=record.reviewer.ran,
             extraction_attempts=min_attempts or 0,
             judge=bool(kept) and all_judged,
+            arbiter=bool(ctx.arbiter and arbiters_ok),
+            classification_arbiter=bool(ctx.arbiter and cls_arbiter_ok),
             full_information=bool(complete and len(record.sorter) == SORTER_ATTEMPTS),
         )
         if transient:
@@ -824,6 +941,7 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
 def _record_cost(record: RunRecord) -> float:
     parts = [a.cost_usd for a in record.sorter] + [a.cost_usd for a in record.extraction]
     parts += [record.reviewer.cost_usd, record.judge.cost_usd] + [j.cost_usd for j in record.judges]
+    parts += [a.cost_usd for a in record.arbiters] + [record.classification_arbiter.cost_usd]
     return sum(parts)
 
 
@@ -1053,7 +1171,7 @@ def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str
 
     A resume skips documents by ``doc_id`` alone, so it is only sound when the saved records
     came from the same inputs and settings. ``current`` holds this run's ``mode``,
-    ``dataset_id``, ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``judge_attempts``,
+    ``dataset_id``, ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``judge_attempts``, ``arbiter``,
     ``max_extraction_candidates`` and ``thresholds``. A saved record that lacks a recorded value
     cannot be validated and is refused too: start a new output file.
     """
@@ -1073,6 +1191,10 @@ def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
         elif diag["judge_attempts"] != current["judge_attempts"]:
             diffs.setdefault("judge_attempts", f"saved {diag['judge_attempts']!r}, now {current['judge_attempts']!r}")
+        if "arbiter" not in diag:
+            diffs.setdefault("arbiter", "not recorded in the saved records")
+        elif diag["arbiter"] != current["arbiter"]:
+            diffs.setdefault("arbiter", f"saved {diag['arbiter']!r}, now {current['arbiter']!r}")
         if "max_extraction_candidates" in diag and diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
             diffs.setdefault("max_extraction_candidates",
                              f"saved {diag['max_extraction_candidates']!r}, now {current['max_extraction_candidates']!r}")
@@ -1162,10 +1284,21 @@ ISOLATED_UNSET = ("DATABASE_URL",)
 
 
 def estimate_calls(n_docs: int, retry_max: int = 2, candidates: int = 2, judge_attempts: str = "first") -> dict:
-    """Lower-bound LLM calls: sliding windows / extraction chunks / LLM intake only add to it."""
+    """Lower-bound LLM calls: sliding windows / extraction chunks / LLM intake only add to it.
+
+    ``--arbiter on`` can add :func:`estimate_arbiter_calls` on top; they are not counted here.
+    """
     judge_passes = (1 + retry_max) if judge_attempts == "all" else 1
     per_doc = SORTER_ATTEMPTS + 1 + candidates * ((1 + retry_max) + 2 * judge_passes)
     return {"per_doc": per_doc, "docs": n_docs, "total": per_doc * n_docs}
+
+
+def estimate_arbiter_calls(retry_max: int = 2, candidates: int = 2, judge_attempts: str = "first") -> int:
+    """Most extra LLM calls per document ``--arbiter on`` can make: one Lane B call per judge pass whose
+    verdict is partial or incomplete (none when every verdict is complete) plus one classification-arbiter
+    call on a parked decision-lane review."""
+    judge_passes = (1 + retry_max) if judge_attempts == "all" else 1
+    return candidates * judge_passes + 1
 
 
 def real_guard(env: dict | None = None) -> str | None:
@@ -1202,6 +1335,10 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--retry-errors", action="store_true", help="With --resume: drop errored records and re-run them.")
     p.add_argument("--concurrency", type=int, default=1, help="Documents in flight (thread pool).")
     p.add_argument("--judge-attempts", choices=["first", "all"], default="first")
+    p.add_argument("--arbiter", choices=["on", "off"], default="on",
+                   help="Run the Lane B arbiter after every partial/incomplete judge verdict and the classification "
+                        "arbiter after a parked decision-lane review (extra LLM calls, real money with --real). "
+                        "off: those routes stay unobserved in policy replay.")
     p.add_argument("--max-extraction-candidates", type=int, default=2)
     return p.parse_args(argv)
 
@@ -1226,7 +1363,7 @@ def main(argv: list[str] | None = None) -> int:
         if reason:
             est = estimate_calls(1, candidates=args.max_extraction_candidates, judge_attempts=args.judge_attempts)
             print(f"{reason}\nestimated LLM calls: >= {est['per_doc']} per document (windows, chunks and LLM "
-                  "intake add more)", file=sys.stderr)
+                  f"intake add more){_arbiter_note(args.arbiter == 'on', args)}", file=sys.stderr)
             return 2
 
     with sweep_environment(mock, None) as base_dir:
@@ -1260,6 +1397,7 @@ def main(argv: list[str] | None = None) -> int:
                 "mode": "mock" if mock else "real", "dataset_id": ds["dataset_id"],
                 "dataset_revision": ds["dataset_revision"], "split": ds["split"],
                 "taxonomy_sha256": _taxonomy_sha256(), "judge_attempts": args.judge_attempts,
+                "arbiter": args.arbiter,
                 "max_extraction_candidates": args.max_extraction_candidates, "thresholds": thresholds,
             }
             why = resume_mismatch(existing, docs, current)
@@ -1290,7 +1428,7 @@ def main(argv: list[str] | None = None) -> int:
             mode="mock" if mock else "real", gt_in_state=False,
         )
         ctx = SweepContext(
-            run=run, base_dir=base_dir, mock=mock, judge_attempts=args.judge_attempts,
+            run=run, base_dir=base_dir, mock=mock, judge_attempts=args.judge_attempts, arbiter=args.arbiter == "on",
             max_candidates=args.max_extraction_candidates, concurrency=args.concurrency,
             thresholds=thresholds,
             field_scoring_embedding=os.environ.get("MAILROOM_FIELD_SCORING_EMBEDDING", "0").lower() not in ("0", "false", "no"),
@@ -1298,13 +1436,21 @@ def main(argv: list[str] | None = None) -> int:
         if not mock:
             est = estimate_calls(len(todo), candidates=args.max_extraction_candidates, judge_attempts=args.judge_attempts)
             print(f"estimated LLM calls: >= {est['total']} ({est['per_doc']} per document x {est['docs']}); "
-                  "windows, chunks and LLM intake add more", flush=True)
+                  f"windows, chunks and LLM intake add more{_arbiter_note(ctx.arbiter, args)}", flush=True)
 
         print(f"sweeping {len(todo)} document(s) ({len(docs) - len(todo)} already done), mode={run.mode}, "
               f"concurrency={args.concurrency}, base_dir={base_dir}", flush=True)
         records = _run_all(todo, ctx, args.out, mock)
 
     return _summarise(records, len(docs) - len(todo))
+
+
+def _arbiter_note(arbiter_on: bool, args: argparse.Namespace) -> str:
+    if not arbiter_on:
+        return "; --arbiter off: no arbiter calls"
+    most = estimate_arbiter_calls(candidates=args.max_extraction_candidates, judge_attempts=args.judge_attempts)
+    return (f"; --arbiter on adds up to {most} per document (one per partial/incomplete judge verdict, "
+            "one per parked decision-lane review)")
 
 
 def _dojo_version() -> str | None:

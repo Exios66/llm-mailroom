@@ -20,6 +20,9 @@ because the record stores their *inputs*, not the policy-dependent result: the
 LLM reviewer's verdict (``build_graph.review_classify_node``: agree/override
 against the class ``high``) and the extraction payload's schema/hollow flags,
 which are stood in for by a stub payload plus a patched ``validate_extraction``.
+The classification arbiter's acceptance (a policy-dependent class cutoff over the
+agent's recorded raw ruling) is not mirrored: the real
+``build_graph.classification_arbiter_node`` runs with the agent replaced by the record.
 
 States are built WITHOUT ``ground_truth`` (production-faithful: routing reads
 ``ground_truth`` through ``class_misses_ground_truth`` / ``coverage_below_floor``
@@ -59,6 +62,7 @@ import yaml
 
 from schemas.run_record import (
     ArbiterObservation,
+    ClassificationArbiterObservation,
     ExtractionAttempt,
     JudgeObservation,
     ReviewerObservation,
@@ -354,11 +358,41 @@ def _judge_for(record: RunRecord, k: int, cls: str | None = None) -> JudgeObserv
     return None
 
 
-def _arbiter_for(record: RunRecord, k: int) -> ArbiterObservation | None:
-    """The arbiter ruling that followed the judge pass on extraction attempt ``k``."""
-    for arb in record.arbiters:
+def _arbiter_for(record: RunRecord, k: int, cls: str | None = None) -> ArbiterObservation | None:
+    """The arbiter ruling that followed the judge pass on extraction attempt ``k`` of class ``cls``."""
+    for arb in _for_class(record.arbiters, cls):
         if arb.ran and arb.on_attempt == k:
             return arb
+    return None
+
+
+def _apply_classification_arbiter(state: dict[str, Any], obs: ClassificationArbiterObservation) -> str | None:
+    """Fold the classification arbiter into ``state`` by running the REAL node on the recorded answer.
+
+    The record keeps the agent's raw ruling; whether the graph accepts it depends on
+    the class cutoff (``arbiter_cutoff``, else the class ``high``) under the policy in
+    force, so ``graph.build_graph.classification_arbiter_node`` is run with the agent
+    replaced by the recorded answer. Returns an ``unobserved`` reason, or ``None`` when
+    ``state`` is ready for ``routing.after_classification_arbiter``. A ruling is reused
+    only for the pair of answers it was shown (the sorter attempt that reached the
+    review can differ from the one the sweep reviewed).
+    """
+    shown = (obs.sorter_doc_type, obs.sorter_doc_subclass, obs.reviewer_doc_type)
+    here = (state.get("doc_type"), state.get("doc_subclass"), state.get("reviewer_doc_type"))
+    if shown != here:
+        return "classification_arbiter_inputs_differ"
+
+    import graph.build_graph as bg
+
+    class _Recorded:
+        def arbitrate_classification(self, **_kwargs: Any) -> dict[str, Any]:
+            return {"decision": obs.decision, "confidence": obs.confidence, "reasoning": obs.reasoning or ""}
+
+    with (
+        mock.patch("agents.arbiter.ClassificationArbiterAgent", _Recorded),
+        mock.patch.object(bg, "logger", _NullLogger()),
+    ):
+        state.update(bg.classification_arbiter_node(state))
     return None
 
 
@@ -566,7 +600,15 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
         w.final_class = state.get("doc_type")
         dest = routing.after_review_classify(state)
         if dest == "classification_arbiter":
-            return w.unobserved("classification_arbiter_not_observed")
+            carb = record.classification_arbiter
+            if not carb.ran:
+                return w.unobserved("classification_arbiter_not_observed")
+            w.visit("classification_arbiter", carb.cost_usd)
+            reason = _apply_classification_arbiter(state, carb)
+            if reason:
+                return w.unobserved(reason)
+            w.final_class = state.get("doc_type")
+            dest = routing.after_classification_arbiter(state)
 
     if dest == HUMAN:
         w.path.append("human_review")
@@ -635,7 +677,7 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
             )
             dest = routing.after_judge(ex_state)
             if dest == "arbiter":
-                arb = _arbiter_for(record, k)
+                arb = _arbiter_for(record, k, cls)
                 if arb is None:
                     return w.unobserved(f"arbiter_not_observed_on_attempt_{k}")
                 w.visit("arbiter", arb.cost_usd)
