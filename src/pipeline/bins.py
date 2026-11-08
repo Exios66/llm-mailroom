@@ -476,7 +476,16 @@ def _save_manifest(manifest) -> Path:
     mdir = manifests_dir()
     mdir.mkdir(parents=True, exist_ok=True)
     path = mdir / f"{manifest.doc_id}.json"
-    path.write_text(manifest.model_dump_json(indent=2))
+    # Atomic publish: write a sibling temp file, then os.replace. A reader
+    # (queue listing, a concurrent resolve) never sees a half-written manifest,
+    # and the temp name never matches the ``*.json`` manifest glob.
+    tmp = mdir / f".{manifest.doc_id}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+    try:
+        tmp.write_text(manifest.model_dump_json(indent=2))
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 

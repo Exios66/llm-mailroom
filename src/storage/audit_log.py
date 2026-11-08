@@ -277,6 +277,7 @@ async def analyze_audit_db(
         "review_recorded",
         "review_requeued",
         "review_completed",
+        "review_resolved",
     ):
         if key in by_event:
             review_events[key] = by_event[key]

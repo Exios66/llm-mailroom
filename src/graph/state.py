@@ -31,6 +31,11 @@ class DocumentState(TypedDict, total=False):
     # Process-level LangGraph thread id for interrupt() HITL resume.
     checkpoint_thread_id: str | None
     resume_extraction: bool
+    # Human-in-the-loop: "human" when a reviewer's fields (approved as-is or
+    # corrected) replaced the model extraction; ``human_label`` is the
+    # reviewer's decision record (see schemas.manifest.DocumentManifest).
+    extraction_source: str | None
+    human_label: dict[str, Any] | None
     retry_count: int
     conflict_detected: bool
     conflict_details: list[str]
