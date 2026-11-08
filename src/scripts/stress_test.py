@@ -5,7 +5,7 @@ Runs the REAL pipeline code (graph, bins, catalog, audit log, watcher) against
 a deterministic fake LLM, under volume and under injected faults, and prints a
 scale scorecard plus exactly one final ``SCORE: 0.XXXX`` line. No network, no
 real LLM, no tracing backend: every scenario runs in its own subprocess with a
-fresh temporary ``MAILROOM_BASE_DIR`` (and ``DATABASE_URL`` removed), so it can
+fresh temporary ``MAILROOM_BASE_DIR`` (``DATABASE_URL`` pinned to its scratch SQLite file), so it can
 never touch ``data/`` or a hosted service. It uses only APIs that exist on
 ``main`` today and feature-detects the rest (``MAILROOM_MAX_CONCURRENT_DOCS``
 is exported but may be ignored by older code), so the same command measures the
@@ -22,7 +22,7 @@ Usage::
 Scenarios (``--scenarios``, comma list, default all)
 ----------------------------------------------------
 ``throughput``
-    ``--docs`` synthetic documents (6 classes, ~10% low-confidence, ~2% blank,
+    ``--docs`` synthetic documents (5 classes, ~10% low-confidence, ~2% blank,
     ~3% long multi-window) are claimed and run through ``run_pipeline`` at each
     ``--threads`` count. The mock LLM sleeps ``--mock-latency-ms`` per call
     (default 50) to model provider I/O overlap. Reports docs/min, p50/p95/max
@@ -90,9 +90,13 @@ Integrity is a hard gate. Gates (each prints ``GATE <name> PASS|FAIL``):
 ``lost_docs``, ``duplicate_catalog_rows``, ``duplicate_sha_rows``,
 ``duplicate_chains``, ``orphan_processing_rows``, ``broken_chains``,
 ``lost_audit_events``, ``inflight_hijacked``, ``orphans_unrecovered``,
-``db_failed_ops``, ``watcher_exactly_once``, ``scenario_error`` (a worker
-crashed or timed out). A gate is only evaluated when the scenario that feeds it
-ran. If any gate fails::
+``db_failed_ops``, ``watcher_exactly_once``, ``crash_injected`` (every
+crash_recovery document actually died at its injection point),
+``integrity_measured`` (the integrity scenario was selected but no worker
+produced an integrity measurement), ``scenario_error`` (a worker crashed or
+timed out). A gate is only evaluated when the scenario that feeds it
+ran; the integrity gates are also evaluated whenever any worker measured
+integrity, even if ``integrity`` was not selected. If any gate fails::
 
     SCORE = 0
 
@@ -187,6 +191,11 @@ def _u(seed: int, *parts) -> float:
     return int.from_bytes(digest, "big") / 2**64
 
 
+def _stable_index(key: str, modulo: int) -> int:
+    """Process-independent ``key -> [0, modulo)`` (``hash()`` is randomized per process)."""
+    return int.from_bytes(hashlib.blake2b(key.encode(), digest_size=8).digest(), "big") % modulo
+
+
 def _pct(values: list[float], q: float) -> float:
     if not values:
         return 0.0
@@ -201,6 +210,10 @@ def _worker_env(base_dir: str, log_level: str, extra: dict | None = None) -> dic
     env.update(
         {
             "MAILROOM_BASE_DIR": base_dir,
+            # Pin the catalog to this worker's scratch SQLite file. Dropping
+            # DATABASE_URL above is not enough: project modules call load_env()
+            # on import, which would re-read it from the repository .env.
+            "DATABASE_URL": f"sqlite+aiosqlite:///{Path(base_dir) / 'mailroom.db'}",
             "OBSERVABILITY_PROVIDER": "none",
             "OPENROUTER_API_KEY": "test-key-not-real",
             "MAILROOM_DOCCLASS_PROMPTS": "0",
@@ -274,7 +287,7 @@ def make_corpus(n: int, seed: int, long_docs: int | None = None, long_chars: int
         marker = f"[[stress id={doc_id} cls={cls} conf={conf} kind={kind}]]"
         body = bodies[cls][i % len(bodies[cls])]
         if kind == "blank":
-            text = "   \n\n  \n"
+            text = f"   \n\n  \n{' ' * (i + 1)}\n"  # whitespace only, distinct bytes (and sha256) per file
         elif kind == "long":
             unit = f"{body}\n{marker}\nUnique clause {doc_id}.\n"
             text = unit * max(2, long_chars // max(1, len(unit)))
@@ -484,6 +497,23 @@ def _write_corpus(corpus) -> None:
 
 # -- integrity ---------------------------------------------------------------
 
+
+def _manifest_index() -> dict[str, list[tuple[str, str | None]]]:
+    """``original_filename -> [(doc_id, stage)]`` from the saved manifests.
+
+    An unreadable or malformed manifest raises (it reaches ``scenario_error``
+    and rejects the score) rather than being skipped and undercounting.
+    """
+    from pipeline import bins
+
+    index: dict[str, list[tuple[str, str | None]]] = {}
+    for mf in sorted(bins.manifests_dir().glob("*.json")):
+        data = json.loads(mf.read_text())
+        if not isinstance(data, dict):
+            raise ValueError(f"manifest root must be a JSON object: {mf.name}")
+        index.setdefault(data.get("original_filename"), []).append((data.get("doc_id") or mf.stem, data.get("stage")))
+    return index
+
 _UUID_SUFFIX = re.compile(r"--[0-9a-fA-F-]{8,}(?=\.[^.]+$|$)")
 
 
@@ -528,6 +558,7 @@ def check_integrity(inputs: dict[str, dict] | None) -> dict:
 
     lost_catalog = lost_files = lost = 0
     duplicate_rows = duplicate_chains = 0
+    manifest_ids = _manifest_index() if inputs is not None else {}
     if inputs is not None:
         for name in inputs:
             recs = by_name.get(name, [])
@@ -538,7 +569,11 @@ def check_integrity(inputs: dict[str, dict] | None) -> dict:
             lost_files += miss_file
             lost += miss_cat or miss_file
             duplicate_rows += max(0, len(recs) - 1)
-            with_chain = {r.doc_id for r in recs if chains.get(r.doc_id)}
+            # Chains are tied to an input through the catalog row AND the saved
+            # manifest, so a retry whose catalog row lacks the filename (the
+            # catalog write is best-effort) still counts as a second chain.
+            ids = {r.doc_id for r in recs} | {d for d, _stage in manifest_ids.get(name, [])}
+            with_chain = {d for d in ids if chains.get(d)}
             duplicate_chains += max(0, len(with_chain) - 1)
     duplicate_sha = sum(
         max(0, len(rows_with_sha) - 1) for rows_with_sha in by_sha.values() if len(rows_with_sha) > 1
@@ -630,7 +665,7 @@ def w_throughput(cfg: dict) -> dict:
             t0 = time.perf_counter()
             try:
                 claimed = bins.claim_file(bins.inbox_dir() / name, f"w{wid}")
-                result = run_pipeline(claimed, matters[hash(name) % len(matters)])
+                result = run_pipeline(claimed, matters[_stable_index(name, len(matters))])
                 stage = result.get("stage")
             except Exception as exc:  # noqa: BLE001
                 stage = "raised"
@@ -787,7 +822,17 @@ def w_stale_claim(cfg: dict) -> dict:
         t.start()
     for name in names:
         started[name].wait(timeout=20)
-    # Every pipeline is mid-run. The rescan loop's periodic reconcile fires now.
+    # Every pipeline is mid-run. claim_file() stamps the claim time, so the
+    # claims are fresh here: age them past the stale cutoff NOW, as a run that
+    # outlives STALE_CLAIM_MINUTES would, or the reconcile below has nothing
+    # to reclaim and "no hijacking" would hold vacuously.
+    from pipeline.bins import list_stale_processing_files
+
+    for name in names:
+        p = claimed_paths.get(name)
+        if p is not None and p.exists():
+            os.utime(p, (old, old))
+    aged = {q.name for q in list_stale_processing_files(stale_minutes=watcher.STALE_CLAIM_MINUTES)}
     w._reconcile_stale_claims()
     hijacked = 0
     for name in names:
@@ -821,12 +866,21 @@ def w_stale_claim(cfg: dict) -> dict:
         f.write_text(f"orphan {name}")
         os.utime(f, (old, old))
     w._reconcile_stale_claims()
-    recovered = sum(1 for name in orphans if (bins.inbox_dir() / name).exists() or not (dead / name).exists())
+    def _requeued_intact(name: str) -> bool:
+        # Recovered = back in the inbox with its original bytes. Disappearing from
+        # the dead worker's dir (deleted, moved elsewhere) is not recovery.
+        try:
+            return (bins.inbox_dir() / name).read_text() == f"orphan {name}"
+        except OSError:
+            return False
+
+    recovered = sum(1 for name in orphans if _requeued_intact(name))
     with lock:
         double_runs = sum(max(0, c - 1) for c in runs.values())
     return {
         "metrics": {
             "inflight_files": n,
+            "inflight_aged_stale": sum(1 for name in names if name in aged),
             "inflight_hijacked": hijacked,
             "double_runs": double_runs,
             "orphans_total": len(orphans),
@@ -855,7 +909,7 @@ def w_crash_recovery(cfg: dict) -> dict:
     def crasher(state):
         raise Crash("simulated SIGKILL")
 
-    points = [("after_intake", "classify_node"), ("after_classify", "extract_node"), ("after_extract", "judge_verify_node")]
+    points = [("after_intake", "classify_node"), ("after_classify", "extract_node"), ("after_extract", "compile_report_node")]
     per_doc = cfg.get("docs_per_point", 2)
     corpus = make_corpus(len(points) * per_doc, cfg["seed"] + 101, clean=True)
     inputs = {n: m for n, _t, m in corpus}
@@ -908,13 +962,7 @@ def w_crash_recovery(cfg: dict) -> dict:
         return out
 
     per_file = asyncio.run(_per_file())
-    manifests = {}
-    for mf in bins.manifests_dir().glob("*.json"):
-        try:
-            data = json.loads(mf.read_text())
-        except Exception:  # noqa: BLE001
-            continue
-        manifests.setdefault(data.get("original_filename"), []).append(data.get("stage"))
+    manifests = _manifest_index()
     dup_manifests = sum(max(0, len(manifests.get(n, [])) - 1) for n in inputs)
     by_point = {}
     for name, (point, _node) in assignments.items():
@@ -929,7 +977,7 @@ def w_crash_recovery(cfg: dict) -> dict:
         "metrics": {
             "crash_docs": len(inputs),
             "crash_points": [p for p, _n in points],
-            "all_crashed": all(died.values()),
+            "all_crashed": len(died) == len(assignments) and bool(died) and all(died.values()),
             "duplicate_manifests": dup_manifests,
             "by_point": by_point,
         },
@@ -1135,7 +1183,7 @@ def worker_main(name: str, cfg: dict, out: Path) -> int:
 
 def run_worker(name: str, cfg: dict, args, label: str) -> dict:
     """Run one worker in a fresh subprocess + fresh base dir; return its result."""
-    root = Path(tempfile.mkdtemp(prefix=f"stress-{label}-", dir=args.workdir))
+    root = Path(tempfile.mkdtemp(prefix=f"stress-{label}-", dir=args.workdir)).resolve()
     base = root / "base"
     base.mkdir()
     out = root / "result.json"
@@ -1171,6 +1219,17 @@ def parse_int_list(s: str) -> list[int]:
     return [int(x) for x in s.split(",") if x.strip()]
 
 
+def positive_int_list(s: str) -> list[int]:
+    """argparse type: comma-separated integers, every one >= 1."""
+    try:
+        values = parse_int_list(s)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected comma-separated integers, got {s!r}") from exc
+    if not values or any(v < 1 for v in values):
+        raise argparse.ArgumentTypeError(f"every count must be >= 1, got {s!r}")
+    return values
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--docs", type=int, default=120, help="documents per throughput run (default 120)")
@@ -1184,7 +1243,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--watcher-files", type=int, default=None, help="files dropped in watcher_backpressure (default --docs)")
     ap.add_argument("--watcher-run-ms", type=float, default=500.0, help="stub pipeline duration (default 500)")
     ap.add_argument("--stale-files", type=int, default=3, help="in-flight backlogged files in stale_claim")
-    ap.add_argument("--db-threads", default="32,128", help="db_contention thread counts (default 32,128)")
+    ap.add_argument("--db-threads", type=positive_int_list, default="32,128", help="db_contention thread counts (default 32,128)")
     ap.add_argument("--db-docs-per-thread", type=int, default=3)
     ap.add_argument("--fault-rate", type=float, default=0.2)
     ap.add_argument("--outage-calls", type=int, default=40, help="consecutive failing LLM calls (full outage)")
@@ -1237,7 +1296,7 @@ def collect(args) -> dict:
         scen["crash_recovery"] = go("crash_recovery", {"docs_per_point": args.crash_docs_per_point}, "crash_recovery")
     if "db_contention" in selected:
         scen["db_contention"] = {}
-        for t in parse_int_list(args.db_threads):
+        for t in args.db_threads:
             scen["db_contention"][str(t)] = go(
                 "db_contention", {"threads": t, "docs_per_thread": args.db_docs_per_thread}, f"db_contention@{t}"
             )
@@ -1294,14 +1353,18 @@ def score(args, data: dict) -> dict:
         "orphan_processing_rows", "broken_chains", "lost_audit_events",
     )
     totals = {k: 0 for k in inter_keys}
+    measured = 0  # workers that audited integrity at all
+    accounted = 0  # workers that audited their input documents (lost_docs is only set then)
     for label, r in _flat_runs(scen):
         inter = r.get("integrity") if r.get("ok") else None
         if inter:
+            measured += 1
+            accounted += "lost_docs" in inter
             for k in inter_keys:
                 totals[k] += int(inter.get(k, 0) or 0)
             for k in inter_keys:
                 metrics[f"integrity[{label}].{k}"] = inter.get(k, 0)
-    if data["do_integrity"]:
+    if data["do_integrity"] or measured:
         for k in inter_keys:
             metrics[f"integrity.{k}"] = totals[k]
 
@@ -1323,6 +1386,7 @@ def score(args, data: dict) -> dict:
         metrics["crash_recovery.orphan_processing_rows"] = ci["orphan_processing_rows"]
         metrics["crash_recovery.lost_docs"] = ci["lost_docs"]
         metrics["crash_recovery.by_point"] = cr["metrics"]["by_point"]
+        metrics["crash_recovery.all_crashed"] = cr["metrics"]["all_crashed"]
     db_failed = 0
     for k, r in scen.get("db_contention", {}).items():
         if r.get("ok"):
@@ -1343,9 +1407,15 @@ def score(args, data: dict) -> dict:
     def gate(name, value, ok):
         gates[name] = {"value": value, "pass": bool(ok)}
 
-    if data["do_integrity"]:
+    # Measured integrity failures are gated whichever scenario produced them
+    # (selecting `integrity` only adds the requirement that something measured).
+    if data["do_integrity"] or measured:
         for k in inter_keys:
             gate(k, totals[k], totals[k] == 0)
+    if data["do_integrity"]:
+        gate("integrity_measured", accounted, accounted > 0)
+    if cr and cr.get("ok"):
+        gate("crash_injected", int(not cr["metrics"]["all_crashed"]), cr["metrics"]["all_crashed"])
     if sc and sc.get("ok"):
         gate("inflight_hijacked", sc["metrics"]["inflight_hijacked"], sc["metrics"]["inflight_hijacked"] == 0)
         gate("orphans_unrecovered", sc["metrics"]["orphans_unrecovered"], sc["metrics"]["orphans_unrecovered"] == 0)
