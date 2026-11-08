@@ -66,7 +66,9 @@ and all guards pass. Most gains come early; five flat iterations means the ceili
    held-out Wilson bound clears the target and the sample suffices; other classes keep
    the taxonomy value and are marked `insufficient_evidence`.
 3. **Score** on test: `PYTHONPATH=src .venv/bin/python src/scripts/hillclimb_eval.py --records test.jsonl --split test
-   --policy candidate.yaml --baseline-policy <current>`.
+   --policy candidate.yaml --baseline-policy src/config/taxonomy.yaml` (its `confidence:` block is
+   the deployed policy; on later iterations pass the last accepted policy file instead).
+   Leaving out `--baseline-policy` skips the ΔU comparison the keep rule needs.
 4. **Iterate** on the policy file only, gating every iteration with
    `src/scripts/autoresearch_gate.py --objective thresholds` (core guards first, then the
    eval's guards and the ΔU interval; registry `experiments/autoresearch/objectives.yaml`,
