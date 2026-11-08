@@ -214,3 +214,18 @@ def test_mock_answers_from_corpus_labels_only_for_hf_rows(fake_corpus, tmp_path)
     plain = run_pilot._fake_client(base).chat.completions.create(
         messages=[{"role": "user", "content": "Classify this legal document"}])
     assert "doc_subclass" not in json.loads(plain.choices[0].message.content)
+
+
+def test_summary_and_rows_survive_an_errored_sample(capsys):
+    from scripts import run_pilot as rp
+
+    ok = {"id": "a", "expected_doc_class": "contract", "expected_stage": "archived", "stage": "archived",
+          "actual_doc_class": "contract", "class_match": True, "classification_confidence": 0.9,
+          "llm_calls": 2, "wall_time_s": 1.0}
+    err = {"id": "b", "filename": "b.txt", "status": "error", "error": "RuntimeError: boom"}
+    summary = rp.summarize([ok, err])
+    assert summary["samples"] == 2 and summary["errors"] == 1 and summary["archived"] == 1
+    assert summary["class_accuracy"] == 0.5  # an errored sample is not a correct classification
+    assert summary["avg_llm_calls"] == 2.0  # averages cover completed samples only
+    rp.print_rows([ok, err])
+    assert "ERROR RuntimeError: boom" in capsys.readouterr().out

@@ -719,7 +719,11 @@ def _attach_field_scoring(sample: dict, row: dict) -> None:
 
 
 def summarize(rows: list[dict]) -> dict:
-    n = len(rows)
+    # A sample that raised is recorded as {"status": "error", ...} with none of the
+    # outcome keys; count it and leave it out of the outcome statistics.
+    errors = sum(1 for r in rows if r.get("status") == "error")
+    rows = [r for r in rows if r.get("status") != "error"]
+    n = len(rows) + errors
     archived = sum(1 for r in rows if r["stage"] == "archived")
     review = sum(1 for r in rows if r["stage"] == "review")
     failed = sum(1 for r in rows if r["stage"] == "failed")
@@ -759,15 +763,16 @@ def summarize(rows: list[dict]) -> dict:
         "archived": archived,
         "review": review,
         "failed": failed,
+        "errors": errors,  # samples that raised; they count against class_accuracy
         "class_accuracy": round(class_matches / n, 3) if n else 0,
         "review_rate": round(review / n, 3) if n else 0,
         "mean_calibration_error": mean_calibration_error,
         "calibration_n": len(conf_rows),
-        "avg_time_s": round(sum(r["wall_time_s"] for r in rows) / n, 3) if n else 0,
-        "avg_llm_calls": round(sum(r["llm_calls"] for r in rows) / n, 1) if n else 0,
-        "avg_cost_usd": round(total_cost / n, 6) if n else 0,
+        "avg_time_s": round(sum(r["wall_time_s"] for r in rows) / len(rows), 3) if rows else 0,
+        "avg_llm_calls": round(sum(r["llm_calls"] for r in rows) / len(rows), 1) if rows else 0,
+        "avg_cost_usd": round(total_cost / len(rows), 6) if rows else 0,
         "total_cost_usd": total_cost,
-        "avg_tokens": round(total_tokens / n) if n else 0,
+        "avg_tokens": round(total_tokens / len(rows)) if rows else 0,
         "total_tokens": total_tokens,
         "avg_extraction_overall_score": round(sum(overalls) / len(overalls), 3) if overalls else None,
         "judge_review_rate": round(judge_review_n / len(scored), 3) if scored else None,
@@ -852,6 +857,9 @@ def print_rows(rows: list[dict]) -> None:
     print(header)
     print("-" * len(header))
     for r in rows:
+        if r.get("status") == "error":
+            print(f"{str(r.get('id')):<{id_w}}ERROR {r.get('error')}")
+            continue
         print(
             f"{r['id']:<{id_w}}{r['expected_doc_class']:<18}{r['expected_stage']:<10}{str(r['stage']):<10}"
             f"{r['expected_doc_class']:<18}{str(r['actual_doc_class']):<18}"
@@ -862,7 +870,7 @@ def print_rows(rows: list[dict]) -> None:
 def print_summary(summary: dict) -> None:
     print("\n== Summary ==")
     print(f"samples: {summary['samples']} | archived: {summary['archived']} | "
-          f"review: {summary['review']} | failed: {summary['failed']}")
+          f"review: {summary['review']} | failed: {summary['failed']} | errors: {summary.get('errors', 0)}")
     print(f"class_accuracy: {summary['class_accuracy']} | review_rate: {summary['review_rate']} | "
           f"calibration_error: {summary['mean_calibration_error']} (n={summary['calibration_n']})")
     if summary.get("avg_extraction_overall_score") is not None:
