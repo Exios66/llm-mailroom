@@ -12,11 +12,14 @@ with ``ground_truth`` in state route differently from production
 policy replayed offline, from records that keep every attempt's raw
 confidence and the gold labels *outside* the routing state.
 
-A *full-information* record observes every branch the router could take
-(sorter attempt 1 and the retry, the reviewer, every extraction attempt and
-the judge), so replay under any thresholds is exact, not counterfactual.
-``observed`` says which branches were run; replay counts a route that needs an
-unobserved branch as ``unobserved`` instead of guessing its outcome.
+A *full-information* record observes the sorter, reviewer, extraction and judge
+branches (sorter attempt 1 and the retry, the reviewer, every extraction attempt
+and the judge), so replay of those branches under any thresholds is exact, not
+counterfactual. The classification arbiter, the Lane B arbiter and the boss are
+never run by the sweep, so a route that needs one of them stays unobserved even
+on a full-information record. ``observed`` says which branches were run; replay
+counts a route that needs an unobserved branch as ``unobserved`` instead of
+guessing its outcome.
 
 Reviewer field names follow ``llm_dojo_scoring.scoring.reviewer.ReviewRecord``
 so :func:`to_review_record` rows feed ``score_review_lane`` directly.
