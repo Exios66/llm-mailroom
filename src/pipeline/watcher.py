@@ -115,6 +115,26 @@ DRAIN_TIMEOUT_SECONDS = int(os.environ.get("WATCHER_DRAIN_TIMEOUT_SECONDS", "30"
 # twice. The API lifespan and a nested start() must not double-run.
 _watcher_owned = False
 _watcher_owned_lock = threading.Lock()
+# Claim gate: Watcher.stop() closes it before draining, so a worker admitted
+# before shutdown cannot claim a file after the watcher lock is released (a
+# replacement watcher could then claim the same document).
+_claim_gate = threading.Lock()
+_claims_open = True
+
+
+def _set_claims_open(value: bool) -> None:
+    global _claims_open
+    with _claim_gate:
+        _claims_open = value
+
+
+def _claim_if_open(path: Path, worker_id: str) -> Path | None:
+    """Claim ``path`` unless the watcher is stopping; None leaves it in the inbox."""
+    with _claim_gate:
+        if not _claims_open:
+            logger.info("claim_skipped_watcher_stopping", file=str(path))
+            return None
+        return claim_file(path, worker_id)
 
 # ---------------------------------------------------------------------------
 # Manifest index cache (HUB-043 / performance fix): O(1) lookup per inbox
@@ -1231,7 +1251,9 @@ class InboxHandler(FileSystemEventHandler):
             if _is_already_processed(path):
                 logger.info("file_skipped_already_processed", file=str(path))
                 return
-            claimed = claim_file(path, self.worker_id)
+            claimed = _claim_if_open(path, self.worker_id)
+            if claimed is None:
+                return
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
             if _is_triage_route(claimed, intake_meta):
@@ -1307,6 +1329,7 @@ class Watcher:
             _build_manifest_index()
 
             _dispatch.reopen()
+            _set_claims_open(True)
             for f in list_inbox_files():
                 logger.info("existing_inbox_file", file=str(f))
                 _dispatch.submit(f.name, self._process_existing, f)
@@ -1429,6 +1452,7 @@ class Watcher:
         # Files still waiting for a worker slot never start; they stay in the
         # inbox for the next watcher. Only in-flight documents are drained.
         _dispatch.close()
+        _set_claims_open(False)
         # Drain: wait for in-flight documents to finish (SIGTERM hardening).
         timeout = drain_timeout if drain_timeout is not None else DRAIN_TIMEOUT_SECONDS
         deadline = time.time() + timeout
@@ -1467,7 +1491,9 @@ class Watcher:
             if _is_already_processed(path):
                 logger.info("file_skipped_already_processed", file=str(path))
                 return
-            claimed = claim_file(path, self.worker_id)
+            claimed = _claim_if_open(path, self.worker_id)
+            if claimed is None:
+                return
             matter_id, intake_meta = _intake_context(path)
             _notify_intake_reaction(intake_meta)
             if _is_triage_route(claimed, intake_meta):
