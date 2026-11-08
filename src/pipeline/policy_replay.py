@@ -34,6 +34,10 @@ The objective (every constant is a parameter, see :class:`ObjectiveParams`)::
                   + LLM_usd / review_cost_usd * C_h     on every document
     SCORE  U      = 1 - mean(cost) / C_h
 
+LLM_usd is the spend of the nodes the policy visits plus the recorded intake
+cost (``diagnostics.intake.cost_usd``), which every policy pays. An auto-archived
+document whose human label is ``rejected`` counts as wrong.
+
 All-human with free LLM scores 0; perfect free automation scores 1; a wrong
 auto-archive at C_e = 20 C_h scores deeply negative. Chow's rule: auto-accept
 only when P(correct) >= 1 - C_h / C_e (0.95 at the defaults), which is the
@@ -309,6 +313,28 @@ def _conf(att: SorterAttempt | ExtractionAttempt) -> float | None:
     return att.confidence if att.confidence is not None else att.confidence_raw
 
 
+def _extraction_confidence(att: ExtractionAttempt, cls: str | None) -> float | None:
+    """The extraction confidence routing sees under the thresholds in force.
+
+    A chunked extraction that lost a window is capped strictly below the class
+    ``low`` at extraction time (``specialist_agents.finalize_chunked_merge``), so
+    the recorded value embeds the sweep's thresholds. Re-apply the cap under the
+    candidate's, otherwise lowering ``low`` below the recorded cap would let a
+    partial extraction through that the live graph would retry.
+    """
+    conf = _conf(att)
+    if att.failed_chunks <= 0:
+        return conf
+    from langchain_agents.specialist_agents import failed_chunk_ceiling
+    from pipeline.config import load_config
+
+    specialist = next(
+        (c.get("specialist") for c in load_config().get("doc_classes") or [] if c.get("key") == cls), None
+    )
+    ceiling = failed_chunk_ceiling(specialist or cls or "")
+    return ceiling if conf is None else min(conf, ceiling)
+
+
 def _for_class(items: Sequence[Any], cls: str | None) -> list[Any]:
     """Observations of class ``cls``: a sweep extracts once per candidate class and
     restarts attempt numbers per class. Untyped (older) observations match any class."""
@@ -418,13 +444,26 @@ def reviewer_route(record: RunRecord, policy: Mapping[str, Any] | None = None) -
     return "extract" if dest == "extract" else "human_review"
 
 
+def _intake_cost_usd(record: RunRecord) -> float:
+    """LLM spend of the intake step as the sweep recorded it (``diagnostics.intake.cost_usd``).
+
+    Intake runs before any routing decision, so it is the same under every
+    policy and is charged once per document. Absent or malformed means 0.
+    """
+    intake = record.diagnostics.get("intake") if isinstance(record.diagnostics, dict) else None
+    value = intake.get("cost_usd") if isinstance(intake, dict) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    return float(value) if math.isfinite(value) and value > 0 else 0.0
+
+
 class _Walk:
     def __init__(self, record: RunRecord, oracle: bool) -> None:
         self.record = record
         self.oracle = oracle
         self.path: list[str] = []
-        self.cost = 0.0
-        self.calls = 0
+        self.cost = _intake_cost_usd(record)
+        self.calls = 1 if self.cost > 0 else 0
         self.reasons: list[str] = []
         self.final_class: str | None = None
         self.score: float | None = None
@@ -555,7 +594,7 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
         ex_state: dict[str, Any] = {
             "doc_id": record.doc_id,
             "doc_type": cls,
-            "extraction_confidence": _conf(att),
+            "extraction_confidence": _extraction_confidence(att, cls),
             "extraction_attempts": k,
             "extracted_data": {} if att.hollow else {"replay_field": "x"},
             "extraction_guardrail": list(att.guardrail_issues),
@@ -628,6 +667,8 @@ def grade_auto(record: RunRecord, out: ReplayOutcome, params: ObjectiveParams) -
     ``unscored`` (no gold class, or right class with no extraction score) is
     charged as wrong in the objective and in G1/G2: unknown is not correct.
     """
+    if str(record.gold.human_decision or "").strip().lower() == "rejected":
+        return "wrong"  # a person rejected the document: archiving it is an error whatever the fields say
     gold = record.gold.expected_doc_type
     if gold is None:
         return "unscored"
@@ -668,7 +709,7 @@ def extraction_pairs(
         if a1 is None or gold is None or a1.doc_type != gold:
             continue
         final = max(
-            (a for a in rec.extraction if a.extraction_score is not None and _conf(a) is not None),
+            (a for a in _for_class(rec.extraction, gold) if a.extraction_score is not None and _conf(a) is not None),
             key=lambda a: a.attempt,
             default=None,
         )
@@ -711,9 +752,14 @@ def evaluate(
     ``result["status"]`` is ``ok`` or ``guard_fail``; ``result["guards"]`` lists
     G1..G4 with ``pass`` True/False (G4 ``skipped`` when no budget is set).
     ``result["per_doc_cost"]`` maps ``doc_id`` to its cost in C_h units, for
-    paired comparisons (:func:`paired_delta`).
+    paired comparisons (:func:`paired_delta`); a repeated ``doc_id`` (concatenated
+    runs) is keyed ``"<doc_id>#2"``, ``"#3"``... in input order, so evaluating the
+    same records under two policies still pairs row for row.
+    ``llm_calls_per_doc`` is a lower bound (see ``llm_calls_basis``).
     """
     p = ObjectiveParams.from_mapping(objective_params)
+    if not (isinstance(p.review_cost_usd, (int, float)) and math.isfinite(p.review_cost_usd) and p.review_cost_usd > 0):
+        raise ValueError(f"review_cost_usd must be a finite number > 0, got {p.review_cost_usd!r}")
     if not records:
         raise ValueError("no records to evaluate")
     n = len(records)
@@ -725,6 +771,7 @@ def evaluate(
     total_usd = 0.0
     total_calls = 0
     unobserved_reasons: dict[str, int] = {}
+    seen_ids: dict[str, int] = {}
 
     with policy_override(policy):
         used_policy = current_policy()
@@ -752,7 +799,11 @@ def evaluate(
                         key = out.reasons[0].split(":")[0] if out.reasons else "unknown"
                         unobserved_reasons[key] = unobserved_reasons.get(key, 0) + 1
                 doc_cost += out.llm_cost_usd / p.review_cost_usd * p.c_human
-                per_doc_cost[rec.doc_id] = doc_cost
+                # Concatenated runs repeat doc_ids: keep one cost per scored row (the 2nd
+                # occurrence is "<id>#2", ...) so it neither overwrites nor drops out of a pairing.
+                seen_ids[rec.doc_id] = seen_ids.get(rec.doc_id, 0) + 1
+                key = rec.doc_id if seen_ids[rec.doc_id] == 1 else f"{rec.doc_id}#{seen_ids[rec.doc_id]}"
+                per_doc_cost[key] = doc_cost
                 total_cost += doc_cost
 
     n_auto = counts[AUTO]
@@ -850,6 +901,9 @@ def evaluate(
         "mean_cost_units": total_cost / n,
         "llm_usd_per_doc": usd_per_doc,
         "llm_calls_per_doc": total_calls / n,
+        # one call per visited node (extraction: one per chunk). A judge result makes two
+        # calls and sliding windows add more, so the count is a floor, not a measurement.
+        "llm_calls_basis": "lower_bound: one call per visited node plus extraction chunks",
         "sorter_calibration": sorter_calibration(records),
         "score": score,
         "status": "ok" if all(g["pass"] for g in guards) else "guard_fail",

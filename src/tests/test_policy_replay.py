@@ -491,3 +491,138 @@ def test_replay_uses_only_the_routed_class_extractions():
              ExtractionAttempt(attempt=1, doc_type="contract", confidence=0.99)]
     assert _att(_for_class(items, "contract"), 1).confidence == 0.99
     assert _att(_for_class(items, "correspondence"), 1).confidence == 0.1
+
+
+def test_replay_routes_with_the_extraction_of_the_routed_class_when_attempt_numbers_collide():
+    """Two candidate classes both have an attempt 1: replay must score the routed class's one."""
+    rec = record(
+        sorters=[sorter(0.97)],
+        extractions=[
+            extract(0.10, doc_type="correspondence", score=0.1),  # would park if it were used
+            extract(0.95, doc_type="contract", score=0.9),
+        ],
+    )
+    out = pr.replay(rec, POLICY)
+    assert out.outcome == pr.AUTO
+    assert out.extraction_score == 0.9 and out.extraction_attempt == 1
+    flipped = pr.replay(
+        record(
+            sorters=[sorter(0.97, doc_type="correspondence")],
+            extractions=rec.extraction,
+            gold="correspondence",
+        ),
+        POLICY,
+    )
+    assert flipped.extraction_score == 0.1  # the other class's attempt 1, not the contract one
+
+
+# ---- review fixes: replay accounting ---------------------------------------------------------
+
+
+def test_failed_chunk_extraction_is_capped_below_the_candidates_own_low():
+    """A lost window caps live confidence below the policy's ``low``; replay must apply the
+    candidate's cap, not trust the cap recorded under the sweep's thresholds."""
+    rec = record(
+        sorters=[sorter(0.97)],
+        extractions=[extract(0.79, failed_chunks=1)],  # recorded under POLICY: low 0.80 - 0.01
+    )
+    lenient = {**POLICY, "low": 0.5, "judge_band_high": 0.6}
+    out = pr.replay(rec, lenient)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["extraction_attempt_2_not_observed"]
+    clean = record(sorters=[sorter(0.97)], extractions=[extract(0.79)])  # no lost window: unchanged
+    assert pr.replay(clean, lenient).outcome == pr.AUTO
+
+
+def test_recorded_intake_cost_is_charged_once_per_document():
+    rec = record("i", sorters=[sorter(0.97, cost=0.40)], extractions=[extract(0.95)])
+    rec = rec.model_copy(update={"diagnostics": {"intake": {"llm_prep": True, "cost_usd": 0.40}}})
+    out = pr.replay(rec, POLICY)
+    assert out.llm_cost_usd == pytest.approx(0.80)
+    res = pr.evaluate([rec], POLICY)
+    assert res["llm_usd_per_doc"] == pytest.approx(0.80)
+    assert res["per_doc_cost"]["i"] == pytest.approx(0.80 / 4)
+    bad = rec.model_copy(update={"diagnostics": {"intake": {"cost_usd": float("nan")}}})
+    assert pr.replay(bad, POLICY).llm_cost_usd == pytest.approx(0.40)  # malformed cost is ignored
+
+
+def test_auto_archiving_a_human_rejected_document_is_wrong():
+    rec = record("r", sorters=[sorter(0.99)], extractions=[extract(0.99, score=1.0)])
+    rec = rec.model_copy(update={"gold": rec.gold.model_copy(update={"human_decision": "rejected"})})
+    res = pr.evaluate([rec], POLICY)
+    assert res["auto"]["wrong"] == 1 and res["auto"]["correct"] == 0
+    assert res["score"] == pytest.approx(1 - 20.0)
+    approved = rec.model_copy(update={"gold": rec.gold.model_copy(update={"human_decision": "approved"})})
+    assert pr.evaluate([approved], POLICY)["auto"]["correct"] == 1
+
+
+def test_repeated_doc_ids_keep_one_cost_per_scored_row_and_stay_paired():
+    a = record("dup", sorters=[sorter(0.99)], extractions=[extract(0.99)])
+    b = record("dup", sorters=[sorter(0.99)], extractions=[extract(0.99, score=0.1)])  # wrong auto
+    res = pr.evaluate([a, b], POLICY)
+    assert len(res["per_doc_cost"]) == 2
+    assert sum(res["per_doc_cost"].values()) == pytest.approx(res["mean_cost_units"] * 2)
+    strict = pr.evaluate([a, b], {**POLICY, "high": 0.995})
+    d = pr.paired_delta(res, strict)
+    assert d is not None and d["n_paired"] == 2
+
+
+def test_non_positive_or_non_finite_review_cost_is_rejected():
+    rec = [record("x", sorters=[sorter(0.99)], extractions=[extract(0.99)])]
+    for bad in (0.0, -4.0, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="review_cost_usd"):
+            pr.evaluate(rec, POLICY, {"review_cost_usd": bad})
+
+
+def test_llm_call_count_is_labelled_a_lower_bound():
+    res = pr.evaluate([record("x", sorters=[sorter(0.99)], extractions=[extract(0.99)])], POLICY)
+    assert res["llm_calls_basis"].startswith("lower_bound")
+
+
+def test_extraction_pairs_ignore_other_candidate_classes():
+    """The final scored attempt must come from the gold class, not a later attempt of another class."""
+    rec = record(
+        "p",
+        sorters=[sorter(0.97)],
+        extractions=[
+            extract(0.90, doc_type="contract", score=0.9),
+            extract(0.30, attempt=2, doc_type="correspondence", score=0.1),
+        ],
+    )
+    assert pr.extraction_pairs([rec]) == {"contract": [(0.90, True)]}
+    untyped = record("q", sorters=[sorter(0.97)], extractions=[extract(0.5, score=0.1)])
+    assert pr.extraction_pairs([untyped]) == {"contract": [(0.5, False)]}  # older, untyped rows still count
+
+
+# ---- review fixes: RunRecord -> ReviewRecord, synthetic generator -----------------------------
+
+
+def test_to_review_record_uses_sorter_attempt_one_whatever_the_order():
+    from schemas.run_record import to_review_record
+
+    rec = record(sorters=[sorter(0.60, attempt=2, doc_type="correspondence"), sorter(0.97)])
+    row = to_review_record(rec)
+    assert row["sorter_doc_type"] == "contract" and row["sorter_confidence"] == 0.97
+    assert to_review_record(record(sorters=[sorter(0.6, attempt=2)]))["sorter_doc_type"] is None
+
+
+def test_to_review_record_reports_reviewer_usage_only_when_the_reviewer_ran():
+    from schemas.run_record import to_review_record
+
+    not_ran = to_review_record(record(sorters=[sorter(0.97)]))
+    assert not_ran["cost_usd"] is None and not_ran["prompt_tokens"] is None
+    assert not_ran["completion_tokens"] is None
+    ran = ReviewerObservation(
+        ran=True, mode="llm", reviewer_doc_type="contract", reviewer_confidence=0.9,
+        cost_usd=0.0, prompt_tokens=10, completion_tokens=2,
+    )
+    row = to_review_record(record(sorters=[sorter(0.97)], reviewer=ran))
+    assert row["cost_usd"] == 0.0 and row["prompt_tokens"] == 10 and row["completion_tokens"] == 2
+
+
+def test_generate_records_rejects_a_single_distinct_class_before_drawing():
+    from pipeline.synthetic_records import generate_records
+
+    for classes in (["contract"], ["contract", "contract"]):
+        with pytest.raises(ValueError, match="two distinct classes"):
+            generate_records(5, classes=classes)
+    assert len(generate_records(2, seed=1, classes=["contract", "correspondence"])) == 4
