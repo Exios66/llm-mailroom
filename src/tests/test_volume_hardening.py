@@ -438,3 +438,23 @@ def test_sqlite_connections_set_busy_timeout_before_wal(catalog_db):
         assert conn.execute("PRAGMA busy_timeout").fetchone()[0] >= 5000
     finally:
         conn.close()
+
+
+async def test_audit_write_retries_sqlite_lock(monkeypatch):
+    """A `database is locked` on BEGIN IMMEDIATE is retried, not dropped."""
+    import sqlite3
+
+    from sqlalchemy.exc import OperationalError
+    from storage import audit_log
+
+    calls = []
+
+    async def flaky(entry):
+        calls.append(entry)
+        if len(calls) == 1:
+            raise OperationalError("BEGIN IMMEDIATE", {}, sqlite3.OperationalError("database is locked"))
+        return "ok"
+
+    monkeypatch.setattr(audit_log, "_write_audit_entry_once", flaky)
+    assert await audit_log.write_audit_entry("entry") == "ok"
+    assert len(calls) == 2
