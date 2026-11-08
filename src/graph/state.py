@@ -39,6 +39,11 @@ class DocumentState(TypedDict, total=False):
     retry_count: int
     conflict_detected: bool
     conflict_details: list[str]
+    # sha256 of the normalized ``conflict_details`` the Boss ruled on (set only
+    # by ``boss_escalation_node``; reset to None on fresh runs and human review
+    # resets). Routing treats a conflict as adjudicated only when it matches.
+    # Absent on pre-existing checkpoints, which keep the legacy behaviour.
+    boss_conflict_fingerprint: str | None
     extraction_guardrail: list[str]
     classification_guardrail: list[str]
     file_path: str
