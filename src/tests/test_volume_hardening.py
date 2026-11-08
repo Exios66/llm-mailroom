@@ -623,3 +623,34 @@ async def test_audit_write_retries_sqlite_lock(monkeypatch):
     monkeypatch.setattr(audit_log, "_write_audit_entry_once", flaky)
     assert await audit_log.write_audit_entry("entry") == "ok"
     assert len(calls) == 2
+
+
+def test_run_coro_in_a_running_loop_waits_without_a_false_timeout(monkeypatch):
+    """CR7: the helper-thread branch must not time out a write that is still running.
+
+    The ``with`` block waits for the thread regardless, so a ``result(timeout=...)``
+    only turned a slow-but-committed write into a logged TimeoutError.
+    """
+    import asyncio
+    import concurrent.futures
+
+    from graph.build_graph import _run_coro
+
+    seen = []
+    real_result = concurrent.futures.Future.result
+
+    def recording_result(self, timeout=None):
+        seen.append(timeout)
+        return real_result(self, timeout)
+
+    monkeypatch.setattr(concurrent.futures.Future, "result", recording_result)
+
+    async def write():
+        await asyncio.sleep(0.05)
+        return "committed"
+
+    async def caller():
+        return _run_coro(write)
+
+    assert asyncio.run(caller()) == "committed"
+    assert seen and all(t is None for t in seen)
