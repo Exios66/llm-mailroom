@@ -83,7 +83,7 @@ the full-suite evidence is your local run on the final commit.
 | Change touches | Run |
 |:---|:---|
 | Any Python | `.venv/bin/python -m compileall -q src`, then `affected_tests.py --run`, then the full suite before the PR is ready |
-| Graph, agents, routing, prompts | + `run_pilot.py --mock` (needs `docs/examples/samples/manifest.csv`, which only the monorepo has; in a standalone checkout say it was not run) and `MAILROOM_BASE_DIR="$(mktemp -d)"` with `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
+| Graph, agents, routing, prompts | + `run_pilot.py --mock` (the monorepo reads `docs/examples/samples/manifest.csv`; in a standalone checkout it falls back to real documents from the pinned HF corpus, or pass `--dataset hf --per-class 2` yourself) and `MAILROOM_BASE_DIR="$(mktemp -d)"` with `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
 | Nodes, spans, agents, classes, score configs, thresholds | + `PYTHONPATH=src .venv/bin/python src/scripts/export_contract.py --check` (`--write` to regenerate) |
 | `CHANGELOG.md` | + `PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check` |
 | Docs, README, prose with paths/versions | + `pytest src/tests/test_docs_truth.py -q` |
