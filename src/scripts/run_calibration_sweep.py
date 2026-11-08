@@ -856,6 +856,22 @@ def _materialise(doc: Doc, ctx: SweepContext) -> Path:
 # --------------------------------------------------------------------------------------
 
 
+def _as_bool(value: Any) -> bool | None:
+    """Corpus boolean cell -> bool. The corpus stores ``review_expected`` as the
+    strings ``"true"`` / ``"false"``, and ``bool("false")`` is True, so parse text."""
+    value = _clean(value)
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in ("true", "1", "yes", "y", "t"):
+        return True
+    if text in ("false", "0", "no", "n", "f", ""):
+        return False if text else None
+    return None
+
+
 def _clean(value: Any) -> Any:
     """Parquet cell -> plain Python: NaN / pandas NA -> None, numpy arrays and scalars -> lists / scalars.
 
@@ -942,7 +958,7 @@ def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict
                 doc_id=sample["filename"], filename=sample["filename"], text=sample["text"],
                 gold_class=sample["expected_hf_class"], gold_subclass=sample.get("expected_subclass") or None,
                 expected_stage=_clean(rec.get("expected_stage")) or None,
-                review_expected=bool(review_expected) if review_expected is not None else None,
+                review_expected=_as_bool(review_expected),
                 expected_fields=fields or None,
                 content_sha256=_clean(rec.get("content_sha256")),
                 gold_meta={k: meta.get(k) for k in ("sources", "n_fields", "n_posthoc", "coverage", "specialist")},
