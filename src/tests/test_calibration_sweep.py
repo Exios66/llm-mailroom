@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -360,8 +361,21 @@ def test_hf_docs_are_a_seeded_per_class_sample_of_the_pinned_loader(monkeypatch)
     assert all(d.expected_stage is None for d in docs)  # NaN became None, not the string "nan"
     again, _ = sw.load_hf_docs("test", per_class=2, seed=7)
     assert [d.doc_id for d in again] == [d.doc_id for d in docs]
-    other, _ = sw.load_hf_docs("test", per_class=2, seed=8)
-    assert [d.doc_id for d in other] != [d.doc_id for d in docs] or len(frame) == 8
+    # Selection depends on the seed: with a controlled sampler that picks a different slice of the
+    # pool per seed, the document ids must differ (no row-count escape hatch).
+    class _SliceSampler:
+        def __init__(self, seed):
+            self.seed = seed
+
+        def sample(self, pool, k):
+            start = self.seed % (len(pool) - k + 1)
+            return list(pool[start:start + k])
+
+    monkeypatch.setattr(sw, "random", SimpleNamespace(Random=_SliceSampler))
+    first, _ = sw.load_hf_docs("test", per_class=2, seed=0)
+    other, _ = sw.load_hf_docs("test", per_class=2, seed=2)
+    assert {d.doc_id for d in first} != {d.doc_id for d in other}
+
 
 
 def test_manifest_docs_resolve_files_and_gold(tmp_path):
