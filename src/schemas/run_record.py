@@ -54,6 +54,13 @@ class Gold(_Model):
     # Routing-level gold from the corpus (§84 columns), when present.
     expected_stage: str | None = None
     review_expected: bool | None = None
+    # Human-review labels (``scripts/export_review_labels.py``). ``label_source``
+    # says whether gold came from the corpus or from a person's resolution.
+    human_decision: str | None = None
+    human_doc_type: str | None = None
+    human_doc_subclass: str | None = None
+    human_fields: dict[str, Any] | None = None
+    label_source: Literal["corpus", "human"] | None = None
 
 
 class SorterAttempt(_Model):
@@ -207,6 +214,9 @@ def to_review_record(record: RunRecord) -> dict[str, Any]:
         "reviewer_confidence": rev.reviewer_confidence if rev.ran else None,
         "reviewer_verdict": rev.reviewer_verdict if rev.ran else None,
         "causes": list(rev.causes),
+        "human_decision": record.gold.human_decision,
+        "human_doc_type": record.gold.human_doc_type,
+        "human_doc_subclass": record.gold.human_doc_subclass,
         "prompt_tokens": rev.prompt_tokens,
         "completion_tokens": rev.completion_tokens,
         "cost_usd": rev.cost_usd,

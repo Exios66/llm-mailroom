@@ -297,6 +297,42 @@ reviewer:
 # types are too lenient for a deterministic reject (Jaro-Winkler/token-set are
 # typo-tolerant by design), so every such field escalates to the judge
 # ("always"). See observability/field_scoring.py.
+review_queue:
+  # Order of the human review tray (pipeline/review_priority.py). Score =
+  # severity * class weight * (1 + age term); the tray sorts by score, then oldest.
+  # severity = heaviest cause weight + 0.1 * the rest; unknown causes weigh 1.0.
+  cause_weights:
+    transient_exhausted: 3.0       # provider outage: nothing was judged at all
+    boss_conflict: 3.0             # contradicts the matter record
+    schema_invalid: 3.0
+    parse_error: 3.0
+    chunk_failed: 3.0              # part of the document was never read
+    judge_error: 3.0
+    unsupported_extraction: 3.0
+    empty_document: 2.5
+    arbiter_escalated: 2.5
+    classification_arbiter_escalated: 2.5
+    unknown_class: 2.0
+    judge_incomplete: 2.0
+    judge_miss: 2.0
+    hollow_extraction: 2.0
+    retries_exhausted: 1.5
+    low_extraction_confidence: 1.5
+    judge_partial: 1.5
+    reviewer_disagreement: 1.5
+    sorter_low_confidence: 1.2
+    reviewer_low_confidence: 1.2
+    reporting_incomplete: 1.2
+  class_tier_weight:               # cost of a wrong answer per class
+    contract: 1.3
+    merger_agreement: 1.4
+    insurance_claim: 1.3
+    corporate_record: 1.1
+    correspondence: 1.0
+  tier_cutoffs: {high: 3.0, normal: 1.5}   # on severity * class weight (before age)
+  age_half_life_hours: 24          # age term = 1 - 0.5 ** (age / half_life), in [0, 1)
+  sla_hours: {high: 4, normal: 24, low: 72}  # older than this: sla_breached
+
 field_scoring:
   ambiguous_band: [0.5, 0.85]
   type_bands:
