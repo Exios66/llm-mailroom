@@ -14,8 +14,11 @@ confidence and the gold labels *outside* the routing state.
 
 A *full-information* record observes the sorter, reviewer, extraction and judge
 branches (sorter attempt 1 and the retry, the reviewer, every extraction attempt
-and the judge), so replay of those branches under any thresholds is exact, not
-counterfactual. The classification arbiter, the Lane B arbiter and the boss are
+and the judge on extraction attempt 1, or on every attempt when swept with
+``--judge-attempts all``), so replay of those branches under any thresholds is
+exact, not counterfactual. A route that sends a later, unjudged attempt to the
+judge is replayed as ``unobserved``, and so is a route that reaches extraction
+with a subclass the sweep did not extract (``extraction_candidates_collapsed``). The classification arbiter, the Lane B arbiter and the boss are
 never run by the sweep, so a route that needs one of them stays unobserved even
 on a full-information record. ``observed`` says which branches were run; replay
 counts a route that needs an unobserved branch as ``unobserved`` instead of

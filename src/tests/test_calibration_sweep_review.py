@@ -50,7 +50,7 @@ def test_docs_and_diagnostics_say_arbiters_are_never_observed(ctx, mocked):
     assert any("arbiter" in gap for gap in sw.KNOWN_GAPS)
     rec = sw.sweep_document(_doc(), ctx)
     assert rec.observed.full_information is True
-    assert rec.diagnostics["unobserved_branches"] == ["classification_arbiter", "arbiter", "boss"]
+    assert rec.diagnostics["unobserved_branches"] == ["classification_arbiter", "arbiter", "boss", "judge_on_retry_attempts"]
     assert rec.arbiters == []
 
 

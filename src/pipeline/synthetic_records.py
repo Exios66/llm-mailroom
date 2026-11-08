@@ -105,9 +105,10 @@ def planted_cutoff(cls: str, target: float, kind: str = "sorter", *, grid: int =
 
     A numerical approximation of the population analogue of ``cutoff_at_target``,
     not an exact value: the planted curve is evaluated at each grid cell's
-    midpoint and the answer is the left edge of a cell (``grid`` cells over the
-    confidence range, so it is within one cell width, ``(1 - lo) / grid``, of the
-    continuous cutoff). It returns ``None`` when no cell's accepted set reaches
+    midpoint and the answer is the left edge of a cell (``grid`` cells of width
+    ``(1 - lo) / grid`` over the confidence range). The midpoint rule can misjudge the
+    accepted-set accuracy near the target, so the error is not bounded by one cell
+    width; it shrinks as ``grid`` grows. It returns ``None`` when no cell's accepted set reaches
     ``target``, which includes a target the curve only reaches inside the last
     cell, where the midpoint accuracy can fall just short of it. Raise ``grid``
     to tighten both effects.

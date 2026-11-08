@@ -626,3 +626,19 @@ def test_generate_records_rejects_a_single_distinct_class_before_drawing():
         with pytest.raises(ValueError, match="two distinct classes"):
             generate_records(5, classes=classes)
     assert len(generate_records(2, seed=1, classes=["contract", "correspondence"])) == 4
+
+
+def test_route_with_an_unextracted_subclass_is_unobserved():
+    """A collapsed candidate of the same class but another subclass was never
+    extracted: replay must not reuse the first candidate's extraction for it."""
+    collapsed = [{"doc_type": "contract", "subclass_differs": True,
+                  "doc_subclass": "lease", "extracted_doc_subclass": "nda"}]
+    rec = record(sorters=[SorterAttempt(attempt=1, doc_type="contract", doc_subclass="lease",
+                                        confidence_raw=0.97, confidence=0.97)],
+                 extractions=[extract(0.95)])
+    rec.diagnostics["extraction_candidates_collapsed"] = collapsed
+    out = pr.replay(rec, POLICY)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["extraction_subclass_not_observed"]
+    # the subclass that WAS extracted still replays normally
+    rec.sorter[0].doc_subclass = "nda"
+    assert pr.replay(rec, POLICY).outcome == pr.AUTO
