@@ -7,7 +7,8 @@ no audit, and pilot runs put ``ground_truth`` into state, which changes routing
 (``pipeline.reconsideration.class_misses_ground_truth`` / ``coverage_below_floor``).
 A confidence threshold cannot be calibrated from such runs. This sweep runs the
 REAL node functions of ``graph/build_graph.py`` in a fixed order, whatever the
-router would have done, so every branch is observed for every document:
+router would have done, so every sorter, reviewer, extraction and judge branch
+is observed for every document (arbiter and boss branches never are; see below):
 
     intake_node
       -> classify_node (sorter attempt 1)
@@ -632,7 +633,8 @@ def _pick_candidates(
 
 
 def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
-    """Run every branch for one document and return its record (never raises)."""
+    """Run the sorter, reviewer, extraction and judge branches for one document and return its
+    record (never raises). Arbiter and boss branches are not run."""
     import graph.build_graph as bg
     from pipeline.config import get_agent_config, get_confidence_thresholds, get_review_mode
 
