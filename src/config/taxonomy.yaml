@@ -172,7 +172,9 @@ run_limits:
 # documents are split on paragraph boundaries into overlapping windows,
 # each window extracted in its own call, and merged deterministically (list
 # fields union with normalized dedupe, scalars keep the first non-null value,
-# confidence takes the max) — nothing is truncated. Window size is capped at
+# confidence takes the MIN across windows; a failed window caps it below the
+# class `low` threshold, a transient provider error is re-raised) — nothing is
+# truncated. Window size is capped at
 # the specialist's ``max_input_chars`` so a chunk is never silently truncated
 # inside ``extract()``. Documents that fit in a single window take the plain
 # single-pass path, so small documents are unaffected. The per-run
