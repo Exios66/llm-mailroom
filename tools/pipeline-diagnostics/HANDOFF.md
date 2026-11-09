@@ -107,6 +107,21 @@ D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested 
 
 **Acceptance:** deliberate defects detected, corrected fixtures clear, and no “unvisited therefore dead” or “finite matrix therefore all Python states safe” claims. Existing-main holes must reproduce before being marked confirmed.
 
+### D1.3 — Live-corpus manifest, run journals and viewer replay
+
+**Depends:** D0.1/D1.1; **owns:** live manifest, smoke/replay scripts, run-event journal, runs/experiments API and viewer panels.
+
+- [x] Resolve the newest tagged `mailroom-dataset` release, verify the release manifest and every parquet/content sha256, and emit the pipeline manifest shape plus provenance. A pinned 15-row real-sample fixture is committed.
+- [x] Fetch selected real documents, verify their hashes, run the full graph (mock by default, `--real` opt-in), and assert expected class/stage plus the clean archived path.
+- [x] Write one journal per run with exact LangGraph node ids, order, transitions and terminal outcome; never include document text, extracted values or absolute paths.
+- [x] Expose `GET /v1/diagnostics/runs`, `/runs/{execution_id}`, `/experiments`, `/experiments/{experiment_id}` and load both in the React viewer; highlight/play the recorded path and jump from an experiment to its runs.
+- [x] Provide `smoke_live_documents.py --replay <journal>` that re-executes the same document and diffs node sequence/outcome.
+- [x] Gate the network real-corpus test behind `MAILROOM_LIVE_TESTS=1`; run it locally on the pinned v9.3 sample and record the result in the PR.
+
+**Acceptance:** real documents route to their expected classes/outcomes in the deterministic mock run; journals reproduce the exact node path; replay matches; the viewer loads journals and experiments without a second inventory. Live route-token/predicate capture and SSE transport remain D2.1/D2.2.
+
+**Evidence (this layered PR):** `src/tests/test_live_manifest.py` (6 hermetic manifest/selection tests), `src/tests/test_run_events.py` (2 journal/redaction tests), `src/tests/test_live_corpus_smoke.py` (5 real documents + replay, 14s, `MAILROOM_LIVE_TESTS=1`), diagnostics API tests, 21 frontend tests, and a browser walkthrough of a real experiment/run journal with path playback.
+
 ### D2.1 — Exact execution and routing instrumentation
 
 **Depends:** D0/D1; **owns:** small node/router hooks plus nested event schema/broker.

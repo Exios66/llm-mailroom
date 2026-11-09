@@ -1,8 +1,8 @@
 """Build a real wheel and load its runtime taxonomy without checkout fallbacks."""
+import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -12,14 +12,18 @@ import pytest
 
 def test_built_wheel_contains_and_loads_its_runtime_prompt_catalog(tmp_path):
     """An isolated wheel must resolve its taxonomy and all 18 frozen templates."""
-    uv = shutil.which("uv")
-    if uv is None:
-        pytest.skip("wheel smoke test requires the documented uv build tool")
     root = Path(__file__).resolve().parents[2]
     dist = tmp_path / "dist"
+    # Build with this interpreter's own setuptools/wheel (both in the ``dev`` extra), so the
+    # test needs no network, no uv and no pre-warmed build cache on a contributor's machine.
+    for backend in ("setuptools", "wheel"):
+        if importlib.util.find_spec(backend) is None:
+            pytest.fail(f"{backend} is missing: install the dev extra (pip install -e '.[dev]')")
     built = subprocess.run(
-        [uv, "build", "--no-sources", "--offline", "--wheel", "--out-dir", str(dist), str(root)],
-        text=True, capture_output=True, timeout=90,
+        [sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation", "--no-index",
+         "--wheel-dir", str(dist), str(root)],
+        text=True, capture_output=True, timeout=180,
+        env={**os.environ, "PIP_DISABLE_PIP_VERSION_CHECK": "1"},
     )
     assert built.returncode == 0, built.stdout + built.stderr
     wheel = next(dist.glob("*.whl"))
