@@ -53,6 +53,29 @@ def test_invalid_cli_arguments_still_have_machine_error(capsys):
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid-arguments"
 
 
+def test_unexpected_runtime_error_does_not_publish_private_details(monkeypatch, capsys):
+    import mailroom_diagnostics.cli as cli
+
+    def fail():
+        raise RuntimeError("private-path-and-document-content")
+
+    monkeypatch.setattr(cli, "build_workspace_snapshot", fail)
+    assert main(["inspect", "--json"]) == 2
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["error"]["code"] == "runtime-error"
+    assert "private-path-and-document-content" not in captured.out + captured.err
+
+
+def test_workspace_rejects_falsey_non_mapping_confidence(monkeypatch):
+    from mailroom_diagnostics.snapshot import _workspace_thresholds
+    from mailroom_diagnostics.models import DiagnosticsError
+    import pipeline.config
+
+    monkeypatch.setattr(pipeline.config, "load_config", lambda: {"confidence": []})
+    with pytest.raises(DiagnosticsError, match="confidence block must be an object"):
+        _workspace_thresholds()
+
+
 def test_untracked_source_is_dirty_provenance(tmp_path):
     def git(*args):
         return subprocess.run(["git", "-C", str(tmp_path), *args], check=True,

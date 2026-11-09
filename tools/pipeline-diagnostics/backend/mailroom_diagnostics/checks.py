@@ -67,8 +67,10 @@ def _endpoint_consistency(graph: GraphPayload) -> list[Finding]:
 def _entry_reachability(graph: GraphPayload) -> list[Finding]:
     """Every declared node must be reachable from the declared entry."""
     adjacency: dict[str, list[str]] = {}
+    incoming_by_node: dict[str, list[dict[str, Any]]] = {}
     for edge in graph.edges:
         adjacency.setdefault(edge.source, []).append(edge.target)
+        incoming_by_node.setdefault(edge.target, []).append(edge.model_dump(mode="json"))
     reachable: set[str] = set()
     stack = [graph.start]
     while stack:
@@ -82,7 +84,7 @@ def _entry_reachability(graph: GraphPayload) -> list[Finding]:
     for node in graph.nodes:
         if node.id in reachable:
             continue
-        incoming = [edge.model_dump(mode="json") for edge in graph.edges if edge.target == node.id]
+        incoming = incoming_by_node.get(node.id, [])
         findings.append(
             _finding(
                 "unreachable-node",
