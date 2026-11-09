@@ -31,6 +31,13 @@ EXIT_INCOMPLETE = 3  # reserved: no partial-evidence mode in this slice
 
 
 class _Parser(argparse.ArgumentParser):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Do not accept optparse-style prefixes such as --js: error-mode
+        # detection matches the literal --json token, so abbreviations would
+        # otherwise fail with text instead of the requested JSON document.
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
+
     def error(self, message: str) -> None:
         # Do not echo arbitrary argument values into shareable machine output.
         raise DiagnosticsError("invalid-arguments", "invalid command line; use --help")

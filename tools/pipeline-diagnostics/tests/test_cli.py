@@ -161,3 +161,29 @@ def test_workspace_snapshot_has_allowlisted_thresholds_only():
     for class_key, row in by_class.items():
         assert isinstance(class_key, str) and class_key
         assert set(row) <= {"high", "low", "judge_band_high"}
+
+
+def test_abbreviated_json_flag_is_rejected_instead_of_leaking_text(run_cli):
+    """Only the literal --json token requests machine mode; --js is refused."""
+    proc = run_cli("inspect", "--js")
+    assert proc.returncode == EXIT_INVALID
+    assert proc.stdout == ""
+    assert "invalid-arguments" in proc.stderr
+
+
+def test_pipeline_version_requires_an_unambiguous_provider(monkeypatch):
+    import importlib.metadata as metadata
+
+    monkeypatch.setattr(
+        metadata,
+        "packages_distributions",
+        lambda: {"pipeline": ["mailroom", "unrelated-mailroom"]},
+    )
+    assert snapshot_module._pipeline_version() is None
+
+    monkeypatch.setattr(
+        metadata,
+        "packages_distributions",
+        lambda: {"pipeline": ["mailroom", "mailroom"]},
+    )
+    assert snapshot_module._pipeline_version() == metadata.version("mailroom")
