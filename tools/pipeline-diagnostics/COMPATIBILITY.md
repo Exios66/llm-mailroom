@@ -59,7 +59,7 @@ The native branch must remain usable on current main independently. This integra
 
 ## Landing verification, 2026-11-09
 
-Heads checked: PR 208 `065a0c2`, PR 203 `ab090bd`, PR 204 `6b2d42a`. Both candidates are disposable local merges, never pushed.
+Heads used to build the candidates: PR 208 `065a0c2`, PR 203 `ab090bd`, PR 204 `6b2d42a` (historical; PR 208 has since moved to tests/CI/docs-only commits, and a fresh review on head `d7e0b05` re-ran the full parent + nested suite and found the same PR 203 fixture result). Both candidates are disposable local merges, never pushed.
 
 | Candidate | Built as | Result |
 | --- | --- | --- |
