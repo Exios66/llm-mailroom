@@ -6,13 +6,13 @@ description: Importable prompt catalog for llm-dojo-scoring. LLM bodies are prod
 prompts:
 - agent: sorter
   family: production
-  version: sorter_v14
+  version: sorter_condensed_v5
   kind: llm
   metrics_bundle: classification
   doc_bundle: null
   source_repo: llm-mailroom
-  source_key: sorter_v14
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_key: sorter_condensed_v5
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: sorter.production.md
   priming: []
 - agent: contracts_specialist
@@ -23,7 +23,7 @@ prompts:
   doc_bundle: contract
   source_repo: llm-mailroom
   source_key: frozen_v1
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: contracts_specialist.production.md
   priming: []
 - agent: merger_agreement_specialist
@@ -34,7 +34,7 @@ prompts:
   doc_bundle: merger_agreement
   source_repo: llm-mailroom
   source_key: frozen_v1
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: merger_agreement_specialist.production.md
   priming: []
 - agent: corporate_records_specialist
@@ -45,7 +45,7 @@ prompts:
   doc_bundle: corporate_record
   source_repo: llm-mailroom
   source_key: frozen_v1
-  source_commit: cb960a2c1ab323a7d9cb1ebf9e9aaf77652ca622
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: corporate_records_specialist.production.md
   notes: 'Live mailroom freeze: corporate_records_specialist_v6 (sha256 fe13501f…).
     production_prompts carries eval-environment v7; promote it here only after
@@ -59,7 +59,7 @@ prompts:
   doc_bundle: correspondence
   source_repo: llm-mailroom
   source_key: frozen_v1
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: correspondence_specialist.production.md
   priming: []
 - agent: compliance_specialist
@@ -80,7 +80,7 @@ prompts:
   doc_bundle: insurance_claim
   source_repo: llm-mailroom
   source_key: frozen_v1
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: insurance_claims_specialist.production.md
   priming: []
 - agent: due_diligence_specialist
@@ -111,7 +111,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: REVIEWER_SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: sorter_reviewer.production.md
   priming: []
 - agent: arbiter
@@ -122,7 +122,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: ARBITER_SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: arbiter.production.md
   priming: []
 - agent: judge
@@ -133,7 +133,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: judge.production.md
   priming: []
 - agent: judge-completeness
@@ -144,7 +144,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: judge.production.md
   notes: Completeness judge — same production body as agent `judge`.
   priming: []
@@ -156,7 +156,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: CLASSIFICATION_SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: judge-classification.production.md
   priming: []
 - agent: judge-correctness
@@ -167,7 +167,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: CORRECTNESS_SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: judge-correctness.production.md
   priming:
   - extraction_correctness
@@ -179,7 +179,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: BOSS_SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: boss.production.md
   priming: []
 - agent: reporter
@@ -190,7 +190,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: COMPILE_SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: reporter.production.md
   priming: []
 - agent: pdf_transcriber
@@ -201,7 +201,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: SYSTEM_PROMPT
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: pdf_transcriber.production.md
   priming: []
 - agent: image_extractor
@@ -212,7 +212,7 @@ prompts:
   doc_bundle: null
   source_repo: llm-mailroom
   source_key: ImageExtractor.system_prompt
-  source_commit: 6ddde73bfca34f39b44e1db9966f4a04543795fa
+  source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: image_extractor.production.md
   priming: []
 - agent: audit_agent

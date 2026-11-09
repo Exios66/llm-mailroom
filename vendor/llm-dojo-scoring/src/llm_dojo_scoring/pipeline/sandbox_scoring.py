@@ -295,10 +295,16 @@ def _value_ok(field: str, value: Any, spans: list[str]) -> bool:
 
 
 def _same_date(a: Any, b: Any) -> bool:
-    """Whether two date strings parse to the same calendar date."""
-    from ..scoring.field_scoring import _parse_date
+    """Whether two date strings state the same date components.
 
-    da, db = _parse_date(str(a)), _parse_date(str(b))
+    Full dates must be the same calendar date. Two partial dates match only
+    when they state the same components with the same values ("18th day of
+    August" and "August 18"); a yearless date never matches a dated one, since
+    no year is invented for it.
+    """
+    from ..scoring.field_scoring import _parse_date_parts
+
+    da, db = _parse_date_parts(str(a)), _parse_date_parts(str(b))
     return da is not None and da == db
 
 
