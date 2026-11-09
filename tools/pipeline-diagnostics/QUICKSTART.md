@@ -4,7 +4,7 @@
 
 The D0a native CLI supports workspace-preview and offline-contract inspection plus structural checks. The React workbench and diagnostic HTTP app remain planned; `/diagnostics` and `serve` are not available yet. Use [HANDOFF.md](HANDOFF.md) to find the next implementation task and [EVIDENCE.md](EVIDENCE.md) to judge its proof.
 
-Run commands from the **repository root**, not from this tools folder. Use Python 3.11+; Python 3.12 is the environment verified for this setup. The commands assume a POSIX shell (macOS, Linux, or WSL); on native Windows use the `.venv\Scripts\` executables instead of `.venv/bin/`. Do not use `uv sync` or `uv pip install -e .`: the root uv source entry points at a separate workspace.
+Run commands from the **repository root**, not from this tools folder. Use Python 3.11+; Python 3.12 is the environment verified for this setup. The commands assume a POSIX shell (macOS, Linux, or WSL); on native Windows use the `.venv\Scripts\` executables instead of `.venv/bin/`. Inline `VAR=value` assignments below are also POSIX: on PowerShell set `$env:PYTHONPATH='src'; $env:OBSERVABILITY_PROVIDER='none'` first, or run the step in WSL. Do not use `uv sync` or `uv pip install -e .`: the root uv source entry points at a separate workspace.
 
 ### 1. Install the declared dependencies
 
