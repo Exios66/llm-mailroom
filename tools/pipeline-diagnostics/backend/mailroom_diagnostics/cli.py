@@ -122,10 +122,13 @@ def _logging_context() -> Iterator[None]:
     handlers, previous_level = root.handlers[:], root.level
     provider = os.environ.get("OBSERVABILITY_PROVIDER")
     level = os.environ.get("LOG_LEVEL", "WARNING").upper()
+    numeric_level = getattr(logging, level, logging.WARNING)
+    if not isinstance(numeric_level, int):
+        numeric_level = logging.WARNING
     handler = logging.StreamHandler(_StderrProxy())
     try:
         root.handlers = [handler]
-        root.setLevel(getattr(logging, level, logging.WARNING))
+        root.setLevel(numeric_level)
         structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=_StderrProxy()))
         yield
     finally:
@@ -133,7 +136,8 @@ def _logging_context() -> Iterator[None]:
             structlog.configure(**config)
         else:
             structlog.reset_defaults()
-        root.handlers, root.level = handlers, previous_level
+        root.handlers = handlers
+        root.setLevel(previous_level)
         handler.close()
         if provider is None:
             os.environ.pop("OBSERVABILITY_PROVIDER", None)
