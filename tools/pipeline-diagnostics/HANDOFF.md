@@ -17,7 +17,7 @@ This file is the ordered work queue for the native workbench. [PLAN.md](PLAN.md)
 
 The first implementation checkpoint is **D0a**, the installable snapshot/check CLI and test-discovery foundation, delivered in PR 208. The standalone read-only HTTP app (D0.3) is delivered as a stacked PR layered on D0a. Each layer's commit-specific Evidence section is the authoritative verification record for its checkpoint. The original design commit is `133e971`; it delivered documents, not an application.
 
-D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208. D0.3 is checked with its own layered PR. Do not mark D0 complete after D0a/D0.3: packaged assets, richer provenance and the React screen remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
+D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208. D0.3 and D0.4a are checked with their own layered PRs. Do not mark D0 complete after D0a/D0.3/D0.4a: preview refresh and the React screen remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
 
 ## Ordered tasks
 
@@ -59,17 +59,27 @@ D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested 
 
 **Evidence (this layered PR, refreshed by its PR body):** `src/api/auth.py` is the import-safe shared policy and `api.main` re-exports it unchanged; nested `test_app.py` (12) and root `test_api_diagnostics_mount.py` (3) cover token/loopback rules, sanitized failures, inert import, placeholder UI and the opt-in mount; 210 focused tests pass. Loopback smoke: `/health`, `/v1/diagnostics/{capabilities,snapshot}`, `/diagnostics` = 200; token set ⇒ missing/wrong bearer 401, correct 200; `serve --host 0.0.0.0` without a token exits 1 with a refusal. Import probe shows no `api.main`, watcher, Gmail, status or graph import when constructing the app.
 
-### D0.4 — Packaged assets, provenance and workspace refresh
+### D0.4a — Packaged assets and provenance hashes
 
-**Depends:** D0.1/D0.3; **owns:** nested packaging/provenance/refresh and optional frontend build skeleton.
+**Depends:** D0.1/D0.3; **owns:** nested package-data, asset modes and source/policy hashes.
 
-- [ ] Include built static assets through explicit nested package-data rules; source and missing-assets modes remain usable.
-- [ ] Verify isolated installed wheels and HTTP asset retrieval, not just editable imports. Test parent/tool interoperability without checkout-only `scripts` imports.
-- [ ] Add code/routing/taxonomy/effective-policy hashes and distinguish worker-loaded configuration from edited workspace files. Unsupported provenance is explicit, not filled from guesswork.
+- [x] Include built static assets through explicit nested package-data rules; source and missing-assets modes remain usable.
+- [x] Verify isolated installed wheels and HTTP asset retrieval, not just editable imports. Test parent/tool interoperability without checkout-only `scripts` imports.
+- [x] Add code/routing/taxonomy/effective-policy hashes and distinguish workspace-file provenance from an offline artifact. Unsupported provenance is explicit (`config_source: unavailable`), not filled from guesswork.
+- [x] Keep the graph hash and source hashes separate: a hash detects a moved seam, it does not prove routing semantics.
+
+**Acceptance:** installed artifact smoke, stable/hash-changing fixtures and asset-mode coverage. Evidence is recorded in the layer's PR body; the committed `.keep`-style static README keeps the wheel's `static/` directory present until D1.1 adds generated assets.
+
+**Evidence (this layered PR):** `test_provenance.py` (8) covers deterministic group digests, rename/content sensitivity, missing inputs, canonical effective-policy hashing, workspace `config_source: workspace-files`, artifact `config_source: artifact` and the declared seam list; `test_assets.py` (3) covers built-index serving with SPA fallback, traversal fallback and the packaged `static/README.md`. An isolated wheel was built, inspected (`mailroom_diagnostics/static/README.md` present), installed into a fresh venv with the parent editable install, and smoke-tested: `/health` 200, `/v1/diagnostics/capabilities` 200, `/diagnostics` build-instructions page, artifact inspect 200, workspace inspect reporting `workspace-files` with `contract/effective_policy/implementation/routing/taxonomy/topology` hashes.
+
+### D0.4b — Workspace preview refresh
+
+**Depends:** D0.4a; **owns:** fresh-process regeneration and atomic preview publication.
+
 - [ ] Regenerate workspace previews in fresh processes after debounced edits; validate then publish atomically. Keep last valid preview with an error label after an invalid edit.
 - [ ] Do not hot-reload an active production worker or mutate its configuration caches.
 
-**Acceptance:** installed artifact smoke, stable/hash-changing fixtures, invalid-save recovery and mixed preview/worker revision fixtures. D0 is complete only when D0.1–D0.4 are verified.
+**Acceptance:** invalid-save recovery and mixed preview/worker revision fixtures. D0 is complete only when D0.1–D0.4b are verified.
 
 ### D1.1 — Accessible React graph and inspector
 
