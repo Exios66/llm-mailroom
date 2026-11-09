@@ -14,6 +14,26 @@ The findings below are kept as audited. PR #202 resolves them as follows:
 | #191, #192, #193, #194, #196, #197, #199, #201 | Fixed in PR #202, each with a regression test |
 | #195 | Loader part fixed in PR #202: every parquet shard is loaded and a `content_sha256` mismatch is logged. The **yearless-date scorer fix is not done**: it belongs in `llm-dojo-scoring`, so yearless ground-truth dates still score against the run year until that lands and the pin moves |
 | #198 | Superseded: main shipped v0.9.3 through the scripted release flow, and `release.py check` is OK. PR #202 no longer carries a release cut |
+
+### Review-round addendum (2026-11-09)
+
+PR #202 survived two bot review rounds; the fixes below refined the first pass:
+
+- #194's mover is now race-proof end to end: a re-failed `doc_id` and a
+  concurrent mover iterate off each other via `os.link` FileExistsError, the
+  staged-copy fallback publishes through `O_CREAT|O_EXCL` reservation, and
+  `fsync` runs before `copystat` (a read-only source no longer fails the
+  standoff). Filesystems without hard links are supported.
+- The stale-claim abort recovery is ownership-fenced: the run's own recorded
+  claim is authoritative-or-absent; the by-name fallback is best effort,
+  and the failed-path locator accepts only names this document's own move
+  could produce (another document's doc-suffixed name is rejected).
+- The loader rejects a revision it cannot enforce, reads only the pinned
+  commit, loads every shard of a sharded config, and refuses a join across
+  two different resolved commits.
+- Corpus pin: `FULL_CORPUS_REVISION` = Hub tag `v9.3` (`ccd040f6`) with
+  resolved-commit provenance; the yearless-date rules remain a Dojo-side
+  follow-up.
 | #200 | Dead names removed and the inbox fallback goes through `list_inbox_files()` (`src/tests/test_lean_cleanup_200.py`). The `_merge_triage` / `_merge_sorter_reads` consolidation was **not done** |
 | Sandbox (item 11) | Not part of this repo; tracked in `local-mailroom-sandbox` |
 
