@@ -248,3 +248,84 @@ def test_broad_change_is_full_even_when_each_leaf_is_mapped(project):
 
 def test_raw_selector_refuses_to_claim_a_pass_for_an_empty_selection(project):
     assert affected.main(["--files", "missing-input.dat", "--run"]) == 5
+
+
+NESTED_TESTS = "tools/pipeline-diagnostics/tests"
+NESTED_BACKEND = "tools/pipeline-diagnostics/backend/mailroom_diagnostics"
+
+
+def nested_tool(project, count=2):
+    for n in range(count):
+        project(f"{NESTED_BACKEND}/module_{n}.py", f"value = {n}\n")
+        project(f"{NESTED_TESTS}/test_module_{n}.py", f"from mailroom_diagnostics import module_{n}\n")
+
+
+def test_tools_backend_change_runs_the_nested_tool_tests(project):
+    nested_tool(project)
+    plan = ci.make_plan([f"{NESTED_BACKEND}/module_0.py"])
+    assert plan["profile"] == "affected"
+    assert set(plan["tests"]) == {
+        f"{NESTED_TESTS}/test_module_0.py",
+        f"{NESTED_TESTS}/test_module_1.py",
+    }
+    assert set(plan["smoke"]) == set(ci.SMOKE)
+    assert plan["selected_test_files"] == len(set(ci.SMOKE)) + 2
+    assert plan["experiment"] is False
+
+
+def test_nested_test_change_selects_that_test_only(project):
+    nested_tool(project)
+    target = f"{NESTED_TESTS}/test_module_0.py"
+    plan = ci.make_plan([target])
+    assert plan["profile"] == "affected"
+    assert plan["tests"] == [target]
+
+
+def test_full_plan_and_counts_include_the_nested_test_root(project):
+    nested_tool(project)
+    project("src/graph/routing.py", "value = 1\n")
+    root_count = len(list((ci.REPO / "src/tests").rglob("test_*.py")))
+    plan = ci.make_plan([], full=True)
+    assert plan["profile"] == "full"
+    assert plan["tests"] == ["src/tests", NESTED_TESTS]
+    assert plan["total_test_files"] == root_count + 2
+    assert plan["selected_test_files"] == plan["total_test_files"]
+    for shared in (ci.make_plan(["src/graph/routing.py"]),
+                   ci.make_plan([], branch="release/1.0")):
+        assert shared["profile"] == "full"
+        assert shared["tests"] == ["src/tests", NESTED_TESTS]
+
+
+def test_full_executor_collects_both_test_roots(project, monkeypatch, tmp_path):
+    nested_tool(project)
+    calls = []
+    monkeypatch.setattr(ci.subprocess, "call", lambda cmd, **kwargs: calls.append(cmd) or 0)
+    assert ci.execute(ci.make_plan([], full=True), results=tmp_path / "evidence") == 0
+    assert calls[0].count("src/tests") == 1
+    assert calls[0].count(NESTED_TESTS) == 1
+
+
+def test_deleted_nested_tool_file_forces_full_with_nested_tests(project):
+    nested_tool(project)
+    plan = ci.make_plan([f"{NESTED_BACKEND}/removed.py"])
+    assert plan["profile"] == "full"
+    assert "deleted" in plan["reason"]
+    assert NESTED_TESTS in plan["tests"]
+
+
+def test_nested_root_without_tests_falls_back_to_full_without_an_empty_run(project):
+    project(f"{NESTED_BACKEND}/module.py", "value = 1\n")
+    project(f"{NESTED_TESTS}/.keep", "")
+    plan = ci.make_plan([f"{NESTED_BACKEND}/module.py"])
+    assert plan["profile"] == "full"
+    assert "test root" in plan["reason"]
+    assert plan["tests"] == ["src/tests"]
+
+
+def test_full_plan_without_a_nested_tool_keeps_root_scope_only(project):
+    plan = ci.make_plan([], full=True)
+    assert plan["tests"] == ["src/tests"]
+    assert plan["total_test_files"] == len(list((ci.REPO / "src/tests").rglob("test_*.py")))
+    missing = ci.make_plan([f"{NESTED_BACKEND}/module.py"])
+    assert missing["profile"] == "full"
+    assert missing["tests"] == ["src/tests"]

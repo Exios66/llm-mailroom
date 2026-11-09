@@ -25,11 +25,13 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from graph.contract import END as _END
+from graph.contract import START as _START
+from graph.contract import graph_section, node_row  # noqa: F401  (public re-export)
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPO_ROOT / "contract" / "mailroom-contract.json"
 CONTRACT_VERSION = "1.0.0"
-_START = "__start__"
-_END = "__end__"
 
 
 def _pipeline_version() -> str:
@@ -38,53 +40,9 @@ def _pipeline_version() -> str:
     return str(data["project"]["version"])
 
 
-def node_row(node_id: str, func: Any) -> dict[str, str]:
-    """One graph node as the contract lists it.
-
-    ``func`` is the node's callable. It must be wrapped by
-    ``observability.tracing.traced_node``, which records the span name and the
-    observation type the span is opened as. That type includes an ``as_type``
-    override, so the contract shows what a trace backend actually receives,
-    not only the ``NODE_OBSERVATION_TYPES`` default for the span name.
-    """
-    span = getattr(func, "mailroom_span_name", None)
-    if not span:
-        raise RuntimeError(f"graph node {node_id!r} is not wrapped by traced_node")
-    obs_type = getattr(func, "mailroom_observation_type", None)
-    if not obs_type:
-        from observability.tracing import observation_type_for
-
-        obs_type = observation_type_for(span)
-    return {"id": node_id, "span": span, "observation_type": obs_type}
-
-
 def _graph_section() -> dict[str, Any]:
-    """Nodes (with span and observation type) and edges of the compiled graph."""
-    from graph.build_graph import build_graph
-    from langgraph.checkpoint.memory import MemorySaver
-
-    # An explicit in-memory saver: ``None`` would let build_graph open the
-    # configured checkpointer, which with MAILROOM_CHECKPOINTER=sqlite creates
-    # the on-disk database just to read the graph's shape.
-    graph = build_graph(checkpointer=MemorySaver())
-    drawn = graph.get_graph()
-    nodes = [
-        node_row(node_id, getattr(spec.runnable, "func", None))
-        for node_id, spec in sorted(graph.builder.nodes.items())
-    ]
-    edges = sorted(
-        (
-            {
-                "source": e.source,
-                "target": e.target,
-                "conditional": bool(e.conditional),
-                "label": e.data if isinstance(e.data, str) else None,
-            }
-            for e in drawn.edges
-        ),
-        key=lambda e: (e["source"], e["target"], e["label"] or ""),
-    )
-    return {"start": _START, "end": _END, "nodes": nodes, "edges": edges}
+    """Nodes and edges of the compiled graph (``graph.contract`` is the source)."""
+    return graph_section()
 
 
 def _taxonomy() -> dict[str, Any]:
