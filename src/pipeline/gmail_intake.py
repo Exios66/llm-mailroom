@@ -2150,7 +2150,10 @@ def _what_happened(manifest: dict, audit_rows: list[dict] | None) -> str:
     elif stage == "REVIEW":
         parts.append("parked in the human-review queue")
     elif stage == "FAILED":
-        parts.append("parked in the failed bin")
+        if str(manifest.get("review_decision") or "").lower() == "rejected":
+            parts.append("rejected by a human reviewer and moved to the failed bin")
+        else:
+            parts.append("parked in the failed bin")
     if "classified" in events and stage == "REVIEW":
         parts.append("classification completed before the escalation")
     return " → ".join(parts) if parts else ""
