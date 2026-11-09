@@ -5,8 +5,9 @@ writes ``contract/mailroom-contract.json`` from this helper and the native
 pipeline diagnostics tool (``tools/pipeline-diagnostics``) reads the same
 helper, so their node/edge inventories cannot drift.
 
-Importing this module has no side effects. The graph is built only when a
-caller asks for it, with an explicit in-memory checkpointer.
+Importing this module does not build the graph or load configuration; the
+graph package still installs its Dojo import fallback. The graph is built
+only when requested, with an explicit in-memory checkpointer.
 """
 
 from __future__ import annotations
