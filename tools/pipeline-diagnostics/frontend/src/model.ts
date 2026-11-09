@@ -15,6 +15,8 @@ export interface PipelineNodeData extends Record<string, unknown> {
   observationType: string;
   boundary: "start" | "end" | null;
   dimmed: boolean;
+  runOrder?: number;
+  runCurrent?: boolean;
 }
 
 export type PipelineNode = Node<PipelineNodeData>;
