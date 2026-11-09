@@ -215,6 +215,47 @@ def test_admitted_worker_cannot_claim_after_stop_begins(watcher_env, monkeypatch
     assert claims == [Path("before.txt")]  # the late file stays in the inbox
 
 
+@pytest.mark.parametrize("entry_point", ["inbox_event", "startup_scan"])
+def test_each_handler_leaves_its_file_unclaimed_when_stop_begins_before_the_claim(
+    watcher_env, monkeypatch, entry_point
+):
+    """Drive the real handler entry points (not ``_claim_if_open``): admit a file,
+    hold the handler just before its claim, stop the watcher with no drain time,
+    release the handler. A handler that bypassed the gate would claim the file."""
+    watcher = watcher_env
+    from pipeline import bins
+
+    inbox = bins.inbox_dir()
+    inbox.mkdir(parents=True, exist_ok=True)
+    doc = inbox / f"{entry_point}.txt"
+    doc.write_text("body")
+    claims = []
+    monkeypatch.setattr(watcher, "claim_file", lambda path, wid: claims.append(path) or path)
+    monkeypatch.setattr(watcher.time, "sleep", lambda s: None)  # the handler's settle delay
+    at_claim, go = threading.Event(), threading.Event()
+
+    def held(path):
+        at_claim.set()  # the last step before the claim
+        assert go.wait(10)
+        return False
+
+    monkeypatch.setattr(watcher, "_is_already_processed", held)
+    if entry_point == "inbox_event":
+        handler = watcher.InboxHandler("w1")._process
+    else:
+        handler = watcher.Watcher()._process_existing
+    worker = threading.Thread(target=handler, args=(doc,), daemon=True)
+    worker.start()
+    try:
+        assert at_claim.wait(10), "handler never reached its claim"
+        watcher.Watcher().stop(drain_timeout=0)  # drain gives up at once; claims close
+    finally:
+        go.set()
+        worker.join(10)
+    assert not worker.is_alive()
+    assert claims == [] and doc.exists()  # still in the inbox for the next watcher
+
+
 def test_workers_that_outlive_close_still_count_against_the_cap(watcher_env, monkeypatch):
     """T48: after a drain timeout the old workers are still running documents.
     A replacement pool must not add a full set of workers on top of them."""
@@ -585,13 +626,14 @@ def test_write_retry_rejects_a_non_positive_attempt_count(attempts):
     assert ran["n"] == 0
 
 
-def test_sqlite_connections_set_busy_timeout_before_wal(catalog_db):
+def test_sqlite_connections_set_busy_timeout_before_wal(catalog_db, monkeypatch):
     """busy_timeout must be armed before any other pragma: the WAL switch
     itself takes a lock and used to fail instantly under load."""
     import sqlite3
 
     from storage import db
 
+    monkeypatch.setenv("SQLITE_BUSY_TIMEOUT_MS", "5000")  # the env may set any value
     statements: list[str] = []
 
     class Spy:
@@ -668,3 +710,80 @@ def test_run_coro_in_a_running_loop_waits_without_a_false_timeout(monkeypatch):
 
     assert asyncio.run(caller()) == "committed"
     assert seen and all(t is None for t in seen)
+
+
+# ---------------------------------------------------------------------------
+# #203 review: a running document must not look stale to another process
+# ---------------------------------------------------------------------------
+
+
+def test_node_heartbeat_refreshes_the_claim_time_of_a_processing_file(temp_base_dir):
+    """The stale-claim sweep may run in a dedicated watcher process that cannot see
+    this process's in-flight set; a claim a run keeps advancing must not age out."""
+    from graph.build_graph import _touch_heartbeat
+    from pipeline import bins
+
+    claim_dir = bins.processing_dir("w-live")
+    claim_dir.mkdir(parents=True, exist_ok=True)
+    claimed = claim_dir / "long.txt"
+    claimed.write_text("body")
+    hours_ago = time.time() - 2 * 3600
+    os.utime(claimed, (hours_ago, hours_ago))
+    assert claimed in bins.list_stale_processing_files(stale_minutes=60)
+
+    _touch_heartbeat({"file_path": str(claimed)})
+
+    assert claimed not in bins.list_stale_processing_files(stale_minutes=60)
+
+
+def test_node_heartbeat_leaves_files_outside_processing_alone(temp_base_dir):
+    from graph.build_graph import _touch_heartbeat
+    from pipeline import bins
+
+    parked = bins.review_dir() / "parked.txt"
+    parked.write_text("body")
+    hours_ago = time.time() - 2 * 3600
+    os.utime(parked, (hours_ago, hours_ago))
+    _touch_heartbeat({"file_path": str(parked)})
+    assert abs(parked.stat().st_mtime - hours_ago) < 1
+
+
+# ---------------------------------------------------------------------------
+# #203 review: a delayed writer cannot move updated_at backwards
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("second_write", ["upsert", "update_only"])
+def test_a_delayed_writer_does_not_move_updated_at_backwards(catalog_db, monkeypatch, second_write):
+    """Each writer reads its clock before its SQL runs, so a slow one can arrive
+    carrying an earlier instant than the row already holds."""
+    import datetime as dt
+
+    from storage import catalog
+
+    class Clock(dt.datetime):
+        now_value = None
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.now_value
+
+    monkeypatch.setattr(catalog, "datetime", Clock)
+    late = dt.datetime(2026, 1, 1, 12, 0, 5, tzinfo=dt.timezone.utc)
+    early = dt.datetime(2026, 1, 1, 12, 0, 1, tzinfo=dt.timezone.utc)
+    base = {"doc_id": "MONO", "matter_id": "M", "original_filename": "m.txt", "stage": "inbox"}
+
+    async def run():
+        Clock.now_value = late
+        await catalog.write_document_record(base)  # the writer that captured the later instant
+        Clock.now_value = early  # the delayed writer, still holding its earlier instant
+        if second_write == "upsert":
+            await catalog.write_document_record({**base, "stage": "archived"})
+        else:
+            await catalog.write_document_record({"doc_id": "MONO", "stage": "archived"})
+        row = await catalog.get_document("MONO")
+        assert row.stage == "archived"  # the stage update still lands
+        assert row.updated_at.replace(tzinfo=None) == late.replace(tzinfo=None)
+        assert row.updated_at >= row.created_at
+
+    asyncio.run(run())

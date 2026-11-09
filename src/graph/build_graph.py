@@ -3503,7 +3503,15 @@ def _touch_heartbeat(state: dict) -> None:
     """L-5: best-effort `updated_at` bump for the document row (progress
     heartbeat). Stuck detection keys on updated_at; without this, a document
     in a long retry storm or PDF transcription looks stuck even though it is
-    actively processing."""
+    actively processing. It also refreshes the claim time of the file in
+    ``processing/``, so the stale-claim sweep (possibly in another process) never
+    retires a document that is still running."""
+    try:
+        from pipeline.bins import touch_claim
+
+        touch_claim(state.get("file_path"))
+    except Exception:
+        pass  # best-effort, like the row heartbeat below
     doc_id = state.get("doc_id")
     if not doc_id:
         return
