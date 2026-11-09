@@ -55,6 +55,17 @@ def test_target_is_derived_from_the_cost_ratio(corpus):
     assert ct.calibrate(small, pr.current_policy(), c_human=2.0, c_error=10.0)["params"]["target"] == pytest.approx(0.8)
 
 
+def test_a_null_by_class_base_policy_is_normalized_before_calibration(corpus):
+    """Reproduced crash: null "by_class" survived setdefault and AttributeError'd at the first
+    calibrated class — after the expensive pass, so no candidate was written at all. Routing
+    tolerates null (pipeline/config.py reads it as {})."""
+    train, _ = pr.select_split(corpus, "train")
+    base = dict(pr.current_policy(), by_class=None)
+    res = ct.calibrate(train, base)
+    assert isinstance(res["candidate_policy"]["by_class"], dict)
+    assert any(e["high"]["status"] == "calibrated" for e in res["classes"].values())
+
+
 def test_undersampled_class_gets_no_cutoff_and_keeps_its_current_value():
     recs = generate_records({**{c: 2500 for c in SORTER_CURVES}, "correspondence": 80}, seed=2)
     train, _ = pr.select_split(recs, "train")
