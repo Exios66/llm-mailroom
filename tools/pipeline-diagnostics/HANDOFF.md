@@ -17,7 +17,7 @@ This file is the ordered work queue for the native workbench. [PLAN.md](PLAN.md)
 
 The first implementation checkpoint is **D0a**, the installable snapshot/check CLI and test-discovery foundation, delivered in PR 208. The standalone read-only HTTP app (D0.3) is delivered as a stacked PR layered on D0a. Each layer's commit-specific Evidence section is the authoritative verification record for its checkpoint. The original design commit is `133e971`; it delivered documents, not an application.
 
-D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208. D0.3 and D0.4a are checked with their own layered PRs. Do not mark D0 complete after D0a/D0.3/D0.4a: preview refresh and the React screen remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
+D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208. D0.3, D0.4a and D0.4b are checked with their own layered PRs. D0 is complete when D0.4b lands; the React screen, live telemetry, replay and calibration remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
 
 ## Ordered tasks
 
@@ -76,8 +76,10 @@ D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested 
 
 **Depends:** D0.4a; **owns:** fresh-process regeneration and atomic preview publication.
 
-- [ ] Regenerate workspace previews in fresh processes after debounced edits; validate then publish atomically. Keep last valid preview with an error label after an invalid edit.
-- [ ] Do not hot-reload an active production worker or mutate its configuration caches.
+- [x] Regenerate workspace previews in fresh processes after debounced edits; validate then publish atomically. Keep last valid preview with an error label after an invalid edit.
+- [x] Do not hot-reload an active production worker or mutate its configuration caches.
+
+**Evidence (this layered PR):** `test_preview.py` (8) covers atomic publication/error clearing, last-good preservation on failure and invalid output, staleness from source mtime, debounced watch rebuilds, seam-only invalidation, a real fresh-process workspace build and the `preview --json` CLI contract. The preview store writes only under the configured preview directory; `serve` never starts the refresher, so no live worker or config cache is touched.
 
 **Acceptance:** invalid-save recovery and mixed preview/worker revision fixtures. D0 is complete only when D0.1–D0.4b are verified.
 
