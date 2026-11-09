@@ -15,10 +15,10 @@ See .claude/rules/evidence-contract.md. Quote real output; trim with … ; long 
 
 Commit: `<short sha>`
 
-- **Tests:** `.venv/bin/python -m pytest src/tests -q` → `<summary line>`
+- **Tests:** `.venv/bin/python -m pytest src/tests tools/pipeline-diagnostics/tests -q` → `<summary line>`
 - **Regression test (bug fixes):** `<test name>` fails before, passes after
 - **Pipeline gates (when graph, agent, routing or prompt code changed):** `run_pilot.py --mock` → `<summary>`; experiment gate → `<verdict>`
-- **Static checks:** `.venv/bin/python -m compileall -q src` → `<observed exit code>`. No linter or type checker is configured in this repo.
+- **Static checks:** `.venv/bin/python -m compileall -q src tools/pipeline-diagnostics/backend` → `<observed exit code>`. No linter or type checker is configured in this repo.
 - **Generated files:** `<PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check, PYTHONPATH=src .venv/bin/python src/scripts/export_contract.py --check, or "not applicable">`
 - **Visual (UI changes):** `<before / after screenshots or recording with synthetic or redacted data, or "not applicable">`
 

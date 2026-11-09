@@ -95,6 +95,7 @@ score-config categories).
 
 ```bash
 pip install -e ".[dev]"        # install (deps NOT vendored; no venv in repo)
+pip install -e tools/pipeline-diagnostics  # native inspect/check CLI, after parent install
 docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server   # OPTIONAL: only for Langfuse tracing
 PYTHONPATH=src python -m pipeline.watcher   # filesystem watcher (optional when the API embeds it)
 PYTHONPATH=src python -m pipeline.gmail_intake  # Gmail intake poller standalone (debug; normally runs inside the watcher)
@@ -147,9 +148,9 @@ PYTHONPATH=src python -m legalbench.cli --task contract_qa --n 30 --model qwen/q
 PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mock             # deterministic mock baseline (no API key)
 ```
 
-- Tests: `pytest -v` (whole suite, 10+ minutes), `pytest src/tests/test_agents/ -v`, `pytest src/tests/test_routing.py -v`, `pytest src/tests -k "sorter"` for single-agent. Coverage via `--cov=src --cov-report=html`. While iterating, `PYTHONPATH=src python src/scripts/affected_tests.py --run -- -q` runs only the tests that import the changed files (vs `origin/main`; `--depth 1` widens it); it is not a substitute for the full suite before a PR is marked ready.
+- Tests: `pytest src/tests tools/pipeline-diagnostics/tests -v` (whole Python suite), `pytest src/tests/test_agents/ -v`, `pytest src/tests/test_routing.py -v`, `pytest src/tests -k "sorter"` for single-agent. Coverage via `--cov=src --cov-report=html`. While iterating, `PYTHONPATH=src python src/scripts/affected_tests.py --run -- -q` runs only the tests that import the changed files (vs `origin/main`; `--depth 1` widens it); it selects only `src/tests`, so run `pytest tools/pipeline-diagnostics/tests -q` separately or use `ci_tests.py` for both roots. The nested suite has its own hermetic fixtures and does not inherit `src/tests/conftest.py`. Neither scoped run substitutes for the full suite before a PR is marked ready.
 - Generated-file checks: `PYTHONPATH=src python src/scripts/export_contract.py --check` (display contract), `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check` (GitBook changelog), `python3 src/scripts/release.py check` (version chain).
-- No linter, formatter, or typechecker is configured — don't invent one. `python -m compileall -q src` is the static check to report in a PR.
+- No linter, formatter, or typechecker is configured — don't invent one. `python -m compileall -q src tools/pipeline-diagnostics/backend` is the static check to report in a PR.
 - Config is in `config/taxonomy.yaml`; copy `.env.example` → `.env`. `OPENROUTER_API_KEY` is required or `llm/client.py:get_llm` raises.
 
 ## Architecture (not obvious from filenames)
