@@ -907,6 +907,17 @@ def test_cr6_replay_keeps_failed_chunk_ceiling_and_guard_clamp():
     assert pr.replay(guarded, POLICY, merge_rule="cr6").outcome != pr.AUTO
 
 
+def test_cr6_an_attempt_whose_every_window_failed_is_observed_like_min():
+    """#204 review: with no parsed window there is nothing to re-derive, so cr6 must not
+    call the attempt unobserved when min replays it."""
+    dead = _windowed(confs=(), fields=(), recorded=0.0, failed_chunks=2)
+    rec = record(sorters=[sorter(0.97)], extractions=[dead, extract(0.95, attempt=2)])
+    mn = pr.replay(rec, POLICY, merge_rule="min")
+    cr6 = pr.replay(rec, POLICY, merge_rule="cr6")
+    assert "extraction_attempt_1_window_evidence_not_observed" not in cr6.reasons
+    assert (cr6.outcome, cr6.path) == (mn.outcome, mn.path)
+
+
 def test_old_records_without_window_fields_still_load():
     old = extract(0.9).model_dump(exclude={"window_confidences", "window_has_fields"})
     att = ExtractionAttempt.model_validate(old)
