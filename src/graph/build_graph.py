@@ -2881,9 +2881,14 @@ def _finalize_human_rejection(
                 # A Gmail sender hears the outcome on the thread, as for an
                 # archive or an abort; the failed manifest reads as a rejection
                 # through ``review_decision``.
+                # The move error can carry a local path: it stays in the
+                # manifest for operators and never reaches the sender.
                 from pipeline.gmail_intake import dispatch_intake_echo
 
-                dispatch_intake_echo(manifest.model_dump(mode="json"))
+                echoed = manifest.model_dump(mode="json")
+                if move_error:
+                    echoed["escalation_reason"] = esc_reason or None
+                dispatch_intake_echo(echoed)
         except Exception:
             logger.exception("review_reject_manifest_failed", doc_id=doc_id)
     _maybe_export_warehouse(doc_id)
@@ -4673,9 +4678,11 @@ def resume_from_review(
     if isinstance(label, dict):
         _write_review_resolved_audit(manifest.doc_id, manifest.matter_id, label)
 
-    _restart_review_clock(manifest.doc_id)
     worker_id = get_worker_id()
     queued = requeue_from_review(review_file, worker_id, original_filename=manifest.original_filename)
+    # Only once the file has left review: a requeue that raises leaves the
+    # document waiting, so its review clock must keep running.
+    _restart_review_clock(manifest.doc_id)
     doc_text, text_ok = _read_file_text(queued)
     from agents.intake import apply_intake
 
