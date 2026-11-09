@@ -87,19 +87,34 @@ def test_load_corpus_join_and_integrity(temp_base_dir, monkeypatch):
 
     frames = {"ground_truth": gt, "default": blind}
 
-    def fake_parquet_urls(repo_id, *, split="train", revision=None):
-        return {name: f"https://viewer.test/{name}.parquet" for name in frames}
+    # The default load is PINNED: it must go through the Hub revision API and
+    # resolve/<sha> downloads, never the Viewer.
+    sha = "c" * 40
 
-    monkeypatch.setattr(loader, "parquet_urls", fake_parquet_urls)
-    monkeypatch.setattr(loader, "dataset_sha", lambda repo_id=None: "fakesha")
+    def fake_resolve(repo_id, revision):
+        assert revision == loader.FULL_CORPUS_REVISION
+        return {
+            "sha": sha,
+            "siblings": [f"parquet/{name}/train/train-00000-of-00001.parquet" for name in frames],
+            "configs": [
+                {"config_name": name, "data_files": [{"split": "train", "path": f"parquet/{name}/train/*"}]}
+                for name in frames
+            ],
+        }
+
+    monkeypatch.setattr(loader, "resolve_revision", fake_resolve)
+    monkeypatch.setattr(loader, "dataset_sha", lambda repo_id=None: sha)
+
     def fake_cache(url, label):
+        assert f"/resolve/{sha}/" in url
         config = "ground_truth" if label.endswith("ground_truth_train") else "default"
         return frames[config].to_parquet()
 
     monkeypatch.setattr(loader, "_cached_get_bytes", fake_cache)
 
     merged, prov = loader.load_corpus()
-    assert prov["ground_truth"]["strategy"] == "parquet"
+    assert prov["ground_truth"]["strategy"] == "hub_resolve"
+    assert prov["revision_resolved"] == sha and "hub_tip_drift" not in prov
     assert prov["integrity"] == {"checked": 2, "verified": 2, "mismatched": 0}
     assert list(merged["expected"]) == ["contract", "correspondence"]
     assert list(merged["doc_text"]) == [text_a, text_b]
@@ -113,6 +128,7 @@ def test_load_corpus_join_and_integrity(temp_base_dir, monkeypatch):
 def test_loader_never_silently_returns_empty(temp_base_dir, monkeypatch):
     from pipeline import hf_corpus_loader as loader
 
+    # Unpinned load: /parquet down and /rows empty must raise, not return empty.
     monkeypatch.setattr(loader, "parquet_urls", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
     monkeypatch.setattr(loader, "_rows_ladder", lambda *a, **k: pd.DataFrame())
     with pytest.raises(RuntimeError, match="cannot load"):

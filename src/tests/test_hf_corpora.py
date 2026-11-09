@@ -115,6 +115,7 @@ def test_unpinned_corpus_warns_once(caplog):
     corpora._UNPINNED_WARNED.clear()  # warn-once set may be seeded by earlier tests
     # Every pipeline corpus in CORPORA is pinned now (#196); the guard is
     # exercised on a synthetic unpinned entry.
+    assert all(c.get("revision") for c in corpora.pipeline_corpora())
     probe = copy.deepcopy(next(c for c in corpora.CORPORA.values() if c.get("pipeline")))
     probe["revision"] = None
     with caplog.at_level("WARNING", logger="llm_mailroom.hf_corpora"):
