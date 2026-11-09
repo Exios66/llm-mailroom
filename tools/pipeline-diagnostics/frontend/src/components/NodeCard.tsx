@@ -7,6 +7,7 @@ export function PipelineNodeCard({ data, selected }: NodeProps) {
   const classes = [
     "node-card",
     node.boundary ? `is-${node.boundary}` : "",
+    !node.boundary && node.observationType === "agent" ? "is-agent" : "",
     node.dimmed ? "is-dimmed" : "",
     selected ? "is-selected" : "",
   ]

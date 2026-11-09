@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DiagnosticsApiError, fetchFindings, fetchSnapshot, readToken, writeToken } from "./api";
 import { ConnectionTable } from "./components/ConnectionTable";
@@ -42,17 +42,20 @@ export default function App() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [token, setToken] = useState(readToken);
   const reducedMotion = useReducedMotion();
+  const loadSequence = useRef(0);
 
   const model = useMemo(() => (snapshot ? buildViewModel(snapshot.graph) : null), [snapshot]);
 
   const load = useCallback(async (signal: AbortSignal, quiet: boolean) => {
+    const sequence = ++loadSequence.current;
     if (!quiet) setLoading(true);
     try {
       const [nextSnapshot, nextReport] = await Promise.all([
         fetchSnapshot(signal),
         fetchFindings(signal),
       ]);
-      if (signal.aborted) return;
+      // An older request finishing last must not replace a newer snapshot.
+      if (signal.aborted || sequence !== loadSequence.current) return;
       setSnapshot(nextSnapshot);
       setReport(nextReport);
       setUpdatedAt(new Date());
@@ -63,7 +66,7 @@ export default function App() {
           : `Loaded workspace preview with ${nextSnapshot.graph.nodes.length} nodes and ${nextSnapshot.graph.edges.length} connections.`,
       );
     } catch (caught) {
-      if (signal.aborted) return;
+      if (signal.aborted || sequence !== loadSequence.current) return;
       const message =
         caught instanceof DiagnosticsApiError || caught instanceof Error
           ? caught.message
@@ -71,7 +74,7 @@ export default function App() {
       setError(message);
       setAnnouncement("Diagnostics could not be refreshed.");
     } finally {
-      if (!signal.aborted) setLoading(false);
+      if (!signal.aborted && sequence === loadSequence.current) setLoading(false);
     }
   }, []);
 

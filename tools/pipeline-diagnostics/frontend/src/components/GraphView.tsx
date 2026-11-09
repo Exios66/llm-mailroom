@@ -10,7 +10,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 
-import { matchesQuery, type ViewModel } from "../model";
+import { edgeMatchesQuery, matchesQuery, type ViewModel } from "../model";
 import type { Selection } from "../selection";
 import { PipelineNodeCard } from "./NodeCard";
 
@@ -62,6 +62,11 @@ export function GraphView({
         }
       }
     }
+    const matchedNodes = new Set(
+      model.nodes
+        .filter((node) => matchesQuery({ id: node.id, span: node.data.span }, query))
+        .map((node) => node.id),
+    );
     const nodes: Node[] = model.nodes.map((node) => ({
       ...node,
       selected: selection?.kind === "node" && selection.id === node.id,
@@ -73,10 +78,11 @@ export function GraphView({
     const edges: Edge[] = model.edges.map((edge) => {
       const isSelected = selection?.kind === "edge" && selection.id === edge.id;
       const isRelated = related.has(edge.id);
-      const dimmed =
-        query.trim().length > 0 &&
-        !matchesQuery({ id: edge.source, span: null }, query) &&
-        !matchesQuery({ id: edge.target, span: null }, query);
+      const dimmed = !edgeMatchesQuery(
+        { id: edge.id, source: edge.source, target: edge.target, label: edge.label as string | undefined },
+        matchedNodes,
+        query,
+      );
       return {
         ...edge,
         selected: isSelected,

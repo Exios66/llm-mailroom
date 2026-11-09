@@ -260,7 +260,11 @@ p {
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
-.chip--error,
+.chip--error {
+  background: color-mix(in srgb, var(--err) 14%, transparent);
+  border-color: color-mix(in srgb, var(--err) 45%, transparent);
+}
+
 .chip--warn {
   background: color-mix(in srgb, var(--warn) 16%, transparent);
   border-color: color-mix(in srgb, var(--warn) 45%, transparent);
@@ -579,6 +583,10 @@ tr.is-selected {
   border-left: 5px solid var(--node-span);
   background: var(--panel);
   box-shadow: var(--shadow);
+}
+
+.node-card.is-agent {
+  border-left-color: var(--node-agent);
 }
 
 .node-card.is-start {

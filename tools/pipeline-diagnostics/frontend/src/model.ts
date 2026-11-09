@@ -156,6 +156,21 @@ export function matchesQuery(
   );
 }
 
+export function edgeMatchesQuery(
+  edge: { id: string; source: string; target: string; label?: string | null },
+  matchedNodeIds: Set<string>,
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return (
+    matchedNodeIds.has(edge.source) ||
+    matchedNodeIds.has(edge.target) ||
+    edge.id.toLowerCase().includes(needle) ||
+    (edge.label ?? "").toLowerCase().includes(needle)
+  );
+}
+
 export function filterConnections(rows: ConnectionRow[], query: string): ConnectionRow[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return rows;
