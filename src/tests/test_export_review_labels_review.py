@@ -229,3 +229,120 @@ def test_hollow_export_replays_as_a_retry_never_an_archive():
                            confidence_raw=0.97)
     out = pr.replay(hollow.model_copy(update={"sorter": [sorter]}), POLICY)
     assert "retry_extract" in out.path and out.outcome == pr.AUTO  # attempt 2 archives; attempt 1 never did
+
+
+# -- #203 review: removed fields, parked attempt counts, decision route, rejections ----------
+
+
+def test_a_legacy_complete_that_only_removes_a_field_is_a_correction():
+    label = {**_label(resolution="correct"), "removed_fields": ["governing_law"]}
+    assert exp.is_corrected(label) is True
+    assert exp.is_corrected(_label()) is False
+    summary = exp.summarize([_manifest(label), _manifest(_label())])
+    assert summary["corrections"] == 1 and summary["correction_rate"] == 0.5
+
+
+def test_the_parked_classification_attempt_count_beats_the_reset_manifest_value():
+    # review_resolve snapshots the manifest as parked (classification_attempts=2); the approve
+    # path then resets the live count to 0, so the manifest the exporter reads says "first attempt".
+    parked_retry = _label(classification_attempts=2)
+    rec = _record(_manifest(parked_retry, classification_attempts=0))
+    assert rec.sorter == [] and rec.observed.sorter_attempts == 0
+    assert rec.diagnostics["sorter_attempt_1"] == "sorter_attempt_1_replaced_by_retry"
+    from pipeline import policy_replay as pr
+
+    assert pr.sorter_pairs([rec]) == {}  # the retry's confidence never enters calibration
+    # A snapshot that says attempt 1 is trusted over a later manifest count, and older snapshots
+    # without the key keep reading the manifest.
+    assert _record(_manifest(_label(classification_attempts=1), classification_attempts=2)).sorter
+    assert _record(_manifest(_label(), classification_attempts=2)).sorter == []
+
+
+def test_the_parked_extraction_attempt_number_is_exported_and_replay_cannot_use_it_as_attempt_one():
+    from pipeline import policy_replay as pr
+    from schemas.run_record import SorterAttempt
+
+    label = _label(extraction_confidence=0.99, extraction_attempts=3,
+                   extracted_data={"parties": ["A"], "agreement_date": "2026-01-01"})
+    rec = _record(_manifest(label, doc_type="contract"))
+    assert [a.attempt for a in rec.extraction] == [3]
+    assert rec.extraction[0].confidence == 0.99
+    assert rec.diagnostics["extraction_attempt_1"] == "extraction_attempt_1_replaced_by_retry"
+    sorter = SorterAttempt(attempt=1, doc_type="contract", confidence=0.97, confidence_raw=0.97)
+    out = pr.replay(rec.model_copy(update={"sorter": [sorter]}), POLICY)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["extraction_attempt_1_not_observed"]
+    # older snapshots (no count) and a first attempt stay attempt 1
+    legacy = _record(_manifest(_label(extraction_confidence=0.9), doc_type="contract"))
+    assert [a.attempt for a in legacy.extraction] == [1] and "extraction_attempt_1" not in legacy.diagnostics
+    first = _record(_manifest(_label(extraction_confidence=0.9, extraction_attempts=1), doc_type="contract"))
+    assert [a.attempt for a in first.extraction] == [1]
+
+
+def test_a_parse_failure_without_a_payload_is_still_schema_invalid():
+    # model_snapshot stores extracted_data=None when only internal keys were left after the parse error
+    rec = _record(_manifest(_label(extraction_confidence=0.8, extracted_data=None, parse_error=True),
+                            doc_type="contract"))
+    assert rec.extraction[0].schema_valid is False
+    # no payload and no parse error is still "nothing to validate"
+    bare = _record(_manifest(_label(extraction_confidence=0.8, extracted_data=None, parse_error=False),
+                             doc_type="contract"))
+    assert bare.extraction[0].schema_valid is None
+
+
+def test_a_reclassified_snapshot_is_validated_against_the_class_it_was_extracted_as():
+    # The parked extraction ran as ``contract`` (``parties`` must be a list); the reviewer then
+    # re-labelled the manifest, so manifest.doc_type is the new class.
+    label = _label(snap_class="contract", human_class="correspondence", resolution="reclassify",
+                   extraction_confidence=0.9, extracted_data={"parties": "A"})
+    att = _record(_manifest(label, doc_type="correspondence")).extraction[0]
+    assert att.schema_valid is False
+    assert att.doc_type == "contract"  # replay for the final class then finds no attempt to reuse
+
+
+def test_extraction_without_a_snapshot_class_falls_back_to_the_manifest_class():
+    label = _label(extraction_confidence=0.9, extracted_data={"parties": "A"})
+    label["model_snapshot"]["doc_type"] = None
+    att = _record(_manifest(label, doc_type="contract")).extraction[0]
+    assert att.schema_valid is False and att.doc_type == "contract"
+
+
+def test_decision_lane_verdict_and_route_reach_the_exported_reviewer(monkeypatch):
+    import pipeline.config as pconfig
+    from pipeline import policy_replay as pr
+
+    label = _label(reviewer_doc_type="correspondence", reviewer_confidence=0.55)
+    rec = _record(_manifest(label, review_verdict="decision_escalates"))
+    assert rec.reviewer.mode == "decision_only"
+    assert rec.reviewer.reviewer_verdict == "decision_escalates"
+    assert rec.reviewer.review_route == "human_review"
+    accepted = _record(_manifest(_label(reviewer_doc_type="contract", reviewer_confidence=0.91,
+                                        classification_confidence=0.91), review_verdict="decision_accepts"))
+    assert accepted.reviewer.mode == "decision_only" and accepted.reviewer.review_route == "extract"
+    # replay follows the observed decision instead of reporting decision_route_not_observed
+    monkeypatch.setattr(pconfig, "get_review_mode", lambda _cls=None: "decision_only")
+    assert pr.reviewer_route(rec) == "human_review"
+
+
+def test_llm_lane_reviewer_fields_are_unchanged():
+    label = _label(reviewer_doc_type="contract", reviewer_confidence=0.6)
+    rec = _record(_manifest(label, review_verdict="reviewer_agrees_low"))
+    assert rec.reviewer.mode is None and rec.reviewer.reviewer_verdict is None
+    assert rec.reviewer.review_route is None
+    assert _record(_manifest(label)).reviewer.review_route is None
+
+
+def test_an_unconfirmed_rejection_is_not_sorter_gold():
+    from pipeline import policy_replay as pr
+
+    guess = {**_label(), "decision": "rejected", "resolution": "reject"}
+    rec = _record(_manifest(guess, classification_attempts=1))
+    assert rec.gold.expected_doc_type is None and rec.gold.human_decision == "rejected"
+    assert pr.sorter_pairs([rec]) == {}  # the model's own guess is not a correct label
+    # a person who named the class (override, or a class the model did not propose) confirmed it
+    overridden = {**guess, "class_override": {"doc_type": "contract"}}
+    assert _record(_manifest(overridden, classification_attempts=1)).gold.expected_doc_type == "contract"
+    changed = {**_label(human_class="correspondence"), "decision": "rejected", "resolution": "reject"}
+    assert _record(_manifest(changed, classification_attempts=1)).gold.expected_doc_type == "correspondence"
+    # approvals are untouched
+    approved = _record(_manifest(_label(), classification_attempts=1))
+    assert approved.gold.expected_doc_type == "contract" and pr.sorter_pairs([approved])
