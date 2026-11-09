@@ -106,6 +106,10 @@ dev = [
     "nbformat>=5.9",
     "nbclient>=0.10",
     "ipykernel>=6.29",
+    # src/tests/test_wheel_runtime_catalog.py builds the wheel offline with these
+    # (no build isolation), matching [build-system].requires.
+    "setuptools>=68.0",
+    "wheel",
 ]
 
 [tool.setuptools.packages.find]
