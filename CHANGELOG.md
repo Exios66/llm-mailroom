@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Native pipeline diagnostics foundation** under `tools/pipeline-diagnostics/`: an installable `mailroom-diagnostics` inspection/check CLI, compiled-graph snapshots through the display exporter's shared graph helper, offline contract input, structural endpoint/reachability findings, and nested test/CI discovery. The draft workbench plan includes an ordered agent handoff and evidence contract. React, diagnostic HTTP serving, live events and calibration remain later milestones; this checkpoint changes no routing policy or model behavior.
+
 ## [v0.9.3] - 2026-11-07
 
 ### Changed

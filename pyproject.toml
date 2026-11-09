@@ -122,8 +122,8 @@ asyncio_mode = "auto"
 markers = [
     "no_langchain_mock: skip conftest's LangChain provider mock (hub#42 provider-seam tests)",
 ]
-testpaths = ["src/tests"]
-pythonpath = ["src", "."]
+testpaths = ["src/tests", "tools/pipeline-diagnostics/tests"]
+pythonpath = ["src", ".", "tools/pipeline-diagnostics/backend"]
 
 # Monorepo dev: resolve the shared scoring engine from the workspace instead
 # of the release git pin above. Plain `pip install .` keeps using the pin.

@@ -34,12 +34,14 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 Every entry below is copied from llm-mailroom's Keep a Changelog file. Tagged GitHub releases stay canonical; this space is the GitBook view of the same list. Pipeline docs: [https://mailroom-inc.gitbook.io/mailroom-inc.-docs/](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/).
 
 {% updates format="full" %}
-{% update date="2026-11-07" tags="improvement" %}
+{% update date="2026-11-07" tags="feature" %}
 ## Unreleased
 
 Work landed on `main` since the last tagged release.
 
+### Added
 
+- **Native pipeline diagnostics foundation** under `tools/pipeline-diagnostics/`: an installable `mailroom-diagnostics` inspection/check CLI, compiled-graph snapshots through the display exporter's shared graph helper, offline contract input, structural endpoint/reachability findings, and nested test/CI discovery. The draft workbench plan includes an ordered agent handoff and evidence contract. React, diagnostic HTTP serving, live events and calibration remain later milestones; this checkpoint changes no routing policy or model behavior.
 
 <a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}
