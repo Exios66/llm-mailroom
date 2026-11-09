@@ -316,6 +316,9 @@ def _backup_sqlite_file(src: Path, dest_dir: Path) -> Path:
     finally:
         target.close()
         source.close()
+    # The audit log holds confidential matters; never hand the backup out
+    # world-readable, whatever the caller's umask (PR #160 review).
+    os.chmod(dest, 0o600)
     return dest
 
 

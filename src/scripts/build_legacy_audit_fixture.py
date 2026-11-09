@@ -129,65 +129,84 @@ def build(out: Path) -> int:
     """Replace ``out`` with a legacy SQLite fixture and return the event count.
 
     Parent directories are created. ``DATABASE_URL`` and the schema cache are
-    changed to use a temporary database and are not restored. Database and
-    filesystem errors propagate.
+    repointed at the temporary database only for the build and restored, so a
+    caller that shares this process with later storage calls never ends up
+    with an env var aimed at a deleted directory (PR #160 review).
+    Database and filesystem errors propagate.
     """
     out = Path(out)
+    from storage import db
+
     with tempfile.TemporaryDirectory() as tmp:
+        prior_url = os.environ.get("DATABASE_URL")
+        prior_cache = db._schema_checked_url
         os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{Path(tmp) / 'mailroom.db'}"
-        from storage import db
-
         db._schema_checked_url = None
-        db._ensure_models_imported()
-
-        # documents first (the FK target), then the old-shape audit_log.
-        from sqlalchemy import create_engine
-
-        sync_engine = create_engine(f"sqlite:///{Path(tmp) / 'mailroom.db'}")
         try:
-            db.Base.metadata.tables["documents"].create(sync_engine, checkfirst=True)
-            with sync_engine.begin() as conn:
-                for ddl in LEGACY_AUDIT_LOG_DDL:
-                    conn.exec_driver_sql(ddl)
+            written = _build_locked(tmp, out)
         finally:
-            sync_engine.dispose()
+            if prior_url is None:
+                os.environ.pop("DATABASE_URL", None)
+            else:
+                os.environ["DATABASE_URL"] = prior_url
+            db._schema_checked_url = prior_cache
+    return written
 
-        # Keep this build from migrating the file it is producing.
-        try:
-            import storage.audit_migrate as audit_migrate
-        except ImportError:
-            audit_migrate = None
-        original = getattr(audit_migrate, "migrate_at_startup", None)
+
+def _build_locked(tmp: str, out: Path) -> int:
+    tmp_path = Path(tmp)
+    from storage import db
+
+    db._ensure_models_imported()
+
+    # documents first (the FK target), then the old-shape audit_log.
+    from sqlalchemy import create_engine
+
+    sync_engine = create_engine(f"sqlite:///{tmp_path / 'mailroom.db'}")
+    try:
+        db.Base.metadata.tables["documents"].create(sync_engine, checkfirst=True)
+        with sync_engine.begin() as conn:
+            for ddl in LEGACY_AUDIT_LOG_DDL:
+                conn.exec_driver_sql(ddl)
+    finally:
+        sync_engine.dispose()
+
+    # Keep this build from migrating the file it is producing.
+    try:
+        import storage.audit_migrate as audit_migrate
+    except ImportError:
+        audit_migrate = None
+    original = getattr(audit_migrate, "migrate_at_startup", None)
+    if audit_migrate is not None and original is not None:
+        async def _skip(*_a, **_k):
+            return audit_migrate.MigrationResult(migrated=False, legacy_rows=0, backup_path=None)
+
+        audit_migrate.migrate_at_startup = _skip
+    try:
+        written = asyncio.run(_write_all())
+    finally:
         if audit_migrate is not None and original is not None:
-            async def _skip(*_a, **_k):
-                return audit_migrate.MigrationResult(migrated=False, legacy_rows=0, backup_path=None)
+            audit_migrate.migrate_at_startup = original
 
-            audit_migrate.migrate_at_startup = _skip
-        try:
-            written = asyncio.run(_write_all())
-        finally:
-            if audit_migrate is not None and original is not None:
-                audit_migrate.migrate_at_startup = original
-
-        src = Path(tmp) / "mailroom.db"
-        conn = sqlite3.connect(src)
-        try:
-            for table in POST_MIGRATION_TABLES:
-                conn.execute(f"DROP TABLE IF EXISTS {table}")
-            conn.commit()
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            conn.execute("PRAGMA journal_mode=DELETE")
-            conn.execute("VACUUM")
-        finally:
-            conn.close()
-        out.parent.mkdir(parents=True, exist_ok=True)
-        if out.exists():
-            out.unlink()
-        dest = sqlite3.connect(out)
-        try:
-            sqlite3.connect(src).backup(dest)
-        finally:
-            dest.close()
+    src = tmp_path / "mailroom.db"
+    conn = sqlite3.connect(src)
+    try:
+        for table in POST_MIGRATION_TABLES:
+            conn.execute(f"DROP TABLE IF EXISTS {table}")
+        conn.commit()
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.execute("PRAGMA journal_mode=DELETE")
+        conn.execute("VACUUM")
+    finally:
+        conn.close()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        out.unlink()
+    dest = sqlite3.connect(out)
+    try:
+        sqlite3.connect(src).backup(dest)
+    finally:
+        dest.close()
     return written
 
 
