@@ -15,8 +15,9 @@ import json
 import logging
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from . import __version__
 from .checks import run_checks
@@ -64,10 +65,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     raw_args = list(sys.argv[1:] if argv is None else argv)
+    with _logging_context():
+        return _run(raw_args)
+
+
+def _run(raw_args: list[str]) -> int:
     json_mode = "--json" in raw_args
     try:
         args = build_parser().parse_args(raw_args)
-        _configure_logging()
         snapshot = _snapshot(args)
         if args.command == "inspect":
             _emit(snapshot.model_dump(mode="json"), args.json, _inspect_text(snapshot))
@@ -93,15 +98,47 @@ def _snapshot(args: argparse.Namespace) -> Snapshot:
     return build_workspace_snapshot()
 
 
-def _configure_logging() -> None:
-    """Keep every log line off stdout so ``--json`` stays machine-parseable."""
+class _StderrProxy:
+    """Cached loggers must not retain a caller's temporary capture stream."""
+
+    def write(self, message: str) -> int:
+        return sys.stderr.write(message)
+
+    def flush(self) -> None:
+        sys.stderr.flush()
+
+
+@contextmanager
+def _logging_context() -> Iterator[None]:
+    """Route CLI logs to stderr, then restore the embedding caller's settings.
+
+    The console entrypoint runs in its own interpreter. Keeping this scope
+    reversible also permits sequential in-process agent/test calls.
+    """
+    import structlog
+
+    config, configured = structlog.get_config().copy(), structlog.is_configured()
+    root = logging.getLogger()
+    handlers, previous_level = root.handlers[:], root.level
+    provider = os.environ.get("OBSERVABILITY_PROVIDER")
     level = os.environ.get("LOG_LEVEL", "WARNING").upper()
-    logging.basicConfig(stream=sys.stderr, level=getattr(logging, level, logging.WARNING))
+    handler = logging.StreamHandler(_StderrProxy())
     try:
-        import structlog
-    except ImportError:
-        return
-    structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=sys.stderr))
+        root.handlers = [handler]
+        root.setLevel(getattr(logging, level, logging.WARNING))
+        structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=_StderrProxy()))
+        yield
+    finally:
+        if configured:
+            structlog.configure(**config)
+        else:
+            structlog.reset_defaults()
+        root.handlers, root.level = handlers, previous_level
+        handler.close()
+        if provider is None:
+            os.environ.pop("OBSERVABILITY_PROVIDER", None)
+        else:
+            os.environ["OBSERVABILITY_PROVIDER"] = provider
 
 
 def _emit(payload: dict[str, Any], json_mode: bool, text: str) -> None:
