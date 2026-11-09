@@ -17,7 +17,7 @@
 - `audit.full_trace` / `MAILROOM_AUDIT_FULL_TRACE` defaults to off.
 - The current graph order stays as it is: judge before arbiter (KANBAN-063), and the boss escalation path.
 - `emit_pipeline_scores` output is unchanged; `detail.metrics` is exactly that output plus `subclass_correct`.
-- Gate per task: `pytest -q` (testpaths `src/tests`) and `python src/scripts/roadmap_status.py --check` pass.
+- Gate per task: `pytest -q` (both `src/tests` and `tools/pipeline-diagnostics/tests`; install both packages) and `python src/scripts/roadmap_status.py --check` pass.
 - Public API additions only: `/audit/{doc_id}` and `/audit` keep every existing key.
 
 ## Review Focus
