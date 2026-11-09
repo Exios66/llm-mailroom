@@ -302,6 +302,10 @@ def test_f3_graph_edge_maps_still_valid():
         ("governing_law", "Commonwealth of Virginia", "Virginia"),
         ("effective_date", "2024-01-05", "January 5, 2024"),
         ("effective_date", "2024-01-05", "5th January 2024"),
+        # An ISO datetime tail is absorbed, like the date line it annotates.
+        ("effective_date", "2024-01-05T00:00:00Z", "2024-01-05"),
+        ("effective_date", "2024-01-05 00:00:00", "2024-01-05"),
+        ("effective_date", "2024-01-05T00:00:00.000+00:00", "2024-01-05"),
         ("agreement_date", "01/15/2024", "2024-01-15"),
         ("parties", ["Acme Corp", "Beta LLC"], ["acme corp.", "BETA LLC", "Gamma Inc"]),
     ],
@@ -321,6 +325,11 @@ def test_f4_equivalent_values_are_not_conflicts(field, a, b):
         ("governing_law", "Virginia", "West Virginia"),
         ("effective_date", "2024-01-05", "2024-01-06"),
         ("effective_date", "2024-01-05", "January 6, 2024"),
+        # Free text after a date makes it a different term: not a date, the
+        # suffix must not be discarded, so the mismatch escalates (no date-only
+        # key can mask contradictory renewal terms).
+        ("renewal_terms", "2024-01-05 unless extended", "2024-01-05 or earlier on notice"),
+        ("effective_date", "2024-01-05 (the Effective Date)", "2024-01-05"),
         ("agreement_date", "01/02/2024", "2024-02-01"),
         ("parties", ["Acme Corp"], ["Beta LLC"]),
         ("document_name", "Master Services Agreement", "Lease Agreement"),

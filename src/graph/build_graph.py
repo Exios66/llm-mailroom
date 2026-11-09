@@ -1735,7 +1735,13 @@ _MONTHS = {
 _MONTHS.update({name[:3]: index for name, index in list(_MONTHS.items())})
 _MONTHS["sept"] = 9
 _ORDINAL = r"(?:st|nd|rd|th)?"
-_DATE_ISO = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?")
+_DATE_ISO = re.compile(
+    r"(\d{4})-(\d{1,2})-(\d{1,2})"
+    r"(?:[T ]\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?"
+)
+# Only an ISO datetime tail may follow the calendar date; free text after the
+# date ("2024-01-05 unless extended") makes the value a different term, which
+# must compare as text and escalate on mismatch, not be absorbed as the date.
 _DATE_SLASH = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
 _DATE_MDY = re.compile(rf"([A-Za-z]{{3,9}})\.?\s+(\d{{1,2}}){_ORDINAL},?\s+(\d{{4}})")
 _DATE_DMY = re.compile(rf"(\d{{1,2}}){_ORDINAL}\s+(?:of\s+)?([A-Za-z]{{3,9}})\.?,?\s+(\d{{4}})")
