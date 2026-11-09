@@ -201,6 +201,20 @@ def test_admitted_document_is_visible_to_drain_when_close_races_the_start(watche
     assert _wait_for(lambda: "raced.txt" not in watcher._active_files)
 
 
+def test_admitted_worker_cannot_claim_after_stop_begins(watcher_env, monkeypatch):
+    """A worker admitted before shutdown that reaches its claim only after the
+    drain timeout must not claim the file: the watcher lock is about to be
+    released, and a replacement watcher could claim the same document."""
+    watcher = watcher_env
+    claims = []
+    monkeypatch.setattr(watcher, "claim_file", lambda path, wid: claims.append(path) or path)
+    assert watcher._claim_if_open(Path("before.txt"), "w1") == Path("before.txt")
+    w = watcher.Watcher()
+    w.stop(drain_timeout=0)  # drain times out immediately; lock released
+    assert watcher._claim_if_open(Path("late.txt"), "w1") is None
+    assert claims == [Path("before.txt")]  # the late file stays in the inbox
+
+
 def test_workers_that_outlive_close_still_count_against_the_cap(watcher_env, monkeypatch):
     """T48: after a drain timeout the old workers are still running documents.
     A replacement pool must not add a full set of workers on top of them."""

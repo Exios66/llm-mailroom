@@ -105,6 +105,16 @@ def temp_base_dir():
 
 
 @pytest.fixture(autouse=True)
+def _reopen_watcher_claim_gate():
+    """A test that calls ``Watcher.stop()`` closes the module-level claim gate;
+    reopen it so later tests that drive the inbox handler directly can claim."""
+    yield
+    mod = sys.modules.get("pipeline.watcher")
+    if mod is not None and hasattr(mod, "_set_claims_open"):
+        mod._set_claims_open(True)
+
+
+@pytest.fixture(autouse=True)
 def mock_langchain_llm(mocker, request):
     """Patch the vendored LangChain agents' ChatOpenAI path with a
     deterministic fake (no network). The LangChain sorter/contracts

@@ -81,9 +81,10 @@ objectives:
       .venv/bin/python -m pytest -q src/tests/test_review_cause_coverage.py
       src/tests/test_review_labels_and_priority.py src/tests/test_hitl_resolution.py
     metric: >-
-      offline: guards only (cause coverage 100%, resolution paths, label export);
-      with production reviews: wasted_review_rate from
-      src/scripts/export_review_labels.py --summary-only (lower is better)
+      the gate evaluates guards only (cause coverage 100%, resolution paths, label
+      export) and reads no metric value; a production wasted_review_rate comparison
+      from src/scripts/export_review_labels.py --summary-only (lower is better) is
+      owner-run evidence, not a gate decision
     direction: guards_only
     min_delta: 0.0
     guards:

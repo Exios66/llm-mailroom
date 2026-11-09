@@ -727,7 +727,9 @@ async def resolve_review(doc_id: str, request: Request):
     Body (JSON or form): ``decision`` (approved|rejected), optional ``notes``,
     ``disposition`` (resume|record|requeue|complete), optional classification
     overrides (``doc_type`` or ``override_doc_type``, ``doc_subclass``,
-    ``contract_subtype``), and optional ``extracted_data`` for ``complete``.
+    ``contract_subtype``), and optional ``extracted_data`` for the LEGACY
+    ``complete`` (no ``resolution``) — with a ``resolution`` it is refused;
+    edits ride ``field_corrections`` (T20).
 
     Prefer the visualizer REVIEW desk buttons (Approve / Reject / Requeue) over
     hand-rolled curls — they post here through ``MAILROOM_PIPELINE_URL``.
@@ -755,13 +757,16 @@ async def resolve_review(doc_id: str, request: Request):
             raise HTTPException(
                 400, "resolution only applies to disposition=resume or disposition=complete"
             )
-        if disposition == "complete" and payload.get("extracted_data"):
-            # plan_resolution works from the parked fields plus field_corrections;
-            # a posted extracted_data would be dropped without a word.
+        if payload.get("extracted_data"):
+            # Any resolution works from the parked fields plus field_corrections;
+            # a posted extracted_data would be dropped without a word (T20). The
+            # legacy disposition=complete WITHOUT a resolution keeps its meaning:
+            # there the posted object is the archive payload (see below).
             raise HTTPException(
                 400,
-                "extracted_data is not used with a resolution; send field_corrections "
-                "with resolution=correct (or omit resolution for the legacy complete)",
+                "extracted_data is not used with a resolution (disposition=resume or "
+                "complete); send field_corrections with resolution=correct (or omit "
+                "resolution for the legacy complete)",
             )
         decision = decision or ("rejected" if resolution == "reject" else "approved")
         payload["decision"] = decision

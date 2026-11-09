@@ -75,11 +75,22 @@ def print_report(label: str, res: Mapping[str, Any], out=None) -> None:
     )
     print(
         f"  cost: mean {_f(res['mean_cost_units'])} C_h/doc | LLM ${_f(res['llm_usd_per_doc'])}/doc | "
-        f"{_f(res['llm_calls_per_doc'], '.2f')} LLM calls/doc",
+        f"{_f(res['llm_calls_per_doc'], '.2f')} LLM calls/doc (lower-bound estimate)",
         file=out,
     )
     if res["unobserved_reasons"]:
         print(f"  unobserved reasons: {res['unobserved_reasons']}", file=out)
+    print(
+        f"  replay fidelity (next to G3): {res['replayed_with_confidence_only_handoff_diff']} route(s) reused an "
+        f"extraction from a collapsed candidate whose handoff confidence differed (confidence-only; counted as "
+        f"observed, not unobserved)",
+        file=out,
+    )
+    print(
+        f"  schema evidence: {res['auto_archived_schema_unknown']} of {c['auto_archived']} auto-archive(s) "
+        f"passed with schema_valid unknown (routing blocks only on an explicit False)",
+        file=out,
+    )
     print(f"  {'class':<18}{'n':>6}{'auto':>6}{'ok':>6}{'wrong':>6}{'unsc':>5}{'human':>6}{'unobs':>6}{'wrong%':>8}{'CP up':>8}", file=out)
     for cls, r in sorted(res["per_class"].items()):
         print(

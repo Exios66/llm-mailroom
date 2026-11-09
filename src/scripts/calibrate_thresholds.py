@@ -8,19 +8,30 @@ TRAIN split only, and writes a *candidate* policy YAML. It never edits
 
 What is proposed, per class, and from which pairs::
 
-    high             sorter attempt 1: (confidence routing saw, class == gold)
-                     -> cross_fit_cutoffs at target = 1 - C_h / C_e (0.95 at the defaults)
-    judge_band_high  final extraction attempt: (confidence, extraction_score >= field_floor),
-                     class-correct documents only -> the same cross-fit at the same target;
-                     in routing this is the auto-archive cut (>= goes straight to the report)
+    high             sorter attempt 1: (confidence routing saw, class == gold), one pair per
+                     DOCUMENT -> cross_fit_cutoffs at target = 1 - C_h / C_e (0.95 at the defaults)
+    judge_band_high  EVERY scored extraction attempt of the gold class: (confidence,
+                     extraction_score >= field_floor), class-correct documents only (sorter
+                     attempt 1 named gold) -> the same cross-fit at the same target; in routing
+                     this is the auto-archive cut (>= goes straight to the report). Routing can
+                     accept attempt 1 before a retry runs, so the final attempt alone would
+                     overstate accuracy (``policy_replay.extraction_pairs``)
     low              the same extraction pairs at ``--low-target`` (retry / judge boundary);
                      note ``low`` is one key shared by the sorter and extraction bands, and
                      only extraction evidence moves it
 
+Extraction evidence is counted in ATTEMPTS (``unit: attempts``): a document with three scored
+attempts is three pairs, so ``n``, ``n_accepted`` and ``errors`` for ``judge_band_high`` / ``low``
+are attempts, and the cross-fit accuracy is per attempt. Attempts of one document are correlated,
+so the SAMPLE-SIZE rule (``required``, ``shortfall``, ``--min-low-n``) counts distinct documents
+instead: ``n_accepted_docs`` (documents with an accepted attempt) and ``errors_docs`` (documents
+with a wrong accepted attempt). ``n_docs`` is the number of documents behind ``n``.
+
 Evidence gate (a class is NEVER given a cutoff it has not earned): the cross-fit
 held-out Wilson lower bound (scored on the cutoff as emitted: rounded up to 3 places and
 clamped, not the raw tuned value) must reach the target, and the number of accepted
-documents must meet ``required_samples(errors, risk)`` (Clopper-Pearson, ``--risk``).
+documents must meet ``required_samples(errors, risk)`` (Clopper-Pearson, ``--risk``); for the
+extraction keys that is distinct documents, not attempts.
 Anything else keeps the current taxonomy value and is marked
 ``insufficient_evidence`` with the reason and the sample shortfall. A calibrated cut that
 would leave the emitted policy with ``low`` at or above ``high`` or ``judge_band_high`` is
@@ -74,7 +85,13 @@ def deployed_cutoff(cutoff: float) -> float:
 
 
 def deployed_cross_fit(
-    pairs: Sequence[tuple[float, bool]], tune_target: float, *, folds: int, seed: int, confidence: float
+    pairs: Sequence[tuple[float, bool]],
+    tune_target: float,
+    *,
+    folds: int,
+    seed: int,
+    confidence: float,
+    docs: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     """Held-out accuracy of the cutoff AS EMITTED (rounded up and clamped), not the raw tuned one.
 
@@ -83,10 +100,43 @@ def deployed_cross_fit(
     can accept a different set (the clamp at ``CLAMP_HI`` widens it). The folds are the Dojo's own
     (same seeded shuffle, ``fold::folds`` slices); only the fold cutoff is transformed, so the
     evidence gate judges the set that would actually be deployed.
+
+    ``docs`` (parallel to ``pairs``, the document behind each pair) switches to DOCUMENT-grouped
+    folds for evidence whose pairs are extraction attempts: every attempt of a document sits in the
+    same fold (no train/held-out leakage between a document's attempts), and the held-out unit is
+    the document, not the attempt: a held-out document counts once if any of its attempts clears
+    the fold cutoff, and counts as right only if every such attempt is right (routing would have
+    accepted a wrong one). ``holdout_accepted`` and the Wilson interval are then in documents, so
+    correlated attempts cannot narrow the interval.
     """
     from statistics import NormalDist
 
     from llm_dojo_scoring.analysis.calibration import cutoff_at_target, wilson_ci
+
+    z = NormalDist().inv_cdf(0.5 + confidence / 2.0)
+    if docs is not None:
+        ids = sorted(set(docs))
+        random.Random(seed).shuffle(ids)
+        fold_of = {d: i % folds for i, d in enumerate(ids)}
+        right = kept = 0
+        for fold in range(folds):
+            training = [row for row, d in zip(pairs, docs) if fold_of[d] != fold]
+            fold_cutoff = cutoff_at_target(training, tune_target)
+            if fold_cutoff is None:
+                continue
+            cut = deployed_cutoff(fold_cutoff)
+            verdict: dict[int, bool] = {}
+            for (conf, ok), d in zip(pairs, docs):
+                if fold_of[d] == fold and conf >= cut:
+                    verdict[d] = verdict.get(d, True) and ok
+            right += sum(1 for v in verdict.values() if v)
+            kept += len(verdict)
+        return {
+            "holdout_accepted": kept,
+            "holdout_accuracy": right / kept if kept else None,
+            "holdout_accuracy_ci": wilson_ci(right / kept, kept, z=z) if kept else None,
+            "holdout_share_accepted": kept / len(ids) if ids else None,
+        }
 
     shuffled = list(pairs)
     random.Random(seed).shuffle(shuffled)
@@ -101,7 +151,6 @@ def deployed_cross_fit(
         accepted = [ok for conf, ok in held if conf >= cut]
         right += sum(1 for ok in accepted if ok)
         kept += len(accepted)
-    z = NormalDist().inv_cdf(0.5 + confidence / 2.0)
     return {
         "holdout_accepted": kept,
         "holdout_accuracy": right / kept if kept else None,
@@ -130,6 +179,8 @@ def cutoff_evidence(
     min_accepted: int = 0,
     target_step: float = 0.0025,
     max_target: float = 0.999,
+    unit: str = "documents",
+    docs: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     """The lowest cutoff whose held-out evidence earns ``target``.
 
@@ -143,15 +194,19 @@ def cutoff_evidence(
     whose accepted set meets the sample-size rule) wins; ``effective_target`` is
     that tuning target. ``target_step=0`` disables escalation. When nothing
     passes, the evidence at the requested target is returned, with the reason.
+
+    ``unit`` names what one pair is (``documents`` or ``attempts``) in the counts and in the
+    ``too_few_<unit>`` reason; ``docs`` (parallel to ``pairs``) identifies the document behind
+    each pair so ``n_docs`` / ``n_accepted_docs`` can be reported separately from attempts.
     """
     first = _evidence_at(pairs, target, target, folds=folds, seed=seed, confidence=confidence,
-                         risk=risk, min_accepted=min_accepted)
+                         risk=risk, min_accepted=min_accepted, unit=unit, docs=docs)
     if first["status"] == "calibrated" or target_step <= 0 or len(pairs) < 2:
         return first
     t = target + target_step
     while t <= max_target + 1e-12:
         ev = _evidence_at(pairs, round(t, 6), target, folds=folds, seed=seed, confidence=confidence,
-                          risk=risk, min_accepted=min_accepted)
+                          risk=risk, min_accepted=min_accepted, unit=unit, docs=docs)
         if ev["status"] == "calibrated":
             ev["escalated_from"] = first["reason"]
             return ev
@@ -170,11 +225,15 @@ def _evidence_at(
     confidence: float,
     risk: float | None,
     min_accepted: int = 0,
+    unit: str = "documents",
+    docs: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     """Tune a cutoff at ``tune_target``; decide whether the evidence earns ``target``.
 
     ``risk`` set: the accepted set must satisfy ``required_samples(errors, risk)``.
     ``risk=None``: only ``min_accepted`` is required (used for the retry/judge ``low``).
+    Both rules count DOCUMENTS (see ``n_accepted_docs`` / ``errors_docs``), also when a pair is
+    one extraction attempt.
     """
     from llm_dojo_scoring.analysis.calibration import (
         auroc,
@@ -188,6 +247,8 @@ def _evidence_at(
     n = len(pairs)
     out: dict[str, Any] = {
         "n": n,
+        "unit": unit,
+        "n_docs": len(set(docs)) if docs is not None else n,
         "accuracy": (sum(1 for _, ok in pairs if ok) / n) if n else None,
         "ece": expected_calibration_error(pairs) if n else None,
         "brier": brier_score(pairs) if n else None,
@@ -198,21 +259,25 @@ def _evidence_at(
         "proposed": None,
         "cross_fit": None,
         "n_accepted": 0,
+        "n_accepted_docs": 0,
         "errors": 0,
+        "errors_docs": 0,
         "required": None,
         "shortfall": None,
         "status": "insufficient_evidence",
         "reason": None,
     }
     if n < 2:
-        out["reason"] = "too_few_documents"
+        out["reason"] = f"too_few_{unit}"
         out["shortfall"] = None
         return out
     cf = cross_fit_cutoffs(list(pairs), target=tune_target, folds=min(folds, n), seed=seed, confidence=confidence)
     if cf.get("cutoff") is not None:
         # Gate on the cutoff as emitted (rounded up, clamped), not the raw tuned value.
         cf = {k: v for k, v in cf.items() if k != "meets_target"}  # raw-cutoff verdict; the gate below decides
-        cf = {**cf, **deployed_cross_fit(pairs, tune_target, folds=min(folds, n), seed=seed, confidence=confidence)}
+        cf = {**cf, **deployed_cross_fit(
+            pairs, tune_target, folds=min(folds, n), seed=seed, confidence=confidence, docs=docs
+        )}
     out["cross_fit"] = cf
     cutoff = cutoff_at_target(list(pairs), tune_target)
     out["cutoff"] = cutoff
@@ -221,15 +286,26 @@ def _evidence_at(
         return out
     proposed = deployed_cutoff(cutoff)
     out["clamped"] = proposed != _ceil3(cutoff)
-    accepted = [ok for c, ok in pairs if c >= proposed]
+    keep = [i for i, (c, _) in enumerate(pairs) if c >= proposed]
+    accepted = [pairs[i][1] for i in keep]
     out["n_accepted"] = len(accepted)
     out["errors"] = sum(1 for ok in accepted if not ok)
+    # The sample-size rule counts independent documents. Attempts of one document are correlated,
+    # so a unit of ``attempts`` is gated on distinct documents: n = documents with an accepted
+    # attempt, errors = documents with a wrong accepted attempt (a document routing would have
+    # archived wrong). For ``documents`` evidence the two views are the same numbers.
+    if docs is None:
+        gate_n, gate_errors = len(accepted), out["errors"]
+    else:
+        gate_n = len({docs[i] for i in keep})
+        gate_errors = len({docs[i] for i in keep if not pairs[i][1]})
+    out["n_accepted_docs"], out["errors_docs"] = gate_n, gate_errors
     if risk is not None:
-        required = required_samples(out["errors"], risk=risk, confidence=confidence)
+        required = required_samples(gate_errors, risk=risk, confidence=confidence)
     else:
         required = min_accepted
     out["required"] = required
-    out["shortfall"] = None if required is None else max(0, required - len(accepted))
+    out["shortfall"] = None if required is None else max(0, required - gate_n)
     lo = (cf.get("holdout_accuracy_ci") or {}).get("lo")
     # `lo` is rounded to 4 places by the Dojo; strict > keeps rounding from lifting a short bound.
     if lo is None or not lo > target:
@@ -342,10 +418,13 @@ def calibrate(
     """Fit cutoffs on ``records`` (pass the TRAIN split) and build the candidate policy."""
     target = pr.accept_target(c_human, c_error)
     sorter = pr.sorter_pairs(records)
-    extraction = pr.extraction_pairs(records, field_floor)
+    extraction, extraction_docs = pr.extraction_evidence(records, field_floor)
     classes = sorted(set(sorter) | set(extraction))
     candidate = copy.deepcopy(dict(base_policy))
-    by_class = candidate.setdefault("by_class", {})
+    # A present-but-null "by_class" would ride the whole calibration and only crash at the first
+    # merged class; routing reads null as {} (pipeline/config.py), so normalize it up front.
+    by_class = candidate.get("by_class") or {}
+    candidate["by_class"] = by_class
     report: dict[str, Any] = {}
     kw = dict(folds=folds, seed=seed, confidence=confidence)
 
@@ -355,13 +434,14 @@ def calibrate(
         high["current"] = effective_value(base_policy, cls, "high")
         entry["high"] = high
 
-        jbh = cutoff_evidence(extraction.get(cls, []), target, risk=risk, target_step=target_step, **kw)
+        ext_kw = dict(unit="attempts", docs=extraction_docs.get(cls, []))
+        jbh = cutoff_evidence(extraction.get(cls, []), target, risk=risk, target_step=target_step, **ext_kw, **kw)
         jbh["current"] = effective_value(base_policy, cls, "judge_band_high")
         entry["judge_band_high"] = jbh
 
         low = cutoff_evidence(
             extraction.get(cls, []), low_target, risk=None, min_accepted=min_low_n,
-            target_step=target_step, max_target=target, **kw
+            target_step=target_step, max_target=target, **ext_kw, **kw
         )
         low["current"] = effective_value(base_policy, cls, "low")
         entry["low"] = low
@@ -401,6 +481,9 @@ def _fmt(x: Any, spec: str = ".3f") -> str:
     return "-" if x is None else format(x, spec)
 
 
+_UNIT_SHORT = {"documents": "doc", "attempts": "att"}
+
+
 def print_table(result: Mapping[str, Any], out=None) -> None:
     out = out or sys.stdout
     p = result["params"]
@@ -410,7 +493,7 @@ def print_table(result: Mapping[str, Any], out=None) -> None:
         file=out,
     )
     header = (
-        f"{'class':<18}{'cutoff':<16}{'n':>6}{'acc':>7}{'ece':>7}{'auroc':>7}"
+        f"{'class':<18}{'cutoff':<16}{'unit':>6}{'n':>6}{'docs':>6}{'acc':>7}{'ece':>7}{'auroc':>7}"
         f"{'cutoff':>8}{'effT':>7}{'holdout':>9}{'CI lo':>7}{'accept':>7}{'err':>5}{'need':>6}{'short':>6}"
         f"{'current':>9}{'proposed':>9}  status"
     )
@@ -422,12 +505,18 @@ def print_table(result: Mapping[str, Any], out=None) -> None:
             ci = (cf.get("holdout_accuracy_ci") or {}).get("lo")
             status = e["status"] if e["status"] == "calibrated" else f"insufficient_evidence ({e['reason']})"
             print(
-                f"{cls:<18}{key:<16}{e['n']:>6}{_fmt(e['accuracy']):>7}{_fmt(e['ece']):>7}"
+                f"{cls:<18}{key:<16}{_UNIT_SHORT.get(e['unit'], e['unit']):>6}{e['n']:>6}{e['n_docs']:>6}{_fmt(e['accuracy']):>7}{_fmt(e['ece']):>7}"
                 f"{_fmt(e['auroc']):>7}{_fmt(e['cutoff'], '.4f'):>8}{_fmt(e.get('effective_target'), '.4f'):>7}{_fmt(cf.get('holdout_accuracy')):>9}"
                 f"{_fmt(ci):>7}{e['n_accepted']:>7}{e['errors']:>5}{_fmt(e['required'], 'd'):>6}"
                 f"{_fmt(e['shortfall'], 'd'):>6}{_fmt(e['current'], '.3f'):>9}{_fmt(e['proposed'], '.3f'):>9}  {status}",
                 file=out,
             )
+    print(
+        "unit: doc = one pair per document; att = one pair per extraction ATTEMPT (every scored attempt of the gold class is "
+        "pooled, so n / accept / err for judge_band_high and low count attempts; docs = distinct documents behind "
+        "n; need / short are in documents)",
+        file=out,
+    )
     if result["reviewer"]:
         print("\nreviewer lane (score_review_lane; evidence only):", file=out)
         for cls, r in result["reviewer"].items():
@@ -450,8 +539,12 @@ def write_candidate(result: Mapping[str, Any], path: str | Path, *, meta: Mappin
                 key: {
                     "status": e["status"],
                     "reason": e["reason"],
+                    "unit": e["unit"],
                     "n": e["n"],
+                    "n_docs": e["n_docs"],
                     "n_accepted": e["n_accepted"],
+                    "n_accepted_docs": e["n_accepted_docs"],
+                    "errors_docs": e["errors_docs"],
                     "errors": e["errors"],
                     "required": e["required"],
                     "shortfall": e["shortfall"],
