@@ -114,6 +114,9 @@ class ObjectiveParams:
 
 def accept_target(c_human: float = 1.0, c_error: float = 20.0) -> float:
     """The implied auto-accept precision, ``1 - C_h / C_e``."""
+    costs = (c_human, c_error)
+    if not all(isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) for c in costs):
+        raise ValueError(f"c_human and c_error must be finite numbers, got {c_human!r}, {c_error!r}")
     if c_error <= c_human or c_human <= 0:
         raise ValueError("need c_error > c_human > 0")
     return 1.0 - c_human / c_error
@@ -368,12 +371,18 @@ def _judge_for(record: RunRecord, k: int, cls: str | None = None) -> JudgeObserv
     return None
 
 
-def _arbiter_for(record: RunRecord, k: int) -> ArbiterObservation | None:
-    """The arbiter ruling that followed the judge pass on extraction attempt ``k``."""
-    for arb in record.arbiters:
-        if arb.ran and arb.on_attempt == k:
-            return arb
-    return None
+def _arbiter_for(record: RunRecord, k: int, cls: str | None = None) -> ArbiterObservation | None:
+    """The arbiter ruling that followed the judge pass on extraction attempt ``k`` of class ``cls``.
+
+    A sweep restarts attempt numbers per class, so several rulings can share ``on_attempt``. A ruling
+    typed with ``cls`` wins. An untyped (older) ruling is used only when it is the only ruling for
+    that attempt: beside any other ruling its class is unknowable, so it counts as unobserved.
+    """
+    ran = [a for a in record.arbiters if a.ran and a.on_attempt == k]
+    typed = [a for a in ran if a.doc_type == cls]
+    if typed:
+        return typed[0]
+    return ran[0] if len(ran) == 1 and ran[0].doc_type is None else None
 
 
 def llm_review_verdict(
@@ -680,7 +689,7 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
             )
             dest = routing.after_judge(ex_state)
             if dest == "arbiter":
-                arb = _arbiter_for(record, k)
+                arb = _arbiter_for(record, k, cls)
                 if arb is None:
                     return w.unobserved(f"arbiter_not_observed_on_attempt_{k}")
                 w.visit("arbiter", arb.cost_usd)
@@ -758,20 +767,31 @@ def extraction_evidence(
     Returns ``(pairs, docs)``; ``docs[cls][i]`` is the position in ``records`` of the document
     that produced ``pairs[cls][i]``, so a caller can count documents separately from attempts.
     See :func:`extraction_pairs` for exactly what is pooled.
+
+    A document is identified by its ``doc_id``: records of one document from several sweeps share
+    an index (the first row that carried it), so its attempts stay together. A record without a
+    ``doc_id`` is its own document.
     """
     pairs: dict[str, list[tuple[float, bool]]] = {}
     docs: dict[str, list[int]] = {}
+    first_row: dict[str, int] = {}
     for index, rec in enumerate(records):
         a1 = _att(rec.sorter, 1)
         gold = rec.gold.expected_doc_type
         if a1 is None or gold is None or a1.doc_type != gold:
             continue
+        doc = first_row.setdefault(rec.doc_id, index) if rec.doc_id else index
         for att in _for_class(rec.extraction, gold):
             conf = _conf(att)
             if att.extraction_score is None or conf is None:
                 continue
+            if att.schema_valid is False or att.hollow:
+                # Routing retries these whatever their confidence (the schema and hollow gates in
+                # ``after_extraction``), so they can never be auto-archived at any cutoff: a poor score
+                # here would only mark a confident, valid retry's cutoff as unearned.
+                continue
             pairs.setdefault(gold, []).append((float(conf), att.extraction_score >= field_floor))
-            docs.setdefault(gold, []).append(index)
+            docs.setdefault(gold, []).append(doc)
     return pairs, docs
 
 
@@ -782,8 +802,10 @@ def extraction_pairs(
 
     What is pooled: for each record whose sorter attempt 1 named the gold class (so the pairs
     isolate extraction calibration from classification errors), every extraction attempt of
-    the gold class that has both a confidence and an offline score. A document with three
-    scored attempts contributes three pairs; an attempt of another class never counts.
+    the gold class that has both a confidence and an offline score and that routing could
+    archive (not ``schema_valid`` False, not hollow: those are retried at any confidence). A
+    document with three scored attempts contributes three pairs; an attempt of another class
+    never counts.
 
     Why every attempt and not the document's final one: routing auto-archives ANY attempt
     whose confidence clears the cutoff, including attempt 1 before a retry would have run
@@ -844,6 +866,7 @@ def evaluate(
     collapsed candidate whose handoff confidence differed; see ``schemas/run_record.py``).
     """
     p = ObjectiveParams.from_mapping(objective_params)
+    accept_target(p.c_human, p.c_error)  # finite and c_error > c_human > 0, before anything is scored
     if not (isinstance(p.review_cost_usd, (int, float)) and math.isfinite(p.review_cost_usd) and p.review_cost_usd > 0):
         raise ValueError(f"review_cost_usd must be a finite number > 0, got {p.review_cost_usd!r}")
     if not records:
