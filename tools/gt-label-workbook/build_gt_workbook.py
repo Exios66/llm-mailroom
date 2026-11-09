@@ -9,7 +9,7 @@ formulas.
 Usage (from the repository root):
 
     PYTHONPATH=src .venv/bin/python tools/gt-label-workbook/build_gt_workbook.py \
-        --out gt_label_workbook.xlsx
+        --out ~/gt_label_workbook.xlsx   # outside the repo; *.xlsx is git-ignored
 
 Reads ``config=ground_truth`` (train + test) of the pipeline's full corpus at
 ``FULL_CORPUS_REVISION`` through ``pipeline.hf_corpus_loader.load_config_frame``
