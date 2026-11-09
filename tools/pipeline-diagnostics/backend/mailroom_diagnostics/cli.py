@@ -80,8 +80,8 @@ def main(argv: list[str] | None = None) -> int:
         return int(payload["exit_code"])
     except DiagnosticsError as exc:
         return _fail(exc, json_mode)
-    except Exception as exc:  # no traceback on the machine-data channel
-        return _fail(DiagnosticsError("runtime-error", f"{type(exc).__name__}: {exc}"), json_mode)
+    except Exception:  # environment exceptions may contain private paths or payloads
+        return _fail(DiagnosticsError("runtime-error", "unable to inspect the pipeline environment"), json_mode)
 
 
 def _snapshot(args: argparse.Namespace) -> Snapshot:
