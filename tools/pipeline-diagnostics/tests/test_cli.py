@@ -202,3 +202,11 @@ def test_pipeline_version_requires_an_unambiguous_provider(monkeypatch):
         lambda: {"pipeline": ["mailroom", "mailroom"]},
     )
     assert snapshot_module._pipeline_version() == metadata.version("mailroom")
+
+
+def test_non_numeric_serve_port_does_not_break_other_commands(monkeypatch):
+    from mailroom_diagnostics.cli import build_parser
+
+    monkeypatch.setenv("MAILROOM_DIAGNOSTICS_PORT", "not-a-port")
+    args = build_parser().parse_args(["inspect", "--json"])
+    assert args.command == "inspect"
