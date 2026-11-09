@@ -159,6 +159,14 @@ pager:
     log: true                    # <base_dir>/pager_log.jsonl
     webhook_url: ""              # env MAILROOM_PAGER_WEBHOOK_URL (+ MAILROOM_PAGER_WEBHOOK_SECRET)
 
+# Inbox watcher scaling. At most this many documents run through the pipeline
+# at once; the rest wait (queued, de-duplicated) in a bounded worker pool, so
+# a backlog of hundreds of files cannot start hundreds of concurrent LLM
+# pipelines. Env override: MAILROOM_MAX_CONCURRENT_DOCS. Needs a watcher/API
+# restart (config is cached).
+watcher:
+  max_concurrent_docs: 4
+
 run_limits:
   # Hard wall-clock cutoff per document run (abort past this).
   deadline_seconds: 3600
@@ -172,7 +180,9 @@ run_limits:
 # documents are split on paragraph boundaries into overlapping windows,
 # each window extracted in its own call, and merged deterministically (list
 # fields union with normalized dedupe, scalars keep the first non-null value,
-# confidence takes the max) — nothing is truncated. Window size is capped at
+# confidence takes the MIN across windows; a failed window caps it below the
+# class `low` threshold, a transient provider error is re-raised) — nothing is
+# truncated. Window size is capped at
 # the specialist's ``max_input_chars`` so a chunk is never silently truncated
 # inside ``extract()``. Documents that fit in a single window take the plain
 # single-pass path, so small documents are unaffected. The per-run
@@ -273,6 +283,42 @@ confidence:
 reviewer:
   default_mode: llm
   by_class: {}
+
+review_queue:
+  # Order of the human review tray (pipeline/review_priority.py). Score =
+  # severity * class weight * (1 + age term); the tray sorts by score, then oldest.
+  # severity = heaviest cause weight + 0.1 * the rest; unknown causes weigh 1.0.
+  cause_weights:
+    transient_exhausted: 3.0       # provider outage: nothing was judged at all
+    boss_conflict: 3.0             # contradicts the matter record
+    schema_invalid: 3.0
+    parse_error: 3.0
+    chunk_failed: 3.0              # part of the document was never read
+    judge_error: 3.0
+    unsupported_extraction: 3.0
+    empty_document: 2.5
+    arbiter_escalated: 2.5
+    classification_arbiter_escalated: 2.5
+    unknown_class: 2.0
+    judge_incomplete: 2.0
+    judge_miss: 2.0
+    hollow_extraction: 2.0
+    retries_exhausted: 1.5
+    low_extraction_confidence: 1.5
+    judge_partial: 1.5
+    reviewer_disagreement: 1.5
+    sorter_low_confidence: 1.2
+    reviewer_low_confidence: 1.2
+    reporting_incomplete: 1.2
+  class_tier_weight:               # cost of a wrong answer per class
+    contract: 1.3
+    merger_agreement: 1.4
+    insurance_claim: 1.3
+    corporate_record: 1.1
+    correspondence: 1.0
+  tier_cutoffs: {high: 3.0, normal: 1.5}   # on severity * class weight (before age)
+  age_half_life_hours: 24          # age term = 1 - 0.5 ** (age / half_life), in [0, 1)
+  sla_hours: {high: 4, normal: 24, low: 72}  # older than this: sla_breached
 
 # Deterministic field-type-aware extraction scoring (issues #4/#5). The scorer
 # normalizes each field by its type (date/money/id exact-after-normalize, name

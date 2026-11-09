@@ -4,7 +4,7 @@ This file is the ordered work queue for the native workbench. [PLAN.md](PLAN.md)
 
 ## Resume protocol
 
-1. Read repository `CLAUDE.md`, the three `.claude/rules/` files, this file, the plan and evidence contract. User preference overrides older model-tier examples and agent `model:` frontmatter for this undertaking: use appropriately scoped inexpensive agents such as DeepSeek 4.1 Flash; do not use Sonnet 4.6.
+1. Read repository `CLAUDE.md`, the three `.claude/rules/` files, this file, the plan and evidence contract. Delegate as `.claude/rules/orchestration.md` says (model tiers come from the agent frontmatter).
 2. Inspect `git status --short`, the current branch and HEAD, the draft PR head and latest review comments. Preserve unrelated edits. Continue the designated feature branch `feat/pipeline-diagnostics-workbench`; do not reset it to a staged PR or copy a sibling repository into it.
 3. Identify the first unchecked task whose dependencies are satisfied. Claim that task in the PR's current handoff section with agent/session, exact base SHA, owned paths and start time. If another agent owns it, pick independent work; do not duplicate active work.
 4. Install the parent package with pip, then this nested package. Run the quick start and the task's focused checks before changing anything. Reproduce a claimed defect before fixing it.

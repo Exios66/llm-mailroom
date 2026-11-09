@@ -80,6 +80,12 @@
     "edges": [
       {
         "source": "__start__",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "__start__",
         "target": "extract",
         "conditional": true,
         "label": null
@@ -239,6 +245,12 @@
         "target": "__end__",
         "conditional": true,
         "label": "failed"
+      },
+      {
+        "source": "human_review",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
       },
       {
         "source": "human_review",
