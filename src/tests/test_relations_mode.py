@@ -253,6 +253,34 @@ class TestRelationsModeApi:
         assert "model" in body
         assert "free_only_guardrail" in body
 
+    def test_get_readout_reports_seeded_sweep_and_edge_count(self, client):
+        """#193: ``mode_status`` reads the relations DB with ``asyncio.run``;
+        called directly on the endpoint's running loop that raises and is
+        swallowed, so ``last_sweep_at``/``edges`` silently came back ``None``.
+        Seed both values and require them in the HTTP response."""
+        import asyncio
+
+        from storage import relations as R
+
+        stamp = "2026-01-02T03:04:05+00:00"
+        asyncio.run(R.set_scan_state("last_sweep_at", stamp))
+        inserted = asyncio.run(
+            R.record_edges(
+                [
+                    {"source_doc_id": "doc-a", "target_doc_id": "doc-b",
+                     "relation_type": "same_matter", "score": 0.9},
+                    {"source_doc_id": "doc-a", "target_doc_id": "doc-c",
+                     "relation_type": "same_matter", "score": 0.8},
+                ]
+            )
+        )
+        assert inserted["inserted"] == 2
+        r = client.get("/api/relations/mode", headers=self._auth())
+        assert r.status_code == 200
+        body = r.json()
+        assert body["last_sweep_at"] == stamp
+        assert body["edges"] == 2
+
     def test_post_live_then_pilot(self, client, taxonomy_tmp):
         r = client.post(
             "/api/relations/mode",

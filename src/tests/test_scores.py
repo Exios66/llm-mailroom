@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 
 class TestValidateExtraction:
     def test_parse_error_flag(self):
@@ -396,14 +398,154 @@ def test_ensure_score_configs_does_not_cache_after_failure(monkeypatch):
     assert len(attempts) == len(scores.SCORE_CONFIGS)
 
 
-def test_scoring_wiring_import_sites_present():
-    """#192 tripwire: every field-scoring entrypoint must import
-    observability.scoring_wiring for its side effect, or field scores /
-    judge gating run on dojo package defaults instead of the calibrated
-    taxonomy (the whole reason the wiring module exists)."""
+def _flaky_config_client(scores, fail_names):
+    """Fake Langfuse client: creating a name in ``fail_names`` raises, once."""
+    from types import SimpleNamespace as NS
+
+    attempts = []
+    failing = set(fail_names)
+
+    class Configs:
+        def get(self, limit=100):
+            return NS(data=[])
+
+        def create(self, **kw):
+            attempts.append(kw["name"])
+            if kw["name"] in failing:
+                failing.discard(kw["name"])  # fails on the first attempt only
+                raise RuntimeError("boom")
+            return NS(id="new-" + kw["name"])
+
+    return NS(api=NS(score_configs=Configs())), attempts
+
+
+def test_ensure_score_configs_retries_only_the_failed_spec(monkeypatch):
+    """#201 follow-up: the first creation fails, later ones succeed. The
+    non-empty cache used to make every later call return early, so the failed
+    config id stayed unavailable for the whole process."""
+    from observability import scores
+
+    failed_spec = scores.SCORE_CONFIGS[0]["name"]
+    failed_wire = scores.langfuse_score_name(failed_spec)
+    client, attempts = _flaky_config_client(scores, {failed_wire})
+    monkeypatch.setattr(scores, "_client", lambda: client)
+    monkeypatch.setattr(scores, "_configs_ensured", set())
+    monkeypatch.setattr(scores, "_config_ids", {})
+
+    first = scores.ensure_score_configs()
+    assert failed_spec not in first
+    assert len(first) == len(scores.SCORE_CONFIGS) - 1  # the later specs succeeded
+    assert failed_wire not in scores._config_ids
+    assert len(attempts) == len(scores.SCORE_CONFIGS)
+
+    second = scores.ensure_score_configs()
+    # Only the missing spec was retried; the successful ones were not re-created.
+    assert attempts[len(scores.SCORE_CONFIGS):] == [failed_wire]
+    assert failed_spec in second
+    assert len(second) == len(scores.SCORE_CONFIGS)
+    assert scores._config_ids[failed_wire] == "new-" + failed_wire
+
+    # Everything is cached now: a third call makes no Langfuse request.
+    scores.ensure_score_configs()
+    assert len(attempts) == len(scores.SCORE_CONFIGS) + 1
+
+
+def test_warmup_retries_a_partially_registered_config_set(monkeypatch):
+    from observability import scores
+
+    failed_spec = scores.SCORE_CONFIGS[0]["name"]
+    failed_wire = scores.langfuse_score_name(failed_spec)
+    client, attempts = _flaky_config_client(scores, {failed_wire})
+    monkeypatch.setattr(scores, "_client", lambda: client)
+    monkeypatch.setattr(scores, "_configs_ensured", set())
+    monkeypatch.setattr(scores, "_config_ids", {})
+    monkeypatch.setattr(scores, "_last_warmup_attempt", float("-inf"))
+
+    scores.warmup_score_configs(blocking=True)
+    assert failed_spec not in scores._configs_ensured
+    # a later warmup (past the sticky backoff) must not be short-circuited by the partial cache
+    monkeypatch.setattr(scores, "_last_warmup_attempt", float("-inf"))
+    scores.warmup_score_configs(blocking=True)
+    assert attempts[len(scores.SCORE_CONFIGS):] == [failed_wire]
+    assert failed_spec in scores._configs_ensured
+
+
+_WIRING_PROBE = """
+import importlib, importlib.abc, json, sys, traceback
+
+first_importer = []
+
+
+class _Recorder(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path, target=None):
+        if name == "observability.scoring_wiring" and not first_importer:
+            frames = [f.filename for f in traceback.extract_stack() if not f.filename.startswith("<frozen")]
+            first_importer.append(frames[-2])  # frames[-1] is this finder
+        return None
+
+
+sys.meta_path.insert(0, _Recorder())
+mode = sys.argv[1]
+if mode == "wire":  # reference: what the wiring is supposed to produce
+    from pipeline.config import load_config
+    from llm_dojo_scoring import configure_from_taxonomy
+
+    configure_from_taxonomy(load_config())
+elif mode != "none":
+    importlib.import_module(mode)  # an entrypoint, with NO separate wiring here
+
+from llm_dojo_scoring import get_settings, get_type_bands
+
+print(json.dumps({
+    "importer": first_importer[0] if first_importer else None,
+    "type_bands": {k: list(v) for k, v in sorted(get_type_bands().items())},
+    "embedding_enabled": get_settings().field_scoring.embedding_enabled,
+}))
+"""
+
+
+def _probe_scoring_config(mode: str) -> dict:
+    """Effective Dojo field-scoring config seen by a FRESH interpreter."""
+    import json
+    import os
+    import subprocess
+    import sys
     from pathlib import Path
 
     src = Path(__file__).resolve().parent.parent
-    for rel in ("graph/build_graph.py", "scripts/run_pilot.py", "scripts/run_hf_pilot.py"):
-        text = (src / rel).read_text()
-        assert "import observability.scoring_wiring" in text, rel
+    env = {**os.environ, "PYTHONPATH": str(src), "OBSERVABILITY_PROVIDER": "none"}
+    proc = subprocess.run(
+        [sys.executable, "-c", _WIRING_PROBE, mode],
+        capture_output=True, text=True, env=env, cwd=str(src), timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+def test_scoring_wiring_probe_distinguishes_calibrated_from_defaults():
+    """Guard the probe: without wiring the Dojo runs on package defaults."""
+    defaults = _probe_scoring_config("none")
+    calibrated = _probe_scoring_config("wire")
+    assert defaults["type_bands"] == {} and defaults["embedding_enabled"] is False
+    assert calibrated["type_bands"] and calibrated["embedding_enabled"] is True
+
+
+@pytest.mark.parametrize(
+    "entrypoint",
+    ["graph.build_graph", "scripts.run_pilot", "scripts.run_hf_pilot"],
+)
+def test_scoring_entrypoint_import_applies_calibrated_taxonomy(entrypoint):
+    """#192 tripwire, behavioural: importing each field-scoring entrypoint in
+    isolation (no separate wiring) must leave the Dojo on the calibrated
+    taxonomy, and the entrypoint's OWN ``import observability.scoring_wiring``
+    must be what wires it. A commented-out import fails both checks (a
+    substring check on the source would not)."""
+    from pathlib import Path
+
+    expected = _probe_scoring_config("wire")
+    seen = _probe_scoring_config(entrypoint)
+    assert seen["type_bands"] == expected["type_bands"]
+    assert seen["embedding_enabled"] == expected["embedding_enabled"]
+    src = Path(__file__).resolve().parent.parent
+    own_file = src / (entrypoint.replace(".", "/") + ".py")
+    assert seen["importer"] is not None and Path(seen["importer"]) == own_file
