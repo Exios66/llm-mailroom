@@ -731,6 +731,26 @@ def test_an_approved_resume_starts_a_new_review_clock(temp_base_dir, mocker, ans
     assert seen["manifest"].review_entered_at == second
 
 
+def test_a_failed_stateless_requeue_keeps_the_review_clock(temp_base_dir, mocker):
+    """The document stays in review when the requeue raises, so its wait goes on."""
+    from graph.build_graph import resume_from_review
+    from pipeline.bins import load_manifest, review_dir, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    old = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+    manifest = DocumentManifest(
+        doc_id="clock-rq", matter_id="M", original_filename="r.txt", doc_type="contract",
+        stage=PipelineStage.REVIEW, review_entered_at=old,
+    )
+    save_manifest(manifest)
+    review_file = review_dir() / "r--clock-rq.txt"
+    review_file.write_text("body")
+    mocker.patch("pipeline.bins.requeue_from_review", side_effect=OSError("disk full"))
+    with pytest.raises(OSError):
+        resume_from_review(manifest, review_file)
+    assert load_manifest("clock-rq").review_entered_at == old
+
+
 # --------------------------------------------------------------------------
 # #203 review: a live-resume abort keeps the correction and the file
 # --------------------------------------------------------------------------
@@ -832,6 +852,34 @@ def test_human_rejection_dispatches_the_completion_echo(temp_base_dir, mocker):
     echo.assert_called_once()
     sent = echo.call_args.args[0]
     assert sent["stage"] == "failed" and sent["review_decision"] == "rejected"
+
+
+def test_a_failed_reject_move_is_not_echoed_to_the_sender(temp_base_dir, mocker, tmp_path):
+    """The move error (it can carry a local path) stays in the manifest, never in the echo."""
+    from graph.build_graph import _finalize_human_rejection
+    from pipeline.bins import load_manifest, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    save_manifest(DocumentManifest(
+        doc_id="rej-3", matter_id="M", original_filename="r.txt", stage=PipelineStage.REVIEW,
+        intake={"source": "gmail", "message_id": "m3", "sender": "a@example.com"},
+    ))
+    parked = tmp_path / "r.txt"
+    parked.write_text("x")
+    mocker.patch("graph.build_graph._catalog_upsert")
+    mocker.patch("graph.build_graph._maybe_export_warehouse")
+    mocker.patch("graph.build_graph.move_to_failed", side_effect=OSError("/srv/secret/path busy"))
+    echo = mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    _finalize_human_rejection(
+        doc_id="rej-3", matter_id="M", original_filename="r.txt", doc_type="contract",
+        classification_confidence=0.9, extraction_confidence=0.5, trace_id=None,
+        esc_reason="low confidence", catalog_extracted=None, dest=parked,
+        reject_reason="duplicate",
+    )
+    assert "reject move failed" in load_manifest("rej-3").escalation_reason
+    sent = echo.call_args.args[0]
+    assert sent["escalation_reason"] == "low confidence"
+    assert "/srv/secret" not in str(sent)
 
 
 def test_the_echo_says_a_reviewer_rejected_the_document():

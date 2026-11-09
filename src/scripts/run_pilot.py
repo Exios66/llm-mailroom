@@ -436,11 +436,6 @@ def run_sample(
         expect["subclass"] = sample.get("mock_subclass") or None
         expect["fields"] = _parse_expected_fields(sample) or {}
 
-    _LLM_METRICS["calls"] = 0
-    _LLM_METRICS["seconds"] = 0.0
-    _LLM_METRICS["usage"] = []
-    _LLM_METRICS["cost_usd"] = 0.0
-
     def _mock_get_llm(agent_name):
         return _fake_client(expect), "mock-model"
 
