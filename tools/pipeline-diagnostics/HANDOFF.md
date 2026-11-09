@@ -17,7 +17,7 @@ This file is the ordered work queue for the native workbench. [PLAN.md](PLAN.md)
 
 The first implementation checkpoint is **D0a**, the installable snapshot/check CLI and test-discovery foundation. The draft PR's commit-specific Evidence section is the authoritative verification record for this checkpoint. The original design commit is `133e971`; it delivered documents, not an application.
 
-Do not mark D0 complete after D0a: the standalone app, authentication integration, React asset handling and richer provenance remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
+D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208; later tasks remain unchecked. Do not mark D0 complete after D0a: the standalone app, authentication integration, React asset handling and richer provenance remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
 
 ## Ordered tasks
 
@@ -25,12 +25,12 @@ Do not mark D0 complete after D0a: the standalone app, authentication integratio
 
 **Depends:** design; **owns:** nested package, CLI/models/checks, shared compiled-graph export helper.
 
-- [ ] Install the nested package from `backend/` with its console entrypoint and declared dependencies; parent mailroom remains the pipeline distribution.
-- [ ] Derive exact node IDs, span metadata and edges from the compiled graph through the same importable helper as the original exporter. Preserve the generated display contract byte-for-byte.
-- [ ] `inspect --json` emits a workspace-preview snapshot with explicit provenance and graph hash, in a fresh interpreter with tracing disabled. No API/watcher import, pipeline execution, LLM call or warmup is permitted.
-- [ ] `inspect --contract PATH --json` reads bounded, validated JSON offline and identifies it as an artifact. Never claim it is the running worker's graph.
-- [ ] `check` reports endpoint consistency and entry reachability with stable finding IDs and witness data. State that this coverage excludes routing predicates, semantic intent and execution completeness.
-- [ ] Prove valid pure JSON, malformed/oversized/version errors, changed fixture topology, dangling endpoint and unreachable-node findings, preserved shared-span node identities, and import/help side-effect boundaries.
+- [x] Install the nested package from `backend/` with its console entrypoint and declared dependencies; parent mailroom remains the pipeline distribution.
+- [x] Derive exact node IDs, span metadata and edges from the compiled graph through the same importable helper as the original exporter. Preserve the generated display contract byte-for-byte.
+- [x] `inspect --json` emits a workspace-preview snapshot with explicit provenance and graph hash, in a fresh interpreter with tracing disabled. No API/watcher import, pipeline execution, LLM call or warmup is permitted.
+- [x] `inspect --contract PATH --json` reads bounded, validated JSON offline and identifies it as an artifact. Never claim it is the running worker's graph.
+- [x] `check` reports endpoint consistency and entry reachability with stable finding IDs and witness data. State that this coverage excludes routing predicates, semantic intent and execution completeness.
+- [x] Prove valid pure JSON, malformed/oversized/version errors, changed fixture topology, dangling endpoint and unreachable-node findings, preserved shared-span node identities, and import/help side-effect boundaries.
 
 **Acceptance:** install/import smoke; CLI stdout parses as one JSON document; structural fixtures fail before correction and clear afterward; exporter parity; no real-model/network path in tests. Exit 0 means only the declared checks found nothing; it is not a pipeline safety certificate.
 
@@ -38,10 +38,10 @@ Do not mark D0 complete after D0a: the standalone app, authentication integratio
 
 **Depends:** D0.1 test root; **owns:** root pytest configuration, `src/scripts/ci_tests.py`, its existing unit tests, CircleCI installation.
 
-- [ ] Include nested tests in default pytest discovery and explicit full CI selections.
-- [ ] Map tool changes to nested tests; deleted/unrecognized inputs conservatively retain full validation.
-- [ ] Install the tool in CircleCI after installing the root package.
-- [ ] Prove affected and full plans select the nested suite and counts/cache scopes remain correct. Nested tests need their own hermetic fixtures: root `src/tests/conftest.py` is not inherited.
+- [x] Include nested tests in default pytest discovery and explicit full CI selections.
+- [x] Map tool changes to nested tests; deleted/unrecognized inputs conservatively retain full validation.
+- [x] Install the tool in CircleCI after installing the root package.
+- [x] Prove affected and full plans select the nested suite and counts/cache scopes remain correct. Nested tests need their own hermetic fixtures: root `src/tests/conftest.py` is not inherited.
 
 **Acceptance:** planner regression red-before/green-after, all existing planner tests, nested collection, and no accidental bypass of root smoke/full backstops. A documentation-only PR check is not evidence of full suite completion.
 

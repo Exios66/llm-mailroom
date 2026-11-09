@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+from collections import Counter
 from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -34,11 +36,16 @@ class DiagnosticsError(Exception):
 
 
 def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 class GraphNode(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
 
     id: str = Field(min_length=1, max_length=200)
     span: str = Field(min_length=1, max_length=200)
@@ -46,7 +53,7 @@ class GraphNode(BaseModel):
 
 
 class GraphEdge(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
 
     source: str = Field(min_length=1, max_length=200)
     target: str = Field(min_length=1, max_length=200)
@@ -57,7 +64,7 @@ class GraphEdge(BaseModel):
 class GraphPayload(BaseModel):
     """The graph section shared with ``contract/mailroom-contract.json``."""
 
-    model_config = ConfigDict(extra="ignore", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
 
     start: str = Field(min_length=1, max_length=200)
     end: str = Field(min_length=1, max_length=200)
@@ -71,7 +78,7 @@ class GraphPayload(BaseModel):
         if self.start == self.end:
             raise ValueError("graph start and end must differ")
         ids = [node.id for node in self.nodes]
-        duplicates = sorted({node_id for node_id in ids if ids.count(node_id) > 1})
+        duplicates = sorted(node_id for node_id, count in Counter(ids).items() if count > 1)
         if duplicates:
             raise ValueError(f"duplicate node ids: {duplicates}")
         boundary = {self.start, self.end} & set(ids)
@@ -101,21 +108,29 @@ class Thresholds(BaseModel):
     def from_confidence(cls, block: Mapping[str, Any]) -> "Thresholds":
         data: dict[str, Any] = {}
         for name in _THRESHOLD_FLOATS:
-            if _is_number(block.get(name)):
+            if block.get(name) is not None:
+                if not _is_number(block[name]):
+                    raise DiagnosticsError("invalid-schema", f"confidence.{name} must be finite numeric data")
                 data[name] = float(block[name])
         for name in _THRESHOLD_INTS:
             value = block.get(name)
             if isinstance(value, int) and not isinstance(value, bool):
                 data[name] = value
+            elif value is not None:
+                raise DiagnosticsError("invalid-schema", f"confidence.{name} must be an integer")
         by_class: dict[str, dict[str, float]] = {}
-        for class_key, row in (block.get("by_class") or {}).items():
+        rows = block.get("by_class", {})
+        if not isinstance(rows, dict):
+            raise DiagnosticsError("invalid-schema", "confidence.by_class must be an object")
+        for class_key, row in rows.items():
             if not isinstance(row, dict):
-                continue
-            filtered = {
-                name: float(row[name])
-                for name in _CLASS_THRESHOLD_FLOATS
-                if _is_number(row.get(name))
-            }
+                raise DiagnosticsError("invalid-schema", "class confidence must be an object")
+            filtered = {}
+            for name in _CLASS_THRESHOLD_FLOATS:
+                if row.get(name) is not None:
+                    if not _is_number(row[name]):
+                        raise DiagnosticsError("invalid-schema", "class confidence must contain finite numbers")
+                    filtered[name] = float(row[name])
             if filtered:
                 by_class[str(class_key)] = filtered
         data["by_class"] = by_class
