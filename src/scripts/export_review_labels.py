@@ -41,7 +41,12 @@ from schemas.run_record import (
 
 _SOURCE_HUMAN = "human"
 # review_classify_node re-labels the document (class AND classification_confidence) only on these.
-_REVIEWER_WON = ("reviewer_agrees_high", "reviewer_overrides")
+# ``decision_accepts`` belongs here too (T17): the decision lane's acceptance rewrites the parked
+# manifest's ``doc_type`` and ``classification_confidence`` with the REVIEWER's values, so the
+# snapshot's numbers are the reviewer's, and unlike ``reviewer_agrees_high`` the class may differ
+# from what the sorter extracted — the attempt-1 pair is unrecoverable either way (``review_route``
+# is never persisted to the manifest, so the old ``== "extract"`` tell cannot be used).
+_REVIEWER_WON = ("reviewer_agrees_high", "reviewer_overrides", "decision_accepts")
 
 
 def _parse_ts(value: Any) -> dt.datetime | None:
@@ -164,12 +169,61 @@ def sorter_attempt_one(manifest: dict[str, Any], snap: dict[str, Any]) -> tuple[
     )
 
 
+def _extraction_schema_evidence(
+    doc_type: Any,
+    payload: Any,
+    *,
+    parse_error: bool = False,
+    attempt: int = 1,
+) -> tuple[bool | None, bool, list[str]]:
+    """Schema/hollow evidence for a parked snapshot's ``extracted_data`` (T1).
+
+    Mirrors ``scripts/run_calibration_sweep.py:_extraction_attempt``: a payload dict is
+    validated against the doc class's schema and checked for hollowness, so replay gates on
+    what live routing gated on instead of assuming a passing extraction. Semantics:
+
+    - No payload dict in the snapshot (or a non-dict): nothing to validate.
+      ``schema_valid`` stays None and the payload is declared not hollow — routing skips
+      the schema gate on a falsy extraction and treats a no-payload attempt as a pass.
+    - A payload dict (empty or not) is validated: an empty/unparseable payload, a payload
+      that fails its class schema or a validator crash all record ``schema_valid`` False
+      (the conservative reading: replay retries or parks it), and a crash additionally
+      lists the failure under ``diagnostics.schema_validation_errors`` in the sweep's
+      format. The snapshot's ``parse_error`` flag is honored too — the parked
+      ``extracted_data`` is cleaned of its ``_parse_error`` marker, so the flag is the
+      only trace of a parse failure live routing never lets through.
+    - A dict that is empty or carries no public fields is hollow (routing's
+      ``extraction_hollow_review`` park arm).
+    """
+    from pipeline.reconsideration import extraction_is_hollow
+
+    if not isinstance(payload, dict):
+        return None, False, []
+    schema_valid: bool | None
+    errors: list[str] = []
+    if parse_error:
+        schema_valid = False  # a parse failure was parked; mark it invalid too
+    else:
+        from observability.scores import validate_extraction
+
+        try:
+            checked = validate_extraction(str(doc_type or ""), payload).get("schema_valid")
+            schema_valid = checked if isinstance(checked, bool) else False
+        except Exception as exc:  # scoring must never lose the record
+            schema_valid = False
+            errors.append(f"{doc_type}#{attempt}: {type(exc).__name__}: {str(exc)[:160]}")
+    return schema_valid, extraction_is_hollow(payload), errors
+
+
 def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
     label = manifest["human_label"]
     snap = label.get("model_snapshot") or {}
     human_fields = label.get("field_corrections")
     first, unobserved_reason = sorter_attempt_one(manifest, snap)
     sorter = [first] if first is not None else []
+    diagnostics: dict[str, Any] = {}
+    if unobserved_reason:
+        diagnostics["sorter_attempt_1"] = unobserved_reason
     reviewer_ran = snap.get("reviewer_doc_type") is not None
     reviewer = ReviewerObservation(
         ran=reviewer_ran,
@@ -178,15 +232,28 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
         causes=[c for c in (manifest.get("review_causes") or []) if isinstance(c, str)],
     )
     extraction: list[ExtractionAttempt] = []
+    schema_errors: list[str] = []
     # A person-supplied extraction carries no model confidence worth calibrating. The snapshot has no
     # provenance field of its own (review_resolve.model_snapshot), so the manifest's final
     # extraction_source is the only signal: when it is human the snapshot's confidence is not trusted.
     if manifest.get("extraction_source") != _SOURCE_HUMAN and _num(
         snap.get("extraction_confidence")
     ) is not None:
-        extraction.append(
-            ExtractionAttempt(attempt=1, confidence=_num(snap.get("extraction_confidence")))
+        schema_valid, hollow, schema_errors = _extraction_schema_evidence(
+            manifest.get("doc_type"),
+            snap.get("extracted_data"),
+            parse_error=bool(snap.get("parse_error")),
         )
+        extraction.append(
+            ExtractionAttempt(
+                attempt=1,
+                confidence=_num(snap.get("extraction_confidence")),
+                schema_valid=schema_valid,
+                hollow=hollow,
+            )
+        )
+    if schema_errors:
+        diagnostics["schema_validation_errors"] = schema_errors
     return RunRecord(
         run=RunInfo(run_id=run_id, mode="real", gt_in_state=False),
         doc_id=str(manifest.get("doc_id") or ""),
@@ -213,7 +280,7 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
             final_stage=str(manifest.get("stage") or "") or None,
             review_causes=list(reviewer.causes),
         ),
-        diagnostics={"sorter_attempt_1": unobserved_reason} if unobserved_reason else {},
+        diagnostics=diagnostics,
     )
 
 
