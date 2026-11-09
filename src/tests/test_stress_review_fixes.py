@@ -89,6 +89,50 @@ def test_db_threads_rejects_non_positive(st, bad, capsys):
     assert st.build_parser().parse_args([]).db_threads == [32, 128]
 
 
+@pytest.mark.parametrize("bad", ["0", "-1", "x", ""])
+def test_db_docs_per_thread_rejects_non_positive(st, bad):
+    """A zero-document contention run performs no writes and must not satisfy the db gate."""
+    with pytest.raises(SystemExit) as exc:
+        st.build_parser().parse_args(["--db-docs-per-thread", bad])
+    assert exc.value.code == 2
+    assert st.build_parser().parse_args(["--db-docs-per-thread", "2"]).db_docs_per_thread == 2
+    assert st.build_parser().parse_args([]).db_docs_per_thread == 3
+
+
+_LOST_EVENT_PROBE = r"""
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("st", sys.argv[1]); st = importlib.util.module_from_spec(spec)
+sys.modules["st"] = st; spec.loader.exec_module(st)
+import storage.audit_log as al
+real = al.write_audit_entry
+async def lossy(entry):
+    if entry.doc_id == "D0-0" and entry.event == "classified":
+        return None  # reports success but persists nothing
+    return await real(entry)
+al.write_audit_entry = lossy
+out = st.w_db_contention({"threads": 2, "docs_per_thread": 2})
+print("LOST", out["integrity"].get("lost_audit_events"), "FAILED", out["metrics"]["failed_ops"])
+"""
+
+
+def _run_probe(code, tmp_path):
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src"), "MAILROOM_BASE_DIR": str(tmp_path)}
+    env.pop("DATABASE_URL", None)
+    return subprocess.run([sys.executable, "-c", code, str(SCRIPT)], capture_output=True, text=True, env=env,
+                          timeout=120, cwd=str(ROOT))
+
+
+def test_db_contention_reports_silently_dropped_audit_events(tmp_path):
+    out = _run_probe(_LOST_EVENT_PROBE, tmp_path)
+    assert "LOST 1 FAILED 0" in out.stdout, out.stdout[-800:] + out.stderr[-1500:]
+
+
+def test_db_contention_clean_run_has_no_lost_audit_events(tmp_path):
+    clean = _LOST_EVENT_PROBE.replace('entry.doc_id == "D0-0"', 'entry.doc_id == "never"')
+    out = _run_probe(clean, tmp_path)
+    assert "LOST 0 FAILED 0" in out.stdout, out.stdout[-800:] + out.stderr[-1500:]
+
+
 def test_workdir_scratch_root_is_absolute(st, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     seen = {}

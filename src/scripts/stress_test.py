@@ -999,6 +999,7 @@ def w_db_contention(cfg: dict) -> dict:
     n_threads, n_docs = cfg["threads"], cfg["docs_per_thread"]
     errors = collections.Counter()
     ok = [0]
+    attempted: dict[str, set[str]] = collections.defaultdict(set)  # doc -> audit events whose write returned
     lock = threading.Lock()
 
     def worker(tid: int):
@@ -1007,20 +1008,22 @@ def w_db_contention(cfg: dict) -> dict:
                 doc = f"D{tid}-{i}"
                 fname = f"{doc}.pdf"
                 steps = [
-                    lambda: write_audit_entry(build_audit_entry(doc, "M", "ingested", "intake", {"original_filename": fname})),
-                    lambda: write_document_record({"doc_id": doc, "matter_id": "M", "original_filename": fname, "stage": "processing"}),
-                    lambda: write_audit_entry(build_audit_entry(doc, "M", "classified", "sorter", {"x": 1})),
-                    lambda: write_document_record(
+                    ("ingested", lambda: write_audit_entry(build_audit_entry(doc, "M", "ingested", "intake", {"original_filename": fname}))),
+                    (None, lambda: write_document_record({"doc_id": doc, "matter_id": "M", "original_filename": fname, "stage": "processing"})),
+                    ("classified", lambda: write_audit_entry(build_audit_entry(doc, "M", "classified", "sorter", {"x": 1}))),
+                    (None, lambda: write_document_record(
                         {"doc_id": doc, "matter_id": "M", "original_filename": fname, "stage": "archived",
                          "doc_type": "contract", "extracted_data": {"k": "v" * 5000}}
-                    ),
-                    lambda: write_audit_entry(build_audit_entry(doc, "M", "archived", "archivist", {"y": 2})),
+                    )),
+                    ("archived", lambda: write_audit_entry(build_audit_entry(doc, "M", "archived", "archivist", {"y": 2}))),
                 ]
-                for step in steps:
+                for event, step in steps:
                     try:
                         await step()
                         with lock:
                             ok[0] += 1
+                            if event:
+                                attempted[doc].add(event)
                     except Exception as exc:  # noqa: BLE001
                         with lock:
                             errors[f"{type(exc).__name__}: {str(exc)[:70]}"] += 1
@@ -1035,6 +1038,19 @@ def w_db_contention(cfg: dict) -> dict:
         t.join()
     elapsed = time.perf_counter() - t0
     inter = check_integrity(None)
+    # check_integrity()'s lost_audit_events expects the full pipeline event set (it requires
+    # `extracted`, which this workload never writes), so compare what this worker wrote
+    # successfully with what the persisted chains hold: a silently dropped event shows up here.
+    from storage.audit_log import get_audit_chain
+
+    async def _lost_events() -> int:
+        lost = 0
+        for doc, events in attempted.items():
+            present = {c["event"] for c in await get_audit_chain(doc)}
+            lost += len(events - present)
+        return lost
+
+    inter["lost_audit_events"] = asyncio.run(_lost_events())
     # no input accounting here; only chain/row consistency is meaningful
     return {
         "metrics": {
@@ -1046,7 +1062,7 @@ def w_db_contention(cfg: dict) -> dict:
             "elapsed_s": round(elapsed, 2),
             "error_kinds": dict(errors.most_common(3)),
         },
-        "integrity": {k: inter[k] for k in ("broken_chains", "orphan_processing_rows", "duplicate_sha_rows", "catalog_rows", "audit_chains")},
+        "integrity": {k: inter[k] for k in ("broken_chains", "orphan_processing_rows", "duplicate_sha_rows", "catalog_rows", "audit_chains", "lost_audit_events")},
     }
 
 
@@ -1230,6 +1246,17 @@ def positive_int_list(s: str) -> list[int]:
     return values
 
 
+def positive_int(s: str) -> int:
+    """argparse type: an integer >= 1 (an empty workload must not satisfy a gate)."""
+    try:
+        value = int(s)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {s!r}") from exc
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1, got {s!r}")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--docs", type=int, default=120, help="documents per throughput run (default 120)")
@@ -1244,7 +1271,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--watcher-run-ms", type=float, default=500.0, help="stub pipeline duration (default 500)")
     ap.add_argument("--stale-files", type=int, default=3, help="in-flight backlogged files in stale_claim")
     ap.add_argument("--db-threads", type=positive_int_list, default="32,128", help="db_contention thread counts (default 32,128)")
-    ap.add_argument("--db-docs-per-thread", type=int, default=3)
+    ap.add_argument("--db-docs-per-thread", type=positive_int, default=3)
     ap.add_argument("--fault-rate", type=float, default=0.2)
     ap.add_argument("--outage-calls", type=int, default=40, help="consecutive failing LLM calls (full outage)")
     ap.add_argument("--fault-docs", type=int, default=None, help="documents in provider_faults (default min(--docs, 60))")
