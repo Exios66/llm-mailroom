@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildViewModel, filterConnections, matchesQuery, START_ID, END_ID } from "./model";
+import { buildViewModel, edgeMatchesQuery, filterConnections, matchesQuery, START_ID, END_ID } from "./model";
 import type { GraphPayload } from "./types";
 
 const graph: GraphPayload = {
@@ -92,6 +92,22 @@ describe("search", () => {
     expect(matchesQuery({ id: "judge_verify", span: "verify-verdict" }, "judge")).toBe(true);
     expect(matchesQuery({ id: "judge_verify", span: "verify-verdict" }, "VERDICT")).toBe(true);
     expect(matchesQuery({ id: "judge_verify", span: "verify-verdict" }, "archive")).toBe(false);
+  });
+
+  it("matches edges by endpoint, stable id, label and node span", () => {
+    const model = buildViewModel(graph);
+    const matched = new Set(
+      model.nodes.filter((node) => matchesQuery({ id: node.id, span: node.data.span }, "extract")).map((node) => node.id),
+    );
+    const edge = model.connections.find((row) => row.id === "extract->archive#1");
+    expect(edge).toBeDefined();
+    expect(edgeMatchesQuery(edge!, matched, "extract")).toBe(true);
+    expect(edgeMatchesQuery(edge!, matched, "archive")).toBe(true);
+    expect(edgeMatchesQuery(edge!, matched, "extract->archive")).toBe(true);
+    expect(edgeMatchesQuery(edge!, new Set(), "not-there")).toBe(false);
+
+    const labelled = model.connections.find((row) => row.label === "retry");
+    expect(edgeMatchesQuery(labelled!, new Set(), "retry")).toBe(true);
   });
 
   it("filters the connection list by endpoint, id and label", () => {
