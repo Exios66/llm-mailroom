@@ -158,6 +158,18 @@ class TestVendoredRetryContract:
         call = src[src.index("ChatOpenAI("):src.index("if self._reasoning_effort:")]
         assert "max_retries=0" in call
 
+    @staticmethod
+    def _record_sleeps(monkeypatch) -> list[float]:
+        """Replace the backoff sleep with a recorder. ``_invoke_with_retry`` does
+        ``import time as _time`` and calls ``_time.sleep(delay)``, i.e. the module
+        attribute ``time.sleep``, so patching it keeps the real backoff delays (which
+        add up to several seconds) out of the test run while still capturing them."""
+        import time
+
+        delays: list[float] = []
+        monkeypatch.setattr(time, "sleep", delays.append)
+        return delays
+
     def test_retryable_error_is_retried(self, monkeypatch):
         from langchain_agents.base_agent import BaseAgent
 
@@ -179,9 +191,11 @@ class TestVendoredRetryContract:
             return "ok"
 
         monkeypatch.setattr(agent, "_check_deadline", lambda: None)
+        delays = self._record_sleeps(monkeypatch)
         result = agent._invoke_with_retry(flaky)
         assert result == "ok"
         assert calls["n"] == 3
+        assert len(delays) == 2 and all(d > 0 for d in delays), delays  # one backoff per failed attempt
 
     def test_non_retryable_error_not_retried(self, monkeypatch):
         from langchain_agents.base_agent import BaseAgent
@@ -204,9 +218,11 @@ class TestVendoredRetryContract:
             raise openai.BadRequestError("400 json marker", response=resp, body=None)
 
         monkeypatch.setattr(agent, "_check_deadline", lambda: None)
+        delays = self._record_sleeps(monkeypatch)
         with pytest.raises(openai.BadRequestError):
             agent._invoke_with_retry(bad_request)
         assert calls["n"] == 1  # never retried
+        assert delays == []  # and never backed off
 
     def test_exhausted_attempts_raise(self, monkeypatch):
         from langchain_agents.base_agent import BaseAgent
@@ -227,9 +243,11 @@ class TestVendoredRetryContract:
             raise openai.APIConnectionError(request=None)
 
         monkeypatch.setattr(agent, "_check_deadline", lambda: None)
+        delays = self._record_sleeps(monkeypatch)
         with pytest.raises(openai.APIConnectionError):
             agent._invoke_with_retry(always_fail)
         assert calls["n"] == 5  # max_attempts from taxonomy llm_retry
+        assert len(delays) == 4 and all(d > 0 for d in delays), delays  # no sleep after the last attempt
 
 
 class TestStructuredCallNonObjectJson:
