@@ -67,9 +67,10 @@ def arbiter(decision, attempt=1, cost=0.0):
     return ArbiterObservation(ran=True, on_attempt=attempt, decision=decision, cost_usd=cost)
 
 
-def reviewer(doc_type, conf, cost=0.0):
+def reviewer(doc_type, conf, cost=0.0, subclass=None):
     return ReviewerObservation(
-        ran=True, mode="llm", reviewer_doc_type=doc_type, reviewer_confidence=conf, cost_usd=cost
+        ran=True, mode="llm", reviewer_doc_type=doc_type, reviewer_doc_subclass=subclass,
+        reviewer_confidence=conf, cost_usd=cost,
     )
 
 
@@ -533,6 +534,35 @@ def test_failed_chunk_extraction_is_capped_below_the_candidates_own_low():
     assert pr.replay(clean, lenient).outcome == pr.AUTO
 
 
+def _three_low_attempts(failed_chunks, judges=()):
+    third = extract(0.40, attempt=3)
+    if failed_chunks:
+        third = third.model_copy(update={"failed_chunks": failed_chunks})
+    return record("w", sorters=[sorter(0.97)],
+                  extractions=[extract(0.40), extract(0.40, attempt=2), third], judges=judges)
+
+
+def test_lost_chunks_are_not_cleared_by_a_complete_judge_verdict():
+    """A lost window is hard evidence of missing data, so routing must reach the judge only on
+    an intact payload: a recorded complete, source-verified verdict may not archive a partial
+    extraction the live graph retried."""
+    judged = _three_low_attempts(1, judges=[judge("complete", attempt=3, verified=True)])
+    out = pr.replay(judged, POLICY)
+    assert out.outcome == pr.HUMAN and out.path[-1] == "human_review"
+    # the same route with the windows intact is exactly what the judge verdict is worth
+    assert pr.replay(_three_low_attempts(0, judges=[judge("complete", attempt=3, verified=True)]),
+                     POLICY).outcome == pr.AUTO
+
+
+def test_lost_chunks_on_the_last_attempt_park_not_unobserved():
+    """The recorded sweep ran no judge on a lost-window attempt, so replay parks the document
+    (what the live graph did) instead of demanding an observation it can never have."""
+    out = pr.replay(_three_low_attempts(2), POLICY)
+    assert out.outcome == pr.HUMAN and out.path[-1] == "human_review"
+    # parity control: without the lost window the route still needs the judge the record lacks
+    assert pr.replay(_three_low_attempts(0), POLICY).outcome == pr.UNOBSERVED
+
+
 def test_recorded_intake_cost_is_charged_once_per_document():
     rec = record("i", sorters=[sorter(0.97, cost=0.40)], extractions=[extract(0.95)])
     rec = rec.model_copy(update={"diagnostics": {"intake": {"llm_prep": True, "cost_usd": 0.40}}})
@@ -564,6 +594,15 @@ def test_repeated_doc_ids_keep_one_cost_per_scored_row_and_stay_paired():
     strict = pr.evaluate([a, b], {**POLICY, "high": 0.995})
     d = pr.paired_delta(res, strict)
     assert d is not None and d["n_paired"] == 2
+    # a real doc_id that itself ends in "#2" must not be overwritten by the generated key of
+    # the repeated "dup": three rows stay three keys and keep their pairing.
+    c = record("dup#2", sorters=[sorter(0.99)], extractions=[extract(0.99, score=0.1)])
+    res3 = pr.evaluate([a, b, c], POLICY)
+    assert sorted(res3["per_doc_cost"]) == ["dup", "dup#2", "dup#2#2"]
+    assert sum(res3["per_doc_cost"].values()) == pytest.approx(res3["mean_cost_units"] * 3)
+    strict3 = pr.evaluate([a, b, c], {**POLICY, "high": 0.995})
+    d3 = pr.paired_delta(res3, strict3)
+    assert d3 is not None and d3["n_paired"] == 3
 
 
 def test_non_positive_or_non_finite_review_cost_is_rejected():
@@ -642,6 +681,56 @@ def test_route_with_an_unextracted_subclass_is_unobserved():
     # the subclass that WAS extracted still replays normally
     rec.sorter[0].doc_subclass = "nda"
     assert pr.replay(rec, POLICY).outcome == pr.AUTO
+
+
+def _reviewer_rec(subclass, extracted, reviewer_subclass, conf=0.85):
+    """A sorter->reviewer record whose routed class was extracted under ``extracted``."""
+    sorters = [
+        SorterAttempt(attempt=1, doc_type="contract", doc_subclass=subclass,
+                      confidence_raw=conf, confidence=conf),
+        SorterAttempt(attempt=2, doc_type="contract", doc_subclass=subclass,
+                      confidence_raw=0.86, confidence=0.86),
+    ]
+    rec = record(sorters=sorters, reviewer=reviewer("contract", 0.97, subclass=reviewer_subclass),
+                 extractions=[extract(0.95)])
+    rec.diagnostics["extraction_candidates_collapsed"] = [
+        {"doc_type": "contract", "subclass_differs": True,
+         "doc_subclass": subclass, "extracted_doc_subclass": extracted}
+    ]
+    return rec
+
+
+def test_a_reviewer_acceptance_relabels_the_subclass_before_the_extraction_guard():
+    """The reviewer's accepted verdict sets the subclass exactly as review_classify_node does:
+    a route arriving on a subclass the sweep never extracted may not reuse the first
+    candidate's extraction, and an accepted subclass that WAS extracted still replays."""
+    # the extraction ran under the sorter's lease hint; the reviewer re-labels to nda
+    out = pr.replay(_reviewer_rec("lease", "lease", "nda"), POLICY)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["extraction_subclass_not_observed"]
+    # control: the reviewer re-labels to the subclass that WAS extracted -> reuse is sound
+    assert pr.replay(_reviewer_rec("lease", "lease", "lease"), POLICY).outcome == pr.AUTO
+
+
+def test_a_reviewer_override_to_another_class_does_not_inherit_the_old_subclass():
+    """Live reclassification replaces the subclass (None when the reviewer named none): a stale
+    contract subclass must not make a correspondence route falsely unobserved."""
+    rec = record(
+        sorters=[
+            SorterAttempt(attempt=1, doc_type="contract", doc_subclass="lease",
+                          confidence_raw=0.85, confidence=0.85),
+            SorterAttempt(attempt=2, doc_type="contract", doc_subclass="lease",
+                          confidence_raw=0.86, confidence=0.86),
+        ],
+        reviewer=reviewer("correspondence", 0.97),
+        extractions=[extract(0.95, doc_type="correspondence")],
+    )
+    rec.diagnostics["extraction_candidates_collapsed"] = [
+        # the correspondence candidate was extracted with no subclass: the route's (cleared)
+        # None matches, exactly as the live node's update would
+        {"doc_type": "correspondence", "subclass_differs": True, "extracted_doc_subclass": None}
+    ]
+    out = pr.replay(rec, POLICY)
+    assert out.outcome == pr.AUTO
 
 
 # ---- T43: extraction evidence pools every scored attempt of the gold class ----------------------

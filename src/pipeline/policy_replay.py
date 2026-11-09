@@ -422,12 +422,19 @@ def _apply_reviewer(state: dict[str, Any], rev: ReviewerObservation) -> str | No
         state["review_route"] = rev.review_route
         if rev.review_route == "extract" and rev.reviewer_doc_type is not None:
             state["doc_type"] = rev.reviewer_doc_type
+            state["doc_subclass"] = rev.reviewer_doc_subclass
             state["classification_confidence"] = rev.reviewer_confidence
     else:
         verdict = llm_review_verdict(state.get("doc_type"), rev.reviewer_doc_type, rev.reviewer_confidence)
         state["review_verdict"] = verdict
         if verdict in ("reviewer_agrees_high", "reviewer_overrides"):
+            # Mirror review_classify_node: a winning verdict re-labels the subclass too (None
+            # when the reviewer named none, the same way live clears it). Leaving the sorter's
+            # subclass in place would let the collapsed-candidate guard compare against an
+            # extraction hint the route never had, and an override to another class would
+            # inherit the previous class's subclass.
             state["doc_type"] = rev.reviewer_doc_type
+            state["doc_subclass"] = rev.reviewer_doc_subclass
             state["classification_confidence"] = rev.reviewer_confidence
     return None
 
@@ -633,12 +640,19 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
         w.attempt = k
         w.schema_unknown = att.schema_valid is None
         _SCHEMA_VALID["value"] = att.schema_valid is not False
+        # The live specialists stamp lost windows INTO the payload (``_failed_chunks``), and
+        # ``_chunks_lost`` refuses to let a judge verdict clear hard evidence of missing data.
+        # Without the key here a recorded complete+source-verified judge pass would archive a
+        # partial extraction the live graph retried.
         ex_state: dict[str, Any] = {
             "doc_id": record.doc_id,
             "doc_type": cls,
             "extraction_confidence": _extraction_confidence(att, cls),
             "extraction_attempts": k,
-            "extracted_data": {} if att.hollow else {"replay_field": "x"},
+            "extracted_data": {} if att.hollow else {
+                "replay_field": "x",
+                **({"_failed_chunks": att.failed_chunks} if att.failed_chunks else {}),
+            },
             "extraction_guardrail": list(att.guardrail_issues),
             "conflict_detected": bool(att.conflict_detected),
             "transient_error": False,
@@ -877,8 +891,17 @@ def evaluate(
                 doc_cost += out.llm_cost_usd / p.review_cost_usd * p.c_human
                 # Concatenated runs repeat doc_ids: keep one cost per scored row (the 2nd
                 # occurrence is "<id>#2", ...) so it neither overwrites nor drops out of a pairing.
+                # A real doc_id may itself end in "#<n>" and occupy a generated key, so a key that
+                # is taken walks further up until it is free: the first occurrence keeps the bare
+                # id, and a later occurrence shifts (a record literally named "d#2" keeps "d#2";
+                # a second "d" then lands on "d#3", not on the "d#2" row's cost).
                 seen_ids[rec.doc_id] = seen_ids.get(rec.doc_id, 0) + 1
-                key = rec.doc_id if seen_ids[rec.doc_id] == 1 else f"{rec.doc_id}#{seen_ids[rec.doc_id]}"
+                occurrence = seen_ids[rec.doc_id]
+                key = rec.doc_id if occurrence == 1 else f"{rec.doc_id}#{occurrence}"
+                while key in per_doc_cost:
+                    occurrence += 1
+                    seen_ids[rec.doc_id] = occurrence
+                    key = f"{rec.doc_id}#{occurrence}"
                 per_doc_cost[key] = doc_cost
                 total_cost += doc_cost
 
