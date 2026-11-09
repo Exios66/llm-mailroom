@@ -1,0 +1,135 @@
+"""Command line for the native pipeline diagnostics.
+
+Machine mode (``--json``) writes exactly one JSON document to stdout; logs and
+human notes go to stderr. This CLI is a preview, never the active worker, and
+it never contacts a network service or a model.
+
+Exit codes: 0 clean, 1 observed structural finding, 2 invalid input or runtime
+failure, 3 reserved for incomplete evidence (not emitted by this slice).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+from . import __version__
+from .checks import run_checks
+from .models import CheckReport, DiagnosticsError, Snapshot
+from .snapshot import build_workspace_snapshot, load_artifact
+
+EXIT_OK = 0
+EXIT_FINDINGS = 1
+EXIT_INVALID = 2
+EXIT_INCOMPLETE = 3  # reserved: no partial-evidence mode in this slice
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mailroom-diagnostics", description=__doc__.splitlines()[0]
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    inspect = sub.add_parser("inspect", help="print a workspace-preview or artifact snapshot")
+    inspect.add_argument(
+        "--contract",
+        type=Path,
+        metavar="PATH",
+        help="read a display-contract JSON artifact instead of compiling the graph",
+    )
+    inspect.add_argument("--json", action="store_true", help="write one JSON document to stdout")
+
+    check = sub.add_parser("check", help="run structural endpoint/reachability checks")
+    check.add_argument(
+        "--contract",
+        type=Path,
+        metavar="PATH",
+        help="check a display-contract JSON artifact instead of compiling the graph",
+    )
+    check.add_argument("--json", action="store_true", help="write one JSON document to stdout")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    _configure_logging()
+    try:
+        snapshot = _snapshot(args)
+        if args.command == "inspect":
+            _emit(snapshot.model_dump(mode="json"), args.json, _inspect_text(snapshot))
+            return EXIT_OK
+        report = run_checks(snapshot)
+        payload = report.model_dump(mode="json")
+        payload["exit_code"] = EXIT_FINDINGS if report.findings else EXIT_OK
+        _emit(payload, args.json, _check_text(report))
+        return int(payload["exit_code"])
+    except DiagnosticsError as exc:
+        return _fail(exc, args.json)
+    except Exception as exc:  # no traceback on the machine-data channel
+        return _fail(DiagnosticsError("runtime-error", f"{type(exc).__name__}: {exc}"), args.json)
+
+
+def _snapshot(args: argparse.Namespace) -> Snapshot:
+    if args.contract is not None:
+        return load_artifact(args.contract)
+    # A preview process must not initialize a tracing backend; set this before
+    # the pipeline graph is imported for the first time.
+    os.environ["OBSERVABILITY_PROVIDER"] = "none"
+    return build_workspace_snapshot()
+
+
+def _configure_logging() -> None:
+    """Keep every log line off stdout so ``--json`` stays machine-parseable."""
+    level = os.environ.get("LOG_LEVEL", "WARNING").upper()
+    logging.basicConfig(stream=sys.stderr, level=getattr(logging, level, logging.WARNING))
+    try:
+        import structlog
+    except ImportError:
+        return
+    structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=sys.stderr))
+
+
+def _emit(payload: dict[str, Any], json_mode: bool, text: str) -> None:
+    if json_mode:
+        sys.stdout.write(json.dumps(payload, indent=2, sort_keys=False) + "\n")
+    else:
+        sys.stdout.write(text + "\n")
+
+
+def _fail(exc: DiagnosticsError, json_mode: bool) -> int:
+    if json_mode:
+        payload = {"ok": False, "error": {"code": exc.code, "message": exc.message}}
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    else:
+        print(f"mailroom-diagnostics: {exc.code}: {exc.message}", file=sys.stderr)
+    return EXIT_INVALID
+
+
+def _inspect_text(snapshot: Snapshot) -> str:
+    provenance = snapshot.provenance
+    return "\n".join(
+        [
+            f"{provenance.kind}  pipeline={provenance.pipeline_version or 'unknown'}"
+            f"  git={provenance.git_sha or 'unknown'}",
+            f"graph {snapshot.graph_hash}",
+            f"nodes {len(snapshot.graph.nodes)}  edges {len(snapshot.graph.edges)}",
+            f"entry {snapshot.graph.start}  exit {snapshot.graph.end}",
+        ]
+    )
+
+
+def _check_text(report: CheckReport) -> str:
+    lines = [f"{report.provenance.kind}  graph {report.graph_hash}"]
+    if not report.findings:
+        lines.append(
+            "no structural findings (coverage: endpoint consistency, entry reachability)"
+        )
+    for finding in report.findings:
+        lines.append(f"{finding.severity.upper()} {finding.id} {finding.message}")
+    return "\n".join(lines)
