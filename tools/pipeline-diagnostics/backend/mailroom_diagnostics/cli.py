@@ -67,6 +67,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="check a display-contract JSON artifact instead of compiling the graph",
     )
     check.add_argument("--json", action="store_true", help="write one JSON document to stdout")
+
+    serve = sub.add_parser("serve", help="serve the read-only diagnostics app (optional UI)")
+    serve.add_argument(
+        "--host",
+        default=os.environ.get("MAILROOM_DIAGNOSTICS_HOST", "127.0.0.1"),
+        help="bind address; non-loopback requires MAILROOM_API_TOKEN(S)",
+    )
+    serve.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("MAILROOM_DIAGNOSTICS_PORT", "8100")),
+        help="TCP port (default 8100, or MAILROOM_DIAGNOSTICS_PORT)",
+    )
     return parser
 
 
@@ -80,6 +93,11 @@ def _run(raw_args: list[str]) -> int:
     json_mode = "--json" in raw_args
     try:
         args = build_parser().parse_args(raw_args)
+        if args.command == "serve":
+            from .app import serve
+
+            serve(host=args.host, port=args.port)
+            return EXIT_OK
         snapshot = _snapshot(args)
         if args.command == "inspect":
             _emit(snapshot.model_dump(mode="json"), args.json, _inspect_text(snapshot))

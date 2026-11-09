@@ -15,9 +15,9 @@ This file is the ordered work queue for the native workbench. [PLAN.md](PLAN.md)
 
 ## Current checkpoint
 
-The first implementation checkpoint is **D0a**, the installable snapshot/check CLI and test-discovery foundation. The draft PR's commit-specific Evidence section is the authoritative verification record for this checkpoint. The original design commit is `133e971`; it delivered documents, not an application.
+The first implementation checkpoint is **D0a**, the installable snapshot/check CLI and test-discovery foundation, delivered in PR 208. The standalone read-only HTTP app (D0.3) is delivered as a stacked PR layered on D0a. Each layer's commit-specific Evidence section is the authoritative verification record for its checkpoint. The original design commit is `133e971`; it delivered documents, not an application.
 
-D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208; later tasks remain unchecked. Do not mark D0 complete after D0a: the standalone app, authentication integration, React asset handling and richer provenance remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
+D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208. D0.3 is checked with its own layered PR. Do not mark D0 complete after D0a/D0.3: packaged assets, richer provenance and the React screen remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
 
 ## Ordered tasks
 
@@ -49,13 +49,15 @@ D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested 
 
 **Depends:** D0.1; **owns:** nested app/API plus minimal side-effect-free root auth extraction and opt-in mount.
 
-- [ ] Construct a standalone inspection app without importing `api.main`, which currently starts warmups at import.
-- [ ] Reuse existing bearer/loopback authorization through an import-safe shared helper; preserve current producer security behavior and its tests.
-- [ ] Add capabilities/snapshot/findings routes under `/v1/diagnostics` and the `/diagnostics` mount. Keep the standalone inspection launch independent of the normal watcher lifecycle.
-- [ ] Default to no watcher, no Gmail/status messages, no relations effects and no tracing-service initialization. Make source mode and unavailable features visible.
-- [ ] Test unauthenticated loopback rules, public/forwarded requests, bearer rotation, missing assets, import side effects, and graph-construction failure responses.
+- [x] Construct a standalone inspection app without importing `api.main`, which currently starts warmups at import.
+- [x] Reuse existing bearer/loopback authorization through an import-safe shared helper; preserve current producer security behavior and its tests.
+- [x] Add capabilities/snapshot/findings routes under `/v1/diagnostics` and the `/diagnostics` mount. Keep the standalone inspection launch independent of the normal watcher lifecycle.
+- [x] Default to no watcher, no Gmail/status messages, no relations effects and no tracing-service initialization. Make source mode and unavailable features visible.
+- [x] Test unauthenticated loopback rules, public/forwarded requests, bearer rotation, missing assets, import side effects, and graph-construction failure responses.
 
 **Acceptance:** real HTTP smoke on loopback plus test-client coverage; no background processing/hosted calls when opening the tool; unchanged producer auth behavior. Do not invent a permissive diagnostic authentication scheme.
+
+**Evidence (this layered PR, refreshed by its PR body):** `src/api/auth.py` is the import-safe shared policy and `api.main` re-exports it unchanged; nested `test_app.py` (12) and root `test_api_diagnostics_mount.py` (3) cover token/loopback rules, sanitized failures, inert import, placeholder UI and the opt-in mount; 210 focused tests pass. Loopback smoke: `/health`, `/v1/diagnostics/{capabilities,snapshot}`, `/diagnostics` = 200; token set ⇒ missing/wrong bearer 401, correct 200; `serve --host 0.0.0.0` without a token exits 1 with a refusal. Import probe shows no `api.main`, watcher, Gmail, status or graph import when constructing the app.
 
 ### D0.4 — Packaged assets, provenance and workspace refresh
 
