@@ -51,6 +51,7 @@ def _classes(raw: str) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", help="tag, branch or commit (default: newest semver tag)")
+    parser.add_argument("--live", action="store_true", help="pull the live Hub (default; kept for readability)")
     parser.add_argument("--per-class", type=int, default=0, help="select N small archived docs per class")
     parser.add_argument("--classes", default="", help="comma-separated classes (default: all five)")
     parser.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS, help="selection ceiling, never truncation")
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     revision = resolve_revision(args.revision)
-    gt, blind, provenance = load_frames(args.revision)
+    gt, blind, provenance = load_frames(revision)
     rows, stats = build_manifest_rows(gt, blind, revision)
     if stats["integrity"]["mismatched"]:
         print(
@@ -89,6 +90,10 @@ def main(argv: list[str] | None = None) -> int:
     selected = rows
     if args.per_class or args.fixture:
         classes = _classes(args.classes) or list(CLASSES)
+        unknown = sorted(set(classes) - set(CLASSES))
+        if unknown:
+            print(json.dumps({"ok": False, "error": f"unknown classes: {unknown}"}))
+            return 2
         selected = select_smoke_rows(
             rows,
             per_class=args.per_class or 3,

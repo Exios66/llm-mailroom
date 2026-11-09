@@ -31,7 +31,7 @@ BLIND_CONFIG = "default"
 JOIN_KEY = "filename"
 RELEASE_MANIFEST = "manifest.txt"
 MANIFEST_SCHEMA_VERSION = "1.0.0"
-DEFAULT_MAX_CHARS = 30_000
+DEFAULT_MAX_CHARS = 250_000
 CLASSES = (
     "contract",
     "merger_agreement",
@@ -64,6 +64,7 @@ MANIFEST_COLUMNS = (
     "notes",
 )
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SEMVER = re.compile(r"^v?(\d+)\.(\d+)(?:\.(\d+))?$")
 
 
@@ -104,9 +105,20 @@ def _cached(url: str, label: str) -> bytes:
         return target.read_bytes()
     raw = _get_bytes(url)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(target.name + ".tmp")
-    temporary.write_bytes(raw)
-    os.replace(temporary, target)
+    import tempfile
+
+    fd, temporary_name = tempfile.mkstemp(
+        dir=target.parent, prefix=target.name + ".", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, target)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
     return raw
 
 
@@ -156,7 +168,7 @@ def resolve_revision(revision: str | None = None) -> dict[str, Any]:
         return {"requested": requested, "tag": requested, "sha": tags[requested], "main_sha": main_sha}
     if requested in branches:
         return {"requested": requested, "tag": None, "sha": branches[requested], "main_sha": main_sha}
-    if _SHA256.match(requested):
+    if _COMMIT.match(requested):
         tag = next((name for name, sha in tags.items() if sha == requested), None)
         return {"requested": requested, "tag": tag, "sha": requested, "main_sha": main_sha}
     raise ValueError(f"unknown revision {requested!r} (tags: {sorted(tags)})")
@@ -192,14 +204,23 @@ def _download_verified(path: str, sha: str, checksums: dict[str, str]) -> bytes:
     url = f"{HUB}/datasets/{DATASET_ID}/resolve/{sha}/{path}"
     raw = _cached(url, f"{sha}/{path}")
     expected = checksums.get(path)
-    if expected and _sha256(raw) != expected:
+    if not expected:
+        raise RuntimeError(f"release manifest has no checksum for {path}")
+    if _sha256(raw) != expected:
         raise RuntimeError(f"checksum mismatch for {path}: expected {expected}, got {_sha256(raw)}")
     return raw
 
 
-def load_frames(revision: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
-    """Download and verify both configs at one exact revision."""
-    resolved = resolve_revision(revision)
+def load_frames(
+    revision: str | dict[str, Any] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
+    """Download and verify both configs at one exact revision.
+
+    Pass a resolved ``{tag,sha,...}`` mapping when the caller already resolved
+    it; passing a tag again could let a moved tag download a different commit
+    than the one recorded in the manifest.
+    """
+    resolved = dict(revision) if isinstance(revision, dict) else resolve_revision(revision)
     sha = resolved["sha"]
     release = parse_release_manifest(
         _get_bytes(f"{HUB}/datasets/{DATASET_ID}/resolve/{sha}/{RELEASE_MANIFEST}").decode("utf-8")
@@ -356,13 +377,18 @@ def build_manifest_rows(
                 "notes": _coerce_text(raw.get("source_corpus")),
             }
         )
-    # Stable unique ids even if the Hub repeats a document id.
-    seen: dict[str, int] = {}
+    # Stable unique ids even when the Hub repeats a document id or a suffixed
+    # id collides with another generated suffix (A, A, A-2 must stay distinct).
+    used: set[str] = set()
     for row in rows:
         base = row["id"] or Path(row["filename"]).stem
-        count = seen.get(base, 0)
-        seen[base] = count + 1
-        row["id"] = base if count == 0 else f"{base}-{count + 1}"
+        candidate = base
+        suffix = 1
+        while candidate in used:
+            suffix += 1
+            candidate = f"{base}-{suffix}"
+        used.add(candidate)
+        row["id"] = candidate
     rows.sort(key=lambda row: (row["expected_doc_class"], row["chars"], row["id"]))
     classes: dict[str, int] = {}
     for row in rows:
@@ -450,12 +476,8 @@ def select_smoke_rows(
             and (not require_archived or row["expected_stage"] == "archived")
             and str(row.get("review_expected") or "").lower() not in ("true", "1")
         ]
-        if not pool:
-            pool = [
-                row
-                for row in rows
-                if row["expected_doc_class"] == doc_class and int(row["chars"] or 0) >= 200
-            ]
+        # No relaxed fallback: an oversized/non-archived document must be
+        # explicitly opted into, never silently selected by the default smoke.
         pool.sort(key=lambda row: (int(row["chars"] or 0), row["id"]))
         selected.extend(pool[: max(0, per_class)])
     return selected

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "src" / "tests" / "fixtures" / "live_manifest_sample.csv"
 CLASSES = "contract,merger_agreement,correspondence,insurance_claim,corporate_record"
 
-pytestmark = pytest.mark.skipif(
+LIVE = pytest.mark.skipif(
     os.environ.get("MAILROOM_LIVE_TESTS") != "1",
     reason="live corpus test: set MAILROOM_LIVE_TESTS=1 (fetches pinned real documents)",
 )
@@ -65,6 +65,7 @@ def _run(args: list[str], timeout: int = 900) -> subprocess.CompletedProcess:
     )
 
 
+@LIVE
 @pytest.mark.live_corpus
 def test_real_documents_route_to_expected_outcomes_and_replay(tmp_path):
     base = tmp_path / "base"
@@ -137,3 +138,22 @@ def test_real_documents_route_to_expected_outcomes_and_replay(tmp_path):
     assert report["same_stage"] is True
     assert report["same_class"] is True
     assert report["new_sequence"] == CLEAN_ARCHIVE_PATH
+
+
+def test_unknown_class_selection_is_rejected_without_running(tmp_path):
+    proc = _run(
+        [
+            "--manifest",
+            str(FIXTURE),
+            "--classes",
+            "not-a-class",
+            "--per-class",
+            "1",
+            "--base",
+            str(tmp_path / "base"),
+            "--out",
+            str(tmp_path / "out"),
+        ]
+    )
+    assert proc.returncode == 2
+    assert "unknown classes" in proc.stdout.lower()

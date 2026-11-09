@@ -46,6 +46,7 @@ def _valid_run(payload: dict[str, Any]) -> bool:
     return (
         isinstance(payload.get("execution_id"), str)
         and isinstance(payload.get("events"), list)
+        and isinstance(payload.get("node_sequence"), list)
         and isinstance(payload.get("outcome"), dict)
         and isinstance(payload.get("document"), dict)
     )
@@ -110,6 +111,7 @@ def list_experiments(limit: int = 50) -> list[dict[str, Any]]:
             continue
         metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
         corpus = payload.get("corpus") if isinstance(payload.get("corpus"), dict) else {}
+        run_records = payload.get("runs") if isinstance(payload.get("runs"), list) else []
         summaries.append(
             {
                 "experiment_id": payload["experiment_id"],
@@ -120,7 +122,7 @@ def list_experiments(limit: int = 50) -> list[dict[str, Any]]:
                     "revision": corpus.get("revision"),
                 },
                 "metrics": metrics,
-                "runs": len(payload.get("runs") or []),
+                "runs": len(run_records),
             }
         )
     summaries.sort(key=lambda item: str(item.get("generated_at") or ""), reverse=True)
@@ -138,7 +140,9 @@ def load_experiment(experiment_id: str) -> dict[str, Any] | None:
         if payload and payload.get("experiment_id") == experiment_id:
             # Local paths are not part of the API contract.
             payload.pop("base_dir", None)
-            for run in payload.get("runs") or []:
+            if not isinstance(payload.get("runs"), list):
+                payload["runs"] = []
+            for run in payload["runs"]:
                 if isinstance(run, dict):
                     run.pop("journal", None)
             return payload

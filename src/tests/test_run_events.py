@@ -53,3 +53,14 @@ def test_finalize_is_idempotent_for_readers(tmp_path: Path):
     second = recorder.finalize({"stage": "failed", "doc_id": "d"})
     assert first["events"] == second["events"]
     assert second["outcome"]["failed"] is True
+
+
+def test_absolute_filenames_are_reduced_to_basenames(tmp_path: Path):
+    recorder = RunEventRecorder(
+        document={"filename": "/private/client/secret/doc.txt", "matter_id": "M"},
+        runs_dir=tmp_path,
+    )
+    payload = recorder.finalize({"stage": "archived"})
+    assert payload["document"]["filename"] == "doc.txt"
+    assert "/private/" not in json.dumps(payload)
+    assert payload["persisted"] is True
