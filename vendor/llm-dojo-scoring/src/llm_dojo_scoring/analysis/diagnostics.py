@@ -83,7 +83,7 @@ def parse_duration_days(text) -> int | None:
 
 def _date_pair_days(predicted: str, expected: str) -> tuple[float, float] | None:
     """(predicted, expected) as ordinal-day floats — the regression pair for
-    the date R² — or None when either side is unparseable."""
+    the date R² — or None when either side is unparseable or only partly dated."""
     pred_date = parse_date(predicted)
     exp_date = parse_date(expected)
     if pred_date is None or exp_date is None:

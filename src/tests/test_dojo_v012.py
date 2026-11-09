@@ -110,7 +110,7 @@ def test_prompt_catalog_honest_non_llm_roles():
     assert serving.text == ""
     sorter = get_prompt("sorter")
     assert sorter.family == "production"
-    assert sorter.version == "sorter_v14"
+    assert sorter.version == "sorter_condensed_v5"
     assert sorter.text.strip()
     docclass = get_prompt("sorter", family="docclass")
     assert docclass.family == "docclass"
