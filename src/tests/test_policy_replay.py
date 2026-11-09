@@ -642,3 +642,135 @@ def test_route_with_an_unextracted_subclass_is_unobserved():
     # the subclass that WAS extracted still replays normally
     rec.sorter[0].doc_subclass = "nda"
     assert pr.replay(rec, POLICY).outcome == pr.AUTO
+
+
+# ---- T43: extraction evidence pools every scored attempt of the gold class ----------------------
+
+
+def test_extraction_pairs_pool_every_scored_attempt_of_the_gold_class():
+    rec = record(
+        "p",
+        sorters=[sorter(0.97)],
+        extractions=[
+            extract(0.97, attempt=1, doc_type="contract", score=0.2),  # confidently wrong; routing would accept it
+            extract(0.70, attempt=2, doc_type="contract", score=0.95),
+            extract(0.99, attempt=3, doc_type="contract", score=None),  # unscored: no evidence
+            extract(0.99, attempt=1, doc_type="correspondence", score=0.1),  # another class
+        ],
+    )
+    assert pr.extraction_pairs([rec]) == {"contract": [(0.97, False), (0.70, True)]}
+    # a document whose sorter attempt 1 missed the gold class contributes nothing
+    wrong_class = record("w", sorters=[sorter(0.97, doc_type="correspondence")], extractions=[extract(0.9)])
+    assert pr.extraction_pairs([wrong_class]) == {}
+
+
+def test_extraction_evidence_keeps_a_document_index_beside_the_pairs():
+    two = record("a", sorters=[sorter(0.97)], extractions=[extract(0.9), extract(0.8, attempt=2)])
+    one = record("b", sorters=[sorter(0.97)], extractions=[extract(0.9)])
+    pairs, docs = pr.extraction_evidence([two, one])
+    assert len(pairs["contract"]) == 3 and docs["contract"] == [0, 0, 1]
+
+
+# ---- T41: an unknown schema passes the gate (parity with live routing) and is counted -----------
+
+
+def test_unknown_schema_passes_like_live_routing_and_is_counted():
+    known = record("k", sorters=[sorter(0.99)], extractions=[extract(0.99, schema_valid=True)])
+    unknown = record("u", sorters=[sorter(0.99)], extractions=[extract(0.99, schema_valid=None)])
+    invalid = record("i", sorters=[sorter(0.99)], extractions=[extract(0.99, schema_valid=False)])
+    assert pr.replay(unknown, POLICY).outcome == pr.AUTO and pr.replay(unknown, POLICY).schema_unknown
+    assert not pr.replay(known, POLICY).schema_unknown
+    assert pr.replay(invalid, POLICY).outcome == pr.UNOBSERVED  # ... it needs the retry the record lacks
+    res = pr.evaluate([known, unknown, unknown, invalid], POLICY)
+    assert res["auto_archived_schema_unknown"] == 2 and res["outcomes"][pr.AUTO] == 3
+
+
+def test_schema_unknown_counts_the_accepted_attempt_not_an_earlier_one():
+    # attempt 1 unknown but below the cutoff; the retry that is archived has a verdict
+    rec = record("r", sorters=[sorter(0.99)],
+                 extractions=[extract(0.50, schema_valid=None), extract(0.97, attempt=2, schema_valid=True)])
+    assert pr.replay(rec, POLICY).outcome == pr.AUTO and not pr.replay(rec, POLICY).schema_unknown
+    rec = record("s", sorters=[sorter(0.99)],
+                 extractions=[extract(0.50, schema_valid=True), extract(0.97, attempt=2, schema_valid=None)])
+    assert pr.replay(rec, POLICY).schema_unknown
+    assert pr.evaluate([rec], POLICY)["auto_archived_schema_unknown"] == 1
+
+
+def test_schema_unknown_is_not_counted_for_human_review():
+    rec = record("h", sorters=[sorter(0.99)], extractions=[extract(0.10, schema_valid=None)] * 1)
+    res = pr.evaluate([rec], POLICY)
+    assert res["outcomes"][pr.AUTO] == 0 and res["auto_archived_schema_unknown"] == 0
+
+
+def _policy_file(tmp_path):
+    import yaml
+
+    path = tmp_path / "policy.yaml"
+    cls = {"high": POLICY["high"], "low": POLICY["low"], "judge_band_high": POLICY["judge_band_high"]}
+    # the taxonomy carries per-class overrides for contract: pin them to POLICY's values
+    path.write_text(yaml.safe_dump({"confidence": {**POLICY, "by_class": {"contract": cls}}}))
+    return path
+
+
+def test_cli_prints_the_schema_unknown_and_handoff_diff_counts(tmp_path, capsys):
+    path = tmp_path / "unk.jsonl"
+    recs = [record(f"a{i}", sorters=[sorter(0.99)], extractions=[extract(0.99, schema_valid=True)]) for i in range(5)]
+    recs += [record("u", sorters=[sorter(0.99)], extractions=[extract(0.99, schema_valid=None)])]
+    pr.dump_records(recs, path)
+    code, out, _ = _run_cli(["--records", path, "--policy", _policy_file(tmp_path), "--split", "test"], capsys)
+    assert "schema evidence: 1 of 6 auto-archive(s) passed with schema_valid unknown" in out
+    assert "replay fidelity (next to G3): 0 route(s)" in out
+    assert out.strip().splitlines()[-1].startswith("SCORE:") and len(_score_lines(out)) == 1
+
+
+# ---- T35: a confidence-only collapsed handoff stays observed but is counted ---------------------
+
+
+def _collapsed(sub="nda", handoff="0.96", extracted="0.98", differs=False):
+    return {"doc_type": "contract", "source": "sorter_2", "collapsed_onto": "sorter_1",
+            "doc_subclass": sub, "handoff_confidence": handoff,
+            "extracted_doc_subclass": sub, "extracted_handoff_confidence": extracted,
+            "subclass_differs": differs}
+
+
+def _sub_record(conf, collapsed, doc_id="c"):
+    rec = record(doc_id, sorters=[SorterAttempt(attempt=1, doc_type="contract", doc_subclass="nda",
+                                                confidence_raw=conf, confidence=conf)],
+                 extractions=[extract(0.95)])
+    rec.diagnostics["extraction_candidates_collapsed"] = collapsed
+    return rec
+
+
+def test_confidence_only_collapsed_handoff_is_replayed_and_counted():
+    differing = _sub_record(0.96, [_collapsed()])  # the route arrives with the collapsed candidate's 0.96
+    out = pr.replay(differing, POLICY)
+    assert out.outcome == pr.AUTO and out.handoff_confidence_diff  # not demoted to unobserved
+    # the route that arrives with the extracted candidate's own handoff (0.98) is an exact reuse
+    exact = _sub_record(0.98, [_collapsed()])
+    out = pr.replay(exact, POLICY)
+    assert out.outcome == pr.AUTO and not out.handoff_confidence_diff
+    plain = _sub_record(0.96, [])
+    assert not pr.replay(plain, POLICY).handoff_confidence_diff
+    res = pr.evaluate([differing, exact, plain], POLICY)
+    assert res["replayed_with_confidence_only_handoff_diff"] == 1
+    assert res["outcomes"][pr.UNOBSERVED] == 0 and res["unobserved_rate"] == 0.0  # G3 is not touched
+
+
+def test_a_subclass_difference_still_makes_the_route_unobserved_and_is_not_counted_as_confidence_only():
+    rec = _sub_record(0.96, [_collapsed(sub="lease", differs=True)])
+    rec.diagnostics["extraction_candidates_collapsed"][0]["extracted_doc_subclass"] = "msa"
+    res = pr.evaluate([rec], POLICY)
+    assert res["outcomes"][pr.UNOBSERVED] == 1 and res["replayed_with_confidence_only_handoff_diff"] == 0
+
+
+def test_handoff_diff_count_tolerates_older_diagnostics_without_the_confidence_keys():
+    rec = _sub_record(0.96, [{"doc_type": "contract", "subclass_differs": False}])
+    assert pr.replay(rec, POLICY).handoff_confidence_diff is False
+
+
+def test_cli_prints_the_handoff_diff_count_next_to_g3(tmp_path, capsys):
+    path = tmp_path / "h.jsonl"
+    recs = [_sub_record(0.96, [_collapsed()], "d1"), _sub_record(0.96, [_collapsed()], "d2")]
+    pr.dump_records(recs, path)
+    _code, out, _ = _run_cli(["--records", path, "--policy", _policy_file(tmp_path), "--split", "test"], capsys)
+    assert "replay fidelity (next to G3): 2 route(s) reused an extraction from a collapsed candidate" in out

@@ -42,6 +42,17 @@ Usage:
 
 Fidelity gaps against the live graph are listed in ``KNOWN_GAPS`` and copied into
 every record's ``diagnostics.known_gaps``.
+
+Collapsed extraction candidates: a later candidate of an already-extracted class is not
+extracted again; it is listed in ``diagnostics.extraction_candidates_collapsed`` with
+``subclass_differs``. A different subclass demotes ``observed.full_information`` (the
+specialist would have seen another hint). A difference only in the handoff confidence (printed
+to 2 decimals) does NOT demote it, by design, but is measurable: ``policy_replay.evaluate``
+counts the routes that reused such an extraction as
+``replayed_with_confidence_only_handoff_diff`` and ``hillclimb_eval.py`` prints it beside G3.
+
+``ExtractionAttempt.schema_valid`` is None only when there is no extracted data to validate
+(transient error or no payload); with an extraction it is always a bool.
 """
 
 from __future__ import annotations
@@ -508,19 +519,29 @@ def _extraction_attempt(doc: Doc, n: int, doc_type: str, step: Step, text: str, 
     for agent in step.cap.agents:  # both specialist implementations keep the counts on the instance
         n_chunks = max(n_chunks, int(getattr(agent, "_last_n_chunks", 1) or 1))
         failed_chunks = max(failed_chunks, int(getattr(agent, "_last_failed_chunks", 0) or 0))
-    schema_valid = None
+    # ``schema_valid`` is None ONLY when there is nothing to validate (a transient error, or no
+    # extracted data): routing does not run the schema gate then either (``after_extraction``
+    # checks ``if extracted:``). Whenever there is an extraction it is a bool. If the validator
+    # itself raises, the extraction could not be shown valid, so it is recorded as invalid (the
+    # conservative reading: replay retries or parks it) and the failure is listed in
+    # ``diagnostics.schema_validation_errors`` instead of silently becoming "unknown".
+    schema_valid: bool | None = None
     if extracted:
         try:
-            schema_valid = validate_extraction(doc_type, extracted).get("schema_valid")
-        except Exception:
-            schema_valid = None
+            checked = validate_extraction(doc_type, extracted).get("schema_valid")
+            schema_valid = checked if isinstance(checked, bool) else False
+        except Exception as exc:
+            schema_valid = False
+            diag.setdefault("schema_validation_errors", []).append(
+                f"{doc_type}#{n}: {type(exc).__name__}: {str(exc)[:160]}"
+            )
     score, halluc = (None, None) if step.transient_error else _score_extraction(doc, doc_type, extracted, text, diag)
     return ExtractionAttempt(
         attempt=n,
         doc_type=doc_type,
         confidence_raw=raw,
         confidence=_num(u.get("extraction_confidence")) if not step.transient_error else None,
-        schema_valid=schema_valid if isinstance(schema_valid, bool) else None,
+        schema_valid=schema_valid,
         hollow=bool(extracted is not None and extraction_is_hollow(extracted)),
         guardrail_issues=[str(i) for i in (u.get("extraction_guardrail") or [])],
         conflict_detected=bool(u.get("conflict_detected")),
