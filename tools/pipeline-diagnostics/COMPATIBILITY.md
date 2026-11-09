@@ -2,7 +2,7 @@
 
 The native workbench must diagnose **today's code**, then add capabilities as staged work lands. It must not require unmerged code to launch or pretend unsupported evidence is available.
 
-This document describes the target compatibility contract. The workbench itself is not implemented yet. Existing current-main exporter and test commands are in [QUICKSTART.md](QUICKSTART.md).
+This document describes the target compatibility contract. The first D0a snapshot/check CLI works against current-main compiled wiring and contract artifacts; the HTTP/React/live/replay workbench remains planned. Runnable commands and their scope are in [QUICKSTART.md](QUICKSTART.md).
 
 ## Revision matrix
 

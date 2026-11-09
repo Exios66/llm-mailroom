@@ -43,6 +43,8 @@ def cli_env(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
         {
             "OBSERVABILITY_PROVIDER": "none",
             "OPENROUTER_API_KEY": "test-key-not-used",
+            # Verbose logging on purpose: even then, stdout must stay pure JSON.
+            "LOG_LEVEL": "DEBUG",
             "MAILROOM_BASE_DIR": str(tmp_path_factory.mktemp("mailroom-subprocess")),
         }
     )
@@ -58,6 +60,11 @@ def contract_path() -> Path:
 @pytest.fixture(scope="session")
 def fixtures_dir() -> Path:
     return FIXTURES
+
+
+@pytest.fixture(scope="session")
+def minimal_contract() -> Path:
+    return FIXTURES / "minimal-contract.json"
 
 
 @pytest.fixture

@@ -59,8 +59,8 @@ class GraphPayload(BaseModel):
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 
-    start: str = START
-    end: str = END
+    start: str = Field(min_length=1, max_length=200)
+    end: str = Field(min_length=1, max_length=200)
     nodes: list[GraphNode]
     edges: list[GraphEdge]
 
@@ -77,12 +77,9 @@ class GraphPayload(BaseModel):
         boundary = {self.start, self.end} & set(ids)
         if boundary:
             raise ValueError(f"node ids collide with graph boundaries: {sorted(boundary)}")
-        seen: set[tuple[Any, ...]] = set()
-        for edge in self.edges:
-            key = (edge.source, edge.target, edge.label, edge.conditional)
-            if key in seen:
-                raise ValueError(f"duplicate edge: {key}")
-            seen.add(key)
+        # Identical edge rows are tolerated: the contract cannot distinguish two
+        # route tokens that map to the same target, so a future revision may
+        # legitimately list the same endpoints twice (checks dedupe findings).
         return self
 
 

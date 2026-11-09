@@ -69,6 +69,8 @@ def make_plan(changed: list[str], *, full: bool = False, branch: str = "") -> di
         if path.is_absolute() or ".." in path.parts:
             reason = reason or f"unrecognized path: {name}"
         elif name.startswith(f"{NESTED_ROOT}/"):
+            if path.suffix.lower() in {".md", ".rst"}:
+                selected.update(p for p in DOC_TESTS if (REPO / p).is_file())
             if not (REPO / path).is_file():
                 reason = reason or f"deleted, renamed, or missing input: {name}"
             elif not nested:

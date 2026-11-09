@@ -66,7 +66,8 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK
         report = run_checks(snapshot)
         payload = report.model_dump(mode="json")
-        payload["exit_code"] = EXIT_FINDINGS if report.findings else EXIT_OK
+        blocking = any(finding.severity in ("error", "warning") for finding in report.findings)
+        payload["exit_code"] = EXIT_FINDINGS if blocking else EXIT_OK
         _emit(payload, args.json, _check_text(report))
         return int(payload["exit_code"])
     except DiagnosticsError as exc:
