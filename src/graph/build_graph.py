@@ -4031,6 +4031,7 @@ def _execute_run(
     dataset: dict | None = None,
     invoke_input=None,
     thread_id: str | None = None,
+    run_events: Any | None = None,
 ) -> dict[str, Any]:
     """Shared execution scaffold: compile (or reuse) the graph, open the
     per-doc trace (one trace per document, deterministic id from `seed`),
@@ -4152,6 +4153,10 @@ def _execute_run(
         "tags": tags,
         "metadata": trace_metadata,
     }
+    if run_events is not None:
+        # Opt-in diagnostics callback: records the exact node sequence for this
+        # run without changing graph behavior or tracing semantics.
+        config["callbacks"] = [*config.get("callbacks", []), run_events]
 
     with tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc
@@ -4313,6 +4318,12 @@ def _execute_run(
         tracing.flush()
     except Exception:
         logger.warning("tracing_flush_error", doc_id=result.get("doc_id"), exc_info=True)
+    if run_events is not None:
+        try:
+            run_events.finalize(result)
+        except Exception:
+            # Diagnostics must never fail a completed document run.
+            logger.warning("run_events_finalize_failed", doc_id=result.get("doc_id"), exc_info=True)
     _run_log.unbind_contextvars("doc_id", "matter_id", "run_id", "trace_id")  # O-4
     return result
 
@@ -4348,6 +4359,7 @@ def run_pipeline(
     run_id: str | None = None,
     dataset: dict | None = None,
     intake_meta: dict | None = None,
+    run_events: Any | None = None,
 ) -> dict[str, Any]:
     _ensure_dirs()
 
@@ -4406,6 +4418,7 @@ def run_pipeline(
         run_id=run_id,
         dataset=dataset,
         trace_input=trace_input,
+        run_events=run_events,
     )
 
 
