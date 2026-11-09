@@ -49,18 +49,27 @@ def _endpoint_consistency(graph: GraphPayload) -> list[Finding]:
             for side, value in (("source", edge.source), ("target", edge.target))
             if value not in known
         ]
-        if not missing:
-            continue
         row = edge.model_dump(mode="json")
-        findings.append(
-            _finding(
+        if missing:
+            findings.append(_finding(
                 "dangling-edge",
                 "error",
                 f"edge {edge.source} -> {edge.target} has an unknown {', '.join(missing)}",
                 {"edge": row},
                 {"edge": row, "missing_endpoints": missing, "declared_endpoints": len(known)},
-            )
-        )
+            ))
+        invalid = [side for side, value, boundary in (
+            ("source", edge.source, graph.end),
+            ("target", edge.target, graph.start),
+        ) if value == boundary]
+        if invalid:
+            findings.append(_finding(
+                "invalid-boundary-edge",
+                "error",
+                f"edge {edge.source} -> {edge.target} reverses a graph boundary",
+                {"edge": row},
+                {"edge": row, "invalid_endpoints": invalid},
+            ))
     return findings
 
 
@@ -68,9 +77,12 @@ def _entry_reachability(graph: GraphPayload) -> list[Finding]:
     """Every declared node must be reachable from the declared entry."""
     adjacency: dict[str, list[str]] = {}
     incoming_by_node: dict[str, list[dict[str, Any]]] = {}
+    nodes = {node.id for node in graph.nodes}
+    sources, targets = nodes | {graph.start}, nodes | {graph.end}
     for edge in graph.edges:
-        adjacency.setdefault(edge.source, []).append(edge.target)
         incoming_by_node.setdefault(edge.target, []).append(edge.model_dump(mode="json"))
+        if edge.source in sources and edge.target in targets:
+            adjacency.setdefault(edge.source, []).append(edge.target)
     reachable: set[str] = set()
     stack = [graph.start]
     while stack:
