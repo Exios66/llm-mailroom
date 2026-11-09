@@ -35,7 +35,70 @@ the merged PR in the step text (`- [x] **Step 3: ...** (Exios66/llm-dojo-scoring
 - After every task, the matching steps are ticked here (with the PR and commit) and
   pushed, so #150 shows the checkpoint. Before this folder is on `main`, ticks ride on
   PR #151; after that, they go in a small PR per checkpoint.
-- Open checkpoint PRs: stage 0 → Exios66/llm-mailroom#151; stage 1 → Exios66/llm-dojo-scoring#116.
+- Open checkpoint PRs: stage 2 → Exios66/llm-mailroom#160 (draft; M2 and M3 so far).
+  Closed out: stage 0 → #151 (merged), stage 1 → Exios66/llm-dojo-scoring#116 and #118 (merged),
+  M1 → #157 (merged), S0 → Exios66/local-mailroom-sandbox#240.
+
+- **Per-repo trackers.** Every repository in the roadmap has an issue that mirrors its slice,
+  so an agent working there sees current progress without opening llm-mailroom:
+
+  | Repo | Tracker | Tasks | llm-mailroom brief |
+  |---|---|---|---|
+  | llm-dojo-scoring | Exios66/llm-dojo-scoring#120 | R0, D1–D8 (done) | — |
+  | local-mailroom-sandbox | Exios66/local-mailroom-sandbox#241 | S0 (done), S1, S2 | #152 |
+  | Digital-Mailroom (hub) | LLM-Mailroom-Services/Digital-Mailroom#222 | H1, H2 | #153 |
+  | The-Mailroom | Exios66/The-Mailroom#60 | F1 | #154 |
+  | eval-environment | LLM-Mailroom-Services/eval-environment#105 | F2 | #155 |
+  | mailroom-issues | LLM-Mailroom-Services/mailroom-issues#249 | F3 | #156 |
+
+  At every checkpoint, update #150 **and** the tracker of each repo whose tasks moved (its
+  checklist and its "Current state" line). When a stage merges, refresh the "Current state"
+  line on every tracker it unblocks.
+
+## Current state (handoff, 2026-11-03)
+
+Read this first if you are picking the work up.
+
+- **Merged to `main`:** the spec and plans (#151), dojo pin v0.27.1 `a82843e` (#157, M1),
+  the release tool `src/scripts/release.py` (#158), CircleCI fixes (#159, #161), the
+  release cut 0.9.1 (#162) and the removal of the Roadmap sync Actions workflow (#163, R1 done).
+- **Draft PR #160** (`claude/unified-audit-row-wip`, based on `main`): M2 (audit tables and
+  migration, `ba73947`) and M3 (row and addendum writers, `3b6e5b9`, full suite 2632 passed). Steps are ticked on
+  this branch; they reach `main` when #160 merges. Rulings for both are in the notes under
+  each task in [stage-2-mailroom.md](stage-2-mailroom.md).
+- **Released:** llm-mailroom v0.9.1 (tag `v0.9.1` at `2284832`, the #162 merge).
+- **Next task: M4 (verification)** on the #160 branch, then M5 onward in order. Commit
+  and push after every task, tick the steps here, and refresh #150.
+- **Working notes:** the full mailroom suite takes about 5 minutes. On a cold uv cache,
+  `test_wheel_runtime_catalog` fails until you run
+  `uv build --no-sources --wheel --out-dir /tmp/uv-warm .` once. `ruff` is not a gate in
+  this repo. `docs/changelog/` is generated: after a CHANGELOG merge conflict, run
+  `python src/scripts/sync_gitbook_changelog.py`. Never hand-edit versions; use
+  `src/scripts/release.py cut`.
+
+## Foundation refresh (stackable branch, 2026-11-09)
+
+`feat/unified-audit-foundation-refresh` imports only the M2/M3 audit storage delta onto the
+current diagnostics/live-manifest base and adds the bounded M4 storage verifier. It is a
+foundation, not the stage:
+
+- **Delivered:** audit tables/migration (opt-in), row/addendum writers (unwired), legacy
+  bridge, and `verify_audit_db` (main chain, sub-rows, addenda, legacy, stored trace I/O).
+- **Default behavior is unchanged:** nothing migrates without `MAILROOM_AUDIT_MIGRATE=1`
+  (SQLite and Postgres) or the explicit `python -m storage.audit_migrate`; the per-event
+  writer/readers stay on `audit_log`. See `src/storage/README.md`.
+- **Not delivered:** M4's full gate (full-suite evidence, pending/sink checks), M5–M15
+  (trace collection, scoring nodes, terminal writers, sinks, reconciliation, readers,
+  warehouse/report, rescore, one scoring path, docs gate). The roadmap table below is not a
+  claim that the stage is finished.
+
+**PR #203 compatibility note (exact future resolution).** PR #203's storage changes have
+landed on `main` independently. When this branch is integrated, keep #203's
+`run_write_with_retry` wrapper and move the `event_log_model()`/legacy-bridge selection
+inside its `_write_audit_entry_once`; retain all of #203's `db.py` retry-loop/busy_timeout
+changes together with this branch's `ensure_tables`, `_create_schema` and
+`_migrate_audit_on_start`. The catalog delta is independent. PR #204's `ed7b808` includes
+#203 branch history, so integrate only its held delta, never a raw head merge.
 
 ## Stages
 
@@ -52,7 +115,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**12/33 tasks done.**
+**14/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -67,9 +130,9 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 1 | D7 | `score_document` dispatcher and wider `score_archive_block` | llm-dojo-scoring | 5/5 | done |
 | 1 | D8 | Release 0.27.0 | llm-dojo-scoring | 4/4 | done |
 | 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 4/4 | done |
-| 2 | M2 | Audit tables and migration | llm-mailroom | 0/5 | ready |
-| 2 | M3 | Row and addendum writers | llm-mailroom | 0/5 | blocked |
-| 2 | M4 | Verification | llm-mailroom | 0/5 | blocked |
+| 2 | M2 | Audit tables and migration | llm-mailroom | 5/5 | done |
+| 2 | M3 | Row and addendum writers | llm-mailroom | 5/5 | done |
+| 2 | M4 | Verification | llm-mailroom | 0/5 | ready |
 | 2 | M5 | Trace collection in state | llm-mailroom | 0/5 | ready |
 | 2 | M6 | Scoring node family | llm-mailroom | 0/5 | blocked |
 | 2 | M7 | Row builder and terminal nodes | llm-mailroom | 0/5 | blocked |

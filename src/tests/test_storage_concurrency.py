@@ -19,6 +19,7 @@ from storage import db
 def database(tmp_path, monkeypatch):
     path = tmp_path / "concurrent.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
+    monkeypatch.delenv("MAILROOM_AUDIT_MIGRATE", raising=False)
     monkeypatch.setattr(db, "_schema_checked_url", None)
     return path
 
@@ -134,6 +135,8 @@ def test_first_use_concurrent_audit_and_relations_writes_are_all_persisted(datab
         asyncio.run(bounded_write(index))
     with ThreadPoolExecutor(max_workers=4) as executor:
         list(executor.map(worker, range(4)))
+    # Default startup does not migrate: the per-event writer still appends to
+    # audit_log (the legacy shape) until an operator runs the explicit migration.
     with sqlite3.connect(database) as conn:
         assert conn.execute("SELECT count(*) FROM audit_log").fetchone()[0] == 4
         assert conn.execute("SELECT seq FROM audit_log ORDER BY seq").fetchall() == [(1,), (2,), (3,), (4,)]

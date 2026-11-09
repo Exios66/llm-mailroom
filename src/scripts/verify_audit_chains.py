@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
-"""Verify every hash-chained audit chain in the database (audit A-8).
+"""Verify the hash-chained audit storage (audit A-8; roadmap M4).
 
-Recomputes each per-doc chain with the shipped algorithm (v2, with v1
-fallback for legacy rows) and reports breaks. Nonzero exit when any chain is
-broken — so restore/backup flows can gate on it.
+Two modes:
+
+* default — the full :func:`audit.verify.verify_audit_db` report: the unified
+  main chain, attempt sub-rows, addenda, the legacy per-document chain and
+  stored trace-I/O hashes. Pending rows/sinks are reported as *uncollected*,
+  never as proof.
+* ``--doc ID`` — today's per-document per-event chain (legacy history after an
+  explicit migration).
+
+Nonzero exit when anything checked is broken — so restore/backup flows can gate
+on it. Verification reads run in one read-only snapshot. The explicit
+``ensure_schema()`` at startup may create missing tables and, only with
+``MAILROOM_AUDIT_MIGRATE=1``, run the opt-in migration; the verifier never
+migrates by itself.
 
 Usage:
     python scripts/verify_audit_chains.py                 # full report
-    python scripts/verify_audit_chains.py --doc d1        # single doc
     python scripts/verify_audit_chains.py --json          # machine-readable
+    python scripts/verify_audit_chains.py --check-sinks   # mark sink checks
+    python scripts/verify_audit_chains.py --doc d1        # single doc
 """
 
 from __future__ import annotations
@@ -34,14 +46,16 @@ from storage.db import ensure_schema  # noqa: E402
 
 
 async def _all_chains():
+    """Return per-event chains keyed by doc id, reading legacy history after migration."""
     from sqlalchemy import select, distinct
-    from storage.audit_log import AuditLogRecord, get_audit_chain
+    from storage.audit_log import event_log_model, get_audit_chain
 
     ensure_schema()
     from storage.db import async_session
 
     async with async_session() as session:
-        rows = await session.execute(select(distinct(AuditLogRecord.doc_id)))
+        Model = await event_log_model(session)
+        rows = await session.execute(select(distinct(Model.doc_id)))
         doc_ids = [r[0] for r in rows.all()]
     chains = {}
     for doc_id in doc_ids:
@@ -78,12 +92,43 @@ def _verify(doc_id: str, records: list[dict]) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--doc", default=None, help="verify a single doc_id")
+    ap.add_argument("--doc", default=None, help="verify a single doc_id's per-event chain")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument(
+        "--check-sinks",
+        action="store_true",
+        help="request external-sink checks (reported as uncollected until roadmap M9)",
+    )
     args = ap.parse_args()
 
-    chains = asyncio.run(_all_chains()) if not args.doc else {args.doc: asyncio.run(_all_chains()).get(args.doc, [])}
-    if args.doc and not chains.get(args.doc):
+    if not args.doc:
+        from audit.verify import verify_audit_db
+
+        report = asyncio.run(verify_audit_db(check_sinks=args.check_sinks))
+        if args.json:
+            print(json.dumps(report.as_dict(), indent=2))
+            return 0 if report.ok else 1
+        sections = ("main", "subrows", "addenda", "legacy", "trace_io", "pending")
+        print("audit verification:" + ("" if report.migrated else " (migration pending)"))
+        for name in sections:
+            section = getattr(report, name)
+            state = "OK " if section.ok else "BROKEN"
+            collected = "" if section.collected else "  [not collected]"
+            print(
+                f"  [{state}] {name:<9} checked={section.checked} "
+                f"failures={len(section.failures)}{collected}"
+            )
+            if section.note:
+                print(f"           {section.note}")
+            for failure in section.failures[:10]:
+                print(f"           {failure}")
+        if not report.ok:
+            print("\nAudit storage is broken — investigate before restore (see audit A-8).")
+            return 1
+        return 0
+
+    chains = {args.doc: asyncio.run(_all_chains()).get(args.doc, [])}
+    if not chains.get(args.doc):
         print(f"no audit entries for {args.doc}")
         return 0
 
