@@ -1,0 +1,27 @@
+- generic [ref=f12e3]:
+  - link "Skip to connection list" [ref=f12e4] [cursor=pointer]:
+    - /url: "#connections"
+  - banner [ref=f12e5]:
+    - generic [ref=f12e6]:
+      - paragraph [ref=f12e7]: llm-mailroom · native diagnostics
+      - heading "Pipeline graph" [level=1] [ref=f12e8]
+      - paragraph [ref=f12e9]: Read-only view of the checked-out LangGraph wiring. The screen renders the exported snapshot; it does not keep a second node or edge inventory.
+    - generic [ref=f12e10]:
+      - button "Refreshing…" [disabled] [ref=f12e11]
+      - group [ref=f12e12]:
+        - generic "Authentication" [ref=f12e13] [cursor=pointer]
+  - region "Snapshot provenance" [ref=f12e14]:
+    - generic [ref=f12e15]: loading
+    - text: Waiting for the diagnostics API.
+  - region "View controls" [ref=f12e16]:
+    - generic [ref=f12e17]:
+      - generic [ref=f12e18]: Filter nodes and connections
+      - searchbox "Filter nodes and connections" [ref=f12e19]
+    - group "Layout" [ref=f12e20]:
+      - button "Graph" [pressed] [ref=f12e21] [cursor=pointer]
+      - button "Connection list" [ref=f12e22] [cursor=pointer]
+  - status [ref=f12e23]
+  - main [ref=f12e24]:
+    - paragraph [ref=f12e25]: Loading workspace preview…
+  - contentinfo [ref=f12e26]:
+    - paragraph [ref=f12e27]: Read-only workspace preview. Opening this screen starts no watcher, document processing, model call or hosted tracing. Exit 0 from the structural checks is not a safety certificate.
