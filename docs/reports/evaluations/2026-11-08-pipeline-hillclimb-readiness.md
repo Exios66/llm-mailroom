@@ -114,7 +114,7 @@ Verified in code; "fixed" items have regression tests on this branch.
 
 | Area | Finding | Status |
 |:--|:--|:--|
-| Routing | A failed extraction chunk was skipped silently and the merge took the MAX confidence | fixed: transient errors re-raise, failed chunks cap confidence below `low`, merge takes the MIN |
+| Routing | A failed extraction chunk was skipped silently and the merge took the MAX confidence | fixed: transient errors re-raise, failed chunks cap confidence below `low`, merge takes the MIN over the windows that produced fields (CR6, held on #204: a field-less window is ignored; `hillclimb_eval.py --merge-rule cr6 --baseline-merge-rule min` decides it on real records) |
 | Routing | Sorter window disagreement did not lower confidence | fixed: scaled by agreement share, capped below `low` when the winner lacks a majority |
 | Routing | Conflict escalation ran before the schema/hollow/confidence gates, so the Boss could archive a bad extraction | fixed: checked after the gates; an unadjudicated conflict on the judge/arbiter tail parks |
 | Routing | Conflict detection flagged "Delaware" vs "State of Delaware" and differently formatted dates | fixed: date and jurisdiction-aware comparison |
