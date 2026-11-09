@@ -2,7 +2,7 @@
 
 ## What is available now
 
-The native CLI supports workspace-preview and offline-contract inspection plus structural checks. D0.3 adds the read-only standalone HTTP app (`serve`), the `/v1/diagnostics` routes and an opt-in mount on the producer API. The React screen (D1.1) is still planned: until it is built, `/diagnostics` serves a short build-instructions page while the JSON API works. Use [HANDOFF.md](HANDOFF.md) to find the next implementation task and [EVIDENCE.md](EVIDENCE.md) to judge its proof.
+The native CLI supports workspace-preview and offline-contract inspection plus structural checks. D0 adds the read-only standalone HTTP app (`serve`), the `/v1/diagnostics` routes, provenance hashes, atomic preview refresh and an opt-in mount on the producer API. D1.1 adds the accessible React/React Flow screen at `/diagnostics`; without built assets the app still serves a build-instructions page and the JSON API keeps working. Use [HANDOFF.md](HANDOFF.md) to find the next implementation task and [EVIDENCE.md](EVIDENCE.md) to judge its proof.
 
 Run commands from the **repository root**, not from this tools folder. Use Python 3.11+; Python 3.12 is the environment verified for this setup. The commands assume a POSIX shell (macOS, Linux, or WSL); on native Windows use the `.venv\Scripts\` executables instead of `.venv/bin/`. Inline `VAR=value` assignments below are also POSIX: on PowerShell set `$env:PYTHONPATH='src'; $env:OBSERVABILITY_PROVIDER='none'` first, or run the step in WSL. Do not use `uv sync` or `uv pip install -e .`: the root uv source entry points at a separate workspace.
 
@@ -56,6 +56,19 @@ The fresh interpreter writes `preview.json`, `last-good.json` and `error.json` u
 
 `serve` constructs a diagnostics-only FastAPI app. It never imports `api.main`, never starts the watcher, Gmail intake, status mail, relations scans or a tracing backend, and processes no documents. Defaults are loopback `127.0.0.1:8100` (`MAILROOM_DIAGNOSTICS_HOST` / `MAILROOM_DIAGNOSTICS_PORT`); an off-loopback bind requires `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS`, the same rule as the producer. Routes reuse the producer bearer/loopback check.
 
+To build the React screen (Node 22 is the verified toolchain):
+
+```bash
+cd tools/pipeline-diagnostics/frontend
+npm ci
+npm run build
+cd ../../..
+MAILROOM_DIAGNOSTICS_STATIC=tools/pipeline-diagnostics/frontend/dist \
+  .venv/bin/mailroom-diagnostics serve
+```
+
+`npm run package:static` copies `index.html` and `assets/` into the nested package's `static/` directory for a packaged wheel. Do not hand-edit generated assets. Without a build, `/diagnostics` shows the build-instructions page; the API, CLI and preview refresh remain fully usable.
+
 To mount the same read-only routes on the normal producer API, set `MAILROOM_DIAGNOSTICS_MOUNT=1` before starting it. The mount is off by default; a missing nested package logs a warning and never fails API startup.
 
 ### 4. Compare the canonical display contract
@@ -85,7 +98,7 @@ Read [PLAN.md](PLAN.md) for D0–D4 and follow the task IDs in [HANDOFF.md](HAND
 ## Launch flow
 
 1. Install the nested Python package from this folder into the repository venv (step 1).
-2. For the React screen, build `frontend/` with its committed lockfile, or use packaged assets (D1.1/D0.4). Node stays optional for end users.
+2. For the React screen, build `frontend/` with its committed lockfile, or use packaged assets. Node stays optional for end users.
 3. Run the standalone `serve` operation (step 3): inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
 4. Open `/diagnostics`; the screen identifies the source as a workspace preview and lists unavailable capabilities explicitly.
 5. For an already-running pipeline, set `MAILROOM_DIAGNOSTICS_MOUNT=1` and mount the same read-only router on this repository's API.
@@ -99,7 +112,7 @@ Do not substitute the normal `python -m api.main` for inspection-only launch: it
 | `No module named langchain_core` | Use `.venv/bin/python` and run the editable dependency install above |
 | `fixture 'mocker' not found` | Install the parent `[dev]` extra, which includes `pytest-mock` |
 | Contract check reports stale output | Inspect the graph/config change and use the repository's normal generated-contract workflow; do not suppress the check |
-| `/diagnostics` shows build instructions | Expected until the React assets land in D1.1; the JSON API and CLI are usable now |
+| `/diagnostics` shows build instructions | Build `frontend/` (step 3) or set `MAILROOM_DIAGNOSTICS_STATIC`; the JSON API and CLI are usable without it |
 | A future replay capability is unavailable | Read the capability reason and [compatibility matrix](COMPATIBILITY.md); do not assume a branch contains PR 203's schemas |
 | Existing mock pilot lacks sample assets | Disclose that limitation; do not treat a skipped pilot as evidence of correctness |
 

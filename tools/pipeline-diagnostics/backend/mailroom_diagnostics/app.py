@@ -10,6 +10,7 @@ small accessible page explaining how to build it; the JSON API keeps working.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -20,6 +21,12 @@ from .api import MOUNT, router
 from .models import DiagnosticsError
 
 STATIC_ROOT = Path(__file__).with_name("static")
+
+
+def static_root() -> Path:
+    """Built assets directory; MAILROOM_DIAGNOSTICS_STATIC overrides for dev builds."""
+    override = os.environ.get("MAILROOM_DIAGNOSTICS_STATIC", "").strip()
+    return Path(override).expanduser() if override else STATIC_ROOT
 
 _PLACEHOLDER = """<!doctype html>
 <html lang="en">
@@ -65,26 +72,27 @@ npm --prefix tools/pipeline-diagnostics/frontend run build</pre>
 
 def static_available() -> bool:
     """True only when a built index exists; source files alone do not count."""
-    return (STATIC_ROOT / "index.html").is_file()
+    return (static_root() / "index.html").is_file()
 
 
 def mount_ui(application: FastAPI) -> None:
     """Mount the optional screen under ``/diagnostics`` (never blocks startup)."""
-    if static_available():
+    root = static_root()
+    if (root / "index.html").is_file():
 
         @application.get(MOUNT, include_in_schema=False)
         async def diagnostics_index() -> FileResponse:
-            return FileResponse(STATIC_ROOT / "index.html")
+            return FileResponse(root / "index.html")
 
         @application.get(f"{MOUNT}/{{path:path}}", include_in_schema=False)
         async def diagnostics_path(path: str) -> FileResponse:
-            candidate = (STATIC_ROOT / path).resolve()
-            root = STATIC_ROOT.resolve()
-            if candidate.is_file() and root in candidate.parents:
+            candidate = (root / path).resolve()
+            resolved_root = root.resolve()
+            if candidate.is_file() and resolved_root in candidate.parents:
                 return FileResponse(candidate)
             # SPA fallback is restricted to this mount; unknown paths are not
             # echoed back and never escape the static root.
-            return FileResponse(root / "index.html")
+            return FileResponse(resolved_root / "index.html")
     else:
 
         @application.get(MOUNT, include_in_schema=False)
