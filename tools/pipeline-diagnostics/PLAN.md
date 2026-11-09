@@ -1,6 +1,6 @@
 # Native pipeline diagnostics workbench — proposed implementation plan
 
-Status: staged delivery plan. D0.1–D0.2 supply the installable inspection/check CLI and test discovery; D0.3 adds the standalone read-only HTTP app and the opt-in producer mount; D0.4a adds packaged-asset rules and source/policy provenance hashes. D0.4b and the React screen, live telemetry and calibration remain planned. Use [HANDOFF.md](HANDOFF.md) for the ordered work queue and [EVIDENCE.md](EVIDENCE.md) for verification.
+Status: staged delivery plan. D0.1–D0.2 supply the installable inspection/check CLI and test discovery; D0.3 adds the standalone read-only HTTP app and the opt-in producer mount; D0.4a adds packaged-asset rules and source/policy provenance hashes. D0.4b adds fresh-process preview refresh with atomic last-good publication, completing D0. The React screen, live telemetry and calibration remain planned. Use [HANDOFF.md](HANDOFF.md) for the ordered work queue and [EVIDENCE.md](EVIDENCE.md) for verification.
 
 The tool belongs in **llm-mailroom**, is consolidated under **`tools/pipeline-diagnostics/`**, runs from this checkout, and assists humans and agents debugging this pipeline. It must not require The-Mailroom, the integration hub, hosted tracing, or a paid model call. Its frontend, backend, schemas, CLI, fixtures, tests, packaging and documentation stay together in that subfolder. Only small integration hooks in existing pipeline/API files live elsewhere. Existing downstream visualizers can continue consuming the display contract independently.
 

@@ -34,6 +34,15 @@ Default inspection compiles the installed parent pipeline's graph in a fresh CLI
 
 `check` covers endpoint consistency and reachability from the declared entry only. Exit 0 means these checks found no structural findings; exit 1 means a structural finding with a witness; exit 2 means invalid input or a runtime failure. Exit 3 is reserved for future incomplete-evidence operations. An empty findings list is not proof of complete routing, correct guards or model quality.
 
+For a file-backed preview that a long-lived client can read without compiling in-process:
+
+```bash
+.venv/bin/mailroom-diagnostics preview --json
+.venv/bin/mailroom-diagnostics preview --watch
+```
+
+The fresh interpreter writes `preview.json`, `last-good.json` and `error.json` under `MAILROOM_DIAGNOSTICS_PREVIEW_DIR` (or `<MAILROOM_BASE_DIR>/diagnostics`; default `data/diagnostics`). Writes are atomic, a failed or invalid rebuild keeps the last valid preview and records the error, and `--watch` rebuilds only after source/config edits settle (default 0.5s poll, 0.3s quiet period). This is still a workspace preview, never a running worker.
+
 ### 3. Serve the read-only app (optional)
 
 ```bash

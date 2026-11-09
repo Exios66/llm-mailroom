@@ -2,7 +2,7 @@
 
 Repository-native debugging and diagnostic tooling for llm-mailroom.
 
-**Current status: D0.1–D0.3 and D0.4a (provenance/package-data) implemented; the full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, and source/policy provenance hashes in every workspace snapshot. The React screen, live events, replay and calibration remain later tasks; until the React assets land, `/diagnostics` serves a build-instructions page while the JSON API works.
+**Current status: D0.1–D0.3, D0.4a (provenance/package-data) and D0.4b (atomic preview refresh) implemented; the full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, and source/policy provenance hashes in every workspace snapshot. The React screen, live events, replay and calibration remain later tasks; until the React assets land, `/diagnostics` serves a build-instructions page while the JSON API works.
 
 ## Start here
 
@@ -48,6 +48,10 @@ tools/pipeline-diagnostics/
   tests/                   # explicitly collected by CI
     fixtures/              # synthetic defects and revision-specific contracts
 ```
+
+## Workspace preview refresh
+
+`mailroom-diagnostics preview` builds the snapshot in a separate interpreter and atomically publishes `preview.json`, `last-good.json` and `error.json` under `MAILROOM_DIAGNOSTICS_PREVIEW_DIR` (or `<MAILROOM_BASE_DIR>/diagnostics`; default `data/diagnostics`). A failed or invalid rebuild never replaces the last valid preview and records a visible error. `preview --watch` debounces edits to the declared source/config seams before rebuilding. A preview always describes edited files, never a running worker's active graph.
 
 ## Read-only HTTP app
 
