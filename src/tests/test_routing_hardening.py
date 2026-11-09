@@ -129,6 +129,60 @@ def test_f1_merged_confidence_is_min_not_max(make, mock_openai_client):
     assert result["_n_chunks"] == 4
 
 
+def _a_field(agent) -> dict:
+    """One populated public field (scripted results bypass schema checks on
+    the mailroom path; ``parties`` is in the vendored contracts schema)."""
+    return {"parties": ["Acme Corp."]}
+
+
+@_MAKERS
+def test_cr6_fieldless_boilerplate_window_does_not_set_the_confidence(make, mock_openai_client):
+    """CR6: a window that produced no fields (signature page, exhibit) carries
+    no evidence about extraction quality; its low stated confidence must not
+    drag a document whose other windows are all 0.92 below the retry line."""
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(
+        agent,
+        [
+            {**good, "confidence": 0.92},
+            {**good, "confidence": 0.92},
+            {"confidence": 0.4},  # boilerplate window: nothing extracted
+            {**good, "confidence": 0.92},
+        ],
+    )
+    result = agent.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert result["_failed_chunks"] == 0
+    assert result["confidence"] == pytest.approx(0.92)
+    assert result["confidence"] >= _low(agent.agent_name)  # not sent to retry/review
+    # a field-less window that comes FIRST is ignored just the same
+    agent2 = make(mock_openai_client)
+    _script(agent2, [{"confidence": 0.4}, {**good, "confidence": 0.92}, {**good, "confidence": 0.9}, {**good, "confidence": 0.95}])
+    assert agent2.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)["confidence"] == pytest.approx(0.9)
+
+
+@_MAKERS
+def test_cr6_windows_with_fields_still_take_the_weakest_confidence(make, mock_openai_client):
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(agent, [{**good, "confidence": c} for c in (0.98, 0.95, 0.60, 0.97)])
+    result = agent.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert result["confidence"] == pytest.approx(0.60)
+
+
+@_MAKERS
+def test_cr6_failed_chunk_still_caps_when_other_windows_are_fieldless(make, mock_openai_client):
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(
+        agent,
+        [{**good, "confidence": 0.99}, {"confidence": 0.3}, {"_parse_error": True}, {**good, "confidence": 0.99}],
+    )
+    result = agent.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert result["_failed_chunks"] == 1
+    assert result["confidence"] < _low(agent.agent_name)
+
+
 def test_f1_single_chunk_unchanged(mock_openai_client):
     agent = _mailroom_agent(mock_openai_client)
     agent.extract = lambda *a, **k: {"claim": "1", "confidence": 0.8}
