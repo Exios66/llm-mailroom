@@ -52,7 +52,7 @@ FIXTURE = SRC_DIR / "tests" / "fixtures" / "live_manifest_sample.csv"
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
 
 def _safe(value: str, limit: int = 60) -> str:
@@ -63,7 +63,7 @@ def _safe(value: str, limit: int = 60) -> str:
 def _load(args: argparse.Namespace, *, select: bool = True) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
     if args.live:
         revision = resolve_revision(args.revision)
-        gt, blind, provenance = load_frames(args.revision)
+        gt, blind, provenance = load_frames(revision)
         rows, stats = build_manifest_rows(gt, blind, revision)
         selected = (
             select_smoke_rows(
@@ -80,7 +80,8 @@ def _load(args: argparse.Namespace, *, select: bool = True) -> tuple[list[dict[s
         return selected, revision, "live"
     manifest = Path(args.manifest or FIXTURE)
     rows = load_manifest(manifest)
-    revision = resolve_revision(rows[0].get("hub_revision") or rows[0].get("hub_sha"))
+    # Pin the exact commit recorded in the manifest; a tag can move.
+    revision = resolve_revision(rows[0].get("hub_sha") or rows[0].get("hub_revision"))
     selected = (
         select_smoke_rows(
             rows,
@@ -232,14 +233,22 @@ def _run_one(
 def _checks(row: dict[str, Any], result: dict[str, Any], journal: dict[str, Any]) -> dict[str, Any]:
     sequence = journal.get("node_sequence") or []
     stage = result.get("stage")
+    expected_stage = row["expected_stage"]
+    terminal = sequence[-1] if sequence else ""
     checks = {
         "class_ok": result.get("doc_type") == row["expected_doc_class"],
-        "stage_ok": stage == row["expected_stage"],
+        "stage_ok": stage == expected_stage,
         "intake_first": bool(sequence) and sequence[0] == "intake",
         "classify_present": "classify" in sequence,
-        "extract_present": "extract" in sequence,
-        "terminal_node_ok": (sequence[-1] == "archive") if stage == "archived" else True,
-        "journal_written": bool(journal.get("events")),
+        "extract_present": "extract" in sequence if expected_stage == "archived" else True,
+        "terminal_node_ok": (
+            terminal == "archive"
+            if stage == "archived"
+            else terminal in ("human_review", "failed")
+            if stage in ("review", "failed")
+            else True
+        ),
+        "journal_written": bool(journal.get("events")) and bool(journal.get("persisted")),
         "outcome_matches_journal": journal.get("outcome", {}).get("stage") == stage,
     }
     return checks
@@ -263,6 +272,9 @@ def _run(args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     rows, revision, source = _load(args, select=not args.replay)
+    if not rows:
+        print(json.dumps({"ok": False, "error": "smoke selection is empty"}))
+        return 2
     if args.replay:
         return _replay(Path(args.replay), rows, revision, base, out, args)
 
@@ -343,6 +355,8 @@ def _replay(
         row = next((row for row in rows if row["filename"] == document.get("filename")), None)
     if row is None:
         raise SystemExit(f"replay document {manifest_id or document.get('filename')!r} not in manifest")
+    if document.get("content_sha256") and document["content_sha256"] != row["content_sha256"]:
+        raise SystemExit("replay refused: journal content sha256 does not match the manifest row")
     texts = fetch_texts([row], revision)
     result, journal = _run_one(row, texts[row["filename"]], base=base, mode="real" if args.real else "mock", revision=revision)
     old_sequence = prior.get("node_sequence") or []
@@ -379,6 +393,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--replay", type=Path, help="replay a recorded run journal and diff it")
     args = parser.parse_args(argv)
     args.classes = [part.strip() for part in args.classes.split(",") if part.strip()]
+    if args.per_class < 1:
+        parser.error("--per-class must be at least 1")
+    unknown = sorted(set(args.classes) - set(CLASSES))
+    if unknown:
+        print(json.dumps({"ok": False, "error": f"unknown classes: {unknown}"}))
+        return 2
     if args.mock and args.real:
         parser.error("--mock and --real are mutually exclusive")
     return _run(args)

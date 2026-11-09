@@ -52,6 +52,20 @@ def default_runs_dir() -> Path:
     return (Path(base).expanduser() if base else Path("data")) / "diagnostics" / "runs"
 
 
+def _basename(value: str) -> str:
+    return value.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+
+
+def _safe_document_value(key: str, value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    normalized = value.replace("\\", "/")
+    windows_absolute = len(normalized) > 1 and normalized[1] == ":"
+    if key == "filename" or normalized.startswith("/") or windows_absolute:
+        return normalized.rstrip("/").rsplit("/", 1)[-1]
+    return value
+
+
 def _curated(outputs: Any) -> dict[str, Any]:
     if not isinstance(outputs, dict):
         return {}
@@ -83,7 +97,7 @@ class RunEventRecorder(BaseCallbackHandler):  # type: ignore[misc]
         execution_id: str | None = None,
     ) -> None:
         self.document = {
-            key: value
+            key: _safe_document_value(key, value)
             for key, value in (document or {}).items()
             if key
             in {
@@ -112,6 +126,8 @@ class RunEventRecorder(BaseCallbackHandler):  # type: ignore[misc]
         self._sequence = 0
         self._lock = threading.Lock()
         self.payload: dict[str, Any] | None = None
+        self.persisted = False
+        self.write_error: str | None = None
 
     # -- LangChain callback surface -------------------------------------
     def on_chain_start(
@@ -228,8 +244,9 @@ class RunEventRecorder(BaseCallbackHandler):  # type: ignore[misc]
             "transitions": transitions,
             "outcome": outcome,
         }
-        self.payload = payload
         self._write(payload)
+        payload["persisted"] = self.persisted
+        self.payload = payload
         return payload
 
     def _write(self, payload: dict[str, Any]) -> None:
@@ -241,6 +258,10 @@ class RunEventRecorder(BaseCallbackHandler):  # type: ignore[misc]
             temporary = target.with_name(target.name + ".tmp")
             temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
             os.replace(temporary, target)
-        except OSError:
-            # Diagnostics must never fail the run.
-            pass
+            self.persisted = True
+            self.write_error = None
+        except OSError as exc:
+            # Diagnostics must never fail the run, but callers must be able to
+            # tell that the journal was not persisted.
+            self.persisted = False
+            self.write_error = type(exc).__name__

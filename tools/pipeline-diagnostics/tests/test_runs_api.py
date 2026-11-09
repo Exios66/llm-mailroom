@@ -105,3 +105,22 @@ def test_experiment_load_strips_local_paths(dirs, client):
     assert "base_dir" not in payload
     assert "journal" not in payload["runs"][0]
     assert payload["metrics"]["all_checks_ok"] is True
+
+
+def test_journal_without_node_sequence_is_ignored(dirs, client):
+    runs, _ = dirs
+    bad = _journal()
+    bad.pop("node_sequence")
+    (runs / "bad.json").write_text(json.dumps(bad), encoding="utf-8")
+    assert client.get("/v1/diagnostics/runs").json()["runs"] == []
+    assert client.get("/v1/diagnostics/runs/run-abc123").status_code == 404
+
+
+def test_experiment_without_runs_returns_an_empty_list(dirs, client):
+    _, experiments = dirs
+    payload = _experiment()
+    payload.pop("runs")
+    (experiments / "experiment.json").write_text(json.dumps(payload), encoding="utf-8")
+    response = client.get("/v1/diagnostics/experiments/20261109T050000Z")
+    assert response.status_code == 200
+    assert response.json()["runs"] == []

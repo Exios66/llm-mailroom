@@ -71,6 +71,8 @@ export default function App() {
   const [playing, setPlaying] = useState(false);
   const reducedMotion = useReducedMotion();
   const loadSequence = useRef(0);
+  const runSequence = useRef(0);
+  const experimentSequence = useRef(0);
 
   const model = useMemo(() => (snapshot ? buildViewModel(snapshot.graph) : null), [snapshot]);
 
@@ -174,6 +176,7 @@ export default function App() {
   }, [playing, runStep, runJournal]);
 
   const selectRun = useCallback(async (id: string) => {
+    const request = ++runSequence.current;
     setRunId(id);
     setPlaying(false);
     setRunStep(null);
@@ -183,15 +186,18 @@ export default function App() {
     }
     try {
       const journal = await fetchRun(id);
+      if (request !== runSequence.current) return;
       setRunJournal(journal);
       setAnnouncement(`Loaded run ${id}.`);
     } catch {
+      if (request !== runSequence.current) return;
       setRunJournal(null);
       setAnnouncement("The selected run journal could not be loaded.");
     }
   }, []);
 
   const selectExperiment = useCallback(async (id: string) => {
+    const request = ++experimentSequence.current;
     setExperimentId(id);
     if (!id) {
       setExperiment(null);
@@ -199,9 +205,11 @@ export default function App() {
     }
     try {
       const detail = await fetchExperiment(id);
+      if (request !== experimentSequence.current) return;
       setExperiment(detail);
       setAnnouncement(`Loaded experiment ${id}.`);
     } catch {
+      if (request !== experimentSequence.current) return;
       setExperiment(null);
       setAnnouncement("The selected experiment log could not be loaded.");
     }

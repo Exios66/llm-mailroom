@@ -70,7 +70,7 @@ export function ExperimentPanel({
             <dd>{metric(detail.metrics.all_checks_ok)}</dd>
           </dl>
           <ul className="experiment-runs">
-            {detail.runs.map((run) => (
+            {(detail.runs ?? []).map((run) => (
               <li key={`${run.execution_id}-${run.manifest_id ?? ""}`}>
                 <button
                   type="button"
