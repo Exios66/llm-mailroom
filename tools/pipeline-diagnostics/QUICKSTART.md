@@ -35,11 +35,10 @@ Default inspection compiles the installed parent pipeline's graph in a fresh CLI
 ### 3. Compare the canonical display contract
 
 ```bash
-PYTHONPATH=src OBSERVABILITY_PROVIDER=none .venv/bin/python src/scripts/export_contract.py
 PYTHONPATH=src OBSERVABILITY_PROVIDER=none .venv/bin/python src/scripts/export_contract.py --check
 ```
 
-The first command prints the generated JSON contract, including nodes and edges. The second checks it against `contract/mailroom-contract.json`. Neither command invokes the pipeline on a document. Do not use `--write` merely to inspect: it updates the committed generated contract.
+This checks the canonical export against `contract/mailroom-contract.json` without invoking the pipeline on a document. The legacy exporter may print diagnostic logs to stdout; use the native `inspect --json` command for machine-readable output. Do not use `--write` merely to inspect: it updates the committed generated contract.
 
 This is topology inspection. It does not prove routing correctness, show every guard condition, or establish whether a rarely used edge is needed.
 
@@ -51,7 +50,7 @@ This is topology inspection. It does not prove routing correctness, show every g
 .venv/bin/python -m pytest src/tests/test_docs_truth.py -q
 ```
 
-Tests use mocked model clients. They do not require a paid model run. The first command exercises existing current-main scenarios; the second checks documentation. A passing finite fixture set is not proof that every possible route is correct. Test results for this planning task are reported separately with their actual exit codes.
+Tests use mocked model clients. They do not require a paid model run. The first command exercises existing current-main scenarios, the second checks the native package/exporter/CI planner, and the third checks documentation. A passing finite fixture set is not proof that every possible route is correct. Results are reported separately with their actual exit codes.
 
 ### 5. Resume the implementation sequence
 

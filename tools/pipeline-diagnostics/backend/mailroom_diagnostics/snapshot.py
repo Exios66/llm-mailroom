@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -34,7 +36,7 @@ def load_artifact(path: Path) -> Snapshot:
     """Read a display-contract JSON file without importing the pipeline graph."""
     raw = _read_bounded(path)
     try:
-        data = json.loads(raw)
+        data = json.loads(raw, parse_constant=_invalid_constant)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         detail = getattr(exc, "msg", "decode error")
         raise DiagnosticsError("invalid-json", f"artifact is not valid JSON: {detail}") from exc
@@ -48,7 +50,7 @@ def load_artifact(path: Path) -> Snapshot:
     if not isinstance(graph, dict):
         raise DiagnosticsError("invalid-schema", "artifact has no graph object")
     payload = _validated_graph(graph)
-    confidence = data.get("confidence") or {}
+    confidence = data.get("confidence", {})
     if not isinstance(confidence, dict):
         raise DiagnosticsError("invalid-schema", "artifact confidence must be an object")
     pipeline_version = data.get("pipeline_version")
@@ -89,9 +91,12 @@ def build_workspace_snapshot() -> Snapshot:
 
 
 def _read_bounded(path: Path) -> bytes:
-    """Read at most the input limit, even from a device or a growing file."""
+    """Read a bounded regular file; pipes/devices cannot stall inspection."""
     try:
-        with path.open("rb") as handle:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise DiagnosticsError("io-error", "artifact must be a regular file")
             raw = handle.read(MAX_ARTIFACT_BYTES + 1)
     except OSError as exc:
         raise DiagnosticsError(
@@ -102,6 +107,10 @@ def _read_bounded(path: Path) -> bytes:
             "input-too-large", f"artifact exceeds the {MAX_ARTIFACT_BYTES}-byte input limit"
         )
     return raw
+
+
+def _invalid_constant(value: str) -> None:
+    raise DiagnosticsError("invalid-json", "artifact contains a non-finite JSON number")
 
 
 def _require_supported(version: str) -> None:
@@ -146,8 +155,10 @@ def _repo_root() -> Path | None:
         import pipeline
     except Exception:
         return None
-    for parent in Path(pipeline.__file__).resolve().parents:
-        if (parent / ".git").exists():
+    source = Path(pipeline.__file__).resolve()
+    for parent in source.parents:
+        expected = parent / "src" / "pipeline" / "__init__.py"
+        if (parent / ".git").exists() and expected.is_file() and expected.resolve() == source:
             return parent
     return None
 
@@ -158,7 +169,7 @@ def _git_state(repo: Path | None) -> tuple[str | None, bool | None]:
     sha = _git(repo, "rev-parse", "HEAD")
     if sha is None:
         return None, None
-    status = _git(repo, "status", "--porcelain", "--untracked-files=no")
+    status = _git(repo, "status", "--porcelain")
     return sha, None if status is None else bool(status)
 
 

@@ -29,8 +29,14 @@ EXIT_INVALID = 2
 EXIT_INCOMPLETE = 3  # reserved: no partial-evidence mode in this slice
 
 
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        # Do not echo arbitrary argument values into shareable machine output.
+        raise DiagnosticsError("invalid-arguments", "invalid command line; use --help")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="mailroom-diagnostics", description=__doc__.splitlines()[0]
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -57,9 +63,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    _configure_logging()
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    json_mode = "--json" in raw_args
     try:
+        args = build_parser().parse_args(raw_args)
+        _configure_logging()
         snapshot = _snapshot(args)
         if args.command == "inspect":
             _emit(snapshot.model_dump(mode="json"), args.json, _inspect_text(snapshot))
@@ -71,9 +79,9 @@ def main(argv: list[str] | None = None) -> int:
         _emit(payload, args.json, _check_text(report))
         return int(payload["exit_code"])
     except DiagnosticsError as exc:
-        return _fail(exc, args.json)
+        return _fail(exc, json_mode)
     except Exception as exc:  # no traceback on the machine-data channel
-        return _fail(DiagnosticsError("runtime-error", f"{type(exc).__name__}: {exc}"), args.json)
+        return _fail(DiagnosticsError("runtime-error", f"{type(exc).__name__}: {exc}"), json_mode)
 
 
 def _snapshot(args: argparse.Namespace) -> Snapshot:
@@ -98,7 +106,7 @@ def _configure_logging() -> None:
 
 def _emit(payload: dict[str, Any], json_mode: bool, text: str) -> None:
     if json_mode:
-        sys.stdout.write(json.dumps(payload, indent=2, sort_keys=False) + "\n")
+        sys.stdout.write(json.dumps(payload, indent=2, sort_keys=False, allow_nan=False) + "\n")
     else:
         sys.stdout.write(text + "\n")
 
