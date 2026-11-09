@@ -1,14 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DiagnosticsApiError, fetchFindings, fetchSnapshot, readToken, writeToken } from "./api";
+import {
+  DiagnosticsApiError,
+  fetchExperiment,
+  fetchExperiments,
+  fetchFindings,
+  fetchRun,
+  fetchRuns,
+  fetchSnapshot,
+  readToken,
+  writeToken,
+} from "./api";
 import { ConnectionTable } from "./components/ConnectionTable";
 import { FindingsPanel } from "./components/FindingsPanel";
 import { GraphView } from "./components/GraphView";
 import { Inspector } from "./components/Inspector";
 import { ProvenanceStrip, type SourceStatus } from "./components/ProvenanceStrip";
+import { ExperimentPanel } from "./components/ExperimentPanel";
+import { RunPanel } from "./components/RunPanel";
 import { buildViewModel } from "./model";
+import { buildRunOverlay } from "./runModel";
 import type { Selection } from "./selection";
-import type { CheckReport, Snapshot } from "./types";
+import type {
+  CheckReport,
+  ExperimentDetail,
+  ExperimentSummary,
+  RunJournal,
+  RunSummary,
+  Snapshot,
+} from "./types";
 import { useReducedMotion } from "./useReducedMotion";
 
 type View = "graph" | "list";
@@ -41,6 +61,14 @@ export default function App() {
   const [announcement, setAnnouncement] = useState("");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [token, setToken] = useState(readToken);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
+  const [experimentId, setExperimentId] = useState("");
+  const [experiment, setExperiment] = useState<ExperimentDetail | null>(null);
+  const [runId, setRunId] = useState("");
+  const [runJournal, setRunJournal] = useState<RunJournal | null>(null);
+  const [runStep, setRunStep] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
   const reducedMotion = useReducedMotion();
   const loadSequence = useRef(0);
 
@@ -50,14 +78,25 @@ export default function App() {
     const sequence = ++loadSequence.current;
     if (!quiet) setLoading(true);
     try {
-      const [nextSnapshot, nextReport] = await Promise.all([
-        fetchSnapshot(signal),
-        fetchFindings(signal),
-      ]);
+      const [snapshotResult, reportResult, runsResult, experimentsResult] =
+        await Promise.allSettled([
+          fetchSnapshot(signal),
+          fetchFindings(signal),
+          fetchRuns(signal),
+          fetchExperiments(signal),
+        ]);
       // An older request finishing last must not replace a newer snapshot.
       if (signal.aborted || sequence !== loadSequence.current) return;
+      if (snapshotResult.status !== "fulfilled") throw snapshotResult.reason;
+      const nextSnapshot = snapshotResult.value;
+      const nextReport = reportResult.status === "fulfilled" ? reportResult.value : null;
+      const nextRuns = runsResult.status === "fulfilled" ? runsResult.value : [];
+      const nextExperiments =
+        experimentsResult.status === "fulfilled" ? experimentsResult.value : [];
       setSnapshot(nextSnapshot);
       setReport(nextReport);
+      setRuns(nextRuns);
+      setExperiments(nextExperiments);
       setUpdatedAt(new Date());
       setError(null);
       setAnnouncement(
@@ -113,6 +152,78 @@ export default function App() {
       `${window.location.pathname}${queryString ? `?${queryString}` : ""}${window.location.hash}`,
     );
   }, [selection]);
+
+  const overlay = useMemo(
+    () => buildRunOverlay(runJournal, runStep),
+    [runJournal, runStep],
+  );
+
+  useEffect(() => {
+    if (!playing || !runJournal) return;
+    const length = runJournal.node_sequence.length;
+    if (runStep === null) {
+      setRunStep(0);
+      return;
+    }
+    if (runStep >= length - 1) {
+      setPlaying(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setRunStep((current) => (current ?? 0) + 1), 900);
+    return () => window.clearTimeout(timer);
+  }, [playing, runStep, runJournal]);
+
+  const selectRun = useCallback(async (id: string) => {
+    setRunId(id);
+    setPlaying(false);
+    setRunStep(null);
+    if (!id) {
+      setRunJournal(null);
+      return;
+    }
+    try {
+      const journal = await fetchRun(id);
+      setRunJournal(journal);
+      setAnnouncement(`Loaded run ${id}.`);
+    } catch {
+      setRunJournal(null);
+      setAnnouncement("The selected run journal could not be loaded.");
+    }
+  }, []);
+
+  const selectExperiment = useCallback(async (id: string) => {
+    setExperimentId(id);
+    if (!id) {
+      setExperiment(null);
+      return;
+    }
+    try {
+      const detail = await fetchExperiment(id);
+      setExperiment(detail);
+      setAnnouncement(`Loaded experiment ${id}.`);
+    } catch {
+      setExperiment(null);
+      setAnnouncement("The selected experiment log could not be loaded.");
+    }
+  }, []);
+
+  const selectStep = useCallback(
+    (index: number) => {
+      setPlaying(false);
+      setRunStep(index);
+      const node = runJournal?.node_sequence[index];
+      if (node) setSelection({ kind: "node", id: node });
+    },
+    [runJournal],
+  );
+
+  const startPlayback = useCallback(() => {
+    if (!runJournal) return;
+    if (runStep === null || runStep >= runJournal.node_sequence.length - 1) {
+      setRunStep(0);
+    }
+    setPlaying(true);
+  }, [runJournal, runStep]);
 
   const status: SourceStatus = error ? "error" : loading && !snapshot ? "loading" : "ready";
 
@@ -216,6 +327,7 @@ export default function App() {
                   selection={selection}
                   query={query}
                   reducedMotion={reducedMotion}
+                  runOverlay={overlay}
                   onSelect={setSelection}
                 />
               ) : (
@@ -223,11 +335,34 @@ export default function App() {
                   model={model}
                   query={query}
                   selection={selection}
+                  runOverlay={overlay}
                   onSelect={setSelection}
                 />
               )}
             </div>
             <aside className="side-column" aria-label="Diagnostics details">
+              <ExperimentPanel
+                experiments={experiments}
+                selectedId={experimentId}
+                detail={experiment}
+                onSelect={(id) => void selectExperiment(id)}
+                onSelectRun={(id) => void selectRun(id)}
+              />
+              <RunPanel
+                runs={runs}
+                selectedId={runId}
+                journal={runJournal}
+                step={runStep}
+                playing={playing}
+                onSelect={(id) => void selectRun(id)}
+                onStep={selectStep}
+                onPlay={startPlayback}
+                onStop={() => setPlaying(false)}
+                onReset={() => {
+                  setPlaying(false);
+                  setRunStep(null);
+                }}
+              />
               <Inspector selection={selection} model={model} onSelect={setSelection} />
               <FindingsPanel report={report} />
             </aside>
@@ -243,6 +378,7 @@ export default function App() {
                 model={model}
                 query={query}
                 selection={selection}
+                runOverlay={overlay}
                 onSelect={setSelection}
               />
             </section>
