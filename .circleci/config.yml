@@ -69,6 +69,14 @@ jobs:
           name: Install dev dependencies
           # pip honors the pinned Dojo dependency; uv workspace sources do not.
           command: pip install uv && pip install -e ".[dev]"
+      - run:
+          name: Install nested pipeline-diagnostics package
+          # After the parent install: the tool imports pipeline modules, and the
+          # editable install is what puts its console entry point on PATH.
+          command: |
+            if [ -f tools/pipeline-diagnostics/pyproject.toml ]; then
+              pip install -e tools/pipeline-diagnostics
+            fi
       - save_cache:
           key: pip-v1-{{ checksum "pyproject.toml" }}
           paths:

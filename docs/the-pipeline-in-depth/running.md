@@ -357,12 +357,12 @@ PYTHONPATH=src python src/scripts/publish_space.py --check
 ## Run the tests
 
 ```bash
-pytest src/tests/ -v
+pytest src/tests/ tools/pipeline-diagnostics/tests -v
 pytest src/tests/test_pipeline_e2e.py -v
-pytest src/tests/ --cov=src --cov-report=html
+pytest src/tests/ tools/pipeline-diagnostics/tests --cov=src --cov-report=html
 ```
 
-`pyproject.toml` sets `testpaths = ["src/tests"]` and `pythonpath = ["src", "."]`, so plain `pytest` works from the repo root. Tests never call a real LLM (`src/tests/conftest.py` mocks the client). Details: [Testing guide](../pipeline-reference-llm-mailroom/testing.md).
+`pyproject.toml` sets `testpaths = ["src/tests", "tools/pipeline-diagnostics/tests"]` and `pythonpath = ["src", ".", "tools/pipeline-diagnostics/backend"]`. Install the parent development package and `pip install -e tools/pipeline-diagnostics` before plain `pytest`. Tests never call a real LLM; the nested suite has its own hermetic fixtures because `src/tests/conftest.py` applies only to the pipeline suite. Details: [Testing guide](../pipeline-reference-llm-mailroom/testing.md).
 
 ## Other repos
 

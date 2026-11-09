@@ -29,7 +29,7 @@ PR descriptions. A claim without evidence is a guess; label it as one or drop it
 
 | Claim | Evidence |
 |:---|:---|
-| Tests pass | `.venv/bin/python -m pytest src/tests -q` summary line (`N passed, M skipped …`), exit code, commit. Name every skip that matters and every environment-only failure (`test_wheel_runtime_catalog` with an empty uv build cache). |
+| Tests pass | `.venv/bin/python -m pytest src/tests tools/pipeline-diagnostics/tests -q` summary line (`N passed, M skipped …`), exit code, commit. Name every skip that matters and every environment-only failure (`test_wheel_runtime_catalog` with an empty uv build cache). |
 | Bug fixed | The new or changed regression test, its failing output on the old code, its passing output on the new code. |
 | Pipeline wiring and routing unchanged | `PYTHONPATH=src .venv/bin/python src/scripts/run_pilot.py --mock` summary (it needs `docs/examples/samples/manifest.csv`; if that is absent, say so under "Not verified"), and the experiment gate: `MAILROOM_BASE_DIR="$(mktemp -d)" PYTHONPATH=src .venv/bin/python src/scripts/run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` verdict. The fake LLM returns each sample's expected class, so this says nothing about classifier, prompt or model quality; that takes separate real-model evidence, with the owner's go-ahead. |
 | Lint / static checks | **No linter or type checker is configured in this repo, by design. Do not add one.** Report `.venv/bin/python -m compileall -q src` (exit 0) and say "no linter or type checker configured". Never claim "lint clean" or "type-safe". |
@@ -40,6 +40,8 @@ PR descriptions. A claim without evidence is a guess; label it as one or drop it
 | Dojo pin bump | `bump_dojo_scoring.py --check` before and after, and the suite run against the **real pinned revision** (see the `/dojo-bump` skill). |
 | Performance / cost | Numbers before and after, with the method and the sample size. |
 | Cross-repo impact | Which sibling repo is affected (see `CLAUDE.md`), and whether it needs a follow-up change. "None" is a claim too: say why. |
+
+For native backend changes, also run `.venv/bin/python -m compileall -q tools/pipeline-diagnostics/backend`. The `src` static check alone does not cover that package.
 
 ## Where evidence goes
 
