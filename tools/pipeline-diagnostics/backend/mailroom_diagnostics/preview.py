@@ -11,6 +11,7 @@ source hashes remain those of the build that produced the preview.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -19,7 +20,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 from pydantic import ValidationError
 
@@ -49,17 +50,25 @@ def watched_paths(workspace: Path) -> list[Path]:
     ]
 
 
-def seam_fingerprint(workspace: Path) -> tuple[tuple[str, int], ...]:
+def _file_signature(path: Path) -> str:
+    """mtime plus content digest: detects edits even when the timestamp is kept."""
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return f"{path.stat().st_mtime_ns}:{digest}"
+
+
+def seam_fingerprint(workspace: Path) -> tuple[tuple[str, str], ...]:
     """Full identity of the declared seams, including deletions.
 
-    A newest-mtime value would miss a deleted or edited non-newest seam, so the
-    preview compares every declared path and marks absent files with ``-1``.
+    A newest-mtime value would miss a deleted or edited non-newest seam, and a
+    timestamp alone would miss a content change that preserved mtime. Every
+    declared path is identified by mtime plus a content digest; absent files
+    are marked ``missing``.
     """
-    rows: dict[str, int] = {}
+    rows: dict[str, str] = {}
     for group in HASH_INPUTS.values():
         for relative in group:
             path = workspace / relative
-            rows[relative] = path.stat().st_mtime_ns if path.is_file() else -1
+            rows[relative] = _file_signature(path) if path.is_file() else "missing"
     return tuple(sorted(rows.items()))
 
 
@@ -178,6 +187,7 @@ def refresh(
 ) -> PreviewState:
     """Build, validate and atomically publish a preview; keep last good on error."""
     preview_path, last_good_path, _ = _paths(base)
+    before = seam_fingerprint(workspace)
     try:
         raw = builder(workspace)
         Snapshot.model_validate_json(raw)
@@ -187,9 +197,18 @@ def refresh(
     except Exception:
         _write_error(base, "preview-failed", "unable to build a workspace preview")
         return read_state(base, workspace)
+    # A change during the build can pair an older graph with current seams.
+    # Refuse that mixed artifact instead of publishing it as fresh.
+    if seam_fingerprint(workspace) != before:
+        _write_error(
+            base,
+            "input-changed",
+            "source or configuration changed while the preview was building; retry",
+        )
+        return read_state(base, workspace)
     _atomic_write(preview_path, raw)
     _atomic_write(last_good_path, raw)
-    seams = [[relative, stamp] for relative, stamp in seam_fingerprint(workspace)]
+    seams = [[relative, stamp] for relative, stamp in before]
     _atomic_write(_meta_path(base), json.dumps({"seams": seams}, indent=2).encode("utf-8"))
     _clear_error(base)
     return read_state(base, workspace)
@@ -204,7 +223,7 @@ def watch(
     cycles: int | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-    fingerprint: Callable[[Path], tuple[tuple[str, int], ...]] = seam_fingerprint,
+    fingerprint: Callable[[Path], tuple[tuple[str, str], ...]] = seam_fingerprint,
     refresh_fn: Callable[..., PreviewState] = refresh,
 ) -> int:
     """Rebuild after a source/config change settles; run until interrupted.

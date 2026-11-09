@@ -121,6 +121,11 @@ def _run(raw_args: list[str]) -> int:
 
             base = args.base or default_base()
             if args.watch:
+                if args.json:
+                    raise DiagnosticsError(
+                        "invalid-arguments",
+                        "--json is only valid for a one-shot preview; omit --watch",
+                    )
                 return watch(Path.cwd(), base, interval=args.interval, debounce=args.debounce)
             state = refresh(Path.cwd(), base)
             _emit(state.to_dict(), args.json, _preview_text(state))
