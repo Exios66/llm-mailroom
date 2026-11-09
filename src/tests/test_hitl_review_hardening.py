@@ -133,7 +133,9 @@ def test_archive_path_comes_from_this_run_not_an_earlier_archive(api, temp_base_
 
 
 # --------------------------------------------------------------------------
-# CR10: a resolution does not silently drop posted extracted_data
+# CR10 / T20: a resolution does not accept posted extracted_data
+# (any disposition) — edits ride field_corrections; the legacy
+# disposition=complete WITHOUT a resolution keeps its meaning.
 # --------------------------------------------------------------------------
 
 
@@ -149,6 +151,58 @@ def test_resolution_with_complete_and_extracted_data_is_refused(api, temp_base_d
     from pipeline.bins import load_manifest
 
     assert load_manifest(doc_id).stage.value == "review"  # nothing ran
+
+
+def test_resolution_with_extracted_data_and_no_disposition_is_refused(api, temp_base_dir, llm, mocker):
+    """T20: 'save edits + approve' (no disposition, defaults to resume) used to
+    archive the PARKED fields and silently drop the posted edits."""
+    doc_id = _extraction_park(temp_base_dir, "nodisp.txt")
+    _forbid_llm(mocker, llm)
+    r = _resolve(
+        api, doc_id, resolution="approve_as_is",
+        extracted_data={"parties": ["Edited Co"], "effective_date": "2024-03-03"},
+    )
+    assert r.status_code == 400, r.text
+    assert "field_corrections" in r.text
+    from pipeline.bins import load_manifest
+
+    assert load_manifest(doc_id).stage.value == "review"  # parked, nothing ran
+
+
+def test_resolution_correct_with_extracted_data_is_refused(api, temp_base_dir, llm, mocker):
+    """T20: only field_corrections may carry edits under a resolution."""
+    doc_id = _extraction_park(temp_base_dir, "corrected.txt")
+    _forbid_llm(mocker, llm)
+    r = _resolve(
+        api, doc_id, resolution="correct",
+        extracted_data={"parties": ["Edited Co"]},
+    )
+    assert r.status_code == 400, r.text
+    assert "field_corrections" in r.text
+    from pipeline.bins import load_manifest
+
+    assert load_manifest(doc_id).stage.value == "review"
+
+
+def test_legacy_complete_extracted_data_without_resolution_still_archives(
+    api, temp_base_dir, llm
+):
+    """T20 control: disposition=complete with extracted_data and NO resolution
+    keeps its meaning (see also ``test_legacy_requests_keep_their_meaning``)."""
+    from pipeline.bins import load_manifest
+
+    doc_id = _extraction_park(temp_base_dir, "legacy.txt")
+    llm.chat.completions.create.side_effect = None
+    r = _resolve(
+        api, doc_id, decision="approved", disposition="complete",
+        extracted_data={"parties": ["Legacy Co"], "effective_date": "2024-02-02"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["complete"]["stage"] == "archived"
+    m = load_manifest(doc_id)
+    assert m.stage.value == "archived"
+    assert m.extraction_source == "human"
+    assert m.extracted_data["parties"] == ["Legacy Co"]
 
 
 def test_resolution_with_a_disposition_it_cannot_use_names_both_valid_ones(api, temp_base_dir, llm):

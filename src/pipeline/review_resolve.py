@@ -581,9 +581,10 @@ def doc_resolve_lock(doc_id: str):
     """Per-document, process-level exclusion around a resolve.
 
     NON-blocking: the resolve endpoint runs on the event loop, so a second
-    resolve for the same document is refused (HTTP 409), never queued behind
-    the first. The stage re-check inside the lock turns a late resolve (the
-    first already finished) into the same clean 409. Process-level: run one API
+    resolve for the same document is refused (HTTP 409 from this lock), never
+    queued behind the first. A resolve that arrives after the first already
+    finished falls to the stage re-check inside the lock, which answers the
+    legacy HTTP 400 naming the current stage. Process-level: run one API
     worker per data directory.
     """
     with _inflight_guard:
@@ -743,6 +744,10 @@ def plan_resolution(
     reviewer_id = normalize_reviewer(reviewer)
     corrections_in = coerce_field_corrections(field_corrections)
     reason = normalize_reject_reason(reject_reason)
+    # Parked fields are what the human reviews and rules on: an approve_as_is /
+    # correct decision ARCHIVES them (plus corrections) without any
+    # re-extraction call — including when the model's extraction failed to
+    # JSON-parse (the snapshot below records parse_error=True for the record).
     parked = clean_extraction(manifest.extracted_data)
     class_changed = (
         bool(class_override.get("doc_type")) and class_override["doc_type"] != before.doc_type
@@ -818,6 +823,10 @@ def plan_resolution(
                         "the parked fields were extracted for the old subtype/subclass; use "
                         "resolution=reclassify to change it"
                     )
+                # The human's approval is authoritative for the parked model
+                # fields, parse failure included (see the note above): archive
+                # them as-is. No parked fields means a sorter-stage park, so
+                # approving just confirms the class and re-extracts.
                 if parked:
                     route = "archive"
                     extracted = parked
