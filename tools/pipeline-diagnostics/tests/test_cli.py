@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import tomllib
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -59,9 +61,22 @@ def test_workspace_check_is_clean(run_cli):
     assert payload["findings"] == []
 
 
-def test_console_script_is_installed():
-    scripts = {entry.name: entry.value for entry in entry_points(group="console_scripts")}
-    assert scripts.get("mailroom-diagnostics") == "mailroom_diagnostics.cli:main"
+def test_console_script_is_declared_and_resolves():
+    """The declared ``mailroom-diagnostics`` script points at a real callable.
+
+    Read from the tool's own ``pyproject.toml`` so the check holds however the package is
+    on the path (editable install, wheel, or plain ``pythonpath``); when the distribution
+    is installed, its entry-point metadata must agree with the declaration.
+    """
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
+    target = declared.get("mailroom-diagnostics")
+    assert target == "mailroom_diagnostics.cli:main"
+    module_name, _, attr = target.partition(":")
+    assert callable(getattr(importlib.import_module(module_name), attr))
+    installed = {entry.name: entry.value for entry in entry_points(group="console_scripts")}
+    if "mailroom-diagnostics" in installed:
+        assert installed["mailroom-diagnostics"] == target
 
 
 @pytest.mark.parametrize(

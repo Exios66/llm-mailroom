@@ -74,3 +74,74 @@ export interface ConnectionRow {
   conditional: boolean;
   selfLoop: boolean;
 }
+
+export interface RunSummary {
+  execution_id: string;
+  document: {
+    filename?: string | null;
+    matter_id?: string | null;
+    manifest_id?: string | null;
+    source?: string | null;
+  };
+  outcome: {
+    stage?: string | null;
+    doc_type?: string | null;
+    review: boolean;
+    failed: boolean;
+  };
+  started_at: string | null;
+  finished_at: string | null;
+  node_count: number;
+}
+
+export interface RunEvent {
+  type: "node_started" | "node_completed" | "node_errored";
+  sequence: number;
+  node: string;
+  ts: number;
+  duration_ms?: number;
+  output?: Record<string, unknown>;
+  error_class?: string;
+}
+
+export interface RunJournal {
+  schema_version: string;
+  execution_id: string;
+  document: RunSummary["document"] & {
+    doc_id?: string | null;
+    content_sha256?: string | null;
+    hub_revision?: string | null;
+  };
+  ground_truth?: Record<string, unknown>;
+  started_at: string;
+  finished_at: string | null;
+  events: RunEvent[];
+  node_sequence: string[];
+  transitions: Array<{ source: string; target: string }>;
+  outcome: RunSummary["outcome"] & { run_aborted?: boolean; node_count?: number };
+}
+
+export interface ExperimentSummary {
+  experiment_id: string;
+  generated_at: string | null;
+  mode: string | null;
+  corpus: { name?: string | null; revision?: unknown };
+  metrics: Record<string, unknown>;
+  runs: number;
+}
+
+export interface ExperimentRun {
+  execution_id: string;
+  manifest_id?: string;
+  filename?: string;
+  expected?: string;
+  predicted?: string | null;
+  stage?: string | null;
+  node_sequence?: string[];
+  checks?: Record<string, boolean>;
+  ok?: boolean;
+}
+
+export type ExperimentDetail = Omit<ExperimentSummary, "runs"> & {
+  runs: ExperimentRun[];
+};

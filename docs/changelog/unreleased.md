@@ -25,6 +25,13 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
 ## Fixed
 
+- **The full suite now passes on a plain contributor install, with no environment-only failures.**
+  `test_wheel_runtime_catalog` builds the wheel with this interpreter's own setuptools and wheel
+  (`pip wheel --no-build-isolation --no-index`, both now in the `dev` extra) instead of
+  `uv build --offline`, which failed whenever uv's cache was empty. The diagnostics CLI test
+  (`test_console_script_is_declared_and_resolves`) checks the declared `mailroom-diagnostics`
+  script resolves to its callable, and that installed entry-point metadata agrees with it when the
+  tool is installed. CI no longer installs uv or warms a uv build cache.
 - **PR #203 review round (human review).** A new review episode restarts `review_entered_at` (a replay keeps it); a live-resume abort keeps the corrected fields and moves the review file to `failed/`; `resume_from_review` validates reviewer fields on the stateless path too (409); a rejected Gmail document now gets a completion echo (neither the reject reason nor a failed-move error is disclosed); a re-review keeps the model's original snapshot.
 - **PR #203 review round (volume).** Running claims refresh their `processing/` mtime at each node boundary, so a stale-claim sweep (even from another watcher process) leaves an advancing run alone; the catalog `updated_at` never moves backwards on a delayed write.
 - **PR #203 review round (replay and calibration).** Policy replay picks the arbiter ruling typed for the selected class (new optional `ArbiterObservation.doc_type`; no collector sets it yet, so today's records stay untyped and an ambiguous untyped ruling is unobserved), rejects non-finite or unordered objective costs, groups extraction evidence by `doc_id`, and drops schema-invalid and hollow attempts from cutoff evidence. `calibrate_thresholds` re-checks the `low`/`high`/`judge_band_high` bands after every demotion.

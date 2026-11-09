@@ -106,6 +106,10 @@ dev = [
     "nbformat>=5.9",
     "nbclient>=0.10",
     "ipykernel>=6.29",
+    # src/tests/test_wheel_runtime_catalog.py builds the wheel offline with these
+    # (no build isolation), matching [build-system].requires.
+    "setuptools>=68.0",
+    "wheel",
 ]
 
 [tool.setuptools.packages.find]
@@ -121,6 +125,7 @@ namespaces = true
 asyncio_mode = "auto"
 markers = [
     "no_langchain_mock: skip conftest's LangChain provider mock (hub#42 provider-seam tests)",
+    "live_corpus: fetches pinned real documents from the Hub; set MAILROOM_LIVE_TESTS=1",
 ]
 testpaths = ["src/tests", "tools/pipeline-diagnostics/tests"]
 pythonpath = ["src", ".", "tools/pipeline-diagnostics/backend"]
