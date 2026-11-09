@@ -22,10 +22,11 @@ What is proposed, per class, and from which pairs::
 
 Extraction evidence is counted in ATTEMPTS (``unit: attempts``): a document with three scored
 attempts is three pairs, so ``n``, ``n_accepted`` and ``errors`` for ``judge_band_high`` / ``low``
-are attempts, and the cross-fit accuracy is per attempt. Attempts of one document are correlated,
-so the SAMPLE-SIZE rule (``required``, ``shortfall``, ``--min-low-n``) counts distinct documents
-instead: ``n_accepted_docs`` (documents with an accepted attempt) and ``errors_docs`` (documents
-with a wrong accepted attempt). ``n_docs`` is the number of documents behind ``n``.
+are attempts. Cross-fit accuracy and its Wilson interval count each accepted document once, as wrong
+if any accepted attempt is wrong. Attempts of one document are correlated, so the SAMPLE-SIZE rule
+(``required``, ``shortfall``, ``--min-low-n``) also counts distinct documents: ``n_accepted_docs``
+(documents with an accepted attempt) and ``errors_docs`` (documents with a wrong accepted attempt).
+``n_docs`` is the number of documents behind ``n``.
 
 Evidence gate (a class is NEVER given a cutoff it has not earned): the cross-fit
 held-out Wilson lower bound (scored on the cutoff as emitted: rounded up to 3 places and
@@ -381,23 +382,29 @@ def _reconcile_bands(entry: dict[str, dict[str, Any]]) -> None:
     policy with nothing calibrated is left as it is (nothing here caused it).
     """
     low = entry["low"]
-    for upper_key, reason_low, reason_upper in (
-        ("judge_band_high", "low_not_below_judge_band_high", "judge_band_high_not_above_low"),
-        ("high", "low_not_below_high", "high_not_above_low"),
-    ):
-        upper = entry[upper_key]
-        # Demoting `low` falls back to its current value, which can still sit above a calibrated
-        # upper cut, so look again before moving on.
-        for _ in range(2):
+    pairs = (
+        (entry["judge_band_high"], "low_not_below_judge_band_high", "judge_band_high_not_above_low"),
+        (entry["high"], "low_not_below_high", "high_not_above_low"),
+    )
+    # Demoting `low` falls back to its current value, which can sit above an upper cut that was
+    # already accepted in an earlier pair, so every demotion restarts the check of BOTH pairs. Each
+    # restart follows a demotion and only calibrated entries are demoted, so this stops after at
+    # most three.
+    changed = True
+    while changed:
+        changed = False
+        for upper, reason_low, reason_upper in pairs:
             lo_v, up_v = _in_force(low), _in_force(upper)
             if lo_v is None or up_v is None or lo_v < up_v:
-                break
+                continue
             if low["status"] == "calibrated":
                 _demote(low, reason_low)
             elif upper["status"] == "calibrated":
                 _demote(upper, reason_upper)
             else:
-                break
+                continue
+            changed = True
+            break
 
 
 def calibrate(

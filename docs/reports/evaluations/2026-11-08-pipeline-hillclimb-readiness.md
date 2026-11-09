@@ -57,7 +57,9 @@ evidence than a real observation:
   `schema_valid is False` and replay mirrors that, so an attempt with no verdict passes. The
   sweep now records a bool whenever there is an extraction (a validator crash is recorded as
   `False` and listed in `diagnostics.schema_validation_errors`), so a non-zero count points at records from another producer
-  (`export_review_labels.py` rows carry no verdict) or an older sweep, not at a sweep gap.
+  (such as `export_review_labels.py` rows whose snapshot has no `extracted_data` payload, which
+  leaves nothing to validate; a payload dict gets a bool, and a parked parse failure is `False`)
+  or an older sweep, not at a sweep gap.
 - `replay fidelity (next to G3): N route(s) reused an extraction ...`
   (`replayed_with_confidence_only_handoff_diff`). The sweep extracts once per candidate class;
   a collapsed candidate with another **subclass** demotes `observed.full_information` and its

@@ -1,6 +1,6 @@
 import structlog
 from datetime import datetime, timezone
-from sqlalchemy import String, Float, DateTime, JSON, Text, func, select, update
+from sqlalchemy import String, Float, DateTime, JSON, Text, case, func, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, async_session, ensure_schema, run_write_with_retry
@@ -139,6 +139,18 @@ async def write_matter_record(matter_data) -> MatterRecord:
     return await run_write_with_retry(_op)
 
 
+def _not_before_updated_at(now: datetime):
+    """SQL for ``documents.updated_at`` on a write: ``now``, unless the row is newer.
+
+    Each writer reads its clock before its statement runs, so a delayed one can
+    carry an instant earlier than the row already holds (or than ``created_at``).
+    Comparing inside the statement keeps ``updated_at`` from moving backwards for
+    recency queries and incremental exports, with no read-modify-write. ``CASE``
+    rather than ``max()``/``GREATEST()`` so SQLite and Postgres share one form.
+    """
+    return case((DocumentRecord.updated_at > now, DocumentRecord.updated_at), else_=now)
+
+
 async def write_document_record(doc_data: dict) -> DocumentRecord:
     """Insert or update a document row as ONE atomic upsert (see
     ``write_matter_record``); concurrent writers of the same ``doc_id`` can no
@@ -168,7 +180,7 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
                 result = await session.execute(
                     update(DocumentRecord)
                     .where(DocumentRecord.doc_id == doc_data["doc_id"])
-                    .values(**values, updated_at=now)
+                    .values(**values, updated_at=_not_before_updated_at(now))
                 )
                 if result.rowcount == 0:
                     raise KeyError("matter_id" if "matter_id" not in doc_data else "original_filename")
@@ -179,7 +191,10 @@ async def write_document_record(doc_data: dict) -> DocumentRecord:
             )
             stmt = stmt.on_conflict_do_update(
                 index_elements=[DocumentRecord.doc_id],
-                set_={**{k: doc_data[k] for k in _DOC_UPDATE_KEYS if k in doc_data}, "updated_at": now},
+                set_={
+                    **{k: doc_data[k] for k in _DOC_UPDATE_KEYS if k in doc_data},
+                    "updated_at": _not_before_updated_at(now),
+                },
             )
             await session.execute(stmt)
             await session.commit()

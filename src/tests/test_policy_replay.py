@@ -930,3 +930,92 @@ def test_cli_merge_rule_compares_cr6_with_min_on_the_same_records(tmp_path, caps
     # the default rule is unchanged: no baseline, no merge-rule line change in the SCORE contract
     code, out, _ = _run_cli(["--records", path], capsys)
     assert "merge rule: candidate=min" in out and "baseline=" not in out
+
+
+# ---- #203 review: arbiter class, objective costs, document identity, ineligible attempts ---------
+
+
+def _arbiter_cases(extractions_by_class):
+    """Record whose sorter named ``contract`` and whose judge needs the arbiter on attempt 1."""
+    return dict(
+        sorters=[sorter(0.97)],
+        extractions=extractions_by_class,
+        judges=[judge("partial")],
+    )
+
+
+def test_arbiter_ruling_of_another_class_is_not_used():
+    base = _arbiter_cases([extract(0.85, doc_type="contract")])
+    other_first = [
+        ArbiterObservation(ran=True, on_attempt=1, decision="human_review", doc_type="correspondence"),
+        ArbiterObservation(ran=True, on_attempt=1, decision="accept_with_caveats", doc_type="contract"),
+    ]
+    out = pr.replay(record(**base, arbiters=other_first), POLICY)
+    assert out.outcome == pr.AUTO  # the contract ruling, not the first one in the list
+    only_other = [other_first[0]]
+    out = pr.replay(record(**base, arbiters=only_other), POLICY)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["arbiter_not_observed_on_attempt_1"]
+
+
+def test_untyped_arbiter_rulings_are_used_only_when_unambiguous():
+    base = _arbiter_cases([extract(0.85)])
+    one = [arbiter("accept_with_caveats")]
+    assert pr.replay(record(**base, arbiters=one), POLICY).outcome == pr.AUTO  # unchanged for old records
+    two = [arbiter("human_review"), arbiter("accept_with_caveats")]
+    out = pr.replay(record(**base, arbiters=two), POLICY)
+    assert out.outcome == pr.UNOBSERVED and out.reasons == ["arbiter_not_observed_on_attempt_1"]
+    mixed = [ArbiterObservation(ran=True, on_attempt=1, decision="human_review", doc_type="correspondence"),
+             arbiter("accept_with_caveats")]
+    assert pr.replay(record(**base, arbiters=mixed), POLICY).outcome == pr.UNOBSERVED
+
+
+@pytest.mark.parametrize("params", [
+    {"c_human": 0.0}, {"c_human": -1.0}, {"c_error": float("nan")}, {"c_human": float("nan")},
+    {"c_error": float("inf")}, {"c_error": 1.0}, {"c_error": 0.5},
+])
+def test_objective_costs_must_be_finite_and_ordered_before_scoring(params):
+    rec = [record("x", sorters=[sorter(0.99)], extractions=[extract(0.99)])]
+    with pytest.raises(ValueError, match="c_error > c_human > 0|finite"):
+        pr.evaluate(rec, POLICY, params)
+    with pytest.raises(ValueError):
+        pr.accept_target(params.get("c_human", 1.0), params.get("c_error", 20.0))
+
+
+def test_the_cli_rejects_a_non_finite_error_cost(tmp_path, capsys):
+    ok = tmp_path / "ok.jsonl"
+    pr.dump_records(_clean(3), ok)
+    for bad in ("nan", "inf"):
+        code, out, err = _run_cli(["--records", ok, "--c-error", bad], capsys)
+        assert code == 1 and not _score_lines(out) and "finite" in err
+
+
+def test_extraction_evidence_groups_repeated_sweeps_of_one_document():
+    sweep_a = record("same", sorters=[sorter(0.97)], extractions=[extract(0.9), extract(0.8, attempt=2)])
+    sweep_b = record("same", sorters=[sorter(0.97)], extractions=[extract(0.7)])
+    other = record("other", sorters=[sorter(0.97)], extractions=[extract(0.9)])
+    pairs, docs = pr.extraction_evidence([sweep_a, other, sweep_b])
+    assert len(pairs["contract"]) == 4
+    assert docs["contract"] == [0, 0, 1, 0]  # the same doc_id is one document, whatever the row position
+    assert len(set(docs["contract"])) == 2
+
+
+def test_extraction_evidence_never_merges_records_without_a_doc_id():
+    a = record("", sorters=[sorter(0.97)], extractions=[extract(0.9)])
+    b = record("", sorters=[sorter(0.97)], extractions=[extract(0.9)])
+    _, docs = pr.extraction_evidence([a, b])
+    assert docs["contract"] == [0, 1]
+
+
+def test_attempts_routing_can_never_archive_are_not_archive_cutoff_evidence():
+    rec = record(
+        "p",
+        sorters=[sorter(0.97)],
+        extractions=[
+            extract(0.97, attempt=1, schema_valid=False, score=0.1),  # retried whatever its confidence
+            extract(0.97, attempt=2, hollow=True, score=0.0),  # hollow extractions retry too
+            extract(0.95, attempt=3, schema_valid=True, score=0.95),
+            extract(0.60, attempt=4, schema_valid=None, score=0.9),  # unknown schema passes like live routing
+        ],
+    )
+    pairs, docs = pr.extraction_evidence([rec])
+    assert pairs["contract"] == [(0.95, True), (0.60, True)] and docs["contract"] == [0, 0]

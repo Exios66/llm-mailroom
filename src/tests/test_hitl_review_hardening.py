@@ -670,3 +670,257 @@ def test_legacy_complete_of_identical_fields_is_still_approve_as_is():
     )
     assert plan.resolution == "approve_as_is"
     assert "removed_fields" not in plan.label
+
+
+# --------------------------------------------------------------------------
+# #203 review: a new review episode restarts the clock, a replay keeps it
+# --------------------------------------------------------------------------
+
+
+def _clock_state():
+    return {
+        "doc_id": "clock-1", "matter_id": "M", "file_path": "r.txt", "original_filename": "r.txt",
+        "doc_type": "contract", "extracted_data": {"parties": ["Acme"]},
+    }
+
+
+def _clock_mocks(mocker):
+    seen = {}
+
+    def fake_park(path, manifest):
+        seen["manifest"] = manifest
+        return Path(path), False
+
+    mocker.patch("pipeline.bins.park_for_review", side_effect=fake_park)
+    mocker.patch("graph.build_graph._catalog_upsert")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.relations.dispatch_relations_scan")
+    return seen
+
+
+@pytest.mark.parametrize("answer", [
+    {"decision": "approved"},
+    {"decision": "approved", "resolution": "approve_as_is",
+     "extracted_data": {"parties": ["Acme"], "effective_date": "2024-01-01"}},
+])
+def test_an_approved_resume_starts_a_new_review_clock(temp_base_dir, mocker, answer):
+    from graph.build_graph import human_review_node
+    from pipeline.bins import load_manifest, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    old = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+    save_manifest(DocumentManifest(
+        doc_id="clock-1", matter_id="M", original_filename="r.txt",
+        stage=PipelineStage.REVIEW, review_entered_at=old,
+    ))
+    seen = _clock_mocks(mocker)
+    mocker.patch("graph.build_graph.interrupt", return_value=answer)
+    human_review_node(_clock_state())  # the reviewer decided: this wait is over
+    assert load_manifest("clock-1").review_entered_at > old
+
+    # The document comes back to review (re-extraction or a failed report): a
+    # new wait, timed from the decision, not from the first park.
+    mocker.patch("graph.build_graph.interrupt", side_effect=_Stop)
+    with pytest.raises(_Stop):
+        human_review_node(_clock_state())
+    second = seen["manifest"].review_entered_at
+    assert second > old
+    # ...and a replay of that second entry (a resume restarts the node) keeps it.
+    with pytest.raises(_Stop):
+        human_review_node(_clock_state())
+    assert seen["manifest"].review_entered_at == second
+
+
+def test_a_failed_stateless_requeue_keeps_the_review_clock(temp_base_dir, mocker):
+    """The document stays in review when the requeue raises, so its wait goes on."""
+    from graph.build_graph import resume_from_review
+    from pipeline.bins import load_manifest, review_dir, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    old = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+    manifest = DocumentManifest(
+        doc_id="clock-rq", matter_id="M", original_filename="r.txt", doc_type="contract",
+        stage=PipelineStage.REVIEW, review_entered_at=old,
+    )
+    save_manifest(manifest)
+    review_file = review_dir() / "r--clock-rq.txt"
+    review_file.write_text("body")
+    mocker.patch("pipeline.bins.requeue_from_review", side_effect=OSError("disk full"))
+    with pytest.raises(OSError):
+        resume_from_review(manifest, review_file)
+    assert load_manifest("clock-rq").review_entered_at == old
+
+
+# --------------------------------------------------------------------------
+# #203 review: a live-resume abort keeps the correction and the file
+# --------------------------------------------------------------------------
+
+
+def test_aborted_live_resume_keeps_the_correction_and_moves_the_review_file(temp_base_dir, mocker):
+    from graph.build_graph import _finalize_aborted, _live_resume
+    from pipeline.bins import failed_dir, load_manifest, review_dir, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    review_file = review_dir() / "keep--live-2.txt"
+    review_file.write_text("body")
+    parked = DocumentManifest(
+        doc_id="live-2", matter_id="M", original_filename="keep.txt", doc_type="contract",
+        stage=PipelineStage.REVIEW, extracted_data={"parties": ["Old"]},
+    )
+    save_manifest(parked)
+    run = mocker.patch("graph.build_graph._execute_run", return_value={})
+    corrected = {"parties": ["Acme", "Beta"], "effective_date": "2024-01-01"}
+    _live_resume(parked, "thread-2", {
+        "decision": "approved", "resolution": "correct", "extracted_data": corrected,
+    }, review_file=review_file)
+    state = run.call_args.args[0]
+    assert state["extracted_data"] == corrected and state["file_path"] == str(review_file)
+
+    # The run never returns (deadline, crash): the abort path sees only that state.
+    mocker.patch("graph.build_graph._write_catalog_record")
+    mocker.patch("graph.build_graph._emit_stage_audit")
+    mocker.patch("graph.build_graph._maybe_export_warehouse")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.relations.dispatch_relations_scan")
+    _finalize_aborted(state, "boom")
+    aborted = load_manifest("live-2")
+    assert aborted.stage.value == "failed"
+    assert aborted.extracted_data == corrected
+    assert not review_file.exists() and any(failed_dir().iterdir())
+
+
+def test_live_resume_of_a_plain_approval_keeps_the_parked_fields_for_an_abort(mocker):
+    from graph.build_graph import _live_resume
+    from schemas.manifest import DocumentManifest
+
+    run = mocker.patch("graph.build_graph._execute_run", return_value={})
+    manifest = DocumentManifest(
+        doc_id="live-3", matter_id="M", original_filename="l.txt", doc_type="contract",
+        extracted_data={"parties": ["Parked"]},
+    )
+    _live_resume(manifest, "thread-3", {"decision": "approved", "resolution": "reclassify"})
+    assert run.call_args.args[0]["extracted_data"] == {"parties": ["Parked"]}
+
+
+# --------------------------------------------------------------------------
+# #203 review: the stateless archive path validates like the live one
+# --------------------------------------------------------------------------
+
+
+def test_stateless_resume_refuses_schema_invalid_fields_before_any_run(temp_base_dir, mocker):
+    import graph.build_graph as bg
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    manifest = DocumentManifest(
+        doc_id="stateless-1", matter_id="M", original_filename="s.txt", doc_type="contract",
+        stage=PipelineStage.REVIEW, extracted_data={"parties": ["Acme"]},
+    )
+    mocker.patch.object(bg, "_thread_is_interrupted", return_value=False)
+    run = mocker.patch.object(bg, "_run_human_applied_stateless")
+    with pytest.raises(ValueError, match="contract schema"):
+        bg.resume_from_review(
+            manifest, Path("s.txt"),
+            resolution={"decision": "approved", "resolution": "correct",
+                        "extracted_data": {"parties": 5}},
+        )
+    run.assert_not_called()
+
+
+# --------------------------------------------------------------------------
+# #203 review: a rejection of a Gmail document reports back on its thread
+# --------------------------------------------------------------------------
+
+
+def test_human_rejection_dispatches_the_completion_echo(temp_base_dir, mocker):
+    from graph.build_graph import _finalize_human_rejection
+    from pipeline.bins import save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    save_manifest(DocumentManifest(
+        doc_id="rej-1", matter_id="M", original_filename="r.txt", stage=PipelineStage.REVIEW,
+        intake={"source": "gmail", "message_id": "m1", "sender": "a@example.com"},
+    ))
+    mocker.patch("graph.build_graph._catalog_upsert")
+    mocker.patch("graph.build_graph._maybe_export_warehouse")
+    echo = mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    _finalize_human_rejection(
+        doc_id="rej-1", matter_id="M", original_filename="r.txt", doc_type="contract",
+        classification_confidence=0.9, extraction_confidence=0.5, trace_id=None,
+        esc_reason="low confidence", catalog_extracted=None, dest=None,
+        reject_reason="duplicate",
+    )
+    echo.assert_called_once()
+    sent = echo.call_args.args[0]
+    assert sent["stage"] == "failed" and sent["review_decision"] == "rejected"
+
+
+def test_a_failed_reject_move_is_not_echoed_to_the_sender(temp_base_dir, mocker, tmp_path):
+    """The move error (it can carry a local path) stays in the manifest, never in the echo."""
+    from graph.build_graph import _finalize_human_rejection
+    from pipeline.bins import load_manifest, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    save_manifest(DocumentManifest(
+        doc_id="rej-3", matter_id="M", original_filename="r.txt", stage=PipelineStage.REVIEW,
+        intake={"source": "gmail", "message_id": "m3", "sender": "a@example.com"},
+    ))
+    parked = tmp_path / "r.txt"
+    parked.write_text("x")
+    mocker.patch("graph.build_graph._catalog_upsert")
+    mocker.patch("graph.build_graph._maybe_export_warehouse")
+    mocker.patch("graph.build_graph.move_to_failed", side_effect=OSError("/srv/secret/path busy"))
+    echo = mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    _finalize_human_rejection(
+        doc_id="rej-3", matter_id="M", original_filename="r.txt", doc_type="contract",
+        classification_confidence=0.9, extraction_confidence=0.5, trace_id=None,
+        esc_reason="low confidence", catalog_extracted=None, dest=parked,
+        reject_reason="duplicate",
+    )
+    assert "reject move failed" in load_manifest("rej-3").escalation_reason
+    sent = echo.call_args.args[0]
+    assert sent["escalation_reason"] == "low confidence"
+    assert "/srv/secret" not in str(sent)
+
+
+def test_the_echo_says_a_reviewer_rejected_the_document():
+    from pipeline.gmail_intake import build_echo_body
+
+    manifest = {
+        "doc_id": "rej-2", "matter_id": "M", "original_filename": "r.txt", "stage": "failed",
+        "review_decision": "rejected", "escalation_reason": "low confidence",
+        "intake": {"source": "gmail", "message_id": "m", "sender": "a@example.com"},
+    }
+    assert "rejected by a human reviewer" in build_echo_body(manifest, [], True)
+    manifest["review_decision"] = None
+    assert "rejected by a human reviewer" not in build_echo_body(manifest, [], True)
+
+
+# --------------------------------------------------------------------------
+# #203 review: a re-review keeps the model's original snapshot
+# --------------------------------------------------------------------------
+
+
+def test_a_re_review_of_human_fields_keeps_the_original_model_snapshot():
+    from pipeline.review_resolve import plan_resolution
+
+    before, manifest = _plan_inputs()
+    original = {"doc_type": "contract", "extracted_data": None, "parse_error": True}
+    # The report failed after a correction: the manifest parks again holding the
+    # human's fields, with the first resolution's label.
+    before.extraction_source = "human"
+    before.human_label = {"resolution": "correct", "model_snapshot": original}
+    manifest.extraction_source = "human"
+    plan = plan_resolution(
+        before=before, manifest=manifest, class_override={}, decision="approved",
+        resolution="approve_as_is",
+    )
+    assert plan.label["model_snapshot"] == original
+
+    # No human provenance: the parked fields are the model's, snapshot as before.
+    before.extraction_source = None
+    plan = plan_resolution(
+        before=before, manifest=manifest, class_override={}, decision="approved",
+        resolution="approve_as_is",
+    )
+    assert plan.label["model_snapshot"]["extracted_data"]["parties"] == ["Acme"]
+    assert plan.label["model_snapshot"] != original
