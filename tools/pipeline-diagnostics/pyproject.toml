@@ -13,6 +13,10 @@ dependencies = [
     #   .venv/bin/pip install -e .
     "pydantic>=2.0",
     "structlog>=24.0",
+    # Optional HTTP app: the CLI and offline artifact reads do not need these
+    # at runtime, but the packaged wheel must declare what the app imports.
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
 ]
 
 [project.scripts]
