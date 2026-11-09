@@ -11,6 +11,7 @@ import {
 } from "@xyflow/react";
 
 import { edgeMatchesQuery, matchesQuery, type ViewModel } from "../model";
+import { edgeKey, type RunOverlay } from "../runModel";
 import type { Selection } from "../selection";
 import { PipelineNodeCard } from "./NodeCard";
 
@@ -21,6 +22,7 @@ interface GraphViewProps {
   selection: Selection | null;
   query: string;
   reducedMotion: boolean;
+  runOverlay: RunOverlay | null;
   onSelect: (selection: Selection | null) => void;
 }
 
@@ -29,6 +31,7 @@ export function GraphView({
   selection,
   query,
   reducedMotion,
+  runOverlay,
   onSelect,
 }: GraphViewProps) {
   const handleNodesChange = useCallback(
@@ -67,12 +70,18 @@ export function GraphView({
         .filter((node) => matchesQuery({ id: node.id, span: node.data.span }, query))
         .map((node) => node.id),
     );
+    const currentNode =
+      runOverlay && runOverlay.currentIndex !== null
+        ? runOverlay.sequence[runOverlay.currentIndex]
+        : null;
     const nodes: Node[] = model.nodes.map((node) => ({
       ...node,
       selected: selection?.kind === "node" && selection.id === node.id,
       data: {
         ...node.data,
         dimmed: query.trim().length > 0 && !matchesQuery({ id: node.id, span: node.data.span }, query),
+        runOrder: runOverlay?.visitOrder[node.id],
+        runCurrent: currentNode === node.id,
       },
     }));
     const edges: Edge[] = model.edges.map((edge) => {
@@ -83,15 +92,26 @@ export function GraphView({
         matchedNodes,
         query,
       );
+      const key = edgeKey(edge.source, edge.target);
+      const runVisited = runOverlay?.edgeKeys.has(key) ?? false;
+      const runCurrent = runOverlay?.currentEdgeKey === key;
+      const classes = [
+        edge.className,
+        runVisited ? "edge--run" : "",
+        runCurrent ? "edge--run-current" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       return {
         ...edge,
         selected: isSelected,
-        animated: !reducedMotion && (isSelected || isRelated),
-        style: { opacity: dimmed ? 0.18 : isRelated || isSelected ? 1 : 0.75 },
+        className: classes,
+        animated: !reducedMotion && (isSelected || isRelated || runCurrent),
+        style: { opacity: dimmed ? 0.18 : isRelated || isSelected || runVisited ? 1 : 0.75 },
       };
     });
     return { nodes, edges };
-  }, [model, selection, query, reducedMotion]);
+  }, [model, selection, query, reducedMotion, runOverlay]);
 
   return (
     <div

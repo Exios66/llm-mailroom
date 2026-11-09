@@ -1,17 +1,45 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DiagnosticsApiError, fetchFindings, fetchSnapshot, readToken, writeToken } from "./api";
+import {
+  DiagnosticsApiError,
+  fetchExperiment,
+  fetchExperiments,
+  fetchFindings,
+  fetchRun,
+  fetchRuns,
+  fetchSnapshot,
+  readToken,
+  writeToken,
+} from "./api";
 import { ConnectionTable } from "./components/ConnectionTable";
 import { FindingsPanel } from "./components/FindingsPanel";
 import { GraphView } from "./components/GraphView";
 import { Inspector } from "./components/Inspector";
 import { ProvenanceStrip, type SourceStatus } from "./components/ProvenanceStrip";
+import { ExperimentPanel } from "./components/ExperimentPanel";
+import { RunPanel } from "./components/RunPanel";
 import { buildViewModel } from "./model";
+import { buildRunOverlay } from "./runModel";
 import type { Selection } from "./selection";
-import type { CheckReport, Snapshot } from "./types";
+import type {
+  CheckReport,
+  ExperimentDetail,
+  ExperimentSummary,
+  RunJournal,
+  RunSummary,
+  Snapshot,
+} from "./types";
 import { useReducedMotion } from "./useReducedMotion";
 
 type View = "graph" | "list";
+
+function failureMessage(label: string, reason: unknown): string {
+  const detail =
+    reason instanceof DiagnosticsApiError || reason instanceof Error
+      ? reason.message
+      : "request failed.";
+  return `${label}: ${detail}`;
+}
 
 function initialView(): View {
   if (typeof window === "undefined") return "graph";
@@ -34,6 +62,7 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [report, setReport] = useState<CheckReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshIssues, setRefreshIssues] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>(initialView);
   const [query, setQuery] = useState("");
@@ -41,8 +70,18 @@ export default function App() {
   const [announcement, setAnnouncement] = useState("");
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [token, setToken] = useState(readToken);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
+  const [experimentId, setExperimentId] = useState("");
+  const [experiment, setExperiment] = useState<ExperimentDetail | null>(null);
+  const [runId, setRunId] = useState("");
+  const [runJournal, setRunJournal] = useState<RunJournal | null>(null);
+  const [runStep, setRunStep] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
   const reducedMotion = useReducedMotion();
   const loadSequence = useRef(0);
+  const runSequence = useRef(0);
+  const experimentSequence = useRef(0);
 
   const model = useMemo(() => (snapshot ? buildViewModel(snapshot.graph) : null), [snapshot]);
 
@@ -50,14 +89,28 @@ export default function App() {
     const sequence = ++loadSequence.current;
     if (!quiet) setLoading(true);
     try {
-      const [nextSnapshot, nextReport] = await Promise.all([
-        fetchSnapshot(signal),
-        fetchFindings(signal),
-      ]);
+      const [snapshotResult, reportResult, runsResult, experimentsResult] =
+        await Promise.allSettled([
+          fetchSnapshot(signal),
+          fetchFindings(signal),
+          fetchRuns(signal),
+          fetchExperiments(signal),
+        ]);
       // An older request finishing last must not replace a newer snapshot.
       if (signal.aborted || sequence !== loadSequence.current) return;
+      if (snapshotResult.status !== "fulfilled") throw snapshotResult.reason;
+      const nextSnapshot = snapshotResult.value;
+      // A failed collection request keeps the last successful result for that
+      // panel and is reported by name; it never discards the other results.
+      const issues: string[] = [];
       setSnapshot(nextSnapshot);
-      setReport(nextReport);
+      if (reportResult.status === "fulfilled") setReport(reportResult.value);
+      else issues.push(failureMessage("Findings", reportResult.reason));
+      if (runsResult.status === "fulfilled") setRuns(runsResult.value);
+      else issues.push(failureMessage("Recorded runs", runsResult.reason));
+      if (experimentsResult.status === "fulfilled") setExperiments(experimentsResult.value);
+      else issues.push(failureMessage("Experiment logs", experimentsResult.reason));
+      setRefreshIssues(issues);
       setUpdatedAt(new Date());
       setError(null);
       setAnnouncement(
@@ -113,6 +166,82 @@ export default function App() {
       `${window.location.pathname}${queryString ? `?${queryString}` : ""}${window.location.hash}`,
     );
   }, [selection]);
+
+  const overlay = useMemo(
+    () => buildRunOverlay(runJournal, runStep),
+    [runJournal, runStep],
+  );
+
+  useEffect(() => {
+    if (!playing || !runJournal) return;
+    const length = runJournal.node_sequence?.length ?? 0;
+    if (runStep === null) {
+      setRunStep(0);
+      return;
+    }
+    if (runStep >= length - 1) {
+      setPlaying(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setRunStep((current) => (current ?? 0) + 1), 900);
+    return () => window.clearTimeout(timer);
+  }, [playing, runStep, runJournal]);
+
+  const selectRun = useCallback(async (id: string) => {
+    const request = ++runSequence.current;
+    setRunId(id);
+    setPlaying(false);
+    setRunStep(null);
+    // Drop the previous journal now so a slow or failed request can never leave
+    // another run's path and overlay on screen under the new selection.
+    setRunJournal(null);
+    if (!id) return;
+    try {
+      const journal = await fetchRun(id);
+      if (request !== runSequence.current) return;
+      setRunJournal(journal);
+      setAnnouncement(`Loaded run ${id}.`);
+    } catch {
+      if (request !== runSequence.current) return;
+      setRunJournal(null);
+      setAnnouncement("The selected run journal could not be loaded.");
+    }
+  }, []);
+
+  const selectExperiment = useCallback(async (id: string) => {
+    const request = ++experimentSequence.current;
+    setExperimentId(id);
+    setExperiment(null);
+    if (!id) return;
+    try {
+      const detail = await fetchExperiment(id);
+      if (request !== experimentSequence.current) return;
+      setExperiment(detail);
+      setAnnouncement(`Loaded experiment ${id}.`);
+    } catch {
+      if (request !== experimentSequence.current) return;
+      setExperiment(null);
+      setAnnouncement("The selected experiment log could not be loaded.");
+    }
+  }, []);
+
+  const selectStep = useCallback(
+    (index: number) => {
+      setPlaying(false);
+      setRunStep(index);
+      const node = runJournal?.node_sequence?.[index];
+      if (node) setSelection({ kind: "node", id: node });
+    },
+    [runJournal],
+  );
+
+  const startPlayback = useCallback(() => {
+    if (!runJournal) return;
+    if (runStep === null || runStep >= (runJournal.node_sequence?.length ?? 0) - 1) {
+      setRunStep(0);
+    }
+    setPlaying(true);
+  }, [runJournal, runStep]);
 
   const status: SourceStatus = error ? "error" : loading && !snapshot ? "loading" : "ready";
 
@@ -206,6 +335,12 @@ export default function App() {
         </div>
       ) : null}
 
+      {refreshIssues.length > 0 ? (
+        <div className="error-banner" role="alert">
+          <strong>Some diagnostics could not be refreshed.</strong> {refreshIssues.join(" ")}
+        </div>
+      ) : null}
+
       {snapshot && model ? (
         <>
           <main className="workbench" aria-busy={loading}>
@@ -216,6 +351,7 @@ export default function App() {
                   selection={selection}
                   query={query}
                   reducedMotion={reducedMotion}
+                  runOverlay={overlay}
                   onSelect={setSelection}
                 />
               ) : (
@@ -223,13 +359,39 @@ export default function App() {
                   model={model}
                   query={query}
                   selection={selection}
+                  runOverlay={overlay}
                   onSelect={setSelection}
                 />
               )}
             </div>
             <aside className="side-column" aria-label="Diagnostics details">
+              <ExperimentPanel
+                experiments={experiments}
+                selectedId={experimentId}
+                detail={experiment}
+                onSelect={(id) => void selectExperiment(id)}
+                onSelectRun={(id) => void selectRun(id)}
+              />
+              <RunPanel
+                runs={runs}
+                selectedId={runId}
+                journal={runJournal}
+                step={runStep}
+                playing={playing}
+                onSelect={(id) => void selectRun(id)}
+                onStep={selectStep}
+                onPlay={startPlayback}
+                onStop={() => setPlaying(false)}
+                onReset={() => {
+                  setPlaying(false);
+                  setRunStep(null);
+                }}
+              />
               <Inspector selection={selection} model={model} onSelect={setSelection} />
-              <FindingsPanel report={report} />
+              <FindingsPanel
+                report={report}
+                failure={refreshIssues.find((issue) => issue.startsWith("Findings:")) ?? null}
+              />
             </aside>
           </main>
           {view === "graph" ? (
@@ -243,6 +405,7 @@ export default function App() {
                 model={model}
                 query={query}
                 selection={selection}
+                runOverlay={overlay}
                 onSelect={setSelection}
               />
             </section>
