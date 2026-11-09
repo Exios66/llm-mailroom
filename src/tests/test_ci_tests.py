@@ -370,7 +370,7 @@ def test_mixed_root_and_nested_changes_keep_both_selections(project):
 
 def test_promotion_to_full_selects_both_roots_and_reports_the_threshold(project):
     nested_tool(project)
-    for n in range(6):
+    for n in range(18):
         project(f"src/tests/test_leaf_{n}.py", "from agents import leaf\n")
     plan = ci.make_plan(["src/agents/leaf.py"])
     assert plan["profile"] == "full"
