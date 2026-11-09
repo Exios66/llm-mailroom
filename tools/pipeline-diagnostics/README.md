@@ -46,7 +46,7 @@ tools/pipeline-diagnostics/
     ...                    # schemas, snapshots, findings, CLI and job protocol
   frontend/                # React/TypeScript source and committed lockfile
   tests/                   # explicitly collected by CI
-  fixtures/                # synthetic defects and revision-specific contracts
+    fixtures/              # synthetic defects and revision-specific contracts
 ```
 
 LangChain core is already declared by the parent project. Install the project's development dependencies rather than adding a duplicate root requirement. The nested package declares its own direct dependencies. Install the parent from this checkout first; the unrelated PyPI project named `mailroom` is not a tool dependency.

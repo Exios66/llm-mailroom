@@ -281,6 +281,26 @@ def test_nested_test_change_selects_that_test_only(project):
     assert plan["tests"] == [target]
 
 
+def test_nested_fixture_named_like_a_test_is_not_passed_to_pytest(project):
+    nested_tool(project)
+    fixture = f"{NESTED_TESTS}/fixtures/test_sample.json"
+    project(fixture, "{}\n")
+    plan = ci.make_plan([fixture])
+    assert plan["profile"] == "affected"
+    assert fixture not in plan["tests"]
+    assert f"{NESTED_TESTS}/test_module_0.py" in plan["tests"]
+
+
+def test_exporter_change_selects_the_nested_parity_suite(project):
+    nested_tool(project)
+    project("src/scripts/export_contract.py", "value = 1\n")
+    project("src/tests/test_contract_export.py", "from scripts import export_contract\n")
+    plan = ci.make_plan(["src/scripts/export_contract.py"])
+    assert plan["profile"] == "affected"
+    assert "src/tests/test_contract_export.py" in plan["tests"]
+    assert f"{NESTED_TESTS}/test_module_0.py" in plan["tests"]
+
+
 def test_nested_documentation_keeps_the_root_docs_truth_checks(project):
     nested_tool(project)
     project("tools/pipeline-diagnostics/README.md", "# Native diagnostics\n")
@@ -338,3 +358,21 @@ def test_full_plan_without_a_nested_tool_keeps_root_scope_only(project):
     missing = ci.make_plan([f"{NESTED_BACKEND}/module.py"])
     assert missing["profile"] == "full"
     assert missing["tests"] == ["src/tests"]
+
+
+def test_mixed_root_and_nested_changes_keep_both_selections(project):
+    nested_tool(project)
+    plan = ci.make_plan(["src/agents/leaf.py", f"{NESTED_BACKEND}/module_0.py"])
+    assert plan["profile"] == "affected"
+    assert {"src/tests/test_bridge.py", "src/tests/test_dynamic.py"} <= set(plan["tests"])
+    assert f"{NESTED_TESTS}/test_module_0.py" in plan["tests"]
+
+
+def test_promotion_to_full_selects_both_roots_and_reports_the_threshold(project):
+    nested_tool(project)
+    for n in range(6):
+        project(f"src/tests/test_leaf_{n}.py", "from agents import leaf\n")
+    plan = ci.make_plan(["src/agents/leaf.py"])
+    assert plan["profile"] == "full"
+    assert "65%" in plan["reason"]
+    assert plan["tests"] == ["src/tests", NESTED_TESTS]

@@ -37,6 +37,10 @@ DOC_TESTS = ("src/tests/test_docs_truth.py", "src/tests/test_landing.py")
 # here is resolved relative to REPO (the planner stays testable in a tmp tree).
 NESTED_ROOT = "tools/pipeline-diagnostics"
 NESTED_TESTS = f"{NESTED_ROOT}/tests"
+# Parent inputs that the nested suite verifies but the src import graph cannot
+# see (the nested tests import the exporter outside `src.tests`). A change here
+# must select the nested suite, not only its root consumers.
+NESTED_PARENT_INPUTS = {"src/scripts/export_contract.py"}
 
 
 def nested_tests() -> list[str]:
@@ -75,12 +79,20 @@ def make_plan(changed: list[str], *, full: bool = False, branch: str = "") -> di
                 reason = reason or f"deleted, renamed, or missing input: {name}"
             elif not nested:
                 reason = reason or f"nested tool change without a discovered test root: {name}"
-            elif name.startswith(f"{NESTED_TESTS}/") and path.name.startswith("test_"):
+            elif path.suffix == ".py" and name.startswith(f"{NESTED_TESTS}/") and path.name.startswith("test_"):
                 selected.add(name)
             else:
                 # Conservative explicit mapping: the nested tool's own suite is
                 # the only test consumer of its backend, packaging and fixtures.
                 selected.update(nested)
+        elif name in NESTED_PARENT_INPUTS:
+            # The nested parity test imports the root exporter directly, which
+            # the src import graph does not attribute to any root test.
+            selected.update(nested)
+            try:
+                ast.parse((REPO / path).read_text(encoding="utf-8"))
+            except (SyntaxError, UnicodeError, OSError):
+                reason = reason or f"cannot analyze changed Python: {name}"
         elif name in GLOBAL_FILES or name.startswith(SHARED) or path.name in {"conftest.py", "__init__.py"}:
             reason = reason or f"shared contract/configuration changed: {name}"
         elif not (REPO / path).is_file():

@@ -141,12 +141,24 @@ def _validated_graph(graph: dict[str, Any]) -> GraphPayload:
 
 
 def _pipeline_version() -> str | None:
-    try:
-        from importlib.metadata import version
+    """Version of the distribution that supplies the imported pipeline package.
 
-        return version("mailroom")
+    A name-only lookup can resolve an unrelated ``mailroom`` distribution that
+    happens to precede the parent install on ``sys.path``. Only a unique
+    provider mapping is trusted; an ambiguous environment reports no version
+    rather than a misleading one.
+    """
+    try:
+        from importlib.metadata import packages_distributions, version
+
+        names = sorted(
+            {name for name in packages_distributions().get("pipeline", []) if name}
+        )
+        if len(names) == 1:
+            return version(names[0])
     except Exception:
         return None
+    return None
 
 
 def _repo_root() -> Path | None:
