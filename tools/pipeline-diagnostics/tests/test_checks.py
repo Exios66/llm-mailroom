@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from mailroom_diagnostics.checks import run_checks
 from mailroom_diagnostics.snapshot import build_workspace_snapshot, load_artifact
 
@@ -143,6 +145,29 @@ def test_a_future_revision_graph_needs_no_code_change(minimal_contract):
     assert findings == []
     snapshot = load_artifact(minimal_contract)
     assert {node.id for node in snapshot.graph.nodes} == {"intake", "archive"}
+
+
+@pytest.mark.parametrize("source,target", [("__end__", "archive"), ("archive", "__start__")])
+def test_graph_boundaries_cannot_be_reversed(mutated_contract, source, target):
+    path = mutated_contract(lambda data: data["graph"]["edges"].append(
+        {"source": source, "target": target, "conditional": False, "label": None}
+    ))
+    assert any(f.rule == "invalid-boundary-edge" for f in _findings(path))
+
+
+def test_path_through_undeclared_node_does_not_prove_reachability(mutated_contract):
+    def through_ghost(data):
+        data["graph"]["nodes"].append(
+            {"id": "island", "span": "island-span", "observation_type": "span"}
+        )
+        data["graph"]["edges"].extend([
+            {"source": "intake", "target": "ghost", "conditional": False, "label": None},
+            {"source": "ghost", "target": "island", "conditional": False, "label": None},
+        ])
+
+    findings = _findings(mutated_contract(through_ghost))
+    assert len([f for f in findings if f.rule == "dangling-edge"]) == 2
+    assert [f.affected["node"] for f in findings if f.rule == "unreachable-node"] == ["island"]
 
 
 def test_graph_hash_changes_with_topology_and_is_deterministic(minimal_contract):
