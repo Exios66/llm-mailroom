@@ -658,6 +658,10 @@ def model_snapshot(manifest: DocumentManifest) -> dict[str, Any]:
         "doc_subclass": manifest.doc_subclass,
         "classification_confidence": manifest.classification_confidence,
         "extraction_confidence": manifest.extraction_confidence,
+        # Which attempt the confidences above belong to. Approval resets the live counts to 0 and
+        # re-extracts, so the final manifest can no longer say a retry was what parked.
+        "classification_attempts": manifest.classification_attempts,
+        "extraction_attempts": manifest.extraction_attempts,
         "extracted_data": clean_extraction(manifest.extracted_data) or None,
         # clean_extraction drops the "_parse_error" marker; keep what it said.
         "parse_error": bool(

@@ -58,7 +58,8 @@ def test_holdout_is_scored_on_the_clamped_cutoff_not_the_raw_one():
     assert raw["holdout_accuracy"] < 1.0  # the raw cutoff admits the wrong documents under 0.5
     assert deployed["holdout_accuracy"] == 1.0  # the emitted cutoff (0.5) does not
     ev = ct._evidence_at(pairs, 0.95, 0.95, folds=5, seed=42, confidence=0.95, risk=None, min_accepted=0)
-    assert ev["proposed"] is None or ev["proposed"] >= ct.CLAMP_LO
+    assert ev["status"] == "calibrated"
+    assert ev["proposed"] == ct.CLAMP_LO
     assert ev["cross_fit"]["holdout_accuracy"] == 1.0
     assert "meets_target" not in ev["cross_fit"]  # the raw-cutoff verdict is not carried along
 
@@ -122,6 +123,21 @@ def test_demoting_low_re_checks_the_fallback_current_low():
     ct._reconcile_bands(entry)
     assert entry["low"]["status"] == "insufficient_evidence"
     assert entry["high"]["status"] == "insufficient_evidence"
+
+
+def test_demoting_low_for_the_sorter_high_re_checks_the_extraction_band():
+    """Low 0.80 clears the calibrated judge_band_high 0.90 but not the calibrated high 0.75: demoting it
+    restores its current 0.95, which now sits above the already-accepted judge_band_high."""
+    entry = _entry(("calibrated", 0.80, 0.95), ("calibrated", 0.75, 0.97), ("calibrated", 0.90, 0.99))
+    ct._reconcile_bands(entry)
+    assert entry["low"]["status"] == "insufficient_evidence"
+    assert entry["low"]["reason"] == "low_not_below_high"
+    in_force = {k: ct._in_force(v) for k, v in entry.items()}
+    assert in_force["low"] < in_force["judge_band_high"]  # no empty judge-gate band is emitted
+    assert in_force["low"] < in_force["high"]
+    assert entry["judge_band_high"]["status"] == "insufficient_evidence"
+    assert entry["judge_band_high"]["reason"] == "judge_band_high_not_above_low"
+    assert entry["high"]["status"] == "insufficient_evidence"  # 0.75 sits under the restored 0.95 too
 
 
 @pytest.mark.parametrize("low", [("calibrated", 0.80, 0.88), ("insufficient_evidence", None, 0.88)])
