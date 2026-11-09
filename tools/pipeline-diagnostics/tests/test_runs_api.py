@@ -92,9 +92,28 @@ def test_corrupt_and_oversized_journals_are_ignored(dirs, client):
     assert client.get("/v1/diagnostics/runs").json()["runs"] == []
 
 
+def test_oversized_journal_is_ignored(dirs, client):
+    from mailroom_diagnostics.runs import MAX_RUN_BYTES
+
+    runs, _ = dirs
+    (runs / "huge.json").write_bytes(b"x" * (MAX_RUN_BYTES + 1))
+    assert client.get("/v1/diagnostics/runs").json()["runs"] == []
+
+
+def test_incomplete_experiment_is_not_listed_or_loaded(dirs, client):
+    _, experiments = dirs
+    (experiments / "partial.json").write_text(
+        json.dumps({"experiment_id": "partial"}), encoding="utf-8"
+    )
+    assert client.get("/v1/diagnostics/experiments").json()["experiments"] == []
+    assert client.get("/v1/diagnostics/experiments/partial").status_code == 404
+
+
 def test_experiment_load_strips_local_paths(dirs, client):
     _, experiments = dirs
-    (experiments / "experiment.json").write_text(json.dumps(_experiment()), encoding="utf-8")
+    payload = _experiment()
+    payload["corpus"]["source"] = "/private/client/manifest.csv"
+    (experiments / "experiment.json").write_text(json.dumps(payload), encoding="utf-8")
 
     listing = client.get("/v1/diagnostics/experiments")
     assert listing.status_code == 200
@@ -105,6 +124,7 @@ def test_experiment_load_strips_local_paths(dirs, client):
     assert "base_dir" not in payload
     assert "journal" not in payload["runs"][0]
     assert payload["metrics"]["all_checks_ok"] is True
+    assert payload["corpus"]["source"] == "manifest.csv"
 
 
 def test_journal_without_node_sequence_is_ignored(dirs, client):
@@ -116,11 +136,10 @@ def test_journal_without_node_sequence_is_ignored(dirs, client):
     assert client.get("/v1/diagnostics/runs/run-abc123").status_code == 404
 
 
-def test_experiment_without_runs_returns_an_empty_list(dirs, client):
+def test_experiment_without_runs_is_rejected(dirs, client):
     _, experiments = dirs
     payload = _experiment()
     payload.pop("runs")
     (experiments / "experiment.json").write_text(json.dumps(payload), encoding="utf-8")
-    response = client.get("/v1/diagnostics/experiments/20261109T050000Z")
-    assert response.status_code == 200
-    assert response.json()["runs"] == []
+    assert client.get("/v1/diagnostics/experiments").json()["experiments"] == []
+    assert client.get("/v1/diagnostics/experiments/20261109T050000Z").status_code == 404

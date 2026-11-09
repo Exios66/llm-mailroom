@@ -51,7 +51,7 @@ tools/pipeline-diagnostics/
 
 ## Live corpus, run journals and replay
 
-`scripts/pull_live_manifest.py` resolves the newest tagged `Lucius-Morningstar/mailroom-dataset` release, verifies the release manifest and every parquet/content hash, and emits the pipeline manifest shape (no document text). `scripts/smoke_live_documents.py` fetches the selected real documents, runs the full graph (mock by default), and writes one run journal plus an experiment summary. `--replay <journal>` re-runs the same document and diffs the node sequence and outcome.
+`src/scripts/pull_live_manifest.py` resolves the newest tagged `Lucius-Morningstar/mailroom-dataset` release, verifies the release manifest and every parquet/content hash, and emits the pipeline manifest shape (no document text). `src/scripts/smoke_live_documents.py` fetches the selected real documents, runs the full graph (mock by default), and writes one run journal plus an experiment summary. `--replay <journal>` re-runs the same document and diffs the node sequence and outcome.
 
 The viewer's **Recorded runs** panel loads journals from `<base>/diagnostics/runs` and plays the recorded node path (numbered nodes, highlighted transitions); **Experiments** loads summaries and jumps to their runs. Playback reads the journal; only the CLI replay re-executes the pipeline. The routes are `GET /v1/diagnostics/runs`, `/runs/{execution_id}`, `/experiments`, `/experiments/{experiment_id}`.
 

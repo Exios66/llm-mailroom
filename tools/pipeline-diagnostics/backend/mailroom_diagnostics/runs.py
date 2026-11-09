@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_RUN_BYTES = 5 * 1024 * 1024
+MAX_SCAN_FILES = 500
 _ID = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 
 
@@ -42,6 +43,16 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _journal_paths(root: Path) -> list[Path]:
+    """Newest-first, bounded scan: listing must not parse an unbounded archive."""
+    try:
+        paths = [path for path in root.glob("*.json") if path.is_file()]
+    except OSError:
+        return []
+    paths.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    return paths[:MAX_SCAN_FILES]
+
+
 def _valid_run(payload: dict[str, Any]) -> bool:
     return (
         isinstance(payload.get("execution_id"), str)
@@ -57,7 +68,9 @@ def list_runs(limit: int = 100) -> list[dict[str, Any]]:
     if not root.is_dir():
         return []
     summaries: list[dict[str, Any]] = []
-    for path in root.glob("*.json"):
+    for path in _journal_paths(root):
+        if len(summaries) >= limit:
+            break
         payload = _read_json(path)
         if payload is None or not _valid_run(payload):
             continue
@@ -93,11 +106,19 @@ def load_run(execution_id: str) -> dict[str, Any] | None:
     root = runs_dir()
     if not root.is_dir():
         return None
-    for path in root.glob("*.json"):
+    for path in _journal_paths(root):
         payload = _read_json(path)
         if payload and payload.get("execution_id") == execution_id and _valid_run(payload):
             return payload
     return None
+
+
+def _valid_experiment(payload: dict[str, Any]) -> bool:
+    return (
+        isinstance(payload.get("experiment_id"), str)
+        and isinstance(payload.get("runs"), list)
+        and isinstance(payload.get("metrics"), dict)
+    )
 
 
 def list_experiments(limit: int = 50) -> list[dict[str, Any]]:
@@ -105,9 +126,11 @@ def list_experiments(limit: int = 50) -> list[dict[str, Any]]:
     if not root.is_dir():
         return []
     summaries: list[dict[str, Any]] = []
-    for path in root.glob("*.json"):
+    for path in _journal_paths(root):
+        if len(summaries) >= limit:
+            break
         payload = _read_json(path)
-        if not payload or not isinstance(payload.get("experiment_id"), str):
+        if not payload or not _valid_experiment(payload):
             continue
         metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
         corpus = payload.get("corpus") if isinstance(payload.get("corpus"), dict) else {}
@@ -135,13 +158,18 @@ def load_experiment(experiment_id: str) -> dict[str, Any] | None:
     root = experiments_dir()
     if not root.is_dir():
         return None
-    for path in root.glob("*.json"):
+    for path in _journal_paths(root):
         payload = _read_json(path)
-        if payload and payload.get("experiment_id") == experiment_id:
+        if payload and payload.get("experiment_id") == experiment_id and _valid_experiment(payload):
             # Local paths are not part of the API contract.
             payload.pop("base_dir", None)
-            if not isinstance(payload.get("runs"), list):
-                payload["runs"] = []
+            corpus = payload.get("corpus")
+            if isinstance(corpus, dict):
+                source = corpus.get("source")
+                if isinstance(source, str) and (
+                    source.startswith("/") or (len(source) > 1 and source[1] == ":")
+                ):
+                    corpus["source"] = source.replace("\\", "/").rsplit("/", 1)[-1]
             for run in payload["runs"]:
                 if isinstance(run, dict):
                     run.pop("journal", None)

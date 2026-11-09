@@ -70,11 +70,18 @@ The network-gated real-corpus test is `MAILROOM_LIVE_TESTS=1 .venv/bin/python -m
 
 ```bash
 .venv/bin/mailroom-diagnostics serve
-# http://127.0.0.1:8100/diagnostics      build-instructions page until D1.1
+# http://127.0.0.1:8100/diagnostics      built React screen (build-instructions page without assets)
 # http://127.0.0.1:8100/v1/diagnostics/capabilities
 # http://127.0.0.1:8100/v1/diagnostics/snapshot
 # http://127.0.0.1:8100/v1/diagnostics/findings
+# http://127.0.0.1:8100/v1/diagnostics/runs
+# http://127.0.0.1:8100/v1/diagnostics/experiments
 # http://127.0.0.1:8100/health
+
+# Load the journals/experiments from the smoke base while serving:
+MAILROOM_BASE_DIR=data/live_smoke/base \
+MAILROOM_DIAGNOSTICS_STATIC=tools/pipeline-diagnostics/frontend/dist \
+  .venv/bin/mailroom-diagnostics serve
 ```
 
 `serve` constructs a diagnostics-only FastAPI app. It never imports `api.main`, never starts the watcher, Gmail intake, status mail, relations scans or a tracing backend, and processes no documents. Defaults are loopback `127.0.0.1:8100` (`MAILROOM_DIAGNOSTICS_HOST` / `MAILROOM_DIAGNOSTICS_PORT`); an off-loopback bind requires `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS`, the same rule as the producer. Routes reuse the producer bearer/loopback check.
@@ -122,9 +129,9 @@ Read [PLAN.md](PLAN.md) for D0–D4 and follow the task IDs in [HANDOFF.md](HAND
 
 1. Install the nested Python package from this folder into the repository venv (step 1).
 2. For the React screen, build `frontend/` with its committed lockfile, or use packaged assets. Node stays optional for end users.
-3. Run the standalone `serve` operation (step 3): inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
-4. Open `/diagnostics`; the screen identifies the source as a workspace preview, lists unavailable capabilities explicitly, and loads recorded runs/experiments from `MAILROOM_BASE_DIR`.
-5. For an already-running pipeline, set `MAILROOM_DIAGNOSTICS_MOUNT=1` and mount the same read-only router on this repository's API.
+4. Run the standalone `serve` operation (step 4): inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
+5. Open `/diagnostics`; the screen identifies the source as a workspace preview, lists unavailable capabilities explicitly, and loads recorded runs/experiments from `MAILROOM_BASE_DIR`.
+6. For an already-running pipeline, set `MAILROOM_DIAGNOSTICS_MOUNT=1` and mount the same read-only router on this repository's API.
 
 Do not substitute the normal `python -m api.main` for inspection-only launch: its import path includes warmups, and its normal lifespan can start the watcher.
 
