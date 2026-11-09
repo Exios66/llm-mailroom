@@ -159,3 +159,152 @@ def test_provenance_distinguishes_workspace_from_artifact(contract_path):
     assert artifact.active_worker is False
     assert artifact.git_sha is None
     assert artifact.pipeline_version  # copied from the artifact, not recompiled
+
+
+_GUARD_SOURCE = '''
+import builtins
+import os
+import socket
+from pathlib import Path
+
+_marker = Path(os.environ["DIAG_CHILD_MARKER"])
+
+
+def _record(kind):
+    with _marker.open("a", encoding="utf-8") as handle:
+        handle.write(kind + "\\n")
+
+
+def _blocked(*args, **kwargs):
+    _record("network")
+    raise RuntimeError("network access is disabled in diagnostics probes")
+
+
+socket.socket.connect = _blocked
+socket.create_connection = _blocked
+
+_real_import = builtins.__import__
+
+
+def _guarded_import(name, *args, **kwargs):
+    if name == "openai" or name.startswith(("graph", "pipeline", "api.")):
+        _record("import:" + name)
+    return _real_import(name, *args, **kwargs)
+
+
+builtins.__import__ = _guarded_import
+'''
+
+
+@pytest.fixture
+def guarded_env(cli_env, tmp_path):
+    guard = tmp_path / "guard"
+    guard.mkdir()
+    (guard / "sitecustomize.py").write_text(_GUARD_SOURCE, encoding="utf-8")
+    marker = tmp_path / "attempts.txt"
+    environment = dict(cli_env, PYTHONPATH=str(guard), DIAG_CHILD_MARKER=str(marker))
+    return environment, marker
+
+
+def _attempts(marker: Path) -> str:
+    return marker.read_text(encoding="utf-8") if marker.exists() else ""
+
+
+def test_child_guard_records_network_attempts(guarded_env):
+    environment, marker = guarded_env
+    code = (
+        "import socket\n"
+        "try:\n"
+        "    socket.create_connection(('127.0.0.1', 9), timeout=0.1)\n"
+        "except Exception:\n"
+        "    pass\n"
+    )
+    subprocess.run(
+        [sys.executable, "-c", code], cwd=REPO_ROOT, env=environment, timeout=60, check=False
+    )
+    assert "network" in _attempts(marker)
+
+
+def test_help_does_not_import_graph_or_pipeline(guarded_env):
+    environment, marker = guarded_env
+    proc = subprocess.run(
+        [sys.executable, "-m", "mailroom_diagnostics", "--help"],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert proc.returncode == 0
+    attempts = _attempts(marker)
+    assert "import:graph" not in attempts
+    assert "import:pipeline" not in attempts
+    assert "network" not in attempts
+
+
+def test_workspace_probe_imports_graph_without_network(guarded_env):
+    environment, marker = guarded_env
+    proc = subprocess.run(
+        [sys.executable, "-m", "mailroom_diagnostics", "inspect", "--json"],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    attempts = _attempts(marker)
+    assert "import:graph" in attempts
+    assert "network" not in attempts
+
+
+def test_workspace_probe_never_constructs_a_model_client(guarded_env):
+    environment, marker = guarded_env
+    code = '''
+import builtins
+import contextlib
+import io
+import json
+import os
+from pathlib import Path
+
+marker = Path(os.environ["DIAG_CHILD_MARKER"])
+_real_import = builtins.__import__
+
+
+def guarded(name, *args, **kwargs):
+    module = _real_import(name, *args, **kwargs)
+    if name == "openai":
+        original = module.OpenAI
+
+        class Guarded(original):
+            def __init__(self, *a, **k):
+                with marker.open("a", encoding="utf-8") as handle:
+                    handle.write("openai-client\\n")
+                raise RuntimeError("client construction blocked")
+
+        module.OpenAI = Guarded
+    return module
+
+
+builtins.__import__ = guarded
+buffer = io.StringIO()
+with contextlib.redirect_stdout(buffer):
+    from mailroom_diagnostics.cli import main
+    rc = main(["inspect", "--json"])
+print(json.dumps({"rc": rc}))
+'''
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["rc"] == 0
+    assert "openai-client" not in _attempts(marker)

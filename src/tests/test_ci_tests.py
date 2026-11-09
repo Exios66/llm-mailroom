@@ -273,12 +273,16 @@ def test_tools_backend_change_runs_the_nested_tool_tests(project):
     assert plan["experiment"] is False
 
 
-def test_nested_test_change_selects_that_test_only(project):
+def test_nested_test_change_selects_the_nested_suite(project):
     nested_tool(project)
     target = f"{NESTED_TESTS}/test_module_0.py"
     plan = ci.make_plan([target])
     assert plan["profile"] == "affected"
-    assert plan["tests"] == [target]
+    # A test module may be imported by a sibling; run the whole nested suite.
+    assert set(plan["tests"]) == {
+        f"{NESTED_TESTS}/test_module_0.py",
+        f"{NESTED_TESTS}/test_module_1.py",
+    }
 
 
 def test_nested_fixture_named_like_a_test_is_not_passed_to_pytest(project):
@@ -298,7 +302,10 @@ def test_exporter_change_selects_the_nested_parity_suite(project):
     plan = ci.make_plan(["src/scripts/export_contract.py"])
     assert plan["profile"] == "affected"
     assert "src/tests/test_contract_export.py" in plan["tests"]
-    assert f"{NESTED_TESTS}/test_module_0.py" in plan["tests"]
+    assert {
+        f"{NESTED_TESTS}/test_module_0.py",
+        f"{NESTED_TESTS}/test_module_1.py",
+    } <= set(plan["tests"])
 
 
 def test_nested_documentation_keeps_the_root_docs_truth_checks(project):
