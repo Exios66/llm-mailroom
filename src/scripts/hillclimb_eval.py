@@ -131,7 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--risk", type=float, default=0.02)
     ap.add_argument("--cost-budget-usd", type=float, default=None)
     ap.add_argument("--oracle", action="store_true")
-    ap.add_argument("--merge-rule", choices=("min", "cr6"), default="min",
+    ap.add_argument("--merge-rule", choices=("min", "cr6"), default=pr.DEFAULT_MERGE_RULE,
                     help="chunk-window confidence merge for the candidate: min over all windows, or "
                          "cr6 = min over windows that produced fields (needs window evidence in the records)")
     ap.add_argument("--baseline-merge-rule", choices=("min", "cr6"), default=None,
