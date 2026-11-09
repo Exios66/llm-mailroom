@@ -220,7 +220,7 @@ Resolve a document on the REVIEW / RECONSIDER siding. Accepts **JSON** (The-Mail
 | `doc_type`                          | string | No                            | Reroute classification (The-Mailroom REVIEW desk). Alias of `override_doc_type`          |
 | `override_doc_type`                 | string | No                            | Legacy alias for `doc_type`                                                              |
 | `contract_subtype` / `doc_subclass` | string | No                            | Optional subtype overrides (stamped on inbox sidecar for `requeue`)                      |
-| `extracted_data`                    | object | For `complete` if none parked | Human-finished extraction payload. Optional when the parked manifest already has fields. |
+| `extracted_data`                    | object | For `complete` if none parked | Human-finished extraction payload. **Legacy `disposition=complete` with NO `resolution` only** — there it replaces the parked fields. With any `resolution` it is refused with `400`: post edits as `field_corrections` instead. |
 
 **Dispositions → bins:**
 
@@ -249,7 +249,7 @@ Resolve a document on the REVIEW / RECONSIDER siding. Accepts **JSON** (The-Mail
 
 * `400`: Invalid decision/disposition, or resume/complete on non-review stage
 * `404`: Manifest or source file not found
-* `409`: Approve/resume without classification (set `doc_type` / `override_doc_type` or requeue)
+* `409`: Another resolve for this document is already in flight, or approve/resume without classification (set `doc_type` / `override_doc_type` or requeue)
 
 Use the visualizer REVIEW desk buttons (Approve / Reject / Requeue + type/subtype selects) rather than hand-typed curls. The visualizer proxies through `MAILROOM_PIPELINE_URL` → this endpoint. Producer try-it-out: `http://localhost:8000/docs`.
 
