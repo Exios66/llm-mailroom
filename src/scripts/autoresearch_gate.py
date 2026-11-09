@@ -7,8 +7,9 @@ experiment gate, the display contract, the changelog check) so a change that
 breaks core functionality is discarded whatever its score, then runs the
 objective's own eval and decides:
 
-- ``crash``       the eval did not run (exit code other than 0 or 2, or no SCORE line
-                  for a scored objective)
+- ``crash``       the eval did not run (exit code other than 0 or 2, an eval command that
+                  cannot be formatted, or no SCORE line for a scored objective; with
+                  ``require_delta_ci``, no ΔU point estimate for the first candidate)
 - ``guard_fail``  a core guard failed, the eval printed a ``GUARD … FAIL`` /
                   ``GATE … FAIL`` line or exited 2, or the required ΔU interval
                   did not exclude 0
@@ -16,9 +17,9 @@ objective's own eval and decides:
 - ``keep``        every guard passed and the score beats the best kept score by
                   ``min_delta`` in the objective's direction
 - ``discard``     every guard passed but the score did not clear ``min_delta``
-- ``harness``     the eval reported non-real records (``records: … modes=[…]``);
-                  the result is recorded but is never evidence and never seeds
-                  ``best_kept``
+- ``harness``     the eval reported non-real records (``records: … modes=[…]``), or, for an
+                  objective that reads ``{records}``, no modes at all; the result is recorded
+                  but is never evidence and never seeds ``best_kept``
 - ``pass``        guards-only objective with every guard passing
 
 Each result is appended to ``<state-dir>/<objective>.jsonl`` (line 0 is the
@@ -119,6 +120,21 @@ def best_kept(rows: list[dict], direction: str) -> float | None:
     return max(scores) if direction == "higher" else min(scores)
 
 
+def _records_not_evidence(objective: dict, parsed: dict) -> list[str]:
+    """Reasons the records behind this result are not evidence; empty when they are.
+
+    An objective that reads no records (``scale``: its eval has no ``{records}`` placeholder)
+    has no provenance to report, so a missing modes line is fine there.
+    """
+    modes = parsed.get("modes")
+    if modes and any(m != "real" for m in modes):
+        return [f"records modes {','.join(modes)} are not evidence (not real)"]
+    if not modes and "{records}" in str(objective.get("eval", "")):
+        # A missing or empty modes list leaves the provenance unknown, which is not "real".
+        return ["records modes not reported, so provenance is unknown (not evidence)"]
+    return []
+
+
 def decide(objective: dict, core: dict, eval_code: int, parsed: dict, best: float | None) -> tuple[str, list[str]]:
     reasons = [f"core:{n}" for n, r in core.items() if not r["ok"]]
     if reasons:
@@ -129,6 +145,10 @@ def decide(objective: dict, core: dict, eval_code: int, parsed: dict, best: floa
     if parsed["fails"] or eval_code == 2:
         return "guard_fail", [f"eval:{f}" for f in parsed["fails"]] or ["eval exit 2"]
     if direction == "guards_only":
+        # A guards-only pass is still a result the operator keeps, so mock/synthetic records must
+        # not reach it (the review objective's eval reads no records and is unaffected).
+        if harness := _records_not_evidence(objective, parsed):
+            return "harness", harness
         return "pass", []
     if parsed["score"] is None:
         return "crash", ["no SCORE line"]
@@ -137,14 +157,17 @@ def decide(objective: dict, core: dict, eval_code: int, parsed: dict, best: floa
         ci = parsed["delta_ci"]
         if ci is None or ci[0] <= 0:
             return "guard_fail", [f"delta U CI {ci} does not exclude 0"]
-    modes = parsed.get("modes")
-    if modes and any(m != "real" for m in modes):
+    if harness := _records_not_evidence(objective, parsed):
         # Realer-than-real check first: mock/synthetic records are never evidence,
         # so they must not baseline, keep, or seed best_kept (objectives.yaml not_evidence).
-        return "harness", [f"records modes {','.join(modes)} are not evidence (not real)"]
+        return "harness", harness
     if best is None:
         delta = parsed.get("delta")
-        if objective.get("require_delta_ci") and delta is not None and delta < min_delta:
+        if objective.get("require_delta_ci") and delta is None:
+            # Without a parseable point estimate min_delta cannot be applied, and an unchecked
+            # first candidate would become the bar every later iteration must beat.
+            return "crash", ["no DELTA U point estimate to check against min_delta"]
+        if objective.get("require_delta_ci") and delta < min_delta:
             # The first candidate becomes the bar later iterations must beat, so a
             # negligible-but-significant first gain must not be accepted as a baseline.
             return "discard", [f"first candidate delta {delta:+.4f} < min_delta {min_delta:.4f}"]
@@ -219,14 +242,21 @@ def main(argv: list[str] | None = None) -> int:
     for name, r in core.items():
         print(f"CORE {name} {'PASS' if r['ok'] else 'FAIL'} (exit {r['exit']})")
 
-    eval_cmd = objective["eval"].format(
-        candidate=shlex.quote(args.candidate),
-        records=shlex.quote(args.records),
-        baseline=shlex.quote(args.baseline),
-    )
-    eval_code, eval_out = (0, "") if not all(r["ok"] for r in core.values()) else _run(eval_cmd, args.timeout)
+    eval_code, eval_out = 0, ""
     if all(r["ok"] for r in core.values()):
-        print(f"[eval] {eval_cmd}\n" + "\n".join(eval_out.strip().splitlines()[-15:]))
+        # Format only when the eval will run: a failed core guard is the result whatever the command is.
+        try:
+            eval_cmd = objective["eval"].format(
+                candidate=shlex.quote(args.candidate),
+                records=shlex.quote(args.records),
+                baseline=shlex.quote(args.baseline),
+            )
+        except (KeyError, IndexError, ValueError) as exc:
+            eval_code, eval_out = 1, f"eval command could not be formatted: {exc!r}"
+            print(f"[eval] {eval_out}")
+        else:
+            eval_code, eval_out = _run(eval_cmd, args.timeout)
+            print(f"[eval] {eval_cmd}\n" + "\n".join(eval_out.strip().splitlines()[-15:]))
     parsed = parse_eval(eval_out)
     best = best_kept(rows, objective.get("direction", "higher"))
     status, reasons = decide(objective, core, eval_code, parsed, best)
