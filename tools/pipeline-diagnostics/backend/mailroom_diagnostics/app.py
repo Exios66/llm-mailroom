@@ -76,32 +76,32 @@ def static_available() -> bool:
 
 
 def mount_ui(application: FastAPI) -> None:
-    """Mount the optional screen under ``/diagnostics`` (never blocks startup)."""
-    root = static_root()
-    if (root / "index.html").is_file():
+    """Mount the optional screen under ``/diagnostics``.
 
-        @application.get(MOUNT, include_in_schema=False)
-        async def diagnostics_index() -> FileResponse:
+    Routes are registered unconditionally and resolve the build directory per
+    request, so a build created while the app is running is served without a
+    restart. A missing index keeps the build-instructions page (and the JSON
+    API) usable.
+    """
+
+    @application.get(MOUNT, include_in_schema=False)
+    async def diagnostics_index():
+        root = static_root()
+        if (root / "index.html").is_file():
             return FileResponse(root / "index.html")
+        return HTMLResponse(_PLACEHOLDER)
 
-        @application.get(f"{MOUNT}/{{path:path}}", include_in_schema=False)
-        async def diagnostics_path(path: str) -> FileResponse:
-            candidate = (root / path).resolve()
-            resolved_root = root.resolve()
-            if candidate.is_file() and resolved_root in candidate.parents:
-                return FileResponse(candidate)
-            # SPA fallback is restricted to this mount; unknown paths are not
-            # echoed back and never escape the static root.
-            return FileResponse(resolved_root / "index.html")
-    else:
-
-        @application.get(MOUNT, include_in_schema=False)
-        async def diagnostics_missing() -> HTMLResponse:
-            return HTMLResponse(_PLACEHOLDER)
-
-        @application.get(f"{MOUNT}/{{path:path}}", include_in_schema=False)
-        async def diagnostics_missing_path(path: str) -> HTMLResponse:
+    @application.get(f"{MOUNT}/{{path:path}}", include_in_schema=False)
+    async def diagnostics_path(path: str):
+        root = static_root().resolve()
+        if not (root / "index.html").is_file():
             return HTMLResponse(_PLACEHOLDER, status_code=404)
+        candidate = (root / path).resolve()
+        if candidate.is_file() and root in candidate.parents:
+            return FileResponse(candidate)
+        # SPA fallback is restricted to this mount; unknown paths are not
+        # echoed back and never escape the static root.
+        return FileResponse(root / "index.html")
 
 
 async def _diagnostics_error(_request: Request, exc: DiagnosticsError) -> JSONResponse:
