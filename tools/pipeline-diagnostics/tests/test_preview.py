@@ -94,7 +94,9 @@ def test_staleness_tracks_the_full_seam_fingerprint(tmp_path, workspace, valid_b
 
 def test_watch_debounces_a_source_change_into_one_rebuild(tmp_path, workspace, valid_bytes):
     base = tmp_path / "preview"
-    fingerprints = iter([("a",), ("a",), ("a",), ("b",), ("b",), ("b",)])
+    fingerprints = iter(
+        [(("a", "1"),), (("a", "1"),), (("a", "1"),), (("b", "2"),), (("b", "2"),), (("b", "2"),)]
+    )
     clock = iter([0.0, 1.0])
     refreshes = []
 
@@ -127,6 +129,31 @@ def test_fingerprint_only_uses_declared_seams(tmp_path, workspace):
     assert seam_fingerprint(workspace) != before
 
 
+def test_fingerprint_detects_content_change_with_preserved_mtime(tmp_path, workspace):
+    taxonomy = workspace / "src/config/taxonomy.yaml"
+    before = seam_fingerprint(workspace)
+    stat = taxonomy.stat()
+    taxonomy.write_text("confidence: {high: 0.99}\n", encoding="utf-8")
+    os.utime(taxonomy, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    assert seam_fingerprint(workspace) != before
+
+
+def test_input_change_during_build_keeps_the_last_valid_preview(
+    tmp_path, workspace, valid_bytes
+):
+    base = tmp_path / "preview"
+    good = refresh(workspace, base, builder=lambda path: valid_bytes)
+
+    def mutating_build(path: Path) -> bytes:
+        (path / "src/config/taxonomy.yaml").write_text("confidence: {high: 0.99}\n", encoding="utf-8")
+        return valid_bytes
+
+    state = refresh(workspace, base, builder=mutating_build)
+    assert state.error["code"] == "input-changed"
+    assert state.preview == good.preview
+    assert state.last_good == good.last_good
+
+
 def test_fresh_process_builds_a_valid_workspace_preview(tmp_path):
     state = refresh(REPO_ROOT, tmp_path / "preview")
     assert state.error is None, state.error
@@ -136,6 +163,14 @@ def test_fresh_process_builds_a_valid_workspace_preview(tmp_path):
     assert provenance["git_sha"]
     assert set(provenance["hashes"]) >= {"topology", "routing", "taxonomy", "effective_policy"}
     assert state.stale is False
+
+
+def test_watch_json_is_rejected_instead_of_empty_stdout(run_cli, tmp_path):
+    proc = run_cli("preview", "--watch", "--json", "--base", str(tmp_path / "preview"))
+    assert proc.returncode == 2
+    payload = json.loads(proc.stdout)
+    assert payload["error"]["code"] == "invalid-arguments"
+    assert "one-shot preview" in payload["error"]["message"]
 
 
 def test_cli_preview_prints_one_json_document(run_cli, tmp_path):
