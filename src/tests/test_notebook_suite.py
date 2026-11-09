@@ -4,9 +4,10 @@ Enforces the four duties promised in ``notebooks/PLAN.md`` (§Guards):
 
 1. every planned notebook exists with title + honesty-label cells, and the
    shared bench module imports network-free;
-2. headless re-execution of every notebook via ``nbclient`` from BOTH
-   PLAN cwds (repo root and notebooks/) regenerates cleanly — cell error
-   status must match the committed stored outputs (zero errors both times);
+2. headless re-execution of every notebook via ``nbclient`` from the repo
+   root, plus one representative from notebooks/ (all notebooks share one
+   cwd bootstrap, which a static guard pins), regenerates cleanly — cell
+   error status must match the committed stored outputs (zero errors);
 3. ``pipeline_lab`` unit pins: band math matches the ``graph.routing``
    literals, sandbox teardown restores env, step-log capture reports node
    names in graph order;
@@ -197,7 +198,7 @@ def test_lab_module_has_no_module_scope_network_imports() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Duty 2 — headless re-execution from BOTH PLAN cwds (the heavy one, last)
+# Duty 2 — headless re-execution from the PLAN cwds (the heavy one, last)
 # ---------------------------------------------------------------------------
 
 
@@ -236,14 +237,56 @@ def _stored_error_count(fname: str) -> int:
     )
 
 
+# Every notebook locates the repo through ONE shared bootstrap: ``ROOT = Path.cwd()`` then walk
+# up to the directory holding ``pyproject.toml``. No other cell, and no ``notebooks/*.py`` lab
+# module, reads the working directory (``test_cwd_dependence_is_confined_to_the_root_bootstrap``
+# enforces that). So the second PLAN cwd exercises the same code in every notebook, and running
+# it for all 15 notebooks only re-executes them (~80 s) without testing anything new. Each
+# notebook runs from the repo root; the ``notebooks/`` start is run for this one cheap
+# representative, whose bootstrap is the canonical form, to prove the walk-up works.
+CWD_REPRESENTATIVE = "00_pipeline_anatomy.ipynb"
+
+_REEXEC_CASES = [(fname, "repo_root") for fname in sorted(PLANNED)] + [
+    (CWD_REPRESENTATIVE, "notebooks_dir")
+]
+
+_CWD_READERS = ("Path.cwd()", "os.getcwd", "chdir")
+_ROOT_WALK_UP = (
+    "ROOT = Path.cwd()",
+    'while ROOT != ROOT.parent and not (ROOT / "pyproject.toml").exists():',
+    "ROOT = ROOT.parent",
+)
+
+
 @pytest.mark.parametrize("fname", sorted(PLANNED))
-@pytest.mark.parametrize("cwd_name", ["repo_root", "notebooks_dir"])
+def test_cwd_dependence_is_confined_to_the_root_bootstrap(fname: str) -> None:
+    """The justification for running the ``notebooks/`` cwd only once: in every notebook the
+    working directory is read only by cells that walk up to the repo root first."""
+    nb = json.loads((NB_DIR / fname).read_text())
+    readers = [
+        "".join(c["source"])
+        for c in nb["cells"]
+        if c["cell_type"] == "code" and any(m in "".join(c["source"]) for m in _CWD_READERS)
+    ]
+    assert readers, f"{fname}: no cell finds the repo root; cwd handling changed, re-audit"
+    for src in readers:
+        for line in _ROOT_WALK_UP:
+            assert line in src, f"{fname}: cwd read outside the root walk-up bootstrap ({line!r} missing)"
+        assert "Path.cwd()" in src and "os.getcwd" not in src and "chdir" not in src, fname
+    for module in NB_DIR.glob("*.py"):
+        text = module.read_text()
+        if module.name == "_build_extension_notebooks.py":
+            continue  # generator script, never imported or executed by a notebook
+        assert not any(m in text for m in _CWD_READERS), f"{module.name} reads the working directory"
+
+
+@pytest.mark.parametrize("fname,cwd_name", _REEXEC_CASES)
 def test_headless_reexecution_matches_stored_outputs(
     fname: str, cwd_name: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """PLAN duty 2 verbatim: headless execution of every notebook via
-    ``nbclient`` from repo root AND notebooks/ itself, with stored outputs
-    regenerating cleanly (cell error status compared, not pixel output)."""
+    """PLAN duty 2: headless execution of every notebook via ``nbclient`` from the repo root,
+    and from ``notebooks/`` itself for the cwd representative (see ``CWD_REPRESENTATIVE``),
+    with stored outputs regenerating cleanly (cell error status compared, not pixel output)."""
     monkeypatch.chdir(REPO_ROOT if cwd_name == "repo_root" else NB_DIR)
 
     fresh_errors = _execute_nb(NB_DIR / fname, Path.cwd())
