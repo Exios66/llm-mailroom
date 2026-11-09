@@ -18,9 +18,18 @@ HUB-053; re-verify before trusting on schema changes):
 - ``content_sha256`` is sha256 of the canonical ``doc_text`` UTF-8 bytes —
   the load-time integrity proof (verified 2979/2979 exact match (v9 train)).
 - The Dataset Viewer ``/filter`` endpoint has been intermittently broken
-  server-side (422/500/502); the robust fetch is ``/parquet`` (2 requests
-  for a whole split) with ``/rows`` pagination (``length<=100``) as the
-  fallback ladder.
+  server-side (422/500/502); for an UNPINNED load the robust fetch is
+  ``/parquet`` (every shard of the split is downloaded and concatenated)
+  with ``/rows`` pagination (``length<=100``) as the fallback ladder.
+- The Viewer always serves the dataset's CURRENT revision: a ``revision=``
+  query parameter on ``/parquet`` or ``/rows`` is not a pin. A PINNED load
+  (``revision`` set) therefore never touches the Viewer: the revision is
+  resolved to a commit sha through the Hub API
+  (``/api/datasets/{id}/revision/{rev}``), the config's data files are
+  selected from that revision's own ``configs`` card and file listing, and
+  every shard is fetched from ``/datasets/{id}/resolve/{sha}/...``. If any
+  step cannot be enforced the load FAILS; it never falls back to Viewer data
+  while labelling it as the pin.
 - The Hub single-repo API is ``https://huggingface.co/api/datasets/{id}``
   with a LITERAL slash (URL-encoding the slash is a 400); the
   ``?author=&search=&expand[]=sha`` listing is the fallback.
@@ -29,9 +38,8 @@ HUB-053; re-verify before trusting on schema changes):
 
 ``datasets.load_dataset`` is NOT a dependency of this workspace — the
 loader is a stdlib + httpx + pandas ladder with an on-disk parquet cache
-(``<base>/hf_cache/``); when the ``datasets`` library IS installed it is
-preferred for pinned-revision loads (``revision=`` is only expressible
-there and on the ``?revision=`` viewer params).
+(``<base>/hf_cache/``); pinned loads are keyed by the resolved commit sha,
+so a moved tag can never be served from a stale cache entry.
 """
 
 from __future__ import annotations
@@ -41,6 +49,7 @@ import io
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -154,35 +163,182 @@ def _cached_get_bytes(url: str, *, label: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Parquet ladder
+# Pinned-revision ladder (Hub API + resolve/<sha>; the only revision-honoring path)
+
+_DATA_EXTS = (".parquet", ".jsonl")
+_OTHER_SPLITS = ("test", "validation", "val", "dev")
 
 
-def parquet_urls(
-    repo_id: str = FULL_CORPUS_ID, *, split: str = "train", revision: str | None = None
-) -> dict[str, str]:
-    """Viewer ``/parquet`` listing: config name -> parquet URL for one split.
-    ``revision`` is passed through when the viewer supports it."""
-    params: dict[str, Any] = {"dataset": repo_id}
-    if revision:
-        params["revision"] = revision
-    listing = _http_get_json(f"{VIEWER_BASE}/parquet?" + _urlencode(params))
-    out: dict[str, str] = {}
-    for entry in listing.get("parquet_files") or []:
-        if entry.get("split") == split and entry.get("url"):
-            config = str(entry.get("config"))
-            if config in out:
-                # A sharded config would lose rows here; keep the first shard
-                # visible and say so instead of silently scoring partial data
-                # (#195).
-                _log.warning(
-                    "sharded config %r in %s: /parquet ladder does not merge "
-                    "shards — the ladder scores the first shard only; switch "
-                    "/rows pagination for this corpus",
-                    config,
-                    repo_id,
-                )
+def resolve_revision(repo_id: str, revision: str) -> dict[str, Any]:
+    """Resolve a tag / branch / sha to ``{"sha", "siblings", "configs"}``.
+
+    Raises RuntimeError when the Hub cannot resolve the revision: a pin that
+    cannot be resolved cannot be enforced, so the caller must fail the load.
+    """
+    from urllib.parse import quote
+
+    url = f"{HUB_BASE}/api/datasets/{repo_id}/revision/{quote(revision, safe='')}"
+    try:
+        info = _http_get_json(url)
+    except Exception as exc:
+        raise RuntimeError(
+            f"cannot resolve revision {revision!r} of {repo_id} "
+            f"({type(exc).__name__}: {exc}) — refusing to load unpinned data as the pin"
+        ) from exc
+    sha = info.get("sha") if isinstance(info, dict) else None
+    if not sha:
+        raise RuntimeError(f"Hub returned no commit sha for {repo_id}@{revision!r}")
+    return {
+        "sha": str(sha),
+        "siblings": [
+            str(s.get("rfilename")) for s in (info.get("siblings") or []) if s.get("rfilename")
+        ],
+        "configs": (info.get("cardData") or {}).get("configs"),
+    }
+
+
+def _glob_regex(pattern: str) -> re.Pattern[str]:
+    out: list[str] = []
+    i = 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out) + r"\Z")
+
+
+def revision_data_files(info: dict[str, Any], config: str, split: str) -> list[str]:
+    """Data files of one config/split at the resolved revision, in shard order.
+
+    Uses the revision's own ``configs`` card (``data_files`` globs) when it
+    declares the config; a repo without a card falls back to the implicit
+    ``default`` config (``<split>.*`` / ``<split>-NNNNN-of-NNNNN.*`` files, or
+    the lone data file for ``train``). Returns [] when nothing matches.
+    """
+    siblings: list[str] = info["siblings"]
+    data_siblings = [f for f in siblings if f.lower().endswith(_DATA_EXTS)]
+    configs = info.get("configs")
+    if configs:
+        for entry in configs:
+            if str(entry.get("config_name") or "default") != config:
                 continue
-            out[config] = str(entry["url"])
+            files = entry.get("data_files")
+            if isinstance(files, str):
+                files = [{"split": "train", "path": files}]
+            matched: list[str] = []
+            for item in files or []:
+                if isinstance(item, str):
+                    item = {"split": "train", "path": item}
+                if str(item.get("split")) != split:
+                    continue
+                paths = item.get("path")
+                for glob in [paths] if isinstance(paths, str) else list(paths or []):
+                    rx = _glob_regex(str(glob))
+                    matched.extend(f for f in data_siblings if rx.match(f))
+            return sorted(set(matched))
+        return []
+    if config != "default":
+        return []
+    named = [
+        f for f in data_siblings
+        if re.match(rf"{re.escape(split)}([-_.]|$)", Path(f).name.lower())
+        or re.search(rf"(^|/){re.escape(split)}/", f.lower())
+    ]
+    if named:
+        return sorted(named)
+    if split == "train":
+        rest = [
+            f for f in data_siblings
+            if not any(re.match(rf"{o}([-_.]|$)", Path(f).name.lower()) for o in _OTHER_SPLITS)
+        ]
+        return sorted(rest)
+    return []
+
+
+def _read_data_file(raw: bytes, path: str) -> pd.DataFrame:
+    if path.lower().endswith(".jsonl"):
+        return pd.read_json(io.BytesIO(raw), lines=True)
+    return pd.read_parquet(io.BytesIO(raw))
+
+
+def load_revision_frame(
+    repo_id: str,
+    config: str,
+    *,
+    split: str,
+    revision: str,
+    max_rows: int | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """One config's split at EXACTLY ``revision``: every shard, concatenated.
+
+    Raises RuntimeError when the revision cannot be resolved or the config
+    has no data files there. ``max_rows`` stops fetching further shards once
+    that many rows are held (the frame is then cut to ``max_rows``).
+    """
+    info = resolve_revision(repo_id, revision)
+    sha = info["sha"]
+    files = revision_data_files(info, config, split)
+    if not files:
+        raise RuntimeError(
+            f"no data files for {repo_id}/{config}[{split}] at revision "
+            f"{revision!r} ({sha[:12]}): the revision's configs card and file "
+            f"listing did not declare it — refusing to fall back to the Viewer"
+        )
+    from urllib.parse import quote
+
+    frames: list[pd.DataFrame] = []
+    urls: list[str] = []
+    held = 0
+    for path in files:
+        url = f"{HUB_BASE}/datasets/{repo_id}/resolve/{sha}/{quote(path)}"
+        raw = _cached_get_bytes(url, label=f"{repo_id.replace('/', '__')}_{config}_{split}")
+        part = _read_data_file(raw, path)
+        frames.append(part)
+        urls.append(url)
+        held += len(part)
+        if max_rows is not None and held >= max_rows:
+            break
+    frame = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
+    if max_rows is not None:
+        frame = frame.head(max_rows).reset_index(drop=True)
+    provenance = {
+        "revision_resolved": sha,
+        "strategy": "hub_resolve",
+        "source_url": urls[0],
+        "source_urls": urls,
+        "shards": len(urls),
+        "shards_total": len(files),
+    }
+    return frame, provenance
+
+
+# ---------------------------------------------------------------------------
+# Viewer parquet ladder (UNPINNED loads only: the Viewer serves the current
+# revision and cannot be pinned)
+
+
+def parquet_urls(repo_id: str = FULL_CORPUS_ID, *, split: str = "train") -> dict[str, list[str]]:
+    """Viewer ``/parquet`` listing: config name -> ALL shard URLs of one split
+    (listing order). The Viewer serves the current revision only."""
+    listing = _http_get_json(f"{VIEWER_BASE}/parquet?" + _urlencode({"dataset": repo_id}))
+    out: dict[str, list[str]] = {}
+    for entry in sorted(
+        (e for e in listing.get("parquet_files") or [] if e.get("split") == split and e.get("url")),
+        key=lambda e: str(e.get("filename") or e.get("url")),
+    ):
+        out.setdefault(str(entry.get("config")), []).append(str(entry["url"]))
     if not out:
         raise RuntimeError(f"/parquet listing empty for {repo_id} split={split}")
     return out
@@ -200,33 +356,63 @@ def load_config_frame(
     *,
     split: str = "train",
     revision: str | None = None,
+    max_rows: int | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """One config's split as a DataFrame: /parquet download (cached) with the
-    /rows pagination ladder as fallback. Returns (frame, provenance)."""
+    """One config's split as a DataFrame, ALL shards concatenated.
+
+    ``revision`` set: the data is fetched from exactly that revision through
+    the Hub (``load_revision_frame``); any failure to enforce it raises — the
+    Viewer is never used, because it cannot honor a pin. ``revision=None``:
+    Viewer ``/parquet`` download (cached) with the ``/rows`` pagination ladder
+    as fallback, and the provenance says ``revision: None``. Returns
+    (frame, provenance).
+    """
     provenance: dict[str, Any] = {
         "dataset": repo_id,
         "config": config,
         "split": split,
         "revision": revision,
+        "revision_resolved": None,
         "strategy": None,
         "fetched_at": _now(),
     }
+    if revision:
+        frame, extra = load_revision_frame(
+            repo_id, config, split=split, revision=revision, max_rows=max_rows
+        )
+        provenance.update(extra)
+        provenance["num_rows"] = int(len(frame))
+        return frame, provenance
     try:
-        urls = parquet_urls(repo_id, split=split, revision=revision)
-        url = urls.get(config)
-        if url is None:
+        urls = parquet_urls(repo_id, split=split)
+        shard_urls = urls.get(config)
+        if not shard_urls:
             raise RuntimeError(f"config {config!r} not in /parquet listing: {sorted(urls)}")
-        raw = _cached_get_bytes(url, label=f"{repo_id.replace('/', '__')}_{config}_{split}")
-        frame = pd.read_parquet(io.BytesIO(raw))
+        parts: list[pd.DataFrame] = []
+        held = 0
+        for url in shard_urls:
+            raw = _cached_get_bytes(url, label=f"{repo_id.replace('/', '__')}_{config}_{split}")
+            parts.append(pd.read_parquet(io.BytesIO(raw)))
+            held += len(parts[-1])
+            if max_rows is not None and held >= max_rows:
+                break
+        frame = pd.concat(parts, ignore_index=True) if len(parts) > 1 else parts[0]
+        if max_rows is not None:
+            frame = frame.head(max_rows).reset_index(drop=True)
         provenance["strategy"] = "parquet"
-        provenance["source_url"] = url
+        provenance["source_url"] = shard_urls[0]
+        provenance["source_urls"] = shard_urls[: len(parts)]
+        provenance["shards"] = len(parts)
+        provenance["shards_total"] = len(shard_urls)
     except Exception as parquet_error:
-        frame = _rows_ladder(repo_id, config, split=split, revision=revision)
+        frame = _rows_ladder(repo_id, config, split=split, revision=None)
         if frame.empty:
             raise RuntimeError(
                 f"cannot load {repo_id}/{config}[{split}]: parquet failed "
                 f"({type(parquet_error).__name__}: {parquet_error}) and /rows returned nothing"
             ) from parquet_error
+        if max_rows is not None:
+            frame = frame.head(max_rows).reset_index(drop=True)
         provenance["strategy"] = "rows_pagination"
     provenance["num_rows"] = int(len(frame))
     return frame, provenance
@@ -235,11 +421,14 @@ def load_config_frame(
 def _rows_ladder(
     repo_id: str, config: str, *, split: str, revision: str | None, page: int = 100
 ) -> pd.DataFrame:
-    """Viewer ``/rows`` pagination fallback (transient-safe: 3 attempts per
-    page; stops on a short page or num_rows_total)."""
-    params: dict[str, Any] = {"dataset": repo_id, "config": config, "split": split}
+    """Viewer ``/rows`` pagination fallback for UNPINNED loads (transient-safe:
+    3 attempts per page; stops on a short page or num_rows_total). Raises
+    ValueError for a pinned ``revision``: the Viewer cannot enforce one."""
     if revision:
-        params["revision"] = revision
+        # The Viewer cannot honor a pin (it serves the current revision):
+        # refuse instead of returning unpinned rows under a pinned label.
+        raise ValueError("the Viewer /rows ladder cannot enforce a pinned revision")
+    params: dict[str, Any] = {"dataset": repo_id, "config": config, "split": split}
     rows: list[dict] = []
     offset = 0
     known_total: int | None = None
@@ -315,6 +504,7 @@ def load_corpus(
         "dataset": repo_id,
         "split": split,
         "revision_requested": revision,
+        "revision_resolved": gt_prov.get("revision_resolved"),
         "hub_sha_tip": dataset_sha(repo_id),
         "ground_truth": gt_prov,
         "fetched_at": _now(),
@@ -322,22 +512,54 @@ def load_corpus(
     hub_tip = provenance["hub_sha_tip"]
     if hub_tip is None:
         provenance["hub_sha_tip_unavailable"] = True
-    elif revision and hub_tip != revision:
+    elif revision and hub_tip != (gt_prov.get("revision_resolved") or revision):
+        # Compare against the RESOLVED commit sha: a tag pin ("v9.1") never
+        # equals a sha, so comparing the raw pin would always report drift.
+        pinned_sha = gt_prov.get("revision_resolved") or revision
         _log.warning(
-            "hub tip %s differs from the requested pinned revision %s — the "
-            "dataset moved upstream; this load stays on the pin, but the next "
-            "publish roll will re-pin (provenance records both)",
+            "hub tip %s differs from the requested pinned revision %s (%s) — "
+            "the dataset moved upstream; this load stays on the pin, but the "
+            "next publish roll will re-pin (provenance records both)",
             hub_tip,
             revision,
+            pinned_sha,
         )
-        provenance["hub_tip_drift"] = {"tip": hub_tip, "pinned": revision}
+        provenance["hub_tip_drift"] = {"tip": hub_tip, "pinned": pinned_sha}
     if not join:
         return gt, provenance
     blind, blind_prov = load_config_frame(repo_id, BLIND_CONFIG, split=split, revision=revision)
     provenance["default"] = blind_prov
+    if gt_prov.get("revision_resolved") != blind_prov.get("revision_resolved"):
+        # A moving tag/branch resolved to two commits between the two config
+        # loads: joining them would mix revisions under one pin.
+        raise RuntimeError(
+            f"revision {revision!r} of {repo_id} resolved to different commits for "
+            f"{GT_CONFIG} ({gt_prov.get('revision_resolved')}) and {BLIND_CONFIG} "
+            f"({blind_prov.get('revision_resolved')}) — refusing to join mixed revisions; "
+            f"pin a commit sha"
+        )
     merged = gt.merge(
         blind[[JOIN_KEY, "doc_text"]], on=JOIN_KEY, how="left", validate="one_to_one"
     )
+    unmatched = int((~gt[JOIN_KEY].isin(blind[JOIN_KEY])).sum())
+    provenance["unmatched_text"] = unmatched
+    if unmatched:
+        # The left join leaves doc_text null for these rows and the integrity
+        # check below only counts rows WITH text, so without this they vanish
+        # from every report (#195).
+        _log.warning(
+            "%d of %d %s rows in %s[%s@%s] have no %s row with a matching "
+            "%s — their doc_text is null and they are excluded from the "
+            "content_sha256 integrity check",
+            unmatched,
+            len(gt),
+            GT_CONFIG,
+            repo_id,
+            split,
+            revision,
+            BLIND_CONFIG,
+            JOIN_KEY,
+        )
     if verify and "doc_text" in merged.columns:
         texts = merged["doc_text"].fillna("").astype(str)
         expected = merged.get("content_sha256")
