@@ -22,3 +22,6 @@ def test_stress_harness_smoke(tmp_path):
     assert "GATE db_failed_ops PASS" in out.stdout
     # exit code 2 is allowed above (a real finding), but a crashed or timed-out worker is not
     assert "GATE scenario_error PASS" in out.stdout
+    # integrity findings are allowed (exit 2), but run_pipeline raising on every document is not
+    raised = next(l.split()[1] for l in lines if l.startswith("throughput.raised@1 "))
+    assert int(raised) < 4, f"all 4 documents raised in run_pipeline:\n{out.stdout[-1500:]}"
