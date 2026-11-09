@@ -66,6 +66,24 @@ def test_failed_chunk_count_is_copied_from_the_agent(ctx):
     assert not any("failed_chunks" in gap for gap in sw.KNOWN_GAPS)
 
 
+def test_window_evidence_is_copied_from_the_agent_and_absent_when_unchunked(ctx):
+    cap = sw._Capture()
+    cap.agents = [SimpleNamespace(
+        _last_n_chunks=2, _last_failed_chunks=0,
+        _last_window_confidences=[0.9, 0.2], _last_window_has_fields=[True, False],
+    )]
+    step = sw.Step({}, {}, 0.0, 0, 0, 0.0, False, 0, cap)
+    att = sw._extraction_attempt(_doc(), 1, "contract", step, "text", {})
+    assert (att.window_confidences, att.window_has_fields) == ([0.9, 0.2], [True, False])
+    single = sw._Capture()
+    single.agents = [SimpleNamespace(
+        _last_n_chunks=1, _last_window_confidences=[0.9], _last_window_has_fields=[True],
+    )]
+    step = sw.Step({}, {}, 0.0, 0, 0, 0.0, False, 0, single)
+    att = sw._extraction_attempt(_doc(), 1, "contract", step, "text", {})
+    assert att.window_confidences is None and att.window_has_fields is None
+
+
 def test_failed_chunks_default_to_zero_for_an_unchunked_extraction(ctx, mocked):
     rec = sw.sweep_document(_doc(), ctx)
     assert {e.failed_chunks for e in rec.extraction} == {0}
