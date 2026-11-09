@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from . import __version__
+from .provenance import workspace_hashes
 from .models import (
     SUPPORTED_CONTRACT_MAJOR,
     DiagnosticsError,
@@ -62,6 +63,7 @@ def load_artifact(path: Path) -> Snapshot:
             pipeline_version=pipeline_version if isinstance(pipeline_version, str) else None,
             artifact_sha256=hashlib.sha256(raw).hexdigest(),
             artifact_bytes=len(raw),
+            config_source="artifact",
         ),
         graph=payload,
         graph_hash=graph_hash(payload),
@@ -74,7 +76,10 @@ def build_workspace_snapshot() -> Snapshot:
     from graph.contract import graph_section
 
     payload = _validated_graph(graph_section())
-    git_sha, git_dirty = _git_state(_repo_root())
+    repository = _repo_root()
+    thresholds = _workspace_thresholds()
+    hashes, missing = workspace_hashes(repository, thresholds)
+    git_sha, git_dirty = _git_state(repository)
     return Snapshot(
         tool_version=__version__,
         provenance=Provenance(
@@ -83,10 +88,13 @@ def build_workspace_snapshot() -> Snapshot:
             git_sha=git_sha,
             git_dirty=git_dirty,
             tracing="disabled",
+            config_source="workspace-files" if repository is not None else "unavailable",
+            hashes=hashes,
+            missing_inputs=missing,
         ),
         graph=payload,
         graph_hash=graph_hash(payload),
-        thresholds=_workspace_thresholds(),
+        thresholds=thresholds,
     )
 
 
