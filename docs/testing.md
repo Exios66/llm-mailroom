@@ -9,6 +9,7 @@ test. The existing `affected_tests.py` import analyzer supplies the selection;
 
 ```bash
 python -m pip install -e '.[dev]'
+python -m pip install -e tools/pipeline-diagnostics
 # Inspect the plan for a branch, including uncommitted and untracked inputs:
 PYTHONPATH=src python src/scripts/ci_tests.py --base origin/main
 # Run the plan:
