@@ -214,13 +214,30 @@ Resolve a document on the REVIEW / RECONSIDER siding. Accepts **JSON** (The-Mail
 
 | Field                               | Type   | Required                      | Description                                                                              |
 | ----------------------------------- | ------ | ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `decision`                          | string | Yes                           | `approved` or `rejected`                                                                 |
+| `decision`                          | string | Yes, unless `resolution` is sent | `approved` or `rejected`; inferred from a `resolution` (see below)                    |
 | `notes`                             | string | No                            | Reviewer notes                                                                           |
 | `disposition`                       | string | No                            | `resume` (default), `record`, `requeue`, or `complete`                                   |
 | `doc_type`                          | string | No                            | Reroute classification (The-Mailroom REVIEW desk). Alias of `override_doc_type`          |
 | `override_doc_type`                 | string | No                            | Legacy alias for `doc_type`                                                              |
 | `contract_subtype` / `doc_subclass` | string | No                            | Optional subtype overrides (stamped on inbox sidecar for `requeue`)                      |
 | `extracted_data`                    | object | For `complete` if none parked | Human-finished extraction payload. **Legacy `disposition=complete` with NO `resolution` only** — there it replaces the parked fields. With any `resolution` it is refused with `400`: post edits as `field_corrections` instead. |
+| `resolution`                        | string | No                            | The reviewer's decision stated directly: `approve_as_is`, `correct`, `reclassify` or `reject`. Only with `disposition=resume` (default) or `complete`; see [Explicit resolutions](#explicit-resolutions). |
+| `field_corrections`                 | object | For `resolution=correct`      | Field edits merged over the parked fields (a JSON object, or a JSON string in a form field). Refused with every other resolution. |
+| `reject_reason`                     | string | For `resolution=reject`       | One of `not_a_legal_document`, `duplicate`, `unreadable`, `out_of_scope`, `wrong_matter`, `spam`, `other`. Free text goes in `notes`. |
+| `reviewer`                          | string | No                            | Who decided. Falls back to the `X-Reviewer` header, then `human_reviewer`; control characters are stripped and the value is cut at 120 characters. Recorded in `human_label` and as the audit actor. |
+
+#### Explicit resolutions
+
+A request with a `resolution` is checked before anything moves. Any violation below returns `400` with the reason. Without a `resolution` the legacy `decision` + `disposition` mapping applies (`approved` + `complete` is `correct` or `approve_as_is`, `approved` + `resume` re-extracts, `rejected` rejects).
+
+| `resolution`    | Required                                                        | Refused                                                                                   | Effect |
+| --------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------ |
+| `approve_as_is` | Nothing; parked fields pick the archive route                   | `field_corrections`; `reject_reason`; a changed `doc_type` (use `reclassify`); a changed subtype/subclass when fields are parked | Parked fields are validated against the class schema and archived, no specialist LLM call. With no parked fields (a sorter-stage park) it only confirms the class and re-extracts. |
+| `correct`       | Non-empty `field_corrections`                                   | `reject_reason`; a changed `doc_type` or, with parked fields, a changed subtype/subclass (use `reclassify`) | `field_corrections` are merged over the parked fields, validated, and archived with no specialist LLM call. |
+| `reclassify`    | `doc_type` (or `override_doc_type`), `doc_subclass` or `contract_subtype` that changes the class | `field_corrections`; `reject_reason`                                                      | Class override written to the manifest, then fresh extraction under the new class. |
+| `reject`        | `reject_reason`                                                 | `field_corrections`                                                                       | Manifest `FAILED`, file to the failed bin. |
+
+**Decision inference:** `decision` may be left out with a `resolution`: it becomes `rejected` for `reject` and `approved` for the others. An explicit `decision` that contradicts the resolution (`reject` with `approved`, or any other resolution with `rejected`) returns `400`. `extracted_data` is refused with any `resolution` (see the field table). Every accepted resolution is returned and stored as `human_label` (with a snapshot of the model's output taken before the override); `record` and `requeue` write only an audit entry and create no label.
 
 **Dispositions → bins:**
 
