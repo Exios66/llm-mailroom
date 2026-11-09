@@ -67,6 +67,33 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
     return base
 
 
+DEFAULT_MAX_CONCURRENT_DOCS = 4
+
+
+def get_max_concurrent_docs() -> int:
+    """Cap on pipeline runs the watcher executes at once.
+
+    ``MAILROOM_MAX_CONCURRENT_DOCS`` overrides taxonomy.yaml
+    ``watcher.max_concurrent_docs``. A missing, non-integer or non-positive
+    value falls back to the next source and finally to the default (4): a bad
+    value must never disable the cap or stall the watcher at zero workers.
+    """
+    import os
+
+    candidates: list[object] = [os.environ.get("MAILROOM_MAX_CONCURRENT_DOCS")]
+    block = load_config().get("watcher")
+    if isinstance(block, dict):
+        candidates.append(block.get("max_concurrent_docs"))
+    for raw in candidates:
+        try:
+            value = int(str(raw).strip())
+        except (TypeError, ValueError):
+            continue
+        if value >= 1:
+            return value
+    return DEFAULT_MAX_CONCURRENT_DOCS
+
+
 def get_reviewer_config() -> dict:
     """Lane A reviewer mode block from taxonomy.yaml ``reviewer:``.
 

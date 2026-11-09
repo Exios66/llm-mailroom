@@ -34,6 +34,21 @@ REVIEWER_NO_TEXT = "reviewer_no_text"
 REVIEWER_INELIGIBLE_LABEL = "reviewer_ineligible_label"
 REVIEWER_DISAGREEMENT = "reviewer_disagreement"
 REVIEWER_LOW_CONFIDENCE = "reviewer_low_confidence"
+# State-derived causes: every route into ``human_review`` carries at least one of
+# these (or a legacy token above), even in live runs with no ground truth and no
+# Langfuse scores. Mirror new tokens in The-Mailroom ``mailroom_ui/reconsideration.py``.
+TRANSIENT_EXHAUSTED = "transient_exhausted"
+BOSS_CONFLICT = "boss_conflict"
+ARBITER_ESCALATED = "arbiter_escalated"
+CLASS_ARBITER_ESCALATED = "classification_arbiter_escalated"
+UNKNOWN_CLASS = "unknown_class"
+EMPTY_DOCUMENT = "empty_document"
+UNSUPPORTED_EXTRACTION = "unsupported_extraction"
+LOW_EXTRACTION_CONFIDENCE = "low_extraction_confidence"
+JUDGE_INCOMPLETE = "judge_incomplete"
+JUDGE_ERROR = "judge_error"
+RETRIES_EXHAUSTED = "retries_exhausted"
+CHUNK_FAILED = "chunk_failed"
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -56,6 +71,18 @@ CAUSE_LABELS: dict[str, str] = {
         "decision reviewer confidence missing or below the class cutoff, "
         "or no valid cutoff for the class"
     ),
+    TRANSIENT_EXHAUSTED: "provider errors outlasted the transient retry budget",
+    BOSS_CONFLICT: "conflict with the matter record that the boss did not clear",
+    ARBITER_ESCALATED: "arbiter escalated the extraction to a person",
+    CLASS_ARBITER_ESCALATED: "classification arbiter did not accept a class",
+    UNKNOWN_CLASS: "document class is unknown or not extractable",
+    EMPTY_DOCUMENT: "document has no readable text",
+    UNSUPPORTED_EXTRACTION: "no specialist extractor for this class",
+    LOW_EXTRACTION_CONFIDENCE: "extraction confidence below the low band after retries",
+    JUDGE_INCOMPLETE: "judge verdict INCOMPLETE — extraction misses the source",
+    JUDGE_ERROR: "judge verification failed",
+    RETRIES_EXHAUSTED: "confidence retry budget spent without a settled answer",
+    CHUNK_FAILED: "one or more extraction windows failed",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -270,6 +297,184 @@ def _as_float(value: Any) -> Optional[float]:
         return None
 
 
+_ACCEPTED_CLASS_ARBITER = frozenset({"accept_sorter", "accept_reviewer"})
+
+
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _transient_exhausted(data: Mapping[str, Any]) -> bool:
+    """A transient flag still set at park time means the per-node budget ran out.
+
+    Nodes clear ``transient_error`` on success, and routing retries the same
+    node while its counter is within budget, so a set flag here is exhaustion.
+    """
+    return _is_true_flag(data.get("transient_error"))
+
+
+def _failed_chunks(extracted: Mapping[str, Any]) -> int:
+    value = extracted.get("_failed_chunks")
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value)
+    return _as_int(value)
+
+
+def _state_derived_causes(
+    data: Mapping[str, Any], extracted: Mapping[str, Any], known: set[str]
+) -> list[str]:
+    """Causes read from the routing state itself (no ground truth, no scores).
+
+    Routing functions in ``graph/routing.py`` return only a destination, so each
+    park reason is rebuilt here from the same state signals they read. ``known``
+    holds the tokens already collected so retry-exhaustion can build on them.
+    """
+    from pipeline.config import get_confidence_thresholds, is_extractable_doc_type
+
+    out: list[str] = []
+
+    def add(token: str) -> None:
+        if token not in known and token not in out:
+            out.append(token)
+
+    thresholds = get_confidence_thresholds(
+        data.get("doc_type") if isinstance(data.get("doc_type"), str) else None
+    )
+    low = float(thresholds.get("low", 0.70))
+    high = float(thresholds.get("high", 0.95))
+    retry_max = _as_int(thresholds.get("retry_max", 2))
+
+    if _transient_exhausted(data):
+        add(TRANSIENT_EXHAUSTED)
+
+    if "doc_text" in data and not str(data.get("doc_text") or "").strip():
+        add(EMPTY_DOCUMENT)
+
+    doc_type = data.get("doc_type")
+    if "doc_type" in data and not is_extractable_doc_type(
+        doc_type if isinstance(doc_type, str) else None
+    ):
+        add(UNKNOWN_CLASS)
+
+    # Classification budget spent without the sorter (or its reviewer) settling.
+    sorter_conf = _as_float(data.get("classification_confidence"))
+    class_attempts = _as_int(data.get("classification_attempts"))
+    pre_extraction = not data.get("extracted_data") and not _as_int(
+        data.get("extraction_attempts")
+    )
+    reviewer_accepted = data.get("review_route") == "extract" or data.get(
+        "classification_arbiter_decision"
+    ) in _ACCEPTED_CLASS_ARBITER
+    if (
+        pre_extraction
+        and not reviewer_accepted
+        and "classification_attempts" in data
+        and class_attempts > retry_max
+        and (sorter_conf is None or sorter_conf < high)
+        and not _transient_exhausted(data)
+        and UNKNOWN_CLASS not in out
+        and UNKNOWN_CLASS not in known
+    ):
+        add(RETRIES_EXHAUSTED)
+
+    # LLM-lane reviewer (no decision route): the verdict names why it parked.
+    if data.get("review_route") is None:
+        verdict = str(data.get("review_verdict") or "")
+        if verdict == "reviewer_error":
+            add(REVIEWER_UNAVAILABLE)
+        elif verdict == "reviewer_agrees_low":
+            add(REVIEWER_LOW_CONFIDENCE)
+        elif verdict == "reviewer_conflicts":
+            add(REVIEWER_DISAGREEMENT)
+        elif verdict == "escalated":
+            add(REVIEWER_LOW_CONFIDENCE)
+        elif verdict in {"reviewer_overrides", "reviewer_agrees_high"}:
+            if not is_extractable_doc_type(
+                data.get("reviewer_doc_type")
+                if isinstance(data.get("reviewer_doc_type"), str)
+                else None
+            ):
+                add(REVIEWER_INELIGIBLE_LABEL)
+            reviewer_conf = _as_float(data.get("reviewer_confidence"))
+            if reviewer_conf is None or reviewer_conf < high:
+                add(REVIEWER_LOW_CONFIDENCE)
+
+    classification_arbiter = data.get("classification_arbiter_decision")
+    if classification_arbiter and classification_arbiter not in _ACCEPTED_CLASS_ARBITER:
+        add(CLASS_ARBITER_ESCALATED)
+
+    stub = bool(extracted.get("_unsupported")) and all(
+        str(k).startswith("_") or k == "reasoning" for k in extracted
+    )
+    if stub:
+        add(UNSUPPORTED_EXTRACTION)
+
+    # ``review`` is the boss's own "hand it to a person" ruling.
+    if data.get("review_decision") == "review" or (
+        _is_true_flag(data.get("conflict_detected")) and data.get("review_decision") != "approved"
+    ):
+        add(BOSS_CONFLICT)
+
+    if data.get("extraction_guardrail"):
+        add(GUARDRAIL)
+
+    if _failed_chunks(extracted) > 0:
+        add(CHUNK_FAILED)
+
+    attempts = _as_int(data.get("extraction_attempts"))
+    schema_probe = (
+        isinstance(data.get("extracted_data"), dict)
+        and bool(extracted)
+        and not stub
+        and isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        and not extracted.get("_parse_error")
+    )
+    retry_driven = False
+    if schema_probe:
+        try:
+            from observability.scores import validate_extraction
+
+            if validate_extraction(doc_type, dict(extracted)).get("schema_valid") is False:
+                add(SCHEMA_INVALID)
+                retry_driven = attempts > retry_max
+        except Exception:  # noqa: BLE001 - schema probe must never break parking
+            pass
+    if not stub and ("extraction_attempts" in data or data.get("extracted_data")):
+        ext_conf = _as_float(data.get("extraction_confidence"))
+        judged = bool(data.get("judge_verdict")) or _as_int(data.get("judge_pass_count")) > 0
+        unsure = (ext_conf is None or ext_conf < low) and not data.get("judge_source_verified")
+        if unsure and (attempts > retry_max or judged):
+            add(LOW_EXTRACTION_CONFIDENCE)
+            retry_driven = retry_driven or attempts > retry_max
+    if (HOLLOW_EXTRACTION in known or SCHEMA_INVALID in known) and attempts > retry_max:
+        retry_driven = True
+    if retry_driven:
+        add(RETRIES_EXHAUSTED)
+
+    # Lane B budgets.
+    max_passes = _as_int(thresholds.get("judge_max_passes")) or 3
+    judge_verdict = str(data.get("judge_verdict") or "")
+    if judge_verdict in {"partial", "incomplete"} and _as_int(
+        data.get("judge_pass_count")
+    ) >= max_passes:
+        add(RETRIES_EXHAUSTED)
+
+    arbiter = data.get("arbiter_decision")
+    if arbiter and arbiter != "accept_with_caveats":
+        arbiter_max = _as_int(thresholds.get("arbiter_retry_max", 2))
+        if arbiter != "retry_extraction":
+            add(ARBITER_ESCALATED)
+        elif _as_int(data.get("arbiter_retry_count")) > arbiter_max:
+            add(ARBITER_ESCALATED)
+            add(RETRIES_EXHAUSTED)
+
+    return out
+
+
 def collect_review_causes(
     state: Mapping[str, Any] | None = None,
     *,
@@ -328,6 +533,10 @@ def collect_review_causes(
         causes.append(JUDGE_MISS)
     elif upper == "PARTIAL":
         causes.append(JUDGE_PARTIAL)
+    elif upper == "INCOMPLETE":
+        causes.append(JUDGE_INCOMPLETE)
+    elif upper == "JUDGE_ERROR":
+        causes.append(JUDGE_ERROR)
 
     if _is_falsey_flag(scores.get("schema_valid")):
         causes.append(SCHEMA_INVALID)
@@ -340,7 +549,9 @@ def collect_review_causes(
             causes.append(PARSE_ERROR)
 
     completeness = _as_float(scores.get("completeness"))
-    completeness_label = str(scores.get("completeness_label") or data.get("judge_verdict") or "").strip().upper()
+    # Only the reporter's own label counts here. The judge's ``incomplete``
+    # verdict is JUDGE_INCOMPLETE above, not a report failure.
+    completeness_label = str(scores.get("completeness_label") or "").strip().upper()
     if (completeness is not None and completeness < floor) or completeness_label in {"LOW", "INCOMPLETE"}:
         causes.append(REPORTING_INCOMPLETE)
     if report_is_failed(data):
@@ -354,6 +565,8 @@ def collect_review_causes(
     sorter_floor = float(get_confidence_thresholds(data.get("doc_type")).get("low", 0.70))
     if not causes and sorter_confidence is not None and sorter_confidence < sorter_floor:
         causes.append(SORTER_LOW_CONFIDENCE)
+
+    causes.extend(_state_derived_causes(data, extracted, set(causes)))
 
     # Decision-model reviewer causes recorded by review_classify_node.
     reviewer_causes = data.get("reviewer_causes")

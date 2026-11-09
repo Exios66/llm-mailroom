@@ -23,7 +23,11 @@ def _transient_decision(state: dict, *, retry_target: str) -> Literal["retry", "
 
     L-13: the transient budget is PER NODE — classify failures must not
     exhaust the counter that extract later needs. Each node tracks its own
-    `transient_retries_<node>` key, reset on success.
+    `transient_retries_<node>` key. It is NOT reset on success: the counter is
+    the run's record of provider blips at that node, and
+    `observability.scores.first_pass_success` reads it to keep a document that
+    needed a transient retry out of the first-pass KPI. Clearing it would turn
+    that KPI true for flaky-provider runs.
 
     The node keeps `classification_attempts`/`extraction_attempts` unchanged on
     transient failures, so a flaky provider never burns the confidence retry
@@ -217,13 +221,38 @@ def _extraction_is_unsupported(state: dict) -> bool:
     return all(str(k).startswith("_") or k == "reasoning" for k in extracted)
 
 
+def _chunks_lost(state: Mapping[str, Any]) -> bool:
+    """True when a chunked extraction lost at least one window.
+
+    Hard evidence of missing data. The specialists already cap the merged
+    confidence below the class ``low`` threshold, but routing must not depend
+    on that number: a threshold-lookup fallback, a lower per-class ``low`` or a
+    judge that saw only the text it was given could otherwise let a partial
+    extraction archive. It retries, then goes to a person.
+    """
+    extracted = state.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return False
+    value = extracted.get("_failed_chunks")
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) > 0
+    try:
+        return int(value or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _judge_can_review(state: dict) -> bool:
     """True when an unsure extraction should reach the judge before a person.
 
     A guardrail failure or an empty extraction is hard evidence, so a judge
-    verdict must not clear it. Without a judge lane the fallback stays human.
+    verdict must not clear it, and neither must it clear a lost chunk. Without
+    a judge lane the fallback stays human.
     """
     import os
+
+    if _chunks_lost(state):
+        return False
 
     if os.environ.get("MAILROOM_JUDGE_VERIFY", "on").lower() in ("off", "false", "0", "no"):
         return False
@@ -242,6 +271,8 @@ def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
     clears this. Otherwise the judge and arbiter may send it back for a
     re-extraction, which has to earn its own confidence, or it goes to a person.
     """
+    if _chunks_lost(state):
+        return True  # no verdict clears missing windows
     if state.get("judge_source_verified"):
         return False
     confidence = state.get("extraction_confidence")
@@ -270,10 +301,6 @@ def after_extraction(state: dict) -> Literal[
     low = thresholds.get("low", 0.70)
     retry_max = thresholds.get("retry_max", 2)
     conflict = state.get("conflict_detected", False)
-
-    if conflict:
-        logger.info("conflict_escalation", doc_id=state.get("doc_id"))
-        return "boss_escalation"
 
     # Schema gate: an extraction that fails the doc type's pydantic schema
     # (parse error, wrong types, fabricated shape) must never archive — retry
@@ -319,6 +346,23 @@ def after_extraction(state: dict) -> Literal[
         )
         return "human_review"
 
+    if _chunks_lost(state):
+        # A window of the document was never extracted. Retry (a fresh pass may
+        # succeed), then a person; never archive, whatever the confidence says.
+        if attempts <= retry_max:
+            logger.info(
+                "extraction_chunk_lost_retry",
+                doc_id=state.get("doc_id"),
+                attempts=attempts,
+            )
+            return "retry_extract"
+        logger.info(
+            "extraction_chunk_lost_review",
+            doc_id=state.get("doc_id"),
+            attempts=attempts,
+        )
+        return "human_review"
+
     gt = state.get("ground_truth") or {}
     expected_fields = gt.get("expected_fields") if isinstance(gt, dict) else None
     sources = gt.get("expected_fields_sources") if isinstance(gt, dict) else None
@@ -343,6 +387,14 @@ def after_extraction(state: dict) -> Literal[
         return "human_review"
 
     if confidence is not None and confidence >= low:
+        # A matter conflict is adjudicated only once the extraction itself is
+        # sound: it has passed the transient, schema, hollow, coverage and
+        # `low` confidence gates above. Escalating earlier let the Boss
+        # approve (-> compile_report) an extraction that was schema-invalid or
+        # near-zero confidence, skipping its retry / judge / review path.
+        if conflict:
+            logger.info("conflict_escalation", doc_id=state.get("doc_id"))
+            return "boss_escalation"
         return "compile_report"
 
     if attempts <= retry_max:
@@ -447,17 +499,41 @@ def after_boss(state: dict) -> Literal["boss_escalation", "compile_report", "hum
     return "human_review"
 
 
-def after_human_review(state: dict) -> Literal["extract", "failed"]:
+# review_decision token set by ``human_review_node`` when a reviewer's own
+# fields (approved as-is or corrected) are applied instead of re-extracting.
+# Like ``"approved"``, only that node sets it, so a crashed or partial run can
+# never be mistaken for a human-applied one and skip extraction.
+HUMAN_APPLIED = "human_applied"
+
+
+def human_fields_applied(state: dict) -> bool:
+    """True when ``state`` carries a reviewer's fields ready for compile_report."""
+    extracted = state.get("extracted_data")
+    return (
+        state.get("review_decision") == HUMAN_APPLIED
+        and state.get("extraction_source") == "human"
+        and isinstance(extracted, dict)
+        and bool(extracted)
+    )
+
+
+def after_human_review(state: dict) -> Literal["extract", "compile_report", "failed"]:
     """Route a resolved HITL interrupt.
 
-    Approved reviews re-enter extraction (fresh fields, never the reviewed
-    payload) — the same contract as ``resume_from_review``. Rejected (or
-    still-pending, which should not happen after ``interrupt()`` returns)
-    ends the run; the node already moved the file to ``failed/``.
+    - ``approved`` re-enters extraction (fresh fields, never the reviewed
+      payload): a class-confirm or reclassify — the same contract as
+      ``resume_from_review``.
+    - ``human_applied`` (explicit token, mirroring the ``approved`` guard) sends
+      the reviewer's approved or corrected fields through the normal tail —
+      compile_report → catalog_write → archive — with no LLM call.
+    - Rejected (or still-pending, which should not happen after ``interrupt()``
+      returns) ends the run; the node already moved the file to ``failed/``.
     """
     decision = state.get("review_decision")
     if decision == "approved":
         return "extract"
+    if human_fields_applied(state):
+        return "compile_report"
     return "failed"
 
 
@@ -579,6 +655,53 @@ def after_review_classify(state: dict) -> Literal[
     return "human_review"
 
 
+def conflict_fingerprint(details: object) -> str:
+    """Stable sha256 of a conflict: the sorted, de-duplicated, whitespace- and
+    case-normalized ``conflict_details`` strings.
+
+    The Boss stores this when it rules, so routing can tell "the conflict the
+    Boss adjudicated" from "a new conflict a retry extraction produced".
+    """
+    import hashlib
+    import json
+
+    items = details if isinstance(details, (list, tuple, set)) else []
+    normalized = sorted({" ".join(str(item).split()).casefold() for item in items})
+    return hashlib.sha256(
+        json.dumps(normalized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _unadjudicated_conflict(state: dict) -> bool:
+    """A matter conflict that reached the judge/arbiter tail without the Boss.
+
+    Conflict escalation runs only on the ``>= low`` arm of ``after_extraction``;
+    an extraction that went retry -> judge -> arbiter instead must not archive
+    an unadjudicated conflict. Those edges have no Boss route, so it parks.
+
+    ``review_decision == "approved"`` alone does not prove the CURRENT conflict
+    was adjudicated: the Boss (and a human re-extract approval) set it, and a
+    retry extraction can then produce a different conflict. So the Boss stores
+    ``boss_conflict_fingerprint`` (see ``conflict_fingerprint``) and the
+    conflict counts as adjudicated only when the current ``conflict_details``
+    fingerprint equals it. A state that predates the field (the key is absent,
+    e.g. a checkpoint resumed after deploy) keeps the legacy rule, so an
+    in-flight Boss approval still holds; every fresh state carries the key
+    (None until the Boss rules), so human-approval resets never count.
+    """
+    if not state.get("conflict_detected"):
+        return False
+    if state.get("review_decision") == "approved":
+        if "boss_conflict_fingerprint" not in state:
+            return False  # legacy state: Boss/approval assumed to cover it
+        if state.get("boss_conflict_fingerprint") == conflict_fingerprint(
+            state.get("conflict_details")
+        ):
+            return False
+    logger.info("conflict_unadjudicated_review", doc_id=state.get("doc_id"))
+    return True
+
+
 def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbiter", "human_review"]:
     """KANBAN-063 (Lane B): judge outcome router.
 
@@ -597,7 +720,9 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     if verdict in ("judge_error",):
         return "human_review"
     if verdict in (None, "", "skipped", "complete"):
-        return "human_review" if _extraction_still_unsure(state) else "compile_report"
+        if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
+            return "human_review"
+        return "compile_report"
     thresholds = _thresholds_for(state)
     raw_max_passes = thresholds.get("judge_max_passes")
     max_passes = int(raw_max_passes) if raw_max_passes is not None else 3
@@ -637,7 +762,9 @@ def after_arbiter(state: dict) -> Literal[
         return "human_review"
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
-        return "human_review" if _extraction_still_unsure(state) else "compile_report"
+        if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
+            return "human_review"
+        return "compile_report"
     thresholds = _thresholds_for(state)
     raw_retry_max = thresholds.get("arbiter_retry_max")
     arbiter_retry_max = int(raw_retry_max) if raw_retry_max is not None else 2

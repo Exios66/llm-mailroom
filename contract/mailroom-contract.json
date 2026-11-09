@@ -1,6 +1,6 @@
 {
   "contract_version": "1.0.0",
-  "pipeline_version": "0.9.4",
+  "pipeline_version": "0.9.3",
   "trace_name": "document-pipeline",
   "graph": {
     "start": "__start__",
@@ -78,6 +78,12 @@
       }
     ],
     "edges": [
+      {
+        "source": "__start__",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
+      },
       {
         "source": "__start__",
         "target": "extract",
@@ -239,6 +245,12 @@
         "target": "__end__",
         "conditional": true,
         "label": "failed"
+      },
+      {
+        "source": "human_review",
+        "target": "compile_report",
+        "conditional": true,
+        "label": null
       },
       {
         "source": "human_review",

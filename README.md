@@ -12,7 +12,7 @@
 [![SQLite first](https://img.shields.io/badge/storage-SQLite_first-6C63FF?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
-[![Release](https://img.shields.io/badge/release-v0.9.4-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.4)
+[![Release](https://img.shields.io/badge/release-v0.9.3-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.3)
 [![Dojo](https://img.shields.io/badge/dojo-00a2a7f-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
@@ -72,7 +72,7 @@ imports committed revisions, the [sandbox](https://github.com/Exios66/local-mail
 executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
-[`v0.9.4`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.4). The
+[`v0.9.3`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.3). The
 dependency badge reflects this checkout's Dojo pin, **00a2a7f** (the Dojo v0.28.1 release commit).
 
 <details>
@@ -176,6 +176,7 @@ cd llm-mailroom
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
+python -m pip install -e tools/pipeline-diagnostics
 cp .env.example .env
 # Add OPENROUTER_API_KEY to .env for live inference.
 ```
@@ -212,10 +213,11 @@ Runtime state is stored under `data/` (or `MAILROOM_BASE_DIR`):
 ### Installation
 
 <a id="installing"></a>
-Core install (pipeline + API + tests):
+Development install (pipeline + API + both test suites):
 
 ```bash
 pip install -e ".[dev]"
+pip install -e tools/pipeline-diagnostics
 ```
 
 Optional install profiles — take only what you need:
@@ -731,7 +733,7 @@ data/
 
 ```bash
 # Run all tests
-pytest src/tests/ -v
+pytest src/tests/ tools/pipeline-diagnostics/tests -v
 
 # Run specific test suites
 pytest src/tests/test_agents/ -v
@@ -740,8 +742,10 @@ pytest src/tests/test_audit_log.py -v
 pytest src/tests/test_pipeline_e2e.py -v
 
 # With coverage
-pytest src/tests/ --cov=src --cov-report=html
+pytest src/tests/ tools/pipeline-diagnostics/tests --cov=src --cov-report=html
 ```
+
+The full developer setup installs both packages. A parent-only install supports the pipeline suite; default pytest discovery also requires the nested package and its console entrypoint. See [native diagnostics quick start](tools/pipeline-diagnostics/QUICKSTART.md).
 
 Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mocked (see `src/tests/conftest.py`).
 

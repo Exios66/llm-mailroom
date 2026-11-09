@@ -5,7 +5,7 @@ This page explains two things:
 1. **How the pipeline scores its own work.** How each document specialist's extraction is compared with ground truth field by field, how those field scores become a document score and a per-specialist suite score, how classification is scored, how the LLM judges and the arbiter are asked to grade, and how confidence and scores decide whether a document is archived automatically or sent for review.
 2. **What has actually been measured.** The recorded accuracy, F1, latency and cost numbers that exist today, each with its source file, run id, date and model. It also lists the metrics the pipeline emits at runtime and where to look at them.
 
-Short version: the scoring logic is well defined and lives mostly in the [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) package. Measured results are **thin**. Most numbers come from isolated per-agent runs in the sibling [eval-environment](https://github.com/LLM-Mailroom-Services/eval-environment) repo (20 to 100 documents per run, late September 2026). This repo has no recorded end-to-end scorecard for the current release (0.9.4).
+Short version: the scoring logic is well defined and lives mostly in the [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) package. Measured results are **thin**. Most numbers come from isolated per-agent runs in the sibling [eval-environment](https://github.com/LLM-Mailroom-Services/eval-environment) repo (20 to 100 documents per run, late September 2026). This repo has no recorded end-to-end scorecard for the current release (0.9.3).
 
 For the pipeline stages referenced below, see [Pipeline flowchart](flowchart.md) and [Architecture](../pipeline-reference-llm-mailroom/architecture.md). For the fields each specialist extracts, see [Extraction schemas](extraction-schemas.md).
 
@@ -260,7 +260,7 @@ For the full graph, see [Pipeline flowchart](flowchart.md) and [Operational proc
 | eval-environment `reports/api-comparisons/` | Per-specialist and sorter runs on four OpenRouter models | Main source, 2026-09-26 to 2026-09-28 |
 | mailroom-ml `reports/` | ModernBERT intake classifier on a 323-document held-out test | Classifier only, not the LLM pipeline |
 
-Nothing in this repo records a full-pipeline accuracy for release 0.9.1. Treat every number below as a per-agent or experimental result, not a production scorecard.
+Nothing in this repo records a full-pipeline accuracy for release 0.9.3. Treat every number below as a per-agent or experimental result, not a production scorecard.
 
 ### Specialist extraction: production model `qwen/qwen3.7-flash`
 
@@ -334,7 +334,7 @@ The vision report it mentions (`pilot-vision-tradeoff.md`) is not in this repo; 
 
 ### Gaps in the record
 
-- No end-to-end pipeline scorecard (class accuracy, field score, STP rate, judge verdicts) is stored for release 0.9.1.
+- No end-to-end pipeline scorecard (class accuracy, field score, STP rate, judge verdicts) is stored for release 0.9.3.
 - No recorded run of `calibrate_field_scoring.py`; only the resulting band values in `taxonomy.yaml`.
 - No recorded output of `run_quality_judges.py` (judge completeness, correctness, classification means).
 - The LegalBench log has only a placeholder entry.
