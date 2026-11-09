@@ -383,6 +383,52 @@ describe("detail requests and partial failures", () => {
     expect(screen.getByText("DOC-2")).toBeInTheDocument();
   });
 
+  it("keeps the latest experiment when an older experiment request finishes last", async () => {
+    const first = deferred();
+    const second = deferred();
+    const secondSummary: ExperimentSummary = { ...experimentSummary, experiment_id: "exp-2" };
+    const secondDetail: ExperimentDetail = {
+      ...experimentDetail,
+      experiment_id: "exp-2",
+      runs: [{ ...experimentDetail.runs[0], execution_id: "run-2", manifest_id: "DOC-2" }],
+    };
+    mockApi((url) => {
+      if (url.endsWith("/v1/diagnostics/experiments")) {
+        return jsonResponse({ experiments: [experimentSummary, secondSummary] });
+      }
+      if (url.includes("/experiments/exp-1")) return first.promise;
+      if (url.includes("/experiments/exp-2")) return second.promise;
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    const select = screen.getByLabelText("Load an experiment log");
+
+    await user.selectOptions(select, "exp-1");
+    await user.selectOptions(select, "exp-2");
+    await act(async () => second.resolve(jsonResponse(secondDetail)));
+    expect(await screen.findByRole("button", { name: /DOC-2/ })).toBeInTheDocument();
+
+    await act(async () => first.resolve(jsonResponse(experimentDetail)));
+    expect(screen.getByRole("button", { name: /DOC-2/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /DOC-1/ })).not.toBeInTheDocument();
+  });
+
+  it("does not restore an experiment that finishes loading after the selector was cleared", async () => {
+    const pending = deferred();
+    mockApi((url) => (url.includes("/experiments/exp-1") ? pending.promise : undefined));
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    const select = screen.getByLabelText("Load an experiment log");
+
+    await user.selectOptions(select, "exp-1");
+    await user.selectOptions(select, "");
+    await act(async () => pending.resolve(jsonResponse(experimentDetail)));
+    expect(screen.queryByText(/Class \/ stage ok/)).not.toBeInTheDocument();
+  });
+
   it("does not restore a run that finishes loading after the selector was cleared", async () => {
     const pending = deferred();
     mockApi((url) => (url.includes("/runs/run-1") ? pending.promise : undefined));

@@ -49,9 +49,20 @@ describe("response validation", () => {
     expect(journal.outcome.failed).toBe(false);
   });
 
+  it("drops transitions the run model cannot read", () => {
+    const journal = parseRunJournal({
+      execution_id: "r",
+      node_sequence: ["a", "b"],
+      transitions: [null, { source: "a" }, { source: "a", target: "b" }],
+    });
+    expect(journal.transitions).toEqual([{ source: "a", target: "b" }]);
+  });
+
   it("rejects an experiment detail without a runs array", () => {
     expect(() => parseExperimentDetail({ experiment_id: "e" })).toThrow(DiagnosticsApiError);
     expect(() => parseExperimentDetail({ runs: "x" })).toThrow(DiagnosticsApiError);
+    expect(() => parseExperimentDetail({ runs: [null] })).toThrow(DiagnosticsApiError);
+    expect(() => parseExperimentDetail({ runs: ["x"] })).toThrow(DiagnosticsApiError);
     expect(parseExperimentDetail({ runs: [] }).corpus).toEqual({});
   });
 });
