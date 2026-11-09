@@ -56,3 +56,18 @@ Refresh PR heads before every landing check. The latest inspected PR 203 is `bee
 5. Record candidate commits/trees, merge-base, patch hash, dependency versions, actual commands/exits and failures in PR 208. Only call integration verified after these checks pass; a clean textual merge alone is insufficient. Repeat if any incoming head changes, and again after merge.
 
 The native branch must remain usable on current main independently. This integration procedure does not approve PR 204's more permissive auto-archive behavior: its separate real held-out objective and risk guards remain required.
+
+## Landing verification, 2026-11-09
+
+Heads checked: PR 208 `065a0c2`, PR 203 `ab090bd`, PR 204 `6b2d42a`. Both candidates are disposable local merges, never pushed.
+
+| Candidate | Built as | Result |
+| --- | --- | --- |
+| C1 | PR 208 + PR 203 (`git merge`). Conflicts only in `CHANGELOG.md` and the generated `docs/changelog/` pages: both Unreleased entries kept, pages regenerated | `sync_gitbook_changelog.py --check` ok (22 pages); `compileall` 0; `export_contract.py --check` current; nested + contract/routing/graph/review-tail/docs tests 267 passed, 1 failed; mock experiment gate exit 0; graph hash `sha256:036af6f5…cb8e` |
+| C2 | C1 + the PR 204 delta (`git diff` from PR 203 head to PR 204 head, sha256 `73a6a06e0e960708…`, applied with `git apply --3way`, no conflicts) | same gates; with the CR6 suites added, 451 passed, 1 failed; mock experiment gate exit 0; graph hash **identical** to C1 (CR6 changes merge behaviour, not topology) |
+
+The single failure in both is `test_cli.py::test_console_script_is_installed`. It comes from the verification environment, which put the tool on the path through a `.pth` file instead of `pip install -e`, so no console script exists. It is not a defect in the code.
+
+`tests/fixtures/pr203-contract.json` is a verbatim copy of PR 203's contract: 14 nodes, 48 edges, START → {compile_report, extract, intake}, human_review → compile_report. `test_human_applied_start_edge_is_not_a_finding` pins it. After PR 203 merges, the committed contract this tool reads becomes that 48-edge contract, and `test_committed_contract_has_no_structural_findings` passed on it in C1.
+
+Merge order: PR 203 → The-Mailroom PR 71 pin bump → PR 208 → PR 204 (retargeted to main, still held for its real `thresholds` objective). Repeat this check if any of these heads changes.
