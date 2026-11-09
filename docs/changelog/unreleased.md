@@ -1,6 +1,6 @@
 ---
 tags:
-  - improvement
+  - feature
 ---
 
 # Unreleased
@@ -13,4 +13,6 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 
 Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md).
 
+## Added
 
+- **Native pipeline diagnostics foundation** under `tools/pipeline-diagnostics/`: an installable `mailroom-diagnostics` inspection/check CLI, compiled-graph snapshots through the display exporter's shared graph helper, offline contract input, structural endpoint/reachability findings, and nested test/CI discovery. The draft workbench plan includes an ordered agent handoff and evidence contract. React, diagnostic HTTP serving, live events and calibration remain later milestones; this checkpoint changes no routing policy or model behavior.
