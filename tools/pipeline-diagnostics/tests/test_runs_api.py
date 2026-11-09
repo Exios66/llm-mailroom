@@ -157,6 +157,16 @@ def test_experiment_without_runs_is_rejected(dirs, client):
     assert client.get("/v1/diagnostics/experiments/20261109T050000Z").status_code == 404
 
 
+@pytest.mark.parametrize("bad_run", [None, "x", 3])
+def test_experiment_with_a_malformed_run_is_rejected(dirs, client, bad_run):
+    _, experiments = dirs
+    payload = _experiment()
+    payload["runs"].append(bad_run)
+    (experiments / "experiment.json").write_text(json.dumps(payload), encoding="utf-8")
+    assert client.get("/v1/diagnostics/experiments").json()["experiments"] == []
+    assert client.get("/v1/diagnostics/experiments/20261109T050000Z").status_code == 404
+
+
 @pytest.mark.parametrize(
     "mutation",
     [

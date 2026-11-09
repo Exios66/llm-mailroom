@@ -132,6 +132,7 @@ def _valid_experiment(payload: dict[str, Any]) -> bool:
     return (
         isinstance(payload.get("experiment_id"), str)
         and isinstance(payload.get("runs"), list)
+        and all(isinstance(run, dict) for run in payload["runs"])
         and isinstance(payload.get("metrics"), dict)
     )
 

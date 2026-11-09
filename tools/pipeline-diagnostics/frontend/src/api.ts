@@ -113,7 +113,15 @@ export function parseRunJournal(payload: unknown): RunJournal {
   return {
     ...(journal as RunJournal),
     events: Array.isArray(journal.events) ? journal.events : [],
-    transitions: Array.isArray(journal.transitions) ? journal.transitions : [],
+    transitions: Array.isArray(journal.transitions)
+      ? journal.transitions.filter(
+          (edge) =>
+            !!edge &&
+            typeof edge === "object" &&
+            typeof edge.source === "string" &&
+            typeof edge.target === "string",
+        )
+      : [],
     document: journal.document ?? {},
     outcome: journal.outcome ?? { review: false, failed: false },
   };
@@ -122,7 +130,12 @@ export function parseRunJournal(payload: unknown): RunJournal {
 /** Reject an experiment detail without a runs list instead of crashing the panel. */
 export function parseExperimentDetail(payload: unknown): ExperimentDetail {
   const detail = payload as Partial<ExperimentDetail> | null;
-  if (!detail || typeof detail !== "object" || !Array.isArray(detail.runs)) {
+  if (
+    !detail ||
+    typeof detail !== "object" ||
+    !Array.isArray(detail.runs) ||
+    !detail.runs.every((run) => !!run && typeof run === "object")
+  ) {
     throw malformed("experiment detail");
   }
   return {
