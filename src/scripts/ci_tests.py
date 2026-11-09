@@ -79,11 +79,12 @@ def make_plan(changed: list[str], *, full: bool = False, branch: str = "") -> di
                 reason = reason or f"deleted, renamed, or missing input: {name}"
             elif not nested:
                 reason = reason or f"nested tool change without a discovered test root: {name}"
-            elif path.suffix == ".py" and name.startswith(f"{NESTED_TESTS}/") and path.name.startswith("test_"):
-                selected.add(name)
             else:
                 # Conservative explicit mapping: the nested tool's own suite is
-                # the only test consumer of its backend, packaging and fixtures.
+                # the only test consumer of its backend, packaging, fixtures and
+                # test helpers. A changed test module may be imported by other
+                # nested tests, so select the whole nested suite rather than one
+                # file and risk missing the dependent regression.
                 selected.update(nested)
         elif name in NESTED_PARENT_INPUTS:
             # The nested parity test imports the root exporter directly, which
