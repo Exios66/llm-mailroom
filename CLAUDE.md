@@ -69,7 +69,7 @@ PYTHONPATH=src .venv/bin/python -m api.main                   # API on :8000 (ne
 
 - **Do not use `uv sync` / `uv pip install -e .`.** `[tool.uv.sources]` points
   `llm-dojo-scoring` at a hub workspace that does not exist here; uv fails with
-  "not a workspace member". `uv` is only used by one test as a build tool.
+  "not a workspace member". No test needs uv.
 - `pyproject.toml` sets `pythonpath = ["src", ".", "tools/pipeline-diagnostics/backend"]`, so bare `pytest` finds modules.
   Scripts and `python -m pipeline.*` need `PYTHONPATH=src`.
 - The raw `affected_tests.py` selector covers `src/tests` only; pair it with
@@ -134,9 +134,9 @@ lint or type cleanliness.
 - Tests use `asyncio_mode = "auto"`, but graph nodes are sync. Node contract:
   `node(state: DocumentState) -> dict[str, Any]` (partial update).
 - New agent tests inject `agent.client = <mock>` and `agent.model = "test-model"`.
-- `test_wheel_runtime_catalog` runs `uv build --offline`, so uv's cache must already hold
-  setuptools and wheel (the test skips if `uv` is missing). With an empty cache it can be
-  the only failure. Report the nonzero pytest exit, the failing test and the empty-cache cause.
+- `test_wheel_runtime_catalog` builds the wheel offline with this interpreter's own
+  setuptools and wheel (`pip wheel --no-build-isolation --no-index`); both are in the `dev`
+  extra, so it needs no uv, no network and no warm cache.
 - Langfuse trace ids are deterministic per filename and tags are immutable: a re-run keeps
   the first run's tags and environment.
 - The suite is slow; use `affected_tests.py` while iterating, the full suite before "ready".
