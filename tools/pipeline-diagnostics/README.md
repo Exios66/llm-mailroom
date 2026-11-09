@@ -2,7 +2,7 @@
 
 Repository-native debugging and diagnostic tooling for llm-mailroom.
 
-**Current status: D0a CLI foundation; full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection plus structural endpoint/reachability checks. React, the diagnostic HTTP app, live events, replay and calibration are later tasks. `/diagnostics` is not implemented by this checkpoint.
+**Current status: D0.1–D0.3 implemented; the full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, and a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API. The React screen, live events, replay and calibration remain later tasks; until the React assets land, `/diagnostics` serves a build-instructions page while the JSON API works.
 
 ## Start here
 
@@ -28,7 +28,7 @@ Keep these distinctions visible:
 
 All tool-specific implementation, tests, fixtures, package configuration and documentation belong in this folder. Existing root pipeline/API modules receive only the hooks needed to observe execution or mount the native screen. The pipeline remains the authority for routing; the generated display contract remains the authority for its exported topology.
 
-Folder layout; app/static/frontend entries remain planned:
+Folder layout; the frontend entry remains planned:
 
 ```text
 tools/pipeline-diagnostics/
@@ -48,6 +48,20 @@ tools/pipeline-diagnostics/
   tests/                   # explicitly collected by CI
     fixtures/              # synthetic defects and revision-specific contracts
 ```
+
+## Read-only HTTP app
+
+`mailroom-diagnostics serve` starts a diagnostics-only FastAPI app on loopback (default `127.0.0.1:8100`). It never imports `api.main` and never starts the watcher, Gmail intake, status mail, relations scans, document processing or a tracing backend.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /v1/diagnostics/capabilities` | Supported modes, read-only status and explicitly unavailable features |
+| `GET /v1/diagnostics/snapshot` | Current workspace-preview graph and provenance |
+| `GET /v1/diagnostics/findings` | Implemented structural checks with stable finding IDs |
+| `GET /health` | Public liveness probe |
+| `GET /diagnostics` | Build-instructions page until the React assets land (D1.1) |
+
+Authorization is the producer's bearer/loopback rule, shared through `api.auth`: an off-loopback bind requires `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS`. Set `MAILROOM_DIAGNOSTICS_MOUNT=1` to mount the same read-only routes on `python -m api.main`; the mount is off by default and a missing package never breaks API startup.
 
 LangChain core is already declared by the parent project. Install the project's development dependencies rather than adding a duplicate root requirement. The nested package declares its own direct dependencies. Install the parent from this checkout first; the unrelated PyPI project named `mailroom` is not a tool dependency.
 
