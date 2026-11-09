@@ -151,8 +151,9 @@ def cache_dir() -> Path:
 
 def _cached_get_bytes(url: str, *, label: str) -> bytes:
     """GET with an on-disk cache keyed by URL sha256 (repeat loads are
-    network-free; a stale cache is just re-fetched by changing the URL —
-    viewer parquet URLs carry the revision)."""
+    network-free). Pinned loads fetch ``resolve/<sha>/`` URLs, so a moved tag
+    is a new URL and never a stale hit; Viewer URLs (unpinned loads) follow
+    the current revision."""
     key = hashlib.sha256(url.encode()).hexdigest()[:24]
     path = cache_dir() / f"{label}_{key}.bin"
     if path.exists() and path.stat().st_size > 0:
