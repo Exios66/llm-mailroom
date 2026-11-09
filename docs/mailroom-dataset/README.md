@@ -2,7 +2,7 @@
 
 [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset) is the corpus every Mailroom repository measures against. This section is the GitBook home for that dataset: composition, configs, source corpora, and the exploratory analysis published by [Mailroom-Corpus-EDA](../repository-guides/repos/mailroom-corpus-eda.md).
 
-It is called **v1** on the Hub and **v9** in the corpus family's lineage. Both names refer to the same 3,302-document surface. llm-mailroom pins Hub tag `v9.1` (`FULL_CORPUS_REVISION` in `pipeline/hf_corpora.py`), which resolves to commit `ed7576b6`. Figures and tables on these pages come from Mailroom-Corpus-EDA's `run_all.py` (P0–P6), generated 2026-09-13 against an earlier v9 tip (`a7067844`). Row counts, classes, and strata match `v9.1`; that quality revision moved `clause_count` / `maud_label_count` out of the blind `metadata` blob so they live only on `ground_truth`.
+It is called **v1** on the Hub and **v9** in the corpus family's lineage. Both names refer to the same 3,302-document surface. llm-mailroom pins Hub tag `v9.3` (`FULL_CORPUS_REVISION` in `pipeline/hf_corpora.py`), which resolves to commit `ccd040f6`. Figures and tables on these pages come from Mailroom-Corpus-EDA's `run_all.py` (P0–P6), generated 2026-09-13 against an earlier v9 tip (`a7067844`). Row counts, classes, and strata are unchanged from `v9.1` through `v9.3`. The `v9.1` quality revision moved `clause_count` / `maud_label_count` out of the blind `metadata` blob so they live only on `ground_truth`; `v9.2` to `v9.3` change ground-truth labels only (see [Configs](configs.md)).
 
 The constellation rules page is still [Data and corpora](../how-it-fits-together/data-and-corpora.md). This section is the full dataset breakdown.
 
@@ -14,7 +14,7 @@ The constellation rules page is still [Data and corpora](../how-it-fits-together
 | Class-by-subclass strata | 55 |
 | Type imbalance | 7.2× (max/min) |
 | Stratum imbalance | 557× (min stratum: `merger_agreement/mixed_cash_stock_election` = 1) |
-| Pinned revision | Hub tag `v9.1` → `ed7576b6` |
+| Pinned revision | Hub tag `v9.3` → `ccd040f6` |
 | Frozen parent | [`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus) v8, 2,000 rows, `eafe1ab4` |
 | EDA site | [exios66.github.io/Mailroom-Corpus-EDA](https://exios66.github.io/Mailroom-Corpus-EDA/) |
 | EDA repo | [Exios66/Mailroom-Corpus-EDA](https://github.com/Exios66/Mailroom-Corpus-EDA) |
@@ -65,8 +65,8 @@ Load the blind surface and the labels separately, then join on `filename`. The p
 
 ```python
 from datasets import load_dataset
-blind = load_dataset("Lucius-Morningstar/mailroom-dataset", "default", revision="v9.1")
-gt = load_dataset("Lucius-Morningstar/mailroom-dataset", "ground_truth", revision="v9.1")
+blind = load_dataset("Lucius-Morningstar/mailroom-dataset", "default", revision="v9.3")
+gt = load_dataset("Lucius-Morningstar/mailroom-dataset", "ground_truth", revision="v9.3")
 ```
 
 Hub Dataset Viewer for the blind `default` config (train split):

@@ -41,11 +41,23 @@ FULL_CORPUS_SCHEMA = "v9"
 # (historical traces carry the immutable `source-docclass-merged` tag;
 # slug/aliases are plumbing, not identity).
 FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
-# Hub tag v9.1 → ed7576b6 (2026-09-27: successor pin after GT-closure tip
-# 46a4d3c2; 3,302 rows, schema unchanged; configs default / ground_truth /
-# bundles / streams / fixtures).
+# Hub tag v9.3 → ccd040f6a1b6b414bdefd161cdc622b68f6dacf8 (2026-11-09; also the
+# Hub `main` that day). Rows, document_ids and text are unchanged from v9.1
+# (3,302 rows; configs default / ground_truth / bundles / streams / fixtures,
+# each with train and test). Ground-truth changes: v9.2 has six
+# annotation_method regimes, sec_edgar annotation_source for 91 EX-10
+# contracts, related_document_ids on 23 rows, and drops the `_published`
+# column (ground_truth is 35 columns); v9.2.1/v9.3 repair corporate labels
+# (entity_name, record_type, subject_matter, keywords; 12 records
+# re-subclassed), add per-subclass corporate gt_presence keys (37 keys) and
+# set merger agreements' expected_specialist to merger_agreement_specialist
+# (it was contracts_specialist). The v9.3 tag was re-pointed once on its
+# release day. Pinned loads resolve the tag to its commit and record it as
+# provenance `revision_resolved` (hf_corpus_loader.load_revision_frame).
+# Previous pin: tag v9.1 (data commit ed7576b6; the tag now resolves to the
+# docs commit bc9eab28 on top of it).
 # Pinned per the corpus plan §44 — never evaluate against unpinned main.
-FULL_CORPUS_REVISION = "v9.1"
+FULL_CORPUS_REVISION = "v9.3"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in mailroom-dataset (v9) — identical to the canonical

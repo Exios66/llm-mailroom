@@ -513,7 +513,7 @@ def load_corpus(
     if hub_tip is None:
         provenance["hub_sha_tip_unavailable"] = True
     elif revision and hub_tip != (gt_prov.get("revision_resolved") or revision):
-        # Compare against the RESOLVED commit sha: a tag pin ("v9.1") never
+        # Compare against the RESOLVED commit sha: a tag pin ("v9.3") never
         # equals a sha, so comparing the raw pin would always report drift.
         pinned_sha = gt_prov.get("revision_resolved") or revision
         _log.warning(

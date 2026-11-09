@@ -1,16 +1,16 @@
 {
  "dataset": "Lucius-Morningstar/mailroom-dataset",
- "hub_sha": "v9.1",
- "plan_revision_pin": "v9.1",
- "hub_sha_tip": "v9.1",
+ "hub_sha": "v9.3",
+ "plan_revision_pin": "v9.3",
+ "hub_sha_tip": "v9.3",
  "integrity": {
   "checked": 2979,
   "verified": 2979,
   "mismatched": 0
  },
- "fetched_at": "2026-09-14",
+ "fetched_at": "2026-11-09",
  "selection": "lucius-verified pilot candidates (HUB-053, refreshed on the v9 corpus per mailroom-issues#47): one class-representative row each for insurance_claim/contract/correspondence + the deliberate over-budget handoff case; the HUB-053 filenames were re-picked 1:1 where present in v9 (GT-closure labels), labels from ground_truth joined with doc_text from default on filename, content_sha256-verified. v9 schema note: gt_fields is kept as the published nested dict and its ground-truth-check fields are also promoted flat for ground_truth_checks(); the embedded doc_text duplicate is dropped.",
- "note": "Committed offline snapshot for notebook 14 (gmail pilot). Refresh via the notebook's live cell (NB-OPT-IN-NETWORK) which goes through pipeline/hf_corpus_loader.load_corpus().",
+ "note": "Committed offline snapshot for notebook 14 (gmail pilot). Refresh via the notebook's live cell (NB-OPT-IN-NETWORK) which goes through pipeline/hf_corpus_loader.load_corpus(). Labels refreshed 2026-11-09 from Hub tag v9.3 (ccd040f6a1b6b414bdefd161cdc622b68f6dacf8) through load_corpus(): same four rows, doc_text byte-identical and content_sha256-verified; the removed `_published` column is dropped, and annotation_method/confidence/reviewer follow the v9.2 regimes.",
  "rows": [
   {
    "role": "insurance_claim",
@@ -52,7 +52,6 @@
      "supporting_documents": "[\"provider NPI 5040521237\", \"HCPCS detail (1 codes)\"]",
      "topic_evidence": ""
     },
-    "_published": "{\"document_id\": \"DOC-592e296b6ebf13ba\", \"source_corpus\": \"cms_desynpuf\", \"source_document_id\": \"carrier:887013387879564\", \"source_filename\": \"carrier:887013387879564.txt\", \"source_revision\": \"\"}",
     "document_id": "DOC-592e296b6ebf13ba",
     "source_corpus": "cms_desynpuf",
     "source_document_id": "carrier:887013387879564",
@@ -70,8 +69,8 @@
     "annotation_method": "synthetic",
     "annotation_model": "",
     "annotation_prompt_version": "",
-    "annotation_confidence": "",
-    "annotation_reviewer": "",
+    "annotation_confidence": "1.0",
+    "annotation_reviewer": "human",
     "annotation_timestamp": "",
     "matter_id": "",
     "matter_construction": "",
@@ -131,7 +130,6 @@
      "supporting_documents": "[]",
      "topic_evidence": ""
     },
-    "_published": "{\"document_id\": \"DOC-0728dd122a97ae33\", \"source_corpus\": \"theatticusproject/cuad\", \"source_document_id\": \"BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement3.pdf\", \"source_filename\": \"BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement3.pdf\", \"source_revision\": \"\"}",
     "document_id": "DOC-0728dd122a97ae33",
     "source_corpus": "theatticusproject/cuad",
     "source_document_id": "BellringBrandsInc_20190920_S-1_EX-10.12_11817081_EX-10.12_Manufacturing Agreement3.pdf",
@@ -203,7 +201,6 @@
      "supporting_documents": "[]",
      "topic_evidence": "no specific topic markers; ordinary business content"
     },
-    "_published": "{\"document_id\": \"DOC-54a5578fcd37a72b\", \"source_corpus\": \"Lucius-Morningstar/enron-correspondence-dedup\", \"source_document_id\": \"kaminski-v/all_documents/921.\", \"source_filename\": \"kaminski-v/all_documents/921.\", \"source_revision\": \"\"}",
     "document_id": "DOC-54a5578fcd37a72b",
     "source_corpus": "Lucius-Morningstar/enron-correspondence-dedup",
     "source_document_id": "kaminski-v/all_documents/921.",
@@ -218,11 +215,11 @@
     "retry_expected": "false",
     "expected_post_retry_state": "",
     "annotation_source": "Lucius-Morningstar/enron-correspondence-dedup",
-    "annotation_method": "source_native",
+    "annotation_method": "human_annotated",
     "annotation_model": "",
     "annotation_prompt_version": "",
-    "annotation_confidence": "",
-    "annotation_reviewer": "",
+    "annotation_confidence": "1.0",
+    "annotation_reviewer": "human",
     "annotation_timestamp": "",
     "matter_id": "",
     "matter_construction": "",
@@ -275,7 +272,6 @@
      "supporting_documents": "[]",
      "topic_evidence": ""
     },
-    "_published": "{\"document_id\": \"DOC-adad5ef793c0e409\", \"source_corpus\": \"theatticusproject/cuad\", \"source_document_id\": \"2ThemartComInc_19990826_10-12G_EX-10.10_6700288_EX-10.10_Co-Branding Agreement_ Agency Agreement.pdf\", \"source_filename\": \"2ThemartComInc_19990826_10-12G_EX-10.10_6700288_EX-10.10_Co-Branding Agreement_ Agency Agreement.pdf\", \"source_revision\": \"\"}",
     "document_id": "DOC-adad5ef793c0e409",
     "source_corpus": "theatticusproject/cuad",
     "source_document_id": "2ThemartComInc_19990826_10-12G_EX-10.10_6700288_EX-10.10_Co-Branding Agreement_ Agency Agreement.pdf",
