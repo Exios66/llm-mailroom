@@ -29,6 +29,68 @@ from langchain_agents.prompts import get_prompt
 logger = structlog.get_logger(__name__)
 
 
+_FAILED_CHUNK_MARGIN = 0.01
+_FAILED_CHUNK_FALLBACK_CEILING = 0.69
+
+
+def failed_chunk_ceiling(agent_name: str) -> float:
+    """Confidence ceiling for a chunked extraction that lost a window.
+
+    Strictly below the ``low`` threshold of every doc class this specialist
+    serves (taxonomy ``doc_classes[].specialist`` + ``confidence.by_class``), so
+    routing retries / escalates instead of archiving a partial extraction.
+    MAILROOM PATCH — not in the upstream vendored pass.
+    """
+    try:
+        from pipeline.config import get_confidence_thresholds, load_config
+
+        lows = [
+            float(get_confidence_thresholds(cls["key"]).get("low", 0.70))
+            for cls in (load_config().get("doc_classes") or [])
+            if cls.get("specialist") == agent_name
+        ]
+        if not lows:
+            lows = [float(get_confidence_thresholds().get("low", 0.70))]
+        return round(min(lows) - _FAILED_CHUNK_MARGIN, 4)
+    except Exception:  # noqa: BLE001 - config trouble must not discard paid-for chunks
+        return _FAILED_CHUNK_FALLBACK_CEILING
+
+
+def finalize_chunked_merge(merged: dict, *, agent_name: str, n_chunks: int, failed: int) -> dict:
+    """Stamp chunk bookkeeping on a merged extraction and cap it on any loss.
+
+    ``_n_chunks`` / ``_failed_chunks`` are underscore (non-public) keys: field
+    scoring, the hollow check and reconsideration all ignore them. When at
+    least one window failed (parse error / non-transient exception), the
+    merged confidence is capped strictly below the class ``low`` threshold so
+    a partial extraction is retried or escalated, never auto-archived.
+    MAILROOM PATCH.
+    """
+    merged["_n_chunks"] = n_chunks
+    merged["_failed_chunks"] = failed
+    if failed:
+        ceiling = failed_chunk_ceiling(agent_name)
+        current = merged.get("confidence")
+        current = float(current) if isinstance(current, (int, float)) else ceiling
+        merged["confidence"] = round(min(current, ceiling), 4)
+        logger.warning(
+            "chunked_extraction_partial",
+            agent=agent_name,
+            failed_chunks=failed,
+            n_chunks=n_chunks,
+            confidence=merged["confidence"],
+        )
+    return merged
+
+
+def _min_confidence(acc, new):
+    """Weakest-window confidence; a missing value never lowers or raises it."""
+    values = [float(v) for v in (acc, new) if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    if not values:
+        return acc
+    return min(values)
+
+
 def _norm(text: str) -> str:
     """Normalize clause text for dedupe: whitespace-collapse + casefold.
 
@@ -391,8 +453,11 @@ class _SpecialistBase(BaseAgent):
     # boundaries into overlapping windows, extracts each window in its own
     # call, and merges: list fields union with normalized dedupe (overlap
     # re-quotes the same clause), scalars keep the first non-null value,
-    # confidence takes the max. Nothing is truncated; the merge is the
-    # completeness guarantee.
+    # confidence takes the MIN (a document is only as reliable as its weakest
+    # window; MAILROOM PATCH). Nothing is truncated; the merge is the
+    # completeness guarantee. A window that fails to parse is counted and caps
+    # the merged confidence below the class ``low`` threshold; a transient
+    # provider error is re-raised so the node's transient routing retries.
     # ------------------------------------------------------------------
 
     def extract_chunked(
@@ -409,8 +474,11 @@ class _SpecialistBase(BaseAgent):
         chunking can never change small-document output. Longer documents
         are split, each window extracted in its own call, and merged: list
         fields union with normalized dedupe, scalars keep the first non-null
-        value, confidence takes the max. A chunk that fails to parse (or
-        raises) is skipped, not fatal — the surviving chunks still merge.
+        value, confidence takes the MIN. A chunk that fails to parse (or
+        raises a non-transient error) is counted in ``_failed_chunks`` and caps
+        the merged confidence below the class ``low`` threshold; a transient
+        provider error is re-raised so the node retries instead of archiving
+        a partial extraction.
 
         MAILROOM PATCH: page-image data-URIs are attached only to the FIRST
         chunk — the model sees the full document pages once plus every text
@@ -441,7 +509,11 @@ class _SpecialistBase(BaseAgent):
                     temperature=0.1,
                     pages=pages if index == 1 else None,  # MAILROOM PATCH
                 )
-            except Exception as exc:  # noqa: BLE001 - one bad chunk must not abort
+            except Exception as exc:  # noqa: BLE001 - non-transient chunk failure is counted
+                from llm.retry import is_transient_error
+
+                if is_transient_error(exc):
+                    raise
                 logger.warning("chunk_call_failed", agent=self.agent_name,
                                chunk=index, total=len(chunks), error=str(exc)[:200])
                 failed += 1
@@ -458,9 +530,12 @@ class _SpecialistBase(BaseAgent):
         self._last_usage = total_usage
         self._last_truncated = False
         self._last_chunked = True
+        self._last_failed_chunks = failed
         if merged is None:
             return {"_parse_error": True}
-        return merged
+        return finalize_chunked_merge(
+            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed
+        )
 
     @staticmethod
     def _sum_usage(acc: dict | None, usage: dict) -> dict:
@@ -517,7 +592,8 @@ class _SpecialistBase(BaseAgent):
         List fields union with normalized dedupe (case/whitespace-insensitive,
         so the overlap window re-quoting a clause is a no-op); scalar fields
         keep the FIRST non-null value in document order; confidence takes the
-        max across chunks (a clause seen in one window is real evidence).
+        MIN across chunks (a document is only as reliable as its weakest
+        window; the failed-window cap is applied by ``finalize_chunked_merge``).
         ``reasoning`` is a TRACE: its entries union across chunks (dedupe by
         field, the first-witness evidence + section reference wins — the chunk
         that first located the value holds the evidence) and the summaries
@@ -527,8 +603,7 @@ class _SpecialistBase(BaseAgent):
         merged = dict(acc)
         for key, value in chunk.items():
             if key == "confidence":
-                merged["confidence"] = max(
-                    float(merged.get("confidence") or 0.0), float(value or 0.0))
+                merged["confidence"] = _min_confidence(merged.get("confidence"), value)
                 continue
             if key == "_parse_error":
                 continue
