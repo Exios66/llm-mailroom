@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mailroom-diagnostics"
+version = "0.1.0"
+description = "Native read-only diagnostics for the llm-mailroom pipeline graph and display contract"
+requires-python = ">=3.11"
+dependencies = [
+    # The parent pipeline owns the graph and taxonomy; install it first:
+    #   .venv/bin/pip install -e .
+    "mailroom",
+    "pydantic>=2.0",
+    "structlog>=24.0",
+]
+
+[project.scripts]
+mailroom-diagnostics = "mailroom_diagnostics.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "backend"}
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["mailroom_diagnostics*"]
