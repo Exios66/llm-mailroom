@@ -57,6 +57,16 @@ def test_asset_paths_cannot_escape_the_static_root(monkeypatch, tmp_path, auth_h
             assert "diagnostics-ui" in response.text
 
 
+def test_static_root_override_serves_a_dev_build(monkeypatch, tmp_path, auth_headers):
+    from mailroom_diagnostics import app as app_module
+
+    monkeypatch.setenv("MAILROOM_DIAGNOSTICS_STATIC", str(_built_tree(tmp_path)))
+    client = TestClient(app_module.create_app(), headers=auth_headers)
+    response = client.get("/diagnostics")
+    assert response.status_code == 200
+    assert "diagnostics-ui" in response.text
+
+
 def test_static_package_directory_is_declared_and_present():
     """The wheel must carry static/; the app handles an absent index itself."""
     from importlib.resources import files

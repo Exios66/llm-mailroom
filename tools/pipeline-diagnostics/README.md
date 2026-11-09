@@ -2,7 +2,7 @@
 
 Repository-native debugging and diagnostic tooling for llm-mailroom.
 
-**Current status: D0.1–D0.3, D0.4a (provenance/package-data) and D0.4b (atomic preview refresh) implemented; the full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, and source/policy provenance hashes in every workspace snapshot. The React screen, live events, replay and calibration remain later tasks; until the React assets land, `/diagnostics` serves a build-instructions page while the JSON API works.
+**Current status: D0 complete and D1.1 (accessible React graph) implemented; the workbench continues with D1.2 gap scenarios.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, source/policy provenance hashes, atomic fresh-process preview refresh, and an accessible React/React Flow screen at `/diagnostics`. Live execution events, replay and calibration remain later tasks.
 
 ## Start here
 
@@ -28,7 +28,7 @@ Keep these distinctions visible:
 
 All tool-specific implementation, tests, fixtures, package configuration and documentation belong in this folder. Existing root pipeline/API modules receive only the hooks needed to observe execution or mount the native screen. The pipeline remains the authority for routing; the generated display contract remains the authority for its exported topology.
 
-Folder layout; the frontend entry remains planned:
+Folder layout:
 
 ```text
 tools/pipeline-diagnostics/
@@ -42,9 +42,9 @@ tools/pipeline-diagnostics/
   backend/mailroom_diagnostics/
     app.py                 # standalone inspection app; never imports api.main
     api.py                 # router also mountable by the normal API
-    static/                # generated, packaged React build
+    static/                # generated React build (README only in the source tree)
     ...                    # schemas, snapshots, findings, CLI and job protocol
-  frontend/                # React/TypeScript source and committed lockfile
+  frontend/                # React/TypeScript screen and committed lockfile
   tests/                   # explicitly collected by CI
     fixtures/              # synthetic defects and revision-specific contracts
 ```

@@ -1,0 +1,4 @@
+# Generated React build copied by `npm run package:static`; the committed
+# static/README.md documents the directory and keeps it in the wheel.
+backend/mailroom_diagnostics/static/index.html
+backend/mailroom_diagnostics/static/assets/

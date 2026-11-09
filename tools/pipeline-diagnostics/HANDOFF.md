@@ -87,12 +87,14 @@ D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested 
 
 **Depends:** D0.3/D0.4; **owns:** `frontend/` and synthetic graph fixtures.
 
-- [ ] Implement the React Flow graph, cyclic retry paths, stable layout, search/selection, source inspector and provenance strip from snapshot data.
-- [ ] Provide keyboard-operable connection/path list equivalents, visible focus, reduced motion, touch targets, light/dark contrast and meaningful labels.
-- [ ] Support 360px, tablet and desktop without requiring gestures or page-wide horizontal scrolling. Preserve focus/selection/zoom during ordinary updates.
-- [ ] Demonstrate add/remove-node/edge fixture changes without frontend inventory edits. Use a fixture-only builder or disposable checkout; keep production wiring untouched.
+- [x] Implement the React Flow graph, cyclic retry paths, stable layout, search/selection, source inspector and provenance strip from snapshot data.
+- [x] Provide keyboard-operable connection/path list equivalents, visible focus, reduced motion, touch targets, light/dark contrast and meaningful labels.
+- [x] Support 360px, tablet and desktop without requiring gestures or page-wide horizontal scrolling. Preserve focus/selection/zoom during ordinary updates.
+- [x] Demonstrate add/remove-node/edge fixture changes without frontend inventory edits. Use a fixture-only builder or disposable checkout; keep production wiring untouched.
 
 **Acceptance:** desktop/mobile screenshots, keyboard/screen-reader walkthrough and interaction recording with synthetic data. Build the locked frontend dependency graph. React Flow support alone is not proof of application accessibility.
+
+**Evidence (this layered PR):** locked `npm ci`; `npm run test` 13 passed (layout determinism, self-loops, duplicate pairs, added/removed edges, search, list selection, deep links, token header); `npm run typecheck` and `npm run build` clean. Browser walkthrough on a real `serve` instance: 16 nodes/46 edges, 0 console errors after the favicon fix; skip link focuses `#connections`; keyboard Enter/Space selects nodes and updates the inspector; Refresh preserves viewport transform and selection; reduced-motion emulation reports no edge animation; 360px viewport has no page-wide horizontal overflow and defaults to the card list. Screenshots/recording are linked from the layer PR (synthetic snapshot only).
 
 ### D1.2 — Reproducible current-pipeline gap scenarios
 
