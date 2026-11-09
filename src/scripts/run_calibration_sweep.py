@@ -1160,7 +1160,9 @@ class _Writer:
         self._lock = threading.Lock()
 
     def write(self, record: RunRecord) -> None:
-        line = record.model_dump_json()
+        from schemas.run_record import record_jsonl_line
+
+        line = record_jsonl_line(record)
         with self._lock:
             self._fh.write(line + "\n")
             self._fh.flush()

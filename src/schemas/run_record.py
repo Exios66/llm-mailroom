@@ -259,3 +259,31 @@ def to_review_record(record: RunRecord) -> dict[str, Any]:
         "dataset_revision": record.run.dataset_revision,
         "split": record.run.split,
     }
+
+
+_WINDOW_KEYS = ("window_confidences", "window_has_fields")
+
+
+def _drop_empty_window_keys(value):
+    if isinstance(value, dict):
+        return {
+            k: _drop_empty_window_keys(v)
+            for k, v in value.items()
+            if not (k in _WINDOW_KEYS and v is None)
+        }
+    if isinstance(value, list):
+        return [_drop_empty_window_keys(v) for v in value]
+    return value
+
+
+def record_jsonl_line(record: "RunRecord") -> str:
+    """Compact JSON for one record, without per-window keys that carry no evidence.
+
+    Main and earlier branches validate with ``extra="forbid"`` and do not know the CR6
+    window fields, so an attempt without window evidence is written without them and
+    stays readable there. A chunked attempt that carries evidence keeps them: that data
+    needs this schema to be read.
+    """
+    import json
+
+    return json.dumps(_drop_empty_window_keys(record.model_dump(mode="json")), separators=(",", ":"))

@@ -127,6 +127,13 @@ def accept_target(c_human: float = 1.0, c_error: float = 20.0) -> float:
 # ---------------------------------------------------------------------------
 
 
+def record_jsonl_line(rec: RunRecord) -> str:
+    """One JSONL line for ``rec``; see :func:`schemas.run_record.record_jsonl_line`."""
+    from schemas.run_record import record_jsonl_line as _line
+
+    return _line(rec)
+
+
 def load_records(path: str | Path) -> list[RunRecord]:
     """Read a JSONL file of :class:`RunRecord` rows (blank lines are skipped)."""
     records: list[RunRecord] = []
@@ -147,7 +154,7 @@ def dump_records(records: Iterable[RunRecord], path: str | Path) -> int:
     n = 0
     with open(path, "w", encoding="utf-8") as fh:
         for rec in records:
-            fh.write(rec.model_dump_json() + "\n")
+            fh.write(record_jsonl_line(rec) + "\n")
             n += 1
     return n
 
@@ -280,7 +287,10 @@ class _NullLogger:
 
 _QUIET_DEPTH = 0
 _SCHEMA_VALID: dict[str, bool] = {"value": True}
-_MERGE_RULE: dict[str, str] = {"value": "min"}
+# The live chunked merge (``specialist_agents.finalize_chunked_merge``) uses ``cr6``; a replay
+# without an explicit rule replays what production does. ``min`` stays available by name.
+DEFAULT_MERGE_RULE: Literal["min", "cr6"] = "cr6"
+_MERGE_RULE: dict[str, str] = {"value": DEFAULT_MERGE_RULE}
 
 
 @contextlib.contextmanager
@@ -570,7 +580,7 @@ def replay(
     policy: Mapping[str, Any] | None = None,
     *,
     oracle: bool = False,
-    merge_rule: Literal["min", "cr6"] = "min",
+    merge_rule: Literal["min", "cr6"] = DEFAULT_MERGE_RULE,
 ) -> ReplayOutcome:
     """Replay ``policy`` over one record through the real routing functions.
 
@@ -892,7 +902,7 @@ def evaluate(
     policy: Mapping[str, Any] | None = None,
     objective_params: ObjectiveParams | Mapping[str, Any] | None = None,
     *,
-    merge_rule: Literal["min", "cr6"] = "min",
+    merge_rule: Literal["min", "cr6"] = DEFAULT_MERGE_RULE,
 ) -> dict[str, Any]:
     """Replay ``policy`` over ``records`` and score it: metrics, guards, SCORE.
 

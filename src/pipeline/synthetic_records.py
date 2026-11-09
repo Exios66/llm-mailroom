@@ -197,6 +197,10 @@ def _extraction_attempt(rng: random.Random, attempt: int, gold: str) -> tuple[Ex
             schema_valid=rng.random() > 0.03,
             hollow=hollow,
             n_chunks=chunks,
+            # A chunked attempt carries the per-window evidence the sweep records (every
+            # window states the attempt's confidence), so both merge rules replay it.
+            window_confidences=[conf] * chunks if chunks > 1 else None,
+            window_has_fields=[not hollow] * chunks if chunks > 1 else None,
             extraction_score=score,
             hallucination_rate=round(rng.uniform(0.0, 0.05 if success else 0.3), 4),
             prompt_tokens=3500 * chunks,
