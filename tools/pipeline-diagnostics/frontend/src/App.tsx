@@ -92,13 +92,12 @@ export default function App() {
       if (snapshotResult.status !== "fulfilled") throw snapshotResult.reason;
       const nextSnapshot = snapshotResult.value;
       const nextReport = reportResult.status === "fulfilled" ? reportResult.value : null;
-      const nextRuns = runsResult.status === "fulfilled" ? runsResult.value : [];
-      const nextExperiments =
-        experimentsResult.status === "fulfilled" ? experimentsResult.value : [];
       setSnapshot(nextSnapshot);
       setReport(nextReport);
-      setRuns(nextRuns);
-      setExperiments(nextExperiments);
+      // A transient runs/experiments failure keeps the last loaded collections
+      // instead of clearing the panels and losing a selection.
+      if (runsResult.status === "fulfilled") setRuns(runsResult.value);
+      if (experimentsResult.status === "fulfilled") setExperiments(experimentsResult.value);
       setUpdatedAt(new Date());
       setError(null);
       setAnnouncement(

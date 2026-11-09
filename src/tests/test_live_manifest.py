@@ -28,7 +28,7 @@ def test_committed_live_manifest_fixture_is_valid():
         assert len(row["hub_sha"]) == 40
         assert len(row["content_sha256"]) == 64
         assert row["expected_stage"] in ("archived", "review", "failed")
-        assert json.loads(row["expected_fields"]) == json.loads(row["expected_fields"])
+        assert json.loads(row["expected_fields"]), row["id"]
 
 
 def test_selection_is_deterministic_and_stratified():

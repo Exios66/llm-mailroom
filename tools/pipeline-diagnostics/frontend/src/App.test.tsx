@@ -224,6 +224,20 @@ describe("App", () => {
     expect(screen.getByLabelText("Load a run journal")).toHaveValue("run-1");
   });
 
+  it("starts and stops recorded-path playback", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    await screen.findByRole("list", { name: "Recorded node path" });
+    await user.click(screen.getByRole("button", { name: "Play path" }));
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(screen.getByRole("button", { name: "Play path" })).toBeInTheDocument();
+  });
+
   it("sends the stored bearer token on diagnostics requests", async () => {
     sessionStorage.setItem("mailroom-diagnostics-token", "tab-token");
     const fetchMock = mockApi();
