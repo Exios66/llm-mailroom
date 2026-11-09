@@ -254,6 +254,94 @@ async def test_attempt_envelope_field_edits_fail_subrows(audit_db, field, statem
     assert report.main.ok is True  # the row hash only covers the listed hashes
 
 
+async def test_cross_parent_attempt_reference_fails_subrows(audit_db):
+    """R1: a second parent cannot list another parent's attempt by hash.
+
+    The old missing-subrow loop only checked global existence, so row B could
+    list row A's attempt (correct hash) and verification still passed.
+    """
+    from audit.verify import verify_audit_db
+    from audit.writer import get_row, hash_entry, write_terminal_row
+
+    await write_terminal_row(_row("doc-a", attempts=[_attempt(1, tag="a1")]))
+    await write_terminal_row(_row("doc-b"))
+    row_a = await get_row("doc-a")
+    row_b = await get_row("doc-b")
+    sub = row_a["sub_rows"][0]
+    detail_b = dict(row_b["detail"])
+    detail_b["attempts"] = [
+        {
+            "attempt_id": sub["attempt_id"],
+            "stage": sub["stage"],
+            "attempt_no": sub["attempt_no"],
+            "entry_hash": sub["entry_hash"],
+        }
+    ]
+    # Recompute B's own hash so the MAIN chain stays valid; only membership is broken.
+    digest = hash_entry(
+        prev_hash=row_b["prev_hash"],
+        doc_id="doc-b",
+        entry_id=row_b["entry_id"],
+        event=row_b["event"],
+        detail=detail_b,
+        matter_id=row_b["matter_id"],
+        actor=row_b["actor"],
+        timestamp=row_b["timestamp"],
+    )
+    with sqlite3.connect(audit_db) as conn:
+        conn.execute(
+            "UPDATE audit_log SET detail = ?, entry_hash = ? WHERE doc_id = 'doc-b'",
+            (json.dumps(detail_b), digest),
+        )
+
+    report = await verify_audit_db()
+
+    assert report.main.ok is True  # B's row hash was recomputed correctly
+    assert report.subrows.ok is False
+    assert {f["kind"] for f in report.subrows.failures} & {
+        "attempt_referenced_twice",
+        "reference_parent_mismatch",
+    }
+
+
+async def test_duplicate_attempt_reference_fails_subrows(audit_db):
+    from audit.verify import verify_audit_db
+    from audit.writer import get_row, hash_entry, write_terminal_row
+
+    await write_terminal_row(_row("doc-a", attempts=[_attempt(1, tag="dup")]))
+    row = await get_row("doc-a")
+    sub = row["sub_rows"][0]
+    ref = {
+        "attempt_id": sub["attempt_id"],
+        "stage": sub["stage"],
+        "attempt_no": sub["attempt_no"],
+        "entry_hash": sub["entry_hash"],
+    }
+    detail = dict(row["detail"])
+    detail["attempts"] = [ref, dict(ref)]
+    digest = hash_entry(
+        prev_hash=row["prev_hash"],
+        doc_id="doc-a",
+        entry_id=row["entry_id"],
+        event=row["event"],
+        detail=detail,
+        matter_id=row["matter_id"],
+        actor=row["actor"],
+        timestamp=row["timestamp"],
+    )
+    with sqlite3.connect(audit_db) as conn:
+        conn.execute(
+            "UPDATE audit_log SET detail = ?, entry_hash = ? WHERE doc_id = 'doc-a'",
+            (json.dumps(detail), digest),
+        )
+
+    report = await verify_audit_db()
+
+    assert report.main.ok is True
+    assert report.subrows.ok is False
+    assert {f["kind"] for f in report.subrows.failures} == {"duplicate_attempt_ref"}
+
+
 async def test_tampered_legacy_fails_legacy_only(tmp_path, monkeypatch):
     """Realistic pre-existing rows: the committed legacy fixture, migrated."""
     from audit.verify import verify_audit_db

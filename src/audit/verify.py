@@ -1,7 +1,10 @@
-"""Bounded verification of the unified audit storage (spec §6, roadmap M4).
+"""Storage-scope verification of the unified audit storage (spec §6, roadmap M4).
 
-This is deliberately a *storage* verifier. It proves the things this layer can
-actually observe and says so when it cannot:
+This is deliberately a *storage* verifier: it covers only the data this layer
+can observe. "Bounded" here means scope-limited, **not memory-bounded** — the
+offline verifier materializes the audit tables in memory for one consistent
+snapshot, so memory use grows with the rows checked. It proves the things this
+layer can actually observe and says so when it cannot:
 
 * **main** — the global terminal-row chain in ``audit_log`` (``seq`` order,
   ``prev_hash`` links, recomputed v2 hashes, unique ``doc_id``, and the
@@ -252,16 +255,17 @@ async def _check_subrows(session, migrated: bool) -> CheckReport:
     attempts = (await session.execute(select(AuditAttemptRecord))).scalars().all()
     report = CheckReport(checked=len(attempts))
 
-    parents: dict[str, tuple[Any, str, str]] = {}
+    parents: dict[str, tuple[Any, str, str, str]] = {}
     listed: dict[str, dict[str, Any]] = {}
     row_matter = {record.doc_id: record.matter_id for record in rows}
     for record in rows:
-        parents[record.entry_id] = (record, record.matter_id, record.actor)
+        parents[record.entry_id] = (record, record.matter_id, record.actor, record.doc_id)
     for record in addenda:
         parents[record.addendum_id] = (
             record,
             row_matter.get(record.doc_id, ""),
             record.actor,
+            record.doc_id,
         )
 
     def _collect_refs(parent_id: str, detail: dict[str, Any] | None) -> None:
@@ -274,7 +278,15 @@ async def _check_subrows(session, migrated: bool) -> CheckReport:
             if not isinstance(ref, dict) or not ref.get("attempt_id"):
                 report.fail(kind="attempt_ref_malformed", parent_id=parent_id)
                 continue
-            listed[parent_id][ref["attempt_id"]] = ref.get("entry_hash")
+            attempt_id = ref["attempt_id"]
+            if attempt_id in listed[parent_id]:
+                report.fail(
+                    kind="duplicate_attempt_ref",
+                    parent_id=parent_id,
+                    attempt_id=attempt_id,
+                )
+                continue
+            listed[parent_id][attempt_id] = ref.get("entry_hash")
 
     for record in rows:
         _collect_refs(record.entry_id, record.detail)
@@ -289,7 +301,7 @@ async def _check_subrows(session, migrated: bool) -> CheckReport:
                 kind="parent_missing", attempt_id=attempt.attempt_id, parent_id=attempt.parent_id
             )
             continue
-        record, matter_id, actor = parent
+        record, matter_id, actor, _doc_id = parent
         expected = attempt_hash(
             _attempt_sub(attempt), matter_id=matter_id, actor=actor
         )
@@ -309,10 +321,48 @@ async def _check_subrows(session, migrated: bool) -> CheckReport:
                 parent_id=attempt.parent_id,
             )
 
+    # A reference is a claim by ITS parent. Checking only global existence
+    # lets a second row/addendum list another parent's attempt (with the
+    # correct hash) and pass verification. Every reference must resolve to an
+    # attempt owned by that exact parent and document, with the exact hash,
+    # and an attempt may be referenced by one parent only.
+    referenced_by: dict[str, str] = {}
     for parent_id, refs in listed.items():
-        for attempt_id in refs:
-            if attempt_id not in by_attempt:
+        parent = parents.get(parent_id)
+        parent_doc = parent[3] if parent is not None else None
+        for attempt_id, ref_hash in refs.items():
+            previous = referenced_by.setdefault(attempt_id, parent_id)
+            if previous != parent_id:
+                report.fail(
+                    kind="attempt_referenced_twice",
+                    attempt_id=attempt_id,
+                    first_parent=previous,
+                    second_parent=parent_id,
+                )
+            attempt = by_attempt.get(attempt_id)
+            if attempt is None:
                 report.fail(kind="missing_subrow", parent_id=parent_id, attempt_id=attempt_id)
+            elif attempt.parent_id != parent_id:
+                report.fail(
+                    kind="reference_parent_mismatch",
+                    parent_id=parent_id,
+                    attempt_id=attempt_id,
+                    actual_parent=attempt.parent_id,
+                )
+            elif parent_doc is not None and attempt.doc_id != parent_doc:
+                report.fail(
+                    kind="reference_doc_mismatch",
+                    parent_id=parent_id,
+                    attempt_id=attempt_id,
+                    expected=parent_doc,
+                    actual=attempt.doc_id,
+                )
+            elif attempt.entry_hash != ref_hash:
+                report.fail(
+                    kind="reference_hash_mismatch",
+                    parent_id=parent_id,
+                    attempt_id=attempt_id,
+                )
     return report
 
 

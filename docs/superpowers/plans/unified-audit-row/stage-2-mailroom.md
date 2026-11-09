@@ -120,7 +120,7 @@
   - `test_unknown_event_rejected`.
   - `test_writer_refuses_while_migration_pending`: with no `audit_meta` (Postgres opt-in not given), `write_terminal_row` raises `AuditMigrationPending` and writes nothing to `audit_log` (spec §6). M10 routes that error into the §5.6 fallback.
 - [x] **Step 2: Run them.** Expected: FAIL.
-- [x] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:<doc_id>` for addenda.
+- [x] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and the separate per-document `audit_doc:<doc_id>` namespace for addenda (never the global key).
 - [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (full suite 2632 passed, 37 skipped)
 - [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `3b6e5b9`)
 

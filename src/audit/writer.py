@@ -4,7 +4,7 @@
   tail by ``seq``, links the new row to it and inserts the row and its attempt
   sub-rows in one transaction. If the document already has a row it writes a
   ``resumed`` addendum instead.
-* ``write_addendum`` takes the per-document ``audit_log:<doc_id>`` lock and
+* ``write_addendum`` takes the per-document ``audit_doc:<doc_id>`` lock and
   appends to the document's addendum chain, which starts at the row's hash.
 
 Every hash is hash version 2 (``schemas.audit.compute_audit_hash``),

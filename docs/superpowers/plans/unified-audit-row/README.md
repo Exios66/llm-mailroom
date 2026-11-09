@@ -78,27 +78,29 @@ Read this first if you are picking the work up.
 
 ## Foundation refresh (stackable branch, 2026-11-09)
 
-`feat/unified-audit-foundation-refresh` imports only the M2/M3 audit storage delta onto the
-current diagnostics/live-manifest base and adds the bounded M4 storage verifier. It is a
-foundation, not the stage:
+`feat/unified-audit-foundation-refresh` starts from current `origin/main` `1b9477c` (PR #203
+and PR #215 both merged) and adds only the M2/M3 audit storage delta plus a
+storage-scope-limited M4 verifier. It is a foundation, not the stage:
 
 - **Delivered:** audit tables/migration (opt-in), row/addendum writers (unwired), legacy
   bridge, and `verify_audit_db` (main chain, sub-rows, addenda, legacy, stored trace I/O).
-- **Default behavior is unchanged:** nothing migrates without `MAILROOM_AUDIT_MIGRATE=1`
-  (SQLite and Postgres) or the explicit `python -m storage.audit_migrate`; the per-event
-  writer/readers stay on `audit_log`. See `src/storage/README.md`.
+- **Default behavior is unchanged:** default startup migrates nothing without
+  `MAILROOM_AUDIT_MIGRATE=1` (SQLite and Postgres); the explicit
+  `python -m storage.audit_migrate` needs no knob on SQLite, while Postgres always requires
+  it. The per-event writer/readers stay on `audit_log`. See `src/storage/README.md`.
+- **"Bounded M4" means storage-scope-limited, not memory-bounded.** The offline verifier
+  covers only this layer's storage surface and it materializes the audit tables in memory
+  for one consistent snapshot; memory cost grows with the rows it checks.
 - **Not delivered:** M4's full gate (full-suite evidence, pending/sink checks), M5–M15
   (trace collection, scoring nodes, terminal writers, sinks, reconciliation, readers,
   warehouse/report, rescore, one scoring path, docs gate). The roadmap table below is not a
   claim that the stage is finished.
 
-**PR #203 compatibility note (exact future resolution).** PR #203's storage changes have
-landed on `main` independently. When this branch is integrated, keep #203's
-`run_write_with_retry` wrapper and move the `event_log_model()`/legacy-bridge selection
-inside its `_write_audit_entry_once`; retain all of #203's `db.py` retry-loop/busy_timeout
-changes together with this branch's `ensure_tables`, `_create_schema` and
-`_migrate_audit_on_start`. The catalog delta is independent. PR #204's `ed7b808` includes
-#203 branch history, so integrate only its held delta, never a raw head merge.
+**Integration status.** PR #203's storage changes are already in `main`; this branch keeps
+their `run_write_with_retry` wrapper with the `event_log_model()`/legacy-bridge selection
+inside `_write_audit_entry_once`, and retains both `db.py` retry/busy-timeout code and the
+new opt-in migration helpers. PR #215 is merged in `main` at `1b9477c` too. PR #204 remains
+a held, independent delta: integrate only its reviewed delta, not its raw head.
 
 ## Stages
 
