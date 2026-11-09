@@ -32,10 +32,29 @@ GLOBAL_FILES = {"pyproject.toml", "Dockerfile", "pytest.ini", "tox.ini", "setup.
                 "src/agents/base.py", "src/agents/sorter.py", "src/pipeline/config.py",
                 "src/pipeline/env.py", "src/pipeline/bins.py", "src/pipeline/guards.py"}
 DOC_TESTS = ("src/tests/test_docs_truth.py", "src/tests/test_landing.py")
+# The pipeline-diagnostics workbench is a nested package with its own suite.
+# Explicit src/tests runs do not reach it, so name both roots. Every path
+# here is resolved relative to REPO (the planner stays testable in a tmp tree).
+NESTED_ROOT = "tools/pipeline-diagnostics"
+NESTED_TESTS = f"{NESTED_ROOT}/tests"
+# Parent inputs that the nested suite verifies but the src import graph cannot
+# see (the nested tests import the exporter outside `src.tests`). A change here
+# must select the nested suite, not only its root consumers.
+NESTED_PARENT_INPUTS = {"src/scripts/export_contract.py"}
+
+
+def nested_tests() -> list[str]:
+    """Test files of the nested workbench; empty until that package lands."""
+    root = REPO / NESTED_TESTS
+    if not root.is_dir():
+        return []
+    return sorted(str(p.relative_to(REPO)) for p in root.rglob("test_*.py"))
 
 
 def make_plan(changed: list[str], *, full: bool = False, branch: str = "") -> dict:
-    all_tests = sorted(str(p.relative_to(REPO)) for p in (REPO / "src/tests").rglob("test_*.py"))
+    root_tests = sorted(str(p.relative_to(REPO)) for p in (REPO / "src/tests").rglob("test_*.py"))
+    nested = nested_tests()
+    all_tests = sorted([*root_tests, *nested])
     smoke = [*SMOKE]
     # PR #180 supplies stronger compiled-graph contracts; include them as soon
     # as they land, without making this CI change depend on that PR's branch.
@@ -53,6 +72,28 @@ def make_plan(changed: list[str], *, full: bool = False, branch: str = "") -> di
         path = Path(name)
         if path.is_absolute() or ".." in path.parts:
             reason = reason or f"unrecognized path: {name}"
+        elif name.startswith(f"{NESTED_ROOT}/"):
+            if path.suffix.lower() in {".md", ".rst"}:
+                selected.update(p for p in DOC_TESTS if (REPO / p).is_file())
+            if not (REPO / path).is_file():
+                reason = reason or f"deleted, renamed, or missing input: {name}"
+            elif not nested:
+                reason = reason or f"nested tool change without a discovered test root: {name}"
+            else:
+                # Conservative explicit mapping: the nested tool's own suite is
+                # the only test consumer of its backend, packaging, fixtures and
+                # test helpers. A changed test module may be imported by other
+                # nested tests, so select the whole nested suite rather than one
+                # file and risk missing the dependent regression.
+                selected.update(nested)
+        elif name in NESTED_PARENT_INPUTS:
+            # The nested parity test imports the root exporter directly, which
+            # the src import graph does not attribute to any root test.
+            selected.update(nested)
+            try:
+                ast.parse((REPO / path).read_text(encoding="utf-8"))
+            except (SyntaxError, UnicodeError, OSError):
+                reason = reason or f"cannot analyze changed Python: {name}"
         elif name in GLOBAL_FILES or name.startswith(SHARED) or path.name in {"conftest.py", "__init__.py"}:
             reason = reason or f"shared contract/configuration changed: {name}"
         elif not (REPO / path).is_file():
@@ -76,6 +117,8 @@ def make_plan(changed: list[str], *, full: bool = False, branch: str = "") -> di
             # Analyze each changed input separately: an unmapped file must not
             # be hidden by a different file that does have known consumers.
             for name in changed:
+                if name.startswith(f"{NESTED_ROOT}/"):
+                    continue  # explicit nested mapping above; not in the src import graph
                 consumers = affected_tests.select([name], depth=-1)
                 if name.endswith(".py") and not consumers:
                     reason = f"no known test consumer: {name}"
@@ -91,7 +134,8 @@ def make_plan(changed: list[str], *, full: bool = False, branch: str = "") -> di
         "reason": reason or "mandatory smoke followed by transitive affected tests",
         "changed": sorted(set(changed)),
         "smoke": [] if reason else smoke,
-        "tests": ["src/tests"] if reason else sorted(selected - set(smoke)),
+        "tests": (["src/tests", *([NESTED_TESTS] if nested else [])] if reason
+                  else sorted(selected - set(smoke))),
         "experiment": bool(reason or production),
         "total_test_files": len(all_tests),
         "selected_test_files": len(all_tests) if reason else len(set(smoke) | selected),

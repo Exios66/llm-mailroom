@@ -176,6 +176,7 @@ cd llm-mailroom
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
+python -m pip install -e tools/pipeline-diagnostics
 cp .env.example .env
 # Add OPENROUTER_API_KEY to .env for live inference.
 ```
@@ -212,10 +213,11 @@ Runtime state is stored under `data/` (or `MAILROOM_BASE_DIR`):
 ### Installation
 
 <a id="installing"></a>
-Core install (pipeline + API + tests):
+Development install (pipeline + API + both test suites):
 
 ```bash
 pip install -e ".[dev]"
+pip install -e tools/pipeline-diagnostics
 ```
 
 Optional install profiles — take only what you need:
@@ -731,7 +733,7 @@ data/
 
 ```bash
 # Run all tests
-pytest src/tests/ -v
+pytest src/tests/ tools/pipeline-diagnostics/tests -v
 
 # Run specific test suites
 pytest src/tests/test_agents/ -v
@@ -740,8 +742,10 @@ pytest src/tests/test_audit_log.py -v
 pytest src/tests/test_pipeline_e2e.py -v
 
 # With coverage
-pytest src/tests/ --cov=src --cov-report=html
+pytest src/tests/ tools/pipeline-diagnostics/tests --cov=src --cov-report=html
 ```
+
+The full developer setup installs both packages. A parent-only install supports the pipeline suite; default pytest discovery also requires the nested package and its console entrypoint. See [native diagnostics quick start](tools/pipeline-diagnostics/QUICKSTART.md).
 
 Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mocked (see `src/tests/conftest.py`).
 

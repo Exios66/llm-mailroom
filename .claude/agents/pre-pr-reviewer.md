@@ -64,5 +64,8 @@ caught before. Check each one. The orchestrator adds a line when a new one gets 
 - A fact changed in one doc but not in the other pages that repeat it (versions, counts,
   pins, ports, defaults).
 - A relative link or `#anchor` that does not resolve.
+- A bounded-input regression fixture whose serialized byte count does not actually exceed the patched limit; check the payload size before claiming the oversized-input path is covered.
+- New default test roots whose documented developer setup does not install their entrypoints; verify the complete setup and CI install sequence.
+- Structural reachability that traverses invalid endpoints, or treats entry/exit boundaries as interchangeable; require ghost-path and reversed-boundary regressions.
 - A new environment variable read in `src/` but missing from `.env.example`.
 - A changed docstring or comment that no longer describes the code.

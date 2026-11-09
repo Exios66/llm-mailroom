@@ -1,0 +1,9 @@
+{
+  "contract_version": "1.0.0",
+  "graph": {
+    "start": "__start__",
+    "end": "__end__",
+    "nodes": "not-a-list",
+    "edges": []
+  }
+}
