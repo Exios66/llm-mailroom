@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pilot-test the pipeline against examples/samples/manifest.csv.
+"""Pilot-test the pipeline against examples/samples/manifest.csv or the pinned HF corpus.
 
 Feeds each sample through the real LangGraph pipeline, records per-document
 outcomes (stage, doc_type, confidence, retries, LLM call count, wall time), and
@@ -14,8 +14,27 @@ scores them against the ground truth in the manifest. Two modes:
 Use --baseline <report.json> to diff two runs (e.g. before/after a procedural
 change) and quantify accuracy/time/call deltas.
 
+Two document sources (``--dataset``):
+
+  samples  the monorepo's docs/examples/samples/manifest.csv (the default when
+           that file exists; nothing about this path changes).
+  hf       REAL documents from the pinned Hugging Face corpus
+           Lucius-Morningstar/mailroom-dataset, loaded only through
+           ``pipeline.hf_corpus_loader.load_corpus`` (a public, anonymous READ at
+           the pinned revision; parquet is cached under
+           ``<MAILROOM_BASE_DIR>/hf_cache/``). ``--per-class N`` documents of each
+           class are drawn with ``--seed`` from ``--split`` and written, in full
+           (never truncated), as .txt files under ``<MAILROOM_BASE_DIR>/samples/hf/``
+           so the pipeline ingests them like any inbox file. Nothing is written to
+           Hugging Face. Chosen automatically (with a notice) for --mock when
+           manifest.csv is absent, i.e. in a standalone checkout.
+
+The mock LLM returns each sample's expected class, so a --mock run checks the
+pipeline wiring on real document text, not classifier quality.
+
 Usage:
     python scripts/run_pilot.py --mock
+    python scripts/run_pilot.py --mock --dataset hf --per-class 2
     python scripts/run_pilot.py --real
     python scripts/run_pilot.py --mock --baseline data/pilot_report_baseline.json
     python scripts/run_pilot.py --mock --include contract
@@ -26,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import shutil
@@ -197,6 +217,22 @@ def _real_get_llm(agent_name: str):
 from llm.client import get_llm as _REAL_GET_LLM  # noqa: E402
 
 
+def _mock_subclass(expect: dict) -> dict:
+    """``{"doc_subclass": ...}`` when the sample supplies one (corpus rows), else ``{}``.
+
+    The classification guard clamps a catalog class answered without a valid
+    ``doc_subclass`` (``doc_subclass_missing``), which routes every such mock
+    document to review. Committed-manifest samples carry no subclass and keep
+    the historical payload; ``--dataset hf`` rows set ``expect["subclass"]``.
+    """
+    return {"doc_subclass": expect["subclass"]} if expect.get("subclass") else {}
+
+
+def _mock_fields(expect: dict) -> dict:
+    """The sample's expected extraction fields, when the mock answers as an oracle (corpus rows)."""
+    return dict(expect.get("fields") or {})
+
+
 def _fake_client(expect: dict) -> MagicMock:
     def create(**kwargs):
         start = time.perf_counter()
@@ -212,6 +248,7 @@ def _fake_client(expect: dict) -> MagicMock:
                 "doc_type": expect["doc_type"],
                 "confidence": expect["conf"],
                 "reasoning": "mock",
+                **_mock_subclass(expect),
             })
         elif "ADJUDICATION REQUEST" in user_content:
             content = json.dumps({"decision": "approved", "reasoning": "mock", "resolution_notes": ""})
@@ -220,6 +257,7 @@ def _fake_client(expect: dict) -> MagicMock:
                 "confidence": expect["conf"],
                 "document_name": "Mock Agreement",
                 "parties": ["Mock Party"],
+                **_mock_fields(expect),
             })
         resp = MagicMock()
         resp.choices = [MagicMock()]
@@ -264,11 +302,13 @@ def _make_mock_langchain_llm(expect: dict):
                 "contract_subtype": "other" if expect["doc_type"] == "contract" else None,
                 "confidence": expect["conf"],
                 "reasoning": "mock",
+                **_mock_subclass(expect),
             },
             extraction={
                 "confidence": expect["conf"],
                 "document_name": "Mock Agreement",
                 "parties": ["Mock Party"],
+                **_mock_fields(expect),
             },
             on_call=_on_call,
         )
@@ -345,11 +385,27 @@ def _make_real_langchain_llm():
     return _llm
 
 
+def _oracle_confidence(sample: dict, bar: dict) -> float:
+    """Confidence for a corpus row: 0.99 at most, but never below the class's routing floor.
+
+    ``bar`` is the class's confidence thresholds. A floor of 1.0 (or 0.99 plus a
+    bump) must stay at the floor, or routing sends a healthy sample to review.
+    """
+    floor = max(float(bar.get("high", 0.97)), float(bar.get("judge_band_high", 0.0)))
+    return max(floor, min(0.99, round(floor + (sum(sample["id"].encode()) % 2) / 100, 2)))
+
+
 def run_sample(
     sample: dict, mock_mode: bool, session_id: str | None = None, run_id: str | None = None
 ) -> dict:
     from pipeline.bins import inbox_dir
     from graph.build_graph import run_pipeline
+
+    # Reset first: a sample that raises later keeps only its own usage (see _error_row).
+    _LLM_METRICS["calls"] = 0
+    _LLM_METRICS["seconds"] = 0.0
+    _LLM_METRICS["usage"] = []
+    _LLM_METRICS["cost_usd"] = 0.0
 
     matter_id = f"PILOT-{sample['id']}"
     sample_pdf = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "samples" / sample["subdir"] / sample["filename"]
@@ -369,11 +425,16 @@ def run_sample(
         if sample["id"] == "ambiguous_01"
         else 0.95 + (sum(sample["id"].encode()) % 5) / 100,
     }
+    if sample.get("mock_oracle"):
+        # Corpus rows (--dataset hf): the fake LLM answers from the sample's own labels so a
+        # healthy pipeline archives it. Class, a valid catalog subclass, a confidence at or
+        # above the class's confidence.high (taxonomy.yaml), and the expected fields as the extraction. The committed
+        # manifest keeps its historical payload (this branch never runs for it).
+        from pipeline.config import get_confidence_thresholds
 
-    _LLM_METRICS["calls"] = 0
-    _LLM_METRICS["seconds"] = 0.0
-    _LLM_METRICS["usage"] = []
-    _LLM_METRICS["cost_usd"] = 0.0
+        expect["conf"] = _oracle_confidence(sample, get_confidence_thresholds(sample["expected_doc_class"]))
+        expect["subclass"] = sample.get("mock_subclass") or None
+        expect["fields"] = _parse_expected_fields(sample) or {}
 
     def _mock_get_llm(agent_name):
         return _fake_client(expect), "mock-model"
@@ -441,6 +502,21 @@ def run_sample(
     }
 
 
+def _error_row(sample: dict, exc: Exception) -> dict:
+    """Row for a sample that raised: keeps the class label and whatever usage was billed before the error."""
+    tokens = sum(u["prompt_tokens"] + u["completion_tokens"] for u in _LLM_METRICS["usage"])
+    return {
+        "id": sample.get("id"),
+        "filename": sample.get("filename"),
+        "expected_doc_class": sample.get("expected_doc_class"),
+        "status": "error",
+        "error": f"{type(exc).__name__}: {exc}",
+        "llm_calls": _LLM_METRICS["calls"],
+        "llm_cost_usd": round(_LLM_METRICS["cost_usd"], 6),
+        "llm_tokens": tokens,
+    }
+
+
 def _parse_expected_fields(sample: dict) -> dict | None:
     """Parse the manifest `expected_fields` JSON column (literal per-field
     expected extraction values) into a dict, or None when absent."""
@@ -452,6 +528,97 @@ def _parse_expected_fields(sample: dict) -> dict | None:
     except json.JSONDecodeError:
         logger.error("expected_fields_invalid", filename=sample.get("filename"))
         return None
+
+
+HF_SOURCE_PREFIX = "hf/"  # manifest ``source`` of corpus rows; is_real_sample() treats it as real
+
+
+def _samples_base_dir() -> Path:
+    return Path(os.environ.get("MAILROOM_BASE_DIR", "./data"))
+
+
+def build_hf_manifest(
+    split: str = "train", per_class: int = 3, seed: int = 0, base_dir: Path | None = None
+) -> tuple[list[dict], dict]:
+    """Manifest rows for a seeded per-class draw of the pinned HF corpus.
+
+    Documents come only from ``pipeline.hf_corpus_loader.load_corpus`` (via
+    ``run_calibration_sweep.load_hf_docs``, which owns the column mapping and the
+    seeded sampling). Each document's full text is written, untruncated, to
+    ``<base_dir>/samples/hf/<name>.txt`` where ``run_sample`` expects it. Returns
+    ``(rows, provenance)``; rows carry exactly the keys the manifest consumers read.
+    """
+    from scripts import run_hf_pilot as hp
+    from scripts.run_calibration_sweep import load_hf_docs, mock_expectation
+
+    if per_class < 1:
+        raise SystemExit("--per-class must be at least 1")
+    docs, provenance = load_hf_docs(split, per_class, seed)
+    out_dir = Path(base_dir if base_dir is not None else _samples_base_dir()) / "samples" / "hf"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    trace_source = hp._trace_source()
+    used: set[str] = set()
+    rows: list[dict] = []
+    # Documents whose names collide are told apart by their content hash, not by draw
+    # order: the filename (hence the row id and the Langfuse trace id) stays with the
+    # same document however the draw is ordered. Order only breaks exact content ties.
+    base_names = [hp._inbox_filename(d.filename) for d in docs]
+    for doc, base in zip(docs, base_names):
+        if base_names.count(base) > 1:
+            digest = doc.content_sha256 or hashlib.sha256(doc.text.encode("utf-8")).hexdigest()
+            base = f"{Path(base).stem}__{digest[:10]}{Path(base).suffix}"
+        filename = hp._unique_name(base, used)
+        (out_dir / filename).write_bytes(doc.text.encode("utf-8"))
+        rows.append({
+            "id": Path(filename).stem,
+            "subdir": "hf",
+            "filename": filename,
+            "source": f"{HF_SOURCE_PREFIX}{provenance['dataset_id']}/{doc.filename}",
+            "dataset": trace_source,
+            "source_corpus": doc.source_corpus or "",
+            "expected_doc_class": doc.gold_class,
+            "expected_subclass": doc.gold_subclass or "",
+            "expected_stage": doc.expected_stage or "archived",
+            # "{}" (not "") when the corpus has no field truth: the manifest
+            # validator rejects an absent expected_fields column.
+            "expected_fields": json.dumps(doc.expected_fields or {}),
+            # The fake LLM answers from these labels (see run_sample): a valid catalog subclass.
+            "mock_oracle": "1",
+            "mock_subclass": mock_expectation(doc)["subclass"] or "",
+            "size_tier": "hf",
+            "chars": str(len(doc.text)),
+        })
+    return rows, provenance
+
+
+def resolve_dataset(requested: str | None, mock_mode: bool) -> tuple[str, str | None]:
+    """Pick the document source. Returns ``(dataset, notice)``.
+
+    ``requested`` is the ``--dataset`` value (None when omitted). An omitted flag
+    keeps the committed-manifest behaviour whenever manifest.csv exists and falls
+    back to the HF corpus only for mock runs: a real run must name ``--dataset hf``
+    itself, because it spends money on the chosen documents.
+    """
+    if requested == "hf":
+        return "hf", None
+    if requested == "samples":
+        if not MANIFEST.exists():
+            raise SystemExit(
+                f"--dataset samples needs {MANIFEST}, which only the monorepo has; "
+                "use --dataset hf for the pinned Hugging Face corpus."
+            )
+        return "samples", None
+    if MANIFEST.exists():
+        return "samples", None
+    if not mock_mode:
+        raise SystemExit(
+            f"{MANIFEST} is absent (standalone checkout). A --real run never falls back "
+            "to another corpus on its own: pass --dataset hf explicitly."
+        )
+    return "hf", (
+        f"{MANIFEST} not found (standalone checkout): falling back to --dataset hf "
+        "(pinned Hugging Face corpus, public read)."
+    )
 
 
 def filter_real_samples(manifest: list[dict], *, mock_mode: bool) -> list[dict]:
@@ -585,19 +752,33 @@ def _attach_field_scoring(sample: dict, row: dict) -> None:
 
 
 def summarize(rows: list[dict]) -> dict:
-    n = len(rows)
+    # A sample that raised is recorded as {"status": "error", ...} with none of the
+    # outcome keys; count it and leave it out of the outcome statistics.
+    error_rows = [r for r in rows if r.get("status") == "error"]
+    errors = len(error_rows)
+    rows = [r for r in rows if r.get("status") != "error"]
+    n = len(rows) + errors
     archived = sum(1 for r in rows if r["stage"] == "archived")
     review = sum(1 for r in rows if r["stage"] == "review")
     failed = sum(1 for r in rows if r["stage"] == "failed")
     class_matches = sum(1 for r in rows if r["class_match"])
     per_class: dict[str, dict] = {}
     for r in rows:
-        pc = per_class.setdefault(r["expected_doc_class"], {"n": 0, "match": 0, "time": 0.0, "calls": 0, "cost": 0.0})
+        pc = per_class.setdefault(
+            r["expected_doc_class"], {"n": 0, "done": 0, "match": 0, "time": 0.0, "calls": 0, "cost": 0.0}
+        )
         pc["n"] += 1
+        pc["done"] += 1
         pc["match"] += int(r["class_match"])
         pc["time"] += r["wall_time_s"]
         pc["calls"] += r["llm_calls"]
         pc["cost"] += r.get("llm_cost_usd", 0.0)
+    for r in error_rows:  # an errored sample counts against its class, like it does overall
+        if r.get("expected_doc_class"):
+            pc = per_class.setdefault(
+                r["expected_doc_class"], {"n": 0, "done": 0, "match": 0, "time": 0.0, "calls": 0, "cost": 0.0}
+            )
+            pc["n"] += 1
 
     # Mean calibration error: |stated confidence − binary correctness|.
     conf_rows = [
@@ -609,8 +790,12 @@ def summarize(rows: list[dict]) -> dict:
     from llm_dojo_scoring.pilot_summary import pilot_calibration_error
 
     mean_calibration_error = pilot_calibration_error(conf_rows)
-    total_cost = round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 6)
-    total_tokens = sum(r.get("llm_tokens", 0) for r in rows)
+    # Totals include errored samples: calls billed before the error still cost money.
+    # Averages stay per completed sample.
+    completed_cost = round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 6)
+    completed_tokens = sum(r.get("llm_tokens", 0) for r in rows)
+    total_cost = round(completed_cost + sum(r.get("llm_cost_usd", 0.0) for r in error_rows), 6)
+    total_tokens = completed_tokens + sum(r.get("llm_tokens", 0) for r in error_rows)
 
     # Deterministic field-scoring summary (issues #4/#5): mean overall score,
     # fraction escalated to the LLM judge (ambiguous band), and judge calls
@@ -625,15 +810,16 @@ def summarize(rows: list[dict]) -> dict:
         "archived": archived,
         "review": review,
         "failed": failed,
+        "errors": errors,  # samples that raised; they count against class_accuracy
         "class_accuracy": round(class_matches / n, 3) if n else 0,
         "review_rate": round(review / n, 3) if n else 0,
         "mean_calibration_error": mean_calibration_error,
         "calibration_n": len(conf_rows),
-        "avg_time_s": round(sum(r["wall_time_s"] for r in rows) / n, 3) if n else 0,
-        "avg_llm_calls": round(sum(r["llm_calls"] for r in rows) / n, 1) if n else 0,
-        "avg_cost_usd": round(total_cost / n, 6) if n else 0,
+        "avg_time_s": round(sum(r["wall_time_s"] for r in rows) / len(rows), 3) if rows else 0,
+        "avg_llm_calls": round(sum(r["llm_calls"] for r in rows) / len(rows), 1) if rows else 0,
+        "avg_cost_usd": round(completed_cost / len(rows), 6) if rows else 0,
         "total_cost_usd": total_cost,
-        "avg_tokens": round(total_tokens / n) if n else 0,
+        "avg_tokens": round(completed_tokens / len(rows)) if rows else 0,
         "total_tokens": total_tokens,
         "avg_extraction_overall_score": round(sum(overalls) / len(overalls), 3) if overalls else None,
         "judge_review_rate": round(judge_review_n / len(scored), 3) if scored else None,
@@ -642,9 +828,9 @@ def summarize(rows: list[dict]) -> dict:
             cls: {
                 "n": v["n"],
                 "class_accuracy": round(v["match"] / v["n"], 3),
-                "avg_time_s": round(v["time"] / v["n"], 3),
-                "avg_llm_calls": round(v["calls"] / v["n"], 1),
-                "avg_cost_usd": round(v["cost"] / v["n"], 6),
+                "avg_time_s": round(v["time"] / v["done"], 3) if v["done"] else 0,
+                "avg_llm_calls": round(v["calls"] / v["done"], 1) if v["done"] else 0,
+                "avg_cost_usd": round(v["cost"] / v["done"], 6) if v["done"] else 0,
             }
             for cls, v in sorted(per_class.items())
         },
@@ -713,12 +899,16 @@ def diff_report(new: dict, baseline: dict) -> dict:
 
 
 def print_rows(rows: list[dict]) -> None:
-    header = f"{'id':<24}{'class':<18}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
+    id_w = max([24] + [len(str(r["id"])) + 1 for r in rows])  # corpus ids can be long
+    header = f"{'id':<{id_w}}{'class':<18}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
     print(header)
     print("-" * len(header))
     for r in rows:
+        if r.get("status") == "error":
+            print(f"{str(r.get('id')):<{id_w}}ERROR {r.get('error')}")
+            continue
         print(
-            f"{r['id']:<24}{r['expected_doc_class']:<18}{r['expected_stage']:<10}{str(r['stage']):<10}"
+            f"{r['id']:<{id_w}}{r['expected_doc_class']:<18}{r['expected_stage']:<10}{str(r['stage']):<10}"
             f"{r['expected_doc_class']:<18}{str(r['actual_doc_class']):<18}"
             f"{str(r['classification_confidence']):<5}{r['llm_calls']:<6}{r['wall_time_s']:<8}"
         )
@@ -727,7 +917,7 @@ def print_rows(rows: list[dict]) -> None:
 def print_summary(summary: dict) -> None:
     print("\n== Summary ==")
     print(f"samples: {summary['samples']} | archived: {summary['archived']} | "
-          f"review: {summary['review']} | failed: {summary['failed']}")
+          f"review: {summary['review']} | failed: {summary['failed']} | errors: {summary.get('errors', 0)}")
     print(f"class_accuracy: {summary['class_accuracy']} | review_rate: {summary['review_rate']} | "
           f"calibration_error: {summary['mean_calibration_error']} (n={summary['calibration_n']})")
     if summary.get("avg_extraction_overall_score") is not None:
@@ -770,6 +960,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-docs", type=int, default=None, help="Limit the run to the first N samples.")
     parser.add_argument("--baseline", help="Path to a previous pilot report JSON to diff against.")
     parser.add_argument(
+        "--dataset",
+        choices=("samples", "hf"),
+        default=None,
+        help="Document source: 'samples' = docs/examples/samples/manifest.csv (monorepo); 'hf' = real "
+        "documents from the pinned Hugging Face corpus. Default: samples when manifest.csv exists, "
+        "else hf for --mock.",
+    )
+    parser.add_argument("--per-class", type=int, default=3, help="--dataset hf: documents drawn per class (default 3).")
+    parser.add_argument("--seed", type=int, default=0, help="--dataset hf: sampling seed (default 0).")
+    parser.add_argument("--split", default="train", help="--dataset hf: corpus split (default train).")
+    parser.add_argument(
         "--scores",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -808,7 +1009,12 @@ def main(argv: list[str] | None = None) -> int:
             )
     scores_enabled = args.scores if args.scores is not None else (not mock_mode)
 
-    prepare_samples()
+    dataset, dataset_notice = resolve_dataset(args.dataset, mock_mode)
+    if dataset_notice:
+        print(dataset_notice)
+        logger.warning("dataset_fallback_hf", reason="manifest_missing")
+    if dataset == "samples":
+        prepare_samples()
 
     # One Langfuse session per pilot RUN (not per sample): every document trace
     # of this run lands in `pilot-<mode>-<timestamp>` in the Sessions view.
@@ -817,12 +1023,22 @@ def main(argv: list[str] | None = None) -> int:
     run_id = datetime.now(timezone.utc).isoformat()
     session_id = f"pilot-{'real' if not mock_mode else 'mock'}-{run_id}"
 
-    with MANIFEST.open() as fh:
-        manifest = list(csv.DictReader(fh))
+    hf_provenance = None
+    if dataset == "hf":
+        manifest, hf_provenance = build_hf_manifest(args.split, args.per_class, args.seed)
+        print(
+            f"dataset: hf ({hf_provenance['dataset_id']} revision={hf_provenance['dataset_revision']} "
+            f"split={args.split} per_class={args.per_class} seed={args.seed}) -> {len(manifest)} documents"
+        )
+        logger.info("dataset_hf", **hf_provenance, per_class=args.per_class, seed=args.seed, documents=len(manifest))
+    else:
+        with MANIFEST.open() as fh:
+            manifest = list(csv.DictReader(fh))
     if args.include:
         manifest = [m for m in manifest if m["expected_doc_class"] == args.include]
     if args.source:
-        manifest = [m for m in manifest if (m.get("dataset") or "original") == args.source]
+        # HF rows keep their corpus in source_corpus; their `dataset` is the trace tag.
+        manifest = [m for m in manifest if (m.get("source_corpus") or m.get("dataset") or "original") == args.source]
         logger.info("source_filter", source=args.source, remaining=len(manifest))
     if args.max_docs:
         manifest = manifest[: args.max_docs]
@@ -860,12 +1076,7 @@ def main(argv: list[str] | None = None) -> int:
             rows.append(run_sample(m, mock_mode, session_id=session_id, run_id=run_id))
         except Exception as exc:
             logger.exception("sample_run_failed", sample=m.get("id"))
-            rows.append({
-                "id": m.get("id"),
-                "filename": m.get("filename"),
-                "status": "error",
-                "error": f"{type(exc).__name__}: {exc}",
-            })
+            rows.append(_error_row(m, exc))
         _page_progress(session_id, label, len(manifest), rows)
     _page_progress(session_id, label, len(manifest), rows, finished=True)
 
@@ -894,6 +1105,8 @@ def main(argv: list[str] | None = None) -> int:
         "misfile_candidates": misfile_candidates(rows, report=None),
         "errors": [r for r in rows if r.get("status") == "error"],
     }
+    if hf_provenance is not None:
+        report["dataset"] = {**hf_provenance, "per_class": args.per_class, "seed": args.seed}
     if scores_enabled:
         report["scores"] = {
             "samples": [

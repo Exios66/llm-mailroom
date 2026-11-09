@@ -13,6 +13,7 @@ import importlib
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -237,15 +238,9 @@ class TestWatcherInboxEvents:
             lambda self, path: scheduled.append(path.name),
         )
 
-        class ImmediateThread:
-            def __init__(self, target=None, args=(), daemon=None, **kwargs):
-                self._target = target
-                self._args = args
-
-            def start(self):
-                self._target(*self._args)
-
-        monkeypatch.setattr(watcher.threading, "Thread", ImmediateThread)
+        # Events are handed to the bounded worker pool (not a thread per event);
+        # an earlier test's Watcher.stop() leaves the pool closed.
+        watcher._dispatch.reopen()
         handler = watcher.InboxHandler("worker")
         inbox = inbox_dir()
         created = inbox / "a.txt"
@@ -261,6 +256,9 @@ class TestWatcherInboxEvents:
 
         handler.on_modified(_Evt(created))
         handler.on_moved(_Evt(inbox / "elsewhere.txt", moved))
+        deadline = time.time() + 10
+        while time.time() < deadline and len(scheduled) < 2:
+            time.sleep(0.02)
         assert "a.txt" in scheduled
         assert "b.txt" in scheduled
 

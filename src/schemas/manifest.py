@@ -57,6 +57,23 @@ class DocumentManifest(BaseModel):
     # when the checkpointer was lost (process restart + MemorySaver) — resume
     # then falls back to a fresh extract invoke.
     checkpoint_thread_id: str | None = None
+    # Human-in-the-loop provenance. ``extraction_source`` is "human" when a
+    # reviewer's own (approved or corrected) fields were archived instead of a
+    # model extraction, so calibration code can exclude them; None = a model
+    # produced the fields. ``human_label`` is the reviewer's decision record
+    # (decision, resolution, final class, field corrections, a snapshot of what
+    # the model said BEFORE the override, reviewer, UTC time, notes). None when
+    # no human resolved the document. ``reject_reason`` is the enum-ish token
+    # chosen on a rejection; ``file_location`` records where the file actually
+    # sits after a rejection (the review bin when the move to failed/ failed).
+    extraction_source: str | None = None
+    human_label: dict | None = None
+    reject_reason: str | None = None
+    file_location: str | None = None
+    # When the document entered the review queue. Set once per park; a later
+    # note, catalog write or replay of the review node does not move it, so the
+    # tray's age and SLA clock keep running. None on older manifests.
+    review_entered_at: datetime | None = None
     # Intake provenance (HUB-037): how the document entered the mailroom —
     # `source` (`gmail` / `upload`), plus channel metadata (message_id, sender,
     # subject, received_at / uploaded_at). None = a bare filesystem drop.

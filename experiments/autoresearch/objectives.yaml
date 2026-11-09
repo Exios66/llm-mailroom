@@ -1,0 +1,96 @@
+# Autoresearch hill-climb registry: one entry per objective.
+#
+# Every iteration of every objective is run through
+#   PYTHONPATH=src .venv/bin/python src/scripts/autoresearch_gate.py --objective <name> ...
+# which runs the CORE guards first (the pipeline must keep working: a failing
+# core guard discards the change whatever its score), then the objective's own
+# eval, parses its `SCORE:` and `GUARD`/`GATE` lines, and keeps the change only
+# if every guard passes and the score beats the best kept score by min_delta.
+# State: experiments/autoresearch/state/<objective>.jsonl (+ <objective>_dashboard.md).
+#
+# Placeholders in commands: {candidate} = the --candidate path, {records} =
+# --records, {baseline} = --baseline. Commands run from the repo root with
+# PYTHONPATH=src.
+
+core_guards:
+  # Syntax of everything (no linter or type checker is configured, by design).
+  compileall: .venv/bin/python -m compileall -q src
+  # Tests the diff can affect; exit 5 = none selected, which is a pass.
+  affected_tests: .venv/bin/python src/scripts/affected_tests.py --run -- -q
+  # Hermetic pipeline wiring/routing regression gate (mock LLM).
+  experiment_gate: >-
+    .venv/bin/python src/scripts/run_experiment.py --dataset mailroom-fixtures --mock
+    --baseline docs/superpowers/baselines/experiment-baseline.json
+  # Display contract (nodes, edges, spans, classes, thresholds) unchanged or regenerated.
+  contract: .venv/bin/python src/scripts/export_contract.py --check
+  changelog: .venv/bin/python src/scripts/sync_gitbook_changelog.py --check
+  # The full suite is NOT run per iteration (10+ min). It is required, on the
+  # final commit, before any kept change is promoted or a PR is marked ready.
+
+objectives:
+  thresholds:
+    goal: >-
+      Calibrate the confidence cutoffs (sorter high/low, extraction low and
+      judge_band_high, per class) so more documents archive with no person
+      while wrong auto-archives stay bounded.
+    constrained_file: >-
+      a policy YAML (a confidence block) passed as --candidate; promoted to
+      src/config/taxonomy.yaml only by a reviewed change
+    eval: >-
+      .venv/bin/python src/scripts/hillclimb_eval.py --records {records} --split test
+      --policy {candidate} --baseline-policy {baseline}
+    metric: U (1 - mean cost per document / cost of one human review)
+    direction: higher
+    min_delta: 0.005
+    require_delta_ci: true   # the DELTA U line's 95% CI lower bound must be > 0
+    guards:
+      - G1 overall wrong-auto Clopper-Pearson 95% upper bound <= 0.02
+      - G2 per-class wrong-auto rate <= 0.05 (classes with >= 30 auto-archives)
+      - G3 unobserved share <= 0.01 (replay fidelity)
+      - G4 mean LLM USD/doc within budget (when set)
+      - paired-bootstrap 95% CI of delta U vs the baseline policy has a lower bound > 0
+    evidence:
+      - full-information RunRecord JSONL from run_calibration_sweep.py on the corpus
+        train and test splits, run.gt_in_state false, mode real (owner-run)
+      - calibrate_thresholds.py evidence table (n, holdout CI, sample shortfall) on train
+      - hillclimb_eval.py SCORE and GUARD lines on test, with --json output kept
+    not_evidence: synthetic or mock records (they validate the harness only)
+
+  scale:
+    goal: >-
+      Process more documents per minute with zero lost, duplicated or
+      half-written documents and no hijacked claims.
+    constrained_file: src/pipeline/watcher.py, src/pipeline/bins.py, src/storage/
+    eval: .venv/bin/python src/scripts/stress_test.py --docs 120 --threads 1,8,32
+    metric: stress_test SCORE (throughput, provider-fault resilience, cap honored)
+    direction: higher
+    min_delta: 0.02
+    guards:
+      - every stress_test GATE line PASS (lost_docs, duplicate rows/chains,
+        orphan rows, broken chains, lost audit events, hijacked claims, db failed ops)
+    evidence:
+      - stress_test.py scorecard and --json output before and after, same arguments
+
+  review:
+    goal: >-
+      Make human review cheaper and two-way: fewer wasted reviews, every park
+      explained, every decision captured as a label that feeds calibration.
+    constrained_file: src/pipeline/reconsideration.py, src/pipeline/review_priority.py,
+      review_queue block of src/config/taxonomy.yaml
+    eval: >-
+      .venv/bin/python -m pytest -q src/tests/test_review_cause_coverage.py
+      src/tests/test_review_labels_and_priority.py src/tests/test_hitl_resolution.py
+    metric: >-
+      the gate evaluates guards only (cause coverage 100%, resolution paths, label
+      export) and reads no metric value; a production wasted_review_rate comparison
+      from src/scripts/export_review_labels.py --summary-only (lower is better) is
+      owner-run evidence, not a gate decision
+    direction: guards_only
+    min_delta: 0.0
+    guards:
+      - every route into human_review carries at least one cause token
+      - approve_as_is / correct archive with zero LLM calls through the normal tail
+      - every resolved review persists human_label with a pre-override model snapshot
+    evidence:
+      - the eval's pytest summary line
+      - export_review_labels.py summary JSON on real resolved reviews (owner data)
