@@ -49,10 +49,18 @@ def watched_paths(workspace: Path) -> list[Path]:
     ]
 
 
-def source_mtime(workspace: Path) -> int:
-    """Newest mtime (ns) among the declared source/config seams, 0 when absent."""
-    mtimes = [path.stat().st_mtime_ns for path in watched_paths(workspace)]
-    return max(mtimes, default=0)
+def seam_fingerprint(workspace: Path) -> tuple[tuple[str, int], ...]:
+    """Full identity of the declared seams, including deletions.
+
+    A newest-mtime value would miss a deleted or edited non-newest seam, so the
+    preview compares every declared path and marks absent files with ``-1``.
+    """
+    rows: dict[str, int] = {}
+    for group in HASH_INPUTS.values():
+        for relative in group:
+            path = workspace / relative
+            rows[relative] = path.stat().st_mtime_ns if path.is_file() else -1
+    return tuple(sorted(rows.items()))
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,10 @@ class PreviewState:
 
 def _paths(base: Path) -> tuple[Path, Path, Path]:
     return base / "preview.json", base / "last-good.json", base / "error.json"
+
+
+def _meta_path(base: Path) -> Path:
+    return base / "meta.json"
 
 
 def _read_json(path: Path) -> dict | None:
@@ -152,10 +164,9 @@ def read_state(base: Path, workspace: Path) -> PreviewState:
     error = _read_json(error_path)
     stale = False
     if preview is not None:
-        try:
-            stale = source_mtime(workspace) > preview_path.stat().st_mtime_ns
-        except OSError:
-            stale = True
+        meta = _read_json(_meta_path(base))
+        recorded = meta.get("seams") if isinstance(meta, dict) else None
+        stale = recorded != [[relative, stamp] for relative, stamp in seam_fingerprint(workspace)]
     return PreviewState(preview=preview, last_good=last_good, error=error, stale=stale)
 
 
@@ -178,6 +189,8 @@ def refresh(
         return read_state(base, workspace)
     _atomic_write(preview_path, raw)
     _atomic_write(last_good_path, raw)
+    seams = [[relative, stamp] for relative, stamp in seam_fingerprint(workspace)]
+    _atomic_write(_meta_path(base), json.dumps({"seams": seams}, indent=2).encode("utf-8"))
     _clear_error(base)
     return read_state(base, workspace)
 
@@ -191,7 +204,7 @@ def watch(
     cycles: int | None = None,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
-    mtime: Callable[[Path], int] = source_mtime,
+    fingerprint: Callable[[Path], tuple[tuple[str, int], ...]] = seam_fingerprint,
     refresh_fn: Callable[..., PreviewState] = refresh,
 ) -> int:
     """Rebuild after a source/config change settles; run until interrupted.
@@ -199,12 +212,12 @@ def watch(
     ``cycles`` bounds the loop for tests. A change starts the debounce window;
     a further change restarts it, so a half-written save is never built.
     """
-    current = mtime(workspace)
+    current = fingerprint(workspace)
     pending: float | None = None
     completed = 0
     while cycles is None or completed < cycles:
         completed += 1
-        observed = mtime(workspace)
+        observed = fingerprint(workspace)
         if observed != current:
             current = observed
             pending = clock()
