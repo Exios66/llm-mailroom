@@ -151,6 +151,9 @@ class Provenance(BaseModel):
     artifact_sha256: str | None = None
     artifact_bytes: int | None = None
     tracing: Literal["disabled"] = "disabled"
+    config_source: Literal["workspace-files", "artifact", "unavailable"] = "unavailable"
+    hashes: dict[str, str] = Field(default_factory=dict)
+    missing_inputs: list[str] = Field(default_factory=list)
 
 
 class Snapshot(BaseModel):

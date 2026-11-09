@@ -28,3 +28,8 @@ package-dir = {"" = "backend"}
 [tool.setuptools.packages.find]
 where = ["backend"]
 include = ["mailroom_diagnostics*"]
+
+[tool.setuptools.package-data]
+# Generated React assets land here in D1.1. The rule is explicit so a built
+# wheel carries them; the source tree remains usable without an index.html.
+mailroom_diagnostics = ["static/*", "static/**/*"]

@@ -2,7 +2,7 @@
 
 Repository-native debugging and diagnostic tooling for llm-mailroom.
 
-**Current status: D0.1–D0.3 implemented; the full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, and a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API. The React screen, live events, replay and calibration remain later tasks; until the React assets land, `/diagnostics` serves a build-instructions page while the JSON API works.
+**Current status: D0.1–D0.3 and D0.4a (provenance/package-data) implemented; the full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, and source/policy provenance hashes in every workspace snapshot. The React screen, live events, replay and calibration remain later tasks; until the React assets land, `/diagnostics` serves a build-instructions page while the JSON API works.
 
 ## Start here
 
