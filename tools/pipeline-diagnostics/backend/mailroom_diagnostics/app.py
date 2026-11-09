@@ -144,15 +144,27 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-def serve(host: str = "127.0.0.1", port: int = 8100) -> None:
-    """Serve the standalone app. Off-loopback binds require a live token."""
-    from api.auth import _host_is_loopback, active_api_tokens
+def prepare_bind(host: str) -> None:
+    """Load repository configuration, then enforce the off-loopback token rule.
 
+    ``load_env`` runs here rather than at import so a token configured only in
+    ``.env`` counts, matching the producer's entrypoints. The rule is unchanged:
+    loopback is tokenless-friendly; any other bind needs a live token.
+    """
+    from api.auth import _host_is_loopback, active_api_tokens
+    from pipeline.env import load_env
+
+    load_env()
     if not _host_is_loopback(host) and not active_api_tokens():
         raise SystemExit(
             "refusing an off-loopback diagnostics bind without MAILROOM_API_TOKEN "
             "or MAILROOM_API_TOKENS"
         )
+
+
+def serve(host: str = "127.0.0.1", port: int = 8100) -> None:
+    """Serve the standalone app after loading env and validating the bind."""
+    prepare_bind(host)
     import uvicorn
 
     uvicorn.run(app, host=host, port=port, log_level="info")

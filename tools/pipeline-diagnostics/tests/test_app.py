@@ -171,3 +171,29 @@ def test_serve_help_exposes_bind_options(run_cli):
     assert proc.returncode == 0
     assert "--host" in proc.stdout
     assert "--port" in proc.stdout
+
+
+def test_prepare_bind_loads_repository_env_before_the_token_check(monkeypatch):
+    from mailroom_diagnostics import app as app_module
+
+    calls = []
+
+    def fake_load_env():
+        calls.append("load_env")
+        monkeypatch.setenv("MAILROOM_API_TOKEN", "from-dotenv")
+
+    monkeypatch.setattr("pipeline.env.load_env", fake_load_env)
+    for name in ("MAILROOM_API_TOKENS", "MAILROOM_API_TOKEN_REVOKED"):
+        monkeypatch.delenv(name, raising=False)
+    app_module.prepare_bind("0.0.0.0")  # no SystemExit
+    assert calls == ["load_env"]
+
+
+def test_prepare_bind_still_refuses_off_loopback_without_a_token(monkeypatch):
+    from mailroom_diagnostics import app as app_module
+
+    monkeypatch.setattr("pipeline.env.load_env", lambda: None)
+    for name in ("MAILROOM_API_TOKEN", "MAILROOM_API_TOKENS", "MAILROOM_API_TOKEN_REVOKED"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(SystemExit):
+        app_module.prepare_bind("0.0.0.0")

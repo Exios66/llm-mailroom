@@ -77,7 +77,10 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("MAILROOM_DIAGNOSTICS_PORT", "8100")),
+        # Keep the environment value a string: argparse converts it only when
+        # the serve subcommand is actually parsed, so an invalid value cannot
+        # break inspect, check or --help.
+        default=os.environ.get("MAILROOM_DIAGNOSTICS_PORT", "8100"),
         help="TCP port (default 8100, or MAILROOM_DIAGNOSTICS_PORT)",
     )
     return parser
