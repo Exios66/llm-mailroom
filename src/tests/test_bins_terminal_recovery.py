@@ -229,6 +229,26 @@ class TestFailedLocatorPrefersRecordedPath:
         )
         assert bins.failed_file_path(manifest) == failed / "a--doc-1.pdf"
 
+    def test_locator_ignores_another_docs_doc_id_suffixed_name(self, temp_base_dir):
+        """PR #202 review: `a--doc-2.pdf` is doc-2's own failed copy; a manifest
+        for `a.pdf` must not adopt it even when the name shares the stem."""
+        from pipeline import bins
+        from schemas.manifest import DocumentManifest, PipelineStage
+
+        failed = bins.failed_dir()
+        failed.mkdir(parents=True, exist_ok=True)
+        (failed / "a--doc-2.pdf").write_bytes(b"doc-2's bytes")
+        (failed / "a--doc-1.pdf").write_bytes(b"mine")
+        manifest = DocumentManifest(
+            doc_id="doc-1",
+            matter_id="M",
+            original_filename="a.pdf",
+            stage=PipelineStage.FAILED,
+            file_location=str(failed / "a--doc-2.pdf"),
+        )
+        assert bins.failed_file_path(manifest) == failed / "a--doc-1.pdf"
+
+
 class TestNoHardLinkFilesystems:
     @pytest.fixture
     def no_link(self, monkeypatch):

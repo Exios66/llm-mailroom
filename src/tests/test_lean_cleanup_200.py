@@ -21,7 +21,7 @@ def test_intake_fallback_skips_meta_sidecar(temp_base_dir):
     a sidecar has nothing to ingest.
     """
     from graph.build_graph import intake_node
-    from pipeline.bins import inbox_dir
+    from pipeline.bins import accepted_extensions, inbox_dir
 
     inbox = inbox_dir()
     inbox.mkdir(parents=True, exist_ok=True)
@@ -29,3 +29,14 @@ def test_intake_fallback_skips_meta_sidecar(temp_base_dir):
 
     with pytest.raises(RuntimeError, match="No files in inbox"):
         intake_node({})
+
+    # The sidecar is skipped by the SAME accepted-extensions gate the watcher
+    # uses, and a real document beside it is picked up (PR #202 review:
+    # assert through the configured gate, not a hardcoded list).
+    assert ".meta" not in accepted_extensions()
+    real = inbox / "note.txt" if ".txt" in accepted_extensions() else (
+        inbox / "note." + sorted(accepted_extensions())[-1].lstrip(".")
+    )
+    real.write_text("a real document", encoding="utf-8")
+    state = intake_node({})
+    assert state["original_filename"] == real.name
