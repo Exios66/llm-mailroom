@@ -154,11 +154,16 @@ def test_path_with_spaces_stays_one_argument(tmp_path):
                      f"open({str(dump)!r}, 'w').write(json.dumps(sys.argv[1:]))\n"
                      + "".join(f"print({line!r})\n" for line in lines))
     records = tmp_path / "with space" / "rec.jsonl"
+    candidate = tmp_path / "with space" / "candidate.yaml"
+    baseline = tmp_path / "with space" / "baseline.yaml"
     records.parent.mkdir()
     records.write_text("")
-    eval_cmd = f'{shlex.quote(PY)} {shlex.quote(str(probe))} --records {{records}}'
-    assert _gate(tmp_path, _registry(tmp_path, eval_cmd), records=str(records)) == 0
-    assert json.loads(dump.read_text()) == ["--records", str(records)]
+    eval_cmd = (f'{shlex.quote(PY)} {shlex.quote(str(probe))} --records {{records}} '
+                '--policy {candidate} --baseline-policy {baseline}')
+    assert _gate(tmp_path, _registry(tmp_path, eval_cmd), records=str(records),
+                 candidate=str(candidate), baseline=str(baseline)) == 0
+    assert json.loads(dump.read_text()) == [
+        "--records", str(records), "--policy", str(candidate), "--baseline-policy", str(baseline)]
 
 
 # --- T7: mock/synthetic records are never evidence ---
@@ -263,3 +268,55 @@ def test_parses_hillclimb_eval_output_format():
 def test_parse_eval_without_modes_or_delta_lines_is_unchanged_behaviour():
     parsed = gate.parse_eval("SCORE: 0.5\nrecords: 3 (split=test)")
     assert parsed == {"score": 0.5, "fails": [], "delta_ci": None, "delta": None, "modes": None}
+
+
+# --- #203 review: provenance, point estimate, formatting, guards-only modes ---
+
+def test_records_objective_without_modes_line_is_not_evidence(tmp_path):
+    """A thresholds-style eval (reads {records}) that omits the modes line or reports an empty list
+    must not baseline or keep: its provenance is unknown."""
+    for lines in (["SCORE: 0.9000"], [_records_line("")] + ["SCORE: 0.9000"]):
+        reg = _registry(tmp_path, _echo_script(tmp_path, *lines) + " {records}")
+        assert _gate(tmp_path, reg, records=str(tmp_path / "r.jsonl")) == 4
+    rows = _results(tmp_path)
+    assert [r["status"] for r in rows] == ["harness", "harness"]
+    assert "provenance is unknown" in rows[0]["reasons"][0]
+    assert gate.best_kept(rows, "higher") is None
+
+
+def test_objective_without_records_does_not_need_a_modes_line(tmp_path):
+    """scale-style objectives read no records, so a missing modes line stays fine."""
+    assert _gate(tmp_path, _registry(tmp_path, _echo("SCORE: 0.5000"))) == 0
+
+
+def test_guards_only_pass_with_mock_records_is_harness(tmp_path):
+    reg = _registry(tmp_path, _echo_script(tmp_path, _records_line("'mock'"), "3 passed"),
+                    direction="guards_only")
+    assert _gate(tmp_path, reg) == 4
+    assert _results(tmp_path)[-1]["status"] == "harness"
+    ok = _registry(tmp_path, _echo_script(tmp_path, _records_line("'real'"), "3 passed"),
+                   direction="guards_only")
+    assert _gate(tmp_path, ok) == 0
+
+
+def test_first_candidate_without_delta_point_estimate_is_not_baselined(tmp_path):
+    line = "DELTA U (candidate - baseline) 95% CI [+0.0040, +0.0200]  (significant)"
+    reg = _registry(tmp_path, _echo(line, "SCORE: 0.5100"), require_delta_ci=True, min_delta=0.005)
+    assert _gate(tmp_path, reg) == 1
+    (row,) = _results(tmp_path)
+    assert row["status"] == "crash" and row["reasons"] == ["no DELTA U point estimate to check against min_delta"]
+    assert gate.best_kept([row], "higher") is None
+
+
+def test_unformattable_eval_command_is_a_recorded_crash(tmp_path):
+    reg = _registry(tmp_path, 'echo {oops}')
+    assert _gate(tmp_path, reg) == 1
+    (row,) = _results(tmp_path)
+    assert row["status"] == "crash" and row["reasons"] == ["eval exit 1"]
+
+
+def test_core_failure_is_recorded_even_when_the_eval_command_cannot_be_formatted(tmp_path):
+    reg = _registry(tmp_path, 'echo {oops}', core={"compileall": f'{PY} -c "raise SystemExit(1)"'})
+    assert _gate(tmp_path, reg) == 2
+    (row,) = _results(tmp_path)
+    assert row["status"] == "guard_fail" and row["reasons"] == ["core:compileall"]
