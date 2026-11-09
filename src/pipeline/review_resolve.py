@@ -651,7 +651,17 @@ def coerce_field_corrections(value: Any) -> dict[str, Any]:
 
 
 def model_snapshot(manifest: DocumentManifest) -> dict[str, Any]:
-    """What the model said, captured BEFORE any override or merge."""
+    """What the model said, captured BEFORE any override or merge.
+
+    A manifest that parked again holding a reviewer's fields (``extraction_source``
+    is ``human``, e.g. the report failed after a correction) no longer holds the
+    model's output: its first resolution's snapshot is the record of that, so it
+    is carried forward instead of snapshotting the human's fields as the model's.
+    """
+    label = getattr(manifest, "human_label", None)
+    earlier = label.get("model_snapshot") if isinstance(label, dict) else None
+    if getattr(manifest, "extraction_source", None) == "human" and isinstance(earlier, dict) and earlier:
+        return dict(earlier)
     return {
         "doc_type": manifest.doc_type,
         "contract_subtype": manifest.contract_subtype,

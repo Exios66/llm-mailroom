@@ -354,6 +354,28 @@ def _owned_bin_file_path(manifest, base: Path) -> Path:
     return legacy
 
 
+def touch_claim(file_path: str | Path | None) -> bool:
+    """Refresh the claim time of a file in ``processing/<worker_id>/``.
+
+    The stale-claim sweep treats a claim older than its cutoff as orphaned, and
+    it may run in another process (a dedicated watcher beside the API), where no
+    in-process "running" set protects the file. A run that is still making
+    progress calls this at each node boundary, so only a claim that has stopped
+    advancing can look stale. Files elsewhere (review, archive) are left alone.
+    """
+    if not file_path:
+        return False
+    path = Path(file_path)
+    try:
+        if path.parent.parent != processing_dir() or not path.is_file():
+            return False
+        os.utime(path, None)
+        return True
+    except OSError:
+        logger.warning("claim_touch_failed", path=str(path))
+        return False
+
+
 def _stamp_claim_time(dest: Path) -> None:
     """Make the claimed file's mtime mean "claimed at", not "uploaded at".
 
