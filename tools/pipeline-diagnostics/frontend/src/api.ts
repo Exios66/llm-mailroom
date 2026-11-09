@@ -2,6 +2,10 @@ import type { CheckReport, Snapshot } from "./types";
 
 const TOKEN_KEY = "mailroom-diagnostics-token";
 
+// In-memory fallback: if the browser blocks session storage, the token entered
+// on this page must still be used until reload.
+let memoryToken = "";
+
 export class DiagnosticsApiError extends Error {
   constructor(
     readonly status: number | null,
@@ -14,19 +18,20 @@ export class DiagnosticsApiError extends Error {
 
 export function readToken(): string {
   try {
-    return sessionStorage.getItem(TOKEN_KEY) ?? "";
+    return sessionStorage.getItem(TOKEN_KEY) ?? memoryToken;
   } catch {
-    return "";
+    return memoryToken;
   }
 }
 
 export function writeToken(value: string): void {
+  memoryToken = value;
   try {
     if (value) sessionStorage.setItem(TOKEN_KEY, value);
     else sessionStorage.removeItem(TOKEN_KEY);
   } catch {
-    // Session storage can be unavailable in hardened browsers; the field still
-    // works for this page's requests until reload.
+    // Storage can be unavailable in hardened browsers; the in-memory value
+    // keeps this page's requests authenticated until reload.
   }
 }
 
