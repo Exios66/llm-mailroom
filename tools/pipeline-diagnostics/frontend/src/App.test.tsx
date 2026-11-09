@@ -3,7 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import type { CheckReport, Snapshot } from "./types";
+import type {
+  CheckReport,
+  ExperimentDetail,
+  ExperimentSummary,
+  RunJournal,
+  RunSummary,
+  Snapshot,
+} from "./types";
 
 const provenance: Snapshot["provenance"] = {
   kind: "workspace-preview",
@@ -59,6 +66,56 @@ const report: CheckReport = {
   exit_code: 0,
 };
 
+const runSummary: RunSummary = {
+  execution_id: "run-1",
+  document: { filename: "real-doc.txt", manifest_id: "DOC-1", source: "live-manifest" },
+  outcome: { stage: "archived", doc_type: "contract", review: false, failed: false },
+  started_at: "2026-11-09T05:00:00+00:00",
+  finished_at: "2026-11-09T05:00:01+00:00",
+  node_count: 3,
+};
+
+const runJournal: RunJournal = {
+  schema_version: "1.0.0",
+  execution_id: "run-1",
+  document: { filename: "real-doc.txt", manifest_id: "DOC-1", source: "live-manifest" },
+  ground_truth: { expected_doc_class: "contract", expected_stage: "archived" },
+  started_at: "2026-11-09T05:00:00+00:00",
+  finished_at: "2026-11-09T05:00:01+00:00",
+  events: [],
+  node_sequence: ["intake", "classify", "archive"],
+  transitions: [
+    { source: "intake", target: "classify" },
+    { source: "classify", target: "archive" },
+  ],
+  outcome: { stage: "archived", doc_type: "contract", review: false, failed: false },
+};
+
+const experimentSummary: ExperimentSummary = {
+  experiment_id: "exp-1",
+  generated_at: "2026-11-09T05:00:00+00:00",
+  mode: "mock",
+  corpus: { name: "Lucius-Morningstar/mailroom-dataset", revision: { tag: "v9.3" } },
+  metrics: { n: 1, class_ok: 1, stage_ok: 1, all_checks_ok: true },
+  runs: 1,
+};
+
+const experimentDetail: ExperimentDetail = {
+  ...experimentSummary,
+  runs: [
+    {
+      execution_id: "run-1",
+      manifest_id: "DOC-1",
+      expected: "contract",
+      predicted: "contract",
+      stage: "archived",
+      node_sequence: ["intake", "classify", "archive"],
+      checks: {},
+      ok: true,
+    },
+  ],
+};
+
 function jsonResponse(body: unknown): Response {
   return {
     ok: true,
@@ -73,6 +130,12 @@ function mockApi() {
     const url = String(input);
     if (url.includes("/snapshot")) return jsonResponse(snapshot);
     if (url.includes("/findings")) return jsonResponse(report);
+    if (url.endsWith("/v1/diagnostics/runs")) return jsonResponse({ runs: [runSummary] });
+    if (url.includes("/v1/diagnostics/runs/run-1")) return jsonResponse(runJournal);
+    if (url.endsWith("/v1/diagnostics/experiments")) {
+      return jsonResponse({ experiments: [experimentSummary] });
+    }
+    if (url.includes("/v1/diagnostics/experiments/exp-1")) return jsonResponse(experimentDetail);
     throw new Error(`unexpected request: ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -131,6 +194,34 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "classify" })).toBeInTheDocument();
     expect(screen.getByText("classify-document")).toBeInTheDocument();
+  });
+
+  it("loads a recorded run and replays its node path", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    const path = await screen.findByRole("list", { name: "Recorded node path" });
+    expect(within(path).getAllByRole("button")).toHaveLength(3);
+
+    await user.click(within(path).getByRole("button", { name: /classify/ }));
+    expect(screen.getByRole("heading", { name: "classify" })).toBeInTheDocument();
+    expect(window.location.search).toContain("node=classify");
+  });
+
+  it("loads an experiment log and jumps to one of its runs", async () => {
+    mockApi();
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+
+    await user.selectOptions(screen.getByLabelText("Load an experiment log"), "exp-1");
+    expect(await screen.findByText(/Class \/ stage ok/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /DOC-1/ }));
+    expect(await screen.findByRole("list", { name: "Recorded node path" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Load a run journal")).toHaveValue("run-1");
   });
 
   it("sends the stored bearer token on diagnostics requests", async () => {

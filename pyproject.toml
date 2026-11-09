@@ -121,6 +121,7 @@ namespaces = true
 asyncio_mode = "auto"
 markers = [
     "no_langchain_mock: skip conftest's LangChain provider mock (hub#42 provider-seam tests)",
+    "live_corpus: fetches pinned real documents from the Hub; set MAILROOM_LIVE_TESTS=1",
 ]
 testpaths = ["src/tests", "tools/pipeline-diagnostics/tests"]
 pythonpath = ["src", ".", "tools/pipeline-diagnostics/backend"]

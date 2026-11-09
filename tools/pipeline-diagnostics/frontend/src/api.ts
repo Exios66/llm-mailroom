@@ -1,4 +1,11 @@
-import type { CheckReport, Snapshot } from "./types";
+import type {
+  CheckReport,
+  ExperimentDetail,
+  ExperimentSummary,
+  RunJournal,
+  RunSummary,
+  Snapshot,
+} from "./types";
 
 const TOKEN_KEY = "mailroom-diagnostics-token";
 
@@ -79,4 +86,33 @@ export function fetchSnapshot(signal?: AbortSignal): Promise<Snapshot> {
 
 export function fetchFindings(signal?: AbortSignal): Promise<CheckReport> {
   return getJson<CheckReport>("/v1/diagnostics/findings", signal);
+}
+
+
+export async function fetchRuns(signal?: AbortSignal): Promise<RunSummary[]> {
+  const payload = await getJson<{ runs: RunSummary[] }>("/v1/diagnostics/runs", signal);
+  return payload.runs;
+}
+
+export function fetchRun(executionId: string, signal?: AbortSignal): Promise<RunJournal> {
+  return getJson<RunJournal>(`/v1/diagnostics/runs/${encodeURIComponent(executionId)}`, signal);
+}
+
+export async function fetchExperiments(signal?: AbortSignal): Promise<ExperimentSummary[]> {
+  const payload = await getJson<{ experiments: ExperimentSummary[] }>(
+    "/v1/diagnostics/experiments",
+    signal,
+  );
+  return payload.experiments;
+}
+
+
+export function fetchExperiment(
+  experimentId: string,
+  signal?: AbortSignal,
+): Promise<ExperimentDetail> {
+  return getJson<ExperimentDetail>(
+    `/v1/diagnostics/experiments/${encodeURIComponent(experimentId)}`,
+    signal,
+  );
 }

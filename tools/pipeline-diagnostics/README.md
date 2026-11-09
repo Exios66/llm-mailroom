@@ -2,7 +2,7 @@
 
 Repository-native debugging and diagnostic tooling for llm-mailroom.
 
-**Current status: D0 complete and D1.1 (accessible React graph) implemented; the workbench continues with D1.2 gap scenarios.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, source/policy provenance hashes, atomic fresh-process preview refresh, and an accessible React/React Flow screen at `/diagnostics`. Live execution events, replay and calibration remain later tasks.
+**Current status: D0 complete, D1.1 (accessible React graph) implemented, and live-corpus run journals/replay wired into the viewer; the workbench continues with D1.2 gap scenarios.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, source/policy provenance hashes, atomic fresh-process preview refresh, and an accessible React/React Flow screen at `/diagnostics`. Recorded run journals, experiment summaries and path playback are implemented; live SSE execution events and calibration remain later tasks.
 
 ## Start here
 
@@ -48,6 +48,14 @@ tools/pipeline-diagnostics/
   tests/                   # explicitly collected by CI
     fixtures/              # synthetic defects and revision-specific contracts
 ```
+
+## Live corpus, run journals and replay
+
+`scripts/pull_live_manifest.py` resolves the newest tagged `Lucius-Morningstar/mailroom-dataset` release, verifies the release manifest and every parquet/content hash, and emits the pipeline manifest shape (no document text). `scripts/smoke_live_documents.py` fetches the selected real documents, runs the full graph (mock by default), and writes one run journal plus an experiment summary. `--replay <journal>` re-runs the same document and diffs the node sequence and outcome.
+
+The viewer's **Recorded runs** panel loads journals from `<base>/diagnostics/runs` and plays the recorded node path (numbered nodes, highlighted transitions); **Experiments** loads summaries and jumps to their runs. Playback reads the journal; only the CLI replay re-executes the pipeline. The routes are `GET /v1/diagnostics/runs`, `/runs/{execution_id}`, `/experiments`, `/experiments/{experiment_id}`.
+
+Live documents are opt-in: `MAILROOM_LIVE_TESTS=1` runs the real-corpus routing/replay test. Screenshots and journals never embed document text.
 
 ## Workspace preview refresh
 
