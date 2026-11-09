@@ -1,10 +1,11 @@
-import errno
 import os
 import json
 import hashlib
 import shutil
 import tempfile
+import threading
 import uuid
+from collections import OrderedDict
 from pathlib import Path, PureWindowsPath
 from typing import Optional
 
@@ -29,14 +30,53 @@ def get_base_dir() -> Path:
     return Path(os.environ.get("MAILROOM_BASE_DIR", "./data")).resolve()
 
 
-def find_claimed_file(original_filename: str) -> Path | None:
-    """The claimed copy of ``original_filename`` under processing/<worker>/.
+# Claims made by THIS process, keyed by the pre-claim source path. An abort
+# between ``claim_file`` and the state update carries only the stale source
+# path; the registry maps it back to the exact file this run claimed, so
+# recovery never depends on a same-named claim of another worker (whose
+# mtime heartbeats keep refreshing). Bounded: entries are a few bytes each.
+_CLAIMS_MAX = 4096
+_claims: "OrderedDict[str, Path]" = OrderedDict()
+_claims_lock = threading.Lock()
+
+
+def _claim_key(path: str | Path) -> str:
+    try:
+        return str(Path(path).resolve())
+    except (OSError, RuntimeError):
+        return str(Path(path).absolute())
+
+
+def _remember_claim(source: Path, claimed: Path) -> None:
+    key = _claim_key(source)
+    with _claims_lock:
+        _claims.pop(key, None)
+        _claims[key] = claimed
+        while len(_claims) > _CLAIMS_MAX:
+            _claims.popitem(last=False)
+
+
+def find_claimed_file(original_filename: str, source_path: str | Path | None = None) -> Path | None:
+    """The claimed copy of a file under processing/<worker>/.
 
     The abort path may hold a STALE pre-claim path (intake claims the file
     into a worker dir before the run completes; a crash in between leaves
-    the reported path missing — PR #202 review). Resolve the actual claimed
-    bytes by name; with same-named claims in several worker dirs the newest
-    wins (mtime), matching "the live claim is the most recent one"."""
+    the reported path missing — PR #202 review).
+
+    When ``source_path`` (the pre-claim path the run was started with) was
+    claimed by this process, the recorded claim is authoritative: it is
+    returned if it still exists, else ``None`` — another worker's same-named
+    claim is never substituted. Only when no claim is recorded does the
+    lookup fall back to scanning by name, where several same-named claims
+    resolve to the newest (mtime)."""
+    if source_path:
+        with _claims_lock:
+            recorded = _claims.get(_claim_key(source_path))
+        if recorded is not None:
+            try:
+                return recorded if recorded.is_file() else None
+            except OSError:
+                return None
     return _claimed_file_scan(original_filename, processing_dir())
 
 
@@ -51,9 +91,14 @@ def _claimed_file_scan(original_filename: str, proc_root: Path) -> Path | None:
         if not worker_dir.is_dir():
             continue
         candidate = worker_dir / _safe_bin_component(original_filename, "original_filename")
-        if not candidate.is_file():
+        try:
+            # A concurrent mover can take the claim between the check and the
+            # stat; a vanished candidate is simply not a candidate.
+            if not candidate.is_file():
+                continue
+            mtime = candidate.stat().st_mtime
+        except FileNotFoundError:
             continue
-        mtime = candidate.stat().st_mtime
         if mtime > best_mtime:
             best, best_mtime = candidate, mtime
     return best
@@ -277,6 +322,7 @@ def claim_file(file_path: Path, worker_id: str) -> Path:
     # Reused workers must never replace an abandoned document's bytes.
     _move_review_file_no_clobber(file_path, dest)
     _stamp_claim_time(dest)
+    _remember_claim(file_path, dest)
     return dest
 
 
@@ -293,6 +339,7 @@ def requeue_from_review(file_path: Path, worker_id: str, *, original_filename: s
     dest = processing / name
     _move_review_file_no_clobber(file_path, dest)
     _stamp_claim_time(dest)
+    _remember_claim(file_path, dest)
     return dest
 
 
@@ -310,8 +357,30 @@ def review_file_path(manifest) -> Path:
 
 
 def failed_file_path(manifest) -> Path:
-    """Resolve the owned failed file, rejecting ambiguous legacy basenames."""
-    return _owned_bin_file_path(manifest, failed_dir())
+    """Resolve the owned failed file, rejecting ambiguous legacy basenames.
+
+    A path the manifest recorded (``file_location``) wins when it is a file
+    in the failed bin: with both preferred names occupied, ``move_to_failed``
+    stores the new bytes under a numbered name that no document-ID rule can
+    derive, so the recorded path is the only exact locator for them."""
+    base = failed_dir()
+    recorded = _recorded_file_in(manifest, base)
+    if recorded is not None:
+        return recorded
+    return _owned_bin_file_path(manifest, base)
+
+
+def _recorded_file_in(manifest, base: Path) -> Path | None:
+    location = getattr(manifest, "file_location", None)
+    if not location:
+        return None
+    path = Path(location)
+    try:
+        if path.parent.resolve() == base.resolve() and path.is_file():
+            return path
+    except (OSError, RuntimeError):
+        return None
+    return None
 
 
 def archived_file_path(manifest) -> Path:
@@ -413,26 +482,55 @@ def _stamp_claim_time(dest: Path) -> None:
 
 
 def _move_review_file_no_clobber(src: Path, dest: Path) -> None:
-    """Publish complete bytes with an atomic link, then retire the source.
+    """Publish complete bytes without ever replacing ``dest``, then retire ``src``.
 
-    Cross-device sources are copied to a private destination-side staging
-    file first. A destination filesystem without hard links fails loudly;
-    never fall back to a rename/copy that could overwrite another worker.
+    The fast path is an atomic hard link. When the link fails for any reason
+    other than the name being taken (cross-device source, or a filesystem
+    without hard links: EXDEV, EPERM, ENOTSUP, ...), the bytes are staged in
+    a private destination-side temp file, fsynced, and published by
+    reserving the name with ``O_CREAT|O_EXCL`` and renaming the staged file
+    over our own reservation. An occupied destination always raises
+    ``FileExistsError`` and is left untouched.
     """
     try:
         os.link(src, dest)
-    except OSError as exc:
-        if exc.errno != errno.EXDEV:
-            raise
+    except FileExistsError:
+        raise
+    except OSError:
         fd, name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=dest.parent)
         os.close(fd)
         temporary = Path(name)
         try:
-            shutil.copy2(src, temporary)
-            os.link(temporary, dest)
+            shutil.copyfile(src, temporary)
+            try:
+                shutil.copystat(src, temporary)
+            except OSError:
+                pass  # metadata is best effort on link-less filesystems
+            with open(temporary, "rb") as staged:
+                os.fsync(staged.fileno())
+            _publish_staged_no_clobber(temporary, dest)
         finally:
             temporary.unlink(missing_ok=True)
     src.unlink()
+
+
+def _publish_staged_no_clobber(staged: Path, dest: Path) -> None:
+    try:
+        os.link(staged, dest)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass
+    # No hard links here: reserve the name atomically, then rename the staged
+    # file over our own reservation (same directory, so the rename is atomic).
+    reserved = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+    os.close(reserved)
+    try:
+        os.replace(staged, dest)
+    except BaseException:
+        dest.unlink(missing_ok=True)
+        raise
 
 
 def _no_clobber_move_to_dir(file_path: Path, dest_dir: Path, doc_id: str = "") -> Path:

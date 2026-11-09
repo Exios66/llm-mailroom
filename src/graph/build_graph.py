@@ -3770,15 +3770,21 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
     if file_path_str and not Path(file_path_str).exists():
         # Intake claims the file into a worker dir before the run finishes —
         # an abort between claim and the state update carries a stale inbox
-        # path (PR #202 review). Resolve the claimed bytes by name.
+        # path (PR #202 review). Resolve THIS run's own claim from the stale
+        # source path; only without a recorded claim fall back to the name.
         from pipeline.bins import find_claimed_file
 
-        claimed = find_claimed_file(state.get("original_filename", ""))
+        claimed = find_claimed_file(
+            state.get("original_filename", ""), source_path=file_path_str
+        )
         if claimed is not None:
             file_path_str = str(claimed)
     if file_path_str:
         try:
-            move_to_failed(Path(file_path_str), aborted_doc_id)
+            failed_path = move_to_failed(Path(file_path_str), aborted_doc_id)
+            # A numbered fallback name cannot be derived from the doc id, so
+            # the manifest records the exact path the bytes were stored at.
+            manifest.file_location = str(failed_path)
         except Exception:
             logger.exception("abort_move_to_failed_error", file=file_path_str)
     try:

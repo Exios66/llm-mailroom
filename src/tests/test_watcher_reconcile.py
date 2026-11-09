@@ -199,6 +199,8 @@ class TestArchiveCollisionSafe:
         dest3 = bins.move_to_failed(src, doc_id="doc-9")
         assert dest3.name == "claim--1.pdf"
         assert (failed / "claim--doc-9.pdf").read_bytes() == b"second bytes"
+        assert dest3.read_bytes() == b"third bytes"
+        assert not src.exists()
 
     def test_archive_doc_id_fallback_also_never_clobbers(self, temp_base_dir):
         """Same contract as the failed bin, for the A-20 archive path."""
@@ -214,6 +216,8 @@ class TestArchiveCollisionSafe:
         dest = bins.move_to_archive(src, "M1", "contract", doc_id="doc-abc")
         assert dest.name == "doc--1.pdf"
         assert (archive / "doc--doc-abc.pdf").read_bytes() == b"first re-archive"
+        assert dest.read_bytes() == b"second re-archive"
+        assert not src.exists()
 
 
 class TestFindClaimedFile:
