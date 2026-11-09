@@ -211,6 +211,24 @@ class TestFailedLocatorPrefersRecordedPath:
         assert bins.failed_file_path(manifest) == failed / "a--doc-1.pdf"
 
 
+    def test_locator_ignores_recorded_path_of_another_document(self, temp_base_dir):
+        """A stale or edited manifest cannot claim another document's failed bytes."""
+        from pipeline import bins
+        from schemas.manifest import DocumentManifest, PipelineStage
+
+        failed = bins.failed_dir()
+        failed.mkdir(parents=True, exist_ok=True)
+        (failed / "other.pdf").write_bytes(b"someone else")
+        (failed / "a--doc-1.pdf").write_bytes(b"mine")
+        manifest = DocumentManifest(
+            doc_id="doc-1",
+            matter_id="M",
+            original_filename="a.pdf",
+            stage=PipelineStage.FAILED,
+            file_location=str(failed / "other.pdf"),
+        )
+        assert bins.failed_file_path(manifest) == failed / "a--doc-1.pdf"
+
 class TestNoHardLinkFilesystems:
     @pytest.fixture
     def no_link(self, monkeypatch):

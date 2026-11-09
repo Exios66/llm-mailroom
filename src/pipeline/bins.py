@@ -375,6 +375,17 @@ def _recorded_file_in(manifest, base: Path) -> Path | None:
     if not location:
         return None
     path = Path(location)
+    # Only a name this document's own move could have produced is trusted:
+    # ``<name>``, ``<stem>--<doc_id><suffix>`` or ``<stem>--<n><suffix>``. A
+    # stale or edited manifest cannot point at another document's bytes.
+    original = Path(str(getattr(manifest, "original_filename", "") or ""))
+    if not original.name:
+        return None
+    name = path.name
+    if name != original.name and not (
+        name.startswith(f"{original.stem}--") and name.endswith(original.suffix)
+    ):
+        return None
     try:
         if path.parent.resolve() == base.resolve() and path.is_file():
             return path
@@ -506,7 +517,8 @@ def _move_review_file_no_clobber(src: Path, dest: Path) -> None:
                 shutil.copystat(src, temporary)
             except OSError:
                 pass  # metadata is best effort on link-less filesystems
-            with open(temporary, "rb") as staged:
+            # r+b: Windows refuses fsync on a read-only descriptor (EBADF).
+            with open(temporary, "r+b") as staged:
                 os.fsync(staged.fileno())
             _publish_staged_no_clobber(temporary, dest)
         finally:
@@ -524,6 +536,9 @@ def _publish_staged_no_clobber(staged: Path, dest: Path) -> None:
         pass
     # No hard links here: reserve the name atomically, then rename the staged
     # file over our own reservation (same directory, so the rename is atomic).
+    # Until the rename lands, a reader can see the reservation as an empty
+    # file; it is never another document's bytes, and it is never overwritten
+    # by anyone but this call.
     reserved = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
     os.close(reserved)
     try:
