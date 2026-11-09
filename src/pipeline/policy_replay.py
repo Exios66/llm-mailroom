@@ -346,7 +346,10 @@ def _conf(att: SorterAttempt | ExtractionAttempt) -> float | None:
 
 def _window_evidence_usable(att: ExtractionAttempt) -> bool:
     confs, fields = att.window_confidences, att.window_has_fields
-    return confs is not None and fields is not None and len(confs) == len(fields) > 0
+    if confs is None or fields is None or len(confs) != len(fields):
+        return False
+    # No parsed window (every one failed): nothing to re-derive, the failed cap decides.
+    return len(confs) > 0 or (att.n_chunks > 0 and att.failed_chunks >= att.n_chunks)
 
 
 def _extraction_confidence(att: ExtractionAttempt, cls: str | None) -> float | None:

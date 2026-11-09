@@ -85,6 +85,12 @@ def finalize_chunked_merge(
     if window_confidences is not None and window_has_fields is not None:
         merged["_window_confidences"] = list(window_confidences)
         merged["_window_has_fields"] = list(window_has_fields)
+        # The pairwise fold in ``_merge_extractions`` can drift from the rule when a
+        # productive window states no confidence; the global rule over the same
+        # evidence is what ``policy_replay`` re-derives, so it is the live value too.
+        derived = merge_window_confidences(window_confidences, window_has_fields, "cr6")
+        if derived is not None:
+            merged["confidence"] = derived
     if failed:
         ceiling = failed_chunk_ceiling(agent_name)
         current = merged.get("confidence")

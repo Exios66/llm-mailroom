@@ -1,6 +1,7 @@
 ---
 tags:
   - feature
+  - improvement
   - fix
 ---
 
@@ -54,3 +55,7 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 - **A lost extraction window never archives.** `after_extraction` sends any extraction with `_failed_chunks > 0` to `retry_extract`, then `human_review`, whatever its confidence, and no judge or arbiter verdict clears it (previously only the confidence cap kept it out of the archive).
 - **Watcher pool hand-off and cap are tight.** A name moves from queued to active in one critical section, so the rescan and the shutdown drain always see it, and workers that outlive `close()` still count against `MAX_CONCURRENT_DOCS`.
 - `_run_coro` no longer times out after 10 s in the running-loop branch; it raised `TimeoutError` after a slow audit write had already committed (about 30 s worst case under `run_write_with_retry`, which now rejects `attempts < 1`).
+
+## Changed
+
+- **Held (#204, CR6): a chunked extraction's confidence ignores field-less windows, and the sweep records per-window evidence.** Held: needs the real thresholds objective. `RunRecord` extraction attempts gain `window_confidences` / `window_has_fields` (`None` on older records), `specialist_agents.merge_window_confidences(..., rule)` sets the live chunked confidence (rule `cr6`) and is what `policy_replay` re-derives (an attempt whose every window failed needs no evidence), and `hillclimb_eval.py` gains `--merge-rule {min,cr6}` / `--baseline-merge-rule` to compare the rules on the same records; a chunked attempt without window evidence is `unobserved` under `cr6`. The per-window keys are stripped before the payload reaches state.

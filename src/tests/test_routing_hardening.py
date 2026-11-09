@@ -686,3 +686,21 @@ def test_t65_judge_and_arbiter_cannot_clear_a_lost_window():
     clean = {**state, "extracted_data": {"parties": ["Acme"], "_failed_chunks": 0}}
     assert after_judge({**clean, "judge_verdict": "complete"}) == "compile_report"
     assert after_arbiter({**clean, "arbiter_decision": "accept_with_caveats"}) == "compile_report"
+
+
+@_MAKERS
+def test_cr6_live_merge_equals_the_shared_rule_when_a_productive_window_states_no_confidence(
+    make, mock_openai_client
+):
+    """#204 review: the live fold must give what ``merge_window_confidences`` gives
+    on the same per-window evidence, or replay would archive what live retried."""
+    from langchain_agents.specialist_agents import merge_window_confidences
+
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(agent, [dict(good), {"confidence": 0.2}, {**good, "confidence": 0.9}, {**good, "confidence": 0.95}])
+    result = agent.extract_chunked(_FOUR_WINDOWS, chunk_chars=400, overlap_chars=0)
+    expected = merge_window_confidences(
+        agent._last_window_confidences, agent._last_window_has_fields, "cr6"
+    )
+    assert result["confidence"] == pytest.approx(expected)
