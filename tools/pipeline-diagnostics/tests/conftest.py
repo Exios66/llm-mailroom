@@ -2,7 +2,8 @@
 
 ``src/tests/conftest.py`` does not apply here (this suite is outside the root
 test root), so this file carries the whole isolation contract: no network, no
-real model client, no writes outside ``tmp_path``. No test may reach a model or
+real model client, and ``MAILROOM_BASE_DIR`` redirected to a temporary directory
+(writes elsewhere are not detected; keep tests writing only under ``tmp_path``). No test may reach a model or
 a hosted service; the socket block makes an accidental attempt fail loudly.
 """
 
