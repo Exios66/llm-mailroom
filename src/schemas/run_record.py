@@ -166,6 +166,9 @@ class ArbiterObservation(_Model):
 
     ran: bool = False
     on_attempt: int | None = None
+    # Class of the extraction that was ruled on; attempt numbers restart per class in a
+    # full-information sweep. None on older records (replay then needs the ruling to be unambiguous).
+    doc_type: str | None = None
     # accept_with_caveats | retry_extraction | human_review (build_graph.arbiter_node)
     decision: str | None = None
     prompt_tokens: int = 0

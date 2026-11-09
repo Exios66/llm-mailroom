@@ -109,7 +109,9 @@ def _subclass_edited(label: dict[str, Any], snap: dict[str, Any]) -> bool:
 
 def is_corrected(label: dict[str, Any]) -> bool:
     snap = label.get("model_snapshot") or {}
-    if label.get("field_corrections"):
+    # A legacy ``complete`` that only drops a parked field leaves ``field_corrections`` empty and
+    # records the edit under ``removed_fields`` (review_resolve.plan_resolution).
+    if label.get("field_corrections") or label.get("removed_fields"):
         return True
     human_class = label.get("doc_type")
     if human_class and snap.get("doc_type") and human_class != snap.get("doc_type"):
@@ -141,7 +143,13 @@ def sorter_attempt_one(manifest: dict[str, Any], snap: dict[str, Any]) -> tuple[
     confidence. So the fields that no longer belong to attempt 1 are left unobserved (``None``), and
     with nothing left no attempt is exported. Returns ``(attempt | None, reason | None)``.
     """
-    attempts = manifest.get("classification_attempts")
+    # The snapshot's count is the one at parking time; the live manifest's is reset to 0 when the
+    # approval re-extracts, so it is only a fallback for snapshots written before the count was kept.
+    attempts = (
+        snap["classification_attempts"]
+        if "classification_attempts" in snap
+        else manifest.get("classification_attempts")
+    )
     if isinstance(attempts, int) and not isinstance(attempts, bool) and attempts > 1:
         return None, "sorter_attempt_1_replaced_by_retry"
     reviewer_type = snap.get("reviewer_doc_type")
@@ -169,6 +177,33 @@ def sorter_attempt_one(manifest: dict[str, Any], snap: dict[str, Any]) -> tuple[
     )
 
 
+# review_classify_node's decision lane: the verdict decides the route (``decide_review``), and the
+# route itself is never persisted, so the persisted verdict is the only way to recover it.
+_DECISION_ROUTES = {"decision_accepts": "extract", "decision_escalates": "human_review"}
+
+
+def _reviewer_decision(manifest: dict[str, Any]) -> dict[str, Any]:
+    """``ReviewerObservation`` fields for a decision-lane reviewer, from the persisted verdict.
+
+    Without the route replay reports ``decision_route_not_observed`` for every ``decision_only``
+    class. An LLM-lane verdict is recomputed by replay under the candidate thresholds, so it
+    (and any manifest without a verdict) leaves the observation as it was.
+    """
+    verdict = manifest.get("review_verdict")
+    route = _DECISION_ROUTES.get(verdict)
+    if route is None:
+        return {}
+    return {"mode": "decision_only", "reviewer_verdict": verdict, "review_route": route}
+
+
+def _class_confirmed(label: dict[str, Any], snap: dict[str, Any]) -> bool:
+    """A person named the class: an explicit override, or a class other than the model's guess."""
+    if label.get("class_override"):
+        return True
+    human_class = label.get("doc_type")
+    return bool(human_class and snap.get("doc_type") and human_class != snap.get("doc_type"))
+
+
 def _extraction_schema_evidence(
     doc_type: Any,
     payload: Any,
@@ -184,7 +219,9 @@ def _extraction_schema_evidence(
 
     - No payload dict in the snapshot (or a non-dict): nothing to validate.
       ``schema_valid`` stays None and the payload is declared not hollow — routing skips
-      the schema gate on a falsy extraction and treats a no-payload attempt as a pass.
+      the schema gate on a falsy extraction and treats a no-payload attempt as a pass. The
+      exception is a parked ``parse_error``: ``model_snapshot`` stores no payload when only the
+      internal marker keys were left, but the parse failure still happened, so it is invalid.
     - A payload dict (empty or not) is validated: an empty/unparseable payload, a payload
       that fails its class schema or a validator crash all record ``schema_valid`` False
       (the conservative reading: replay retries or parks it), and a crash additionally
@@ -198,7 +235,7 @@ def _extraction_schema_evidence(
     from pipeline.reconsideration import extraction_is_hollow
 
     if not isinstance(payload, dict):
-        return None, False, []
+        return (False if parse_error else None), False, []
     schema_valid: bool | None
     errors: list[str] = []
     if parse_error:
@@ -230,6 +267,7 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
         reviewer_doc_type=snap.get("reviewer_doc_type"),
         reviewer_confidence=_num(snap.get("reviewer_confidence")),
         causes=[c for c in (manifest.get("review_causes") or []) if isinstance(c, str)],
+        **(_reviewer_decision(manifest) if reviewer_ran else {}),
     )
     extraction: list[ExtractionAttempt] = []
     schema_errors: list[str] = []
@@ -239,14 +277,27 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
     if manifest.get("extraction_source") != _SOURCE_HUMAN and _num(
         snap.get("extraction_confidence")
     ) is not None:
+        # The snapshot was extracted under the class the manifest had when it parked, which a
+        # reclassification has since replaced: validate and label it under that class.
+        extracted_as = snap.get("doc_type") or manifest.get("doc_type")
+        # The snapshot confidence belongs to the attempt that parked (``extraction_attempts`` at
+        # parking time). Earlier attempts left no trace, so with a retry parked only that attempt
+        # is exported and replay finds attempt 1 unobserved. Snapshots without the count keep
+        # the old reading, attempt 1.
+        parked = snap.get("extraction_attempts")
+        attempt_no = parked if isinstance(parked, int) and not isinstance(parked, bool) and parked > 1 else 1
+        if attempt_no > 1:
+            diagnostics["extraction_attempt_1"] = "extraction_attempt_1_replaced_by_retry"
         schema_valid, hollow, schema_errors = _extraction_schema_evidence(
-            manifest.get("doc_type"),
+            extracted_as,
             snap.get("extracted_data"),
             parse_error=bool(snap.get("parse_error")),
+            attempt=attempt_no,
         )
         extraction.append(
             ExtractionAttempt(
-                attempt=1,
+                attempt=attempt_no,
+                doc_type=extracted_as,
                 confidence=_num(snap.get("extraction_confidence")),
                 schema_valid=schema_valid,
                 hollow=hollow,
@@ -254,13 +305,16 @@ def to_run_record(manifest: dict[str, Any], run_id: str) -> RunRecord:
         )
     if schema_errors:
         diagnostics["schema_validation_errors"] = schema_errors
+    rejected_unconfirmed = label.get("decision") == "rejected" and not _class_confirmed(label, snap)
     return RunRecord(
         run=RunInfo(run_id=run_id, mode="real", gt_in_state=False),
         doc_id=str(manifest.get("doc_id") or ""),
         filename=manifest.get("original_filename"),
         gold=Gold(
-            expected_doc_type=label.get("doc_type"),
-            expected_doc_subclass=label.get("doc_subclass"),
+            # A rejection that left the class alone only parks the model's own guess in the label, and
+            # calibrating the sorter against its guess would score it as right. Unconfirmed: no gold.
+            expected_doc_type=None if rejected_unconfirmed else label.get("doc_type"),
+            expected_doc_subclass=None if rejected_unconfirmed else label.get("doc_subclass"),
             human_decision=label.get("decision"),
             human_doc_type=label.get("doc_type"),
             human_doc_subclass=label.get("doc_subclass"),

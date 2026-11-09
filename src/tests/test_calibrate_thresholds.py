@@ -6,6 +6,8 @@ Synthetic data validates the harness only; it says nothing about any real model.
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pytest
 import yaml
 
@@ -244,3 +246,35 @@ def test_document_grouped_cross_fit_judges_a_document_by_its_worst_accepted_atte
     by_doc = ct.deployed_cross_fit(pairs, 0.5, folds=5, seed=1, confidence=0.95, docs=docs)
     assert by_attempt["holdout_accuracy"] == pytest.approx(0.8)
     assert by_doc["holdout_accuracy"] == 0.0 and by_doc["holdout_accepted"] == 30  # documents, not attempts
+
+
+def test_document_grouped_cross_fit_keeps_every_attempt_of_a_document_in_one_fold(monkeypatch):
+    """Each fold's training rows hold ALL attempts of a document or none, and each document is held
+    out exactly once: no document's attempts leak between training and holdout."""
+    from llm_dojo_scoring.analysis import calibration
+
+    n_docs, n_attempts = 20, 4
+    pairs, docs, owner = [], [], {}
+    for d in range(n_docs):
+        for n in range(n_attempts):
+            conf = 0.80 + (d * n_attempts + n) * 0.0002  # unique per attempt, so a row names its document
+            pairs.append((conf, n != 0))
+            docs.append(d)
+            owner[conf] = d
+    seen_training = []
+    real = calibration.cutoff_at_target
+
+    def spy(rows, target, *args, **kwargs):
+        seen_training.append(list(rows))
+        return real(rows, target, *args, **kwargs)
+
+    monkeypatch.setattr(calibration, "cutoff_at_target", spy)
+    ct.deployed_cross_fit(pairs, 0.5, folds=5, seed=3, confidence=0.95, docs=docs)
+    assert len(seen_training) == 5
+    held_out = Counter()
+    for training in seen_training:
+        per_doc = Counter(owner[conf] for conf, _ in training)
+        assert set(per_doc.values()) == {n_attempts}  # a training document is whole, never split
+        for d in set(range(n_docs)) - set(per_doc):
+            held_out[d] += 1
+    assert held_out == Counter({d: 1 for d in range(n_docs)})  # every document held out in exactly one fold

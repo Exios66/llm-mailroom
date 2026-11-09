@@ -144,6 +144,7 @@ class Doc:
     review_expected: bool | None = None
     expected_fields: dict | None = None
     content_sha256: str | None = None
+    source_corpus: str | None = None  # corpus the row came from (e.g. sec_edgar), for --source filtering
     gold_meta: dict = field(default_factory=dict)
 
 
@@ -996,6 +997,7 @@ def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict
                 review_expected=_as_bool(review_expected),
                 expected_fields=fields or None,
                 content_sha256=_clean(rec.get("content_sha256")),
+                source_corpus=_clean(rec.get("source_corpus")) or None,
                 gold_meta={k: meta.get(k) for k in ("sources", "n_fields", "n_posthoc", "coverage", "specialist")},
             ))
     revision = (prov.get("revision_requested") or prov.get("hub_sha_tip")) if isinstance(prov, dict) else None
