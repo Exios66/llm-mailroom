@@ -69,6 +69,14 @@ def test_workspace_hashes_include_sources_and_policy(tmp_path: Path):
     assert missing
 
 
+def test_snapshot_schema_version_announces_provenance_enrichment():
+    snapshot = build_workspace_snapshot()
+    assert snapshot.schema_version == "1.1.0"
+    assert {"config_source", "hashes", "missing_inputs"} <= set(
+        snapshot.provenance.model_dump()
+    )
+
+
 def test_workspace_snapshot_reports_source_hashes():
     snapshot = build_workspace_snapshot()
     provenance = snapshot.provenance
