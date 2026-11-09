@@ -33,7 +33,7 @@ GLOBAL_FILES = {"pyproject.toml", "Dockerfile", "pytest.ini", "tox.ini", "setup.
                 "src/pipeline/env.py", "src/pipeline/bins.py", "src/pipeline/guards.py"}
 DOC_TESTS = ("src/tests/test_docs_truth.py", "src/tests/test_landing.py")
 # The pipeline-diagnostics workbench is a nested package with its own suite.
-# Root pytest discovery does not reach it, so name it explicitly. Every path
+# Explicit src/tests runs do not reach it, so name both roots. Every path
 # here is resolved relative to REPO (the planner stays testable in a tmp tree).
 NESTED_ROOT = "tools/pipeline-diagnostics"
 NESTED_TESTS = f"{NESTED_ROOT}/tests"

@@ -46,7 +46,8 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 | `src/api/` | FastAPI app (`main.py`), embeds the watcher |
 | `src/config/taxonomy.yaml` | **Single source of truth**: classes, thresholds, agent → model, token caps |
 | `src/scripts/` | operator and maintenance CLIs (pilots, gates, sync, release, bumps) |
-| `src/tests/` | pytest suite; `conftest.py` mocks every LLM client |
+| `src/tests/` | pipeline pytest suite; `conftest.py` mocks every LLM client |
+| `tools/pipeline-diagnostics/` | native inspect/check CLI, workbench plan, nested tests with their own hermetic fixtures |
 | `src/legalbench/` | LegalBench evaluation submodule |
 | `deploy/` | compose files, LiteLLM gateway, Modal vLLM, HF Space payload |
 | `contract/` | generated display contract (`export_contract.py --write`) |
@@ -58,7 +59,8 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # use PIP, never uv
-.venv/bin/python -m pytest src/tests -q                       # full suite, no network (10+ min)
+.venv/bin/python -m pip install -e tools/pipeline-diagnostics # after parent install
+.venv/bin/python -m pytest src/tests tools/pipeline-diagnostics/tests -q # full suite, no network
 PYTHONPATH=src .venv/bin/python src/scripts/affected_tests.py --run -- -q   # only tests the diff can affect (exit 5 = none selected)
 .venv/bin/python -m pytest src/tests -k sorter -q             # one area
 PYTHONPATH=src .venv/bin/python src/scripts/run_pilot.py --mock   # whole pipeline, fake LLM
@@ -68,8 +70,11 @@ PYTHONPATH=src .venv/bin/python -m api.main                   # API on :8000 (ne
 - **Do not use `uv sync` / `uv pip install -e .`.** `[tool.uv.sources]` points
   `llm-dojo-scoring` at a hub workspace that does not exist here; uv fails with
   "not a workspace member". `uv` is only used by one test as a build tool.
-- `pyproject.toml` sets `pythonpath = ["src", "."]`, so bare `pytest` finds modules.
+- `pyproject.toml` sets `pythonpath = ["src", ".", "tools/pipeline-diagnostics/backend"]`, so bare `pytest` finds modules.
   Scripts and `python -m pipeline.*` need `PYTHONPATH=src`.
+- The raw `affected_tests.py` selector covers `src/tests` only; pair it with
+  `pytest tools/pipeline-diagnostics/tests -q`, or use `ci_tests.py` for both roots.
+  The nested suite does not inherit `src/tests/conftest.py`.
 - Every other script and its flags are listed in `AGENTS.md` → "Commands".
 
 ## Verification gates
@@ -82,7 +87,7 @@ the full-suite evidence is your local run on the final commit.
 
 | Change touches | Run |
 |:---|:---|
-| Any Python | `.venv/bin/python -m compileall -q src`, then `affected_tests.py --run`, then the full suite before the PR is ready |
+| Any Python | `.venv/bin/python -m compileall -q src tools/pipeline-diagnostics/backend`, then `affected_tests.py --run`, then the full suite before the PR is ready |
 | Graph, agents, routing, prompts | + `run_pilot.py --mock` (needs `docs/examples/samples/manifest.csv`, which only the monorepo has; in a standalone checkout say it was not run) and `MAILROOM_BASE_DIR="$(mktemp -d)"` with `run_experiment.py --dataset mailroom-fixtures --mock --baseline docs/superpowers/baselines/experiment-baseline.json` |
 | Nodes, spans, agents, classes, score configs, thresholds | + `PYTHONPATH=src .venv/bin/python src/scripts/export_contract.py --check` (`--write` to regenerate) |
 | `CHANGELOG.md` | + `PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check` |

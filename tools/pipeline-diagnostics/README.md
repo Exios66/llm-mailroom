@@ -49,7 +49,7 @@ tools/pipeline-diagnostics/
   fixtures/                # synthetic defects and revision-specific contracts
 ```
 
-LangChain core is already declared by the parent project. Install the project's development dependencies rather than adding a duplicate root requirement. The future nested package will also declare dependencies that it imports directly.
+LangChain core is already declared by the parent project. Install the project's development dependencies rather than adding a duplicate root requirement. The nested package declares its own direct dependencies. Install the parent from this checkout first; the unrelated PyPI project named `mailroom` is not a tool dependency.
 
 First useful milestone: current-main topology, source-linked checks and reproducible missing-route fixtures. Exact mock/live execution follows, then staged calibration adapters. PR 204 is not a prerequisite for the tool.
 

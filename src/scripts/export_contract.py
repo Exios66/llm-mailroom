@@ -25,8 +25,6 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from graph.contract import END as _END
-from graph.contract import START as _START
 from graph.contract import graph_section, node_row  # noqa: F401  (public re-export)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

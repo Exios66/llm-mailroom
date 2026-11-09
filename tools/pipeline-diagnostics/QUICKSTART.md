@@ -17,6 +17,8 @@ python3 -m venv .venv
 .venv/bin/python -c "import langchain_core; print(langchain_core.__version__)"
 ```
 
+Install the parent from this checkout first. The tool does not depend on the unrelated PyPI package named `mailroom`; artifact-only inspection also works without the parent.
+
 `langchain-core>=0.3.0` is already a dependency in the root `pyproject.toml`; the editable installation installs a compatible version with the rest of the pipeline. The setup performed for this proposal used Python 3.12.13 and installed LangChain core 1.7.6. This records the observed environment, not a new version pin.
 
 ### 2. Inspect and check with the native CLI
