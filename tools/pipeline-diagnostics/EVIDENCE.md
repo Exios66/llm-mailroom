@@ -56,7 +56,7 @@ PYTHONPATH=src OBSERVABILITY_PROVIDER=none .venv/bin/python src/scripts/export_c
 PYTHONPATH=src .venv/bin/python src/scripts/sync_gitbook_changelog.py --check
 ```
 
-These are the prescribed evidence commands; the PR must state which were actually run and their exact results. An affected selection is not the full suite. Exit 5 from the standalone affected selector means no tests selected, not a completed full run. After nested test discovery is implemented, the explicit complete Python selection is `src/tests` plus `tools/pipeline-diagnostics/tests`.
+These are the prescribed evidence commands; the PR must state which were actually run and their exact results. The raw affected selector covers `src/tests` only; pair it with the nested suite, or use `ci_tests.py` for both roots. An affected selection is not the full suite. Exit 5 from the standalone affected selector means no tests selected, not a completed full run. After nested test discovery is implemented, the explicit complete Python selection is `src/tests` plus `tools/pipeline-diagnostics/tests`.
 
 Graph/agent/routing/prompt changes also require the mock experiment gate and the pilot when its fixture manifest exists. Before marking ready, run the full applicable suites on the final commit and disclose fixture/environment skips. The mock experiment must use an isolated temporary MAILROOM_BASE_DIR; never overwrite runtime bins or re-approve the baseline as a shortcut.
 

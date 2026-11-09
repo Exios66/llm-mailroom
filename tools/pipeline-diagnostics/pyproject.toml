@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "Native read-only diagnostics for the llm-mailroom pipeline graph and display contract"
 requires-python = ">=3.11"
 dependencies = [
-    # The parent pipeline owns the graph and taxonomy; install it first:
+    # The parent owns graph/taxonomy and must be installed from this checkout.
+    # Do not resolve the unrelated PyPI project named mailroom. Install first:
     #   .venv/bin/pip install -e .
-    "mailroom",
     "pydantic>=2.0",
     "structlog>=24.0",
 ]
