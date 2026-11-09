@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import shutil
@@ -384,11 +385,27 @@ def _make_real_langchain_llm():
     return _llm
 
 
+def _oracle_confidence(sample: dict, bar: dict) -> float:
+    """Confidence for a corpus row: 0.99 at most, but never below the class's routing floor.
+
+    ``bar`` is the class's confidence thresholds. A floor of 1.0 (or 0.99 plus a
+    bump) must stay at the floor, or routing sends a healthy sample to review.
+    """
+    floor = max(float(bar.get("high", 0.97)), float(bar.get("judge_band_high", 0.0)))
+    return max(floor, min(0.99, round(floor + (sum(sample["id"].encode()) % 2) / 100, 2)))
+
+
 def run_sample(
     sample: dict, mock_mode: bool, session_id: str | None = None, run_id: str | None = None
 ) -> dict:
     from pipeline.bins import inbox_dir
     from graph.build_graph import run_pipeline
+
+    # Reset first: a sample that raises later keeps only its own usage (see _error_row).
+    _LLM_METRICS["calls"] = 0
+    _LLM_METRICS["seconds"] = 0.0
+    _LLM_METRICS["usage"] = []
+    _LLM_METRICS["cost_usd"] = 0.0
 
     matter_id = f"PILOT-{sample['id']}"
     sample_pdf = Path(os.environ.get("MAILROOM_BASE_DIR", "./data")) / "samples" / sample["subdir"] / sample["filename"]
@@ -415,9 +432,7 @@ def run_sample(
         # manifest keeps its historical payload (this branch never runs for it).
         from pipeline.config import get_confidence_thresholds
 
-        bar = get_confidence_thresholds(sample["expected_doc_class"])
-        floor = max(float(bar.get("high", 0.97)), float(bar.get("judge_band_high", 0.0)))
-        expect["conf"] = min(0.99, round(floor + (sum(sample["id"].encode()) % 2) / 100, 2))
+        expect["conf"] = _oracle_confidence(sample, get_confidence_thresholds(sample["expected_doc_class"]))
         expect["subclass"] = sample.get("mock_subclass") or None
         expect["fields"] = _parse_expected_fields(sample) or {}
 
@@ -492,6 +507,21 @@ def run_sample(
     }
 
 
+def _error_row(sample: dict, exc: Exception) -> dict:
+    """Row for a sample that raised: keeps the class label and whatever usage was billed before the error."""
+    tokens = sum(u["prompt_tokens"] + u["completion_tokens"] for u in _LLM_METRICS["usage"])
+    return {
+        "id": sample.get("id"),
+        "filename": sample.get("filename"),
+        "expected_doc_class": sample.get("expected_doc_class"),
+        "status": "error",
+        "error": f"{type(exc).__name__}: {exc}",
+        "llm_calls": _LLM_METRICS["calls"],
+        "llm_cost_usd": round(_LLM_METRICS["cost_usd"], 6),
+        "llm_tokens": tokens,
+    }
+
+
 def _parse_expected_fields(sample: dict) -> dict | None:
     """Parse the manifest `expected_fields` JSON column (literal per-field
     expected extraction values) into a dict, or None when absent."""
@@ -534,8 +564,15 @@ def build_hf_manifest(
     trace_source = hp._trace_source()
     used: set[str] = set()
     rows: list[dict] = []
-    for doc in docs:
-        filename = hp._unique_name(hp._inbox_filename(doc.filename), used)
+    # Documents whose names collide are told apart by their content hash, not by draw
+    # order: the filename (hence the row id and the Langfuse trace id) stays with the
+    # same document however the draw is ordered. Order only breaks exact content ties.
+    base_names = [hp._inbox_filename(d.filename) for d in docs]
+    for doc, base in zip(docs, base_names):
+        if base_names.count(base) > 1:
+            digest = doc.content_sha256 or hashlib.sha256(doc.text.encode("utf-8")).hexdigest()
+            base = f"{Path(base).stem}__{digest[:10]}{Path(base).suffix}"
+        filename = hp._unique_name(base, used)
         (out_dir / filename).write_bytes(doc.text.encode("utf-8"))
         rows.append({
             "id": Path(filename).stem,
@@ -543,6 +580,7 @@ def build_hf_manifest(
             "filename": filename,
             "source": f"{HF_SOURCE_PREFIX}{provenance['dataset_id']}/{doc.filename}",
             "dataset": trace_source,
+            "source_corpus": doc.source_corpus or "",
             "expected_doc_class": doc.gold_class,
             "expected_subclass": doc.gold_subclass or "",
             "expected_stage": doc.expected_stage or "archived",
@@ -721,7 +759,8 @@ def _attach_field_scoring(sample: dict, row: dict) -> None:
 def summarize(rows: list[dict]) -> dict:
     # A sample that raised is recorded as {"status": "error", ...} with none of the
     # outcome keys; count it and leave it out of the outcome statistics.
-    errors = sum(1 for r in rows if r.get("status") == "error")
+    error_rows = [r for r in rows if r.get("status") == "error"]
+    errors = len(error_rows)
     rows = [r for r in rows if r.get("status") != "error"]
     n = len(rows) + errors
     archived = sum(1 for r in rows if r["stage"] == "archived")
@@ -730,12 +769,21 @@ def summarize(rows: list[dict]) -> dict:
     class_matches = sum(1 for r in rows if r["class_match"])
     per_class: dict[str, dict] = {}
     for r in rows:
-        pc = per_class.setdefault(r["expected_doc_class"], {"n": 0, "match": 0, "time": 0.0, "calls": 0, "cost": 0.0})
+        pc = per_class.setdefault(
+            r["expected_doc_class"], {"n": 0, "done": 0, "match": 0, "time": 0.0, "calls": 0, "cost": 0.0}
+        )
         pc["n"] += 1
+        pc["done"] += 1
         pc["match"] += int(r["class_match"])
         pc["time"] += r["wall_time_s"]
         pc["calls"] += r["llm_calls"]
         pc["cost"] += r.get("llm_cost_usd", 0.0)
+    for r in error_rows:  # an errored sample counts against its class, like it does overall
+        if r.get("expected_doc_class"):
+            pc = per_class.setdefault(
+                r["expected_doc_class"], {"n": 0, "done": 0, "match": 0, "time": 0.0, "calls": 0, "cost": 0.0}
+            )
+            pc["n"] += 1
 
     # Mean calibration error: |stated confidence − binary correctness|.
     conf_rows = [
@@ -747,8 +795,12 @@ def summarize(rows: list[dict]) -> dict:
     from llm_dojo_scoring.pilot_summary import pilot_calibration_error
 
     mean_calibration_error = pilot_calibration_error(conf_rows)
-    total_cost = round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 6)
-    total_tokens = sum(r.get("llm_tokens", 0) for r in rows)
+    # Totals include errored samples: calls billed before the error still cost money.
+    # Averages stay per completed sample.
+    completed_cost = round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 6)
+    completed_tokens = sum(r.get("llm_tokens", 0) for r in rows)
+    total_cost = round(completed_cost + sum(r.get("llm_cost_usd", 0.0) for r in error_rows), 6)
+    total_tokens = completed_tokens + sum(r.get("llm_tokens", 0) for r in error_rows)
 
     # Deterministic field-scoring summary (issues #4/#5): mean overall score,
     # fraction escalated to the LLM judge (ambiguous band), and judge calls
@@ -770,9 +822,9 @@ def summarize(rows: list[dict]) -> dict:
         "calibration_n": len(conf_rows),
         "avg_time_s": round(sum(r["wall_time_s"] for r in rows) / len(rows), 3) if rows else 0,
         "avg_llm_calls": round(sum(r["llm_calls"] for r in rows) / len(rows), 1) if rows else 0,
-        "avg_cost_usd": round(total_cost / len(rows), 6) if rows else 0,
+        "avg_cost_usd": round(completed_cost / len(rows), 6) if rows else 0,
         "total_cost_usd": total_cost,
-        "avg_tokens": round(total_tokens / len(rows)) if rows else 0,
+        "avg_tokens": round(completed_tokens / len(rows)) if rows else 0,
         "total_tokens": total_tokens,
         "avg_extraction_overall_score": round(sum(overalls) / len(overalls), 3) if overalls else None,
         "judge_review_rate": round(judge_review_n / len(scored), 3) if scored else None,
@@ -781,9 +833,9 @@ def summarize(rows: list[dict]) -> dict:
             cls: {
                 "n": v["n"],
                 "class_accuracy": round(v["match"] / v["n"], 3),
-                "avg_time_s": round(v["time"] / v["n"], 3),
-                "avg_llm_calls": round(v["calls"] / v["n"], 1),
-                "avg_cost_usd": round(v["cost"] / v["n"], 6),
+                "avg_time_s": round(v["time"] / v["done"], 3) if v["done"] else 0,
+                "avg_llm_calls": round(v["calls"] / v["done"], 1) if v["done"] else 0,
+                "avg_cost_usd": round(v["cost"] / v["done"], 6) if v["done"] else 0,
             }
             for cls, v in sorted(per_class.items())
         },
@@ -990,7 +1042,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.include:
         manifest = [m for m in manifest if m["expected_doc_class"] == args.include]
     if args.source:
-        manifest = [m for m in manifest if (m.get("dataset") or "original") == args.source]
+        # HF rows keep their corpus in source_corpus; their `dataset` is the trace tag.
+        manifest = [m for m in manifest if (m.get("source_corpus") or m.get("dataset") or "original") == args.source]
         logger.info("source_filter", source=args.source, remaining=len(manifest))
     if args.max_docs:
         manifest = manifest[: args.max_docs]
@@ -1028,12 +1081,7 @@ def main(argv: list[str] | None = None) -> int:
             rows.append(run_sample(m, mock_mode, session_id=session_id, run_id=run_id))
         except Exception as exc:
             logger.exception("sample_run_failed", sample=m.get("id"))
-            rows.append({
-                "id": m.get("id"),
-                "filename": m.get("filename"),
-                "status": "error",
-                "error": f"{type(exc).__name__}: {exc}",
-            })
+            rows.append(_error_row(m, exc))
         _page_progress(session_id, label, len(manifest), rows)
     _page_progress(session_id, label, len(manifest), rows, finished=True)
 

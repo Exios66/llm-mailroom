@@ -216,6 +216,29 @@ def test_mock_answers_from_corpus_labels_only_for_hf_rows(fake_corpus, tmp_path)
     assert "doc_subclass" not in json.loads(plain.choices[0].message.content)
 
 
+def test_both_mocks_inject_expected_fields_into_the_extraction_response():
+    """The helper assertion alone would pass if either mock stopped injecting `fields`."""
+    from types import SimpleNamespace
+
+    oracle = {"doc_type": "contract", "conf": 0.97, "subclass": "other", "fields": {"governing_law": "Delaware"}}
+    extract_prompt = "Extract the fields from this legal document"
+
+    chat = run_pilot._fake_client(oracle).chat.completions.create(
+        messages=[{"role": "user", "content": extract_prompt}])
+    assert json.loads(chat.choices[0].message.content)["governing_law"] == "Delaware"
+
+    llm = run_pilot._make_mock_langchain_llm(oracle)(None)  # the BaseAgent.llm replacement
+    extraction = llm.invoke([SimpleNamespace(content=extract_prompt)])
+    assert json.loads(extraction.content)["governing_law"] == "Delaware"
+    classification = llm.invoke([SimpleNamespace(content="Classify this legal document")])
+    assert "governing_law" not in json.loads(classification.content)  # fields belong to extraction only
+
+    # no fields on the expectation: neither mock invents any
+    bare = {"doc_type": "contract", "conf": 0.95}
+    chat = run_pilot._fake_client(bare).chat.completions.create(messages=[{"role": "user", "content": extract_prompt}])
+    assert "governing_law" not in json.loads(chat.choices[0].message.content)
+
+
 def test_summary_and_rows_survive_an_errored_sample(capsys):
     from scripts import run_pilot as rp
 
@@ -229,3 +252,89 @@ def test_summary_and_rows_survive_an_errored_sample(capsys):
     assert summary["avg_llm_calls"] == 2.0  # averages cover completed samples only
     rp.print_rows([ok, err])
     assert "ERROR RuntimeError: boom" in capsys.readouterr().out
+
+
+# --- #203 review: confidence floor, resource totals, per-class errors, stable names, --source ---
+
+
+@pytest.mark.parametrize("high,judge_high", [(1.0, 0.0), (0.99, 0.0), (0.97, 0.99), (0.97, 0.0)])
+def test_oracle_confidence_never_drops_below_the_routing_floor(high, judge_high):
+    floor = max(high, judge_high)
+    for sample_id in ("a", "b", "contract_0", "x" * 7):
+        conf = run_pilot._oracle_confidence({"id": sample_id}, {"high": high, "judge_band_high": judge_high})
+        assert conf >= floor, (sample_id, conf)
+        assert conf <= max(floor, 0.99)
+
+
+def test_errored_sample_keeps_its_billed_usage_in_totals(temp_base_dir, monkeypatch, fake_corpus, capsys):
+    monkeypatch.setattr(run_pilot, "MANIFEST", temp_base_dir / "no-such-manifest.csv")
+
+    def boom(sample, mock_mode, session_id=None, run_id=None):
+        run_pilot._LLM_METRICS.update(calls=3, cost_usd=0.25, usage=[{"prompt_tokens": 100, "completion_tokens": 20}])
+        raise RuntimeError("provider fell over")
+
+    monkeypatch.setattr(run_pilot, "run_sample", boom)
+    assert run_pilot.main(["--mock", "--per-class", "1", "--include", "contract"]) == 0
+    (report_path,) = sorted(Path(temp_base_dir).glob("pilot_report_*.json"))
+    summary = json.loads(report_path.read_text())["summary"]
+    assert summary["errors"] == 1
+    assert summary["total_cost_usd"] == 0.25 and summary["total_tokens"] == 120
+    assert summary["per_class"]["contract"]["n"] == 1 and summary["per_class"]["contract"]["class_accuracy"] == 0.0
+    assert summary["avg_cost_usd"] == 0  # averages cover completed samples only
+
+
+def test_sample_that_fails_before_the_pipeline_does_not_inherit_the_previous_samples_usage(temp_base_dir):
+    run_pilot._LLM_METRICS.update(calls=9, cost_usd=1.0, usage=[{"prompt_tokens": 5, "completion_tokens": 5}])
+    sample = {"id": "s", "subdir": "hf", "filename": "missing.txt", "expected_doc_class": "contract",
+              "expected_stage": "archived"}
+    with pytest.raises(FileNotFoundError):
+        run_pilot.run_sample(sample, True)
+    row = run_pilot._error_row(sample, RuntimeError("x"))
+    assert row["llm_calls"] == 0 and row["llm_cost_usd"] == 0 and row["llm_tokens"] == 0
+    assert row["expected_doc_class"] == "contract"
+
+
+def test_per_class_counts_errors_as_incorrect():
+    ok = {"id": "a", "expected_doc_class": "contract", "expected_stage": "archived", "stage": "archived",
+          "actual_doc_class": "contract", "class_match": True, "classification_confidence": 0.9,
+          "llm_calls": 2, "wall_time_s": 1.0, "llm_cost_usd": 0.1, "llm_tokens": 10}
+    err = {"id": "b", "status": "error", "error": "RuntimeError: boom", "expected_doc_class": "contract",
+           "llm_cost_usd": 0.05, "llm_tokens": 7, "llm_calls": 1}
+    summary = run_pilot.summarize([ok, err])
+    assert summary["per_class"]["contract"]["n"] == 2
+    assert summary["per_class"]["contract"]["class_accuracy"] == 0.5
+    assert summary["per_class"]["contract"]["avg_llm_calls"] == 2.0  # averages: completed samples only
+    assert summary["total_cost_usd"] == 0.15 and summary["total_tokens"] == 17
+    assert summary["avg_cost_usd"] == 0.1 and summary["avg_tokens"] == 10
+    # a class whose only sample errored still appears, with zero accuracy
+    only_err = run_pilot.summarize([{**err, "expected_doc_class": "insurance_claim"}])
+    assert only_err["per_class"]["insurance_claim"]["n"] == 1
+    assert only_err["per_class"]["insurance_claim"]["class_accuracy"] == 0.0
+
+
+def test_colliding_names_follow_the_document_not_the_draw_order(monkeypatch, tmp_path):
+    from pipeline import hf_corpus_loader
+
+    base = _frame().iloc[0].to_dict()
+    docs = [dict(base, filename=n, doc_text=_text("contract", i + 1), content_sha256=f"sha-{i}")
+            for i, n in enumerate(("a.PDF", "a.htm", "a.PDF"))]
+
+    def names_by_text(order, sub):
+        frame = pd.DataFrame([docs[i] for i in order])
+        monkeypatch.setattr(hf_corpus_loader, "load_corpus", lambda **kw: (frame, {}))
+        rows, _ = run_pilot.build_hf_manifest("train", 5, 0, base_dir=tmp_path / sub)
+        return {(tmp_path / sub / "samples" / "hf" / r["filename"]).read_text(): (r["filename"], r["id"]) for r in rows}
+
+    forward, backward = names_by_text([0, 1, 2], "f"), names_by_text([2, 1, 0], "b")
+    assert len(forward) == 3 and forward == backward
+    assert len({fn for fn, _ in forward.values()}) == 3  # still unique
+
+
+def test_hf_rows_carry_source_corpus_and_source_filter_uses_it(temp_base_dir, monkeypatch, fake_corpus, capsys):
+    rows, _ = run_pilot.build_hf_manifest("train", 1, 0, base_dir=temp_base_dir)
+    assert {r["source_corpus"] for r in rows} == {"sec_edgar"}
+    assert {r["dataset"] for r in rows} != {"sec_edgar"}  # the trace tag is a different thing
+
+    monkeypatch.setattr(run_pilot, "MANIFEST", temp_base_dir / "no-such-manifest.csv")
+    assert run_pilot.main(["--mock", "--per-class", "1", "--include", "contract", "--source", "sec_edgar"]) == 0
+    assert "samples: 1 " in capsys.readouterr().out
