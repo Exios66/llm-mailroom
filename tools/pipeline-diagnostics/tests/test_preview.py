@@ -12,7 +12,7 @@ from mailroom_diagnostics.models import DiagnosticsError
 from mailroom_diagnostics.preview import (
     read_state,
     refresh,
-    source_mtime,
+    seam_fingerprint,
     watch,
 )
 from mailroom_diagnostics.snapshot import load_artifact
@@ -78,22 +78,23 @@ def test_invalid_output_is_recorded_without_replacing_the_preview(tmp_path, work
     assert state.last_good == good.last_good
 
 
-def test_staleness_compares_source_mtime_with_the_published_preview(
-    tmp_path, workspace, valid_bytes
-):
+def test_staleness_tracks_the_full_seam_fingerprint(tmp_path, workspace, valid_bytes):
     base = tmp_path / "preview"
     state = refresh(workspace, base, builder=lambda path: valid_bytes)
     assert state.stale is False
 
-    preview_path = base / "preview.json"
-    old = preview_path.stat().st_mtime - 10
-    os.utime(preview_path, (old, old))
+    taxonomy = workspace / "src/config/taxonomy.yaml"
+    taxonomy.write_text("confidence: {high: 0.9}\n", encoding="utf-8")
+    assert read_state(base, workspace).stale is True
+
+    assert refresh(workspace, base, builder=lambda path: valid_bytes).stale is False
+    taxonomy.unlink()
     assert read_state(base, workspace).stale is True
 
 
 def test_watch_debounces_a_source_change_into_one_rebuild(tmp_path, workspace, valid_bytes):
     base = tmp_path / "preview"
-    mtimes = iter([1, 1, 1, 2, 2, 2])
+    fingerprints = iter([("a",), ("a",), ("a",), ("b",), ("b",), ("b",)])
     clock = iter([0.0, 1.0])
     refreshes = []
 
@@ -105,20 +106,25 @@ def test_watch_debounces_a_source_change_into_one_rebuild(tmp_path, workspace, v
         debounce=0.3,
         clock=lambda: next(clock),
         sleep=lambda _seconds: None,
-        mtime=lambda _workspace: next(mtimes),
+        fingerprint=lambda _workspace: next(fingerprints),
         refresh_fn=lambda path, directory: refreshes.append((path, directory)),
     )
 
     assert refreshes == [(workspace, base)]
 
 
-def test_source_mtime_only_uses_declared_seams(tmp_path, workspace):
-    before = source_mtime(workspace)
+def test_fingerprint_only_uses_declared_seams(tmp_path, workspace):
+    before = seam_fingerprint(workspace)
     (workspace / "unrelated.md").write_text("docs\n", encoding="utf-8")
-    assert source_mtime(workspace) == before
-    (workspace / "src/config/taxonomy.yaml").write_text("confidence: {high: 0.9}\n", encoding="utf-8")
-    os.utime(workspace / "src/config/taxonomy.yaml", None)
-    assert source_mtime(workspace) >= before
+    assert seam_fingerprint(workspace) == before
+
+    taxonomy = workspace / "src/config/taxonomy.yaml"
+    taxonomy.write_text("confidence: {high: 0.9}\n", encoding="utf-8")
+    os.utime(taxonomy, None)
+    assert seam_fingerprint(workspace) != before
+
+    taxonomy.unlink()
+    assert seam_fingerprint(workspace) != before
 
 
 def test_fresh_process_builds_a_valid_workspace_preview(tmp_path):
