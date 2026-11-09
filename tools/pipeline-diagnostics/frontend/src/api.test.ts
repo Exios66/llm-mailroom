@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { readToken, writeToken } from "./api";
+import { DiagnosticsApiError, parseExperimentDetail, parseRunJournal, readToken, writeToken } from "./api";
 
 const originalSetItem = Storage.prototype.setItem;
 const originalGetItem = Storage.prototype.getItem;
@@ -31,5 +31,38 @@ describe("token storage", () => {
     expect(sessionStorage.getItem("mailroom-diagnostics-token")).toBe("stored-token");
     writeToken("");
     expect(sessionStorage.getItem("mailroom-diagnostics-token")).toBeNull();
+  });
+});
+
+describe("response validation", () => {
+  it("rejects a run journal without a node_sequence array", () => {
+    expect(() => parseRunJournal({ execution_id: "r" })).toThrow(DiagnosticsApiError);
+    expect(() => parseRunJournal({ node_sequence: 1 })).toThrow(DiagnosticsApiError);
+    expect(() => parseRunJournal({ node_sequence: ["a", 2] })).toThrow(DiagnosticsApiError);
+    expect(() => parseRunJournal(null)).toThrow(DiagnosticsApiError);
+  });
+
+  it("fills in optional journal arrays so playback can read them", () => {
+    const journal = parseRunJournal({ execution_id: "r", node_sequence: ["a"], transitions: 3 });
+    expect(journal.transitions).toEqual([]);
+    expect(journal.events).toEqual([]);
+    expect(journal.outcome.failed).toBe(false);
+  });
+
+  it("drops transitions the run model cannot read", () => {
+    const journal = parseRunJournal({
+      execution_id: "r",
+      node_sequence: ["a", "b"],
+      transitions: [null, { source: "a" }, { source: "a", target: "b" }],
+    });
+    expect(journal.transitions).toEqual([{ source: "a", target: "b" }]);
+  });
+
+  it("rejects an experiment detail without a runs array", () => {
+    expect(() => parseExperimentDetail({ experiment_id: "e" })).toThrow(DiagnosticsApiError);
+    expect(() => parseExperimentDetail({ runs: "x" })).toThrow(DiagnosticsApiError);
+    expect(() => parseExperimentDetail({ runs: [null] })).toThrow(DiagnosticsApiError);
+    expect(() => parseExperimentDetail({ runs: ["x"] })).toThrow(DiagnosticsApiError);
+    expect(parseExperimentDetail({ runs: [] }).corpus).toEqual({});
   });
 });

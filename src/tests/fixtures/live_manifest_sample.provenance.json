@@ -1,0 +1,48 @@
+{
+  "dataset": "Lucius-Morningstar/mailroom-dataset",
+  "revision": {
+    "requested": null,
+    "tag": "v9.3",
+    "sha": "ff4ca546d4346991628c2616ae014afc15e9fe04",
+    "main_sha": "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8"
+  },
+  "release_manifest_verified": true,
+  "downloads": {
+    "parquet/ground_truth/train/train-00000-of-00001.parquet": {
+      "sha256": "2b30be9e2f864f86a3c42c2d5fa6237bfd4e2210f82a0883bc3de6da9c9601d2",
+      "bytes": 3006092
+    },
+    "parquet/default/train/train-00000-of-00001.parquet": {
+      "sha256": "008165a2e66da9a8f0df9b800493746e68823458845104378e36991b55fb86f7",
+      "bytes": 38640568
+    }
+  },
+  "fetched_at": "2026-11-09T06:14:38+00:00",
+  "stats": {
+    "rows": 2979,
+    "classes": {
+      "contract": 540,
+      "corporate_record": 403,
+      "correspondence": 915,
+      "insurance_claim": 986,
+      "merger_agreement": 135
+    },
+    "integrity": {
+      "checked": 2979,
+      "verified": 2979,
+      "mismatched": 0,
+      "missing_text": 0
+    }
+  },
+  "selection": {
+    "per_class": 3,
+    "classes": null,
+    "max_chars": 30000,
+    "rows": 15
+  },
+  "schema_version": "1.0.0",
+  "csv": "live_manifest_sample.csv",
+  "csv_sha256": "548d12d2cec0f291cd9ecd9c068982aebadde197aba5195fbcf65fde8055a39a",
+  "rows": 15,
+  "written_at": "2026-11-09T06:14:42+00:00"
+}

@@ -1,11 +1,19 @@
 import type { CheckReport } from "../types";
 
-export function FindingsPanel({ report }: { report: CheckReport | null }) {
+export function FindingsPanel({
+  report,
+  failure = null,
+}: {
+  report: CheckReport | null;
+  failure?: string | null;
+}) {
   if (!report) {
     return (
       <section className="panel findings" aria-label="Structural findings">
         <h2>Findings</h2>
-        <p className="muted">Findings are unavailable until the snapshot loads.</p>
+        <p className="muted">
+          {failure ?? "Findings are unavailable until the snapshot loads."}
+        </p>
       </section>
     );
   }

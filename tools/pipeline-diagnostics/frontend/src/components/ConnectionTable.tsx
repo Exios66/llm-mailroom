@@ -1,14 +1,16 @@
 import { filterConnections, type ViewModel } from "../model";
+import { edgeKey, type RunOverlay } from "../runModel";
 import type { Selection } from "../selection";
 
 interface ConnectionTableProps {
   model: ViewModel;
   query: string;
   selection: Selection | null;
+  runOverlay?: RunOverlay | null;
   onSelect: (selection: Selection | null) => void;
 }
 
-export function ConnectionTable({ model, query, selection, onSelect }: ConnectionTableProps) {
+export function ConnectionTable({ model, query, selection, runOverlay, onSelect }: ConnectionTableProps) {
   const rows = filterConnections(model.connections, query);
   return (
     <section className="table-wrap" id="connections" aria-label="All connections" tabIndex={-1}>
@@ -29,8 +31,14 @@ export function ConnectionTable({ model, query, selection, onSelect }: Connectio
         <tbody>
           {rows.map((row) => {
             const selected = selection?.kind === "edge" && selection.id === row.id;
+            const runVisited = runOverlay?.edgeKeys.has(edgeKey(row.source, row.target)) ?? false;
             return (
-              <tr key={row.id} className={selected ? "is-selected" : undefined}>
+              <tr
+                key={row.id}
+                className={[selected ? "is-selected" : "", runVisited ? "is-run-visited" : ""]
+                  .filter(Boolean)
+                  .join(" ") || undefined}
+              >
                 <td data-label="From">
                   <button
                     className="link-button"
