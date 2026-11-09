@@ -347,15 +347,29 @@ def _replay(
     out: Path,
     args: argparse.Namespace,
 ) -> int:
-    prior = json.loads(journal_path.read_text(encoding="utf-8"))
-    document = prior.get("document") or {}
+    try:
+        prior = json.loads(journal_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"replay refused: cannot read journal {journal_path}: {exc}") from exc
+    if not isinstance(prior, dict) or not isinstance(prior.get("document"), dict):
+        raise SystemExit("replay refused: journal has no document block")
+    document = prior["document"]
     manifest_id = document.get("manifest_id") or ""
     row = next((row for row in rows if row["id"] == manifest_id), None)
     if row is None:
         row = next((row for row in rows if row["filename"] == document.get("filename")), None)
     if row is None:
         raise SystemExit(f"replay document {manifest_id or document.get('filename')!r} not in manifest")
-    if document.get("content_sha256") and document["content_sha256"] != row["content_sha256"]:
+    # A newer manifest can keep an id but change its content, and fetch_texts only
+    # verifies the manifest's own hash. Both hashes must exist and agree, otherwise
+    # the replay would compare runs over different documents.
+    journal_sha = document.get("content_sha256")
+    row_sha = row.get("content_sha256")
+    if not journal_sha:
+        raise SystemExit("replay refused: journal records no content sha256")
+    if not row_sha:
+        raise SystemExit("replay refused: manifest row has no content sha256 to verify against")
+    if journal_sha != row_sha:
         raise SystemExit("replay refused: journal content sha256 does not match the manifest row")
     texts = fetch_texts([row], revision)
     result, journal = _run_one(row, texts[row["filename"]], base=base, mode="real" if args.real else "mock", revision=revision)

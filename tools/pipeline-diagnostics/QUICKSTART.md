@@ -58,7 +58,7 @@ The smoke runner fetches the selected real documents, verifies their recorded ha
 - one journal per document under `<base>/diagnostics/runs/` with the exact node ingress order, transitions and terminal outcome;
 - an experiment summary under `<base>/diagnostics/experiments/` and the requested output directory.
 
-Replay a recorded journal (re-runs the same real document and diffs the path/outcome):
+Replay a recorded journal (re-runs the same real document and diffs the path/outcome). Replay is refused, before anything runs, when the journal has no `content_sha256` or it differs from the selected manifest row:
 
 ```bash
 PYTHONPATH=src python src/scripts/smoke_live_documents.py --replay data/live_smoke/base/diagnostics/runs/<journal>.json --manifest src/tests/fixtures/live_manifest_sample.csv --out data/live_smoke/replay
@@ -69,7 +69,7 @@ The network-gated real-corpus test is `MAILROOM_LIVE_TESTS=1 .venv/bin/python -m
 ### 4. Serve the read-only app (optional)
 
 ```bash
-.venv/bin/mailroom-diagnostics serve
+MAILROOM_BASE_DIR=data/live_smoke/base .venv/bin/mailroom-diagnostics serve
 # http://127.0.0.1:8100/diagnostics      built React screen (build-instructions page without assets)
 # http://127.0.0.1:8100/v1/diagnostics/capabilities
 # http://127.0.0.1:8100/v1/diagnostics/snapshot
@@ -78,7 +78,7 @@ The network-gated real-corpus test is `MAILROOM_LIVE_TESTS=1 .venv/bin/python -m
 # http://127.0.0.1:8100/v1/diagnostics/experiments
 # http://127.0.0.1:8100/health
 
-# Load the journals/experiments from the smoke base while serving:
+# Same base directory, now also serving the built React screen:
 MAILROOM_BASE_DIR=data/live_smoke/base \
 MAILROOM_DIAGNOSTICS_STATIC=tools/pipeline-diagnostics/frontend/dist \
   .venv/bin/mailroom-diagnostics serve
@@ -93,6 +93,7 @@ cd tools/pipeline-diagnostics/frontend
 npm ci
 npm run build
 cd ../../..
+MAILROOM_BASE_DIR=data/live_smoke/base \
 MAILROOM_DIAGNOSTICS_STATIC=tools/pipeline-diagnostics/frontend/dist \
   .venv/bin/mailroom-diagnostics serve
 ```
@@ -129,6 +130,7 @@ Read [PLAN.md](PLAN.md) for D0–D4 and follow the task IDs in [HANDOFF.md](HAND
 
 1. Install the nested Python package from this folder into the repository venv (step 1).
 2. For the React screen, build `frontend/` with its committed lockfile, or use packaged assets. Node stays optional for end users.
+3. Optional: record real-document journals with the live-corpus smoke run (step 3).
 4. Run the standalone `serve` operation (step 4): inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
 5. Open `/diagnostics`; the screen identifies the source as a workspace preview, lists unavailable capabilities explicitly, and loads recorded runs/experiments from `MAILROOM_BASE_DIR`.
 6. For an already-running pipeline, set `MAILROOM_DIAGNOSTICS_MOUNT=1` and mount the same read-only router on this repository's API.
@@ -142,7 +144,7 @@ Do not substitute the normal `python -m api.main` for inspection-only launch: it
 | `No module named langchain_core` | Use `.venv/bin/python` and run the editable dependency install above |
 | `fixture 'mocker' not found` | Install the parent `[dev]` extra, which includes `pytest-mock` |
 | Contract check reports stale output | Inspect the graph/config change and use the repository's normal generated-contract workflow; do not suppress the check |
-| `/diagnostics` shows build instructions | Build `frontend/` (step 3) or set `MAILROOM_DIAGNOSTICS_STATIC`; the JSON API and CLI are usable without it |
+| `/diagnostics` shows build instructions | Build `frontend/` (step 4) or set `MAILROOM_DIAGNOSTICS_STATIC`; the JSON API and CLI are usable without it |
 | A future replay capability is unavailable | Read the capability reason and [compatibility matrix](COMPATIBILITY.md); do not assume a branch contains PR 203's schemas |
 | Existing mock pilot lacks sample assets | Disclose that limitation; do not treat a skipped pilot as evidence of correctness |
 

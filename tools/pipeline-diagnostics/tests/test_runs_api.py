@@ -92,12 +92,24 @@ def test_corrupt_and_oversized_journals_are_ignored(dirs, client):
     assert client.get("/v1/diagnostics/runs").json()["runs"] == []
 
 
-def test_oversized_journal_is_ignored(dirs, client):
+def test_valid_journal_larger_than_limit_is_rejected_by_list_and_detail(dirs, client):
     from mailroom_diagnostics.runs import MAX_RUN_BYTES
 
     runs, _ = dirs
-    (runs / "huge.json").write_bytes(b"x" * (MAX_RUN_BYTES + 1))
+    journal = _journal("run-huge")
+    journal["padding"] = "x" * (MAX_RUN_BYTES + 1)
+    path = runs / "huge.json"
+    path.write_text(json.dumps(journal), encoding="utf-8")
+    assert path.stat().st_size > MAX_RUN_BYTES
+
     assert client.get("/v1/diagnostics/runs").json()["runs"] == []
+    assert client.get("/v1/diagnostics/runs/run-huge").status_code == 404
+
+    # The same journal under the limit is accepted, so the size is what rejected it.
+    journal.pop("padding")
+    path.write_text(json.dumps(journal), encoding="utf-8")
+    assert client.get("/v1/diagnostics/runs").json()["runs"][0]["execution_id"] == "run-huge"
+    assert client.get("/v1/diagnostics/runs/run-huge").status_code == 200
 
 
 def test_incomplete_experiment_is_not_listed_or_loaded(dirs, client):
@@ -143,3 +155,68 @@ def test_experiment_without_runs_is_rejected(dirs, client):
     (experiments / "experiment.json").write_text(json.dumps(payload), encoding="utf-8")
     assert client.get("/v1/diagnostics/experiments").json()["experiments"] == []
     assert client.get("/v1/diagnostics/experiments/20261109T050000Z").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"node_sequence": 1},
+        {"node_sequence": "intake"},
+        {"node_sequence": ["intake", 2]},
+        {"transitions": 1},
+        {"transitions": "intake->classify"},
+        {"transitions": [{"source": "intake"}]},
+        {"transitions": ["intake"]},
+    ],
+)
+def test_journal_with_malformed_arrays_is_skipped_not_fatal(dirs, client, mutation):
+    runs, _ = dirs
+    (runs / "good.json").write_text(json.dumps(_journal("run-good")), encoding="utf-8")
+    (runs / "bad.json").write_text(
+        json.dumps({**_journal("run-bad"), **mutation}), encoding="utf-8"
+    )
+    listing = client.get("/v1/diagnostics/runs")
+    assert listing.status_code == 200
+    assert [run["execution_id"] for run in listing.json()["runs"]] == ["run-good"]
+    assert client.get("/v1/diagnostics/runs/run-bad").status_code == 404
+    assert client.get("/v1/diagnostics/runs/run-good").status_code == 200
+
+
+def test_journal_without_transitions_is_skipped(dirs, client):
+    runs, _ = dirs
+    bad = _journal()
+    bad.pop("transitions")
+    (runs / "bad.json").write_text(json.dumps(bad), encoding="utf-8")
+    assert client.get("/v1/diagnostics/runs").json()["runs"] == []
+    assert client.get("/v1/diagnostics/runs/run-abc123").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "/private/client/manifest.csv",
+        "src/tests/fixtures/manifest.csv",
+        "../outside/manifest.csv",
+        "C:\\Users\\someone\\manifest.csv",
+        "data\\manifest.csv",
+        "/private/client/manifests/",
+    ],
+)
+def test_experiment_corpus_source_never_exposes_a_directory(dirs, client, source):
+    _, experiments = dirs
+    payload = _experiment()
+    payload["corpus"]["source"] = source
+    (experiments / "experiment.json").write_text(json.dumps(payload), encoding="utf-8")
+    served = client.get("/v1/diagnostics/experiments/20261109T050000Z").json()["corpus"]["source"]
+    assert "/" not in served and "\\" not in served and ":" not in served
+    assert "private" not in served and "outside" not in served and "Users" not in served
+
+
+def test_experiment_corpus_source_label_is_kept(dirs, client):
+    _, experiments = dirs
+    for label in ("live", "manifest.csv"):
+        payload = _experiment()
+        payload["corpus"]["source"] = label
+        (experiments / "experiment.json").write_text(json.dumps(payload), encoding="utf-8")
+        detail = client.get("/v1/diagnostics/experiments/20261109T050000Z").json()
+        assert detail["corpus"]["source"] == label
