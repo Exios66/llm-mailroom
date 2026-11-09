@@ -16,6 +16,9 @@ objective's own eval and decides:
 - ``keep``        every guard passed and the score beats the best kept score by
                   ``min_delta`` in the objective's direction
 - ``discard``     every guard passed but the score did not clear ``min_delta``
+- ``harness``     the eval reported non-real records (``records: … modes=[…]``);
+                  the result is recorded but is never evidence and never seeds
+                  ``best_kept``
 - ``pass``        guards-only objective with every guard passing
 
 Each result is appended to ``<state-dir>/<objective>.jsonl`` (line 0 is the
@@ -27,7 +30,8 @@ Usage:
         --objective thresholds --candidate candidate.yaml --records test.jsonl \\
         --baseline current.yaml --description "raise contract high to 0.985"
 
-Exit codes: 0 keep / baseline / pass, 3 discard, 2 guard_fail, 1 crash.
+Exit codes: 0 keep / baseline / pass, 3 discard, 2 guard_fail,
+4 harness (records are not evidence — mock/synthetic), 1 crash.
 """
 
 from __future__ import annotations
@@ -51,7 +55,9 @@ DEFAULT_STATE_DIR = REPO_ROOT / "experiments" / "autoresearch" / "state"
 _SCORE = re.compile(r"^SCORE:\s*([+-]?\d+(?:\.\d+)?)\s*$")
 _FAIL = re.compile(r"^(GUARD|GATE)\s+(\S+)\s+FAIL\b")
 _CI = re.compile(r"^DELTA U .*95% CI \[\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\]")
-_EXIT = {"keep": 0, "baseline": 0, "pass": 0, "discard": 3, "guard_fail": 2, "crash": 1}
+_DELTA_U = re.compile(r"^DELTA U .*?=\s*([+-]?\d+(?:\.\d+)?)")   # lazy: not the "n=300" tail
+_MODES = re.compile(r"^records:.*modes=\[([^\]]*)\]")
+_EXIT = {"keep": 0, "baseline": 0, "pass": 0, "discard": 3, "guard_fail": 2, "harness": 4, "crash": 1}
 
 
 def _run(cmd: str, timeout: int) -> tuple[int, str]:
@@ -81,6 +87,8 @@ def parse_eval(output: str) -> dict:
     score = None
     fails: list[str] = []
     ci = None
+    delta = None
+    modes = None
     for line in output.splitlines():
         line = line.strip()
         if m := _SCORE.match(line):
@@ -89,7 +97,12 @@ def parse_eval(output: str) -> dict:
             fails.append(m[2])
         elif m := _CI.match(line):
             ci = (float(m[1]), float(m[2]))
-    return {"score": score, "fails": fails, "delta_ci": ci}
+        if m := _DELTA_U.match(line):
+            delta = float(m[1])
+        if m := _MODES.match(line):
+            # hillclimb_eval prints a Python list repr: modes=['real'] or modes=['mock', 'real'].
+            modes = [t.strip().strip("'\"") for t in m[1].split(",") if t.strip()]
+    return {"score": score, "fails": fails, "delta_ci": ci, "delta": delta, "modes": modes}
 
 
 def load_state(path: Path) -> list[dict]:
@@ -119,13 +132,23 @@ def decide(objective: dict, core: dict, eval_code: int, parsed: dict, best: floa
         return "pass", []
     if parsed["score"] is None:
         return "crash", ["no SCORE line"]
+    min_delta = float(objective.get("min_delta", 0.0))
     if objective.get("require_delta_ci"):
         ci = parsed["delta_ci"]
         if ci is None or ci[0] <= 0:
             return "guard_fail", [f"delta U CI {ci} does not exclude 0"]
+    modes = parsed.get("modes")
+    if modes and any(m != "real" for m in modes):
+        # Realer-than-real check first: mock/synthetic records are never evidence,
+        # so they must not baseline, keep, or seed best_kept (objectives.yaml not_evidence).
+        return "harness", [f"records modes {','.join(modes)} are not evidence (not real)"]
     if best is None:
+        delta = parsed.get("delta")
+        if objective.get("require_delta_ci") and delta is not None and delta < min_delta:
+            # The first candidate becomes the bar later iterations must beat, so a
+            # negligible-but-significant first gain must not be accepted as a baseline.
+            return "discard", [f"first candidate delta {delta:+.4f} < min_delta {min_delta:.4f}"]
         return "baseline", []
-    min_delta = float(objective.get("min_delta", 0.0))
     gain = parsed["score"] - best if direction == "higher" else best - parsed["score"]
     if gain >= min_delta and gain > 0:
         return "keep", []
@@ -196,7 +219,11 @@ def main(argv: list[str] | None = None) -> int:
     for name, r in core.items():
         print(f"CORE {name} {'PASS' if r['ok'] else 'FAIL'} (exit {r['exit']})")
 
-    eval_cmd = objective["eval"].format(candidate=args.candidate, records=args.records, baseline=args.baseline)
+    eval_cmd = objective["eval"].format(
+        candidate=shlex.quote(args.candidate),
+        records=shlex.quote(args.records),
+        baseline=shlex.quote(args.baseline),
+    )
     eval_code, eval_out = (0, "") if not all(r["ok"] for r in core.values()) else _run(eval_cmd, args.timeout)
     if all(r["ok"] for r in core.values()):
         print(f"[eval] {eval_cmd}\n" + "\n".join(eval_out.strip().splitlines()[-15:]))
@@ -205,11 +232,19 @@ def main(argv: list[str] | None = None) -> int:
     status, reasons = decide(objective, core, eval_code, parsed, best)
 
     iteration = sum(1 for r in rows if r.get("type") == "result") + 1
-    delta = None if parsed["score"] is None or best is None else round(parsed["score"] - best, 6)
+    direction = objective.get("direction", "higher")
+    if parsed["score"] is None or best is None:
+        delta = None
+    else:
+        # Direction-aware: "keep" means the candidate improved in the objective's
+        # direction, so the persisted delta must agree with what decide computed.
+        delta = round(parsed["score"] - best if direction == "higher" else best - parsed["score"], 6)
     result = {
         "type": "result", "iteration": iteration, "commit": _git_commit(), "score": parsed["score"],
-        "best_before": best, "delta": delta, "status": status, "reasons": reasons,
+        "best_before": best, "delta": delta, "delta_vs_policy": parsed.get("delta"),
+        "status": status, "reasons": reasons,
         "eval_fails": parsed["fails"], "delta_ci": parsed["delta_ci"],
+        "modes": parsed.get("modes"), "records": args.records, "baseline": args.baseline,
         "core": {n: r["ok"] for n, r in core.items()}, "candidate": args.candidate,
         "description": args.description, "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
