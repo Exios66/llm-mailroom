@@ -353,7 +353,12 @@ async def _tail_digest(session) -> str:
     first = True
     last: tuple[str, int, object, str] | None = None
     columns = 'doc_id, seq, "timestamp", entry_id, entry_hash'
-    order = 'doc_id, seq, "timestamp", entry_id'
+    # Pre-seq SQLite databases get `seq` through ALTER TABLE ADD COLUMN, so
+    # existing rows carry NULL. A plain tuple keyset with NULL in the last tuple
+    # makes the next comparison NULL (false) and would silently stop the scan at
+    # a batch boundary; COALESCE keeps the ordering total without changing which
+    # row is each document's last for normal (non-NULL) data.
+    order = 'doc_id, COALESCE(seq, 0), "timestamp", entry_id'
     while True:
         if last is None:
             result = await session.execute(
@@ -367,7 +372,8 @@ async def _tail_digest(session) -> str:
             result = await session.execute(
                 text(
                     f"SELECT {columns} FROM {LEGACY_TABLE} "
-                    f'WHERE (doc_id, seq, "timestamp", entry_id) > (:d, :s, :t, :e) '
+                    'WHERE (doc_id, COALESCE(seq, 0), "timestamp", entry_id) > '
+                    '(:d, COALESCE(CAST(:s AS INTEGER), 0), :t, :e) '
                     f"ORDER BY {order} LIMIT :limit"
                 ),
                 {"d": last[0], "s": last[1], "t": last[2], "e": last[3], "limit": BATCH_ROWS},

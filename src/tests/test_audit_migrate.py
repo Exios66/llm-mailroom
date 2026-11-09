@@ -185,6 +185,47 @@ def test_independent_processes_migrate_once(legacy_db):
     assert len(list((legacy_db.parent / "backups").iterdir())) == 1
 
 
+async def test_tail_digest_handles_null_seq_added_column(tmp_path, monkeypatch):
+    """A pre-seq SQLite DB gets NULL seq rows; the keyset must not stop early.
+
+    ``ALTER TABLE ... ADD COLUMN seq`` leaves existing rows NULL. With a plain
+    tuple keyset, a batch boundary ending on a NULL seq makes the next
+    comparison NULL (false) and silently truncates the tail digest. The digest
+    is compared against an independent reference over the same migrated rows.
+    """
+    import hashlib
+    import json
+
+    path = tmp_path / "mailroom.db"
+    shutil.copy(FIXTURE, path)
+    with sqlite3.connect(path) as conn:
+        conn.execute("ALTER TABLE audit_log DROP COLUMN seq")
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
+    monkeypatch.delenv("MAILROOM_AUDIT_MIGRATE", raising=False)
+    monkeypatch.setattr(db, "_schema_checked_url", None)
+    assert db.ensure_schema()  # adds seq as NULL on existing rows
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT seq FROM audit_log").fetchall() == [(None,)] * 11
+
+    monkeypatch.setattr(audit_migrate, "BATCH_ROWS", 2)
+    result = await audit_migrate.migrate_audit_log()
+
+    assert result.migrated is True and result.legacy_rows == 11
+    with sqlite3.connect(path) as conn:
+        rows = conn.execute(
+            'SELECT doc_id, seq, "timestamp", entry_id, entry_hash FROM audit_log_legacy '
+            'ORDER BY doc_id, COALESCE(seq, 0), "timestamp", entry_id'
+        ).fetchall()
+        ((value,),) = conn.execute("SELECT value FROM audit_meta").fetchall()
+    last: dict[str, str] = {}
+    for doc_id, _seq, _ts, _entry_id, entry_hash in rows:
+        last[doc_id] = entry_hash
+    payload = "\n".join(f"{doc_id}\t{last[doc_id]}" for doc_id in sorted(last))
+    expected = hashlib.sha256(payload.encode()).hexdigest()
+    assert json.loads(value)["legacy_tail_hashes_sha256"] == expected
+    assert (await audit_migrate.verify_legacy_chain()).ok is True
+
+
 @pytest.mark.parametrize("damage", ["hash", "count"])
 async def test_counts_or_hash_mismatch_aborts_without_emptying(legacy_db, monkeypatch, damage):
     before = _rows(legacy_db, "audit_log")

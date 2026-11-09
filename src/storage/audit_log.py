@@ -68,7 +68,10 @@ class AuditLegacyRecord(Base):
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     prev_hash: Mapped[str] = mapped_column(String(256), default="")
     entry_hash: Mapped[str] = mapped_column(String(256), default="")
-    seq: Mapped[int] = mapped_column(Integer, default=0)
+    # The previous release added ``seq`` by ``ALTER TABLE ... ADD COLUMN`` on
+    # old SQLite databases, which leaves existing rows NULL. The legacy copy
+    # preserves stored values byte-for-byte, so this column must accept NULL.
+    seq: Mapped[int | None] = mapped_column(Integer, default=0)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
