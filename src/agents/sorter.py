@@ -169,10 +169,16 @@ def _merge_sorter_reads(results: list[dict]) -> dict:
 
     - doc_type: plurality vote among non-unknown classes; ties break on the
       highest window confidence; all-unknown falls back to the first window.
-    - confidence: MEAN of the agreeing windows' confidences (each window's
-      read is real evidence; a lone outlier does not drag the class down).
+    - confidence: MEAN of the agreeing windows' confidences, scaled by the
+      share of non-unknown windows that agree (windows that disagree on the
+      class are evidence against it, so three confident but different reads
+      are not a confident read). When the winning class holds fewer than half
+      of ALL windows (unknown included) it is also capped strictly below the
+      class ``low`` threshold, so routing retries / escalates it.
     - contract_subtype / doc_subclass: first non-null among agreeing windows.
     - reasoning: per-window trace joined with window markers, bounded.
+    - ``_window_votes``: the vote vector (class -> window count, ``unknown``
+      included). Underscore key: classify_node copies named fields only.
     """
     if len(results) == 1:
         return results[0]
@@ -193,9 +199,20 @@ def _merge_sorter_reads(results: list[dict]) -> dict:
     )
     winners = votes[best_class]
     confidence = sum(float(r.get("confidence") or 0.0) for r in winners) / len(winners)
+    non_unknown = sum(len(v) for v in votes.values())
+    confidence *= len(winners) / non_unknown
+    if len(winners) * 2 < len(results):
+        from pipeline.config import get_confidence_thresholds
+
+        low = float(get_confidence_thresholds(best_class).get("low", 0.70))
+        confidence = min(confidence, low - 0.01)
     merged = dict(winners[0])
     merged["doc_type"] = best_class
     merged["confidence"] = round(confidence, 3)
+    merged["_window_votes"] = {
+        cls: sum(1 for r in results if str(r.get("doc_type") or "unknown") == cls)
+        for cls in dict.fromkeys(str(r.get("doc_type") or "unknown") for r in results)
+    }
     merged["contract_subtype"] = next(
         (r.get("contract_subtype") for r in winners if r.get("contract_subtype")), None
     )

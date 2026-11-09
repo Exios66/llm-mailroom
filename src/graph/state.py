@@ -31,9 +31,19 @@ class DocumentState(TypedDict, total=False):
     # Process-level LangGraph thread id for interrupt() HITL resume.
     checkpoint_thread_id: str | None
     resume_extraction: bool
+    # Human-in-the-loop: "human" when a reviewer's fields (approved as-is or
+    # corrected) replaced the model extraction; ``human_label`` is the
+    # reviewer's decision record (see schemas.manifest.DocumentManifest).
+    extraction_source: str | None
+    human_label: dict[str, Any] | None
     retry_count: int
     conflict_detected: bool
     conflict_details: list[str]
+    # sha256 of the normalized ``conflict_details`` the Boss ruled on (set only
+    # by ``boss_escalation_node``; reset to None on fresh runs and human review
+    # resets). Routing treats a conflict as adjudicated only when it matches.
+    # Absent on pre-existing checkpoints, which keep the legacy behaviour.
+    boss_conflict_fingerprint: str | None
     extraction_guardrail: list[str]
     classification_guardrail: list[str]
     file_path: str

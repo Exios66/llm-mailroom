@@ -640,16 +640,19 @@ async def review_queue():
             payload["actions"] = tray_actions_for(payload.get("stage"))
             items[doc_id] = payload
 
-    docs = sorted(
-        items.values(),
-        key=lambda d: d.get("updated_at") or d.get("created_at") or "",
-        reverse=True,
-    )
+    from pipeline.review_priority import oldest_age_hours, sort_queue
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # Highest priority first, then oldest first; ``priority`` and ``sla_breached``
+    # are added to each item (existing fields unchanged).
+    docs = sort_queue(list(items.values()), now)
     return {
         "review_queue": len(docs),
         "documents": docs,
         "dispositions": ["resume", "record", "requeue", "complete"],
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "oldest_age_hours": oldest_age_hours(docs),
+        "sla_breached": sum(1 for d in docs if d.get("sla_breached")),
+        "timestamp": now.isoformat(),
     }
 
 
@@ -686,6 +689,10 @@ async def _parse_resolve_payload(request: Request) -> dict:
             "contract_subtype": body.get("contract_subtype"),
             "doc_subclass": body.get("doc_subclass"),
             "extracted_data": extracted,
+            "resolution": str(body.get("resolution") or "").strip().lower(),
+            "field_corrections": body.get("field_corrections"),
+            "reviewer": body.get("reviewer"),
+            "reject_reason": body.get("reject_reason"),
         }
     form = await request.form()
     extracted_raw = form.get("extracted_data")
@@ -706,6 +713,10 @@ async def _parse_resolve_payload(request: Request) -> dict:
         "contract_subtype": form.get("contract_subtype"),
         "doc_subclass": form.get("doc_subclass"),
         "extracted_data": extracted,
+        "resolution": str(form.get("resolution") or "").strip().lower(),
+        "field_corrections": form.get("field_corrections"),
+        "reviewer": form.get("reviewer"),
+        "reject_reason": form.get("reject_reason"),
     }
 
 
@@ -716,7 +727,9 @@ async def resolve_review(doc_id: str, request: Request):
     Body (JSON or form): ``decision`` (approved|rejected), optional ``notes``,
     ``disposition`` (resume|record|requeue|complete), optional classification
     overrides (``doc_type`` or ``override_doc_type``, ``doc_subclass``,
-    ``contract_subtype``), and optional ``extracted_data`` for ``complete``.
+    ``contract_subtype``), and optional ``extracted_data`` for the LEGACY
+    ``complete`` (no ``resolution``) — with a ``resolution`` it is refused;
+    edits ride ``field_corrections`` (T20).
 
     Prefer the visualizer REVIEW desk buttons (Approve / Reject / Requeue) over
     hand-rolled curls — they post here through ``MAILROOM_PIPELINE_URL``.
@@ -726,19 +739,37 @@ async def resolve_review(doc_id: str, request: Request):
     from pipeline.review_resolve import (
         DECISIONS,
         DISPOSITIONS,
-        apply_classification_override,
-        complete_human_extraction,
-        copy_to_inbox,
-        locate_document_file,
-        resolve_complete_extracted,
-        validate_operator_extraction,
+        RESOLUTIONS,
+        ResolveInProgress,
+        doc_resolve_lock,
     )
 
     _validate_doc_id(doc_id)
     payload = await _parse_resolve_payload(request)
+    payload["reviewer_header"] = request.headers.get("x-reviewer")
     decision = payload["decision"]
-    notes = payload["notes"]
     disposition = (payload["disposition"] or "resume").lower()
+    resolution = payload.get("resolution") or ""
+    if resolution:
+        if resolution not in RESOLUTIONS:
+            raise HTTPException(400, f"resolution must be one of {sorted(RESOLUTIONS)}")
+        if disposition not in {"resume", "complete"}:
+            raise HTTPException(
+                400, "resolution only applies to disposition=resume or disposition=complete"
+            )
+        if payload.get("extracted_data"):
+            # Any resolution works from the parked fields plus field_corrections;
+            # a posted extracted_data would be dropped without a word (T20). The
+            # legacy disposition=complete WITHOUT a resolution keeps its meaning:
+            # there the posted object is the archive payload (see below).
+            raise HTTPException(
+                400,
+                "extracted_data is not used with a resolution (disposition=resume or "
+                "complete); send field_corrections with resolution=correct (or omit "
+                "resolution for the legacy complete)",
+            )
+        decision = decision or ("rejected" if resolution == "reject" else "approved")
+        payload["decision"] = decision
     if decision not in DECISIONS:
         raise HTTPException(400, "decision must be 'approved' or 'rejected'")
     if disposition not in DISPOSITIONS:
@@ -746,6 +777,28 @@ async def resolve_review(doc_id: str, request: Request):
             400,
             "disposition must be 'resume', 'record', 'requeue', or 'complete'",
         )
+    try:
+        with doc_resolve_lock(doc_id):
+            return await _resolve_review_locked(doc_id, payload)
+    except ResolveInProgress as exc:
+        raise HTTPException(409, str(exc))
+
+
+async def _resolve_review_locked(doc_id: str, payload: dict):
+    """Body of ``resolve_review``; runs with the per-document resolve lock held."""
+    import asyncio
+
+    from pipeline.review_resolve import (
+        apply_classification_override,
+        copy_to_inbox,
+        locate_document_file,
+        plan_resolution,
+        stage_name,
+    )
+
+    decision = payload["decision"]
+    notes = payload["notes"]
+    disposition = (payload["disposition"] or "resume").lower()
 
     manifest = load_manifest(doc_id)
     if not manifest:
@@ -765,7 +818,7 @@ async def resolve_review(doc_id: str, request: Request):
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
-    if class_override and disposition in {"record", "requeue", "resume", "complete"}:
+    if class_override and disposition in {"record", "requeue"}:
         manifest.touch()
         save_manifest(manifest)
 
@@ -843,149 +896,149 @@ async def resolve_review(doc_id: str, request: Request):
             body["class_override"] = class_override
         return body
 
-    # Remaining dispositions require a parked review document.
+    # Remaining dispositions require a parked review document. The stage is
+    # re-checked here, inside the per-document lock, so a late resolve (the
+    # first already archived/failed the document) gets the legacy 400 with the
+    # current stage named; a resolve racing one in flight gets 409 from the lock.
     if manifest.stage != PipelineStage.REVIEW:
         raise HTTPException(
             400,
-            f"Document is not in review (current stage: {manifest.stage}); "
+            f"Document is not in review (current stage: {stage_name(manifest.stage)}); "
             "use disposition=record or disposition=requeue",
         )
 
-    # --- complete: human-supplied extraction, archive without LLM ------------
-    if disposition == "complete":
-        if decision != "approved":
-            raise HTTPException(400, "disposition=complete requires decision=approved")
-        try:
-            extracted = resolve_complete_extracted(
-                payload.get("extracted_data"), manifest.extracted_data
-            )
-            if manifest.doc_type:
-                extracted = validate_operator_extraction(manifest.doc_type, extracted)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc))
-        from pipeline.bins import review_file_path
-
-        review_file = review_file_path(manifest)
-        if not review_file.exists():
-            raise HTTPException(404, f"File not found in review bin: {review_file}")
-        try:
-            result = await asyncio.to_thread(
-                complete_human_extraction, manifest, review_file, extracted
-            )
-        except ValueError as exc:
-            raise HTTPException(409, str(exc))
-        except Exception as exc:
-            logger.exception("review_complete_failed", doc_id=doc_id)
-            raise HTTPException(500, f"Complete failed: {exc}")
-        try:
-            from storage.catalog import write_document_record
-
-            doc_record = result.pop("doc_record", None)
-            if doc_record:
-                await write_document_record(doc_record)
-            from storage.warehouse import export_document_to_warehouse
-
-            export_document_to_warehouse(doc_id)
-        except Exception:
-            logger.exception("review_complete_catalog_failed", doc_id=doc_id)
-        await _write_review_audit_entry(
-            doc_id,
-            manifest.matter_id,
-            "review_completed",
-            notes,
-            detail={
-                "disposition": "complete",
-                "stage": result.get("stage"),
-                **({"class_override": class_override} if class_override else {}),
-            },
+    # --- resume / complete: the human decision flows back into the graph ------
+    try:
+        plan = plan_resolution(
+            before=original_manifest,
+            manifest=manifest,
+            class_override=class_override,
+            decision=decision,
+            disposition=disposition,
+            resolution=payload.get("resolution") or None,
+            notes=notes,
+            submitted_extracted=payload.get("extracted_data"),
+            field_corrections=payload.get("field_corrections"),
+            reviewer=payload.get("reviewer") or payload.get("reviewer_header"),
+            reject_reason=payload.get("reject_reason"),
         )
-        body = {
-            "status": "ok",
-            "doc_id": doc_id,
-            "decision": decision,
-            "disposition": "complete",
-            "notes": notes,
-            "complete": result,
-        }
-        if class_override:
-            body["class_override"] = class_override
-        return body
-
-    # --- resume (default) ----------------------------------------------------
-    if decision == "rejected":
-        manifest.review_decision = "rejected"
-        manifest.stage = PipelineStage.FAILED
-        manifest.touch()
-        save_manifest(manifest)
-        await _move_rejected_to_failed(doc_id, manifest)
-        await _write_review_audit_entry(
-            doc_id,
-            manifest.matter_id,
-            "review_rejected",
-            notes,
-            detail={
-                "disposition": "resume",
-                **({"class_override": class_override} if class_override else {}),
-            },
-        )
-        logger.info("review_rejected", doc_id=doc_id)
-        body = {
-            "status": "ok",
-            "doc_id": doc_id,
-            "decision": decision,
-            "disposition": "resume",
-            "notes": notes,
-        }
-        if class_override:
-            body["class_override"] = class_override
-        return body
-
-    if not manifest.doc_type:
-        raise HTTPException(
-            409,
-            "Document has no classification to resume; set doc_type "
-            "(or override_doc_type) or requeue to the inbox instead.",
-        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
     from pipeline.bins import review_file_path
+
+    try:
+        review_file = review_file_path(manifest)
+    except Exception:
+        review_file = None
+    if plan.route != "failed":
+        if not manifest.doc_type:
+            raise HTTPException(
+                409,
+                "Document has no classification to resume; set doc_type "
+                "(or override_doc_type) or requeue to the inbox instead.",
+            )
+        if review_file is None or not review_file.exists():
+            raise HTTPException(404, f"File not found in review bin: {review_file}")
+
+    if class_override:
+        manifest.touch()
+    save_manifest(manifest)  # persist any classification override before the graph runs
+
     from graph.build_graph import resume_from_review
 
-    review_file = review_file_path(manifest)
-    if not review_file.exists():
-        raise HTTPException(404, f"File not found in review bin: {review_file}")
-
-    save_manifest(manifest)  # persist any classification override before resume
-    try:
-        result = await asyncio.to_thread(resume_from_review, manifest, review_file, notes)
-    except Exception as exc:
-        logger.exception("review_resume_failed", doc_id=doc_id)
-        raise HTTPException(500, f"Resume failed: {exc}")
-
-    await _write_review_audit_entry(
-        doc_id,
-        manifest.matter_id,
-        "review_approved",
-        notes,
-        detail={
-            "disposition": "resume",
-            "resumed_stage": result.get("stage"),
-            **({"class_override": class_override} if class_override else {}),
-        },
+    audit_event = {"archive": "review_completed", "reextract": "review_approved", "failed": "review_rejected"}[
+        plan.route
+    ]
+    # Where this run's audit entries start (see ``_archived_path``).
+    audit_mark = await _audit_entry_count(doc_id) if plan.route == "archive" else None
+    # The graph runs in a worker thread that a cancelled request cannot stop.
+    # Keep the per-document lock held until that thread ends, so a second
+    # resolve cannot run the same document while the first is still going.
+    graph_run = asyncio.ensure_future(
+        asyncio.to_thread(resume_from_review, manifest, review_file, notes, resolution=plan.payload())
     )
-    logger.info("review_approved_resumed", doc_id=doc_id, stage=result.get("stage"))
-    body = {
+    graph_run.add_done_callback(lambda fut: fut.cancelled() or fut.exception())
+    try:
+        try:
+            result = await asyncio.shield(graph_run)
+        except asyncio.CancelledError:
+            while not graph_run.done():
+                try:
+                    await asyncio.wait({graph_run})
+                except asyncio.CancelledError:
+                    continue
+            raise
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    except Exception as exc:
+        logger.exception("review_resolve_failed", doc_id=doc_id, resolution=plan.resolution)
+        raise HTTPException(500, f"Resolve failed: {exc}")
+
+    detail = {
+        "disposition": "complete" if plan.route == "archive" else "resume",
+        "resolution": plan.resolution,
+        "reviewer": plan.reviewer,
+        **({"reject_reason": plan.reject_reason} if plan.reject_reason else {}),
+        **({"class_override": class_override} if class_override else {}),
+    }
+    body: dict = {
         "status": "ok",
         "doc_id": doc_id,
-        "decision": decision,
-        "disposition": "resume",
+        "decision": plan.decision,
+        "disposition": detail["disposition"],
+        "resolution": plan.resolution,
+        "reviewer": plan.reviewer,
         "notes": notes,
-        "resume": {
+        "human_label": plan.label,
+    }
+    if plan.route == "archive":
+        detail["stage"] = result.get("stage")
+        body["complete"] = {
+            "stage": result.get("stage"),
+            "doc_type": result.get("doc_type"),
+            "extraction_confidence": result.get("extraction_confidence"),
+            "extraction_source": "human",
+            "extraction_attempts": result.get("extraction_attempts"),
+            "extracted_data": {
+                k: v for k, v in (result.get("extracted_data") or {}).items() if k != "_report"
+            },
+        }
+        if result.get("stage") == PipelineStage.ARCHIVED.value:
+            archive_path = await _archived_path(doc_id, after=audit_mark)
+            if archive_path:
+                body["complete"]["archive_path"] = archive_path
+        else:
+            # The tail did not archive (report failure re-parked it, or the run
+            # aborted): the decision stands, the completion does not. Record it
+            # as an approval, not as ``review_completed``.
+            audit_event = "review_approved"
+            detail["archived"] = False
+            body["warning"] = (
+                f"document did not reach the archive (stage: {result.get('stage')}); "
+                "see complete.stage"
+            )
+    elif plan.route == "reextract":
+        detail["resumed_stage"] = result.get("stage")
+        body["resume"] = {
             "stage": result.get("stage"),
             "doc_type": result.get("doc_type"),
             "extraction_confidence": result.get("extraction_confidence"),
             "extraction_attempts": result.get("extraction_attempts"),
-        },
-    }
+        }
+    else:
+        final = load_manifest(doc_id)
+        location = getattr(final, "file_location", None)
+        if location:
+            from pipeline.bins import failed_dir
+
+            body["file_location"] = location
+            if Path(location).parent != failed_dir():
+                body["warning"] = "file could not be moved to the failed bin; see file_location"
+    await _write_review_audit_entry(
+        doc_id, manifest.matter_id, audit_event, notes, detail=detail, actor=plan.reviewer
+    )
+    logger.info("review_resolved", doc_id=doc_id, resolution=plan.resolution, route=plan.route)
     if class_override:
         body["class_override"] = class_override
     return body
@@ -1032,8 +1085,43 @@ async def document_source(doc_id: str, download: bool = False):
 
 
 
+async def _audit_entry_count(doc_id: str) -> int | None:
+    """Length of the document's audit chain now (None when it cannot be read)."""
+    try:
+        from storage.audit_log import get_audit_chain
+
+        return len(await get_audit_chain(doc_id))
+    except Exception:
+        logger.warning("review_audit_mark_failed", doc_id=doc_id, exc_info=True)
+        return None
+
+
+async def _archived_path(doc_id: str, after: int | None = None) -> str | None:
+    """Where the archivist put the file (latest ``archived`` audit entry), or None.
+
+    ``after`` is the chain length taken before the run: only entries written
+    since then count, so an earlier archive of the same document is never
+    reported as this run's. Without it (mark unreadable) the whole chain is used.
+    """
+    try:
+        from storage.audit_log import get_audit_chain
+
+        chain = await get_audit_chain(doc_id)
+        for entry in reversed(chain[after or 0:]):
+            if entry.get("event") == "archived":
+                return (entry.get("detail") or {}).get("archive_path")
+    except Exception:
+        logger.warning("review_archive_path_lookup_failed", doc_id=doc_id, exc_info=True)
+    return None
+
+
 async def _write_review_audit_entry(
-    doc_id: str, matter_id: str, event: str, notes: str, detail: dict | None = None
+    doc_id: str,
+    matter_id: str,
+    event: str,
+    notes: str,
+    detail: dict | None = None,
+    actor: str = "human_reviewer",
 ) -> None:
     """Append a hash-chained audit entry for a human review decision.
 
@@ -1053,7 +1141,7 @@ async def _write_review_audit_entry(
             doc_id=doc_id,
             matter_id=matter_id,
             event=event,
-            actor="human_reviewer",
+            actor=actor or "human_reviewer",
             detail=entry_detail,
             prev_hash=prev,
         )
