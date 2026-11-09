@@ -16,6 +16,8 @@ module constants so the eval loops and judges can reference the same contracts.
 
 from __future__ import annotations
 
+from typing import Literal
+
 import structlog
 from langchain_agents.base_agent import BaseAgent, build_structured_schema
 from langchain_agents.doc_inventories import (
@@ -56,7 +58,15 @@ def failed_chunk_ceiling(agent_name: str) -> float:
         return _FAILED_CHUNK_FALLBACK_CEILING
 
 
-def finalize_chunked_merge(merged: dict, *, agent_name: str, n_chunks: int, failed: int) -> dict:
+def finalize_chunked_merge(
+    merged: dict,
+    *,
+    agent_name: str,
+    n_chunks: int,
+    failed: int,
+    window_confidences: list | None = None,
+    window_has_fields: list | None = None,
+) -> dict:
     """Stamp chunk bookkeeping on a merged extraction and cap it on any loss.
 
     ``_n_chunks`` / ``_failed_chunks`` are underscore (non-public) keys: field
@@ -64,10 +74,17 @@ def finalize_chunked_merge(merged: dict, *, agent_name: str, n_chunks: int, fail
     least one window failed (parse error / non-transient exception), the
     merged confidence is capped strictly below the class ``low`` threshold so
     a partial extraction is retried or escalated, never auto-archived.
+    ``_window_confidences`` / ``_window_has_fields`` carry the per-window evidence
+    (windows that parsed, in document order) so a sweep can re-derive the merge
+    under another rule; ``graph.build_graph._run_chunked_extraction`` strips them
+    before the payload reaches state, so they never reach the archive.
     MAILROOM PATCH.
     """
     merged["_n_chunks"] = n_chunks
     merged["_failed_chunks"] = failed
+    if window_confidences is not None and window_has_fields is not None:
+        merged["_window_confidences"] = list(window_confidences)
+        merged["_window_has_fields"] = list(window_has_fields)
     if failed:
         ceiling = failed_chunk_ceiling(agent_name)
         current = merged.get("confidence")
@@ -83,16 +100,38 @@ def finalize_chunked_merge(merged: dict, *, agent_name: str, n_chunks: int, fail
     return merged
 
 
-def _min_confidence(acc, new):
-    """Weakest-window confidence; a missing value never lowers or raises it."""
-    values = [float(v) for v in (acc, new) if isinstance(v, (int, float)) and not isinstance(v, bool)]
-    if not values:
-        return acc
-    return min(values)
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def merge_window_confidences(
+    confidences: list, has_fields: list, rule: Literal["min", "cr6"]
+):
+    """Merged confidence of the windows that parsed (pure; live merge and replay share it).
+
+    ``min``: the weakest window, whatever it produced.
+    ``cr6``: the weakest window that produced fields. A window with NO fields
+    (signature page, exhibit) says nothing about extraction quality, so it is
+    ignored whenever any other window holds fields; when none does, or none of
+    the productive windows states a confidence, the plain minimum applies (a
+    document that yields nothing stays low). ``None`` when no window states a
+    confidence. The failed-window cap is NOT part of this rule
+    (``finalize_chunked_merge`` / ``policy_replay`` apply it afterwards).
+    """
+    if rule not in ("min", "cr6"):
+        raise ValueError(f"unknown merge rule {rule!r}")
+    if len(confidences) != len(has_fields):
+        raise ValueError("confidences and has_fields must have the same length")
+    pool = [c for c in confidences if _is_number(c)]
+    if rule == "cr6":
+        productive = [c for c, h in zip(confidences, has_fields) if h and _is_number(c)]
+        if productive:
+            pool = productive
+    return min(pool) if pool else None
 
 
 def _window_confidence(acc: dict, chunk: dict):
-    """Confidence of ``acc`` merged with the next window ``chunk``.
+    """Confidence of ``acc`` merged with the next window ``chunk`` (rule ``cr6``).
 
     Windows that extracted fields are combined by their weakest confidence (a
     document is only as reliable as its weakest productive window). A window
@@ -103,18 +142,24 @@ def _window_confidence(acc: dict, chunk: dict):
     plain minimum applies (a document that yields nothing stays low). A window
     that FAILED never reaches the merge: ``finalize_chunked_merge`` caps the
     result below the class ``low`` threshold for it, independent of this rule.
-    "No fields" is exactly what routing calls hollow, so the two agree.
+    "No fields" is exactly what routing calls hollow, so the two agree. The rule
+    itself lives in :func:`merge_window_confidences`.
     """
     from pipeline.reconsideration import extraction_is_hollow
 
-    old, new = acc.get("confidence"), chunk.get("confidence")
-    acc_has_fields = not extraction_is_hollow(acc)
-    chunk_has_fields = not extraction_is_hollow(chunk)
-    if acc_has_fields != chunk_has_fields:
-        winner = old if acc_has_fields else new
-        if isinstance(winner, (int, float)) and not isinstance(winner, bool):
-            return winner
-    return _min_confidence(old, new)
+    return merge_window_confidences(
+        [acc.get("confidence"), chunk.get("confidence")],
+        [not extraction_is_hollow(acc), not extraction_is_hollow(chunk)],
+        "cr6",
+    )
+
+
+def window_evidence(result: dict) -> tuple:
+    """``(stated confidence or None, produced fields)`` of one parsed window."""
+    from pipeline.reconsideration import extraction_is_hollow
+
+    conf = result.get("confidence")
+    return (conf if _is_number(conf) else None), not extraction_is_hollow(result)
 
 
 def _norm(text: str) -> str:
@@ -518,6 +563,9 @@ class _SpecialistBase(BaseAgent):
         merged: dict | None = None
         total_usage: dict | None = None
         failed = 0
+        window_confs: list = []
+        window_fields: list = []
+        self._last_window_confidences = self._last_window_has_fields = None
         for index, chunk in enumerate(chunks, start=1):
             header = (f"EXTRACTION CHUNK {index} OF {len(chunks)} — this is one "
                       f"window of the document; extract every field occurrence "
@@ -552,15 +600,23 @@ class _SpecialistBase(BaseAgent):
             if self._confidence_missing(result):
                 result["confidence"] = round(self._evidence_confidence(result), 4)
             result = normalize_extraction(result, self.schema)
+            # Per-window evidence is read BEFORE the merge: the merge unions lists
+            # into the accumulator's own lists, which would change a window's
+            # "has fields" after the fact.
+            conf, has_fields = window_evidence(result)
+            window_confs.append(conf)
+            window_fields.append(has_fields)
             merged = result if merged is None else self._merge_extractions(merged, result)
         self._last_usage = total_usage
         self._last_truncated = False
         self._last_chunked = True
         self._last_failed_chunks = failed
+        self._last_window_confidences, self._last_window_has_fields = window_confs, window_fields
         if merged is None:
             return {"_parse_error": True}
         return finalize_chunked_merge(
-            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed
+            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed,
+            window_confidences=window_confs, window_has_fields=window_fields,
         )
 
     @staticmethod

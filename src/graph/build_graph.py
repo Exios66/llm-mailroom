@@ -548,9 +548,15 @@ def _run_chunked_extraction(agent_fn, doc_text, pages, handoff_context):
             pages=pages,
         )
         try:
-            return agent.extract_chunked(**kwargs, handoff_context=handoff_context)
+            result = agent.extract_chunked(**kwargs, handoff_context=handoff_context)
         except TypeError:
-            return agent.extract_chunked(**kwargs)
+            result = agent.extract_chunked(**kwargs)
+        # Per-window evidence is for the calibration sweep (it reads it off the agent);
+        # it must not reach state or the archive.
+        if isinstance(result, dict):
+            result.pop("_window_confidences", None)
+            result.pop("_window_has_fields", None)
+        return result
     try:
         return agent.extract(doc_text, pages=pages, handoff_context=handoff_context)
     except TypeError:

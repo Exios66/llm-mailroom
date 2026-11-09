@@ -133,6 +133,11 @@ class ExtractionAttempt(_Model):
     conflict_detected: bool = False
     n_chunks: int = 1
     failed_chunks: int = 0
+    # Per-window evidence of a chunked extraction (windows that parsed, document order;
+    # same length). Lets a replay re-derive the merged confidence under another merge
+    # rule (``policy_replay`` ``merge_rule``). None = recorded before CR6, or not chunked.
+    window_confidences: list[float | None] | None = None
+    window_has_fields: list[bool] | None = None
     # Offline Dojo score of THIS attempt vs gold fields (never seen by routing).
     extraction_score: float | None = None
     hallucination_rate: float | None = None

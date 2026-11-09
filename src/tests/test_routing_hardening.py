@@ -183,6 +183,60 @@ def test_cr6_failed_chunk_still_caps_when_other_windows_are_fieldless(make, mock
     assert result["confidence"] < _low(agent.agent_name)
 
 
+_TWO_WINDOWS = ("x" * 90 + "\n\n") * 8  # chunk_chars=400, overlap=0 -> 2 windows
+
+
+def test_cr6_rule_ignores_fieldless_window():
+    from langchain_agents.specialist_agents import merge_window_confidences
+
+    assert merge_window_confidences([0.9, 0.2], [True, False], "cr6") == 0.9
+    assert merge_window_confidences([0.9, 0.2], [True, False], "min") == 0.2
+    # order does not matter, and a productive window that states no confidence falls back
+    assert merge_window_confidences([0.2, 0.9], [False, True], "cr6") == 0.9
+    assert merge_window_confidences([None, 0.2], [True, False], "cr6") == 0.2
+    assert merge_window_confidences([None, None], [True, False], "cr6") is None
+
+
+def test_cr6_rule_all_fieldless_takes_min():
+    from langchain_agents.specialist_agents import merge_window_confidences
+
+    assert merge_window_confidences([0.4, 0.2], [False, False], "cr6") == 0.2
+    with pytest.raises(ValueError):
+        merge_window_confidences([0.4], [True], "max")  # type: ignore[arg-type]
+
+
+@_MAKERS
+def test_cr6_window_evidence_records_hollow_window(make, mock_openai_client, monkeypatch):
+    import graph.build_graph as bg
+
+    agent = make(mock_openai_client)
+    good = _a_field(agent)
+    _script(agent, [{**good, "confidence": 0.9}, {"confidence": 0.2}])
+    out = agent.extract_chunked(_TWO_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert out["confidence"] == pytest.approx(0.9)
+    assert out["_window_confidences"] == [0.9, 0.2]
+    assert out["_window_has_fields"] == [True, False]
+    assert (agent._last_window_confidences, agent._last_window_has_fields) == ([0.9, 0.2], [True, False])
+    # the node's funnel keeps the evidence off the payload that reaches state and the archive
+    agent2 = make(mock_openai_client)
+    _script(agent2, [{**good, "confidence": 0.9}, {"confidence": 0.2}])
+    monkeypatch.setattr(bg, "_chunk_config", lambda: {"chunk_chars": 400, "overlap_chars": 0})
+    archived = bg._run_chunked_extraction(lambda handoff_context=None: agent2, _TWO_WINDOWS, None, None)
+    assert archived["confidence"] == pytest.approx(0.9)
+    assert "_window_confidences" not in archived and "_window_has_fields" not in archived
+    assert agent2._last_window_confidences == [0.9, 0.2]  # still there for the sweep
+
+
+@_MAKERS
+def test_cr6_failed_chunk_cap_still_applies(make, mock_openai_client):
+    agent = make(mock_openai_client)
+    _script(agent, [{**_a_field(agent), "confidence": 0.9}, {"_parse_error": True}])
+    out = agent.extract_chunked(_TWO_WINDOWS, chunk_chars=400, overlap_chars=0)
+    assert out["_failed_chunks"] == 1
+    assert out["confidence"] < _low(agent.agent_name)
+    assert out["_window_confidences"] == [0.9] and out["_window_has_fields"] == [True]
+
+
 def test_f1_single_chunk_unchanged(mock_openai_client):
     agent = _mailroom_agent(mock_openai_client)
     agent.extract = lambda *a, **k: {"claim": "1", "confidence": 0.8}
