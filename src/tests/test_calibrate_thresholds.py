@@ -118,7 +118,11 @@ def test_cli_writes_a_loadable_candidate_and_never_touches_the_taxonomy(tmp_path
     assert code == 0 and "SYNTHETIC" in stdout and "wrote" in stdout
     assert "insufficient_evidence" in stdout or "calibrated" in stdout
     assert "reviewer lane" in stdout
+    assert "att = one pair per extraction ATTEMPT" in stdout and " att " in stdout
     doc = yaml.safe_load(out.read_text())
+    audit = next(iter(doc["calibration"]["classes"].values()))
+    assert (audit["high"]["unit"], audit["judge_band_high"]["unit"]) == ("documents", "attempts")
+    assert audit["judge_band_high"]["n_docs"] <= audit["judge_band_high"]["n"]
     assert set(doc) == {"confidence", "calibration"}
     assert doc["calibration"]["params"]["target"] == pytest.approx(0.95)
     assert doc["calibration"]["split"] == "train"
@@ -137,3 +141,95 @@ def test_cli_bad_input_and_gt_in_state_exclusion(tmp_path, capsys):
     capsys.readouterr()
     assert ct.main(["--records", str(path), "--out", str(tmp_path / "o.yaml")]) == 1  # nothing usable left
     assert not (tmp_path / "o.yaml").exists()
+
+
+# ---- T43: every scored extraction attempt is evidence, not just the final one ---------------
+
+
+def _attempt_record(i, attempts):
+    """A class-correct document whose extraction attempts are ``[(confidence, score), ...]``."""
+    from schemas.run_record import ExtractionAttempt, Gold, RunInfo, RunRecord, SorterAttempt
+
+    return RunRecord(
+        run=RunInfo(run_id="t", mode="synthetic", split="train"),
+        doc_id=f"d{i}",
+        gold=Gold(expected_doc_type="contract"),
+        sorter=[SorterAttempt(attempt=1, doc_type="contract", confidence_raw=0.97, confidence=0.97)],
+        extraction=[
+            ExtractionAttempt(attempt=n, doc_type="contract", confidence_raw=c, confidence=c, extraction_score=s)
+            for n, (c, s) in enumerate(attempts, 1)
+        ],
+    )
+
+
+def _confidently_wrong_first_attempt_corpus():
+    """400 documents. 100 of them: attempt 1 confidently WRONG (0.95-0.99), the retry right.
+
+    Routing accepts any attempt above the cutoff, so attempt 1 would have been archived wrong.
+    """
+    recs = []
+    for i in range(300):  # attempt 1 right at 0.90-0.99; the retry is right too
+        c = 0.90 + (i % 10) / 100.0
+        recs.append(_attempt_record(i, [(c, 0.95), (c, 0.95)]))
+    for i in range(300, 400):
+        c = 0.95 + (i % 5) / 100.0
+        recs.append(_attempt_record(i, [(c, 0.20), (c, 0.95)]))
+    return recs
+
+
+def test_extraction_cutoff_is_not_earned_by_the_final_attempt_alone():
+    recs = _confidently_wrong_first_attempt_corpus()
+    base = {"high": 0.95, "low": 0.80, "judge_band_high": 0.90, "retry_max": 2, "by_class": {}}
+    kw = dict(folds=5, seed=42, confidence=0.95, risk=0.02)
+    # control: the final attempt alone is flawless, so the old evidence WOULD call the cutoff earned
+    final_only = [(a.confidence, a.extraction_score >= 0.80) for r in recs for a in r.extraction[-1:]]
+    assert ct.cutoff_evidence(final_only, 0.95, **kw)["status"] == "calibrated"
+    res = ct.calibrate(recs, base)
+    jbh = res["classes"]["contract"]["judge_band_high"]
+    assert jbh["status"] == "insufficient_evidence" and jbh["proposed"] is None, jbh
+    assert res["candidate_policy"]["by_class"].get("contract", {}).get("judge_band_high") is None
+    low = res["classes"]["contract"]["low"]
+    assert low["status"] == "insufficient_evidence", low
+    # the counts say what they count: 800 attempts of 400 documents
+    assert (jbh["unit"], jbh["n"], jbh["n_docs"]) == ("attempts", 800, 400)
+    assert jbh["n_accepted_docs"] <= jbh["n_accepted"]
+
+
+def test_sorter_evidence_is_counted_in_documents():
+    recs = [_attempt_record(i, [(0.9, 0.9)]) for i in range(10)]
+    res = ct.calibrate(recs, {"high": 0.95, "low": 0.8, "judge_band_high": 0.9, "by_class": {}})
+    high = res["classes"]["contract"]["high"]
+    assert (high["unit"], high["n"], high["n_docs"]) == ("documents", 10, 10)
+
+
+def test_too_few_attempts_is_named_in_attempts():
+    kw = dict(folds=5, seed=42, confidence=0.95, risk=0.02)
+    assert ct.cutoff_evidence([(0.9, True)], 0.95, unit="attempts", **kw)["reason"] == "too_few_attempts"
+
+
+def test_sample_size_rule_counts_documents_when_a_pair_is_an_attempt():
+    """40 flawless documents x 5 attempts = 200 pairs, which would clear required_samples(0) = 149 if
+    attempts were independent samples. Only 40 documents stand behind them: still a shortfall."""
+    pairs = [(0.90 + (n * 7 + i) % 10 / 100.0, True) for i in range(40) for n in range(5)]
+    docs = [i for i in range(40) for _ in range(5)]
+    kw = dict(folds=5, seed=42, confidence=0.95, risk=0.02, target_step=0.0)
+    as_documents = ct.cutoff_evidence(pairs, 0.5, **kw)  # pretends 200 independent documents
+    assert as_documents["status"] == "calibrated"
+    ev = ct.cutoff_evidence(pairs, 0.5, unit="attempts", docs=docs, **kw)
+    assert ev["status"] == "insufficient_evidence" and ev["reason"] == "sample_shortfall", ev
+    assert ev["n"] == 200 and ev["n_docs"] == 40 and ev["n_accepted_docs"] <= 40
+    assert ev["required"] == 149 and ev["shortfall"] == 149 - ev["n_accepted_docs"]
+
+
+def test_document_grouped_cross_fit_judges_a_document_by_its_worst_accepted_attempt():
+    # 30 documents x 5 attempts at the same confidence, one wrong attempt each: 80% right per attempt,
+    # but every document has a wrong attempt routing could have archived.
+    pairs, docs = [], []
+    for d in range(30):
+        for n in range(5):
+            pairs.append((0.95, n != 0))
+            docs.append(d)
+    by_attempt = ct.deployed_cross_fit(pairs, 0.5, folds=5, seed=1, confidence=0.95)
+    by_doc = ct.deployed_cross_fit(pairs, 0.5, folds=5, seed=1, confidence=0.95, docs=docs)
+    assert by_attempt["holdout_accuracy"] == pytest.approx(0.8)
+    assert by_doc["holdout_accuracy"] == 0.0 and by_doc["holdout_accepted"] == 30  # documents, not attempts

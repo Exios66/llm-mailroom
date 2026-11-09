@@ -279,3 +279,43 @@ def test_base_dir_that_only_dotenv_supplies_is_not_used(tmp_path, capsys, monkey
     code, cap = _run([*FIXTURE_ARGS, "--limit", "1", "--out", str(tmp_path / "r.jsonl")], capsys)
     assert code == 0 and not live.exists()
     assert "base_dir=" in cap.out and str(live) not in cap.out
+
+
+# -- T41: schema_valid is None only when there is nothing to validate -------------------------
+
+
+def _ext_step(update, *, transient=False):
+    return sw.Step(update, update, 0.0, 0, 0, 0.0, transient, 0, sw._Capture())
+
+
+def test_schema_valid_is_a_bool_whenever_there_is_an_extraction(monkeypatch):
+    from observability import scores
+
+    diag: dict = {}
+    good = {"parties": ["Acme"], "effective_date": "2024-01-01"}
+    att = sw._extraction_attempt(_doc(), 1, "contract", _ext_step({"extracted_data": good}), "t", diag)
+    assert isinstance(att.schema_valid, bool)  # computed, whatever the verdict
+    # nothing to validate: a missing payload and a transient error stay None
+    for step in (_ext_step({}), _ext_step({"extracted_data": {}}), _ext_step({"extracted_data": good}, transient=True)):
+        assert sw._extraction_attempt(_doc(), 1, "contract", step, "t", diag).schema_valid is None
+    assert "schema_validation_errors" not in diag
+
+    def boom(_doc_type, _data):
+        raise RuntimeError("schema registry unavailable")
+
+    monkeypatch.setattr(scores, "validate_extraction", boom)
+    att = sw._extraction_attempt(_doc(), 2, "contract", _ext_step({"extracted_data": good}), "t", diag)
+    assert att.schema_valid is False  # could not be shown valid: never "unknown"
+    assert diag["schema_validation_errors"] == ["contract#2: RuntimeError: schema registry unavailable"]
+
+
+def test_a_non_dict_payload_is_recorded_invalid_not_unknown():
+    diag: dict = {}
+    att = sw._extraction_attempt(_doc(), 1, "contract", _ext_step({"extracted_data": ["not", "a", "dict"]}), "t", diag)
+    assert att.schema_valid is False and att.hollow is True
+    assert diag["schema_validation_errors"][0].startswith("contract#1: ")
+
+
+def test_swept_extractions_carry_a_schema_verdict(ctx, mocked):
+    rec = sw.sweep_document(_doc(), ctx)
+    assert rec.extraction and all(isinstance(e.schema_valid, bool) for e in rec.extraction if not e.hollow)
