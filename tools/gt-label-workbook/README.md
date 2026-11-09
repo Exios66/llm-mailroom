@@ -4,8 +4,11 @@ Builds an editable Excel workbook of the ground truth the Dojo scores against, s
 labels can be found and filled in.
 
 ```bash
-PYTHONPATH=src .venv/bin/python tools/gt-label-workbook/build_gt_workbook.py --revision v9.3 --out gt_label_workbook.xlsx
+PYTHONPATH=src .venv/bin/python tools/gt-label-workbook/build_gt_workbook.py --revision v9.3 --out ~/gt_label_workbook.xlsx
 ```
+
+The workbook holds the full document text, so it is a private, offline record: write it
+outside the repository. `*.xlsx` and the `<name>_texts/` fallback folder are git-ignored.
 
 `--revision` defaults to `FULL_CORPUS_REVISION` (v9.1 at the time of writing); pass the release you want to label.
 
