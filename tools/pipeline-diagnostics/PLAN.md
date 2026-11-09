@@ -1,6 +1,6 @@
 # Native pipeline diagnostics workbench — proposed implementation plan
 
-Status: design proposal; no application implementation or policy changes in this document.
+Status: staged delivery plan. The first D0a implementation supplies an installable inspection/check CLI and test discovery; D0 is not complete. Use [HANDOFF.md](HANDOFF.md) for the ordered work queue and [EVIDENCE.md](EVIDENCE.md) for verification. The React screen, HTTP app, live telemetry and calibration remain planned.
 
 The tool belongs in **llm-mailroom**, is consolidated under **`tools/pipeline-diagnostics/`**, runs from this checkout, and assists humans and agents debugging this pipeline. It must not require The-Mailroom, the integration hub, hosted tracing, or a paid model call. Its frontend, backend, schemas, CLI, fixtures, tests, packaging and documentation stay together in that subfolder. Only small integration hooks in existing pipeline/API files live elsewhere. Existing downstream visualizers can continue consuming the display contract independently.
 
@@ -48,7 +48,7 @@ PR descriptions report limitations, including crash-recovery identity duplicatio
 
 ## 3. Repository-native architecture and delivery
 
-Except for the documentation created with this proposal, the following paths and entrypoints are **proposed**, not existing commands. All paths in this table are relative to `tools/pipeline-diagnostics/`:
+The following table describes the target layout. D0a provides the package, inspection/check code and tests; app/API/static/frontend entries remain **proposed**. All paths are relative to `tools/pipeline-diagnostics/`:
 
 | Proposed location | Responsibility |
 | --- | --- |
@@ -59,7 +59,7 @@ Except for the documentation created with this proposal, the following paths and
 | `backend/mailroom_diagnostics/static/` | Build destination for packaged React assets; generated, not hand-edited |
 | `tests/` and `fixtures/` | Tool-specific contracts, lifecycle/API/bundle/replay tests and synthetic defect fixtures |
 | `pyproject.toml` | Nested tool packaging, CLI entrypoint, declared LangChain core dependency and generated asset inclusion |
-| `README.md`, `QUICKSTART.md`, `COMPATIBILITY.md`, `PLAN.md` | Navigation, usable setup, supported revisions/capabilities, and this implementation plan |
+| `README.md`, `QUICKSTART.md`, `COMPATIBILITY.md`, `PLAN.md`, `HANDOFF.md`, `EVIDENCE.md` | Navigation, setup, revision support, full design, resumable tasks and verification contract |
 
 Keep the Python API and CLI usable when the React assets are absent. The screen should report how to build the optional UI rather than break API startup. The root package's allowlist will not discover code under this tools folder: install/build the nested package explicitly and include its generated static assets in its own package-data configuration. D0 includes a named packaging task for this declaration and an isolated wheel-install check using resource lookup plus HTTP asset retrieval; an editable install alone is insufficient evidence. Build release/container assets during packaging, so users of a prepared artifact need no Node installation. Plain editable installs continue to work without a frontend build. Ignore `node_modules`, build products and local captures within the tool folder; commit the dependency lockfile.
 
@@ -208,7 +208,7 @@ For Python changes, run compileall, affected tests, and the full suite on the fi
 
 Every phase's gate includes affected tests for root Python changes and explicit collection of the nested tool's own tests, since root pytest discovery currently targets `src/tests` only. Include the nested backend in syntax verification; `compileall src` alone will not inspect it. LangChain core is already a root dependency; the nested package must declare its direct use too, while resolving a compatible version with the parent install. No graph construction, state inspection or mock scenario should require an actual chat completion.
 
-D0 must register the nested test root and a `tools/pipeline-diagnostics/` input mapping in `src/scripts/ci_tests.py`, update root pytest `testpaths`, and extend `src/tests/test_ci_tests.py` to prove both affected and full plans collect the nested tests. Today the planner's full profile still runs only `src/tests`, and an unrecognized tools change does not solve that. Nested tests also do not automatically inherit `src/tests/conftest.py`: register shared hermetic mock fixtures in the nested suite and verify that attempts to reach real LLM/network clients fail locally. Keep frontend build checks explicit in CircleCI as they are outside Python test discovery.
+D0a registers the nested test root and a `tools/pipeline-diagnostics/` input mapping in `src/scripts/ci_tests.py`, updates root pytest `testpaths`, and extends `src/tests/test_ci_tests.py` to prove both affected and full plans collect the nested tests. The previous planner's full profile ran only `src/tests`; an unrecognized tools change did not solve that. Nested tests do not automatically inherit `src/tests/conftest.py`, so their hermetic fixtures must independently prevent real LLM/network access. Keep eventual frontend build checks explicit in CircleCI as they are outside Python test discovery.
 
 D1's mutation demonstration is fixture-only: it cannot leave test nodes in production wiring while claiming the committed contract is current. An intended real graph change instead regenerates the contract through the normal exporter workflow, then checks the new committed artifact. Record the mutation fixture and baseline gate as separate evidence.
 
@@ -241,4 +241,4 @@ These are implementation choices with recommended defaults, not reasons to move 
 - [React Flow accessibility](https://reactflow.dev/learn/advanced-use/accessibility): keyboard, focus and screen-reader affordances to build on.
 - [MDN server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events): one-way transport, event IDs, reconnect and heartbeat format.
 
-This is a plan, not evidence that the proposed screen, checks, instrumentation or performance targets work. No real-model run, hosted write, policy promotion or PR change was performed to prepare it.
+This design is not evidence that its remaining screen, instrumentation, calibration or performance targets work. Only the implemented checkpoint's commit-specific raw results support its narrower claims. Preparing the draft PR does not authorize real-model pipeline runs, hosted syncs or policy promotion.

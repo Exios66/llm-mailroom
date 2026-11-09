@@ -89,18 +89,19 @@ def build_workspace_snapshot() -> Snapshot:
 
 
 def _read_bounded(path: Path) -> bytes:
+    """Read at most the input limit, even from a device or a growing file."""
     try:
-        size = path.stat().st_size
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_ARTIFACT_BYTES + 1)
     except OSError as exc:
-        raise DiagnosticsError("io-error", f"cannot read artifact: {exc.strerror or type(exc).__name__}") from exc
-    if size > MAX_ARTIFACT_BYTES:
         raise DiagnosticsError(
-            "input-too-large", f"artifact is {size} bytes; the limit is {MAX_ARTIFACT_BYTES}"
+            "io-error", f"cannot read artifact: {exc.strerror or type(exc).__name__}"
+        ) from exc
+    if len(raw) > MAX_ARTIFACT_BYTES:
+        raise DiagnosticsError(
+            "input-too-large", f"artifact exceeds the {MAX_ARTIFACT_BYTES}-byte input limit"
         )
-    try:
-        return path.read_bytes()
-    except OSError as exc:
-        raise DiagnosticsError("io-error", f"cannot read artifact: {exc.strerror or type(exc).__name__}") from exc
+    return raw
 
 
 def _require_supported(version: str) -> None:
@@ -140,11 +141,15 @@ def _pipeline_version() -> str | None:
 
 
 def _repo_root() -> Path | None:
+    """The checkout that owns the imported pipeline package, if it is one."""
     try:
         import pipeline
     except Exception:
         return None
-    return Path(pipeline.__file__).resolve().parents[2]
+    for parent in Path(pipeline.__file__).resolve().parents:
+        if (parent / ".git").exists():
+            return parent
+    return None
 
 
 def _git_state(repo: Path | None) -> tuple[str | None, bool | None]:

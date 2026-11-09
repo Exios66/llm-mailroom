@@ -24,13 +24,17 @@ LIMITATIONS = (
 
 def run_checks(snapshot: Snapshot) -> CheckReport:
     graph = snapshot.graph
-    findings = _endpoint_consistency(graph) + _entry_reachability(graph)
-    findings.sort(key=lambda finding: (finding.rule, finding.id))
+    # Stable IDs make duplicate edge rows collapse to one finding instead of
+    # reporting the same defect twice with the same identity.
+    findings = {finding.id: finding for finding in _endpoint_consistency(graph)}
+    for finding in _entry_reachability(graph):
+        findings.setdefault(finding.id, finding)
+    ordered = sorted(findings.values(), key=lambda finding: (finding.rule, finding.id))
     return CheckReport(
         tool_version=__version__,
         provenance=snapshot.provenance,
         graph_hash=snapshot.graph_hash,
-        findings=findings,
+        findings=ordered,
         coverage=Coverage(checks=list(CHECKS), limitations=list(LIMITATIONS)),
     )
 

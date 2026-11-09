@@ -281,6 +281,15 @@ def test_nested_test_change_selects_that_test_only(project):
     assert plan["tests"] == [target]
 
 
+def test_nested_documentation_keeps_the_root_docs_truth_checks(project):
+    nested_tool(project)
+    project("tools/pipeline-diagnostics/README.md", "# Native diagnostics\n")
+    plan = ci.make_plan(["tools/pipeline-diagnostics/README.md"])
+    assert plan["profile"] == "affected"
+    assert set(ci.DOC_TESTS) <= set(plan["tests"])
+    assert f"{NESTED_TESTS}/test_module_0.py" in plan["tests"]
+
+
 def test_full_plan_and_counts_include_the_nested_test_root(project):
     nested_tool(project)
     project("src/graph/routing.py", "value = 1\n")

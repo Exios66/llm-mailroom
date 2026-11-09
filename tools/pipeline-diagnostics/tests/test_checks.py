@@ -50,6 +50,33 @@ def test_finding_ids_are_stable_across_runs(mutated_contract):
     assert first and first[0].startswith("dangling-edge.")
 
 
+def test_duplicate_edge_rows_collapse_to_one_finding(mutated_contract):
+    """Two route tokens to the same target may export identically; report once."""
+
+    def add_dupes(data):
+        edge = {"source": "archive", "target": "ghost", "conditional": False, "label": None}
+        data["graph"]["edges"].extend([edge, dict(edge)])
+
+    findings = _findings(mutated_contract(add_dupes))
+    assert len(findings) == 1
+    assert findings[0].rule == "dangling-edge"
+
+
+def test_duplicate_route_tokens_to_one_target_stay_clean(mutated_contract):
+    """A future revision can route two tokens to the same node (e.g. END)."""
+
+    def add_dupes(data):
+        edge = {
+            "source": "human_review",
+            "target": "__end__",
+            "conditional": True,
+            "label": None,
+        }
+        data["graph"]["edges"].extend([edge, dict(edge)])
+
+    assert _findings(mutated_contract(add_dupes)) == []
+
+
 def test_removing_the_injected_edge_clears_the_finding(mutated_contract):
     def add_edge(data):
         data["graph"]["edges"].append(

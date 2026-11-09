@@ -2,13 +2,15 @@
 
 Repository-native debugging and diagnostic tooling for llm-mailroom.
 
-**Current status: planning and setup documentation.** The React screen, diagnostic CLI and diagnostic API described here are not implemented yet. Existing pipeline inspection and mock tests can be used now; see the quick start. Do not expect `/diagnostics` to exist on current main.
+**Current status: D0a CLI foundation; full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection plus structural endpoint/reachability checks. React, the diagnostic HTTP app, live events, replay and calibration are later tasks. `/diagnostics` is not implemented by this checkpoint.
 
 ## Start here
 
 - [Quick start](QUICKSTART.md): install dependencies, inspect the current compiled graph and run existing routing checks.
 - [Compatibility](COMPATIBILITY.md): what works on current main, what PR 203 enables, and what evidence PR 204 needs.
 - [Implementation plan](PLAN.md): architecture, API/data contracts, live updates, gap detection, accessible React design, delivery phases and verification gates.
+- [Agent handoff](HANDOFF.md): ordered tasks, ownership, dependencies, acceptance checks and interruption/resume instructions.
+- [Evidence contract](EVIDENCE.md): commit-scoped proof and independent post-hoc verification requirements.
 
 ## Intended native experience
 
@@ -26,7 +28,7 @@ Keep these distinctions visible:
 
 All tool-specific implementation, tests, fixtures, package configuration and documentation belong in this folder. Existing root pipeline/API modules receive only the hooks needed to observe execution or mount the native screen. The pipeline remains the authority for routing; the generated display contract remains the authority for its exported topology.
 
-Planned layout, except for the documentation already present:
+Folder layout; app/static/frontend entries remain planned:
 
 ```text
 tools/pipeline-diagnostics/
@@ -34,6 +36,8 @@ tools/pipeline-diagnostics/
   QUICKSTART.md
   COMPATIBILITY.md
   PLAN.md
+  HANDOFF.md
+  EVIDENCE.md
   pyproject.toml
   backend/mailroom_diagnostics/
     app.py                 # standalone inspection app; never imports api.main
@@ -49,6 +53,6 @@ LangChain core is already declared by the parent project. Install the project's 
 
 First useful milestone: current-main topology, source-linked checks and reproducible missing-route fixtures. Exact mock/live execution follows, then staged calibration adapters. PR 204 is not a prerequisite for the tool.
 
-When implementation starts, D0 must register the nested suite in the root pytest configuration and CI planner, with hermetic fixtures. Today's default root pytest and CI full-run selection cover `src/tests`, not a future test suite under this folder.
+The nested suite is registered in root pytest discovery and the CI planner, with its own hermetic fixtures. A full explicit Python run covers both `src/tests` and this folder's `tests`; a scoped run remains scoped evidence. See the PR's tested SHA/results before relying on a checkpoint.
 
 Related downstream work: [The-Mailroom PR 71](https://github.com/Exios66/The-Mailroom/pull/71) handles adoption of PR 203's contract and review behavior. It is complementary context, not the home or a dependency of this native tool.

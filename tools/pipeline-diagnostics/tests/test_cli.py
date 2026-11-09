@@ -96,7 +96,9 @@ def test_missing_artifact_fails_with_exit_2(run_cli, tmp_path: Path):
 def test_input_size_is_bounded(monkeypatch, capsys, tmp_path: Path):
     monkeypatch.setattr(snapshot_module, "MAX_ARTIFACT_BYTES", 64)
     path = tmp_path / "big.json"
-    path.write_text(json.dumps({"contract_version": "1.0.0", "graph": {}}), encoding="utf-8")
+    path.write_text(
+        json.dumps({"contract_version": "1.0.0", "padding": "x" * 200}), encoding="utf-8"
+    )
     assert main(["inspect", "--contract", str(path), "--json"]) == EXIT_INVALID
     payload = json.loads(capsys.readouterr().out)
     assert payload["error"]["code"] == "input-too-large"
@@ -153,10 +155,9 @@ def test_workspace_snapshot_has_allowlisted_thresholds_only():
         "conflict_threshold",
         "by_class",
     }
-    assert set(dumped["thresholds"]["by_class"]) == {
-        "contract",
-        "merger_agreement",
-        "insurance_claim",
-        "corporate_record",
-        "correspondence",
-    }
+    # Class names come from the taxonomy, never from a hardcoded inventory.
+    by_class = dumped["thresholds"]["by_class"]
+    assert by_class
+    for class_key, row in by_class.items():
+        assert isinstance(class_key, str) and class_key
+        assert set(row) <= {"high", "low", "judge_band_high"}
