@@ -11,7 +11,8 @@ The migration is **opt-in and never automatic**. ``migrate_at_startup`` (the
 hook in ``ensure_schema``) runs only with ``MAILROOM_AUDIT_MIGRATE=1`` on
 SQLite and Postgres alike; without it the current per-event ``audit_log`` and
 its writer stay in place. ``python -m storage.audit_migrate`` is the deliberate
-operator command and does not require the knob.
+operator command: it needs no knob on SQLite, but Postgres always requires
+``MAILROOM_AUDIT_MIGRATE=1`` per spec §6 (quiesce writers, ``pg_dump`` first).
 
 ``migrate_audit_log`` runs under ``acquire_write_lock(session,
 "audit_log:chain")``, in one transaction:
@@ -458,10 +459,10 @@ async def _migrate_locked(
 ) -> MigrationResult:
     """Migrate under the caller's chain lock without committing the transaction.
 
-    ``require_opt_in`` is true on the startup path: without
-    ``MAILROOM_AUDIT_MIGRATE=1`` nothing is changed and the result says
-    ``opt_in_required`` (SQLite and Postgres alike). The explicit CLI passes
-    false, because running it is the operator's deliberate decision.
+    ``require_opt_in`` is true on the startup path. Postgres additionally
+    always requires ``MAILROOM_AUDIT_MIGRATE=1`` (both startup and the explicit
+    CLI, per spec §6); only explicit SQLite migration bypasses the knob. Without
+    it nothing is changed and the result says ``opt_in_required``.
 
     Return a reason when already migrated, empty, or awaiting the opt-in.
     Raise ``AuditMigrationError`` for ambiguous existing data or a copy mismatch;
@@ -472,16 +473,24 @@ async def _migrate_locked(
     if meta is not None:
         return MigrationResult(False, int(meta.get("legacy_rows", 0)), None, "already_migrated")
 
-    rows = await _scalar(session, "SELECT count(*) FROM audit_log")
-    if require_opt_in and not _opted_in():
+    # Startup is opt-in on both backends; the explicit CLI lifts it for SQLite
+    # only. Postgres always requires MAILROOM_AUDIT_MIGRATE=1 (spec §6): the
+    # operator must quiesce writers and take a pg_dump first.
+    if (require_opt_in or dialect == "postgresql") and not _opted_in():
+        rows = await _scalar(session, "SELECT count(*) FROM audit_log")
         logger.warning("audit_migration_pending", legacy_rows=rows, hint=_PENDING_HINT)
         return MigrationResult(False, rows, None, "opt_in_required")
 
     if dialect == "postgresql":
-        # Older writers do not take the advisory gate. Block their INSERTs for
-        # the copy+delete window; the opt-in hint tells the operator to quiesce
-        # them first so this lock is short and predictable.
+        # Older writers do not take the advisory gate. Take the source-table
+        # lock BEFORE the count that decides rows==0/copy/metadata, so an old
+        # writer cannot insert between the count and the lock and leave that
+        # event in a table we then mark unified without copying it.
         await session.execute(text("LOCK TABLE audit_log IN ACCESS EXCLUSIVE MODE"))
+
+    # Authoritative count: under the Postgres table lock / SQLite BEGIN
+    # IMMEDIATE from the caller's chain lock.
+    rows = await _scalar(session, "SELECT count(*) FROM audit_log")
 
     if await _scalar(session, f"SELECT count(*) FROM {LEGACY_TABLE}"):
         raise AuditMigrationError(
@@ -544,12 +553,13 @@ async def migrate_at_startup() -> MigrationResult:
 async def migrate_audit_log(*, backup_dir: Path | None = None) -> MigrationResult:
     """Migrate ``audit_log`` to the unified shape once; safe to call again.
 
-    This is the explicit operator path (also ``python -m storage.audit_migrate``),
-    so it does not require ``MAILROOM_AUDIT_MIGRATE``; running it is the
-    decision. Back up first: SQLite gets an automatic 0600 file backup; Postgres
-    needs your own ``pg_dump`` and the older writer processes quiesced (they do
-    not take the advisory gate). ``backup_dir`` is where the SQLite backup goes
-    (default ``<db dir>/backups/``); in-memory databases have no backup.
+    This is the explicit operator path (also ``python -m storage.audit_migrate``).
+    SQLite does not require ``MAILROOM_AUDIT_MIGRATE``; running it is the
+    decision. **Postgres always requires ``MAILROOM_AUDIT_MIGRATE=1``** (spec
+    §6): quiesce older writers and take your own ``pg_dump`` first; the
+    migration then locks ``audit_log`` exclusively for the copy+delete window.
+    SQLite gets an automatic 0600 file backup. ``backup_dir`` is where that
+    backup goes (default ``<db dir>/backups/``); in-memory databases have none.
 
     Creates any missing table first and returns a ``MigrationResult`` with the
     legacy row count and backup path. ``migrated=False`` means already migrated

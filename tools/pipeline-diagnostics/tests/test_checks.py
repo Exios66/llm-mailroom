@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from mailroom_diagnostics.checks import run_checks
@@ -177,3 +179,23 @@ def test_graph_hash_changes_with_topology_and_is_deterministic(minimal_contract)
 
     workspace = build_workspace_snapshot()
     assert workspace.graph_hash != first.graph_hash
+
+
+def test_human_applied_start_edge_is_not_a_finding(fixtures_dir):
+    """PR 203's contract adds START -> compile_report and human_review -> compile_report.
+
+    The fixture is a verbatim copy of ``contract/mailroom-contract.json`` on the
+    PR 203 head (`ab090bd`). The diagnostics must accept the new report-tail
+    connections as real wiring, not flag them.
+    """
+    artifact = load_artifact(fixtures_dir / "pr203-contract.json")
+    data = json.loads((fixtures_dir / "pr203-contract.json").read_text())
+    edges = data["graph"]["edges"]
+    assert len(data["graph"]["nodes"]) == 14
+    assert len(edges) == 48
+    start_targets = sorted(e["target"] for e in edges if e["source"] == "__start__")
+    assert start_targets == ["compile_report", "extract", "intake"]
+    assert any(
+        e["source"] == "human_review" and e["target"] == "compile_report" for e in edges
+    )
+    assert run_checks(artifact).findings == []

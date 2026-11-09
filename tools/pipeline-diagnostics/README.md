@@ -2,7 +2,7 @@
 
 Repository-native debugging and diagnostic tooling for llm-mailroom.
 
-**Current status: D0a CLI foundation; full workbench remains in development.** The native package supports compiled-graph and offline-contract inspection plus structural endpoint/reachability checks. React, the diagnostic HTTP app, live events, replay and calibration are later tasks. `/diagnostics` is not implemented by this checkpoint.
+**Current status: D0 complete and D1.1 (accessible React graph) implemented; the workbench continues with D1.2 gap scenarios.** The native package supports compiled-graph and offline-contract inspection, structural endpoint/reachability checks, a read-only HTTP app (`mailroom-diagnostics serve`) that is also mountable on the producer API, source/policy provenance hashes, atomic fresh-process preview refresh, and an accessible React/React Flow screen at `/diagnostics`. Live execution events, replay and calibration remain later tasks.
 
 ## Start here
 
@@ -28,7 +28,7 @@ Keep these distinctions visible:
 
 All tool-specific implementation, tests, fixtures, package configuration and documentation belong in this folder. Existing root pipeline/API modules receive only the hooks needed to observe execution or mount the native screen. The pipeline remains the authority for routing; the generated display contract remains the authority for its exported topology.
 
-Folder layout; app/static/frontend entries remain planned:
+Folder layout:
 
 ```text
 tools/pipeline-diagnostics/
@@ -42,12 +42,30 @@ tools/pipeline-diagnostics/
   backend/mailroom_diagnostics/
     app.py                 # standalone inspection app; never imports api.main
     api.py                 # router also mountable by the normal API
-    static/                # generated, packaged React build
+    static/                # generated React build (README only in the source tree)
     ...                    # schemas, snapshots, findings, CLI and job protocol
-  frontend/                # React/TypeScript source and committed lockfile
+  frontend/                # React/TypeScript screen and committed lockfile
   tests/                   # explicitly collected by CI
     fixtures/              # synthetic defects and revision-specific contracts
 ```
+
+## Workspace preview refresh
+
+`mailroom-diagnostics preview` builds the snapshot in a separate interpreter and atomically publishes `preview.json`, `last-good.json` and `error.json` under `MAILROOM_DIAGNOSTICS_PREVIEW_DIR` (or `<MAILROOM_BASE_DIR>/diagnostics`; default `data/diagnostics`). A failed or invalid rebuild never replaces the last valid preview and records a visible error. `preview --watch` debounces edits to the declared source/config seams before rebuilding. A preview always describes edited files, never a running worker's active graph.
+
+## Read-only HTTP app
+
+`mailroom-diagnostics serve` starts a diagnostics-only FastAPI app on loopback (default `127.0.0.1:8100`). It never imports `api.main` and never starts the watcher, Gmail intake, status mail, relations scans, document processing or a tracing backend.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /v1/diagnostics/capabilities` | Supported modes, read-only status and explicitly unavailable features |
+| `GET /v1/diagnostics/snapshot` | Current workspace-preview graph and provenance |
+| `GET /v1/diagnostics/findings` | Implemented structural checks with stable finding IDs |
+| `GET /health` | Public liveness probe |
+| `GET /diagnostics` | Build-instructions page until the React assets land (D1.1) |
+
+Authorization is the producer's bearer/loopback rule, shared through `api.auth`: an off-loopback bind requires `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS`. Set `MAILROOM_DIAGNOSTICS_MOUNT=1` to mount the same read-only routes on `python -m api.main`; the mount is off by default and a missing package never breaks API startup.
 
 LangChain core is already declared by the parent project. Install the project's development dependencies rather than adding a duplicate root requirement. The nested package declares its own direct dependencies. Install the parent from this checkout first; the unrelated PyPI project named `mailroom` is not a tool dependency.
 

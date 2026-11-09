@@ -38,9 +38,10 @@ Startup never migrates. The default keeps the per-event `audit_log` and its curr
 # 1. Quiesce writers (watcher/API) so no old process inserts during the copy.
 # 2. Back up: SQLite gets an automatic 0600 copy under <db dir>/backups/;
 #    Postgres needs your own pg_dump.
-# 3. Migrate deliberately (no env knob needed for the CLI):
+# 3. Migrate deliberately. SQLite needs no knob for the CLI; Postgres always
+#    requires MAILROOM_AUDIT_MIGRATE=1 (quiesce writers + pg_dump first):
 PYTHONPATH=src python -m storage.audit_migrate
-# or opt the startup path in once:
+# or opt the startup path in once (SQLite and Postgres):
 MAILROOM_AUDIT_MIGRATE=1 PYTHONPATH=src python -m api.main
 # 4. Verify:
 PYTHONPATH=src python src/scripts/verify_audit_chains.py --json

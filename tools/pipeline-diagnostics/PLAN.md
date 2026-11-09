@@ -1,6 +1,6 @@
 # Native pipeline diagnostics workbench — proposed implementation plan
 
-Status: staged delivery plan. The first D0a implementation supplies an installable inspection/check CLI and test discovery; D0 is not complete. Use [HANDOFF.md](HANDOFF.md) for the ordered work queue and [EVIDENCE.md](EVIDENCE.md) for verification. The React screen, HTTP app, live telemetry and calibration remain planned.
+Status: staged delivery plan. D0 is complete (CLI, test/CI integration, standalone app, provenance/package data, atomic preview refresh). D1.1 adds the accessible React/React Flow screen from the exported snapshot; D1.2 and the live/replay/calibration layers remain planned. Use [HANDOFF.md](HANDOFF.md) for the ordered work queue and [EVIDENCE.md](EVIDENCE.md) for verification.
 
 The tool belongs in **llm-mailroom**, is consolidated under **`tools/pipeline-diagnostics/`**, runs from this checkout, and assists humans and agents debugging this pipeline. It must not require The-Mailroom, the integration hub, hosted tracing, or a paid model call. Its frontend, backend, schemas, CLI, fixtures, tests, packaging and documentation stay together in that subfolder. Only small integration hooks in existing pipeline/API files live elsewhere. Existing downstream visualizers can continue consuming the display contract independently.
 
@@ -48,7 +48,7 @@ PR descriptions report limitations, including crash-recovery identity duplicatio
 
 ## 3. Repository-native architecture and delivery
 
-The following table describes the target layout. D0a provides the package, inspection/check code and tests; app/API/static/frontend entries remain **proposed**. All paths are relative to `tools/pipeline-diagnostics/`:
+The following table describes the implemented layout. D0 provides the package, inspection/check code, app/API and preview; D1.1 provides the frontend. All paths are relative to `tools/pipeline-diagnostics/`:
 
 | Proposed location | Responsibility |
 | --- | --- |

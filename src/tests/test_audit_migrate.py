@@ -263,6 +263,74 @@ async def test_migration_scans_in_bounded_batches(legacy_db, monkeypatch):
     assert len(json.loads(value)["legacy_tail_hashes_sha256"]) == 64
 
 
+async def test_explicit_postgres_migration_still_requires_opt_in(legacy_db, monkeypatch):
+    """Spec §6: only explicit SQLite bypasses the startup knob, never Postgres."""
+    assert db.ensure_schema()
+    before = _rows(legacy_db, "audit_log")
+    monkeypatch.setattr(audit_migrate, "_dialect_name", lambda session: "postgresql")
+    monkeypatch.delenv("MAILROOM_AUDIT_MIGRATE", raising=False)
+
+    result = await audit_migrate.migrate_audit_log()
+
+    assert result.migrated is False
+    assert result.reason == "opt_in_required"
+    assert result.legacy_rows == 11
+    assert _rows(legacy_db, "audit_log") == before
+    with sqlite3.connect(legacy_db) as conn:
+        assert conn.execute("SELECT count(*) FROM audit_meta").fetchone()[0] == 0
+
+
+async def test_postgres_table_lock_precedes_deciding_count(monkeypatch):
+    """The ACCESS EXCLUSIVE lock must be taken before the authoritative count."""
+    import json as _json
+
+    from sqlalchemy.dialects import postgresql
+
+    monkeypatch.setenv("MAILROOM_AUDIT_MIGRATE", "1")
+    events: list[tuple[str, str]] = []
+    dialect = postgresql.dialect()
+
+    class FakeSession:
+        def get_bind(self):
+            return type("Bind", (), {"dialect": dialect})()
+
+        async def execute(self, statement, params=None):
+            events.append(("execute", str(statement)))
+
+        def add(self, obj):
+            events.append(("add", type(obj).__name__))
+
+        async def flush(self):
+            events.append(("flush", ""))
+
+    async def no_meta(session):
+        return None
+
+    async def fake_scalar(session, sql):
+        events.append(("count", sql))
+        return 0
+
+    async def not_unified(session):
+        return False
+
+    async def fake_write_meta(session, *, legacy_rows, tail_digest):
+        events.append(("meta", _json.dumps({"legacy_rows": legacy_rows})))
+
+    monkeypatch.setattr(audit_migrate, "_migration_meta", no_meta)
+    monkeypatch.setattr(audit_migrate, "_scalar", fake_scalar)
+    monkeypatch.setattr(audit_migrate, "_is_unified_audit_log", not_unified)
+    monkeypatch.setattr(audit_migrate, "_write_meta", fake_write_meta)
+
+    result = await audit_migrate._migrate_locked(
+        FakeSession(), None, require_opt_in=False
+    )
+
+    assert result.reason == "no_legacy_rows"
+    assert events[0] == ("execute", "LOCK TABLE audit_log IN ACCESS EXCLUSIVE MODE")
+    counts = [index for index, event in enumerate(events) if event[0] == "count"]
+    assert counts and counts[0] > 0
+
+
 async def test_startup_requires_opt_in_on_sqlite_and_postgres(legacy_db, monkeypatch):
     before = _dump(legacy_db, ("audit_log",))
     # Tables exist (as they would at startup), so only the opt-in gate decides.

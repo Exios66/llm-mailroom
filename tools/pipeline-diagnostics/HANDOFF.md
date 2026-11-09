@@ -4,7 +4,7 @@ This file is the ordered work queue for the native workbench. [PLAN.md](PLAN.md)
 
 ## Resume protocol
 
-1. Read repository `CLAUDE.md`, the three `.claude/rules/` files, this file, the plan and evidence contract. User preference overrides older model-tier examples and agent `model:` frontmatter for this undertaking: use appropriately scoped inexpensive agents such as DeepSeek 4.1 Flash; do not use Sonnet 4.6.
+1. Read repository `CLAUDE.md`, the three `.claude/rules/` files, this file, the plan and evidence contract. Delegate as `.claude/rules/orchestration.md` says (model tiers come from the agent frontmatter).
 2. Inspect `git status --short`, the current branch and HEAD, the draft PR head and latest review comments. Preserve unrelated edits. Continue the designated feature branch `feat/pipeline-diagnostics-workbench`; do not reset it to a staged PR or copy a sibling repository into it.
 3. Identify the first unchecked task whose dependencies are satisfied. Claim that task in the PR's current handoff section with agent/session, exact base SHA, owned paths and start time. If another agent owns it, pick independent work; do not duplicate active work.
 4. Install the parent package with pip, then this nested package. Run the quick start and the task's focused checks before changing anything. Reproduce a claimed defect before fixing it.
@@ -15,9 +15,9 @@ This file is the ordered work queue for the native workbench. [PLAN.md](PLAN.md)
 
 ## Current checkpoint
 
-The first implementation checkpoint is **D0a**, the installable snapshot/check CLI and test-discovery foundation. The draft PR's commit-specific Evidence section is the authoritative verification record for this checkpoint. The original design commit is `133e971`; it delivered documents, not an application.
+The first implementation checkpoint is **D0a**, the installable snapshot/check CLI and test-discovery foundation, delivered in PR 208. The standalone read-only HTTP app (D0.3) is delivered as a stacked PR layered on D0a. Each layer's commit-specific Evidence section is the authoritative verification record for its checkpoint. The original design commit is `133e971`; it delivered documents, not an application.
 
-D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208; later tasks remain unchecked. Do not mark D0 complete after D0a: the standalone app, authentication integration, React asset handling and richer provenance remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
+D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested commit in PR 208. D0.3, D0.4a and D0.4b are checked with their own layered PRs. D0 is complete when D0.4b lands; the React screen, live telemetry, replay and calibration remain separate tasks below. No review, live tracing or calibration behavior is changed by the initial CLI checkpoint.
 
 ## Ordered tasks
 
@@ -49,36 +49,52 @@ D0a means D0.1 and D0.2, checked below. Their verification is indexed by tested 
 
 **Depends:** D0.1; **owns:** nested app/API plus minimal side-effect-free root auth extraction and opt-in mount.
 
-- [ ] Construct a standalone inspection app without importing `api.main`, which currently starts warmups at import.
-- [ ] Reuse existing bearer/loopback authorization through an import-safe shared helper; preserve current producer security behavior and its tests.
-- [ ] Add capabilities/snapshot/findings routes under `/v1/diagnostics` and the `/diagnostics` mount. Keep the standalone inspection launch independent of the normal watcher lifecycle.
-- [ ] Default to no watcher, no Gmail/status messages, no relations effects and no tracing-service initialization. Make source mode and unavailable features visible.
-- [ ] Test unauthenticated loopback rules, public/forwarded requests, bearer rotation, missing assets, import side effects, and graph-construction failure responses.
+- [x] Construct a standalone inspection app without importing `api.main`, which currently starts warmups at import.
+- [x] Reuse existing bearer/loopback authorization through an import-safe shared helper; preserve current producer security behavior and its tests.
+- [x] Add capabilities/snapshot/findings routes under `/v1/diagnostics` and the `/diagnostics` mount. Keep the standalone inspection launch independent of the normal watcher lifecycle.
+- [x] Default to no watcher, no Gmail/status messages, no relations effects and no tracing-service initialization. Make source mode and unavailable features visible.
+- [x] Test unauthenticated loopback rules, public/forwarded requests, bearer rotation, missing assets, import side effects, and graph-construction failure responses.
 
 **Acceptance:** real HTTP smoke on loopback plus test-client coverage; no background processing/hosted calls when opening the tool; unchanged producer auth behavior. Do not invent a permissive diagnostic authentication scheme.
 
-### D0.4 — Packaged assets, provenance and workspace refresh
+**Evidence (this layered PR, refreshed by its PR body):** `src/api/auth.py` is the import-safe shared policy and `api.main` re-exports it unchanged; nested `test_app.py` (12) and root `test_api_diagnostics_mount.py` (3) cover token/loopback rules, sanitized failures, inert import, placeholder UI and the opt-in mount; 210 focused tests pass. Loopback smoke: `/health`, `/v1/diagnostics/{capabilities,snapshot}`, `/diagnostics` = 200; token set ⇒ missing/wrong bearer 401, correct 200; `serve --host 0.0.0.0` without a token exits 1 with a refusal. Import probe shows no `api.main`, watcher, Gmail, status or graph import when constructing the app.
 
-**Depends:** D0.1/D0.3; **owns:** nested packaging/provenance/refresh and optional frontend build skeleton.
+### D0.4a — Packaged assets and provenance hashes
 
-- [ ] Include built static assets through explicit nested package-data rules; source and missing-assets modes remain usable.
-- [ ] Verify isolated installed wheels and HTTP asset retrieval, not just editable imports. Test parent/tool interoperability without checkout-only `scripts` imports.
-- [ ] Add code/routing/taxonomy/effective-policy hashes and distinguish worker-loaded configuration from edited workspace files. Unsupported provenance is explicit, not filled from guesswork.
-- [ ] Regenerate workspace previews in fresh processes after debounced edits; validate then publish atomically. Keep last valid preview with an error label after an invalid edit.
-- [ ] Do not hot-reload an active production worker or mutate its configuration caches.
+**Depends:** D0.1/D0.3; **owns:** nested package-data, asset modes and source/policy hashes.
 
-**Acceptance:** installed artifact smoke, stable/hash-changing fixtures, invalid-save recovery and mixed preview/worker revision fixtures. D0 is complete only when D0.1–D0.4 are verified.
+- [x] Include built static assets through explicit nested package-data rules; source and missing-assets modes remain usable.
+- [x] Verify isolated installed wheels and HTTP asset retrieval, not just editable imports. Test parent/tool interoperability without checkout-only `scripts` imports.
+- [x] Add code/routing/taxonomy/effective-policy hashes and distinguish workspace-file provenance from an offline artifact. Unsupported provenance is explicit (`config_source: unavailable`), not filled from guesswork.
+- [x] Keep the graph hash and source hashes separate: a hash detects a moved seam, it does not prove routing semantics.
+
+**Acceptance:** installed artifact smoke, stable/hash-changing fixtures and asset-mode coverage. Evidence is recorded in the layer's PR body; the committed `.keep`-style static README keeps the wheel's `static/` directory present until D1.1 adds generated assets.
+
+**Evidence (this layered PR):** `test_provenance.py` (8) covers deterministic group digests, rename/content sensitivity, missing inputs, canonical effective-policy hashing, workspace `config_source: workspace-files`, artifact `config_source: artifact` and the declared seam list; `test_assets.py` (3) covers built-index serving with SPA fallback, traversal fallback and the packaged `static/README.md`. An isolated wheel was built, inspected (`mailroom_diagnostics/static/README.md` present), installed into a fresh venv with the parent editable install, and smoke-tested: `/health` 200, `/v1/diagnostics/capabilities` 200, `/diagnostics` build-instructions page, artifact inspect 200, workspace inspect reporting `workspace-files` with `contract/effective_policy/implementation/routing/taxonomy/topology` hashes.
+
+### D0.4b — Workspace preview refresh
+
+**Depends:** D0.4a; **owns:** fresh-process regeneration and atomic preview publication.
+
+- [x] Regenerate workspace previews in fresh processes after debounced edits; validate then publish atomically. Keep last valid preview with an error label after an invalid edit.
+- [x] Do not hot-reload an active production worker or mutate its configuration caches.
+
+**Evidence (this layered PR):** `test_preview.py` (8) covers atomic publication/error clearing, last-good preservation on failure and invalid output, staleness from source mtime, debounced watch rebuilds, seam-only invalidation, a real fresh-process workspace build and the `preview --json` CLI contract. The preview store writes only under the configured preview directory; `serve` never starts the refresher, so no live worker or config cache is touched.
+
+**Acceptance:** invalid-save recovery and mixed preview/worker revision fixtures. D0 is complete only when D0.1–D0.4b are verified.
 
 ### D1.1 — Accessible React graph and inspector
 
 **Depends:** D0.3/D0.4; **owns:** `frontend/` and synthetic graph fixtures.
 
-- [ ] Implement the React Flow graph, cyclic retry paths, stable layout, search/selection, source inspector and provenance strip from snapshot data.
-- [ ] Provide keyboard-operable connection/path list equivalents, visible focus, reduced motion, touch targets, light/dark contrast and meaningful labels.
-- [ ] Support 360px, tablet and desktop without requiring gestures or page-wide horizontal scrolling. Preserve focus/selection/zoom during ordinary updates.
-- [ ] Demonstrate add/remove-node/edge fixture changes without frontend inventory edits. Use a fixture-only builder or disposable checkout; keep production wiring untouched.
+- [x] Implement the React Flow graph, cyclic retry paths, stable layout, search/selection, source inspector and provenance strip from snapshot data.
+- [x] Provide keyboard-operable connection/path list equivalents, visible focus, reduced motion, touch targets, light/dark contrast and meaningful labels.
+- [x] Support 360px, tablet and desktop without requiring gestures or page-wide horizontal scrolling. Preserve focus/selection/zoom during ordinary updates.
+- [x] Demonstrate add/remove-node/edge fixture changes without frontend inventory edits. Use a fixture-only builder or disposable checkout; keep production wiring untouched.
 
 **Acceptance:** desktop/mobile screenshots, keyboard/screen-reader walkthrough and interaction recording with synthetic data. Build the locked frontend dependency graph. React Flow support alone is not proof of application accessibility.
+
+**Evidence (this layered PR):** locked `npm ci`; `npm run test` 13 passed (layout determinism, self-loops, duplicate pairs, added/removed edges, search, list selection, deep links, token header); `npm run typecheck` and `npm run build` clean. Browser walkthrough on a real `serve` instance: 16 nodes/46 edges, 0 console errors after the favicon fix; skip link focuses `#connections`; keyboard Enter/Space selects nodes and updates the inspector; Refresh preserves viewport transform and selection; reduced-motion emulation reports no edge animation; 360px viewport has no page-wide horizontal overflow and defaults to the card list. Screenshots/recording are linked from the layer PR (synthetic snapshot only).
 
 ### D1.2 — Reproducible current-pipeline gap scenarios
 

@@ -13,6 +13,10 @@ dependencies = [
     #   .venv/bin/pip install -e .
     "pydantic>=2.0",
     "structlog>=24.0",
+    # Optional HTTP app: the CLI and offline artifact reads do not need these
+    # at runtime, but the packaged wheel must declare what the app imports.
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
 ]
 
 [project.scripts]
@@ -24,3 +28,8 @@ package-dir = {"" = "backend"}
 [tool.setuptools.packages.find]
 where = ["backend"]
 include = ["mailroom_diagnostics*"]
+
+[tool.setuptools.package-data]
+# Generated React assets land here in D1.1. The rule is explicit so a built
+# wheel carries them; the source tree remains usable without an index.html.
+mailroom_diagnostics = ["static/*", "static/**/*"]

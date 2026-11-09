@@ -210,12 +210,25 @@ def _link_to_tail(entry, tail) -> None:
 
 
 async def write_audit_entry(entry) -> AuditLogRecord | AuditLegacyRecord:
-    """Commit a per-event entry and return its stored record.
+    """Append ``entry`` to its document's hash chain and return its stored record.
 
-    After migration, events go to ``audit_log_legacy``. Create a minimal
-    catalog document if absent and assign the next per-document sequence.
-    The supplied entry's previous hash, timestamp, and hash may be updated
-    to link it to the current tail. Database errors propagate.
+    After migration, events go to ``audit_log_legacy``. Retries SQLite
+    ``database is locked`` on ``BEGIN IMMEDIATE`` (heavy writer contention)
+    with jittered backoff; each attempt is a fresh transaction that re-reads
+    the chain tail, so a retry can never fork or duplicate the chain.
+    """
+    from storage.db import run_write_with_retry
+
+    return await run_write_with_retry(lambda: _write_audit_entry_once(entry))
+
+
+async def _write_audit_entry_once(entry) -> AuditLogRecord | AuditLegacyRecord:
+    """One self-contained attempt: gate, document lock, choose table, append.
+
+    The PostgreSQL shared migration gate is taken before selecting
+    ``event_log_model()``, so a migration/rollback cannot swap the table
+    between the choice and the write. SQLite's ``BEGIN IMMEDIATE`` document
+    lock must remain the first statement there.
     """
     ensure_schema()
     from schemas.audit import AuditLogEntry
@@ -464,6 +477,7 @@ async def analyze_audit_db(
         "review_recorded",
         "review_requeued",
         "review_completed",
+        "review_resolved",
     ):
         if key in by_event:
             review_events[key] = by_event[key]

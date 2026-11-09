@@ -44,13 +44,27 @@ Reviewed `80aa3fe`; 12 inline comments, no approval or verdict. Dispositions at 
 | --- | --- |
 | `src/scripts/ci_tests.py:83` — parent-module changes skip nested parity | FIXED: `NESTED_PARENT_INPUTS` selects the nested suite for `src/scripts/export_contract.py`; covered by `test_exporter_change_selects_the_nested_parity_suite` and `test_mixed_root_and_nested_changes_keep_both_selections`. |
 | `src/scripts/ci_tests.py:75` — fixture named `test_*.json` passed to pytest | FIXED: only `.py` files under the nested test root are selected directly; covered by `test_nested_fixture_named_like_a_test_is_not_passed_to_pytest`. |
-| `src/tests/test_ci_tests.py:305` — missing mixed/threshold coverage | FIXED by the two tests above plus `test_promotion_to_full_selects_both_roots_and_reports_the_threshold`. |
+| `src/tests/test_ci_tests.py:305` — missing mixed/threshold coverage | FIXED: mixed root+nested coverage is `test_mixed_root_and_nested_changes_keep_both_selections`; exporter selection is `test_exporter_change_selects_the_nested_parity_suite` (asserting both nested tests); threshold promotion is `test_promotion_to_full_selects_both_roots_and_reports_the_threshold`. |
 | `tools/pipeline-diagnostics/backend/mailroom_diagnostics/cli.py:73` — `--js` abbreviation leaks text errors | FIXED: abbreviations disabled on the parser and its subparsers; `test_abbreviated_json_flag_is_rejected_instead_of_leaking_text`. |
 | `tools/pipeline-diagnostics/backend/mailroom_diagnostics/snapshot.py:164` — name-only version lookup | FIXED: `packages_distributions()` unique-provider lookup, ambiguous environments report no version; `test_pipeline_version_requires_an_unambiguous_provider`. |
 | `tools/pipeline-diagnostics/COMPATIBILITY.md:54` — root README/AGENTS say 13 nodes | DEFERRED: pre-existing repo-wide docs drift (the graph registers 14, including `classification_arbiter`); not introduced here and outside this PR's scope. The tool's own docs already state 14/46. Separate docs-truth change. |
 | `tools/pipeline-diagnostics/PLAN.md:199` — bundle delivery assigned to D1 and D4.2 | FIXED: D1 now claims fixtures/findings only; the journey and D1 paragraph point bundle export at D4.2. |
 | `tools/pipeline-diagnostics/QUICKSTART.md:17` — `.venv/bin` on native Windows | FIXED: POSIX/WSL requirement documented with the `.venv\Scripts\` equivalent. |
 | `tools/pipeline-diagnostics/README.md:49` — root `fixtures/` path | FIXED: tree shows `tests/fixtures/`, matching `tests/conftest.py`. |
-| `tools/pipeline-diagnostics/tests/test_isolation.py:37,110,148` — child-process probes do not prove no network/graph/client construction | DEFERRED to the D2.1 test-hardening pass: valid rigor gaps in supplementary probes; the product guarantees are already pinned in-process (`test_workspace_snapshot_builds_no_model_client`) and by exit/stdout purity. A child-process guard belongs with the live-instrumentation work. |
+| `tools/pipeline-diagnostics/tests/test_isolation.py:37,110,148` — child-process probes do not prove no network/graph/client construction | FIXED: a `sitecustomize` child guard records network attempts and graph/pipeline imports, and a probe installs an OpenAI guard before importing the CLI. `test_child_guard_records_network_attempts`, `test_help_does_not_import_graph_or_pipeline`, `test_workspace_probe_imports_graph_without_network` and `test_workspace_probe_never_constructs_a_model_client` pin the three seams. |
 
 No provider thread is marked resolved by this table; the review tool's thread state remains separate from the code dispositions. These dispositions are valid only for the review-fix commit's evidence, which is recorded in PR 208.
+
+
+## Round 3 — CodeRabbit (post-head review)
+
+Reviewed the `065a0c2` head. Six findings; five valid and fixed at the next commit, one pre-existing documentation drift.
+
+| Finding | Disposition |
+| --- | --- |
+| Audit coverage references mixed the exporter and mixed-change tests | FIXED: the round-2 table now names each test for the coverage it actually provides. |
+| `src/scripts/ci_tests.py:83` — a changed nested test can miss dependent test modules | FIXED: any change under the nested test root selects the whole nested suite; `test_nested_test_change_selects_the_nested_suite` pins it. |
+| `src/tests/test_ci_tests.py:301` — exporter test did not prove both nested tests were selected | FIXED: the assertion now requires both nested test files. |
+| `tools/pipeline-diagnostics/QUICKSTART.md:7` — Windows shell syntax for the contract check | FIXED: the quick start names the PowerShell `$env:` assignments and the WSL fallback. |
+| `tools/pipeline-diagnostics/tests/test_cli.py:189` — provider test did not prove which distribution supplies `pipeline` | FIXED: `test_pipeline_version_follows_the_imported_pipelines_provider` covers a non-mailroom provider and a missing provider. |
+| Root README/AGENTS still say 13 nodes instead of 14 | DEFERRED (pre-existing repo-wide docs drift, unchanged by this PR). The diagnostics docs already report 14/46. |

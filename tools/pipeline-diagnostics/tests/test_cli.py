@@ -171,6 +171,21 @@ def test_abbreviated_json_flag_is_rejected_instead_of_leaking_text(run_cli):
     assert "invalid-arguments" in proc.stderr
 
 
+def test_pipeline_version_follows_the_imported_pipelines_provider(monkeypatch):
+    import importlib.metadata as metadata
+
+    monkeypatch.setattr(metadata, "packages_distributions", lambda: {"pipeline": ["other-dist"]})
+    monkeypatch.setattr(
+        metadata,
+        "version",
+        lambda name: {"other-dist": "9.9.9", "mailroom": "0.9.3"}[name],
+    )
+    assert snapshot_module._pipeline_version() == "9.9.9"
+
+    monkeypatch.setattr(metadata, "packages_distributions", lambda: {})
+    assert snapshot_module._pipeline_version() is None
+
+
 def test_pipeline_version_requires_an_unambiguous_provider(monkeypatch):
     import importlib.metadata as metadata
 
@@ -187,3 +202,11 @@ def test_pipeline_version_requires_an_unambiguous_provider(monkeypatch):
         lambda: {"pipeline": ["mailroom", "mailroom"]},
     )
     assert snapshot_module._pipeline_version() == metadata.version("mailroom")
+
+
+def test_non_numeric_serve_port_does_not_break_other_commands(monkeypatch):
+    from mailroom_diagnostics.cli import build_parser
+
+    monkeypatch.setenv("MAILROOM_DIAGNOSTICS_PORT", "not-a-port")
+    args = build_parser().parse_args(["inspect", "--json"])
+    assert args.command == "inspect"
