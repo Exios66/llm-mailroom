@@ -863,3 +863,70 @@ def test_cli_prints_the_handoff_diff_count_next_to_g3(tmp_path, capsys):
     pr.dump_records(recs, path)
     _code, out, _ = _run_cli(["--records", path, "--policy", _policy_file(tmp_path), "--split", "test"], capsys)
     assert "replay fidelity (next to G3): 2 route(s) reused an extraction from a collapsed candidate" in out
+
+
+# ---- CR6: re-deriving the chunk-window merge from per-window evidence ---------------------------
+
+
+def _windowed(confs=(0.9, 0.2), fields=(True, False), recorded=0.2, **kw):
+    return extract(
+        recorded, n_chunks=2, window_confidences=None if confs is None else list(confs),
+        window_has_fields=None if fields is None else list(fields), **kw,
+    )
+
+
+def test_cr6_replay_rederives_confidence():
+    rec = record(sorters=[sorter(0.97)], extractions=[_windowed()])  # recorded under min: 0.2
+    cr6 = pr.replay(rec, POLICY, merge_rule="cr6")
+    assert cr6.outcome == pr.AUTO and cr6.path[-1] == "archive"
+    mn = pr.replay(rec, POLICY, merge_rule="min")
+    assert mn.outcome == pr.UNOBSERVED and mn.reasons == ["extraction_attempt_2_not_observed"]  # min: retry route
+    # the default rule is min, and evaluate() takes the same switch
+    assert pr.replay(rec, POLICY).path == mn.path
+    assert pr.evaluate([rec], POLICY, merge_rule="cr6")["outcomes"]["auto_archived"] == 1
+    assert pr.evaluate([rec], POLICY)["outcomes"]["auto_archived"] == 0
+
+
+def test_cr6_replay_without_window_evidence_is_unobserved():
+    rec = record(sorters=[sorter(0.97)], extractions=[_windowed(confs=None, fields=None, recorded=0.2)])
+    out = pr.replay(rec, POLICY, merge_rule="cr6")
+    assert out.outcome == pr.UNOBSERVED
+    assert out.reasons == ["extraction_attempt_1_window_evidence_not_observed"]
+    assert pr.evaluate([rec], POLICY, merge_rule="cr6")["unobserved_rate"] > 0
+    # a pre-CR6 record still replays under min, and an unchunked attempt is never unobserved
+    assert pr.replay(rec, POLICY, merge_rule="min").reasons == ["extraction_attempt_2_not_observed"]
+    plain = record(sorters=[sorter(0.97)], extractions=[extract(0.95)])
+    assert pr.replay(plain, POLICY, merge_rule="cr6").outcome == pr.AUTO
+
+
+def test_cr6_replay_keeps_failed_chunk_ceiling_and_guard_clamp():
+    lost = record(sorters=[sorter(0.97)], extractions=[_windowed(confs=(0.95, 0.95), fields=(True, True), recorded=0.79, failed_chunks=1)])
+    lenient = {**POLICY, "low": 0.5, "judge_band_high": 0.6}
+    assert pr.replay(lost, lenient, merge_rule="cr6").outcome == pr.UNOBSERVED  # still capped, retry not observed
+    guarded = record(sorters=[sorter(0.97)], extractions=[_windowed(confs=(0.95, 0.95), fields=(True, True), recorded=0.5, guardrail_issues=["bad"])])
+    assert pr.replay(guarded, POLICY, merge_rule="cr6").outcome != pr.AUTO
+
+
+def test_old_records_without_window_fields_still_load():
+    old = extract(0.9).model_dump(exclude={"window_confidences", "window_has_fields"})
+    att = ExtractionAttempt.model_validate(old)
+    assert att.window_confidences is None and att.window_has_fields is None
+
+
+def test_cli_merge_rule_compares_cr6_with_min_on_the_same_records(tmp_path, capsys):
+    hollow = [record(f"w{i}", sorters=[sorter(0.97)], extractions=[_windowed()]) for i in range(40)]
+    path = tmp_path / "windows.jsonl"
+    pr.dump_records(hollow + _clean(40), path)
+    code, out, _ = _run_cli(
+        ["--records", path, "--merge-rule", "cr6", "--baseline-merge-rule", "min", "--json", tmp_path / "o.json"],
+        capsys,
+    )
+    assert code in (0, 2) and "merge rule: candidate=cr6 baseline=min" in out
+    assert "DELTA U (candidate - baseline) = +" in out and len(_score_lines(out)) == 1
+    import json
+
+    payload = json.loads((tmp_path / "o.json").read_text())
+    assert (payload["candidate"]["merge_rule"], payload["baseline"]["merge_rule"]) == ("cr6", "min")
+    # the default rule is unchanged: no baseline, no merge-rule line change in the SCORE contract
+    code, out, _ = _run_cli(["--records", path], capsys)
+    assert "merge rule: candidate=min" in out and "baseline=" not in out

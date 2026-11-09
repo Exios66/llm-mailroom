@@ -24,7 +24,8 @@ Exit codes: 0 ok | 2 guard failure | 1 bad input.
 Usage::
 
     PYTHONPATH=src python src/scripts/hillclimb_eval.py --records runs.jsonl \\
-        [--policy candidate.yaml] [--baseline-policy base.yaml] [--split test] [--json out.json]
+        [--policy candidate.yaml] [--baseline-policy base.yaml] [--split test] [--json out.json] \\
+        [--merge-rule {min,cr6}] [--baseline-merge-rule {min,cr6}]
 """
 
 from __future__ import annotations
@@ -130,6 +131,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--risk", type=float, default=0.02)
     ap.add_argument("--cost-budget-usd", type=float, default=None)
     ap.add_argument("--oracle", action="store_true")
+    ap.add_argument("--merge-rule", choices=("min", "cr6"), default="min",
+                    help="chunk-window confidence merge for the candidate: min over all windows, or "
+                         "cr6 = min over windows that produced fields (needs window evidence in the records)")
+    ap.add_argument("--baseline-merge-rule", choices=("min", "cr6"), default=None,
+                    help="merge rule for the baseline (default: same as --merge-rule). Given without "
+                         "--baseline-policy, the baseline is the candidate policy under this rule")
     ap.add_argument("--json", dest="json_out", help="write the full result as JSON")
     args = ap.parse_args(argv)
 
@@ -148,8 +155,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError(f"no records with split={args.split!r}")
         policy = pr.load_policy(args.policy)
         baseline = pr.load_policy(args.baseline_policy) if args.baseline_policy else None
-        result = pr.evaluate(selected, policy, params)
-        base_result = pr.evaluate(selected, baseline, params) if baseline is not None else None
+        base_rule = args.baseline_merge_rule or args.merge_rule
+        if baseline is None and base_rule != args.merge_rule:
+            baseline = policy  # same policy, other merge rule: the CR6 comparison
+        result = pr.evaluate(selected, policy, params, merge_rule=args.merge_rule)
+        base_result = pr.evaluate(selected, baseline, params, merge_rule=base_rule) if baseline is not None else None
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -159,6 +169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     modes = sorted({r.run.mode for r in selected})
     if "synthetic" in modes:
         print("NOTE: SYNTHETIC records -- harness validation only, not evidence about any model.")
+    print(f"merge rule: candidate={args.merge_rule}" + (f" baseline={base_rule}" if base_result is not None else ""))
     print(f"records: {len(selected)} (split={args.split}, modes={modes}); accept target 1 - C_h/C_e = {params.accept_target:.3f}")
     print_report("candidate" if base_result is not None else "policy", result)
 

@@ -52,7 +52,7 @@ import json
 import math
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Literal, Mapping, Sequence
 from unittest import mock
 
 import yaml
@@ -277,6 +277,20 @@ class _NullLogger:
 
 _QUIET_DEPTH = 0
 _SCHEMA_VALID: dict[str, bool] = {"value": True}
+_MERGE_RULE: dict[str, str] = {"value": "min"}
+
+
+@contextlib.contextmanager
+def _merge_rule(rule: str) -> Iterator[None]:
+    """Chunk-window merge rule in force for a replay: ``min`` or ``cr6`` (see ``merge_window_confidences``)."""
+    if rule not in ("min", "cr6"):
+        raise ValueError(f"merge_rule must be 'min' or 'cr6', got {rule!r}")
+    previous = _MERGE_RULE["value"]
+    _MERGE_RULE["value"] = rule
+    try:
+        yield
+    finally:
+        _MERGE_RULE["value"] = previous
 
 
 @contextlib.contextmanager
@@ -327,6 +341,11 @@ def _conf(att: SorterAttempt | ExtractionAttempt) -> float | None:
     return att.confidence if att.confidence is not None else att.confidence_raw
 
 
+def _window_evidence_usable(att: ExtractionAttempt) -> bool:
+    confs, fields = att.window_confidences, att.window_has_fields
+    return confs is not None and fields is not None and len(confs) == len(fields) > 0
+
+
 def _extraction_confidence(att: ExtractionAttempt, cls: str | None) -> float | None:
     """The extraction confidence routing sees under the thresholds in force.
 
@@ -337,6 +356,18 @@ def _extraction_confidence(att: ExtractionAttempt, cls: str | None) -> float | N
     partial extraction through that the live graph would retry.
     """
     conf = _conf(att)
+    if _window_evidence_usable(att):
+        # Re-derive the merge from the per-window evidence under the rule in force, so ``min``
+        # and ``cr6`` are compared on the same records whichever rule the sweep ran under.
+        from langchain_agents.specialist_agents import merge_window_confidences
+
+        derived = merge_window_confidences(att.window_confidences, att.window_has_fields, _MERGE_RULE["value"])
+        if derived is not None:
+            conf = derived
+            if att.guardrail_issues:  # the extraction guard clamps after the merge (guards.py)
+                from pipeline.guards import _GUARD_CONFIDENCE_CEILING
+
+                conf = min(conf, _GUARD_CONFIDENCE_CEILING)
     if att.failed_chunks <= 0:
         return conf
     from langchain_agents.specialist_agents import failed_chunk_ceiling
@@ -522,17 +553,25 @@ class _Walk:
         return self.done(UNOBSERVED, reason)
 
 
-def replay(record: RunRecord, policy: Mapping[str, Any] | None = None, *, oracle: bool = False) -> ReplayOutcome:
+def replay(
+    record: RunRecord,
+    policy: Mapping[str, Any] | None = None,
+    *,
+    oracle: bool = False,
+    merge_rule: Literal["min", "cr6"] = "min",
+) -> ReplayOutcome:
     """Replay ``policy`` over one record through the real routing functions.
 
     ``policy=None`` replays under whatever ``pipeline.config`` currently serves
     (the taxonomy, or an enclosing :func:`policy_override`). A policy is
-    applied for the duration of the call.
+    applied for the duration of the call. ``merge_rule`` re-derives a chunked extraction's
+    confidence from its per-window evidence; a chunked attempt recorded without that evidence
+    is ``unobserved`` under any rule but ``min``.
     """
     if policy is not None:
         with policy_override(policy):
-            return replay(record, None, oracle=oracle)
-    with _replay_env():
+            return replay(record, None, oracle=oracle, merge_rule=merge_rule)
+    with _replay_env(), _merge_rule(merge_rule):
         return _replay(record, oracle)
 
 
@@ -636,6 +675,8 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
         w.visit("extract" if k == 1 else "retry_extract", att.cost_usd, calls=max(1, att.n_chunks))
         if att.transient_error:
             return w.unobserved(f"extraction_attempt_{k}_transient_error")
+        if _MERGE_RULE["value"] != "min" and att.n_chunks > 1 and not _window_evidence_usable(att):
+            return w.unobserved(f"extraction_attempt_{k}_window_evidence_not_observed")
         w.score = att.extraction_score
         w.attempt = k
         w.schema_unknown = att.schema_valid is None
@@ -825,8 +866,12 @@ def evaluate(
     records: Sequence[RunRecord],
     policy: Mapping[str, Any] | None = None,
     objective_params: ObjectiveParams | Mapping[str, Any] | None = None,
+    *,
+    merge_rule: Literal["min", "cr6"] = "min",
 ) -> dict[str, Any]:
     """Replay ``policy`` over ``records`` and score it: metrics, guards, SCORE.
+
+    ``merge_rule`` is the chunk-window confidence rule (see :func:`replay`).
 
     ``policy=None`` uses the current taxonomy. ``result["score"]`` is U;
     ``result["status"]`` is ``ok`` or ``guard_fail``; ``result["guards"]`` lists
@@ -863,7 +908,7 @@ def evaluate(
 
     with policy_override(policy):
         used_policy = current_policy()
-        with _replay_env():
+        with _replay_env(), _merge_rule(merge_rule):
             for rec in records:
                 out = _replay(rec, p.oracle)
                 counts[out.outcome] += 1
@@ -982,6 +1027,7 @@ def evaluate(
         "params": asdict(p),
         "policy": used_policy,
         "oracle": p.oracle,
+        "merge_rule": merge_rule,
         "outcomes": counts,
         "stp_rate": n_auto / n,
         "review_rate": counts[HUMAN] / n,
