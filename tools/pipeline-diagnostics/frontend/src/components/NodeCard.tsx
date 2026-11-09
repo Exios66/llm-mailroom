@@ -9,6 +9,8 @@ export function PipelineNodeCard({ data, selected }: NodeProps) {
     node.boundary ? `is-${node.boundary}` : "",
     !node.boundary && node.observationType === "agent" ? "is-agent" : "",
     node.dimmed ? "is-dimmed" : "",
+    node.runOrder ? "is-run-visited" : "",
+    node.runCurrent ? "is-run-current" : "",
     selected ? "is-selected" : "",
   ]
     .filter(Boolean)
@@ -17,6 +19,11 @@ export function PipelineNodeCard({ data, selected }: NodeProps) {
   return (
     <div className={classes} title={`${node.label} — ${node.span}`}>
       <Handle type="target" position={Position.Left} isConnectable={false} />
+      {node.runOrder ? (
+        <span className="node-card__run" aria-label={`Run step ${node.runOrder}`}>
+          {node.runOrder}
+        </span>
+      ) : null}
       <span className="node-card__type">{node.observationType}</span>
       <strong className="node-card__label">{node.label}</strong>
       <span className="node-card__span">{node.span}</span>

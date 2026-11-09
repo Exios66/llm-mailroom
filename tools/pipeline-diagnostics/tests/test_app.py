@@ -35,7 +35,10 @@ def test_capabilities_are_honest_and_read_only(client):
     features = body["features"]
     assert features["graph"] is True
     assert features["structural_checks"] is True
-    for unavailable in ("runs", "live_events", "replay", "calibration", "bundles"):
+    assert features["runs"] is True
+    assert features["experiments"] is True
+    assert features["replay"] == "cli"
+    for unavailable in ("live_events", "calibration", "bundles"):
         assert features[unavailable] is False
     assert body["mount"] == "/diagnostics"
 
