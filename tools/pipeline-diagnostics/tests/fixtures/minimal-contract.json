@@ -1,0 +1,49 @@
+{
+  "contract_version": "1.0.0",
+  "pipeline_version": "0.0.1-test",
+  "graph": {
+    "start": "__start__",
+    "end": "__end__",
+    "nodes": [
+      {
+        "id": "intake",
+        "span": "intake-document",
+        "observation_type": "span"
+      },
+      {
+        "id": "archive",
+        "span": "archive-document",
+        "observation_type": "span"
+      }
+    ],
+    "edges": [
+      {
+        "source": "__start__",
+        "target": "intake",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "intake",
+        "target": "archive",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "archive",
+        "target": "__end__",
+        "conditional": false,
+        "label": null
+      }
+    ]
+  },
+  "confidence": {
+    "high": 0.9,
+    "low": 0.8,
+    "by_class": {
+      "contract": {
+        "high": 0.99
+      }
+    }
+  }
+}
