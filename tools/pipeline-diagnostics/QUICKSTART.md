@@ -2,7 +2,7 @@
 
 ## What is available now
 
-The D0a native CLI supports workspace-preview and offline-contract inspection plus structural checks. The React workbench and diagnostic HTTP app remain planned; `/diagnostics` and `serve` are not available yet. Use [HANDOFF.md](HANDOFF.md) to find the next implementation task and [EVIDENCE.md](EVIDENCE.md) to judge its proof.
+The native CLI supports workspace-preview and offline-contract inspection plus structural checks. D0.3 adds the read-only standalone HTTP app (`serve`), the `/v1/diagnostics` routes and an opt-in mount on the producer API. The React screen (D1.1) is still planned: until it is built, `/diagnostics` serves a short build-instructions page while the JSON API works. Use [HANDOFF.md](HANDOFF.md) to find the next implementation task and [EVIDENCE.md](EVIDENCE.md) to judge its proof.
 
 Run commands from the **repository root**, not from this tools folder. Use Python 3.11+; Python 3.12 is the environment verified for this setup. The commands assume a POSIX shell (macOS, Linux, or WSL); on native Windows use the `.venv\Scripts\` executables instead of `.venv/bin/`. Inline `VAR=value` assignments below are also POSIX: on PowerShell set `$env:PYTHONPATH='src'; $env:OBSERVABILITY_PROVIDER='none'` first, or run the step in WSL. Do not use `uv sync` or `uv pip install -e .`: the root uv source entry points at a separate workspace.
 
@@ -34,7 +34,22 @@ Default inspection compiles the installed parent pipeline's graph in a fresh CLI
 
 `check` covers endpoint consistency and reachability from the declared entry only. Exit 0 means these checks found no structural findings; exit 1 means a structural finding with a witness; exit 2 means invalid input or a runtime failure. Exit 3 is reserved for future incomplete-evidence operations. An empty findings list is not proof of complete routing, correct guards or model quality.
 
-### 3. Compare the canonical display contract
+### 3. Serve the read-only app (optional)
+
+```bash
+.venv/bin/mailroom-diagnostics serve
+# http://127.0.0.1:8100/diagnostics      build-instructions page until D1.1
+# http://127.0.0.1:8100/v1/diagnostics/capabilities
+# http://127.0.0.1:8100/v1/diagnostics/snapshot
+# http://127.0.0.1:8100/v1/diagnostics/findings
+# http://127.0.0.1:8100/health
+```
+
+`serve` constructs a diagnostics-only FastAPI app. It never imports `api.main`, never starts the watcher, Gmail intake, status mail, relations scans or a tracing backend, and processes no documents. Defaults are loopback `127.0.0.1:8100` (`MAILROOM_DIAGNOSTICS_HOST` / `MAILROOM_DIAGNOSTICS_PORT`); an off-loopback bind requires `MAILROOM_API_TOKEN` or `MAILROOM_API_TOKENS`, the same rule as the producer. Routes reuse the producer bearer/loopback check.
+
+To mount the same read-only routes on the normal producer API, set `MAILROOM_DIAGNOSTICS_MOUNT=1` before starting it. The mount is off by default; a missing nested package logs a warning and never fails API startup.
+
+### 4. Compare the canonical display contract
 
 ```bash
 PYTHONPATH=src OBSERVABILITY_PROVIDER=none .venv/bin/python src/scripts/export_contract.py --check
@@ -44,7 +59,7 @@ This checks the canonical export against `contract/mailroom-contract.json` witho
 
 This is topology inspection. It does not prove routing correctness, show every guard condition, or establish whether a rarely used edge is needed.
 
-### 4. Exercise native and existing routing fixtures
+### 5. Exercise native and existing routing fixtures
 
 ```bash
 .venv/bin/python -m pytest src/tests/test_routing.py src/tests/test_graph_contracts.py -q
@@ -54,21 +69,19 @@ This is topology inspection. It does not prove routing correctness, show every g
 
 Tests use mocked model clients. They do not require a paid model run. The first command exercises existing current-main scenarios, the second checks the native package/exporter/CI planner, and the third checks documentation. A passing finite fixture set is not proof that every possible route is correct. Results are reported separately with their actual exit codes.
 
-### 5. Resume the implementation sequence
+### 6. Resume the implementation sequence
 
 Read [PLAN.md](PLAN.md) for D0–D4 and follow the task IDs in [HANDOFF.md](HANDOFF.md). D0a starts inspection/checks; D0.3/D0.4 complete app/provenance/packaging work before D1's graph. D2 captures exact execution, D3 adds compatible calibration adapters, and D4 covers per-window comparison and delivery hardening.
 
-## Planned launch flow — not runnable yet
+## Launch flow
 
-During D0, implement and verify these interfaces, then replace this section with tested commands:
+1. Install the nested Python package from this folder into the repository venv (step 1).
+2. For the React screen, build `frontend/` with its committed lockfile, or use packaged assets (D1.1/D0.4). Node stays optional for end users.
+3. Run the standalone `serve` operation (step 3): inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
+4. Open `/diagnostics`; the screen identifies the source as a workspace preview and lists unavailable capabilities explicitly.
+5. For an already-running pipeline, set `MAILROOM_DIAGNOSTICS_MOUNT=1` and mount the same read-only router on this repository's API.
 
-1. Install the nested Python package from this folder into the repository venv.
-2. Build its `frontend/` with its committed lockfile, or use packaged assets. Keep Node optional for end users.
-3. Run its standalone `serve` operation: default inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
-4. Open `/diagnostics`; the capabilities panel identifies current-main, record/replay support and evidence completeness.
-5. For an already-running pipeline, mount the same tool router on this repository's API and explicitly enable diagnostic capture.
-
-The exact console entrypoint, flags, default diagnostic port and supported Node/package versions must be documented after D0 verifies them. Do not substitute the normal `python -m api.main` for inspection-only launch: its current import path includes warmups, and its normal lifespan can start the watcher.
+Do not substitute the normal `python -m api.main` for inspection-only launch: its import path includes warmups, and its normal lifespan can start the watcher.
 
 ## Troubleshooting
 
@@ -77,7 +90,7 @@ The exact console entrypoint, flags, default diagnostic port and supported Node/
 | `No module named langchain_core` | Use `.venv/bin/python` and run the editable dependency install above |
 | `fixture 'mocker' not found` | Install the parent `[dev]` extra, which includes `pytest-mock` |
 | Contract check reports stale output | Inspect the graph/config change and use the repository's normal generated-contract workflow; do not suppress the check |
-| `/diagnostics` is 404 today | Expected until D0.3 and the React delivery tasks implement the screen/mount; use the native CLI now |
+| `/diagnostics` shows build instructions | Expected until the React assets land in D1.1; the JSON API and CLI are usable now |
 | A future replay capability is unavailable | Read the capability reason and [compatibility matrix](COMPATIBILITY.md); do not assume a branch contains PR 203's schemas |
 | Existing mock pilot lacks sample assets | Disclose that limitation; do not treat a skipped pilot as evidence of correctness |
 
