@@ -14,10 +14,33 @@ confidence and the gold labels *outside* the routing state.
 
 A *full-information* record observes the sorter, reviewer, extraction and judge
 branches (sorter attempt 1 and the retry, the reviewer, every extraction attempt
-and the judge), so replay of those branches under any thresholds is exact, not
-counterfactual. The classification arbiter, the Lane B arbiter and the boss are
+and the judge on extraction attempt 1, or on every attempt when swept with
+``--judge-attempts all``), so replay of those branches under any thresholds is
+exact, not counterfactual. A route that sends a later, unjudged attempt to the
+judge is replayed as ``unobserved``, and so is a route that reaches extraction
+with a subclass the sweep did not extract (``extraction_candidates_collapsed``). The classification arbiter, the Lane B arbiter and the boss are
 never run by the sweep, so a route that needs one of them stays unobserved even
-on a full-information record. ``observed`` says which branches were run; replay
+on a full-information record.
+
+Collapsed extraction candidates. The sweep extracts once per distinct candidate CLASS (sorter
+attempt 1, the reviewer, the sorter retry). A later candidate of an already-extracted class is
+listed in ``diagnostics.extraction_candidates_collapsed`` and its extraction is not run; each
+entry carries ``subclass_differs``. The two kinds of difference are treated differently on
+purpose. A different SUBCLASS changes the hint the specialist sees, so the record is not
+``observed.full_information`` and a replayed route that arrives with that subclass is
+``unobserved`` (``extraction_subclass_not_observed``). A difference ONLY in the handoff
+confidence (printed to 2 decimals in the prompt) does not demote ``full_information``: it is
+treated as below the model's own run-to-run noise, and the route reuses the extraction. That
+is an approximation, so it is measured: ``policy_replay.evaluate`` reports
+``replayed_with_confidence_only_handoff_diff``, the number of routes that reused such an
+extraction, and ``hillclimb_eval.py`` prints it next to the G3 (unobserved) numbers.
+
+Schema evidence. ``ExtractionAttempt.schema_valid`` is None only when there is no extracted
+data to validate (a transient error, or no payload); the sweep records a bool whenever there
+is an extraction (a validator crash is recorded as False and listed in
+``diagnostics.schema_validation_errors``). Routing blocks only on an explicit False, and replay
+mirrors that, so a None passes the gate. ``evaluate`` reports ``auto_archived_schema_unknown``,
+the auto-archives whose accepted attempt had no schema verdict. ``observed`` says which branches were run; replay
 counts a route that needs an unobserved branch as ``unobserved`` instead of
 guessing its outcome.
 

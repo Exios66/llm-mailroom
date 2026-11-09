@@ -259,6 +259,13 @@ class ReplayOutcome:
     reasons: list[str] = field(default_factory=list)
     extraction_attempt: int | None = None  # the attempt that produced the archived/final payload
     doc_id: str = ""
+    # The accepted/final extraction attempt has no recorded schema verdict (``schema_valid`` None).
+    # Routing blocks only on an explicit False, so such an attempt passes the schema gate on
+    # missing evidence; ``evaluate`` counts the auto-archived ones.
+    schema_unknown: bool = False
+    # The extraction was reused from a collapsed candidate whose handoff confidence differed from
+    # the extracted one (same class and subclass; see ``extraction_candidates_collapsed``).
+    handoff_confidence_diff: bool = False
 
 
 class _NullLogger:
@@ -300,6 +307,13 @@ def _replay_env() -> Iterator[None]:
             yield
     finally:
         _QUIET_DEPTH = 0
+
+
+def _handoff_text(confidence: Any) -> str | None:
+    """A handoff confidence as the sweep prints it into ``extraction_candidates_collapsed`` (2 decimals)."""
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not math.isfinite(confidence):
+        return None
+    return f"{float(confidence):.2f}"
 
 
 def _att(items: Sequence[Any], n: int) -> Any | None:
@@ -408,12 +422,19 @@ def _apply_reviewer(state: dict[str, Any], rev: ReviewerObservation) -> str | No
         state["review_route"] = rev.review_route
         if rev.review_route == "extract" and rev.reviewer_doc_type is not None:
             state["doc_type"] = rev.reviewer_doc_type
+            state["doc_subclass"] = rev.reviewer_doc_subclass
             state["classification_confidence"] = rev.reviewer_confidence
     else:
         verdict = llm_review_verdict(state.get("doc_type"), rev.reviewer_doc_type, rev.reviewer_confidence)
         state["review_verdict"] = verdict
         if verdict in ("reviewer_agrees_high", "reviewer_overrides"):
+            # Mirror review_classify_node: a winning verdict re-labels the subclass too (None
+            # when the reviewer named none, the same way live clears it). Leaving the sorter's
+            # subclass in place would let the collapsed-candidate guard compare against an
+            # extraction hint the route never had, and an override to another class would
+            # inherit the previous class's subclass.
             state["doc_type"] = rev.reviewer_doc_type
+            state["doc_subclass"] = rev.reviewer_doc_subclass
             state["classification_confidence"] = rev.reviewer_confidence
     return None
 
@@ -468,6 +489,8 @@ class _Walk:
         self.final_class: str | None = None
         self.score: float | None = None
         self.attempt: int | None = None
+        self.schema_unknown = False
+        self.handoff_confidence_diff = False
 
     def visit(self, node: str, cost: float, calls: int = 1) -> None:
         self.path.append(node)
@@ -491,6 +514,8 @@ class _Walk:
             reasons=self.reasons,
             extraction_attempt=self.attempt,
             doc_id=self.record.doc_id,
+            schema_unknown=self.schema_unknown,
+            handoff_confidence_diff=self.handoff_confidence_diff,
         )
 
     def unobserved(self, reason: str) -> ReplayOutcome:
@@ -577,6 +602,29 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
     # ---- extract / judge / arbiter / report -------------------------------
     cls = state.get("doc_type")
     w.final_class = cls
+    # The sweep extracts each class once, on its first candidate. When a later candidate
+    # of the same class had another subclass, its extraction was not run: a route that
+    # arrives with that subclass cannot reuse the first candidate's extraction.
+    for c in record.diagnostics.get("extraction_candidates_collapsed") or []:
+        if (
+            isinstance(c, dict)
+            and c.get("doc_type") == cls
+            and c.get("subclass_differs")
+            and state.get("doc_subclass") != c.get("extracted_doc_subclass")
+        ):
+            return w.unobserved("extraction_subclass_not_observed")
+    # A confidence-only difference (the handoff prints it to 2 decimals) does not make the route
+    # unobserved: the extraction is reused. It is counted so the effect is measurable.
+    handoff = _handoff_text(state.get("classification_confidence"))
+    for c in record.diagnostics.get("extraction_candidates_collapsed") or []:
+        if (
+            isinstance(c, dict)
+            and c.get("doc_type") == cls
+            and not c.get("subclass_differs")
+            and c.get("handoff_confidence") == handoff
+            and c.get("handoff_confidence") != c.get("extracted_handoff_confidence")
+        ):
+            w.handoff_confidence_diff = True
     k = 1
     judge_passes = 0
     arbiter_retries = 0
@@ -590,13 +638,21 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
             return w.unobserved(f"extraction_attempt_{k}_transient_error")
         w.score = att.extraction_score
         w.attempt = k
+        w.schema_unknown = att.schema_valid is None
         _SCHEMA_VALID["value"] = att.schema_valid is not False
+        # The live specialists stamp lost windows INTO the payload (``_failed_chunks``), and
+        # ``_chunks_lost`` refuses to let a judge verdict clear hard evidence of missing data.
+        # Without the key here a recorded complete+source-verified judge pass would archive a
+        # partial extraction the live graph retried.
         ex_state: dict[str, Any] = {
             "doc_id": record.doc_id,
             "doc_type": cls,
             "extraction_confidence": _extraction_confidence(att, cls),
             "extraction_attempts": k,
-            "extracted_data": {} if att.hollow else {"replay_field": "x"},
+            "extracted_data": {} if att.hollow else {
+                "replay_field": "x",
+                **({"_failed_chunks": att.failed_chunks} if att.failed_chunks else {}),
+            },
             "extraction_guardrail": list(att.guardrail_issues),
             "conflict_detected": bool(att.conflict_detected),
             "transient_error": False,
@@ -694,29 +750,53 @@ def sorter_pairs(records: Iterable[RunRecord]) -> dict[str, list[tuple[float, bo
     return out
 
 
-def extraction_pairs(
+def extraction_evidence(
     records: Iterable[RunRecord], field_floor: float = 0.80
-) -> dict[str, list[tuple[float, bool]]]:
-    """Per class: ``(final-attempt extraction confidence, extraction_score >= floor)``.
+) -> tuple[dict[str, list[tuple[float, bool]]], dict[str, list[int]]]:
+    """Per class: pooled ``(confidence, extraction_score >= floor)`` pairs, and each pair's document.
 
-    Only records whose sorter attempt 1 named the gold class are used, so the
-    pairs isolate extraction calibration from classification errors.
+    Returns ``(pairs, docs)``; ``docs[cls][i]`` is the position in ``records`` of the document
+    that produced ``pairs[cls][i]``, so a caller can count documents separately from attempts.
+    See :func:`extraction_pairs` for exactly what is pooled.
     """
-    out: dict[str, list[tuple[float, bool]]] = {}
-    for rec in records:
+    pairs: dict[str, list[tuple[float, bool]]] = {}
+    docs: dict[str, list[int]] = {}
+    for index, rec in enumerate(records):
         a1 = _att(rec.sorter, 1)
         gold = rec.gold.expected_doc_type
         if a1 is None or gold is None or a1.doc_type != gold:
             continue
-        final = max(
-            (a for a in _for_class(rec.extraction, gold) if a.extraction_score is not None and _conf(a) is not None),
-            key=lambda a: a.attempt,
-            default=None,
-        )
-        if final is None:
-            continue
-        out.setdefault(gold, []).append((float(_conf(final)), final.extraction_score >= field_floor))
-    return out
+        for att in _for_class(rec.extraction, gold):
+            conf = _conf(att)
+            if att.extraction_score is None or conf is None:
+                continue
+            pairs.setdefault(gold, []).append((float(conf), att.extraction_score >= field_floor))
+            docs.setdefault(gold, []).append(index)
+    return pairs, docs
+
+
+def extraction_pairs(
+    records: Iterable[RunRecord], field_floor: float = 0.80
+) -> dict[str, list[tuple[float, bool]]]:
+    """Per class: ``(extraction confidence, extraction_score >= floor)``, EVERY scored attempt pooled.
+
+    What is pooled: for each record whose sorter attempt 1 named the gold class (so the pairs
+    isolate extraction calibration from classification errors), every extraction attempt of
+    the gold class that has both a confidence and an offline score. A document with three
+    scored attempts contributes three pairs; an attempt of another class never counts.
+
+    Why every attempt and not the document's final one: routing auto-archives ANY attempt
+    whose confidence clears the cutoff, including attempt 1 before a retry would have run
+    (``after_extraction``: a confident attempt 1 goes straight to the report). The final
+    attempt is usually the best one, so scoring only it would credit a confidently wrong
+    attempt 1 to the retry's accuracy and overstate the accuracy at a cutoff. A retry is only
+    reached when the earlier attempts fell below the cutoff, so pooling all attempts also
+    over-weights low-confidence evidence, which is the conservative direction for a cutoff.
+
+    Counts over these pairs are ATTEMPTS, not documents, and attempts of one document are not
+    independent samples (:func:`extraction_evidence` keeps the document index for the count).
+    """
+    return extraction_evidence(records, field_floor)[0]
 
 
 def _cp_upper(errors: int, n: int, confidence: float) -> float | None:
@@ -756,6 +836,12 @@ def evaluate(
     runs) is keyed ``"<doc_id>#2"``, ``"#3"``... in input order, so evaluating the
     same records under two policies still pairs row for row.
     ``llm_calls_per_doc`` is a lower bound (see ``llm_calls_basis``).
+
+    Two counters say how much of a result rests on weaker evidence than a real observation:
+    ``auto_archived_schema_unknown`` (auto-archives whose accepted extraction attempt has
+    ``schema_valid`` None: routing, and so replay, blocks only on an explicit False) and
+    ``replayed_with_confidence_only_handoff_diff`` (routes that reused an extraction run for a
+    collapsed candidate whose handoff confidence differed; see ``schemas/run_record.py``).
     """
     p = ObjectiveParams.from_mapping(objective_params)
     if not (isinstance(p.review_cost_usd, (int, float)) and math.isfinite(p.review_cost_usd) and p.review_cost_usd > 0):
@@ -771,6 +857,8 @@ def evaluate(
     total_usd = 0.0
     total_calls = 0
     unobserved_reasons: dict[str, int] = {}
+    schema_unknown_auto = 0
+    handoff_diff = 0
     seen_ids: dict[str, int] = {}
 
     with policy_override(policy):
@@ -788,7 +876,9 @@ def evaluate(
                 )
                 row["n"] += 1
                 row[out.outcome] += 1
+                handoff_diff += out.handoff_confidence_diff
                 if out.outcome == AUTO:
+                    schema_unknown_auto += out.schema_unknown
                     grade = grade_auto(rec, out, p)
                     grades[grade] += 1
                     row[grade] += 1
@@ -801,8 +891,17 @@ def evaluate(
                 doc_cost += out.llm_cost_usd / p.review_cost_usd * p.c_human
                 # Concatenated runs repeat doc_ids: keep one cost per scored row (the 2nd
                 # occurrence is "<id>#2", ...) so it neither overwrites nor drops out of a pairing.
+                # A real doc_id may itself end in "#<n>" and occupy a generated key, so a key that
+                # is taken walks further up until it is free: the first occurrence keeps the bare
+                # id, and a later occurrence shifts (a record literally named "d#2" keeps "d#2";
+                # a second "d" then lands on "d#3", not on the "d#2" row's cost).
                 seen_ids[rec.doc_id] = seen_ids.get(rec.doc_id, 0) + 1
-                key = rec.doc_id if seen_ids[rec.doc_id] == 1 else f"{rec.doc_id}#{seen_ids[rec.doc_id]}"
+                occurrence = seen_ids[rec.doc_id]
+                key = rec.doc_id if occurrence == 1 else f"{rec.doc_id}#{occurrence}"
+                while key in per_doc_cost:
+                    occurrence += 1
+                    seen_ids[rec.doc_id] = occurrence
+                    key = f"{rec.doc_id}#{occurrence}"
                 per_doc_cost[key] = doc_cost
                 total_cost += doc_cost
 
@@ -888,6 +987,14 @@ def evaluate(
         "review_rate": counts[HUMAN] / n,
         "unobserved_rate": unobs_share,
         "unobserved_reasons": unobserved_reasons,
+        # Auto-archives whose accepted extraction attempt has no recorded schema verdict
+        # (``schema_valid`` None). Routing blocks only on an explicit False, so each of these
+        # passed the schema gate on missing evidence.
+        "auto_archived_schema_unknown": schema_unknown_auto,
+        # Routes that reused the extraction of a collapsed candidate whose handoff confidence
+        # differed (same class and subclass), which the sweep does not count against
+        # ``observed.full_information``. Reported next to G3 so the approximation is measurable.
+        "replayed_with_confidence_only_handoff_diff": handoff_diff,
         "auto": {
             "n": n_auto,
             "correct": grades["correct"],

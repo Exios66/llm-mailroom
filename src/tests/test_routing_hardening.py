@@ -356,6 +356,10 @@ def test_f3_graph_edge_maps_still_valid():
         ("governing_law", "Commonwealth of Virginia", "Virginia"),
         ("effective_date", "2024-01-05", "January 5, 2024"),
         ("effective_date", "2024-01-05", "5th January 2024"),
+        # An ISO datetime tail is absorbed, like the date line it annotates.
+        ("effective_date", "2024-01-05T00:00:00Z", "2024-01-05"),
+        ("effective_date", "2024-01-05 00:00:00", "2024-01-05"),
+        ("effective_date", "2024-01-05T00:00:00.000+00:00", "2024-01-05"),
         ("agreement_date", "01/15/2024", "2024-01-15"),
         ("parties", ["Acme Corp", "Beta LLC"], ["acme corp.", "BETA LLC", "Gamma Inc"]),
     ],
@@ -375,6 +379,11 @@ def test_f4_equivalent_values_are_not_conflicts(field, a, b):
         ("governing_law", "Virginia", "West Virginia"),
         ("effective_date", "2024-01-05", "2024-01-06"),
         ("effective_date", "2024-01-05", "January 6, 2024"),
+        # Free text after a date makes it a different term: not a date, the
+        # suffix must not be discarded, so the mismatch escalates (no date-only
+        # key can mask contradictory renewal terms).
+        ("renewal_terms", "2024-01-05 unless extended", "2024-01-05 or earlier on notice"),
+        ("effective_date", "2024-01-05 (the Effective Date)", "2024-01-05"),
         ("agreement_date", "01/02/2024", "2024-02-01"),
         ("parties", ["Acme Corp"], ["Beta LLC"]),
         ("document_name", "Master Services Agreement", "Lease Agreement"),
@@ -476,6 +485,94 @@ def test_conflict_on_judge_tail_never_archives_unadjudicated():
     clean = {**base, "conflict_detected": False}
     assert after_judge({**clean, "judge_verdict": "complete"}) == "compile_report"
     assert after_arbiter({**clean, "arbiter_decision": "accept_with_caveats"}) == "compile_report"
+
+
+# The Boss's ruling must be tied to the conflict it ruled on: a retry extraction
+# can produce a DIFFERENT conflict while ``review_decision`` still reads "approved".
+_CONFLICT_A = ["field 'governing_law' differs from archived record d1: 'New York' vs 'Delaware'"]
+_CONFLICT_B = ["field 'parties' differs from archived record d2: 'Acme' vs 'Beta LLC'"]
+
+
+def _boss_ruled_on(details, decision="approved"):
+    """Run the real Boss node on ``details`` and return the state it leaves."""
+    from unittest.mock import patch
+
+    from graph import build_graph as bg
+
+    state = {
+        "doc_id": "d0", "matter_id": "M", "doc_type": "contract",
+        "classification_confidence": 0.9, "extraction_confidence": 0.99,
+        "extracted_data": {}, "escalation_reason": "conflict",
+        "conflict_detected": True, "conflict_details": list(details),
+        "judge_source_verified": True, "boss_conflict_fingerprint": None,
+    }
+    with patch.object(bg, "_fetch_matter_context", return_value=[]), patch(
+        "agents.boss.BossAgent.adjudicate", return_value={"decision": decision, "reasoning": "ok"}
+    ):
+        return {**state, **bg.boss_escalation_node(state)}
+
+
+def test_boss_ruling_on_conflict_a_does_not_cover_later_conflict_b():
+    from graph.routing import after_arbiter, after_judge
+
+    ruled = _boss_ruled_on(_CONFLICT_A)
+    assert ruled["review_decision"] == "approved"
+    # Same conflict A: still adjudicated, the judge/arbiter tail proceeds.
+    assert after_judge({**ruled, "judge_verdict": "complete"}) == "compile_report"
+    assert after_arbiter({**ruled, "arbiter_decision": "accept_with_caveats"}) == "compile_report"
+    # A retry extraction then yields a NEW conflict B: it must not ride A's ruling.
+    later = {**ruled, "conflict_details": list(_CONFLICT_B)}
+    assert after_judge({**later, "judge_verdict": "complete"}) == "human_review"
+    assert after_arbiter({**later, "arbiter_decision": "accept_with_caveats"}) == "human_review"
+
+
+def test_boss_ruling_is_order_and_whitespace_insensitive():
+    from graph.routing import after_judge
+
+    two = [*_CONFLICT_A, *_CONFLICT_B]
+    ruled = _boss_ruled_on(two)
+    same = {**ruled, "conflict_details": [f"  {_CONFLICT_B[0].upper()} ", *_CONFLICT_A]}
+    assert after_judge({**same, "judge_verdict": "complete"}) == "compile_report"
+
+
+def test_human_reextract_approval_does_not_adjudicate_a_new_conflict():
+    from graph.routing import after_judge
+
+    # review_decision "approved" from a human re-extract, fingerprint reset to None.
+    state = {"doc_type": "contract", "conflict_detected": True, "conflict_details": list(_CONFLICT_B),
+             "review_decision": "approved", "boss_conflict_fingerprint": None,
+             "judge_source_verified": True, "extraction_confidence": 0.99, "judge_verdict": "complete"}
+    assert after_judge(state) == "human_review"
+
+
+def test_legacy_state_without_fingerprint_keeps_boss_approval():
+    from graph.routing import after_arbiter, after_judge
+
+    # A checkpoint that predates the field: the key is ABSENT, old rule applies.
+    legacy = {"doc_type": "contract", "conflict_detected": True, "conflict_details": list(_CONFLICT_B),
+              "review_decision": "approved", "judge_source_verified": True, "extraction_confidence": 0.99}
+    assert "boss_conflict_fingerprint" not in legacy
+    assert after_judge({**legacy, "judge_verdict": "complete"}) == "compile_report"
+    assert after_arbiter({**legacy, "arbiter_decision": "accept_with_caveats"}) == "compile_report"
+    # ...and legacy without an approval still parks, exactly as before.
+    parked = {**legacy, "review_decision": None}
+    assert after_judge({**parked, "judge_verdict": "complete"}) == "human_review"
+
+
+def test_boss_review_ruling_never_adjudicates():
+    from graph.routing import after_judge
+
+    ruled = _boss_ruled_on(_CONFLICT_A, decision="review")
+    assert after_judge({**ruled, "judge_verdict": "complete"}) == "human_review"
+
+
+def test_conflict_fingerprint_is_stable_and_discriminating():
+    from graph.routing import conflict_fingerprint
+
+    assert conflict_fingerprint(_CONFLICT_A) == conflict_fingerprint(list(reversed(_CONFLICT_A)))
+    assert conflict_fingerprint(_CONFLICT_A) != conflict_fingerprint(_CONFLICT_B)
+    assert conflict_fingerprint(None) == conflict_fingerprint([])
+    assert len(conflict_fingerprint(_CONFLICT_A)) == 64
 
 
 # ---------------------------------------------------------------------------

@@ -255,12 +255,22 @@ def test_legacy_requests_keep_their_meaning(api, temp_base_dir, llm):
     assert m.human_label["legacy_request"] is True
 
 
-def test_human_review_node_without_file_path_is_not_unbound():
+def test_human_review_node_without_file_path_is_not_unbound(mocker):
     from graph.build_graph import human_review_node
 
-    with pytest.raises(Exception) as exc:  # interrupt() outside a graph run
+    class InterruptReached(Exception):
+        pass
+
+    # A sentinel proves the node got as far as interrupt(); any earlier error
+    # (UnboundLocalError included) would escape as a different exception.
+    interrupt = mocker.patch("graph.build_graph.interrupt", side_effect=InterruptReached)
+    with pytest.raises(InterruptReached):
         human_review_node({"doc_id": "x", "matter_id": "M"})
-    assert not isinstance(exc.value, UnboundLocalError)
+    interrupt.assert_called_once()
+    payload = interrupt.call_args.args[0]
+    assert payload["action"] == "human_review"
+    assert payload["doc_id"] == "x"
+    assert payload["matter_id"] == "M"
 
 
 def test_save_manifest_is_atomic(temp_base_dir, monkeypatch):

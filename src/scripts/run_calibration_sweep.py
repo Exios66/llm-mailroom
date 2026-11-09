@@ -7,7 +7,8 @@ no audit, and pilot runs put ``ground_truth`` into state, which changes routing
 (``pipeline.reconsideration.class_misses_ground_truth`` / ``coverage_below_floor``).
 A confidence threshold cannot be calibrated from such runs. This sweep runs the
 REAL node functions of ``graph/build_graph.py`` in a fixed order, whatever the
-router would have done, so every branch is observed for every document:
+router would have done, so every sorter, reviewer, extraction and judge branch
+is observed for every document (arbiter and boss branches never are; see below):
 
     intake_node
       -> classify_node (sorter attempt 1)
@@ -25,7 +26,8 @@ report / archive nodes are never run, so ``observed.full_information`` covers th
 sorter, reviewer, extraction and judge branches ONLY. A route that needs an arbiter
 ruling or the boss stays unobserved on every record, ``full_information`` or not, and
 policy replay reports it as ``unobserved`` (``diagnostics.unobserved_branches`` names
-them); see ``schemas/run_record.py``.
+them, plus ``judge_on_retry_attempts`` unless ``--judge-attempts all``); see
+``schemas/run_record.py``.
 
 Usage:
     PYTHONPATH=src python src/scripts/run_calibration_sweep.py \\
@@ -40,6 +42,17 @@ Usage:
 
 Fidelity gaps against the live graph are listed in ``KNOWN_GAPS`` and copied into
 every record's ``diagnostics.known_gaps``.
+
+Collapsed extraction candidates: a later candidate of an already-extracted class is not
+extracted again; it is listed in ``diagnostics.extraction_candidates_collapsed`` with
+``subclass_differs``. A different subclass demotes ``observed.full_information`` (the
+specialist would have seen another hint). A difference only in the handoff confidence (printed
+to 2 decimals) does NOT demote it, by design, but is measurable: ``policy_replay.evaluate``
+counts the routes that reused such an extraction as
+``replayed_with_confidence_only_handoff_diff`` and ``hillclimb_eval.py`` prints it beside G3.
+
+``ExtractionAttempt.schema_valid`` is None only when there is no extracted data to validate
+(transient error or no payload); with an extraction it is always a bool.
 """
 
 from __future__ import annotations
@@ -429,6 +442,7 @@ def build_initial_state(file_path: Path, matter_id: str) -> dict:
         "review_decision": None,
         "retry_count": 0,
         "conflict_detected": False,
+        "boss_conflict_fingerprint": None,
         "file_path": str(file_path),
         "doc_text": "",
         "doc_pages": [],
@@ -505,19 +519,29 @@ def _extraction_attempt(doc: Doc, n: int, doc_type: str, step: Step, text: str, 
     for agent in step.cap.agents:  # both specialist implementations keep the counts on the instance
         n_chunks = max(n_chunks, int(getattr(agent, "_last_n_chunks", 1) or 1))
         failed_chunks = max(failed_chunks, int(getattr(agent, "_last_failed_chunks", 0) or 0))
-    schema_valid = None
+    # ``schema_valid`` is None ONLY when there is nothing to validate (a transient error, or no
+    # extracted data): routing does not run the schema gate then either (``after_extraction``
+    # checks ``if extracted:``). Whenever there is an extraction it is a bool. If the validator
+    # itself raises, the extraction could not be shown valid, so it is recorded as invalid (the
+    # conservative reading: replay retries or parks it) and the failure is listed in
+    # ``diagnostics.schema_validation_errors`` instead of silently becoming "unknown".
+    schema_valid: bool | None = None
     if extracted:
         try:
-            schema_valid = validate_extraction(doc_type, extracted).get("schema_valid")
-        except Exception:
-            schema_valid = None
+            checked = validate_extraction(doc_type, extracted).get("schema_valid")
+            schema_valid = checked if isinstance(checked, bool) else False
+        except Exception as exc:
+            schema_valid = False
+            diag.setdefault("schema_validation_errors", []).append(
+                f"{doc_type}#{n}: {type(exc).__name__}: {str(exc)[:160]}"
+            )
     score, halluc = (None, None) if step.transient_error else _score_extraction(doc, doc_type, extracted, text, diag)
     return ExtractionAttempt(
         attempt=n,
         doc_type=doc_type,
         confidence_raw=raw,
         confidence=_num(u.get("extraction_confidence")) if not step.transient_error else None,
-        schema_valid=schema_valid if isinstance(schema_valid, bool) else None,
+        schema_valid=schema_valid,
         hollow=bool(extracted is not None and extraction_is_hollow(extracted)),
         guardrail_issues=[str(i) for i in (u.get("extraction_guardrail") or [])],
         conflict_detected=bool(u.get("conflict_detected")),
@@ -632,7 +656,8 @@ def _pick_candidates(
 
 
 def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
-    """Run every branch for one document and return its record (never raises)."""
+    """Run the sorter, reviewer, extraction and judge branches for one document and return its
+    record (never raises). Arbiter and boss branches are not run."""
     import graph.build_graph as bg
     from pipeline.config import get_agent_config, get_confidence_thresholds, get_review_mode
 
@@ -657,7 +682,8 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         "judge_attempts": ctx.judge_attempts,
         "field_scoring_embedding": ctx.field_scoring_embedding,
         "known_gaps": list(KNOWN_GAPS),
-        "unobserved_branches": list(UNOBSERVED_BRANCHES),
+        "unobserved_branches": list(UNOBSERVED_BRANCHES)
+        + ([] if ctx.judge_attempts == "all" else ["judge_on_retry_attempts"]),
         "max_extraction_candidates": ctx.max_candidates,
         "gold_meta": doc.gold_meta,
         "node_errors": [],
@@ -851,6 +877,22 @@ def _materialise(doc: Doc, ctx: SweepContext) -> Path:
 # --------------------------------------------------------------------------------------
 
 
+def _as_bool(value: Any) -> bool | None:
+    """Corpus boolean cell -> bool. The corpus stores ``review_expected`` as the
+    strings ``"true"`` / ``"false"``, and ``bool("false")`` is True, so parse text."""
+    value = _clean(value)
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in ("true", "1", "yes", "y", "t"):
+        return True
+    if text in ("false", "0", "no", "n", "f", ""):
+        return False if text else None
+    return None
+
+
 def _clean(value: Any) -> Any:
     """Parquet cell -> plain Python: NaN / pandas NA -> None, numpy arrays and scalars -> lists / scalars.
 
@@ -937,7 +979,7 @@ def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict
                 doc_id=sample["filename"], filename=sample["filename"], text=sample["text"],
                 gold_class=sample["expected_hf_class"], gold_subclass=sample.get("expected_subclass") or None,
                 expected_stage=_clean(rec.get("expected_stage")) or None,
-                review_expected=bool(review_expected) if review_expected is not None else None,
+                review_expected=_as_bool(review_expected),
                 expected_fields=fields or None,
                 content_sha256=_clean(rec.get("content_sha256")),
                 gold_meta={k: meta.get(k) for k in ("sources", "n_fields", "n_posthoc", "coverage", "specialist")},
@@ -1069,7 +1111,9 @@ def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
         elif diag["judge_attempts"] != current["judge_attempts"]:
             diffs.setdefault("judge_attempts", f"saved {diag['judge_attempts']!r}, now {current['judge_attempts']!r}")
-        if "max_extraction_candidates" in diag and diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
+        if "max_extraction_candidates" not in diag:
+            diffs.setdefault("max_extraction_candidates", "not recorded in the saved records")
+        elif diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
             diffs.setdefault("max_extraction_candidates",
                              f"saved {diag['max_extraction_candidates']!r}, now {current['max_extraction_candidates']!r}")
         if "thresholds_in_force" not in row:
@@ -1275,6 +1319,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{args.out} already has {len(existing)} record(s); use --resume or a new path", file=sys.stderr)
             return 2
         else:
+            if torn:
+                # The writer appends: new records would be glued onto the torn bytes, and a later
+                # --resume would classify that line as torn and drop it — silent loss of records.
+                print(f"{args.out} contains only unparsable data; use --resume to repair it or a new path",
+                      file=sys.stderr)
+                return 2
             todo = docs
         if torn:
             print(f"ignored {torn} unparsable line(s) in {args.out}", file=sys.stderr)

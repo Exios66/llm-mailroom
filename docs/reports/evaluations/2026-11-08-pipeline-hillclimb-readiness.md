@@ -34,8 +34,8 @@ defaults: C_h = 1, C_e = 20, review_cost_usd = 4.00, field_floor = 0.80
 ```
 
 `U = 0` is all-human with free LLM calls; `U = 1` is perfect free automation. An
-auto-archive is correct only if the class matches gold **and** the final extraction's
-Dojo field score is ≥ `field_floor`; an unscored auto-archive counts as wrong. The costs
+auto-archive is correct only if the class matches gold **and** the archived extraction
+attempt's Dojo field score is ≥ `field_floor`; an unscored auto-archive counts as wrong. The costs
 imply Chow's rule: auto-accept only when P(correct) ≥ 1 − C_h/C_e = 0.95, which is the
 calibrator's default target. **C_e and review_cost_usd are owner decisions** — change
 them on the command line, not in code.
@@ -48,6 +48,22 @@ Guards (any failure → exit 2, the change is discarded):
 | G2 | per-class wrong-auto rate ≤ 0.05 (classes with ≥ 30 auto-archives) |
 | G3 | unobserved share ≤ 0.01 (replay fidelity) |
 | G4 | mean LLM USD/doc ≤ `--cost-budget-usd` (off by default) |
+
+Two counters in the `hillclimb_eval.py` report say how much of a score rests on weaker
+evidence than a real observation:
+
+- `schema evidence: N of M auto-archive(s) passed with schema_valid unknown`
+  (`auto_archived_schema_unknown`). Live routing blocks only on an explicit
+  `schema_valid is False` and replay mirrors that, so an attempt with no verdict passes. The
+  sweep now records a bool whenever there is an extraction (a validator crash is recorded as
+  `False` and listed in `diagnostics.schema_validation_errors`), so a non-zero count points at records from another producer
+  (`export_review_labels.py` rows carry no verdict) or an older sweep, not at a sweep gap.
+- `replay fidelity (next to G3): N route(s) reused an extraction ...`
+  (`replayed_with_confidence_only_handoff_diff`). The sweep extracts once per candidate class;
+  a collapsed candidate with another **subclass** demotes `observed.full_information` and its
+  route is `unobserved` (G3), but one that differs **only in handoff confidence** (printed to
+  2 decimals in the prompt) reuses the extraction and does not demote. That is an
+  approximation, so the count shows how many routes lean on it.
 
 Keep/discard: tune on `split=train`, score on `split=test`, and keep a change only when
 the paired-bootstrap 95% interval of ΔU (`--baseline-policy`) has a positive lower bound
@@ -65,8 +81,20 @@ and all guards pass. Most gains come early; five flat iterations means the ceili
    --split train --out candidate.yaml`. It proposes per-class cutoffs only where the
    held-out Wilson bound clears the target and the sample suffices; other classes keep
    the taxonomy value and are marked `insufficient_evidence`.
+
+   Extraction evidence (`judge_band_high`, `low`) pools **every** scored extraction attempt of
+   the gold class, not only each document's final attempt. Routing archives any attempt whose
+   confidence clears the cutoff, including attempt 1 before a retry would run, so scoring only
+   the (usually better) final attempt would credit a confidently wrong attempt 1 to its retry
+   and overstate accuracy at the cutoff. Counts in the table (`n`, `accept`, `err`) are
+   therefore **attempts** (`unit` column), with the distinct documents behind them in `docs`.
+   Attempts of one document are correlated, so the sample-size rule (`need`/`short`) counts
+   distinct documents, and the held-out folds are grouped by document and judge a document by
+   its worst accepted attempt. Sorter (`high`) evidence is one pair per document, unchanged.
 3. **Score** on test: `PYTHONPATH=src .venv/bin/python src/scripts/hillclimb_eval.py --records test.jsonl --split test
-   --policy candidate.yaml --baseline-policy <current>`.
+   --policy candidate.yaml --baseline-policy src/config/taxonomy.yaml` (its `confidence:` block is
+   the deployed policy; on later iterations pass the last accepted policy file instead).
+   Leaving out `--baseline-policy` skips the ΔU comparison the keep rule needs.
 4. **Iterate** on the policy file only, gating every iteration with
    `src/scripts/autoresearch_gate.py --objective thresholds` (core guards first, then the
    eval's guards and the ΔU interval; registry `experiments/autoresearch/objectives.yaml`,
@@ -96,7 +124,7 @@ Verified in code; "fixed" items have regression tests on this branch.
 | Volume | Stale-claim reconcile can pull back a document that is still running | fixed for the watcher's own reconcile: claim stamps claim time and the reconcile skips files this process is running or has queued. The separate `recover_processing.py --apply` CLI cannot see another process's in-flight set and relies on the claim time vs `--stale-minutes` only; run it with the watcher stopped |
 | Volume | Concurrent catalog and audit writes lost (`UNIQUE` races, `database is locked`) | fixed: upserts plus lock retry; 0 failed ops at 128 threads |
 | Volume | Crash re-run creates duplicate rows; Docker stop grace below the drain timeout; outage parks everything to review; tracing outage slows each document ~20× | open |
-| Review | Approving re-runs extraction instead of archiving what the person checked; corrections are not stored as labels | fixed: `approve_as_is` / `correct` archive through the normal tail with no LLM call; `human_label` persisted; `export_review_labels.py` turns reviews into calibration records |
+| Review | Approving re-runs extraction instead of archiving what the person checked; corrections are not stored as labels | fixed: `approve_as_is` / `correct` with parked fields archive through the normal tail with no LLM call (a sorter-stage park has no fields, so `approve_as_is` confirms the class and re-extracts); `human_label` persisted; `export_review_labels.py` turns reviews into calibration records |
 | Review | Most routes into review record no cause; queue is newest-first with no priority | fixed: cause coverage 85.1% → 100% on 13,692 reachable states; priority-then-age queue with SLA flags |
 | Review | Reject/complete leak the interrupted checkpoint; concurrent resolves are unguarded | fixed: checkpoint discarded; per-document lock with 409; atomic manifest writes |
 

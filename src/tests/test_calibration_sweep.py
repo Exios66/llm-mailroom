@@ -407,3 +407,19 @@ def test_hf_split_end_to_end_keeps_full_text_and_provenance(tmp_path, capsys, te
         assert r.content_sha256 == frame.loc[r.doc_id, "content_sha256"]
         assert r.gold.expected_doc_subclass in ("license", "letter")
         assert r.observed.full_information
+
+
+def test_hf_review_expected_strings_parse_as_booleans(monkeypatch):
+    # The corpus stores review_expected as the strings "true" / "false"; bool("false") is True.
+    frame = _hf_frame()
+    frame["review_expected"] = ["false", "true", None, "False"] * 2
+    monkeypatch.setattr(
+        "pipeline.hf_corpus_loader.load_corpus",
+        lambda **kw: (frame, {"revision_requested": "v9.1"}),
+    )
+    docs, _ = sw.load_hf_docs("test", per_class=4, seed=0)
+    want = dict(zip(frame["filename"], [False, True, None, False] * 2))
+    assert {d.filename: d.review_expected for d in docs} == want
+    assert [sw._as_bool(v) for v in (True, 0, 1.0, "yes", " FALSE ", "", float("nan"), "maybe")] == [
+        True, False, True, True, False, None, None, None,
+    ]
