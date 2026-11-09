@@ -67,6 +67,18 @@ def _link_to_tail(entry, tail) -> None:
 
 
 async def write_audit_entry(entry) -> AuditLogRecord:
+    """Append ``entry`` to its document's hash chain.
+
+    Retries SQLite ``database is locked`` on ``BEGIN IMMEDIATE`` (heavy writer
+    contention) with jittered backoff; each attempt is a fresh transaction that
+    re-reads the chain tail, so a retry can never fork or duplicate the chain.
+    """
+    from storage.db import run_write_with_retry
+
+    return await run_write_with_retry(lambda: _write_audit_entry_once(entry))
+
+
+async def _write_audit_entry_once(entry) -> AuditLogRecord:
     ensure_schema()
     from schemas.audit import AuditLogEntry
     async with async_session() as session:
@@ -277,6 +289,7 @@ async def analyze_audit_db(
         "review_recorded",
         "review_requeued",
         "review_completed",
+        "review_resolved",
     ):
         if key in by_event:
             review_events[key] = by_event[key]
