@@ -14,9 +14,9 @@ At minimum:
 ```bash
 git status --short                      # prints nothing: commit the work first
 git diff origin/main...HEAD --stat      # the diff is the size you expect
-.venv/bin/python -m compileall -q src   # syntax only; no linter is configured
+.venv/bin/python -m compileall -q src tools/pipeline-diagnostics/backend   # syntax only; no linter is configured
 PYTHONPATH=src .venv/bin/python src/scripts/affected_tests.py --run -- -q   # fast loop
-.venv/bin/python -m pytest src/tests -q # full suite before the PR is marked ready
+.venv/bin/python -m pytest src/tests tools/pipeline-diagnostics/tests -q # full suite before the PR is marked ready
 ```
 
 Add the generated-file checks when they apply
