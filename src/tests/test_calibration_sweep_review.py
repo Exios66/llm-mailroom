@@ -185,6 +185,18 @@ def test_resume_adds_the_missing_newline_of_a_complete_last_record(tmp_path, cap
     assert len(_lines(out)) == 2
 
 
+def test_non_resume_refuses_a_torn_only_output(tmp_path, capsys, temp_base_dir):
+    """The writer appends, so appending onto torn bytes glues the first new record onto them and a
+    later --resume would drop the glued line. Refuse; never truncate a possibly-mistyped --out."""
+    out = tmp_path / "r.jsonl"
+    torn = b'{"doc_id": "torn", "run"'
+    out.write_bytes(torn)
+    code, cap = _run([*FIXTURE_ARGS, "--limit", "2", "--out", str(out)], capsys)
+    assert code == 2, cap
+    assert "unparsable" in cap.err and "--resume" in cap.err
+    assert out.read_bytes() == torn  # the file is left exactly as it was
+
+
 # -- T54: resume only continues records from the same inputs ----------------------------------
 
 
@@ -242,6 +254,15 @@ def test_resume_refuses_records_that_do_not_record_their_provenance(tmp_path, ca
     del rows[0]["diagnostics"]["judge_attempts"]
     out.write_text("".join(json.dumps(r) + "\n" for r in rows))
     assert "not recorded" in _refused([*FIXTURE_ARGS, "--limit", "3", "--resume", "--out", str(out)], out, capsys)
+
+
+def test_resume_refuses_records_that_omit_the_candidate_cap(tmp_path, capsys, temp_base_dir):
+    out = _first_run(tmp_path, capsys)
+    rows = _lines(out)
+    del rows[0]["diagnostics"]["max_extraction_candidates"]
+    out.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    err = _refused([*FIXTURE_ARGS, "--limit", "3", "--resume", "--out", str(out)], out, capsys)
+    assert "max_extraction_candidates" in err and "not recorded" in err
 
 
 def test_resume_with_matching_inputs_still_works(tmp_path, capsys, temp_base_dir):

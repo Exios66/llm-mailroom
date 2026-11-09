@@ -421,7 +421,10 @@ def calibrate(
     extraction, extraction_docs = pr.extraction_evidence(records, field_floor)
     classes = sorted(set(sorter) | set(extraction))
     candidate = copy.deepcopy(dict(base_policy))
-    by_class = candidate.setdefault("by_class", {})
+    # A present-but-null "by_class" would ride the whole calibration and only crash at the first
+    # merged class; routing reads null as {} (pipeline/config.py), so normalize it up front.
+    by_class = candidate.get("by_class") or {}
+    candidate["by_class"] = by_class
     report: dict[str, Any] = {}
     kw = dict(folds=folds, seed=seed, confidence=confidence)
 

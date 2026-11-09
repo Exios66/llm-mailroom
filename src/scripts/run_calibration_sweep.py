@@ -1111,7 +1111,9 @@ def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
         elif diag["judge_attempts"] != current["judge_attempts"]:
             diffs.setdefault("judge_attempts", f"saved {diag['judge_attempts']!r}, now {current['judge_attempts']!r}")
-        if "max_extraction_candidates" in diag and diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
+        if "max_extraction_candidates" not in diag:
+            diffs.setdefault("max_extraction_candidates", "not recorded in the saved records")
+        elif diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
             diffs.setdefault("max_extraction_candidates",
                              f"saved {diag['max_extraction_candidates']!r}, now {current['max_extraction_candidates']!r}")
         if "thresholds_in_force" not in row:
@@ -1317,6 +1319,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{args.out} already has {len(existing)} record(s); use --resume or a new path", file=sys.stderr)
             return 2
         else:
+            if torn:
+                # The writer appends: new records would be glued onto the torn bytes, and a later
+                # --resume would classify that line as torn and drop it — silent loss of records.
+                print(f"{args.out} contains only unparsable data; use --resume to repair it or a new path",
+                      file=sys.stderr)
+                return 2
             todo = docs
         if torn:
             print(f"ignored {torn} unparsable line(s) in {args.out}", file=sys.stderr)
