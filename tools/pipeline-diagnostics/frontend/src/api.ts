@@ -91,11 +91,51 @@ export function fetchFindings(signal?: AbortSignal): Promise<CheckReport> {
 
 export async function fetchRuns(signal?: AbortSignal): Promise<RunSummary[]> {
   const payload = await getJson<{ runs: RunSummary[] }>("/v1/diagnostics/runs", signal);
+  if (!Array.isArray(payload?.runs)) throw malformed("run list");
   return payload.runs;
 }
 
-export function fetchRun(executionId: string, signal?: AbortSignal): Promise<RunJournal> {
-  return getJson<RunJournal>(`/v1/diagnostics/runs/${encodeURIComponent(executionId)}`, signal);
+function malformed(what: string): DiagnosticsApiError {
+  return new DiagnosticsApiError(null, `The diagnostics API returned a malformed ${what}.`);
+}
+
+/** Reject a journal the viewer cannot iterate instead of crashing during playback. */
+export function parseRunJournal(payload: unknown): RunJournal {
+  const journal = payload as Partial<RunJournal> | null;
+  if (
+    !journal ||
+    typeof journal !== "object" ||
+    !Array.isArray(journal.node_sequence) ||
+    !journal.node_sequence.every((node) => typeof node === "string")
+  ) {
+    throw malformed("run journal");
+  }
+  return {
+    ...(journal as RunJournal),
+    events: Array.isArray(journal.events) ? journal.events : [],
+    transitions: Array.isArray(journal.transitions) ? journal.transitions : [],
+    document: journal.document ?? {},
+    outcome: journal.outcome ?? { review: false, failed: false },
+  };
+}
+
+/** Reject an experiment detail without a runs list instead of crashing the panel. */
+export function parseExperimentDetail(payload: unknown): ExperimentDetail {
+  const detail = payload as Partial<ExperimentDetail> | null;
+  if (!detail || typeof detail !== "object" || !Array.isArray(detail.runs)) {
+    throw malformed("experiment detail");
+  }
+  return {
+    ...(detail as ExperimentDetail),
+    corpus: detail.corpus ?? {},
+    metrics: detail.metrics ?? {},
+  };
+}
+
+export async function fetchRun(executionId: string, signal?: AbortSignal): Promise<RunJournal> {
+  return parseRunJournal(
+    await getJson<unknown>(`/v1/diagnostics/runs/${encodeURIComponent(executionId)}`, signal),
+  );
 }
 
 export async function fetchExperiments(signal?: AbortSignal): Promise<ExperimentSummary[]> {
@@ -103,16 +143,19 @@ export async function fetchExperiments(signal?: AbortSignal): Promise<Experiment
     "/v1/diagnostics/experiments",
     signal,
   );
+  if (!Array.isArray(payload?.experiments)) throw malformed("experiment list");
   return payload.experiments;
 }
 
 
-export function fetchExperiment(
+export async function fetchExperiment(
   experimentId: string,
   signal?: AbortSignal,
 ): Promise<ExperimentDetail> {
-  return getJson<ExperimentDetail>(
-    `/v1/diagnostics/experiments/${encodeURIComponent(experimentId)}`,
-    signal,
+  return parseExperimentDetail(
+    await getJson<unknown>(
+      `/v1/diagnostics/experiments/${encodeURIComponent(experimentId)}`,
+      signal,
+    ),
   );
 }

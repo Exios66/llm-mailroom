@@ -33,6 +33,14 @@ import { useReducedMotion } from "./useReducedMotion";
 
 type View = "graph" | "list";
 
+function failureMessage(label: string, reason: unknown): string {
+  const detail =
+    reason instanceof DiagnosticsApiError || reason instanceof Error
+      ? reason.message
+      : "request failed.";
+  return `${label}: ${detail}`;
+}
+
 function initialView(): View {
   if (typeof window === "undefined") return "graph";
   const requested = new URLSearchParams(window.location.search).get("view");
@@ -54,6 +62,7 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [report, setReport] = useState<CheckReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshIssues, setRefreshIssues] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<View>(initialView);
   const [query, setQuery] = useState("");
@@ -91,13 +100,17 @@ export default function App() {
       if (signal.aborted || sequence !== loadSequence.current) return;
       if (snapshotResult.status !== "fulfilled") throw snapshotResult.reason;
       const nextSnapshot = snapshotResult.value;
-      const nextReport = reportResult.status === "fulfilled" ? reportResult.value : null;
+      // A failed collection request keeps the last successful result for that
+      // panel and is reported by name; it never discards the other results.
+      const issues: string[] = [];
       setSnapshot(nextSnapshot);
-      setReport(nextReport);
-      // A transient runs/experiments failure keeps the last loaded collections
-      // instead of clearing the panels and losing a selection.
+      if (reportResult.status === "fulfilled") setReport(reportResult.value);
+      else issues.push(failureMessage("Findings", reportResult.reason));
       if (runsResult.status === "fulfilled") setRuns(runsResult.value);
+      else issues.push(failureMessage("Recorded runs", runsResult.reason));
       if (experimentsResult.status === "fulfilled") setExperiments(experimentsResult.value);
+      else issues.push(failureMessage("Experiment logs", experimentsResult.reason));
+      setRefreshIssues(issues);
       setUpdatedAt(new Date());
       setError(null);
       setAnnouncement(
@@ -161,7 +174,7 @@ export default function App() {
 
   useEffect(() => {
     if (!playing || !runJournal) return;
-    const length = runJournal.node_sequence.length;
+    const length = runJournal.node_sequence?.length ?? 0;
     if (runStep === null) {
       setRunStep(0);
       return;
@@ -179,10 +192,10 @@ export default function App() {
     setRunId(id);
     setPlaying(false);
     setRunStep(null);
-    if (!id) {
-      setRunJournal(null);
-      return;
-    }
+    // Drop the previous journal now so a slow or failed request can never leave
+    // another run's path and overlay on screen under the new selection.
+    setRunJournal(null);
+    if (!id) return;
     try {
       const journal = await fetchRun(id);
       if (request !== runSequence.current) return;
@@ -198,10 +211,8 @@ export default function App() {
   const selectExperiment = useCallback(async (id: string) => {
     const request = ++experimentSequence.current;
     setExperimentId(id);
-    if (!id) {
-      setExperiment(null);
-      return;
-    }
+    setExperiment(null);
+    if (!id) return;
     try {
       const detail = await fetchExperiment(id);
       if (request !== experimentSequence.current) return;
@@ -218,7 +229,7 @@ export default function App() {
     (index: number) => {
       setPlaying(false);
       setRunStep(index);
-      const node = runJournal?.node_sequence[index];
+      const node = runJournal?.node_sequence?.[index];
       if (node) setSelection({ kind: "node", id: node });
     },
     [runJournal],
@@ -226,7 +237,7 @@ export default function App() {
 
   const startPlayback = useCallback(() => {
     if (!runJournal) return;
-    if (runStep === null || runStep >= runJournal.node_sequence.length - 1) {
+    if (runStep === null || runStep >= (runJournal.node_sequence?.length ?? 0) - 1) {
       setRunStep(0);
     }
     setPlaying(true);
@@ -324,6 +335,12 @@ export default function App() {
         </div>
       ) : null}
 
+      {refreshIssues.length > 0 ? (
+        <div className="error-banner" role="alert">
+          <strong>Some diagnostics could not be refreshed.</strong> {refreshIssues.join(" ")}
+        </div>
+      ) : null}
+
       {snapshot && model ? (
         <>
           <main className="workbench" aria-busy={loading}>
@@ -371,7 +388,10 @@ export default function App() {
                 }}
               />
               <Inspector selection={selection} model={model} onSelect={setSelection} />
-              <FindingsPanel report={report} />
+              <FindingsPanel
+                report={report}
+                failure={refreshIssues.find((issue) => issue.startsWith("Findings:")) ?? null}
+              />
             </aside>
           </main>
           {view === "graph" ? (

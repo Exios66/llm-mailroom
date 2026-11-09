@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -124,10 +124,18 @@ function jsonResponse(body: unknown): Response {
   } as Response;
 }
 
-function mockApi() {
+type Override = (url: string) => Response | Promise<Response> | undefined;
+
+function errorResponse(status: number): Response {
+  return { ok: false, status, json: async () => ({}) } as Response;
+}
+
+function mockApi(override?: Override) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     void init;
     const url = String(input);
+    const overridden = override?.(url);
+    if (overridden) return overridden;
     if (url.includes("/snapshot")) return jsonResponse(snapshot);
     if (url.includes("/findings")) return jsonResponse(report);
     if (url.endsWith("/v1/diagnostics/runs")) return jsonResponse({ runs: [runSummary] });
@@ -148,6 +156,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -247,5 +256,220 @@ describe("App", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [, init] = fetchMock.mock.calls[0];
     expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer tab-token");
+  });
+});
+
+describe("recorded run playback", () => {
+  async function loadRun() {
+    mockApi();
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    const path = await screen.findByRole("list", { name: "Recorded node path" });
+    return within(path).getAllByRole("button");
+  }
+
+  const currentIndex = (steps: HTMLElement[]) =>
+    steps.findIndex((step) => step.getAttribute("aria-current") === "step");
+
+  it("advances one node per interval and stops after the last node", async () => {
+    const steps = await loadRun();
+    expect(currentIndex(steps)).toBe(-1);
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "Play path" }));
+    expect(currentIndex(steps)).toBe(0);
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+
+    act(() => void vi.advanceTimersByTime(899));
+    expect(currentIndex(steps)).toBe(0);
+    act(() => void vi.advanceTimersByTime(1));
+    expect(currentIndex(steps)).toBe(1);
+    act(() => void vi.advanceTimersByTime(900));
+    expect(currentIndex(steps)).toBe(2);
+
+    // Completion: the last node stays current and playback returns to "Play path".
+    expect(screen.getByRole("button", { name: "Play path" })).toBeInTheDocument();
+    act(() => void vi.advanceTimersByTime(5000));
+    expect(currentIndex(steps)).toBe(2);
+  });
+
+  it("Stop halts advancement where it is", async () => {
+    const steps = await loadRun();
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "Play path" }));
+    act(() => void vi.advanceTimersByTime(900));
+    expect(currentIndex(steps)).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(screen.getByRole("button", { name: "Play path" })).toBeInTheDocument();
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(currentIndex(steps)).toBe(1);
+  });
+
+  it("Show all clears the current step and stops playback", async () => {
+    const steps = await loadRun();
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "Play path" }));
+    act(() => void vi.advanceTimersByTime(900));
+    expect(currentIndex(steps)).toBe(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    expect(currentIndex(steps)).toBe(-1);
+    expect(screen.getByRole("button", { name: "Play path" })).toBeInTheDocument();
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(currentIndex(steps)).toBe(-1);
+  });
+
+  it("replays from the start when played again after completion", async () => {
+    const steps = await loadRun();
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "Play path" }));
+    act(() => void vi.advanceTimersByTime(900));
+    act(() => void vi.advanceTimersByTime(900));
+    expect(currentIndex(steps)).toBe(2);
+    fireEvent.click(screen.getByRole("button", { name: "Play path" }));
+    expect(currentIndex(steps)).toBe(0);
+  });
+});
+
+describe("detail requests and partial failures", () => {
+  const secondRun: RunSummary = {
+    ...runSummary,
+    execution_id: "run-2",
+    document: { filename: "other.txt", manifest_id: "DOC-2", source: "live-manifest" },
+  };
+  const secondJournal: RunJournal = {
+    ...runJournal,
+    execution_id: "run-2",
+    document: { filename: "other.txt", manifest_id: "DOC-2", source: "live-manifest" },
+    node_sequence: ["intake", "classify"],
+  };
+
+  function deferred() {
+    let resolve!: (response: Response) => void;
+    const promise = new Promise<Response>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+
+  it("keeps the latest selection when an older run request finishes last", async () => {
+    const first = deferred();
+    const second = deferred();
+    mockApi((url) => {
+      if (url.endsWith("/v1/diagnostics/runs")) return jsonResponse({ runs: [runSummary, secondRun] });
+      if (url.includes("/runs/run-1")) return first.promise;
+      if (url.includes("/runs/run-2")) return second.promise;
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    const select = screen.getByLabelText("Load a run journal");
+
+    await user.selectOptions(select, "run-1");
+    await user.selectOptions(select, "run-2");
+    await act(async () => second.resolve(jsonResponse(secondJournal)));
+    const path = await screen.findByRole("list", { name: "Recorded node path" });
+    expect(within(path).getAllByRole("button")).toHaveLength(2);
+
+    await act(async () => first.resolve(jsonResponse(runJournal)));
+    expect(within(screen.getByRole("list", { name: "Recorded node path" })).getAllByRole("button")).toHaveLength(2);
+    expect(screen.getByText("DOC-2")).toBeInTheDocument();
+  });
+
+  it("does not restore a run that finishes loading after the selector was cleared", async () => {
+    const pending = deferred();
+    mockApi((url) => (url.includes("/runs/run-1") ? pending.promise : undefined));
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    const select = screen.getByLabelText("Load a run journal");
+
+    await user.selectOptions(select, "run-1");
+    await user.selectOptions(select, "");
+    await act(async () => pending.resolve(jsonResponse(runJournal)));
+    expect(screen.queryByRole("list", { name: "Recorded node path" })).not.toBeInTheDocument();
+  });
+
+  it("drops the previous journal as soon as another run is selected", async () => {
+    const pending = deferred();
+    mockApi((url) => {
+      if (url.endsWith("/v1/diagnostics/runs")) return jsonResponse({ runs: [runSummary, secondRun] });
+      if (url.includes("/runs/run-2")) return pending.promise;
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    const select = screen.getByLabelText("Load a run journal");
+
+    await user.selectOptions(select, "run-1");
+    await screen.findByRole("list", { name: "Recorded node path" });
+    await user.selectOptions(select, "run-2");
+    expect(screen.queryByRole("list", { name: "Recorded node path" })).not.toBeInTheDocument();
+    await act(async () => pending.resolve(errorResponse(500)));
+    expect(screen.queryByRole("list", { name: "Recorded node path" })).not.toBeInTheDocument();
+  });
+
+  it("does not crash on a run journal without node_sequence", async () => {
+    const { node_sequence: _omitted, ...broken } = runJournal;
+    void _omitted;
+    mockApi((url) => (url.includes("/runs/run-1") ? jsonResponse(broken) : undefined));
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("could not be loaded"),
+    );
+    expect(screen.queryByRole("list", { name: "Recorded node path" })).not.toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("does not crash on an experiment detail without runs", async () => {
+    const { runs: _omitted, ...broken } = experimentDetail;
+    void _omitted;
+    mockApi((url) => (url.includes("/experiments/exp-1") ? jsonResponse(broken) : undefined));
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+
+    await user.selectOptions(screen.getByLabelText("Load an experiment log"), "exp-1");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("could not be loaded"),
+    );
+    expect(screen.queryByText(/Class \/ stage ok/)).not.toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+
+  it("names a failed collection request and keeps the successful results", async () => {
+    mockApi((url) => (url.endsWith("/v1/diagnostics/runs") ? errorResponse(500) : undefined));
+    render(<App />);
+
+    expect(await screen.findByText(/All 4 connections/)).toBeInTheDocument();
+    const banner = await screen.findByText(/Some diagnostics could not be refreshed/);
+    expect(banner.closest("[role=alert]")).toHaveTextContent("Recorded runs");
+    expect(banner.closest("[role=alert]")).not.toHaveTextContent("Findings:");
+    expect(screen.getByRole("heading", { name: /Findings/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Load an experiment log")).toContainElement(
+      screen.getByRole("option", { name: /exp-1/ }),
+    );
+  });
+
+  it("says why findings are missing instead of claiming the snapshot has not loaded", async () => {
+    mockApi((url) => (url.includes("/findings") ? errorResponse(503) : undefined));
+    render(<App />);
+
+    await screen.findByText(/All 4 connections/);
+    const panel = screen.getByRole("region", { name: "Structural findings" });
+    expect(panel).toHaveTextContent("Findings: ");
+    expect(panel).not.toHaveTextContent("until the snapshot loads");
   });
 });

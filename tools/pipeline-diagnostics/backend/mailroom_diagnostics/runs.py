@@ -53,11 +53,26 @@ def _journal_paths(root: Path) -> list[Path]:
     return paths[:MAX_SCAN_FILES]
 
 
+def _str_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _valid_transitions(value: Any) -> bool:
+    return isinstance(value, list) and all(
+        isinstance(item, dict)
+        and isinstance(item.get("source"), str)
+        and isinstance(item.get("target"), str)
+        for item in value
+    )
+
+
 def _valid_run(payload: dict[str, Any]) -> bool:
+    """A journal is listable/loadable only if the viewer can iterate every array it reads."""
     return (
         isinstance(payload.get("execution_id"), str)
         and isinstance(payload.get("events"), list)
-        and isinstance(payload.get("node_sequence"), list)
+        and _str_list(payload.get("node_sequence"))
+        and _valid_transitions(payload.get("transitions"))
         and isinstance(payload.get("outcome"), dict)
         and isinstance(payload.get("document"), dict)
     )
@@ -167,9 +182,10 @@ def load_experiment(experiment_id: str) -> dict[str, Any] | None:
             if isinstance(corpus, dict):
                 source = corpus.get("source")
                 if isinstance(source, str) and (
-                    source.startswith("/") or (len(source) > 1 and source[1] == ":")
+                    "/" in source or "\\" in source or (len(source) > 1 and source[1] == ":")
                 ):
-                    corpus["source"] = source.replace("\\", "/").rsplit("/", 1)[-1]
+                    # Absolute or relative, the directory part is a local path.
+                    corpus["source"] = source.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
             for run in payload["runs"]:
                 if isinstance(run, dict):
                     run.pop("journal", None)
