@@ -41,7 +41,7 @@ Work landed on `main` since the last tagged release.
 
 ### Added
 
-- **Native pipeline diagnostics foundation** under `tools/pipeline-diagnostics/`: an installable `mailroom-diagnostics` inspection/check CLI, compiled-graph snapshots through the display exporter's shared graph helper, offline contract input, structural endpoint/reachability findings, and nested test/CI discovery. The draft workbench plan includes an ordered agent handoff and evidence contract. React, diagnostic HTTP serving, live events and calibration remain later milestones; this checkpoint changes no routing policy or model behavior.
+- **Native pipeline diagnostics foundation** under `tools/pipeline-diagnostics/`: an installable `mailroom-diagnostics` inspection/check CLI, compiled-graph snapshots through the display exporter's shared graph helper, offline contract input, structural endpoint/reachability findings, and nested test/CI discovery. The draft workbench plan includes an ordered agent handoff and evidence contract. React, diagnostic HTTP serving, live events and calibration remain later milestones; this checkpoint changes no routing policy or model behavior. **Install change:** `pyproject.toml` `testpaths` now includes `tools/pipeline-diagnostics/tests`, so a bare `pytest` also needs `pip install -e tools/pipeline-diagnostics` (otherwise `test_console_script_is_installed` fails); vendored copies (the hub and `local-mailroom-sandbox`) need the same install.
 
 <a href="unreleased.md" class="button primary">Read full update</a><a href="https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md" class="button secondary">CHANGELOG.md on GitHub</a>
 {% endupdate %}
