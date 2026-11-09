@@ -2,7 +2,20 @@
 
 - **Date**: 2026-11-07
 - **Kind**: audits (Repository audit and synthesis reports)
-- **Status**: draft
+- **Status**: findings as audited; remediation tracked below
+- **Audited revision**: `19203ea` (the findings and line numbers below describe that commit)
+
+## Remediation status (PR #202)
+
+The findings below are kept as audited. PR #202 resolves them as follows:
+
+| Issue | Status |
+|---|---|
+| #191, #192, #193, #194, #196, #197, #199, #201 | Fixed in PR #202, each with a regression test |
+| #195 | Loader part fixed in PR #202: every parquet shard is loaded and a `content_sha256` mismatch is logged. The **yearless-date scorer fix is not done**: it belongs in `llm-dojo-scoring`, so yearless ground-truth dates still score against the run year until that lands and the pin moves |
+| #198 | Superseded: main shipped v0.9.3 through the scripted release flow, and `release.py check` is OK. PR #202 no longer carries a release cut |
+| #200 | Dead names removed and the inbox fallback goes through `list_inbox_files()` (`src/tests/test_lean_cleanup_200.py`). The `_merge_triage` / `_merge_sorter_reads` consolidation was **not done** |
+| Sandbox (item 11) | Not part of this repo; tracked in `local-mailroom-sandbox` |
 
 ## Scope
 
@@ -128,7 +141,7 @@ All findings are tracked as GitHub issues #191–#201
 | 8 | #201 | per-spec success caching; fetch failure bails | unit test with a mocked failing create |
 | 9 | #197 | `.get(key, fallback)` chain; usage capture only on success row; comment tracks usage fix | `legalbench/langfuse_tracing` unit test for 0.0 macro_f1 |
 | 10 | #195 | dojo date fix (yearless GT = month/day compare) + `setdefault` shard handling + integrity gate in `sync_dataset` | dojo field_scoring + loader tests |
-| 11 | #200 | delete the three dead names; one merge helper; `list_inbox_files()` fallback | `pytest -k lean/bins` |
+| 11 | #200 | delete the three dead names; one merge helper; `list_inbox_files()` fallback | `pytest src/tests/test_lean_cleanup_200.py src/tests/test_api_upload.py src/tests/test_routing_hardening.py -q` |
 | 12 | Sandbox | commit the in-flight vendor refresh; re-vendor `llm-mailroom @ main` post-#198; re-run sandbox gates | sandbox CI green on the committed branch |
 
 After orders 1–8 land: re-run the two hermetic gates
