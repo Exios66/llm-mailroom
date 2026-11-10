@@ -456,3 +456,43 @@ async def test_sqlite_event_writer_begins_with_immediate_lock(legacy_db):
         event.remove(engine, "before_cursor_execute", capture)
     assert statements[0] == "BEGIN IMMEDIATE"
     assert sum(s == "BEGIN IMMEDIATE" for s in statements) == 1
+@pytest.mark.asyncio
+async def test_backup_is_owner_only_even_when_backup_fails(temp_base_dir, monkeypatch):
+    """PR #220 review: chmod at reservation time — a failed copy must not
+    leave a world-readable partial database behind."""
+    import os as _os
+    import sqlite3 as _sqlite3
+    import stat as _stat
+    from pathlib import Path as _Path
+
+    from storage.audit_migrate import _backup_sqlite_file
+
+    import storage.audit_migrate as _am
+
+    real_connect = _sqlite3.connect
+
+    class _ExplodingConn:
+        """Delegates every attribute to a real connection; only ``backup`` fails."""
+
+        def __init__(self, real):
+            self._real = real
+
+        def backup(self, target, **kw):
+            raise _sqlite3.OperationalError("interrupted")
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    monkeypatch.setattr(
+        _am.sqlite3, "connect", lambda *a, **k: _ExplodingConn(real_connect(*a, **k))
+    )
+    src = _Path(temp_base_dir) / "src.db"
+    c = _sqlite3.connect(src)
+    c.execute("create table t(x)")
+    c.commit()
+    c.close()
+    with pytest.raises(_sqlite3.OperationalError):
+        _backup_sqlite_file(src, _Path(temp_base_dir) / "backups")
+    backup = next((_Path(temp_base_dir) / "backups").glob("src.pre-audit-migration-*"))
+    mode = _stat.S_IMODE(_os.stat(backup).st_mode)
+    assert mode & 0o077 == 0, oct(mode)

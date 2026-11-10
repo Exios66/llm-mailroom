@@ -310,6 +310,9 @@ def _backup_sqlite_file(src: Path, dest_dir: Path) -> Path:
         dest = dest_dir / f"{src.stem}.pre-audit-migration-{stamp}-{n}{src.suffix}"
     source = sqlite3.connect(src, timeout=30)
     target = sqlite3.connect(dest)
+    # Owner-only from the first byte: a failed backup must not leave a
+    # world-readable partial database (PR #220 review).
+    os.chmod(dest, 0o600)
     try:
         # The online backup API reads a consistent snapshot, WAL included.
         source.backup(target)
