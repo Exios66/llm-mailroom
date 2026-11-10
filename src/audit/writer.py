@@ -59,9 +59,10 @@ MAX_ATTEMPTS = 5
 def _utc(ts: datetime | str | None) -> datetime | None:
     """Normalize to UTC, treating naive values as UTC and preserving ``None``.
 
+    The empty string (the stored unknown-start shape) normalizes like ``None``.
     Raise ``ValueError`` if a string is not a valid ISO datetime.
     """
-    if ts is None:
+    if ts is None or ts == "":
         return None
     if isinstance(ts, str):
         ts = datetime.fromisoformat(ts)

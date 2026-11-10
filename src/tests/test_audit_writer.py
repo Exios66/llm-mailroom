@@ -334,3 +334,17 @@ def test_hash_entry_preserves_empty_timestamp_and_rejects_invalid_timestamp():
     fields["timestamp"] = "invalid"
     with pytest.raises(ValueError):
         hash_entry(**fields)
+
+
+async def test_attempt_stored_empty_started_at_round_trips(audit_db):
+    """PR #160 review: an attempt sub-row whose stored started_at is "" (the
+    documented unknown-start shape) must hash and verify, not raise."""
+    from audit.writer import attempt_hash, get_row, write_terminal_row
+
+    first = _attempt(1)
+    first.started_at = None
+    await write_terminal_row(_row("doc-empty-start", attempts=[first]))
+    row = await get_row("doc-empty-start")
+    for sub in row["sub_rows"]:
+        sub["started_at"] = ""
+        assert sub["entry_hash"] == attempt_hash(sub, matter_id="M-1", actor="archivist")
