@@ -293,7 +293,8 @@ def class_columns(cls: str, sub: pd.DataFrame) -> list[tuple[str, str, str]]:
         return cols
     if cls == "merger_agreement":
         cols += [(n, n, t) for n, t in types.items() if n != "maud_clauses"]
-        keys = sorted({k for v in sub.gt_fields for k in (_json(_json(json.loads(v)).get("maud_clause_labels")) or {})})
+        keys = sorted({k for v in sub.gt_fields
+                       for k in (_json((_json(v) or {}).get("maud_clause_labels")) or {})})
         cols += [(f"maud::{k}", f"MAUD: {k}", "maud answer") for k in keys]
         return cols
     return [(n, n, t) for n, t in types.items()]
@@ -661,6 +662,10 @@ def _to_label_readme(tl: dict[str, Any], *, truncated_texts: int) -> list[tuple[
                       "workbook or the links break. File names are the document_id, percent-encoded so they cannot "
                       f"leave the folder. Texts cut in this build: {truncated_texts}. Filter the To Label sheets, "
                       "do not sort them.", "p"))
+    if tl["empty_texts"]:
+        lines.append((f"{tl['empty_texts']} listed document(s) have no text in the dataset's 'default' config "
+                      "(no row with the same filename), so their text cell is empty; label them from the "
+                      "original document.", "p"))
     lines.append(("", "p"))
     return lines
 
@@ -808,7 +813,7 @@ def _add_to_label(wb: Workbook, rows: pd.DataFrame, class_cols: dict, to_label: 
             ws.row_dimensions[r].height = ROW_HEIGHT
         _decorate(ws, lists, cls=cls, fields=[cols[i] for i in used], first=first, n_rows=n, sub_col=c_sub,
                   orig_col=orig_col, mask_col=mask_col,
-                  sub_values=subclass_choices(cls, (d.subclass for d in docs)))
+                  sub_values=subclass_choices(cls, rows.loc[rows.expected == cls, "expected_subclass"].astype(str)))
         _group_hidden(ws, built, mask_col)
         ws.freeze_panes = "B2"
         ws.auto_filter.ref = f"A1:{get_column_letter(flag_col)}{n + 1}"
@@ -1085,7 +1090,11 @@ def _date_audit(dates, date_rows: list[list], parts_source: str) -> None:
         _header(dates, i, h, HEAD_VAL if i >= 13 else HEAD_ID, width=w)
     for r, rec in enumerate(date_rows, start=2):
         for i, v in enumerate(rec, start=1):
-            c = dates.cell(row=r, column=i, value=v)
+            c = dates.cell(row=r, column=i)
+            if isinstance(v, str):
+                _set_str(c, v)  # a span such as "=..." stays text, never a formula
+            else:
+                c.value = v
             c.font, c.border = FONT, BORDER
         if rec[11] in ("MISSING LABEL", *DATE_PROBLEMS):
             for i in (13, 14):

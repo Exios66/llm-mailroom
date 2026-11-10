@@ -198,8 +198,8 @@ def test_to_label_columns_follow_the_spec_and_skip_complete_fields(tool, label_r
     assert ws.cell(row=2, column=6).alignment.wrap_text
     live = ws.cell(row=2, column=8).value
     assert live.startswith("=SUMPRODUCT((MOD(COLUMN(F2:G2)-COLUMN(F2),2)=1)") and "pending_annotation" in live
-    for letter in ("J", "K", "L"):  # helpers are grouped and hidden
-        assert ws.column_dimensions["J"].hidden and ws.column_dimensions["J"].outline_level == 1
+    dim = ws.column_dimensions["J"]  # J:L is one grouped range (min 10, max 12) of hidden helpers
+    assert dim.hidden and dim.outline_level == 1
     assert ws.column_dimensions["J"].min == 10 and ws.column_dimensions["J"].max == 12
 
 
@@ -763,3 +763,40 @@ def test_insurance_claim_checklist_is_not_a_labelling_target(tool, tmp_path):
         assert "claim_checklist" not in _headers(wb[name]), name
     assert stats["to_label"].get("To Label – Insurance Claims", 0) == 0
     assert "claim_checklist" in _readme_text(wb)
+
+
+def test_to_label_subclass_list_matches_the_class_sheet_when_a_subclass_is_fully_labelled(tool, label_rows, tmp_path):
+    full = _doc(tool, "DOC-L", "correspondence", "fax_cover", "A fax.", _full_gt(tool, "correspondence"))
+    full_gt = json.loads(full["gt_fields"])
+    full_gt["communication_date"] = "March 3, 2001"
+    full["gt_fields"] = json.dumps(full_gt)
+    rows = pd.concat([label_rows, pd.DataFrame([full])], ignore_index=True)
+    _, stats, wb = _build(tool, rows, tmp_path, to_label=("correspondence",))
+    assert "DOC-L" not in [c.value for c in wb["To Label – Correspondence"]["A"]]
+    assert "fax_cover" in _list_values(wb, "lst_subclass_correspondence")  # not a Dojo subclass
+
+
+def test_date_audit_keeps_a_span_that_starts_with_equals_as_text(tool, rows, tmp_path):
+    gt = json.loads(rows.loc[0, "gt_fields"])
+    gt["cuad_clause_labels"] = json.dumps({"Agreement Date": [{"start": 1, "text": "=HYPERLINK(\"x\")"}]})
+    rows.loc[0, "gt_fields"] = json.dumps(gt)
+    out = tmp_path / "gt.xlsx"
+    tool.build_workbook(rows, out, dataset="org/ds", revision="v0", to_label=())
+    ws = load_workbook(out)["Date Audit"]
+    cell = next(r[6] for r in ws.iter_rows(min_row=2) if r[1].value == "DOC-1")
+    assert cell.value == '=HYPERLINK("x")' and cell.data_type == "s"
+
+
+def test_merger_columns_accept_dict_valued_gt_fields(tool, tmp_path):
+    gt = {"maud_clause_labels": {"Deal Size": "Yes"}, "gt_presence": {}}
+    rows = pd.DataFrame([{**_row("DOC-M1", "merger_agreement", "merger", {}), "gt_fields": gt}])
+    cols = tool.class_columns("merger_agreement", rows)
+    assert ("maud::Deal Size", "MAUD: Deal Size", "maud answer") in cols
+
+
+def test_readme_names_documents_with_no_default_text(tool, label_rows, tmp_path):
+    label_rows.loc[label_rows.document_id == "DOC-B", "doc_text"] = float("nan")
+    _, stats, wb = _build(tool, label_rows, tmp_path, to_label=("correspondence",))
+    assert stats["empty_texts"] == 1
+    readme = " ".join(str(c.value) for c in wb["README"]["A"] if c.value)
+    assert "1 listed document(s) have no text in the dataset's 'default' config" in readme
