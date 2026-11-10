@@ -1342,6 +1342,9 @@ class Watcher:
         ensure_dirs(inbox)
         _STATUS_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         logger.info("watcher_starting", inbox=str(inbox), worker_id=self.worker_id)
+        from audit.sinks.sql import warn_if_ephemeral
+
+        warn_if_ephemeral()
 
         with _watcher_owned_lock:
             if _watcher_owned:

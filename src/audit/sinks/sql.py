@@ -44,6 +44,29 @@ def spool_path() -> Path:
     return Path(raw).expanduser().resolve() if raw else _db_dir() / "audit_spool.db"
 
 
+def data_dir() -> Path:
+    """The persistent data directory: ``MAILROOM_DATA_DIR``, else the bins' ``MAILROOM_BASE_DIR``."""
+    raw = os.environ.get("MAILROOM_DATA_DIR") or os.environ.get("MAILROOM_BASE_DIR", "./data")
+    return Path(raw).expanduser().resolve()
+
+
+def warn_if_ephemeral() -> bool:
+    """Log ``audit_spool_ephemeral`` when the spool is outside the data directory (spec §5.6).
+
+    A redeploy (Railway, a fresh container) loses anything outside the mounted
+    volume, so pending rows parked there would be lost. Returns whether it warned.
+    """
+    try:
+        path, root = spool_path(), data_dir()
+        if path.is_relative_to(root):
+            return False
+        logger.warning("audit_spool_ephemeral", spool_path=str(path), data_dir=str(root))
+        return True
+    except Exception:
+        logger.warning("audit_spool_check_failed", exc_info=True)
+        return False
+
+
 @contextlib.contextmanager
 def _spool():
     """A spool connection that commits on success and is always closed."""
@@ -130,4 +153,4 @@ class SqlSink:
             conn.execute("DELETE FROM pending_rows WHERE ref = ?", (ref,))
 
 
-__all__ = ["SqlSink", "spool_path"]
+__all__ = ["SqlSink", "data_dir", "spool_path", "warn_if_ephemeral"]

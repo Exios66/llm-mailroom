@@ -348,7 +348,7 @@
 **Interfaces:**
 - Produces: `async def reconcile(*, dry_run: bool = False) -> ReconcileReport` (`recovered`, `skipped_existing`, `rejected_hash`). The spool path comes from `MAILROOM_AUDIT_SPOOL_PATH`, defaulting to `<db dir>/audit_spool.db`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_three_failures_then_pending_capture`.
   - `test_manifest_marked_pending_and_run_succeeds`.
   - `test_oversize_payload_sends_decisions_only_plus_sha` (Review Focus).
@@ -361,10 +361,12 @@
   - `test_ephemeral_spool_warning` (review item A6).
   - `test_migration_pending_takes_fallback`: `AuditMigrationPending` from the writer is handled like a failed commit; the record is parked and `audit-reconcile` writes it after the migration (spec §6).
   - `test_decisions_only_copy_reconciles_as_partial`: with only a decisions-only copy, reconcile writes it with `recovered_from.complete = false`, and logs `audit_gap_partial`; the manifest said `pending_partial`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (14 errors on the M9 commit: `audit.writer.RETRY_DELAYS_S` missing)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The retry lives in `audit.writer.commit_or_park` (three tries, waits `RETRY_DELAYS_S`), and `audit.row.write_row` calls it, so every terminal writer gets the fallback; a `ValueError` (a malformed row) is re-raised, not parked. (2) The pending record is captured under a pre-assigned `entry_id` and `write_terminal_row(..., entry_id=, recovered_from=)` reuses it, so the sub-row hashes and `detail_sha256` that reconcile checks are exactly what the recovered row stores. (3) The decisions-only copy keeps each visit's identity and `decisions` and each sub-row's `nodes` and `decisions`; extraction and scoring are dropped. (4) The `recovered_detail` addendum carries the full `detail` and sub-rows inside its own detail rather than as new sub-rows, because the attempt ids are the partial row's and are unique. (5) Partial copies stay in the spool after a partial row is written, so a complete copy found later can still close the gap; everything else is dropped once its row exists. (6) `MAILROOM_DATA_DIR` is not defined anywhere else yet, so the ephemeral check falls back to `MAILROOM_BASE_DIR` (the bins' root). (7) Extra tests: `test_reconcile_dry_run_writes_nothing` and `test_cli_dry_run_json`.
 
 ### Task M11: Readers and `audit_row_metrics`
 

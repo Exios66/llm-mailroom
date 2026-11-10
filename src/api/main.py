@@ -96,6 +96,9 @@ def _embed_watcher_running() -> bool:
 async def lifespan(app: FastAPI):
     global _embedded_watcher
     _ensure_dirs()
+    from audit.sinks.sql import warn_if_ephemeral
+
+    warn_if_ephemeral()
     watcher = None
     from pipeline.watcher import Watcher, WatcherLockHeld, embed_watcher_enabled
 

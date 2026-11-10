@@ -210,7 +210,8 @@ def test_pending_rows_round_trip_through_spool(monkeypatch, tmp_path):
     monkeypatch.setenv("PHOENIX_TRACING", "disabled")
     monkeypatch.setenv("MAILROOM_AUDIT_SPOOL_PATH", str(tmp_path / "spool.db"))
     assert spool_path() == tmp_path / "spool.db"
-    assert capture_pending({"doc_id": "d-p", "event": "archived"}) == ["sql"]
+    (kept,) = capture_pending({"doc_id": "d-p", "event": "archived"})
+    assert (kept["sink"], kept["complete"]) == ("sql", True) and kept["ref"].startswith("pend-")
     (pending,) = SqlSink().fetch_pending()
     assert pending["doc_id"] == "d-p" and pending["ref"].startswith("pend-")
     SqlSink().drop_pending(pending["ref"])
