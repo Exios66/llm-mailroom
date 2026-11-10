@@ -305,14 +305,17 @@ def _backup_sqlite_file(src: Path, dest_dir: Path) -> Path:
     stamp = _utc_now().strftime("%Y%m%dT%H%M%SZ")
     dest = dest_dir / f"{src.stem}.pre-audit-migration-{stamp}{src.suffix}"
     n = 1
-    while dest.exists():
-        n += 1
-        dest = dest_dir / f"{src.stem}.pre-audit-migration-{stamp}-{n}{src.suffix}"
+    while True:
+        # Owner-only from the first byte (created 0o600, never chmod-ed after
+        # the fact), and O_EXCL so a concurrent backup cannot share the name.
+        try:
+            os.close(os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+            break
+        except FileExistsError:
+            n += 1
+            dest = dest_dir / f"{src.stem}.pre-audit-migration-{stamp}-{n}{src.suffix}"
     source = sqlite3.connect(src, timeout=30)
     target = sqlite3.connect(dest)
-    # Owner-only from the first byte: a failed backup must not leave a
-    # world-readable partial database (PR #220 review).
-    os.chmod(dest, 0o600)
     try:
         # The online backup API reads a consistent snapshot, WAL included.
         source.backup(target)

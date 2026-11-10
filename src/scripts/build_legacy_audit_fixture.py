@@ -202,11 +202,13 @@ def _build_locked(tmp: str, out: Path) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         out.unlink()
+    source = sqlite3.connect(src)
     dest = sqlite3.connect(out)
     try:
-        sqlite3.connect(src).backup(dest)
+        source.backup(dest)
     finally:
         dest.close()
+        source.close()
     return written
 
 

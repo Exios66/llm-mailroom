@@ -245,11 +245,11 @@ async def test_event_writer_holds_document_lock_through_commit_without_exclusive
         held.append(key)
 
     async def model(session_arg):
-        assert held == ["audit_log:doc"]
+        assert held == ["audit_log:doc:doc"]
         return audit_log.AuditLegacyRecord
 
     async def commit():
-        assert held == ["audit_log:doc"]
+        assert held == ["audit_log:doc:doc"]
         assert isinstance(session.add.call_args.args[0], audit_log.AuditLegacyRecord)
         held.clear()
 

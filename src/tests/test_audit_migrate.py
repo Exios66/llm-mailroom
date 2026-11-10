@@ -402,7 +402,7 @@ async def test_event_writers_wait_for_migration_before_selecting_model(monkeypat
 
     async def document_lock(session, key):
         assert migration_committed.is_set()
-        assert key.startswith("audit_log:doc-")
+        assert key.startswith("audit_log:doc:doc-")
         calls.append(("document", session))
 
     async def select_model(session):

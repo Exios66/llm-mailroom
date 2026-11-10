@@ -348,3 +348,31 @@ async def test_attempt_stored_empty_started_at_round_trips(audit_db):
     for sub in row["sub_rows"]:
         sub["started_at"] = ""
         assert sub["entry_hash"] == attempt_hash(sub, matter_id="M-1", actor="archivist")
+
+
+def test_document_lock_key_never_collides_with_the_chain_lock():
+    from audit.writer import CHAIN_LOCK
+    from storage.audit_log import doc_lock_key
+
+    assert doc_lock_key("chain") != CHAIN_LOCK
+    assert doc_lock_key("doc-1") == "audit_log:doc:doc-1"
+
+
+async def test_addendum_without_attempts_drops_caller_supplied_attempt_refs(audit_db):
+    from audit.models import Addendum
+    from audit.writer import get_row, write_addendum, write_terminal_row
+
+    await write_terminal_row(_row("doc-i"))
+    forged = [{"attempt_id": "att-x", "entry_hash": "0" * 64}]
+    await write_addendum(Addendum("doc-i", "review_decision", "reviewer", {"decision": "approve", "attempts": forged}))
+    (add,) = (await get_row("doc-i"))["addenda"]
+    assert add["detail"] == {"decision": "approve"}
+
+
+def test_sub_row_detail_is_a_deep_snapshot():
+    from audit.writer import _build_sub_rows
+
+    att = _attempt(1)
+    (rec,), _ = _build_sub_rows([att], parent_id="row-1", doc_id="doc-c", matter_id="M-1", actor="a")
+    att.detail["extracted_data"]["n"] = 99
+    assert rec.detail == {"extracted_data": {"n": 1}}
