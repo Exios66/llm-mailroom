@@ -232,9 +232,37 @@ def _derived_fields() -> dict[str, str]:
 _DERIVED = _derived_fields()
 
 
+def carried_fields(sub: pd.DataFrame) -> set[str]:
+    """Fields the dataset's ground truth carries for these rows: a non-empty value or a gt_presence key."""
+    carried: set[str] = set()
+    for raw in sub.gt_fields:
+        gt = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        carried.update(k for k, v in gt.items() if not is_empty(v))
+        carried.update((_json(gt.get("gt_presence")) or {}).keys())
+    return carried
+
+
+#: Schema fields left out of a class's columns because the pinned dataset never carries them
+#: (filled in by ``class_columns``; reported in the README and the build summary).
+DROPPED_FIELDS: dict[str, list[str]] = {}
+
+
 def class_columns(cls: str, sub: pd.DataFrame) -> list[tuple[str, str, str]]:
-    """(column key, header, field type) for every field the Dojo scores for ``cls``."""
+    """(column key, header, field type) for every field the Dojo scores for ``cls`` that the dataset labels.
+
+    A pipeline extraction field the dataset's ground truth never carries for this class (no
+    value and no gt_presence key on any row, e.g. insurance ``claim_checklist``) is not a
+    labelling target and gets no column. Corporate records keep the Dojo's per-subclass entity
+    contract (``unlabeled_fields``); fields derived from CUAD, MAUD or the subclass are kept.
+    """
     types = dict(extraction_schema(cls).field_types)
+    if cls != "corporate_record":
+        carried = carried_fields(sub)
+        keep_always = {_DERIVED.get(cls), "cms_source_table", "cuad_clauses", "maud_clauses",
+                       *(_CUAD_FIELD if cls == "contract" else ())}
+        dropped = [n for n in types if n not in carried and n not in keep_always]
+        DROPPED_FIELDS[cls] = dropped
+        types = {n: t for n, t in types.items() if n not in dropped}
     if cls == "corporate_record":
         subclasses = sorted(sub.expected_subclass.astype(str).unique())
         # filing_number is a core entity field the base schema omits: list it when any subclass
@@ -896,9 +924,12 @@ def _readme_rows(*, dataset: str, revision: str, resolved: str | None, n_rows: i
          "from the subclass and shown as populated; they are never gaps.", "p"),
         ("", "p"),
         ("COLUMNS AND COUNTS", "h"),
-        ("Columns: a value column and a status column for EVERY field the Dojo scores for that class "
+        ("Columns: a value column and a status column for each field the Dojo scores for that class "
          "(extraction_schema; corporate records add each subclass's entity fields and filing_number; contract "
-         "dates come from the CUAD clause spans, e.g. 'Agreement Date' -> agreement_date).", "p"),
+         "dates come from the CUAD clause spans, e.g. 'Agreement Date' -> agreement_date). A pipeline field "
+         "the dataset never labels for a class (no value and no gt_presence key on any row) is not a labelling "
+         "target and has no column. Left out in this build: "
+         + ("; ".join(f"{c}: {', '.join(v)}" for c, v in DROPPED_FIELDS.items() if v) or "none") + ".", "p"),
         ("Counts ('Labels missing', 'still missing (live)', the Summary sheet) are formulas that follow your edits; "
          "they count status cells only and use functions that work in Excel, LibreOffice and Google Sheets. "
          "'Labels missing' on a class sheet counts statuses only; the To Label counter also includes flagged dates.",
@@ -923,6 +954,7 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
     then needs a ``doc_text`` column (and may carry ``metadata`` for the original-document
     links). ``hub_files`` lists the files the dataset repo holds at ``resolved``.
     """
+    DROPPED_FIELDS.clear()
     parts_fn, parts_source = _date_parts_impl()
     rows = rows.reset_index(drop=True)
     to_label = tuple(to_label)
@@ -1041,7 +1073,8 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
             "text_mode": tl["text_mode"], "text_docs": tl["text_docs"], "text_chars": tl["text_chars"],
             "text_chunks": tl["text_chunks"], "text_truncated": tl["text_truncated"],
             "text_controls_replaced": tl["controls_replaced"], "empty_texts": tl["empty_texts"],
-            "lists": sorted(lists.items), "all_sheets": wb.sheetnames}
+            "lists": sorted(lists.items), "all_sheets": wb.sheetnames,
+            "dropped_fields": {c: list(v) for c, v in DROPPED_FIELDS.items() if v}}
 
 
 def _date_audit(dates, date_rows: list[list], parts_source: str) -> None:
