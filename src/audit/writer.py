@@ -4,7 +4,7 @@
   tail by ``seq``, links the new row to it and inserts the row and its attempt
   sub-rows in one transaction. If the document already has a row it writes a
   ``resumed`` addendum instead.
-* ``write_addendum`` takes the per-document ``audit_log:<doc_id>`` lock and
+* ``write_addendum`` takes the per-document ``audit_log:doc:<doc_id>`` lock and
   appends to the document's addendum chain, which starts at the row's hash.
 
 Every hash is hash version 2 (``schemas.audit.compute_audit_hash``),
@@ -19,6 +19,7 @@ sub-row hashes before the parent is hashed.
 
 from __future__ import annotations
 
+import copy
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -44,6 +45,7 @@ from storage.audit_log import (
     AuditAttemptRecord,
     AuditLogRecord,
     AuditMetaRecord,
+    doc_lock_key,
 )
 from storage.db import acquire_write_lock, async_session, ensure_schema
 
@@ -201,7 +203,7 @@ def _build_sub_rows(
             "outcome": att.outcome,
             "started_at": _utc(att.started_at),
             "ended_at": _utc(att.ended_at),
-            "detail": dict(att.detail),
+            "detail": copy.deepcopy(att.detail),
         }
         digest = attempt_hash(sub, matter_id=matter_id, actor=actor)
         records.append(AuditAttemptRecord(**sub, entry_hash=digest))
@@ -227,8 +229,7 @@ async def write_terminal_row(row: TerminalRow) -> WriteResult:
     An existing row is preserved; the call writes a ``resumed`` addendum with
     the requested event in ``detail.event`` and returns its identity instead.
 
-    Raise ``ValueError`` for an unknown event, missing attempt start time, or
-    invalid attempt timestamp,
+    Raise ``ValueError`` for an unknown event or an invalid attempt timestamp,
     ``AuditMigrationPending`` if the migration marker is absent, and
     ``AuditWriteError`` after five attempts encounter uniqueness conflicts.
     Other database errors propagate; failed transactions are rolled back.
@@ -255,7 +256,7 @@ async def write_terminal_row(row: TerminalRow) -> WriteResult:
                     row.attempts, parent_id=entry_id, doc_id=row.doc_id,
                     matter_id=row.matter_id, actor=row.actor,
                 )
-                detail = {**row.detail, "attempts": listed}
+                detail = {**copy.deepcopy(row.detail), "attempts": listed}
                 entry_hash = hash_entry(
                     prev_hash=prev_hash, doc_id=row.doc_id, entry_id=entry_id, event=row.event,
                     detail=detail, matter_id=row.matter_id, actor=row.actor, timestamp=timestamp,
@@ -308,8 +309,7 @@ async def write_addendum(add: Addendum) -> WriteResult:
     starts at 1. The terminal row supplies the matter id and stays unchanged.
     When attempts are supplied, their hash references replace ``detail.attempts``.
 
-    Raise ``ValueError`` for an unknown kind, missing attempt start time, or
-    invalid attempt timestamp,
+    Raise ``ValueError`` for an unknown kind or an invalid attempt timestamp,
     ``AuditMigrationPending`` if the migration marker is absent, ``NoAuditRow``
     if the document has no terminal row, and ``AuditWriteError`` after five
     attempts encounter uniqueness conflicts. Other database errors propagate;
@@ -320,7 +320,7 @@ async def write_addendum(add: Addendum) -> WriteResult:
     ensure_schema()
     for attempt in range(1, MAX_ATTEMPTS + 1):
         async with async_session() as session:
-            await acquire_write_lock(session, f"audit_log:{add.doc_id}")
+            await acquire_write_lock(session, doc_lock_key(add.doc_id))
             try:
                 await _require_migrated(session)
                 row = await _existing_row(session, add.doc_id)
@@ -342,7 +342,11 @@ async def write_addendum(add: Addendum) -> WriteResult:
                     add.attempts, parent_id=addendum_id, doc_id=add.doc_id,
                     matter_id=row.matter_id, actor=add.actor,
                 )
-                detail = {**add.detail, "attempts": listed} if listed else dict(add.detail)
+                # Snapshot the caller's detail; attempt references come only
+                # from this addendum's own sub-rows, never from inherited input.
+                detail = {k: v for k, v in copy.deepcopy(add.detail).items() if k != "attempts"}
+                if listed:
+                    detail["attempts"] = listed
                 entry_hash = hash_entry(
                     prev_hash=prev_hash, doc_id=add.doc_id, entry_id=addendum_id, event=add.kind,
                     detail=detail, matter_id=row.matter_id, actor=add.actor, timestamp=timestamp,
