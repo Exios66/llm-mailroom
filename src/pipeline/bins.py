@@ -57,7 +57,12 @@ def _remember_claim(source: Path, claimed: Path) -> None:
             _claims.popitem(last=False)
 
 
-def find_claimed_file(original_filename: str, source_path: str | Path | None = None) -> Path | None:
+def find_claimed_file(
+    original_filename: str,
+    source_path: str | Path | None = None,
+    *,
+    scan_fallback: bool = True,
+) -> Path | None:
     """The claimed copy of a file under processing/<worker>/.
 
     The abort path may hold a STALE pre-claim path (intake claims the file
@@ -69,7 +74,9 @@ def find_claimed_file(original_filename: str, source_path: str | Path | None = N
     returned if it still exists, else ``None`` — another worker's same-named
     claim is never substituted. Only when no claim is recorded does the
     lookup fall back to scanning by name, where several same-named claims
-    resolve to the newest (mtime)."""
+    resolve to the newest (mtime). ``scan_fallback=False`` disables that
+    scan: a caller that will MOVE the result (the abort path) must not pick
+    up a same-named file that another worker claimed."""
     if source_path:
         with _claims_lock:
             recorded = _claims.get(_claim_key(source_path))
@@ -78,6 +85,8 @@ def find_claimed_file(original_filename: str, source_path: str | Path | None = N
                 return recorded if recorded.is_file() else None
             except OSError:
                 return None
+    if not scan_fallback:
+        return None
     return _claimed_file_scan(original_filename, processing_dir())
 
 
@@ -766,9 +775,11 @@ def list_inbox_files() -> list[Path]:
     if not inbox.exists():
         return []
     extensions = accepted_extensions()
+    # A ``.meta`` sidecar is never a document, even if a taxonomy lists the
+    # extension; only the document beside it is selectable.
     return sorted(
         p for p in inbox.iterdir()
-        if p.is_file() and p.suffix.lower() in extensions
+        if p.is_file() and p.suffix.lower() in extensions and p.suffix.lower() != ".meta"
     )
 
 

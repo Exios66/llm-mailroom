@@ -52,12 +52,14 @@ FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
 # re-subclassed), add per-subclass corporate gt_presence keys (37 keys) and
 # set merger agreements' expected_specialist to merger_agreement_specialist
 # (it was contracts_specialist). The v9.3 tag was re-pointed once on its
-# release day. Pinned loads resolve the tag to its commit and record it as
-# provenance `revision_resolved` (hf_corpus_loader.load_revision_frame).
+# release day, so the pin is the commit itself, not the movable tag (the tag
+# object ff4ca546 still resolves to this commit; Hub `main` was also this
+# commit on 2026-11-10). Loads record the resolved commit as provenance
+# `revision_resolved` (hf_corpus_loader.load_revision_frame).
 # Previous pin: tag v9.1 (data commit ed7576b6; the tag now resolves to the
 # docs commit bc9eab28 on top of it).
 # Pinned per the corpus plan §44 — never evaluate against unpinned main.
-FULL_CORPUS_REVISION = "v9.3"
+FULL_CORPUS_REVISION = "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8"  # Hub tag v9.3
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in mailroom-dataset (v9) — identical to the canonical

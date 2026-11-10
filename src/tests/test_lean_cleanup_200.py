@@ -31,12 +31,22 @@ def test_intake_fallback_skips_meta_sidecar(temp_base_dir):
         intake_node({})
 
     # The sidecar is skipped by the SAME accepted-extensions gate the watcher
-    # uses, and a real document beside it is picked up (PR #202 review:
+    # uses, and the real document beside it is picked up (PR #202 review:
     # assert through the configured gate, not a hardcoded list).
     assert ".meta" not in accepted_extensions()
-    real = inbox / "note.txt" if ".txt" in accepted_extensions() else (
-        inbox / "note." + sorted(accepted_extensions())[-1].lstrip(".")
-    )
-    real.write_text("a real document", encoding="utf-8")
+    assert ".pdf" in accepted_extensions()
+    (inbox / "contract.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
     state = intake_node({})
-    assert state["original_filename"] == real.name
+    assert state["original_filename"] == "contract.pdf"
+
+
+def test_sidecar_excluded_even_when_meta_is_configured(temp_base_dir, monkeypatch):
+    """A taxonomy that lists ``.meta`` still never selects a sidecar for intake."""
+    import pipeline.bins as bins
+
+    monkeypatch.setattr(bins, "accepted_extensions", lambda: [".pdf", ".meta"])
+    inbox = bins.inbox_dir()
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "contract.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+    (inbox / "contract.pdf.meta").write_text("{}", encoding="utf-8")
+    assert [p.name for p in bins.list_inbox_files()] == ["contract.pdf"]

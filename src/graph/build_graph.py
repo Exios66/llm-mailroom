@@ -3770,12 +3770,17 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
     if file_path_str and not Path(file_path_str).exists():
         # Intake claims the file into a worker dir before the run finishes —
         # an abort between claim and the state update carries a stale inbox
-        # path (PR #202 review). Resolve THIS run's own claim from the stale
-        # source path; only without a recorded claim fall back to the name.
+        # path (PR #202 review). Resolve THIS run's own recorded claim from
+        # the stale source path. Without a recorded claim, ownership is not
+        # established, so nothing is moved: a same-named file in another
+        # worker's dir may be that worker's live document (the watcher's
+        # stale-claim reconcile recovers a genuinely stranded file).
         from pipeline.bins import find_claimed_file
 
         claimed = find_claimed_file(
-            state.get("original_filename", ""), source_path=file_path_str
+            state.get("original_filename", ""),
+            source_path=file_path_str,
+            scan_fallback=False,
         )
         if claimed is not None:
             file_path_str = str(claimed)

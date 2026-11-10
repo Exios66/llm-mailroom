@@ -1,8 +1,8 @@
 {
  "dataset": "Lucius-Morningstar/mailroom-dataset",
- "hub_sha": "v9.3",
- "plan_revision_pin": "v9.3",
- "hub_sha_tip": "v9.3",
+ "hub_sha": "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8",
+ "plan_revision_pin": "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8",
+ "hub_sha_tip": "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8",
  "integrity": {
   "checked": 2979,
   "verified": 2979,

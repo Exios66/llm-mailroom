@@ -156,6 +156,33 @@ class TestAbortBoundToOwnClaim:
         assert [p.read_bytes() for p in stored] == [b"my bytes"]
 
 
+    def test_finalize_aborted_without_recorded_claim_moves_nothing(
+        self, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        """PR #202 review: a run that never recorded a claim (it lost the inbox
+        race) must not move another worker's same-named in-flight file."""
+        from graph.build_graph import _finalize_aborted
+        from pipeline import bins
+
+        _claim_dirs(bins, "worker-other")
+        other = bins.processing_dir("worker-other") / "claim.pdf"
+        other.write_bytes(b"other run bytes")
+        result = _finalize_aborted(
+            {
+                "doc_id": "no-claim-1",
+                "matter_id": "M-NONE",
+                "original_filename": "claim.pdf",
+                "file_path": str(bins.inbox_dir() / "claim.pdf"),  # never claimed here
+                "trace_id": None,
+            },
+            "unit abort",
+        )
+        assert result["stage"] == "failed"
+        assert other.read_bytes() == b"other run bytes"
+        failed = bins.failed_dir()
+        assert not (failed.exists() and any(failed.glob("claim*.pdf")))
+
+
 class TestFailedLocatorPrefersRecordedPath:
     def _occupy(self, bins):
         failed = bins.failed_dir()

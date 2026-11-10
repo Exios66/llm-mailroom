@@ -113,6 +113,26 @@ class TestModeStatus:
         assert s["mode"] == "live"
         assert s["llm"] is True and s["llm_effective"] is True
 
+    def test_status_warns_on_failed_reads(self, taxonomy_tmp, monkeypatch):
+        """#193: a failed ledger or relations-DB read still renders as None,
+        but is logged as a warning instead of being swallowed silently."""
+        from structlog.testing import capture_logs
+
+        import pipeline.relations as relations
+        from storage import relations as R
+
+        def boom(*_a, **_k):
+            raise RuntimeError("read failed")
+
+        monkeypatch.setattr(relations, "verify_ledger", boom)
+        monkeypatch.setattr(R, "get_scan_state", boom)
+        with capture_logs() as logs:
+            s = M.mode_status()
+        assert s["ledger"] is None
+        assert s["last_sweep_at"] is None and s["edges"] is None
+        events = {e["event"] for e in logs if e.get("log_level") == "warning"}
+        assert {"relations_mode_ledger_read_failed", "relations_mode_db_read_failed"} <= events
+
     def test_status_env_kill_switch_blocks(self, taxonomy_tmp, monkeypatch):
         monkeypatch.setenv("MAILROOM_RELATIONS", "1")
         monkeypatch.delenv("MAILROOM_LLM_FREE_ONLY", raising=False)
