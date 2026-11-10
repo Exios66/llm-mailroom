@@ -164,7 +164,7 @@ def test_an_empty_diff_runs_the_smoke_only(project):
 
 
 @pytest.mark.parametrize("name,expected", [
-    ("docs/guide.md", True), ("README.md", True), ("CHANGELOG.md", True), (".claude/rules/x.md", True),
+    ("docs/testing.md", True), ("README.md", True), ("CHANGELOG.md", True), (".claude/rules/x.md", True),
     ("docs/assets/diagram.png", True), (".gitbook.yaml", True), ("src/agents/README.md", True),
     ("src/langchain_agents/skills/sorter/calibration.md", False),   # loaded at run time
     ("landing/assets/mascot/fumi.png", False), ("docs/reports/eval.json", False), ("deploy/compose.yml", False),
@@ -642,7 +642,7 @@ def test_a_run_over_its_tier_budget_is_reported_but_not_failed(project, monkeypa
     clock = iter(range(0, 10_000, 1000))
     monkeypatch.setattr(ci.time, "monotonic", lambda: next(clock))
     monkeypatch.setattr(ci.subprocess, "call", lambda cmd, **kw: 0)
-    assert ci.execute(ci.make_plan(["docs/none.md"]) | {"budget_seconds": 1}, results=tmp_path / "e") == 0
+    assert ci.execute(ci.make_plan(["docs/testing.md"]) | {"budget_seconds": 1}, results=tmp_path / "e") == 0
     assert "OVER the 1s tier budget" in capsys.readouterr().out
 
 
