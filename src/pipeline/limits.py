@@ -42,6 +42,7 @@ class RunBudgetExceeded(Exception):
 
 _run_usage: contextvars.ContextVar[list] = contextvars.ContextVar("run_usage", default=[])
 _run_deadline: contextvars.ContextVar = contextvars.ContextVar("run_deadline", default=None)
+_run_started: contextvars.ContextVar = contextvars.ContextVar("run_started", default=None)
 
 
 def reset_run_usage() -> None:
@@ -52,6 +53,15 @@ def reset_run_usage() -> None:
 def set_run_deadline(deadline: float | None) -> None:
     """Stamp the current run's wall-clock deadline (called per _execute_run)."""
     _run_deadline.set(deadline)
+
+
+def set_run_started(started_at: float | None) -> None:
+    """Wall-clock start of the current ``run_pipeline`` invocation (for the audit row's metrics)."""
+    _run_started.set(started_at)
+
+
+def get_run_started() -> float | None:
+    return _run_started.get()
 
 
 def get_run_deadline() -> float | None:

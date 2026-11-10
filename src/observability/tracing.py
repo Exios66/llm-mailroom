@@ -201,6 +201,7 @@ NODE_OBSERVATION_TYPES = {
     "score-generic": "evaluator",
     "write-catalog": "span",
     "archive-document": "span",
+    "audit-failed": "span",
     "pipeline-result": "generation",
     "answer-question": "generation",
 }

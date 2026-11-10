@@ -17,6 +17,11 @@
         "observation_type": "span"
       },
       {
+        "id": "audit_failed",
+        "span": "audit-failed",
+        "observation_type": "span"
+      },
+      {
         "id": "boss_escalation",
         "span": "adjudicate-conflict",
         "observation_type": "agent"
@@ -162,6 +167,12 @@
         "label": null
       },
       {
+        "source": "audit_failed",
+        "target": "__end__",
+        "conditional": false,
+        "label": null
+      },
+      {
         "source": "boss_escalation",
         "target": "boss_escalation",
         "conditional": true,
@@ -277,7 +288,7 @@
       },
       {
         "source": "human_review",
-        "target": "__end__",
+        "target": "audit_failed",
         "conditional": true,
         "label": "failed"
       },
@@ -481,6 +492,7 @@
     "arbitrate-classification": "agent",
     "arbitrate-verdict": "agent",
     "archive-document": "span",
+    "audit-failed": "span",
     "classify-document": "agent",
     "compile-report": "agent",
     "document-pipeline": "chain",

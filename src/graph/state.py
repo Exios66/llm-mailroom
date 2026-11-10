@@ -158,4 +158,7 @@ class DocumentState(TypedDict, total=False):
     scoring_common: dict[str, Any] | None
     scoring: dict[str, Any] | None
     extraction_adherence: dict[str, Any] | None
+    # Set by a terminal node: the row's ``metrics`` (``compute_pipeline_scores``
+    # + ``subclass_correct``), reused by ``run_pipeline`` so both agree.
+    audit_metrics: dict[str, Any] | None
     trace_incomplete: bool

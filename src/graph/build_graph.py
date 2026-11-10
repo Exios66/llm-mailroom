@@ -3228,6 +3228,22 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         update_only=True,
     )
 
+    # Unified audit row (spec §5.3): the document's one row, built from the
+    # final state and its trace. The per-event ``archived`` entry above stays
+    # until the readers move to rows (roadmap M11).
+    audit_metrics = _terminal_audit_row(
+        {**state, "doc_id": manifest.doc_id, "stage": PipelineStage.ARCHIVED.value},
+        event="archived",
+        actor="archivist",
+        terminal_node="archive",
+        refs={
+            "archive_path": str(archive_path),
+            "manifest_path": (audit_entry.detail or {}).get("manifest_path"),
+            "sidecar_path": (audit_entry.detail or {}).get("archive_sidecar"),
+            "file_sha256": (audit_entry.detail or {}).get("file_sha256"),
+        },
+    )
+
     logger.info("pipeline_complete", doc_id=manifest.doc_id, archive=str(archive_path))
     # Completion echo (HUB-037): Gmail-intake documents get the outcome
     # (archive entry + audit chain) replied onto their source email thread.
@@ -3241,7 +3257,38 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
 
     dispatch_relations_scan(manifest.model_dump(mode="json"))
     _maybe_export_warehouse(manifest.doc_id)
-    return {"stage": PipelineStage.ARCHIVED.value}
+    return {"stage": PipelineStage.ARCHIVED.value, "audit_metrics": audit_metrics}
+
+
+def _terminal_audit_row(state: dict, *, event: str, actor: str, terminal_node: str | None = None,
+                        refs: dict | None = None) -> dict | None:
+    """Write the document's unified audit row; returns the row's ``metrics`` (best-effort, never raises)."""
+    from audit.row import EVENT_STAGE, row_metrics, write_row
+
+    try:
+        metrics = row_metrics(state, stage=EVENT_STAGE.get(event, state.get("stage") or ""))
+    except Exception:
+        logger.exception("audit_row_metrics_failed", doc_id=state.get("doc_id"), event_name=event)
+        metrics = None
+    write_row(state, event=event, actor=actor, refs=refs, metrics=metrics, terminal_node=terminal_node)
+    return metrics
+
+
+def audit_failed_node(state: DocumentState) -> dict[str, Any]:
+    """Terminal node of every stop edge (spec §5.1): writes the document's ``failed`` row.
+
+    The node that stopped the run already moved the file and saved the
+    manifest; this only records the outcome.
+    """
+    from schemas.manifest import PipelineStage
+
+    metrics = _terminal_audit_row(
+        {**state, "stage": PipelineStage.FAILED.value},
+        event="failed",
+        actor="pipeline",
+        terminal_node="audit_failed",
+    )
+    return {"stage": PipelineStage.FAILED.value, "audit_metrics": metrics}
 
 
 def _maybe_export_warehouse(doc_id: str) -> None:
@@ -3517,6 +3564,7 @@ def build_graph(checkpointer=None):
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(compile_report_node)))
     workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
     workflow.add_node("archive", traced_node("archive-document")(_bounded(archive_node)))
+    workflow.add_node("audit_failed", traced_node("audit-failed")(audit_failed_node))
 
     workflow.add_conditional_edges(START, entry_route, {
         "intake": "intake",
@@ -3595,8 +3643,9 @@ def build_graph(checkpointer=None):
     workflow.add_conditional_edges("human_review", after_human_review, {
         "extract": "extract",
         "compile_report": "compile_report",  # reviewer's fields, no LLM
-        "failed": END,
+        "failed": "audit_failed",
     })
+    workflow.add_edge("audit_failed", END)
 
     # Unified audit row (spec §5.1): the report is scored before it is catalogued.
     from graph.scoring_nodes import add_scoring_nodes
@@ -3667,7 +3716,19 @@ def _abort_review_evidence(state: dict, doc_id: str | None) -> dict[str, Any]:
     }
 
 
-def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | None = None) -> dict:
+def _checkpoint_values(graph, config) -> dict:
+    """The last checkpointed state of this run (its trace and decisions), or ``{}``."""
+    try:
+        snapshot = graph.get_state(config)
+        values = getattr(snapshot, "values", None)
+        return dict(values) if isinstance(values, dict) else {}
+    except Exception:
+        return {}
+
+
+def _finalize_aborted(
+    initial_state: dict, reason: str, *, failure_class: str | None = None, checkpoint: dict | None = None
+) -> dict:
     """Turn a run that hit a hard limit (or crashed) into a failed result.
 
     Moves the file to the failed bin with a manifest noting the abort, and
@@ -3754,8 +3815,11 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         _write_catalog_record(state, manifest)
     except Exception:
         logger.exception("abort_catalog_write_error", doc_id=manifest.doc_id)
-    # The failed audit row for an aborted run is written by the terminal
-    # writer (roadmap M7); per-stage audit rows are no longer written (§5.2).
+    # Unified audit row (spec §5.3): the failed row, from the last checkpoint
+    # (its trace and decisions) overlaid with the abort outcome.
+    state["audit_metrics"] = _terminal_audit_row(
+        {**(checkpoint or {}), **state}, event="failed", actor="pipeline"
+    )
     # Completion echo (HUB-037): failed Gmail-intake runs report on-thread
     # too.
     from pipeline.gmail_intake import dispatch_intake_echo
@@ -4033,6 +4097,7 @@ def _execute_run(
     deadline = started_at + float(limits.get_deadline_seconds())
     limits.reset_run_usage()
     limits.set_run_deadline(deadline)
+    limits.set_run_started(started_at)
     thread_id = (
         thread_id
         or initial_state.get("checkpoint_thread_id")
@@ -4152,6 +4217,7 @@ def _execute_run(
                 initial_state,
                 classified["reason"],
                 failure_class=classified["failure_class"],
+                checkpoint=_checkpoint_values(graph, config),
             )
         except Exception as exc:
             from pipeline.failures import classify_run_failure
@@ -4166,6 +4232,7 @@ def _execute_run(
                 initial_state,
                 classified["reason"],
                 failure_class=classified["failure_class"],
+                checkpoint=_checkpoint_values(graph, config),
             )
         if _result_is_interrupted(result):
             result = _paused_review_result(result, initial_state, thread_id, state_trace_id)
@@ -4182,7 +4249,17 @@ def _execute_run(
         # failure to the watcher (the run itself succeeded).
         try:
             metrics = pipeline_scores.compute_run_metrics(result, started_at, time.time())
-            score_values = pipeline_scores.emit_pipeline_scores(_model_scoring_view(result), metrics)
+            row_scores = result.get("audit_metrics")
+            score_values = pipeline_scores.emit_pipeline_scores(
+                _model_scoring_view(result),
+                metrics,
+                # The terminal node already computed these for the audit row:
+                # emit the same numbers (``subclass_correct`` is row-only).
+                precomputed=(
+                    {k: v for k, v in row_scores.items() if k != "subclass_correct"}
+                    if isinstance(row_scores, dict) else None
+                ),
+            )
             _persist_scores(result, score_values)
         except Exception:
             logger.exception("post_run_scoring_failed", doc_id=result.get("doc_id"))
