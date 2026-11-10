@@ -5,9 +5,9 @@
 exactly the §4.1 keys (``ROW_DETAIL_KEYS``). Fields a run did not collect are
 ``None``. ``attempts_from_trace`` cuts the trace into attempt sub-rows (§4.2).
 
-``write_row`` is what terminal nodes call: it builds the row, writes it with
-``write_terminal_row`` and never raises. A failed write is logged as
-``audit_row_write_failed``; the spool fallback for it is roadmap M10.
+``write_row`` is what terminal nodes call: it builds the row, commits it with
+``audit.writer.commit_or_park`` (three tries, then the trace sinks' pending
+store, §5.6), records the outcome on the manifest and never raises.
 """
 
 from __future__ import annotations
@@ -384,12 +384,32 @@ def write_row(
         logger.exception("audit_row_build_failed", doc_id=doc_id, event_name=event)
         return None
     try:
-        from audit.writer import write_terminal_row
+        from audit.writer import commit_or_park
 
-        return _run(lambda: write_terminal_row(row))
+        outcome = _run(lambda: commit_or_park(row))
     except Exception:
         logger.exception("audit_row_write_failed", doc_id=doc_id, event_name=event)
         return None
+    mark_manifest(str(doc_id), outcome.status, outcome.refs)
+    return outcome.result
+
+
+_AUDIT_WRITTEN = {"written": True, "pending": "pending", "pending_partial": "pending_partial", "gap": False}
+
+
+def mark_manifest(doc_id: str, status: str, refs=()) -> None:
+    """Record on the manifest whether the row is committed or waiting in a sink (§5.6 step 2)."""
+    try:
+        from pipeline.bins import load_manifest, save_manifest
+
+        manifest = load_manifest(doc_id)
+        if manifest is None:
+            return
+        manifest.audit_written = _AUDIT_WRITTEN[status]
+        manifest.audit_pending_refs = [dict(r) for r in refs]
+        save_manifest(manifest)
+    except Exception:
+        logger.warning("audit_manifest_mark_failed", doc_id=doc_id, status=status, exc_info=True)
 
 
 __all__ = [

@@ -130,15 +130,42 @@ def record_io(
     return (accepted[0] if accepted else None), io_sha256(prompt, completion), accepted[1:]
 
 
-def capture_pending(record: dict[str, Any]) -> list[str]:
-    """Hand a row that could not be committed to every sink; returns the sinks that kept it."""
-    kept: list[str] = []
+def _size(record: dict[str, Any]) -> int:
+    import json
+
+    return len(json.dumps(record, default=str).encode())
+
+
+def capture_pending(record: dict[str, Any], *, partial=None) -> list[dict[str, Any]]:
+    """Hand a row that could not be committed to every sink (§5.6 step 1).
+
+    A sink with ``max_payload_bytes`` smaller than the record gets the
+    decisions-only copy that ``partial()`` builds (marked ``complete: false``).
+    Returns ``[{"sink", "ref", "complete"}]`` for each sink that kept a copy.
+    """
+    kept: list[dict[str, Any]] = []
+    small: dict[str, Any] | None = None
+    full_size = _size(record)
     for sink in active_sinks():
+        name = getattr(sink, "name", "?")
+        payload = record
+        limit = getattr(sink, "max_payload_bytes", None)
+        if limit is not None and full_size > limit:
+            if partial is None:
+                logger.warning("trace_sink_payload_too_large", sink=name, size=full_size, limit=limit)
+                continue
+            small = small if small is not None else partial()
+            payload = small
+            if _size(payload) > limit:
+                logger.warning("trace_sink_payload_too_large", sink=name, size=_size(payload), limit=limit)
+                continue
         try:
-            if sink.capture_pending(record) is not None:
-                kept.append(sink.name)
+            ref = sink.capture_pending(payload)
         except Exception:
-            logger.warning("trace_sink_capture_failed", sink=getattr(sink, "name", "?"), exc_info=True)
+            logger.warning("trace_sink_capture_failed", sink=name, exc_info=True)
+            continue
+        if ref is not None:
+            kept.append({"sink": name, "ref": ref, "complete": bool(payload.get("complete", True))})
     return kept
 
 
