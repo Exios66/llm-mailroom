@@ -513,6 +513,82 @@ class TestPipelineResultSuppression:
         )
 
 
+class TestAbortResolvesStaleClaimPath:
+    def test_abort_finds_claimed_file_after_stale_path(self, temp_base_dir, mock_openai_client, mock_langchain_llm):
+        """PR #202 review: an abort between claim_file and the state update
+        carries a dead inbox path — the claimed copy must still reach the
+        failed bin, not strand in processing/."""
+        from graph.build_graph import _finalize_aborted
+        from pipeline import bins
+
+        inbox = bins.inbox_dir()
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "doc.pdf").write_bytes(b"claimed bytes")
+        # Claim it the way intake does, so this run's claim is recorded; a
+        # same-named file this run never claimed is covered (and left alone)
+        # by test_bins_terminal_recovery.
+        claimed = bins.claim_file(inbox / "doc.pdf", "wtest")
+
+        initial_state = {
+            "doc_id": "aborted-doc-1",
+            "matter_id": "M-ABORT",
+            "original_filename": "doc.pdf",
+            "file_path": str(inbox / "doc.pdf"),  # dead: file was claimed
+            "trace_id": None,
+        }
+        result = _finalize_aborted(initial_state, "unit abort")
+        assert result["stage"] == "failed"
+        failed = bins.failed_dir()
+        moved = list(failed.glob("doc--aborted-doc-1.pdf")) or list(failed.glob("doc.pdf"))
+        assert moved and moved[0].read_bytes() == b"claimed bytes"
+        assert not claimed.exists()
+
+
+class TestGroundedFieldScoringDocText:
+    def test_scorer_receives_result_doc_text(self, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch):
+        """#191: the deterministic scorer must receive the transcribed text
+        (the post-run state's doc_text), not the empty pre-invoke snapshot."""
+        from graph.build_graph import run_pipeline
+        from observability import langfuse_field_scoring as lfs
+
+        real = lfs.score_and_log_extraction
+        captured = []
+
+        def spy(trace_id, **kw):
+            captured.append(kw)
+            return real(trace_id, **kw)
+
+        monkeypatch.setattr(lfs, "score_and_log_extraction", spy)
+
+        inbox = temp_base_dir / "pipeline" / "inbox"
+        test_file = inbox / "gt_doctext.txt"
+        test_file.write_text("Service agreement between Acme Corp and Beta LLC.")
+        mock_langchain_llm.classification = {
+            "doc_type": "contract",
+            "contract_subtype": "other",
+            "confidence": 0.99,
+            "reasoning": "Service agreement",
+        }
+        mock_langchain_llm.extraction = {
+            "parties": ["Acme Corp", "Beta LLC"],
+            "effective_date": "2024-01-15",
+            "governing_law": "Delaware",
+            "confidence": 0.99,
+        }
+        result = run_pipeline(
+            test_file,
+            "MATTER-191",
+            ground_truth={
+                "expected_doc_class": "contract",
+                "expected_fields": {"parties": ["Acme Corp", "Beta LLC"]},
+            },
+        )
+        assert result["stage"] == "archived"
+        assert captured, "a grounded archived run must call the field scorer"
+        assert captured[0]["doc_text"]
+        assert captured[0]["doc_text"] == result.get("doc_text")
+
+
 class TestEmptyDocRoutesStraightToReview:
     def test_empty_doc_no_retry_call(self, temp_base_dir, mock_openai_client, mock_langchain_llm):
         from graph.build_graph import run_pipeline

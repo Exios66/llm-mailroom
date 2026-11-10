@@ -15,6 +15,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
 
 from graph.state import DocumentState
+# Wires taxonomy.yaml into llm-dojo-scoring at import time (#192): without it
+# field scoring / judge gating run on package defaults, not the calibrated map.
+import observability.scoring_wiring  # noqa: F401,E402
 from graph.routing import (
     after_classify,
     after_retry_classify,
@@ -59,7 +62,8 @@ logger = structlog.get_logger(__name__)
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 PDF_EXTENSIONS = {".pdf"}
-SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | PDF_EXTENSIONS | {".txt", ".md", ".docx"}
+# The real intake gate is bins.accepted_extensions(); this aggregate was dead
+# and is gone (#200).
 
 
 def _build_checkpointer():
@@ -586,8 +590,11 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
     else:
-        inbox = inbox_dir()
-        files = list(inbox.glob("*"))
+        # Route the fallback through the same extension gate as the watcher
+        # (#200): a leftover <file>.pdf.meta sidecar is not a document.
+        from pipeline.bins import list_inbox_files
+
+        files = list_inbox_files()
         if not files:
             raise RuntimeError("No files in inbox")
         file_path = files[0]
@@ -2829,7 +2836,7 @@ def _finalize_human_rejection(
     move_error: str | None = None
     if dest is not None and dest.exists():
         try:
-            file_path = str(move_to_failed(dest))
+            file_path = str(move_to_failed(dest, doc_id))
         except Exception as exc:
             move_error = f"{type(exc).__name__}: {exc}"
             logger.error(
@@ -3760,9 +3767,29 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         state["escalation_reason"] = tagged
 
     file_path_str = state.get("file_path") or ""
+    if file_path_str and not Path(file_path_str).exists():
+        # Intake claims the file into a worker dir before the run finishes —
+        # an abort between claim and the state update carries a stale inbox
+        # path (PR #202 review). Resolve THIS run's own recorded claim from
+        # the stale source path. Without a recorded claim, ownership is not
+        # established, so nothing is moved: a same-named file in another
+        # worker's dir may be that worker's live document (the watcher's
+        # stale-claim reconcile recovers a genuinely stranded file).
+        from pipeline.bins import find_claimed_file
+
+        claimed = find_claimed_file(
+            state.get("original_filename", ""),
+            source_path=file_path_str,
+            scan_fallback=False,
+        )
+        if claimed is not None:
+            file_path_str = str(claimed)
     if file_path_str:
         try:
-            move_to_failed(Path(file_path_str))
+            failed_path = move_to_failed(Path(file_path_str), aborted_doc_id)
+            # A numbered fallback name cannot be derived from the doc id, so
+            # the manifest records the exact path the bytes were stored at.
+            manifest.file_location = str(failed_path)
         except Exception:
             logger.exception("abort_move_to_failed_error", file=file_path_str)
     try:
@@ -4249,7 +4276,9 @@ def _execute_run(
                         predicted=extracted,
                         expected=expected_fields,
                         matter_id=initial_state.get("matter_id"),
-                        doc_text=initial_state.get("doc_text"),
+                        # The real transcription lives on the post-run state;
+                        # the pre-invoke snapshot never carries it (#191).
+                        doc_text=result.get("doc_text") or initial_state.get("doc_text"),
                         expected_class=expected_class,
                         presence_expectations=presence,
                     )
