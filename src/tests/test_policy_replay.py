@@ -865,6 +865,107 @@ def test_cli_prints_the_handoff_diff_count_next_to_g3(tmp_path, capsys):
     assert "replay fidelity (next to G3): 2 route(s) reused an extraction from a collapsed candidate" in out
 
 
+# ---- CR6: re-deriving the chunk-window merge from per-window evidence ---------------------------
+
+
+def _windowed(confs=(0.9, 0.2), fields=(True, False), recorded=0.2, **kw):
+    return extract(
+        recorded, n_chunks=2, window_confidences=None if confs is None else list(confs),
+        window_has_fields=None if fields is None else list(fields), **kw,
+    )
+
+
+def test_cr6_replay_rederives_confidence():
+    rec = record(sorters=[sorter(0.97)], extractions=[_windowed()])  # recorded under min: 0.2
+    cr6 = pr.replay(rec, POLICY, merge_rule="cr6")
+    assert cr6.outcome == pr.AUTO and cr6.path[-1] == "archive"
+    mn = pr.replay(rec, POLICY, merge_rule="min")
+    assert mn.outcome == pr.UNOBSERVED and mn.reasons == ["extraction_attempt_2_not_observed"]  # min: retry route
+    # the default rule is cr6 (the live rule), and evaluate() takes the same switch
+    assert pr.replay(rec, POLICY).path == cr6.path
+    assert pr.evaluate([rec], POLICY, merge_rule="min")["outcomes"]["auto_archived"] == 0
+    assert pr.evaluate([rec], POLICY)["outcomes"]["auto_archived"] == 1
+
+
+def test_cr6_replay_without_window_evidence_is_unobserved():
+    rec = record(sorters=[sorter(0.97)], extractions=[_windowed(confs=None, fields=None, recorded=0.2)])
+    out = pr.replay(rec, POLICY, merge_rule="cr6")
+    assert out.outcome == pr.UNOBSERVED
+    assert out.reasons == ["extraction_attempt_1_window_evidence_not_observed"]
+    assert pr.evaluate([rec], POLICY, merge_rule="cr6")["unobserved_rate"] > 0
+    # a pre-CR6 record still replays under min, and an unchunked attempt is never unobserved
+    assert pr.replay(rec, POLICY, merge_rule="min").reasons == ["extraction_attempt_2_not_observed"]
+    plain = record(sorters=[sorter(0.97)], extractions=[extract(0.95)])
+    assert pr.replay(plain, POLICY, merge_rule="cr6").outcome == pr.AUTO
+
+
+def test_cr6_replay_keeps_failed_chunk_ceiling_and_guard_clamp():
+    lost = record(sorters=[sorter(0.97)], extractions=[_windowed(confs=(0.95, 0.95), fields=(True, True), recorded=0.79, failed_chunks=1)])
+    lenient = {**POLICY, "low": 0.5, "judge_band_high": 0.6}
+    assert pr.replay(lost, lenient, merge_rule="cr6").outcome == pr.UNOBSERVED  # still capped, retry not observed
+    guarded = record(sorters=[sorter(0.97)], extractions=[_windowed(confs=(0.95, 0.95), fields=(True, True), recorded=0.5, guardrail_issues=["bad"])])
+    assert pr.replay(guarded, POLICY, merge_rule="cr6").outcome != pr.AUTO
+
+
+def test_cr6_an_attempt_whose_every_window_failed_is_observed_like_min():
+    """#204 review: with no parsed window there is nothing to re-derive, so cr6 must not
+    call the attempt unobserved when min replays it."""
+    dead = _windowed(confs=(), fields=(), recorded=0.0, failed_chunks=2)
+    rec = record(sorters=[sorter(0.97)], extractions=[dead, extract(0.95, attempt=2)])
+    mn = pr.replay(rec, POLICY, merge_rule="min")
+    cr6 = pr.replay(rec, POLICY, merge_rule="cr6")
+    assert "extraction_attempt_1_window_evidence_not_observed" not in cr6.reasons
+    assert (cr6.outcome, cr6.path) == (mn.outcome, mn.path)
+
+
+
+def test_cr6_an_old_all_failed_attempt_without_evidence_reaches_its_retry():
+    """#204 review: a pre-evidence record whose first attempt lost every window must replay
+    its recorded retry under cr6 (and so count the retry's cost), exactly as under min."""
+    dead = _windowed(confs=None, fields=None, recorded=0.0, failed_chunks=2)
+    rec = record(sorters=[sorter(0.97)], extractions=[dead, extract(0.95, attempt=2)])
+    cr6 = pr.replay(rec, POLICY, merge_rule="cr6")
+    mn = pr.replay(rec, POLICY, merge_rule="min")
+    assert "extraction_attempt_1_window_evidence_not_observed" not in cr6.reasons
+    assert (cr6.outcome, cr6.path) == (mn.outcome, mn.path)
+    assert "retry_extract" in cr6.path
+
+
+@pytest.mark.parametrize("rule", ["min", "cr6"])
+def test_window_evidence_that_skips_a_parsed_window_is_unobserved(rule):
+    """#204 review: three parsed windows but evidence for one must not auto-archive on it."""
+    short = extract(0.99, n_chunks=3, window_confidences=[0.99], window_has_fields=[True])
+    rec = record(sorters=[sorter(0.97)], extractions=[short])
+    out = pr.replay(rec, POLICY, merge_rule=rule)
+    assert out.outcome == pr.UNOBSERVED
+    assert out.reasons == ["extraction_attempt_1_window_evidence_incomplete"]
+
+
+def test_old_records_without_window_fields_still_load():
+    old = extract(0.9).model_dump(exclude={"window_confidences", "window_has_fields"})
+    att = ExtractionAttempt.model_validate(old)
+    assert att.window_confidences is None and att.window_has_fields is None
+
+
+def test_cli_merge_rule_compares_cr6_with_min_on_the_same_records(tmp_path, capsys):
+    hollow = [record(f"w{i}", sorters=[sorter(0.97)], extractions=[_windowed()]) for i in range(40)]
+    path = tmp_path / "windows.jsonl"
+    pr.dump_records(hollow + _clean(40), path)
+    code, out, _ = _run_cli(
+        ["--records", path, "--merge-rule", "cr6", "--baseline-merge-rule", "min", "--json", tmp_path / "o.json"],
+        capsys,
+    )
+    assert code in (0, 2) and "merge rule: candidate=cr6 baseline=min" in out
+    assert "DELTA U (candidate - baseline) = +" in out and len(_score_lines(out)) == 1
+    import json
+
+    payload = json.loads((tmp_path / "o.json").read_text())
+    assert (payload["candidate"]["merge_rule"], payload["baseline"]["merge_rule"]) == ("cr6", "min")
+    # the default rule is the live rule (cr6); no baseline, no change to the SCORE contract
+    code, out, _ = _run_cli(["--records", path], capsys)
+    assert "merge rule: candidate=cr6" in out and "baseline=" not in out
+
+
 # ---- #203 review: arbiter class, objective costs, document identity, ineligible attempts ---------
 
 
@@ -952,3 +1053,28 @@ def test_attempts_routing_can_never_archive_are_not_archive_cutoff_evidence():
     )
     pairs, docs = pr.extraction_evidence([rec])
     assert pairs["contract"] == [(0.95, True), (0.60, True)] and docs["contract"] == [0, 0]
+
+
+def test_the_default_merge_rule_is_the_live_rule():
+    """Merging #204 adopts CR6 live (``finalize_chunked_merge``), so a replay without an
+    explicit rule must replay what production does; ``min`` stays available by name."""
+    rec = record(sorters=[sorter(0.97)], extractions=[_windowed()])
+    assert pr.DEFAULT_MERGE_RULE == "cr6"
+    assert pr.replay(rec, POLICY).path == pr.replay(rec, POLICY, merge_rule="cr6").path
+    assert pr.evaluate([rec], POLICY)["merge_rule"] == "cr6"
+
+
+def test_records_without_window_evidence_are_written_without_the_window_keys(tmp_path):
+    """An unchunked attempt must stay readable by main/#203 (``extra="forbid"`` there)."""
+    import json
+
+    plain = record("p", sorters=[sorter(0.97)], extractions=[extract(0.95)])
+    chunked = record("c", sorters=[sorter(0.97)], extractions=[_windowed()])
+    path = tmp_path / "r.jsonl"
+    pr.dump_records([plain, chunked], path)
+    lines = path.read_text().splitlines()
+    assert "window_confidences" not in lines[0] and "window_has_fields" not in lines[0]
+    assert json.loads(lines[1])["extraction"]  # chunked evidence is kept
+    assert "window_confidences" in lines[1]
+    assert [r.doc_id for r in pr.load_records(path)] == ["p", "c"]
+    assert pr.load_records(path)[1] == chunked
