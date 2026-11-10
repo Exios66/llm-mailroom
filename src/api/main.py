@@ -1218,37 +1218,14 @@ async def get_matter(matter_id: str):
 
 @app.get("/audit/{doc_id}", dependencies=[Depends(_require_token)])
 async def get_audit_trail(doc_id: str):
+    """One document's unified row, sub-rows and addenda, with its legacy chain beside them (spec §7)."""
     _validate_doc_id(doc_id)
     try:
-        from storage.audit_log import get_audit_chain
-        from schemas.audit import verify_chain
-        records = await get_audit_chain(doc_id)
-        from schemas.audit import AuditLogEntry
-        entries = [
-            AuditLogEntry(
-                entry_id=r["entry_id"],
-                doc_id=doc_id,
-                matter_id=r.get("matter_id") or "",
-                event=r["event"],
-                actor=r["actor"],
-                detail=r["detail"],
-                prev_hash=r["prev_hash"],
-                entry_hash=r["entry_hash"],
-                timestamp=r["timestamp"],
-            )
-            for r in records
-        ]
-        chain_valid = verify_chain(entries)
-        return {
-            "doc_id": doc_id,
-            "chain_length": len(records),
-            "chain_valid": chain_valid,
-            "entries": [
-                {**r, "timestamp": r["timestamp"].isoformat() if hasattr(r["timestamp"], "isoformat") else r["timestamp"]}
-                for r in records
-            ],
-        }
+        from audit.readers import doc_view
+
+        return await doc_view(doc_id)
     except Exception:
+        logger.exception("audit_trail_failed", doc_id=doc_id)
         raise HTTPException(500, "Audit log unavailable")
 
 
@@ -1261,11 +1238,17 @@ async def analyze_audit_database(
 
     Returns event/actor histograms, per-doc chain health, review-related event
     counts, and the newest entries — for operator audits without opening sqlite3.
+    ``unified`` adds the unified-row summary (spec §7): rows by event and outcome,
+    addenda by kind, attempts per stage, retry and rescue rates, pending and
+    recovered counts, and the verifier's checks.
     """
     try:
+        from audit.readers import unified_summary
         from storage.audit_log import analyze_audit_db
 
-        return await analyze_audit_db(verify_chains=verify, event_limit=recent)
+        report = await analyze_audit_db(verify_chains=verify, event_limit=recent)
+        report["unified"] = await unified_summary(verify=verify)
+        return report
     except Exception:
         logger.exception("audit_analyze_failed")
         raise HTTPException(500, "Audit analysis unavailable")
