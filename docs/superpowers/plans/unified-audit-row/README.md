@@ -91,7 +91,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**16/33 tasks done.**
+**17/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -110,15 +110,15 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 2 | M3 | Row and addendum writers | llm-mailroom | 5/5 | done |
 | 2 | M4 | Verification | llm-mailroom | 5/5 | done |
 | 2 | M5 | Trace collection in state | llm-mailroom | 5/5 | done |
-| 2 | M6 | Scoring node family | llm-mailroom | 0/5 | ready |
-| 2 | M7 | Row builder and terminal nodes | llm-mailroom | 0/5 | blocked |
+| 2 | M6 | Scoring node family | llm-mailroom | 5/5 | done |
+| 2 | M7 | Row builder and terminal nodes | llm-mailroom | 0/5 | ready |
 | 2 | M8 | Human review paths and pre-row events | llm-mailroom | 0/5 | blocked |
 | 2 | M9 | Trace sinks | llm-mailroom | 0/5 | ready |
 | 2 | M10 | Write-failure fallback and `audit-reconcile` | llm-mailroom | 0/5 | blocked |
 | 2 | M11 | Readers and `audit_row_metrics` | llm-mailroom | 0/5 | blocked |
 | 2 | M12 | Warehouse, `audit-report` and Langfuse scores | llm-mailroom | 0/5 | blocked |
-| 2 | M14 | Rescore CLI | llm-mailroom | 0/5 | blocked |
-| 2 | M15 | One scoring path (retire the legacy scorers) | llm-mailroom | 0/5 | blocked |
+| 2 | M14 | Rescore CLI | llm-mailroom | 0/5 | ready |
+| 2 | M15 | One scoring path (retire the legacy scorers) | llm-mailroom | 0/5 | ready |
 | 2 | M13 | Docs and branch gate | llm-mailroom | 0/3 | blocked |
 | 3 | S0 | Capture sandbox output goldens | local-mailroom-sandbox | 3/3 | done |
 | 3 | S1 | Vendor refresh and thin wrapper | local-mailroom-sandbox | 0/5 | blocked |

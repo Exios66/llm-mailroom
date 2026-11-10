@@ -190,6 +190,9 @@ class TestTopology:
             "extract", "retry_extract", "judge_verify", "arbiter", "classification_arbiter",
             "human_review", "boss_escalation", "compile_report",
             "catalog_write", "archive",
+            # Scoring node family (unified audit row M6): one per dojo registry entry + generic.
+            "score_common", "score_contract", "score_corporate_record", "score_correspondence",
+            "score_insurance_claim", "score_merger_agreement", "score_generic",
         }
         assert nodes == expected
 
@@ -216,7 +219,9 @@ class TestTopology:
             ("arbiter", "arbiter"),
             ("human_review", "extract"),
             ("boss_escalation", "boss_escalation"),
-            ("compile_report", "catalog_write"),
+            ("compile_report", "score_common"),
+            ("score_common", "score_contract"),
+            ("score_contract", "catalog_write"),
             ("compile_report", "human_review"),
         }
         missing = required - edges
