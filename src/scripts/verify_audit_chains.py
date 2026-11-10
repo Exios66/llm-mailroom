@@ -51,6 +51,25 @@ async def _all_chains():
     return chains
 
 
+async def _unified_rows() -> int:
+    """How many unified audit rows, attempts and addenda exist (0 before migration).
+
+    This tool verifies only the per-event chains. Until the unified verifier
+    lands (roadmap M4) it must not report success over data it cannot check.
+    """
+    from sqlalchemy import func, select
+    from storage.audit_log import AuditAddendumRecord, AuditAttemptRecord, AuditLogRecord, event_log_model
+    from storage.db import async_session
+
+    async with async_session() as session:
+        if await event_log_model(session) is AuditLogRecord:
+            return 0  # not migrated: audit_log still holds the per-event chains
+        total = 0
+        for model in (AuditLogRecord, AuditAttemptRecord, AuditAddendumRecord):
+            total += (await session.execute(select(func.count()).select_from(model))).scalar_one()
+        return total
+
+
 def _verify(doc_id: str, records: list[dict]) -> dict:
     from schemas.audit import AuditLogEntry, verify_chain
 
@@ -91,10 +110,11 @@ def main() -> int:
 
     results = [_verify(doc_id, records) for doc_id, records in sorted(chains.items())]
     broken = [r for r in results if not r["ok"]]
+    unverified = asyncio.run(_unified_rows())
 
     if args.json:
-        print(json.dumps({"chains": len(results), "broken": broken}, indent=2))
-        return 1 if broken else 0
+        print(json.dumps({"chains": len(results), "broken": broken, "unverified_unified_rows": unverified}, indent=2))
+        return 1 if broken or unverified else 0
 
     print(f"{len(results)} chain(s) checked, {len(broken)} broken")
     for r in results:
@@ -102,6 +122,10 @@ def main() -> int:
         print(f"  [{mark}] {r['doc_id']:<40} entries={r['entries']}" + (f"  {r['error']}" if r["error"] else ""))
     if broken:
         print("\nChains are broken — investigate before restore (see audit A-8).")
+        return 1
+    if unverified:
+        print(f"\n{unverified} unified audit row(s), attempt(s) or addend(a) are present and NOT verified by this "
+              "tool yet (roadmap M4); failing closed.")
         return 1
     return 0
 

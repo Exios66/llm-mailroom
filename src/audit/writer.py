@@ -402,10 +402,13 @@ async def get_row(doc_id: str) -> dict[str, Any] | None:
     Timestamps come back as UTC ISO strings, the form they were hashed in.
     Each parent has its own ``sub_rows``, ordered by stage, attempt number,
     and attempt id; addenda are ordered by their per-document sequence.
-    Schema initialization may migrate legacy data. Database errors propagate.
+    Schema initialization may migrate legacy data. Raise
+    ``AuditMigrationPending`` while the migration has not run, since
+    ``audit_log`` then still holds per-event legacy rows. Database errors propagate.
     """
     ensure_schema()
     async with async_session() as session:
+        await _require_migrated(session)
         row = await _existing_row(session, doc_id)
         if row is None:
             return None
