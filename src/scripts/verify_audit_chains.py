@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Verify every hash-chained audit chain in the database (audit A-8).
+"""Verify the audit database (audit A-8, unified audit row spec §6).
 
-Recomputes each per-doc chain with the shipped algorithm (v2, with v1
-fallback for legacy rows) and reports breaks. Nonzero exit when any chain is
-broken — so restore/backup flows can gate on it.
+Runs ``audit.verify.verify_audit_db``: the main chain, sub-rows, addenda, the
+legacy per-event chains, trace I/O, and pending records (manifests with
+``audit_written: pending`` and no row). Nonzero exit on any failure, so
+restore/backup flows can gate on it.
 
 Usage:
     python scripts/verify_audit_chains.py                 # full report
-    python scripts/verify_audit_chains.py --doc d1        # single doc
-    python scripts/verify_audit_chains.py --json          # machine-readable
+    python scripts/verify_audit_chains.py --doc d1        # one document's per-event chain only
+    python scripts/verify_audit_chains.py --json          # machine-readable report
+    python scripts/verify_audit_chains.py --check-sinks   # also check external trace sinks (roadmap M9)
 """
 
 from __future__ import annotations
@@ -30,76 +32,65 @@ from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
 
-from storage.db import ensure_schema  # noqa: E402
 
-
-async def _all_chains():
-    from sqlalchemy import select, distinct
-    from storage.audit_log import AuditLogRecord, get_audit_chain
+async def _doc_chain(doc_id: str) -> dict:
+    """One document's per-event chain (``--doc``), checked with today's algorithm."""
+    from schemas.audit import AuditLogEntry, verify_legacy_chain
+    from storage.audit_log import get_audit_chain
+    from storage.db import ensure_schema
 
     ensure_schema()
-    from storage.db import async_session
-
-    async with async_session() as session:
-        rows = await session.execute(select(distinct(AuditLogRecord.doc_id)))
-        doc_ids = [r[0] for r in rows.all()]
-    chains = {}
-    for doc_id in doc_ids:
-        chains[doc_id] = await get_audit_chain(doc_id)
-    return chains
-
-
-def _verify(doc_id: str, records: list[dict]) -> dict:
-    from schemas.audit import AuditLogEntry, verify_chain
-
-    if not records:
-        return {"doc_id": doc_id, "ok": True, "entries": 0, "error": None}
+    records = await get_audit_chain(doc_id)
     entries = [
         AuditLogEntry(
-            entry_id=r["entry_id"], doc_id=doc_id, matter_id=r.get("matter_id", ""),
-            event=r["event"], actor=r["actor"], detail=r["detail"],
-            prev_hash=r["prev_hash"], entry_hash=r["entry_hash"], timestamp=r["timestamp"],
+            entry_id=r["entry_id"], doc_id=doc_id, matter_id=r.get("matter_id", ""), event=r["event"],
+            actor=r["actor"], detail=r["detail"], prev_hash=r["prev_hash"], entry_hash=r["entry_hash"],
+            timestamp=r["timestamp"],
         )
         for r in records
     ]
-    ok = verify_chain(entries)
-    # Locate the first broken link for the report.
-    error = None
-    if not ok:
-        for i, e in enumerate(entries):
-            expected_prev = "" if i == 0 else entries[i - 1].entry_hash
-            if e.prev_hash != expected_prev:
-                error = f"link {i}: prev_hash mismatch (expected {expected_prev[:12]}, got {e.prev_hash[:12]})"
-                break
-        if error is None:
-            error = "entry hash mismatch (content tampered)"
-    return {"doc_id": doc_id, "ok": ok, "entries": len(records), "error": error}
+    return {"doc_id": doc_id, "entries": len(entries), "ok": verify_legacy_chain(entries) if entries else True}
+
+
+_LABELS = {
+    "main": "main chain", "subrows": "sub-rows", "addenda": "addenda", "legacy": "legacy chains",
+    "trace_io": "trace I/O", "pending": "pending records",
+}
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--doc", default=None, help="verify a single doc_id")
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--doc", default=None, help="verify one document's per-event chain only")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--check-sinks", action="store_true", help="also check external trace sinks")
     args = ap.parse_args()
 
-    chains = asyncio.run(_all_chains()) if not args.doc else {args.doc: asyncio.run(_all_chains()).get(args.doc, [])}
-    if args.doc and not chains.get(args.doc):
-        print(f"no audit entries for {args.doc}")
-        return 0
+    if args.doc:
+        result = asyncio.run(_doc_chain(args.doc))
+        if args.json:
+            print(json.dumps(result, indent=2))
+        elif not result["entries"]:
+            print(f"no audit entries for {args.doc}")
+        else:
+            print(f"[{'OK ' if result['ok'] else 'BROKEN'}] {args.doc} entries={result['entries']}")
+        return 0 if result["ok"] else 1
 
-    results = [_verify(doc_id, records) for doc_id, records in sorted(chains.items())]
-    broken = [r for r in results if not r["ok"]]
+    from audit.verify import SECTIONS, verify_audit_db
 
+    report = asyncio.run(verify_audit_db(check_sinks=args.check_sinks))
     if args.json:
-        print(json.dumps({"chains": len(results), "broken": broken}, indent=2))
-        return 1 if broken else 0
-
-    print(f"{len(results)} chain(s) checked, {len(broken)} broken")
-    for r in results:
-        mark = "OK " if r["ok"] else "BROKEN"
-        print(f"  [{mark}] {r['doc_id']:<40} entries={r['entries']}" + (f"  {r['error']}" if r["error"] else ""))
-    if broken:
-        print("\nChains are broken — investigate before restore (see audit A-8).")
+        print(json.dumps(report.as_dict(), indent=2, default=str))
+        return 0 if report.ok else 1
+    for name in SECTIONS:
+        section = getattr(report, name)
+        mark = "OK " if section.ok else "FAIL"
+        print(f"  [{mark}] {_LABELS[name]:<16} checked={section.checked} failures={len(section.failures)}")
+        for failure in section.failures[:20]:
+            print(f"         {failure}")
+        if len(section.failures) > 20:
+            print(f"         ... {len(section.failures) - 20} more")
+    if not report.ok:
+        print("\nAudit verification failed; investigate before restore (see audit A-8).")
         return 1
     return 0
 

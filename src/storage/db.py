@@ -211,6 +211,15 @@ def ensure_schema() -> bool:
     The idempotency cache is keyed by the resolved DB URL so a change of
     MAILROOM_BASE_DIR (e.g. per-test temp dirs) creates the schema in the
     right database.
+
+    After the tables exist it runs the one-time legacy audit migration
+    (``storage.audit_migrate``: skipped once ``audit_meta`` says it ran). A
+    migration that cannot run or aborts is logged and leaves the old
+    ``audit_log`` untouched; it never fails the schema, and the next process
+    start tries again.
+
+    Return ``True`` on success or a cache hit, even if the audit migration is
+    pending or failed. Return ``False`` for caught schema-creation errors.
     """
     with _schema_lock:
         global _schema_checked_url
@@ -219,30 +228,57 @@ def ensure_schema() -> bool:
             return True
         _ensure_models_imported()
         try:
-            if url.startswith("sqlite"):
-                from sqlalchemy import create_engine, event
-
-                # Sync sqlite driver (stdlib) — no event loop involvement, so this
-                # is safe to call from graph nodes, watcher threads, or the API.
-                sync_url = url.replace("+aiosqlite", "")
-                sync_engine = create_engine(sync_url)
-                event.listen(sync_engine, "connect", _apply_sqlite_pragmas)
-                try:
-                    Base.metadata.create_all(sync_engine)  # checkfirst=True by default
-                    _migrate_sqlite_columns(sync_engine)
-                finally:
-                    sync_engine.dispose()
-            else:
-                # Postgres: async driver. ensure_schema() is mostly called from
-                # inside a running loop (API handlers, audit writes), where
-                # asyncio.run() raises — so run the create on a private loop.
-                _run_on_private_loop(lambda: _create_schema_async(url))
+            _create_schema(url)
+            _migrate_audit_on_start()
             _schema_checked_url = url
             logger.info("schema_ready", url=url)
             return True
         except Exception:
             logger.exception("schema_creation_failed")
             return False
+
+
+def _create_schema(url: str) -> None:
+    """create_all (plus SQLite column adds) for ``url``; caller holds ``_schema_lock``."""
+    if url.startswith("sqlite"):
+        from sqlalchemy import create_engine, event
+
+        # Sync sqlite driver (stdlib) — no event loop involvement, so this
+        # is safe to call from graph nodes, watcher threads, or the API.
+        sync_url = url.replace("+aiosqlite", "")
+        sync_engine = create_engine(sync_url)
+        event.listen(sync_engine, "connect", _apply_sqlite_pragmas)
+        try:
+            Base.metadata.create_all(sync_engine)  # checkfirst=True by default
+            _migrate_sqlite_columns(sync_engine)
+        finally:
+            sync_engine.dispose()
+    else:
+        # Postgres: async driver. ensure_schema() is mostly called from
+        # inside a running loop (API handlers, audit writes), where
+        # asyncio.run() raises — so run the create on a private loop.
+        _run_on_private_loop(lambda: _create_schema_async(url))
+
+
+def ensure_tables() -> None:
+    """Create missing tables and add missing SQLite columns under ``_schema_lock``.
+
+    Used by the audit migration CLI and tests without running the legacy
+    audit migration. Schema-creation errors propagate to the caller.
+    """
+    with _schema_lock:
+        _ensure_models_imported()
+        _create_schema(_resolve_url())
+
+
+def _migrate_audit_on_start() -> None:
+    """Run the legacy audit migration; log, never raise, on failure."""
+    try:
+        from storage.audit_migrate import migrate_at_startup
+
+        _run_on_private_loop(migrate_at_startup)
+    except Exception:
+        logger.exception("audit_migration_failed")
 
 
 async def _create_schema_async(url: str) -> None:

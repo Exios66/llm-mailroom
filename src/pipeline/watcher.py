@@ -904,6 +904,31 @@ def _run_triage_traced(claimed: Path, matter_id: str, intake_meta: dict) -> dict
             logger.warning("triage_trace_flush_failed", exc_info=True)
 
 
+def _triage_audit_row(manifest, event: str, *, triage: dict | None, refs: dict) -> None:
+    """The triage lane's one unified audit row (roadmap M7): ``triage_archived`` or ``triage_reviewed``.
+
+    The lane runs outside the graph, so there is no node trace; the row records the
+    triage read as its decision fields. Best-effort: ``write_row`` never raises.
+    """
+    from audit.row import write_row
+
+    triage = triage or {}
+    state = {
+        "doc_id": manifest.doc_id,
+        "matter_id": manifest.matter_id,
+        "stage": manifest.stage.value if hasattr(manifest.stage, "value") else manifest.stage,
+        "doc_type": manifest.doc_type,
+        "doc_subclass": manifest.doc_subclass,
+        "classification_confidence": manifest.classification_confidence,
+        "classification_attempts": manifest.classification_attempts,
+        "escalation_reason": manifest.escalation_reason,
+        "extracted_data": triage.get("extraction"),
+        "extraction_source": "triage" if triage.get("extraction") is not None else None,
+        "file_sha256": refs.get("file_sha256"),
+    }
+    write_row(state, event=event, actor="triage", refs=refs)
+
+
 def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     """Single-document Gmail intake → the free-triage lane (HUB-037).
 
@@ -1001,6 +1026,9 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         # terminal manifest — the relations clerk must see it and the
         # conveyor position must be real.
         _triage_catalog_upsert(manifest, terminal_path=review_path, file_sha256=_file_sha256(claimed))
+        _triage_audit_row(manifest, "triage_reviewed", triage=None, refs={
+            "manifest_path": str(manifest_path), "file_sha256": _file_sha256(review_path),
+        })
         from .relations import dispatch_relations_scan
 
         dispatch_relations_scan(manifest.model_dump(mode="json"))
@@ -1140,6 +1168,12 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         extraction=triage.get("extraction"),
         file_sha256=terminal_detail.get("file_sha256"),
     )
+    _triage_audit_row(manifest, terminal_event, triage=triage, refs={
+        "archive_path": terminal_detail.get("archive_path"),
+        "manifest_path": str(manifest_path),
+        "sidecar_path": terminal_detail.get("archive_sidecar"),
+        "file_sha256": terminal_detail.get("file_sha256") or _file_sha256(terminal_path),
+    })
 
     logger.info(
         "triage_lane_complete",
@@ -1308,6 +1342,9 @@ class Watcher:
         ensure_dirs(inbox)
         _STATUS_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         logger.info("watcher_starting", inbox=str(inbox), worker_id=self.worker_id)
+        from audit.sinks.sql import warn_if_ephemeral
+
+        warn_if_ephemeral()
 
         with _watcher_owned_lock:
             if _watcher_owned:

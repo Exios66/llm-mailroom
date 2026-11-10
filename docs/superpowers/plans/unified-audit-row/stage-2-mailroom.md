@@ -12,7 +12,13 @@
 
 ## Global Constraints
 
-- Hash version 2 is unchanged and byte-identical with the dojo's `format_audit_entry`. `seq` is not hashed.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c535bdb0c904ded435f306b2b9d61a0fa37eaf52df9c675a9f35781bc3931aac -->
+
+- Hash version 2 is unchanged and byte-identical with the dojo's `archive_entry_hash`. `format_audit_entry` builds and normalizes the dojo detail object before hashing with `archive_entry_hash`. `seq` is not hashed.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - Fields not collected on a run are `null`, never filled in.
 - `audit.full_trace` / `MAILROOM_AUDIT_FULL_TRACE` defaults to off.
 - The current graph order stays as it is: judge before arbiter (KANBAN-063), and the boss escalation path.
@@ -60,7 +66,7 @@
 **Interfaces:**
 - Produces: `async def migrate_audit_log(*, backup_dir: Path | None = None) -> MigrationResult` (`migrated: bool`, `legacy_rows: int`, `backup_path: str | None`) and `async def rollback_audit_migration() -> RollbackResult`. CLI: `python -m storage.audit_migrate [--rollback]`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_migrates_legacy_rows_byte_for_byte`: every legacy column equals the original, and `verify_legacy_chain` passes.
   - `test_migration_is_idempotent`: a second run gives `migrated=False` and no changes.
   - `test_concurrent_startup_migrates_once`: two `ensure_schema` calls run under `asyncio.gather`.
@@ -69,10 +75,13 @@
   - `test_postgres_requires_opt_in`: with a Postgres URL and no `MAILROOM_AUDIT_MIGRATE=1`, the result is `migrated=False` and `audit_migration_pending` is logged.
   - `test_ddl_compiles_for_postgres`.
   - `test_rollback_restores_audit_log`: new tables are renamed `*_v2_<ts>`, and `audit_log` holds the legacy rows again.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Everything runs under `acquire_write_lock(session, "audit_log:chain")`. Check `audit_meta` first. Add unique indexes on `audit_log.doc_id` and `audit_log.seq`. SQLite: copy the DB file to `backup_dir` (default `<db dir>/backups/`). Postgres: proceed only with the opt-in, in one transaction. Write `audit_meta = {migrated_at, legacy_rows, legacy_tail_hashes_sha256}`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** Everything runs under `acquire_write_lock(session, "audit_log:chain")`. Check `audit_meta` first. Add unique indexes on `audit_log.doc_id` and `audit_log.seq`. SQLite: copy the DB file to `backup_dir` (default `<db dir>/backups/`). Postgres: proceed only with the opt-in, in one transaction. Write `audit_meta = {migrated_at, legacy_rows, legacy_tail_hashes_sha256}`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `ba73947`)
+
+> **Status:** implemented on draft PR #160 (branch `claude/unified-audit-row-wip`), not merged yet; full suite 2616 passed after merging `main`.
+> Rulings: (1) interim bridge `storage.audit_log.event_log_model()` sends the old per-event writer `write_audit_entry` and its readers to `audit_log_legacy` once `audit_meta` records the migration (removed by M7/M8/M11 when the per-event writers go); (2) the copy check compares row counts plus a digest over every legacy column, not only hashes; (3) `test_storage_concurrency.py` now queries `audit_log_legacy`.
 
 ### Task M3: Row and addendum writers
 
@@ -92,8 +101,14 @@
   - `async def get_row(doc_id) -> dict | None`.
   - `EVENTS = ("archived", "failed", "triage_archived", "triage_reviewed")` and `ADDENDUM_KINDS = ("rescore", "resumed", "review_decision", "relations_linked", "recovered_detail")`.
 
-- [ ] **Step 1: Write the tests.**
-  - `test_row_hash_matches_dojo_format_audit_entry`: compare against `llm_dojo_scoring.format_audit_entry` on the same inputs.
+- [x] **Step 1: Write the tests.**
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:decf93b9b8e0421d93ee9ba20f43447799abd909e0dc19d621972660b559ec53 -->
+
+  - `test_row_hash_matches_dojo_format_audit_entry`: compare the stored row hash against `llm_dojo_scoring.archive_entry_hash` on the same inputs, and reproduce the hash from `format_audit_entry` using its built and normalized detail object.
+
+<!-- /coderabbit-ai-generated:v1 -->
   - `test_rows_chain_globally_by_seq`.
   - `test_subrow_hashes_listed_in_parent_detail_attempts`.
   - `test_subrows_and_row_commit_atomically`: a failure injected after the sub-row insert leaves neither.
@@ -104,10 +119,14 @@
   - `test_concurrent_documents_do_not_fork_chain`: 20 documents under `asyncio.gather`.
   - `test_unknown_event_rejected`.
   - `test_writer_refuses_while_migration_pending`: with no `audit_meta` (Postgres opt-in not given), `write_terminal_row` raises `AuditMigrationPending` and writes nothing to `audit_log` (spec §6). M10 routes that error into the §5.6 fallback.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:<doc_id>` for addenda.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:doc:<doc_id>` for addenda (`storage.audit_log.doc_lock_key`).
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (full suite 2632 passed, 37 skipped)
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `3b6e5b9`)
+
+> **Status:** implemented on draft PR #160 (`3b6e5b9`), not merged yet. `src/audit/{models,writer}.py`, 16 tests in `src/tests/test_audit_writer.py`; `audit*` added to the wheel packages in `pyproject.toml`.
+> Rulings: (1) a sub-row hashes an envelope of its columns (`attempt_detail_envelope`: parent_id, stage, attempt_no, trigger, outcome, started_at, ended_at, detail) with `prev_hash=""`, `entry_id=attempt_id`, `event=attempt:<stage>`, timestamp `started_at`; M4 must recompute with `audit.writer.attempt_hash`. (2) `test_row_hash_matches_dojo_format_audit_entry` compares with the dojo's `archive_entry_hash` (what `format_audit_entry` hashes with), because `format_audit_entry` fills its own detail template. (3) SQLite's `BEGIN IMMEDIATE` already serializes processes, so `test_seq_conflict_retries` simulates the A17 race with a stale tail read; conflicts retry 5 times, then `AuditWriteError`. (4) A `resumed` addendum keeps the event the second terminal write asked for in `detail.event`. (5) `get_row` returns the row with `sub_rows` and `addenda` (each with its `sub_rows`), timestamps as UTC ISO strings. (6) The writers add a minimal `documents` row when the catalog has none (FK), as the per-event writer does.
+> For M4: use `audit.writer.hash_entry` (naive SQLite timestamps are read as UTC) and `attempt_hash`; rows chain by `seq`, addenda per document from the row's `entry_hash`.
 
 ### Task M4: Verification
 
@@ -124,7 +143,7 @@
 **Interfaces:**
 - Produces: `async def verify_audit_db(*, check_sinks: bool = False) -> VerifyReport`. `VerifyReport` has `main`, `subrows`, `addenda`, `legacy`, `trace_io` and `pending`, each `{ok: bool, checked: int, failures: list[dict]}`, plus `ok`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_clean_db_verifies`.
   - `test_tampered_row_detail_fails_main`.
   - `test_deleted_subrow_fails_subrows`.
@@ -135,10 +154,12 @@
   - `test_recovered_row_detail_sha_checked`.
   - `test_pending_manifest_without_row_reported`.
   - `test_script_exits_nonzero_on_failure`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement** the five checks and the pending report.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (15 failed)
+- [x] **Step 3: Implement** the five checks and the pending report.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The digests live in `src/audit/digests.py` (`detail_sha256`, `io_sha256`, SHA-256 of sorted-key JSON like `compute_audit_hash`), so M9 and M10 write exactly what the verifier recomputes. `detail_sha256` covers the detail as stored (including `attempts`) without `recovered_from`. (2) Pending records (a manifest with `audit_written` `pending` or `pending_partial` and no row) make the report fail: they are audit gaps until `audit-reconcile` runs. (3) Before the migration has run, the legacy check covers the live per-event `audit_log` and the unified checks have nothing to check. (4) `check_sinks` checks nothing extra until the M9 adapters exist. (5) `verify_chain` dispatches only `AuditLogEntry` chains and raises `TypeError` otherwise; `verify_audit_chains.py --doc` keeps the per-document per-event check. (6) Extra checks beyond the plan's list: a broken `prev_hash` link, an edited sub-row, an addendum's sub-rows.
 
 ### Task M5: Trace collection in state
 
@@ -161,7 +182,7 @@
   - `attempt_id_for(state: dict, node: str) -> str`, which is deterministic from `doc_id`, stage and counters.
   - `decisions_for(node, state, update) -> list[dict]` in the sandbox schema `{question, type, answer, p, expected, options, source}`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_traced_node_appends_one_visit_per_call`.
   - `test_visit_fields_match_spec`: exactly the §4.4 keys, with `prompt` and `completion` only when `full_trace` is on.
   - `test_decisions_match_sandbox_schema`: validate against the fixture copied from the sandbox's `job/node_trace.py`.
@@ -170,10 +191,12 @@
   - `test_trace_survives_checkpoint_resume`.
   - `test_old_checkpoint_without_trace_resumes` (review item A3): resume a recorded pre-upgrade checkpoint fixture; the trace starts empty and `trace_incomplete` is set.
   - `test_no_stage_rows_written_during_run`: `audit_log` stays empty until a terminal node runs.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `traced_node` measures timing and reads the LLM call info that the LLM wrapper already records (tokens, cost, model, prompt version). It hands prompt and completion to the sink layer (M9) through `audit.sinks.record_io`; until M9 lands, that is a no-op returning `(None, sha256)`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (10 failed)
+- [x] **Step 3: Implement.** `traced_node` measures timing and reads the LLM call info that the LLM wrapper already records (tokens, cost, model, prompt version). It hands prompt and completion to the sink layer (M9) through `audit.sinks.record_io`; until M9 lands, that is a no-op returning `(None, sha256)`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The visit's `node` is the graph node name, taken from the node function (`classify_node` -> `classify`), so `retry_classify` and `classify` stay apart although they share a span. (2) The old stage events are notes on the node's own visit (`record_visit` -> `decision["audit_event"]`), carried through a context variable so node return values are unchanged. The abort path's `run_aborted` event runs outside a node; its failed row comes with M7. (3) `attempt_id` is `att-<doc_id>-<stage>-r<run_attempt>-<n>` from the stage counter after the node ran; a transient failure names the attempt that runs next, so its retry shares the id. Nodes outside classification, extraction and judge have `attempt_id: null`. (4) `trace_incomplete` is set when a node other than `intake` sees an empty trace: LangGraph gives a missing reducer channel an empty list, so "key absent" cannot be told apart. (5) A node interrupted by `interrupt()` returns no update, so its pause is not a visit; the visit is recorded when the node completes after the resume. (6) Several LLM calls in one node are one visit: tokens and cost are summed, model and prompt version are the last call's, prompts and completions are joined. (7) The decision schema fixture is written from spec §4.4; the sandbox's `job/node_trace.py` was not reachable, so the contract test has not been compared with it. The old-checkpoint test builds the pre-upgrade checkpoint in the test (an untraced node) instead of a recorded binary fixture.
 
 ### Task M6: Scoring node family
 
@@ -195,7 +218,7 @@
   - State keys `scoring_common` (adherence plus the tier-0 result), `scoring` (the archive block plus `scored_payload`) and `extraction_adherence`.
   - `score_document_block(state_like: dict) -> dict`, the pure function the nodes and the rescore CLI (M14) share.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_one_node_per_registry_entry`.
   - `test_routes_each_corpus_type`, parametrised over the five types.
   - `test_corpus_absent_and_unknown_route_to_generic`.
@@ -206,10 +229,12 @@
   - `test_each_scoring_node_has_trace_visit`.
   - `test_benchmark_rows_get_headline` (G3): CUAD and MAUD rows reach `score_document_block` with their raw label maps, and the block has `headline_score` and `headline_metric`.
   - `test_doc_subclass_from_final_state` (G5): the scoring call gets the final `state["doc_subclass"]` (set near `build_graph.py:831`), not the classifier's first guess and not nothing.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `schema_lookup` is `schemas.documents.get_extraction_schema`. `taxonomy_bytes` is read once from `src/config/taxonomy.yaml`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (collection error: `graph.scoring_nodes` missing)
+- [x] **Step 3: Implement.** `schema_lookup` is `schemas.documents.get_extraction_schema`. `taxonomy_bytes` is read once from `src/config/taxonomy.yaml`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) `score_common` holds tier 0 as the payload adherence check plus the chosen scorer; the dojo's field-map suite (also tier 0) runs inside `score_archive_block` in the type node, so it is not run twice. (2) The type nodes and the rescore CLI share `score_document_block(state_like, *, adherence=None)`. (3) A scorer exception does not fail the document: the block is `{status: "error", reason, scorer}`, and the failing type node's visit shows it. (4) G3 is solved with a scoring-only adapter (`scoring_ground_truth`) instead of changing `catalog_expected_fields`, so the field scoring that `emit_pipeline_scores` reads is unchanged (Global Constraints). (5) Keys starting with `_` (the `_report` that `compile_report` adds) are dropped before adherence and scoring. (6) The scoring spans are `score-common` and `score-<type>` (observation type `evaluator`).
 
 ### Task M7: Row builder and terminal nodes
 
@@ -227,7 +252,7 @@
 **Interfaces:**
 - Produces: `build_row(state: dict, *, event: str, actor: str) -> TerminalRow` and `attempts_from_trace(trace: list[dict]) -> list[AttemptRow]`. The `detail` keys are exactly those in the spec §4.1 table, with `row_schema: 1`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_detail_keys_exactly_spec`.
   - `test_uncollected_fields_are_null`.
   - `test_metrics_equal_emit_pipeline_scores`.
@@ -238,10 +263,12 @@
   - `test_watcher_abort_writes_failed_row`.
   - `test_subrows_per_retry_and_arbiter_rescue`.
   - `test_trace_incomplete_flag_on_old_checkpoint`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (12 failed on the M6 commit)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The row is built in `src/audit/row.py` and written by the terminal nodes through `write_row`, which never raises; `agents/archivist.py` keeps its file work and legacy entry, and the `archive` node writes the row next to it, so the archivist stays procedural. (2) Only two edges reach `END` (`archive`, `audit_failed`): the judge stop and a rejected tray park both end through `human_review -> failed -> audit_failed`, and an intake failure raises into the `run_pipeline` abort path, which writes the `failed` row from the last checkpoint's trace. The stopping node is the one before `audit_failed` in `nodes_visited`; no row key was added for it (§4.1 is exact). (3) The triage lane runs outside the graph, so its row has no trace and records the triage read as its decision fields, with actor `triage`. (4) Directly consecutive visits with one `attempt_id` are one attempt; any visit in between (a `human_review` before a resume) starts a new sub-row, suffixed `.2`. (5) G6: `validate_extraction` takes `schema_valid` from `assess_extraction_payload` behind its existing edges (parse flag, empty payload, unregistered class), so routing does not move; a parity test pins it. `audit-row-schema.md` is left to M13. (6) The run start for `run_duration` is a context variable set by `run_pipeline`, not a state field, so checkpoints do not change.
 
 ### Task M8: Human review paths and pre-row events
 
@@ -258,7 +285,7 @@
 **Interfaces:**
 - Produces: `async def record_document_event(doc_id: str, kind: str, detail: dict) -> Literal["addendum", "trace"]`. It writes an addendum when the row exists; otherwise it appends a visit to the parked checkpoint through `graph.update_state(config, {"audit_trace": [visit]})`, so the reducer applies (review item A2).
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_complete_without_data_scores_and_archives_model_extraction`: `pipeline_success` is false and `extraction_source` is `"model"`.
   - `test_complete_with_data_is_human_correction`: a `human_correction` sub-row carrying the diff, reviewer and time; `scored_payload` is `"human_corrected"`; no extract node in the trace after the review.
   - `test_resume_reruns_extract`.
@@ -266,10 +293,12 @@
   - `test_record_and_requeue_before_row_land_in_trace`.
   - `test_record_after_row_is_review_decision_addendum`.
   - `test_model_scores_not_credited_with_correction`: the last model attempt's scores are kept on its sub-row.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (5 failed on the M7 commit; the resume and override tests pin unchanged behavior and passed)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) `disposition=complete` already resumed the graph at `compile_report` (through `human_review -> compile_report`, or a fresh run that starts there when the checkpoint is gone), so `review_resolve.py` and `resume_from_review` needed no change; `complete_human_extraction` stays for direct callers. (2) The state's `extraction_source` stays `human` for as-is approvals too (calibration, the catalog and `_model_scoring_view` key on it); the row's `extraction_source` and `scored_payload` read `scoring_nodes.human_corrected`, which looks at the `human_label` (`correct`, `field_corrections` or `removed_fields`). (3) The correction sub-row is stage `extraction` with trigger `human_correction` (the stage list stays the three model stages) and the next attempt number. (4) `record_document_event` returns `None` (logged `audit_event_unrecorded`) when the document has no row and nothing is parked; the interface's two values cover the cases that write. (5) The pre-row visit is appended with `update_state` and no `as_node`: the interrupted `human_review` is scheduled again and resumes as before (a probe and `test_record_and_requeue_before_row_land_in_trace` show it). (6) The legacy per-event entries (`review_recorded`, `review_requeued`, `relations_linked`) are still written next to the new records until the legacy writers are retired.
 
 ### Task M9: Trace sinks
 
@@ -288,7 +317,7 @@
   - `active_sinks() -> list[TraceSink]`, ordered with `sql` first.
   - `record_io(...) -> tuple[str | None, str, list[str]]`, returning `(trace_sink, io_sha256, also_in)`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_sql_sink_always_active`.
   - `test_phoenix_added_when_importable_enabled_and_reachable`: use a fake collector on localhost and the 1-second probe.
   - `test_phoenix_skipped_on_railway_localhost_endpoint`.
@@ -297,10 +326,12 @@
   - `test_sink_failure_does_not_fail_node`.
   - `test_full_trace_copies_io_into_visit`.
   - `test_io_sha_is_sha256_of_prompt_and_completion`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** The adapters reuse the clients in `src/observability/tracing.py`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (11 errors on the M7 commit: `audit.sinks.phoenix` missing)
+- [x] **Step 3: Implement.** The adapters reuse the clients in `src/observability/tracing.py`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The hosted rule covers Railway (`RAILWAY_ENVIRONMENT` / `RAILWAY_PROJECT_ID`) as well as the Hugging Face Space rule that `resolve_provider_name` already has; only a localhost endpoint is skipped there. (2) The probe is a TCP connect with a 1-second timeout, cached per endpoint for 60 seconds, so a visit never waits on it more than once a minute. (3) `phoenix`, `langfuse`, `braintrust` and `otlp` are write-only: `fetch_io` and `fetch_pending` return nothing (reading back would need each service's query API); only `sql` reads back, which is what `audit-reconcile` (M10) needs. (4) The built-ins are listed in the `mailroom.trace_sinks` group for discovery, but the loader resolves them by name, so they follow the rules above and work without a reinstall; any other name in the group is active once installed. (5) The spool table lives in `sql.py` (`capture_pending`, `fetch_pending`, `drop_pending`) so M10 only adds the write-failure path and the reconcile CLI. (6) `test_phoenix_skipped_when_unreachable` and `test_pending_rows_round_trip_through_spool` were added for the probe's negative case and the spool.
 
 ### Task M10: Write-failure fallback and `audit-reconcile`
 
@@ -317,7 +348,7 @@
 **Interfaces:**
 - Produces: `async def reconcile(*, dry_run: bool = False) -> ReconcileReport` (`recovered`, `skipped_existing`, `rejected_hash`). The spool path comes from `MAILROOM_AUDIT_SPOOL_PATH`, defaulting to `<db dir>/audit_spool.db`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_three_failures_then_pending_capture`.
   - `test_manifest_marked_pending_and_run_succeeds`.
   - `test_oversize_payload_sends_decisions_only_plus_sha` (Review Focus).
@@ -330,10 +361,12 @@
   - `test_ephemeral_spool_warning` (review item A6).
   - `test_migration_pending_takes_fallback`: `AuditMigrationPending` from the writer is handled like a failed commit; the record is parked and `audit-reconcile` writes it after the migration (spec §6).
   - `test_decisions_only_copy_reconciles_as_partial`: with only a decisions-only copy, reconcile writes it with `recovered_from.complete = false`, and logs `audit_gap_partial`; the manifest said `pending_partial`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (14 errors on the M9 commit: `audit.writer.RETRY_DELAYS_S` missing)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The retry lives in `audit.writer.commit_or_park` (three tries, waits `RETRY_DELAYS_S`), and `audit.row.write_row` calls it, so every terminal writer gets the fallback; a `ValueError` (a malformed row) is re-raised, not parked. (2) The pending record is captured under a pre-assigned `entry_id` and `write_terminal_row(..., entry_id=, recovered_from=)` reuses it, so the sub-row hashes and `detail_sha256` that reconcile checks are exactly what the recovered row stores. (3) The decisions-only copy keeps each visit's identity and `decisions` and each sub-row's `nodes` and `decisions`; extraction and scoring are dropped. (4) The `recovered_detail` addendum carries the full `detail` and sub-rows inside its own detail rather than as new sub-rows, because the attempt ids are the partial row's and are unique. (5) Partial copies stay in the spool after a partial row is written, so a complete copy found later can still close the gap; everything else is dropped once its row exists. (6) `MAILROOM_DATA_DIR` is not defined anywhere else yet, so the ephemeral check falls back to `MAILROOM_BASE_DIR` (the bins' root). (7) Extra tests: `test_reconcile_dry_run_writes_nothing` and `test_cli_dry_run_json`.
 
 ### Task M11: Readers and `audit_row_metrics`
 
@@ -349,7 +382,7 @@
 **Interfaces:**
 - Produces: `audit_row_metrics(row: dict, addenda: list[dict], attempts: list[dict]) -> dict` with exactly the spec §7 keys. `overall_extraction_score` is `scoring.headline_score` when set, else `scoring.overall_score`; `suite_overall_extraction_score` is `scoring.overall_score` (review item A1).
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_audit_doc_contract`: the keys `doc_id`, `chain_length`, `chain_valid` and `entries` keep their names, and the new keys are `legacy`, `pending` and `warehouse`. Entries are ordered row, sub-rows, then each addendum with its sub-rows, and each has `kind` and `parent_id`.
   - `test_audit_summary_rates`.
   - `test_metrics_keys_exactly_spec`.
@@ -357,10 +390,12 @@
   - `test_resumed_supplies_outcome`.
   - `test_model_only_counterparts_from_last_model_attempt`.
   - `test_headline_mapping`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (12 failed on the M10 commit: `audit.metrics` missing, `GET /audit/{doc_id}` still the legacy chain, no `unified` summary)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The legacy summary keys of `GET /audit` and `analyze_audit_db.py` stay top-level and the unified summary sits under `unified`, so existing callers keep working; it is built in `audit.readers.unified_summary` rather than inside `storage.audit_log.analyze_audit_db`, which stays the legacy reader. (2) Addendum entries carry `addendum_kind`, because `kind` is `addendum` for every one of them. (3) `chain_length` counts the row plus its addenda; the old per-event count is `legacy.chain_length`. (4) The `warehouse` key reads the warehouse manifest's `documents` map, which M12 writes; until then it is `null`. (5) `schemas.audit.verify_chain` stays as an alias: `gmail_intake`, `relations` and `stress_test.py` still verify per-event chains with it. (6) `analyze_audit_db.py` takes `argv` and exits 1 when a unified check fails, as `verify_audit_chains.py` does. (7) Extra tests: `test_audit_doc_unknown_and_tampered`, `test_audit_doc_shows_pending`, `test_analyze_script_prints_unified`, `test_corrected_without_model_attempt_leaves_model_scores_null`, `test_recovered_flag_and_missing_fields_are_null`.
 
 ### Task M12: Warehouse, `audit-report` and Langfuse scores
 
@@ -374,17 +409,19 @@
 - Modify: `src/observability/scores.py`. When Langfuse is configured, also emit `overall_score`, `extraction_f1`, `extraction_f2` and `schema_adherence`.
 - Test: `src/tests/test_warehouse_audit.py`, `src/tests/test_audit_report.py` with the golden `src/tests/fixtures/audit/audit_report.md`
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_parquet_round_trip_rows_attempts_addenda`: keyed merge by `entry_id`, `attempt_id` and `addendum_id`.
   - `test_legacy_exported_once`.
   - `test_manifest_maps_doc_to_hash_and_files`.
   - `test_audit_report_golden`: per live type it shows the schema, n, model, route, F1 and F2, with uncollected metrics labelled.
   - `test_report_reads_db_or_parquet_identically`.
   - `test_langfuse_scoring_emission_names`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (8 failed on the M11 commit: no unified warehouse files, `audit.report` and `emit_scoring_scores` missing)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The daily `audit_<date>.parquet` file keeps the per-event entries as before, because callers and tests join on it; `audit_legacy.parquet` is the one-time copy of the migrated history, written on the first export after the migration and recorded as `legacy_export` in the manifest, and later per-event entries (pre-row events) keep reaching the daily file. (2) The manifest's `documents` entry lists only the files that hold something of that document (`audit_attempts_` and `audit_addenda_` are left out when it has none) and is replaced by the newest export that included it. (3) The report has a section for each type with at least one row and a registered extraction schema; other types are listed by count. Route is `Modal` when the extraction model equals a `gateway.tiers.*.alias` in `taxonomy.yaml`, else `API`. Booleans show as a rate, numbers as a mean, each with the n that collected it. (4) Reading Parquet keeps the newest export of each `entry_id` across the daily files. (5) `schema_adherence` is added to `SCORE_CONFIGS` (it is in the dojo registry), so the contract gains one score config; The-Mailroom's schema mirror needs it. The scoring-block scores carry the id `<trace_id>-<name>`, so a later emission replaces rather than duplicates; the legacy `extraction_overall_score` emitters are M15's. (6) Extra tests: `test_cli_writes_report`, `test_run_pipeline_emits_the_row_scoring_block`.
 
 ### Task M14: Rescore CLI
 

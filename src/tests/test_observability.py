@@ -33,6 +33,11 @@ def _clear_observability_env(monkeypatch):
     monkeypatch.setattr(braintrust_setup, "_configured", False)
 
 
+
+def _node_output(out: dict) -> dict:
+    """A traced node's update without the audit keys ``traced_node`` adds (unified audit row, M5)."""
+    return {k: v for k, v in out.items() if k not in ("audit_trace", "trace_incomplete")}
+
 class TestProviderResolution:
     def test_defaults_to_phoenix_without_keys(self):
         # Local-first fallback: no cloud keys set -> the cost-free local Phoenix
@@ -139,7 +144,9 @@ class TestLangfuseClient:
             calls.append(state)
             return {"stage": "classified"}
 
-        assert node({"doc_id": "1"}) == {"stage": "classified"}
+        out = node({"doc_id": "1"})
+        assert _node_output(out) == {"stage": "classified"}
+        assert [v["node"] for v in out["audit_trace"]] == ["node"]  # one audit visit per call (M5)
         assert calls == [{"doc_id": "1"}]
 
 
@@ -290,7 +297,7 @@ class TestObservationTypes:
         def node(state):
             return {"stage": "classified"}
 
-        assert node({"doc_id": "1"}) == {"stage": "classified"}
+        assert _node_output(node({"doc_id": "1"})) == {"stage": "classified"}
         assert captured == [("classify-document", "agent")]
 
     def test_traced_node_publishes_stage_and_flushes(self, monkeypatch):
@@ -316,7 +323,8 @@ class TestObservationTypes:
         def node(state):
             return {"doc_type": "contract"}
 
-        assert node({"doc_id": "1", "stage": "classified"}) == {"doc_type": "contract"}
+        assert _node_output(node({"doc_id": "1", "stage": "classified"})) == {"doc_type": "contract"}
+        # The span output is the node's own update, without the audit visit.
         assert outputs == [{"doc_type": "contract", "stage": "classified"}]
         assert flushes == [1]
 

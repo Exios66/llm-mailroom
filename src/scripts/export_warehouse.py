@@ -92,6 +92,10 @@ def main() -> int:
             print(f"stamp: {result.get('stamp')}")
             print(f"batch documents: {result.get('exported_documents', 0)}")
             print(f"batch audit entries: {result.get('exported_audit_entries', 0)}")
+            print(f"batch unified rows: {result.get('exported_audit_rows', 0)} "
+                  f"(attempts {result.get('exported_audit_attempts', 0)}, "
+                  f"addenda {result.get('exported_audit_addenda', 0)}, "
+                  f"legacy history {result.get('exported_audit_legacy', 0)})")
             print(f"documents file total rows: {result.get('total_documents_in_file', 0)}")
             print(f"audit file total rows: {result.get('total_audit_in_file', 0)}")
             if result.get("documents_path"):
