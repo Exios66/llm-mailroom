@@ -308,3 +308,122 @@ class TestMockModel:
         assert m1.answer_binary("q", "d") == m2.answer_binary("q", "d")
         assert m1.classify_family("d") == m2.classify_family("d")
         assert m1.usage()["total_tokens"] > 0
+
+
+class TestLangfuseTracingAttach:
+    def test_zero_macro_f1_is_attached_not_dropped(self, monkeypatch):
+        """#197: a legitimate macro_f1 == 0.0 falls through no fallback chain."""
+        from legalbench import langfuse_tracing as lt
+
+        emitted = []
+        monkeypatch.setattr(lt.tracing, "is_enabled", lambda: True)
+        monkeypatch.setattr(lt, "score_trace", lambda name, value, **kw: emitted.append((name, value)))
+        lt.attach_run_scores({"accuracy": 0.9, "macro_f1": 0.0, "yes_f1": 1.0}, "contract_qa")
+        assert ("legalbench_macro_f1", 0.0) in emitted
+
+    @staticmethod
+    def _run_with_agent(monkeypatch, agent):
+        """Row 1 reaches the agent (111 tokens); row 2 has no ``question`` and
+        raises before any agent call."""
+        from types import SimpleNamespace as NS
+
+        from legalbench import runner as R
+
+        def task_call(a, row):
+            return a.answer_binary(row["question"], "doc")  # KeyError on row 2
+
+        task = NS(
+            id="contract_qa",
+            kind="binary",
+            call=task_call,
+            extract=lambda row, p: ("yes", 1.0, ""),
+            scorer=lambda results: {},
+            prompt_version="v1",
+            data_source_label=["test"],
+            ground_truth_label="TEST_GT",
+        )
+        monkeypatch.setattr(R, "get_task", lambda task_id: task)
+        monkeypatch.setattr(R, "build_record", lambda **kw: {})
+        monkeypatch.setattr(R, "_model_name", lambda model, default: "fake-model")
+        return R.run_task(
+            "contract_qa",
+            model=agent,
+            rows=[{"question": "q1", "answer": "yes"}, {"answer": "yes"}],
+            trace_enabled=False,
+        )
+
+    @staticmethod
+    def _assert_only_row_one_counted(result):
+        errored = [r for r in result.results if r["status"] == "error"]
+        assert len(errored) == 1 and errored[0]["cost_usd"] is None
+        ok = [r for r in result.results if r["status"] == "ok"]
+        assert ok and ok[0]["cost_usd"] == 0.5
+        # Only row 1 contributed usage: the failed row neither re-attached it
+        # nor counted as a row with usage.
+        assert result.tokens["total_tokens"] == 111
+        assert result.tokens["rows_with_usage"] == 1
+
+    def test_runner_usage_stays_empty_after_pre_call_failure(self, monkeypatch):
+        """#197: a row that raises before any LLM call must not re-attach the
+        previous row's usage (tokens/cost double-count)."""
+
+        class Agent:
+            def __init__(self):
+                self._last_usage = None
+
+            def answer_binary(self, question, text):
+                self._last_usage = {"total_tokens": 111, "cost": 0.5}
+                return {"answer": "yes"}
+
+            def usage(self):
+                return dict(self._last_usage or {})
+
+        self._assert_only_row_one_counted(self._run_with_agent(monkeypatch, Agent()))
+
+    def test_runner_does_not_write_injected_agent_private_usage(self, monkeypatch):
+        """An injected agent whose ``_last_usage`` is a read-only property must
+        not make the runner raise (it used to assign ``agent._last_usage = None``)."""
+
+        class Agent:
+            def __init__(self):
+                self._usage = {}
+
+            @property
+            def _last_usage(self):  # read-only: assignment raises AttributeError
+                return self._usage
+
+            def answer_binary(self, question, text):
+                self._usage = {"total_tokens": 111, "cost": 0.5}
+                return {"answer": "yes"}
+
+            def usage(self):
+                return dict(self._usage)
+
+        result = self._run_with_agent(monkeypatch, Agent())
+        assert len(result.results) == 2  # run_task did not die before the row handler
+        self._assert_only_row_one_counted(result)
+
+    def test_runner_pre_call_failure_without_private_usage_attribute(self, monkeypatch):
+        """An injected agent with no ``_last_usage`` at all: the failed row must
+        not inherit row 1's cost or be counted again."""
+
+        class Agent:
+            def __init__(self):
+                self._tokens = None
+
+            def answer_binary(self, question, text):
+                self._tokens = {"total_tokens": 111, "cost": 0.5}
+                return {"answer": "yes"}
+
+            def usage(self):
+                return dict(self._tokens or {})
+
+        self._assert_only_row_one_counted(self._run_with_agent(monkeypatch, Agent()))
+
+    def test_legalbench_agent_usage_is_empty_until_a_call_reports_usage(self):
+        from legalbench.agent import LegalBenchAgent
+
+        agent = LegalBenchAgent("system prompt")
+        assert agent.usage() == {}  # was a non-empty zero-valued dict
+        agent._last_usage = {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5, "cost": None}
+        assert agent.usage()["total_tokens"] == 5

@@ -50,10 +50,12 @@ dependencies = [
     "pyarrow>=15.0",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
+    # Interim pin f95c318 (llm-dojo-scoring#135, unreleased): date scoring hardening —
+    # year-verified dates, strict list date matching; no version cut yet.
     # v0.28.1 release (00a2a7f, llm-dojo-scoring#130/#131): the sorter guide files a bylaw
     # amendment under bylaws, never board_resolution (agrees with sorter_condensed_v5).
     # v0.28.0 (cab9768, #124): v10 alignment — Contract/Merger v2 field maps, gt_from_v10_row.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f",
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@f95c3188a1a634a9a2354afd5351edd8dd152a89",
 ]
 
 [project.optional-dependencies]
@@ -106,6 +108,10 @@ dev = [
     "nbformat>=5.9",
     "nbclient>=0.10",
     "ipykernel>=6.29",
+    # src/tests/test_wheel_runtime_catalog.py builds the wheel offline with these
+    # (no build isolation), matching [build-system].requires.
+    "setuptools>=68.0",
+    "wheel",
 ]
 
 [tool.setuptools.packages.find]
@@ -121,9 +127,10 @@ namespaces = true
 asyncio_mode = "auto"
 markers = [
     "no_langchain_mock: skip conftest's LangChain provider mock (hub#42 provider-seam tests)",
+    "live_corpus: fetches pinned real documents from the Hub; set MAILROOM_LIVE_TESTS=1",
 ]
-testpaths = ["src/tests"]
-pythonpath = ["src", "."]
+testpaths = ["src/tests", "tools/pipeline-diagnostics/tests"]
+pythonpath = ["src", ".", "tools/pipeline-diagnostics/backend"]
 
 # Monorepo dev: resolve the shared scoring engine from the workspace instead
 # of the release git pin above. Plain `pip install .` keeps using the pin.

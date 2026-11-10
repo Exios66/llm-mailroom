@@ -68,17 +68,19 @@ jobs:
       - run:
           name: Install dev dependencies
           # pip honors the pinned Dojo dependency; uv workspace sources do not.
-          command: pip install uv && pip install -e ".[dev]"
+          command: pip install -e ".[dev]"
+      - run:
+          name: Install nested pipeline-diagnostics package
+          # After the parent install: the tool imports pipeline modules, and the
+          # editable install is what puts its console entry point on PATH.
+          command: |
+            if [ -f tools/pipeline-diagnostics/pyproject.toml ]; then
+              pip install -e tools/pipeline-diagnostics
+            fi
       - save_cache:
           key: pip-v1-{{ checksum "pyproject.toml" }}
           paths:
             - ~/.cache/pip
-      - run:
-          name: Warm wheel build cache only when packaging tests are selected
-          command: |
-            if python -c 'import json; p=json.load(open("test-results/test-plan.json")); raise SystemExit(not (p["profile"] == "full" or "src/tests/test_wheel_runtime_catalog.py" in p["tests"]))'; then
-              uv build --no-sources --wheel --out-dir /tmp/uv-warm .
-            fi
       - run:
           name: Execute the test cascade and relevant experiment gate
           command: |

@@ -198,7 +198,17 @@ async def write_audit_entry(entry) -> AuditLogRecord | AuditLegacyRecord:
     catalog document if absent and assign the next per-document sequence.
     The supplied entry's previous hash, timestamp, and hash may be updated
     to link it to the current tail. Database errors propagate.
+
+    Retries SQLite ``database is locked`` on ``BEGIN IMMEDIATE`` (heavy writer
+    contention) with jittered backoff; each attempt is a fresh transaction that
+    re-reads the chain tail, so a retry can never fork or duplicate the chain.
     """
+    from storage.db import run_write_with_retry
+
+    return await run_write_with_retry(lambda: _write_audit_entry_once(entry))
+
+
+async def _write_audit_entry_once(entry) -> AuditLogRecord | AuditLegacyRecord:
     ensure_schema()
     from schemas.audit import AuditLogEntry
     async with async_session() as session:
@@ -442,6 +452,7 @@ async def analyze_audit_db(
         "review_recorded",
         "review_requeued",
         "review_completed",
+        "review_resolved",
     ):
         if key in by_event:
             review_events[key] = by_event[key]

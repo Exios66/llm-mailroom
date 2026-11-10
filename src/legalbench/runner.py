@@ -54,6 +54,51 @@ def _tokens_summary(rows_with_usage: list[dict[str, Any]]) -> dict[str, Any]:
     )}
 
 
+class _RowUsageScope:
+    """Runner-owned per-row usage capture around any agent.
+
+    Records whether the current row actually reached an agent call, so usage
+    is read only for rows that made one. A row that fails before any call
+    (e.g. a missing ``question``) gets an empty usage dict instead of the
+    previous row's tokens/cost (#197) and does not count toward
+    ``tokens.rows_with_usage`` -- with no write to the agent's private
+    ``_last_usage``, so injected agents may implement usage however they like
+    (read-only property, other attribute, ...). Attribute reads and writes
+    are forwarded to the wrapped agent unchanged.
+    """
+
+    _NOT_CALLS = frozenset({"usage", "last_usage"})
+
+    def __init__(self, agent: Any) -> None:
+        object.__setattr__(self, "_agent", agent)
+        object.__setattr__(self, "_called", False)
+
+    def begin_row(self) -> None:
+        object.__setattr__(self, "_called", False)
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._agent, name)
+        if not callable(attr) or name in self._NOT_CALLS or name.startswith("_"):
+            return attr
+
+        def _tracked(*args: Any, **kwargs: Any) -> Any:
+            object.__setattr__(self, "_called", True)
+            return attr(*args, **kwargs)
+
+        return _tracked
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(self._agent, name, value)
+
+    def row_usage(self) -> dict[str, Any]:
+        """The agent's usage for this row; ``{}`` if no agent call was made."""
+        if not self._called:
+            return {}
+        reader = getattr(self._agent, "usage", None)
+        usage = reader() if callable(reader) else {}
+        return usage if isinstance(usage, dict) else {}
+
+
 def _model_name(model: Any, fallback: str) -> str:
     if isinstance(model, str):
         return model
@@ -109,6 +154,7 @@ def run_task(
             pass
     results: list[dict[str, Any]] = []
     usages: list[dict[str, Any]] = []
+    scope = _RowUsageScope(agent)
 
     if trace_enabled:
         _tracing.ensure_score_configs_if_enabled()
@@ -120,6 +166,9 @@ def run_task(
 
     with trace_ctx:
         for i, row in enumerate(rows):
+            # A failed row must not re-append the previous row's usage
+            # (#197): the runner tracks whether THIS row reached an agent call.
+            scope.begin_row()
             expected = row.get("answer") or row.get("family") or ""
             obs_input = {
                 "task": task.id,
@@ -132,7 +181,7 @@ def run_task(
                     i, task.id, input_data=obs_input, metadata={"run_id": run_id}
                 ) if trace_enabled else nullcontext()
                 with question_context:
-                    prediction = task.call(agent, row)
+                    prediction = task.call(scope, row)
                 predicted, conf, support = task.extract(row, prediction)
                 parse_error = isinstance(prediction, dict) and bool(prediction.get("_parse_error"))
                 if parse_error or predicted == "error":
@@ -165,7 +214,10 @@ def run_task(
                         "error": str(exc)[:300],
                     }
                 )
-            usage = agent.usage() if hasattr(agent, "usage") else {}
+            # On a row that raised BEFORE any agent call, usage stays empty
+            # (not the previous row's tokens/cost, #197) and the row does not
+            # count toward ``rows_with_usage``.
+            usage = scope.row_usage()
             usages.append(usage)
             cost = usage.get("cost")
             if results and isinstance(cost, (int, float)):
