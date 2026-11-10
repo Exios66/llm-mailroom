@@ -376,3 +376,50 @@ def test_sub_row_detail_is_a_deep_snapshot():
     (rec,), _ = _build_sub_rows([att], parent_id="row-1", doc_id="doc-c", matter_id="M-1", actor="a")
     att.detail["extracted_data"]["n"] = 99
     assert rec.detail == {"extracted_data": {"n": 1}}
+
+
+async def test_get_row_refuses_while_migration_pending(audit_db):
+    from audit.models import AuditMigrationPending
+    from audit.writer import get_row, write_terminal_row
+
+    await write_terminal_row(_row("doc-p"))
+    with sqlite3.connect(audit_db) as conn:
+        conn.execute("DELETE FROM audit_meta")
+    with pytest.raises(AuditMigrationPending):
+        await get_row("doc-p")
+
+
+@pytest.mark.parametrize("field, value", [
+    ("parent_id", "row-2"), ("doc_id", "doc-2"), ("attempt_id", "att-2"), ("stage", "judge"),
+    ("attempt_no", 2), ("trigger", "retry"), ("outcome", "error"),
+    ("started_at", "2026-11-03T09:00:09+00:00"), ("ended_at", "2026-11-03T09:00:09+00:00"),
+    ("detail", {"extracted_data": {"n": 2}}),
+])
+def test_every_attempt_field_changes_the_attempt_hash(field, value):
+    from audit.writer import attempt_hash
+
+    sub = {"parent_id": "row-1", "doc_id": "doc-1", "attempt_id": "att-1", "stage": "extraction",
+           "attempt_no": 1, "trigger": "initial", "outcome": "ok",
+           "started_at": "2026-11-03T09:00:01+00:00", "ended_at": "2026-11-03T09:00:02+00:00",
+           "detail": {"extracted_data": {"n": 1}}}
+    base = attempt_hash(sub, matter_id="M-1", actor="a")
+    assert attempt_hash({**sub, field: value}, matter_id="M-1", actor="a") != base
+    assert attempt_hash(sub, matter_id="M-2", actor="a") != base
+    assert attempt_hash(sub, matter_id="M-1", actor="b") != base
+
+
+def test_verify_audit_chains_fails_closed_on_unified_rows(audit_db, monkeypatch, capsys):
+    import asyncio as _asyncio
+    import importlib.util
+    import sys
+
+    from audit.writer import write_terminal_row
+
+    _asyncio.run(write_terminal_row(_row("doc-v", attempts=[_attempt(1)])))
+    path = Path(__file__).resolve().parents[1] / "scripts" / "verify_audit_chains.py"
+    spec = importlib.util.spec_from_file_location("verify_audit_chains_under_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setattr(sys, "argv", ["verify_audit_chains.py"])
+    assert mod.main() == 1
+    assert "NOT verified by this tool yet" in capsys.readouterr().out
