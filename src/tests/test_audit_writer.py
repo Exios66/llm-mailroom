@@ -408,7 +408,7 @@ def test_every_attempt_field_changes_the_attempt_hash(field, value):
     assert attempt_hash(sub, matter_id="M-1", actor="b") != base
 
 
-def test_verify_audit_chains_fails_closed_on_unified_rows(audit_db, monkeypatch, capsys):
+def test_verify_audit_chains_checks_unified_rows(audit_db, monkeypatch, capsys):
     import asyncio as _asyncio
     import importlib.util
     import sys
@@ -421,5 +421,6 @@ def test_verify_audit_chains_fails_closed_on_unified_rows(audit_db, monkeypatch,
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     monkeypatch.setattr(sys, "argv", ["verify_audit_chains.py"])
-    assert mod.main() == 1
-    assert "NOT verified by this tool yet" in capsys.readouterr().out
+    assert mod.main() == 0  # M4: unified rows are verified, not refused
+    out = capsys.readouterr().out
+    assert "main chain" in out and "sub-rows" in out and "checked=1" in out
