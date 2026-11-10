@@ -130,8 +130,8 @@ def mode_status() -> dict:
 
         ok, count = verify_ledger()
         ledger = {"ok": bool(ok), "entries": count}
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("relations_mode_ledger_read_failed", error=repr(exc))
     try:
         import asyncio
 
@@ -139,8 +139,8 @@ def mode_status() -> dict:
 
         last_sweep = asyncio.run(R.get_scan_state("last_sweep_at"))
         edges = asyncio.run(R.count_edges())
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("relations_mode_db_read_failed", error=repr(exc))
 
     return {
         "mode": mode,

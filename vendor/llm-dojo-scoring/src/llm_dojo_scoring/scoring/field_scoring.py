@@ -39,7 +39,7 @@ import threading
 from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 import structlog
 
@@ -355,8 +355,65 @@ _MONTH_NAMES = ["january", "february", "march", "april", "may", "june",
                 "july", "august", "september", "october", "november", "december"]
 
 
-def _parse_date(text) -> Optional[Any]:
-    """Parse to a canonical datetime.date, or None when unparseable.
+class _DateParts(NamedTuple):
+    """The components of a date that its text actually states (``None`` = not stated)."""
+
+    year: Optional[int]
+    month: Optional[int]
+    day: Optional[int]
+
+    @property
+    def is_full(self) -> bool:
+        """True when year, month and day are all stated."""
+        return None not in self
+
+    @property
+    def stated(self) -> frozenset:
+        """Indexes (0 year, 1 month, 2 day) of the components the text states."""
+        return frozenset(i for i, v in enumerate(self) if v is not None)
+
+
+# Two fixed, distinct fill-in datetimes. dateutil fills every component the text
+# does not state from ``default`` (its own default is the CURRENT date, which makes
+# scores depend on the wall clock). The two differ in year, month AND day, so a
+# component that comes out the same in both parses was stated by the text. Both
+# years are leap years, so "February 29" parses.
+_DATE_PROBE_A = (2000, 1, 1)
+_DATE_PROBE_B = (2004, 3, 3)
+# Two-digit years use a FIXED pivot, never the clock: dateutil's default
+# parserinfo picks the century from today's year, so "1/1/77" would read as
+# 1977 now and as 2077 from 2027. Like Python's ``%y``: 00-68 -> 2000-2068,
+# 69-99 -> 1969-1999.
+_TWO_DIGIT_YEAR_PIVOT = 69
+_DATE_PARSERINFO = None
+
+
+def _date_parserinfo():
+    """Return the shared dateutil ``parserinfo`` with the fixed two-digit-year pivot."""
+    global _DATE_PARSERINFO
+    if _DATE_PARSERINFO is None:
+        from dateutil import parser
+
+        class _FixedPivotParserInfo(parser.parserinfo):
+            """``parserinfo`` whose two-digit-year century never depends on the clock."""
+
+            def convertyear(self, year, century_specified=False):
+                """Map a two-digit year with the fixed pivot; leave stated centuries alone."""
+                if year < 100 and not century_specified:
+                    return year + (1900 if year >= _TWO_DIGIT_YEAR_PIVOT else 2000)
+                return year
+
+        _DATE_PARSERINFO = _FixedPivotParserInfo()
+    return _DATE_PARSERINFO
+
+
+def _parse_date_parts(text) -> Optional[_DateParts]:
+    """Return the (year, month, day) components ``text`` states, or None.
+
+    Never reads the clock. None means unparseable, or a parse that states
+    neither a year nor a month (a bare day number or time is not a date).
+    A missing component is ``None``: "18th day of August" is ``(None, 8, 18)``
+    and "August 2014" is ``(2014, 8, None)``.
 
     Handles the forms that appear in CUAD ground truth: ISO, mm/dd/yyyy,
     "March 3, 2024", ordinal prose ("10th day of January 2000"), and stray
@@ -368,29 +425,77 @@ def _parse_date(text) -> Optional[Any]:
     if not s:
         return None
     s = _ORDINAL_RE.sub(r"\1", s)
+    # "March 12,1999": dateutil drops a year glued to the comma and would
+    # report it as unstated, so the stated year must get its space back.
+    s = re.sub(r",(?=\d)", ", ", s)
+    # A day range ("August 1-3, 2014", "1-3 August 2014") names its first day;
+    # dateutil would read the second number as a year. ISO and numeric dates
+    # (2014-08-18, 18-08-2014) are untouched: the range must sit next to a word
+    # or a ", YYYY".
+    s = re.sub(r"\b([A-Za-z]{3,}\.?\s+\d{1,2})\s*[-\u2013]\s*\d{1,2}\b(?![-/.]\d)", r"\1", s)
+    s = re.sub(r"(?<![\d/.\-])(\d{1,2})\s*[-\u2013]\s*\d{1,2}(?=\s+[A-Za-z]{3,})", r"\1", s)
+    # A weekday name is not a day of the month: dateutil would resolve "Monday
+    # August 2014" to the first Monday after each probe default and invent a day.
+    s = re.sub(
+        r"\b(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b\.?,?",
+        " ", s, flags=re.IGNORECASE,
+    )
+    s = re.sub(r"\s+", " ", s).strip()
     s = re.sub(
         r"\b(\d{1,2})[a-z]*(?:\s+[a-z]+)*\s+day\s+of\b", r"\1 day of", s,
         flags=re.IGNORECASE,
     )
+    # "16 day of August. 2012": a period before the year is OCR/typing noise.
     day_of_month = re.search(
-        r"\b(\d{1,2})\s+day\s+of\s+([A-Za-z]+)[,\s]*(\d{4})?", s, flags=re.IGNORECASE
+        r"\b(\d{1,2})\s+day\s+of\s+([A-Za-z]+)[,.\s]*(\d{4})?", s, flags=re.IGNORECASE
     )
     if day_of_month:
         month, day, year = day_of_month.group(2), day_of_month.group(1), day_of_month.group(3)
         s = f"{month} {day}, {year}" if year else f"{month} {day}"
     s = re.sub(r"[(\[\{,]+$", "", s).strip()
     try:
+        import datetime
+
         from dateutil import parser
 
-        dt = parser.parse(s)
-        return dt.date()
+        info = _date_parserinfo()
+        a = parser.parse(s, parserinfo=info, default=datetime.datetime(*_DATE_PROBE_A))
+        b = parser.parse(s, parserinfo=info, default=datetime.datetime(*_DATE_PROBE_B))
     except (ValueError, OverflowError):
+        return None
+    parts = _DateParts(
+        a.year if a.year == b.year else None,
+        a.month if a.month == b.month else None,
+        a.day if a.day == b.day else None,
+    )
+    if parts.year is None and parts.month is None:
+        return None
+    return parts
+
+
+def _parse_date(text) -> Optional[Any]:
+    """Parse to a canonical datetime.date, or None.
+
+    Returns a date only when the text states year, month AND day, so the
+    result never depends on the current date. Partial dates ("18th day of
+    August", "August 2014") return None here; use :func:`_parse_date_parts`
+    for the components they do state.
+    """
+    parts = _parse_date_parts(text)
+    if parts is None or not parts.is_full:
+        return None
+    import datetime
+
+    try:
+        return datetime.date(parts.year, parts.month, parts.day)
+    except ValueError:
         return None
 
 
 def parse_date(text) -> Optional[Any]:
-    """Public alias of :func:`_parse_date` — canonical datetime.date for any
-    CUAD-style date string, or None when unparseable."""
+    """Public alias of :func:`_parse_date` — canonical datetime.date for a
+    CUAD-style date string that states year, month and day, or None when it is
+    unparseable or only partly dated (no year or no day). Never reads the clock."""
     return _parse_date(text)
 
 
@@ -535,44 +640,179 @@ def score_containment_field(pred, exp, embedding=None) -> float:
     return round(len(te & tp) / len(te), 4)
 
 
+# A label that states no year cannot verify the year a prediction states, so the
+# prediction never earns full credit for it (the owner's rule: the year is critical).
+_UNVERIFIED_YEAR_CAP = 0.67
+
+
 def score_date_field(pred, exp, embedding=None) -> float:
+    """Score a date prediction; see :func:`_score_date_field_uncapped` for the rules.
+
+    A prediction that states a year scores at most 0.67 against a label that
+    states none: the year cannot be verified, so it is never a full match.
+    """
+    pred, exp = _integral_float_as_text(pred), _integral_float_as_text(exp)
+    score = _score_date_field_uncapped(pred, exp, embedding=embedding)
+    if score > _UNVERIFIED_YEAR_CAP and _date_year_unverified(pred, exp):
+        return _UNVERIFIED_YEAR_CAP
+    return score
+
+
+def _date_year_unverified(pred, exp) -> bool:
+    """True when the label cannot verify the year(s) the prediction states.
+
+    A yearless label cannot verify any year the prediction states, in a parsed
+    date or in prose ("dated August 18, 2015"). A prediction naming several
+    years the label does not state ("August 1, 2014 and August 18, 2015") is
+    ambiguous; a label that itself spans those years ("2014 to 2016") is not.
+    """
+    pred, exp = _integral_float_as_text(pred), _integral_float_as_text(exp)
+    ps, es = _parse_date_parts(pred), _parse_date_parts(exp)
+    pred_years = _stated_years(pred) | ({ps.year} if ps is not None and ps.year else set())
+    if es is not None and es.year is None and pred_years:
+        return True
+    return len(pred_years) > 1 and not pred_years <= _stated_years(exp)
+
+
+def _date_match_similarity(pred, exp, embedding=None) -> float:
+    """Date similarity for MATCHING (list pairing, audits): an unverified year never matches.
+
+    :func:`score_date_field` caps such a pair at 0.67 as a field score, which is
+    above ``bipartite_match_threshold``; for pairing it counts as no match, so a
+    dated prediction is never a true positive for a yearless label.
+    """
+    if _date_year_unverified(pred, exp):
+        return 0.0
+    return score_date_field(pred, exp, embedding=embedding)
+
+
+def _stated_years(text) -> set:
+    """Four-digit years (1900-2099) written in *text*."""
+    return {int(y) for y in re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", str(text))}
+
+
+def _integral_float_as_text(value):
+    """Render an integral float (a NaN-promoted year column: 2014.0) as "2014"."""
+    if isinstance(value, float) and value == value and value.is_integer():
+        return str(int(value))
+    return value
+
+
+def _score_date_field_uncapped(pred, exp, embedding=None) -> float:
     """Parse to canonical date, then exact match — with containment and
-    partial-credit fallbacks.
+    partial-credit fallbacks. Never reads the clock.
+
+    A date states some of (year, month, day); a yearless CUAD date such as
+    "18th day of August" states month and day only, and "August 2014" states
+    no day. A missing component is never invented: not from today's date and
+    not from a placeholder. The year is critical information, and the year of
+    a document is not the year the scorer runs in. Whether a yearless label
+    fixes the year is therefore decided by the LABEL, not by the clock. A
+    prediction that leaves out a year the label states never scores 1.0, and
+    :func:`score_date_field` caps a prediction stating a year at 0.67 against
+    a yearless label, because that label cannot verify the year.
 
     Rules, in order:
 
-    1. Exact parsed-date equality -> 1.0 (the discriminator).
+    1. Blank-template or label-only ground truth (no real date) -> 1.0 for a
+       null prediction, else 0.0.
     2. Containment -> 1.0: the labeler's date phrase appears inside the
-       prediction (or vice versa).
-    3. Partial credit by shared components when both parse: year+month ->
-       0.67, within 45 days -> 0.67, year-only -> 0.33.
-    4. Unparseable values fall back to fuzzy string matching.
+       prediction. The reverse (prediction inside the label) does not count
+       when the prediction leaves out a component the label states.
+    3. Both sides fully dated (year, month, day):
+
+       * same date -> 1.0
+       * same year+month, or within 45 days -> 0.67
+       * same year or same month only -> 0.33
+       * otherwise 0.0
+
+    4. At least one side partly dated: compare only the components BOTH sides
+       state (the 45-day window never applies).
+
+       * every shared component agrees and the prediction states every
+         component the label states -> 1.0 (a yearless label does not fix the
+         year; the prediction agrees with all of it)
+       * every shared component agrees but the prediction leaves out a
+         component the label states -> 0.67 when two or more agree, 0.33 when
+         only the year or only the month agrees, else 0.0; never 1.0
+       * a shared component differs -> 0.33 when the shared year or month
+         still agrees (e.g. same month, different day), else 0.0
+
+    5. Unparseable values fall back to fuzzy string matching.
     """
     if not isinstance(pred, str):
         pred = str(pred or "")
     if not isinstance(exp, str):
         exp = str(exp or "")
+    ps, es = _parse_date_parts(pred), _parse_date_parts(exp)
     # Blank-template and label-only ground truth (CUAD annotators select the
     # contract's literal date line: "_____ day of ________, 19____",
     # "Effective Date:") hold NO actual date. The model answering null is
     # CORRECT, and a fabricated date is not the labeled date.
-    if _parse_date(exp) is None and _date_expected_is_null(exp):
-        return 1.0 if not str(pred).strip() else 0.0
-    if _date_phrase_contained(pred, exp) or _date_phrase_contained(exp, pred):
-        return 1.0
-    dp, de = _parse_date(pred), _parse_date(exp)
-    if dp is not None and de is not None:
-        if dp == de:
+    if es is None and _date_expected_is_null(exp):
+        if not str(pred).strip():
             return 1.0
-        shared = sum(1 for a, b in ((dp.year, de.year), (dp.month, de.month)) if a == b)
-        if shared == 2:
-            return 0.67
-        if abs((dp - de).days) <= 45:
-            return 0.67
-        if shared == 1:
-            return 0.33
+        # An exact copy of a non-date label ("Effective upon signing") is the
+        # labelled value; a copied blank template or bare label is not a date.
+        if not _date_is_blank_or_bare_label(exp) and normalize_text(pred) == normalize_text(exp):
+            return 1.0
         return 0.0
+    pred_omits_label_component = es is not None and (ps is None or bool(es.stated - ps.stated))
+    if _date_phrase_contained(pred, exp) or (
+        not pred_omits_label_component and _date_phrase_contained(exp, pred)
+    ):
+        return 1.0
+    if ps is not None and es is not None:
+        if ps.is_full and es.is_full:
+            # Reuse the parsed components instead of parsing both sides again.
+            # Full parts are always a real date: dateutil rejects "Feb 30".
+            import datetime
+
+            return _score_full_dates(datetime.date(*ps), datetime.date(*es))
+        return _score_partial_dates(ps, es)
+    if es is not None:
+        # The label states a date but the prediction parses to no date. A bare
+        # fragment ("12", "Tuesday") is not the date and gets nothing. A garbled
+        # date that names a year ("Augus 18, 2014", "FY2014") keeps fuzzy credit,
+        # but never above 0.33 unless it names the labelled year.
+        pred_years = _stated_years(pred)
+        if not pred_years:
+            return 0.0
+        score = score_name_field(pred, exp, embedding=embedding)
+        if es.year is not None and es.year not in pred_years:
+            score = min(score, 0.33)
+        if not es.is_full:
+            # Never more than the partial-date ceiling against a partial label.
+            score = min(score, 0.67)
+        return score
     return score_name_field(pred, exp, embedding=embedding)
+
+
+def _score_full_dates(dp, de) -> float:
+    """Score two fully dated values: exact, year+month or 45 days, year or month only."""
+    if dp == de:
+        return 1.0
+    shared = sum(1 for a, b in ((dp.year, de.year), (dp.month, de.month)) if a == b)
+    if shared == 2:
+        return 0.67
+    if abs((dp - de).days) <= 45:
+        return 0.67
+    if shared == 1:
+        return 0.33
+    return 0.0
+
+
+def _score_partial_dates(ps: _DateParts, es: _DateParts) -> float:
+    """Score when a side is missing year or day: compare only shared components."""
+    common = ps.stated & es.stated
+    agree = {i for i in common if ps[i] == es[i]}
+    if agree == common and common:
+        if es.stated <= ps.stated:
+            return 1.0
+        if len(agree) >= 2:
+            return 0.67
+        return 0.33 if agree & {0, 1} else 0.0
+    return 0.33 if agree & {0, 1} else 0.0
 
 
 def _date_expected_is_null(exp: str) -> bool:
@@ -585,6 +825,17 @@ def _date_expected_is_null(exp: str) -> bool:
         if not re.search(r"\b(19|20)\d{2}\b", low):
             return True
     return False
+
+
+def _date_is_blank_or_bare_label(exp: str) -> bool:
+    """True for a blank template line ("_____ day of ____") or a bare label ("Effective Date:")."""
+    low = str(exp).strip().lower()
+    return (
+        "_" in low
+        or "blank" in low
+        or low.endswith(":")
+        or bool(re.fullmatch(r"[a-z ]*\bdate\b[a-z ]*", low))
+    )
 
 
 def _date_phrase_contained(container: str, target: str) -> bool:
@@ -604,7 +855,10 @@ def _date_phrase_contained(container: str, target: str) -> bool:
         any(f" {month}" in target_norm for month in _MONTH_NAMES)
         or bool(re.search(r"\b\d{4}-\d{1,2}\b", target_norm))
     )
-    if target_norm in nc and (len(target_norm.split()) >= 3 or explicit_month):
+    # Match on word boundaries, so a date is never found inside a different one
+    # ("august 1" in "august 18 2014", "1 august 2014" in "11 august 2014").
+    found = _contains_phrase(nc, target_norm)
+    if found and (len(target_norm.split()) >= 3 or explicit_month):
         return True
     if dt is None:
         return False
@@ -614,7 +868,12 @@ def _date_phrase_contained(container: str, target: str) -> bool:
         f"{month} {dt.day} {dt.year}",
         f"{dt.day} {month} {dt.year}",
     ]
-    return any(norm(r) in nc for r in renderings)
+    return any(_contains_phrase(nc, norm(r)) for r in renderings)
+
+
+def _contains_phrase(haystack: str, phrase: str) -> bool:
+    """True when *phrase* occurs in *haystack* bounded by non-alphanumerics."""
+    return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", haystack))
 
 
 # ---------------------------------------------------------------------------
@@ -695,6 +954,8 @@ def _element_similarity(element_type: str, item: str, exp: str, embedding=None) 
     For ``free_text`` elements, when the item covers >= the verification
     coverage of the answer's plain tokens, that coverage is the similarity
     (the item IS the labeled clause, quoted at length)."""
+    if element_type == "date":
+        return _date_match_similarity(item, exp, embedding=embedding)
     base = _element_scorer(element_type)(item, exp, embedding=embedding)
     if element_type == "free_text":
         answer_tokens = set(_tokenize(str(exp)))
@@ -895,9 +1156,12 @@ def _verification_tokens(value, field_type: str) -> set[str]:
     matches the document's prose date."""
     text = str(value or "")
     if field_type == "date":
-        parsed = _parse_date(text)
-        if parsed is not None:
-            text = f"{parsed.strftime('%B')} {parsed.day}, {parsed.year}"
+        parts = _parse_date_parts(text)
+        if parts is not None:
+            month = _MONTH_NAMES[parts.month - 1].capitalize() if parts.month else ""
+            day = f" {parts.day}" if parts.day else ""
+            year = f", {parts.year}" if parts.year and parts.day else (f" {parts.year}" if parts.year else "")
+            text = f"{month}{day}{year}".strip()
     return _containment_tokens(text)
 
 
@@ -913,13 +1177,22 @@ _DATE_CANDIDATE_RE = re.compile(
 
 
 def _date_grounded_in_doc(pred_date, doc_text: str) -> bool:
-    """True when the document contains a date parseable to ``pred_date``,
-    in ANY format (numeric dashed, slashed, or prose month-name)."""
+    """True when the document contains a date that agrees with ``pred_date``,
+    in ANY format (numeric dashed, slashed, or prose month-name).
+
+    ``pred_date`` is a ``datetime.date`` or the :class:`_DateParts` of a
+    partial date. A partial prediction ("August 18") is grounded by a document
+    date that agrees on every component it states; no component is invented.
+    """
     if pred_date is None or not doc_text:
         return False
+    if not isinstance(pred_date, _DateParts):
+        pred_date = _DateParts(pred_date.year, pred_date.month, pred_date.day)
     for match in _DATE_CANDIDATE_RE.finditer(doc_text):
-        candidate = _parse_date(match.group(0))
-        if candidate is not None and candidate == pred_date:
+        candidate = _parse_date_parts(match.group(0))
+        if candidate is not None and all(
+            want is None or want == got for want, got in zip(pred_date, candidate)
+        ):
             return True
     return False
 
@@ -936,13 +1209,13 @@ def audit_scalar_field(field_type: str, pred, exp, doc_text: str | None) -> dict
                 "true_items": 0, "verified_precision": 0.0,
                 "hallucinated": 0, "hallucination_rate": 0.0,
                 "doc_verification": bool(doc_text)}
-    scorer = FIELD_SCORERS.get(field_type, score_name_field)
+    scorer = _date_match_similarity if field_type == "date" else FIELD_SCORERS.get(field_type, score_name_field)
     threshold = get_bipartite_match_threshold()
     matched = exp not in (None, "") and scorer(pred, str(exp)) >= threshold
     in_doc = False
     if doc_text:
         if field_type == "date":
-            in_doc = _date_grounded_in_doc(_parse_date(pred), doc_text)
+            in_doc = _date_grounded_in_doc(_parse_date_parts(pred), doc_text)
         else:
             it_tokens = _verification_tokens(pred, field_type)
             dt_tokens = _containment_tokens(doc_text)
@@ -1539,7 +1812,7 @@ def score_extraction(
             # A null answer satisfies a null-expectation date (blank-template
             # or label-only GT holds no real date).
             if (field_type == "date"
-                    and _parse_date(str(exp_value)) is None
+                    and _parse_date_parts(str(exp_value)) is None
                     and _date_expected_is_null(str(exp_value))):
                 score = 1.0
             else:

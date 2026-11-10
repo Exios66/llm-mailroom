@@ -1,10 +1,12 @@
-import errno
 import os
 import json
 import hashlib
+import re
 import shutil
 import tempfile
+import threading
 import uuid
+from collections import OrderedDict
 from pathlib import Path, PureWindowsPath
 from typing import Optional
 
@@ -29,13 +31,98 @@ def get_base_dir() -> Path:
     return Path(os.environ.get("MAILROOM_BASE_DIR", "./data")).resolve()
 
 
+# Claims made by THIS process, keyed by the pre-claim source path. An abort
+# between ``claim_file`` and the state update carries only the stale source
+# path; the registry maps it back to the exact file this run claimed, so
+# recovery never depends on a same-named claim of another worker (whose
+# mtime heartbeats keep refreshing). Bounded: entries are a few bytes each.
+_CLAIMS_MAX = 4096
+_claims: "OrderedDict[str, Path]" = OrderedDict()
+_claims_lock = threading.Lock()
+
+
+def _claim_key(path: str | Path) -> str:
+    try:
+        return str(Path(path).resolve())
+    except (OSError, RuntimeError):
+        return str(Path(path).absolute())
+
+
+def _remember_claim(source: Path, claimed: Path) -> None:
+    key = _claim_key(source)
+    with _claims_lock:
+        _claims.pop(key, None)
+        _claims[key] = claimed
+        while len(_claims) > _CLAIMS_MAX:
+            _claims.popitem(last=False)
+
+
+def find_claimed_file(
+    original_filename: str,
+    source_path: str | Path | None = None,
+    *,
+    scan_fallback: bool = True,
+) -> Path | None:
+    """The claimed copy of a file under processing/<worker>/.
+
+    The abort path may hold a STALE pre-claim path (intake claims the file
+    into a worker dir before the run completes; a crash in between leaves
+    the reported path missing — PR #202 review).
+
+    When ``source_path`` (the pre-claim path the run was started with) was
+    claimed by this process, the recorded claim is authoritative: it is
+    returned if it still exists, else ``None`` — another worker's same-named
+    claim is never substituted. Only when no claim is recorded does the
+    lookup fall back to scanning by name, where several same-named claims
+    resolve to the newest (mtime). ``scan_fallback=False`` disables that
+    scan: a caller that will MOVE the result (the abort path) must not pick
+    up a same-named file that another worker claimed."""
+    if source_path:
+        with _claims_lock:
+            recorded = _claims.get(_claim_key(source_path))
+        if recorded is not None:
+            try:
+                return recorded if recorded.is_file() else None
+            except OSError:
+                return None
+    if not scan_fallback:
+        return None
+    return _claimed_file_scan(original_filename, processing_dir())
+
+
+def _claimed_file_scan(original_filename: str, proc_root: Path) -> Path | None:
+    if not original_filename:
+        return None
+    if not proc_root.exists():
+        return None
+    best: Path | None = None
+    best_mtime = -1.0
+    for worker_dir in proc_root.iterdir():
+        if not worker_dir.is_dir():
+            continue
+        candidate = worker_dir / _safe_bin_component(original_filename, "original_filename")
+        try:
+            # A concurrent mover can take the claim between the check and the
+            # stat; a vanished candidate is simply not a candidate.
+            if not candidate.is_file():
+                continue
+            mtime = candidate.stat().st_mtime
+        except FileNotFoundError:
+            continue
+        if mtime > best_mtime:
+            best, best_mtime = candidate, mtime
+    return best
+
+
 def list_stale_processing_files(stale_minutes: int = 60) -> list[Path]:
     """Files stranded in processing/<worker_id>/ by a crashed process (L-1/A-18).
 
     A file claimed by a worker that died mid-run stays in its worker dir
-    forever (no SIGTERM handler, no reclaim path). Anything older than
-    ``stale_minutes`` is presumed orphaned — return it for re-queueing or
-    finalizing as failed.
+    forever (no SIGTERM handler, no reclaim path). Anything whose claim is
+    older than ``stale_minutes`` is presumed orphaned — return it for
+    re-queueing or finalizing as failed. Age is the file's mtime, which
+    ``claim_file`` / ``requeue_from_review`` reset to the claim time; callers
+    that run documents in-process must still skip the names they are running.
     """
     import time as _time
 
@@ -244,14 +331,8 @@ def claim_file(file_path: Path, worker_id: str) -> Path:
     dest = processing / file_path.name
     # Reused workers must never replace an abandoned document's bytes.
     _move_review_file_no_clobber(file_path, dest)
-    return dest
-
-
-def move_to_classified(file_path: Path, doc_type: str) -> Path:
-    dest_dir = classified_dir(doc_type)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file_path.name
-    shutil.move(str(file_path), str(dest))
+    _stamp_claim_time(dest)
+    _remember_claim(file_path, dest)
     return dest
 
 
@@ -267,6 +348,8 @@ def requeue_from_review(file_path: Path, worker_id: str, *, original_filename: s
     name = _safe_bin_component(original_filename or file_path.name, "original_filename")
     dest = processing / name
     _move_review_file_no_clobber(file_path, dest)
+    _stamp_claim_time(dest)
+    _remember_claim(file_path, dest)
     return dest
 
 
@@ -284,8 +367,51 @@ def review_file_path(manifest) -> Path:
 
 
 def failed_file_path(manifest) -> Path:
-    """Resolve the owned failed file, rejecting ambiguous legacy basenames."""
-    return _owned_bin_file_path(manifest, failed_dir())
+    """Resolve the owned failed file, rejecting ambiguous legacy basenames.
+
+    A path the manifest recorded (``file_location``) wins when it is a file
+    in the failed bin: with both preferred names occupied, ``move_to_failed``
+    stores the new bytes under a numbered name that no document-ID rule can
+    derive, so the recorded path is the only exact locator for them."""
+    base = failed_dir()
+    recorded = _recorded_file_in(manifest, base)
+    if recorded is not None:
+        return recorded
+    return _owned_bin_file_path(manifest, base)
+
+
+def _recorded_file_in(manifest, base: Path) -> Path | None:
+    location = getattr(manifest, "file_location", None)
+    if not location:
+        return None
+    path = Path(location)
+    # Only a name this document's own move could have produced is trusted:
+    # the bare original name, this manifest's own review-file name
+    # (``<stem>--<doc_id><suffix>``) or a numbered fallback
+    # (``<stem>--<n><suffix>``). Anything else — including another
+    # document's ``<stem>--<its doc_id>`` name — is rejected, so a stale or
+    # edited manifest cannot point at another document's bytes.
+    original = Path(str(getattr(manifest, "original_filename", "") or ""))
+    if not original.name:
+        return None
+    name = path.name
+    if name != original.name:
+        if name == _review_name(manifest):
+            pass  # this manifest's own review-file name is trusted
+        elif not re.fullmatch(
+            r"%s--\d+%s" % (re.escape(original.stem), re.escape(original.suffix)),
+            name,
+        ):
+            # A numbered collision fallback (``<stem>--<n><suffix>``) is also
+            # this document's own move's product; anything else — notably
+            # another document's ``<stem>--<doc_id>`` name — is not.
+            return None
+    try:
+        if path.parent.resolve() == base.resolve() and path.is_file():
+            return path
+    except (OSError, RuntimeError):
+        return None
+    return None
 
 
 def archived_file_path(manifest) -> Path:
@@ -350,27 +476,128 @@ def _owned_bin_file_path(manifest, base: Path) -> Path:
     return legacy
 
 
-def _move_review_file_no_clobber(src: Path, dest: Path) -> None:
-    """Publish complete bytes with an atomic link, then retire the source.
+def touch_claim(file_path: str | Path | None) -> bool:
+    """Refresh the claim time of a file in ``processing/<worker_id>/``.
 
-    Cross-device sources are copied to a private destination-side staging
-    file first. A destination filesystem without hard links fails loudly;
-    never fall back to a rename/copy that could overwrite another worker.
+    The stale-claim sweep treats a claim older than its cutoff as orphaned, and
+    it may run in another process (a dedicated watcher beside the API), where no
+    in-process "running" set protects the file. A run that is still making
+    progress calls this at each node boundary, so only a claim that has stopped
+    advancing can look stale. Files elsewhere (review, archive) are left alone.
+    """
+    if not file_path:
+        return False
+    path = Path(file_path)
+    try:
+        if path.parent.parent != processing_dir() or not path.is_file():
+            return False
+        os.utime(path, None)
+        return True
+    except OSError:
+        logger.warning("claim_touch_failed", path=str(path))
+        return False
+
+
+def _stamp_claim_time(dest: Path) -> None:
+    """Make the claimed file's mtime mean "claimed at", not "uploaded at".
+
+    ``_move_review_file_no_clobber`` hard-links, so the claim keeps the
+    upload's mtime. A document that waited in a backlog for longer than the
+    stale cutoff would then look orphaned the moment it was claimed, and the
+    periodic reconcile would move it back to the inbox mid-run.
+    """
+    try:
+        os.utime(dest, None)
+    except OSError:
+        logger.warning("claim_time_stamp_failed", path=str(dest))
+
+
+def _move_review_file_no_clobber(src: Path, dest: Path) -> None:
+    """Publish complete bytes without ever replacing ``dest``, then retire ``src``.
+
+    The fast path is an atomic hard link. When the link fails for any reason
+    other than the name being taken (cross-device source, or a filesystem
+    without hard links: EXDEV, EPERM, ENOTSUP, ...), the bytes are staged in
+    a private destination-side temp file, fsynced, and published by
+    reserving the name with ``O_CREAT|O_EXCL`` and renaming the staged file
+    over our own reservation. An occupied destination always raises
+    ``FileExistsError`` and is left untouched.
     """
     try:
         os.link(src, dest)
-    except OSError as exc:
-        if exc.errno != errno.EXDEV:
-            raise
+    except FileExistsError:
+        raise
+    except OSError:
         fd, name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=dest.parent)
         os.close(fd)
         temporary = Path(name)
         try:
-            shutil.copy2(src, temporary)
-            os.link(temporary, dest)
+            shutil.copyfile(src, temporary)
+            # fsync FIRST: copystat copies src's mode, and a read-only src
+            # would leave the staged file 0o444 — opening it r+b for fsync
+            # would then fail for non-root users (PR #202 review).
+            with open(temporary, "r+b") as staged:
+                os.fsync(staged.fileno())
+            try:
+                shutil.copystat(src, temporary)
+            except OSError:
+                pass  # metadata is best effort on link-less filesystems
+            _publish_staged_no_clobber(temporary, dest)
         finally:
             temporary.unlink(missing_ok=True)
     src.unlink()
+
+
+def _publish_staged_no_clobber(staged: Path, dest: Path) -> None:
+    try:
+        os.link(staged, dest)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass
+    # No hard links here: reserve the name atomically, then rename the staged
+    # file over our own reservation (same directory, so the rename is atomic).
+    # Until the rename lands, a reader can see the reservation as an empty
+    # file; it is never another document's bytes, and it is never overwritten
+    # by anyone but this call.
+    reserved = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+    os.close(reserved)
+    try:
+        os.replace(staged, dest)
+    except BaseException:
+        dest.unlink(missing_ok=True)
+        raise
+
+
+def _no_clobber_move_to_dir(file_path: Path, dest_dir: Path, doc_id: str = "") -> Path:
+    """Resolve an unoccupied destination name, then publish via the atomic
+    link+unlink move.
+
+    ``os.link`` raising FileExistsError makes every step race-free: two
+    concurrent movers (or a re-failed same-name / same-doc_id file) can
+    never overwrite preserved bytes (PR #202 review on #194) — the old
+    code checked ``exists()`` *before* moving, which is not atomic, and the
+    doc-tagged fallback itself could overwrite."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    def _candidates():
+        stem, suffix = file_path.stem, file_path.suffix
+        yield dest_dir / file_path.name
+        if doc_id:
+            yield dest_dir / f"{stem}--{doc_id}{suffix}"
+        counter = 1
+        while True:
+            yield dest_dir / f"{stem}--{counter}{suffix}"
+            counter += 1
+
+    for dest in _candidates():
+        try:
+            _move_review_file_no_clobber(file_path, dest)
+            return dest
+        except FileExistsError:
+            continue
+    raise FileExistsError(f"no free destination for {file_path.name} in {dest_dir}")  # unreachable
 
 
 def park_for_review(file_path: Path, manifest) -> tuple[Path, bool]:
@@ -423,42 +650,33 @@ def move_to_review(file_path: Path, manifest) -> Path:
     return dest
 
 
-def move_to_failed(file_path: Path) -> Path:
-    dest_dir = failed_dir()
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file_path.name
-    shutil.move(str(file_path), str(dest))
-    return dest
+def move_to_failed(file_path: Path, doc_id: str = "") -> Path:
+    """Move a file to the failed bin with race-free collision resolution
+    (PR #202 review on #194 — an occupied target is never overwritten)."""
+    return _no_clobber_move_to_dir(file_path, failed_dir(), doc_id)
 
 
 def move_to_archive(file_path: Path, matter_id: str, doc_type: str, doc_id: str = "") -> Path:
-    """Move a file to the archive with a collision-safe name (audit A-20).
-
-    POSIX rename silently overwrites a same-named target — re-processing could
-    destroy a previously archived legal document. When a collision exists, the
-    incoming file gets a ``<stem>--<doc_id><suffix>`` name so nothing is ever
-    overwritten."""
-    dest_dir = archive_dir(matter_id, doc_type)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / file_path.name
-    if dest.exists():
-        stem, suffix = file_path.stem, file_path.suffix
-        if doc_id:
-            dest = dest_dir / f"{stem}--{doc_id}{suffix}"
-        else:
-            counter = 1
-            while dest.exists():
-                dest = dest_dir / f"{stem}--{counter}{suffix}"
-                counter += 1
-    shutil.move(str(file_path), str(dest))
-    return dest
+    """Move a file to the archive with race-free collision resolution
+    (audit A-20; re-processing can never destroy a previously archived
+    legal document, and the doc-tagged fallback no longer clobbers)."""
+    return _no_clobber_move_to_dir(file_path, archive_dir(matter_id, doc_type), doc_id)
 
 
 def _save_manifest(manifest) -> Path:
     mdir = manifests_dir()
     mdir.mkdir(parents=True, exist_ok=True)
     path = mdir / f"{manifest.doc_id}.json"
-    path.write_text(manifest.model_dump_json(indent=2))
+    # Atomic publish: write a sibling temp file, then os.replace. A reader
+    # (queue listing, a concurrent resolve) never sees a half-written manifest,
+    # and the temp name never matches the ``*.json`` manifest glob.
+    tmp = mdir / f".{manifest.doc_id}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+    try:
+        tmp.write_text(manifest.model_dump_json(indent=2))
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -477,10 +695,6 @@ def load_manifest(doc_id: str):
     if not isinstance(data, dict):
         raise ValueError("Document manifest root must be a JSON object")
     return DocumentManifest(**data)
-
-
-def load_taxonomy():
-    return _get_config()
 
 
 def get_worker_id() -> str:
@@ -561,9 +775,11 @@ def list_inbox_files() -> list[Path]:
     if not inbox.exists():
         return []
     extensions = accepted_extensions()
+    # A ``.meta`` sidecar is never a document, even if a taxonomy lists the
+    # extension; only the document beside it is selectable.
     return sorted(
         p for p in inbox.iterdir()
-        if p.is_file() and p.suffix.lower() in extensions
+        if p.is_file() and p.suffix.lower() in extensions and p.suffix.lower() != ".meta"
     )
 
 

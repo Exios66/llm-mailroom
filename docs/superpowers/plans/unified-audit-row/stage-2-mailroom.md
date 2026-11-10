@@ -23,7 +23,7 @@
 - `audit.full_trace` / `MAILROOM_AUDIT_FULL_TRACE` defaults to off.
 - The current graph order stays as it is: judge before arbiter (KANBAN-063), and the boss escalation path.
 - `emit_pipeline_scores` output is unchanged; `detail.metrics` is exactly that output plus `subclass_correct`.
-- Gate per task: `pytest -q` (testpaths `src/tests`) and `python src/scripts/roadmap_status.py --check` pass.
+- Gate per task: `pytest -q` (both `src/tests` and `tools/pipeline-diagnostics/tests`; install both packages) and `python src/scripts/roadmap_status.py --check` pass.
 - Public API additions only: `/audit/{doc_id}` and `/audit` keep every existing key.
 
 ## Review Focus
@@ -120,7 +120,7 @@
   - `test_unknown_event_rejected`.
   - `test_writer_refuses_while_migration_pending`: with no `audit_meta` (Postgres opt-in not given), `write_terminal_row` raises `AuditMigrationPending` and writes nothing to `audit_log` (spec §6). M10 routes that error into the §5.6 fallback.
 - [x] **Step 2: Run them.** Expected: FAIL.
-- [x] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:<doc_id>` for addenda.
+- [x] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:doc:<doc_id>` for addenda (`storage.audit_log.doc_lock_key`).
 - [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (full suite 2632 passed, 37 skipped)
 - [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `3b6e5b9`)
 

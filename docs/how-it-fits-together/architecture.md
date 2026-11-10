@@ -56,7 +56,7 @@ the hub integrates them afterward.
 
 1. **Corpus feeds build class-specific samples.** Enron-Evaluation-Environment turns 517K Enron emails into a stratified, de-duplicated `correspondence` sample. claims-data-eda renders CMS Medicare claim events into plain-text EOB documents with ground truth for `insurance_claim`. Contracts (CUAD), merger agreements (MAUD) and corporate records (EDGAR S-1 exhibits) come from public legal corpora.
 2. **Everything is published to one dataset.** The canonical corpus is [`Lucius-Morningstar/mailroom-dataset`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-dataset): 3,302 documents, five classes, 55 class-by-subclass strata. Mailroom-Corpus-EDA profiles it (phases P0 to P6) and owns the upload helpers. GitBook embeds those figures on [Mailroom dataset](../mailroom-dataset/mailroom-dataset.md) ([visualizations](../mailroom-dataset/visualizations.md)).
-3. **Consumers pin a revision, never a live tip.** The pipeline, eval-environment and mailroom-ml all pin the same Hub revision (`ed7576b6`, tag v9.1 at time of writing). The labels sit in a separate `ground_truth` config joined to the blind `default` config on `filename`, so a model under test never sees its answers.
+3. **Consumers pin a revision, never a live tip.** The pipeline pins commit `ccd040f6` (Hub tag v9.3, as of 2026-11-10); eval-environment and mailroom-ml pin their own revision, which their guides record. The labels sit in a separate `ground_truth` config, joined to the `default` config on `filename`. That join does not make all of `default` blind: filenames and some metadata fields can reveal the class or subclass, so a blind evaluation shows the model only `doc_text` and the prompt.
 
 Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroom dataset](../mailroom-dataset/mailroom-dataset.md).
 
@@ -117,7 +117,7 @@ flowchart LR
 
 | Consumer               | Depends on                                | How                                                                          |
 | ---------------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
-| llm-mailroom           | llm-dojo-scoring                          | git pin `@00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f`; changed through explicit release adoption                                              |
+| llm-mailroom           | llm-dojo-scoring                          | git pin `@f95c3188a1a634a9a2354afd5351edd8dd152a89`; changed through explicit release adoption                                              |
 | llm-mailroom           | mailroom-ml                               | optional, lazily imported at intake                                          |
 | eval-environment       | llm-mailroom (and dojo through it)        | editable path source to a sibling checkout, set in `[tool.uv.sources]`       |
 | local-mailroom-sandbox | llm-mailroom, llm-dojo-scoring            | tracked snapshots under `vendor/`                                            |

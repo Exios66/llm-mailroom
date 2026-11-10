@@ -9,6 +9,7 @@ test. The existing `affected_tests.py` import analyzer supplies the selection;
 
 ```bash
 python -m pip install -e '.[dev]'
+python -m pip install -e tools/pipeline-diagnostics
 # Inspect the plan for a branch, including uncommitted and untracked inputs:
 PYTHONPATH=src python src/scripts/ci_tests.py --base origin/main
 # Run the plan:
@@ -23,11 +24,17 @@ PYTHONPATH=src python src/scripts/ci_tests.py --full --run
 inputs from Git. To test a single function directly, use ordinary pytest:
 `python -m pytest src/tests/test_routing.py -q -k classify`.
 
+The full Python selection includes `src/tests` and `tools/pipeline-diagnostics/tests`.
+The raw `affected_tests.py` helper scans only `src`; pair it with the nested suite
+or use `ci_tests.py` for combined selection. Install the nested package after the
+parent. Its tests carry their own hermetic fixtures.
+
 ## Cascade and escalation
 
 | Scope | What runs |
 | --- | --- |
 | Every scoped run | Routing, output guards, graph-node contracts and compiled pipeline E2E smoke tests. The stronger `test_graph_contracts.py` suite joins automatically when present. |
+| Nested diagnostics change | Smoke plus explicitly mapped `tools/pipeline-diagnostics/tests`; nested docs also retain root documentation checks. |
 | Small mapped change | Smoke, then all transitively affected test files (including literal dynamic imports/monkeypatch targets). No smoke file is run twice. Runtime/script changes also run the hermetic experiment baseline. |
 | Markdown/reStructuredText | Smoke, documentation consistency checks, and any tests that reference changed filenames. |
 | Shared/high-risk or uncertain change | Full pytest suite with branch coverage, then the hermetic experiment baseline. |

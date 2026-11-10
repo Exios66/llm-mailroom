@@ -2,7 +2,7 @@
 
 `mailroom-dataset` ships five Hugging Face configs. The first two are the evaluation contract every repository joins. The other three are ingress-simulation extras.
 
-Pin the revision (`v9.1` / `ed7576b6`). Never read the live tip.
+Pin the revision (`v9.3` / `ccd040f6`). Never read the live tip.
 
 ## `default` (blind)
 
@@ -23,6 +23,15 @@ An LLM that only sees `default` cannot read class, subclass, intent, clause span
 ## `ground_truth`
 
 3,302 rows, joined 1:1 on `filename`. The integrity pass reports unique filenames on both sides, equal filename sets, and identical 2,979/323 splits.
+
+**v9.2 and v9.3 ground-truth revisions** (rows, `document_id`s and text are unchanged from v9.1; still 3,302 rows):
+
+- `annotation_method` has six regimes. The 91 SEC EDGAR EX-10 contracts carry `annotation_source` = `sec_edgar`, and `related_document_ids` is populated for 23 rows.
+- The `_published` column is removed: the published `ground_truth` config has 35 columns at v9.3.
+- Corporate labels were repaired (`entity_name`, `record_type`, `subject_matter`, `keywords`; 12 corporate records re-subclassed), and corporate `gt_presence` has per-subclass entity keys (37 keys). A blank, undocumented corporate entity field is left out of `gt_presence`. `labels_version` is recorded in the dataset's `manifest.txt`.
+- Merger agreements expect `expected_specialist` = `merger_agreement_specialist` instead of `contracts_specialist` (152 merger rows, plus 8 bundle, 8 stream and 4 fixture rows).
+
+Corporate field scores and merger routing expectations therefore differ from runs against v9.1. The `v9.3` tag was re-pointed once on its release day; the pipeline records the resolved commit as `revision_resolved` in load provenance.
 
 ### Identity and provenance
 

@@ -67,3 +67,6 @@ graphify-out/
 
 # PR evidence captured locally (screenshots, recordings); published via the pr-evidence branch
 .evidence/
+
+# Autoresearch loop state (per-machine iteration logs and dashboards)
+experiments/autoresearch/state/
