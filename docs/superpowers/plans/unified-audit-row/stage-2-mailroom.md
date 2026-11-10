@@ -382,7 +382,7 @@
 **Interfaces:**
 - Produces: `audit_row_metrics(row: dict, addenda: list[dict], attempts: list[dict]) -> dict` with exactly the spec §7 keys. `overall_extraction_score` is `scoring.headline_score` when set, else `scoring.overall_score`; `suite_overall_extraction_score` is `scoring.overall_score` (review item A1).
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_audit_doc_contract`: the keys `doc_id`, `chain_length`, `chain_valid` and `entries` keep their names, and the new keys are `legacy`, `pending` and `warehouse`. Entries are ordered row, sub-rows, then each addendum with its sub-rows, and each has `kind` and `parent_id`.
   - `test_audit_summary_rates`.
   - `test_metrics_keys_exactly_spec`.
@@ -390,10 +390,12 @@
   - `test_resumed_supplies_outcome`.
   - `test_model_only_counterparts_from_last_model_attempt`.
   - `test_headline_mapping`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (12 failed on the M10 commit: `audit.metrics` missing, `GET /audit/{doc_id}` still the legacy chain, no `unified` summary)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The legacy summary keys of `GET /audit` and `analyze_audit_db.py` stay top-level and the unified summary sits under `unified`, so existing callers keep working; it is built in `audit.readers.unified_summary` rather than inside `storage.audit_log.analyze_audit_db`, which stays the legacy reader. (2) Addendum entries carry `addendum_kind`, because `kind` is `addendum` for every one of them. (3) `chain_length` counts the row plus its addenda; the old per-event count is `legacy.chain_length`. (4) The `warehouse` key reads the warehouse manifest's `documents` map, which M12 writes; until then it is `null`. (5) `schemas.audit.verify_chain` stays as an alias: `gmail_intake`, `relations` and `stress_test.py` still verify per-event chains with it. (6) `analyze_audit_db.py` takes `argv` and exits 1 when a unified check fails, as `verify_audit_chains.py` does. (7) Extra tests: `test_audit_doc_unknown_and_tampered`, `test_audit_doc_shows_pending`, `test_analyze_script_prints_unified`, `test_corrected_without_model_attempt_leaves_model_scores_null`, `test_recovered_flag_and_missing_fields_are_null`.
 
 ### Task M12: Warehouse, `audit-report` and Langfuse scores
 
