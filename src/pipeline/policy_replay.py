@@ -354,12 +354,30 @@ def _conf(att: SorterAttempt | ExtractionAttempt) -> float | None:
     return att.confidence if att.confidence is not None else att.confidence_raw
 
 
+def _every_window_failed(att: ExtractionAttempt) -> bool:
+    return att.n_chunks > 0 and att.failed_chunks >= att.n_chunks
+
+
 def _window_evidence_usable(att: ExtractionAttempt) -> bool:
+    """Whether the attempt's merge can be replayed under any rule.
+
+    An attempt whose every window failed needs no evidence, even in a record
+    written before window evidence existed: nothing parsed, so the failed cap
+    decides. Otherwise the evidence must hold one entry per parsed window
+    (``n_chunks - failed_chunks``); a shorter list could hide a weak window.
+    """
+    if _every_window_failed(att):
+        return True
     confs, fields = att.window_confidences, att.window_has_fields
     if confs is None or fields is None or len(confs) != len(fields):
         return False
-    # No parsed window (every one failed): nothing to re-derive, the failed cap decides.
-    return len(confs) > 0 or (att.n_chunks > 0 and att.failed_chunks >= att.n_chunks)
+    return 0 < len(confs) == att.n_chunks - att.failed_chunks
+
+
+def _window_evidence_incomplete(att: ExtractionAttempt) -> bool:
+    """Evidence was recorded but does not cover every parsed window (never true for legacy records)."""
+    has_evidence = att.window_confidences is not None or att.window_has_fields is not None
+    return has_evidence and not _window_evidence_usable(att)
 
 
 def _extraction_confidence(att: ExtractionAttempt, cls: str | None) -> float | None:
@@ -372,7 +390,7 @@ def _extraction_confidence(att: ExtractionAttempt, cls: str | None) -> float | N
     partial extraction through that the live graph would retry.
     """
     conf = _conf(att)
-    if _window_evidence_usable(att):
+    if _window_evidence_usable(att) and att.window_confidences:
         # Re-derive the merge from the per-window evidence under the rule in force, so ``min``
         # and ``cr6`` are compared on the same records whichever rule the sweep ran under.
         from langchain_agents.specialist_agents import merge_window_confidences
@@ -697,6 +715,9 @@ def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
         w.visit("extract" if k == 1 else "retry_extract", att.cost_usd, calls=max(1, att.n_chunks))
         if att.transient_error:
             return w.unobserved(f"extraction_attempt_{k}_transient_error")
+        if att.n_chunks > 1 and _window_evidence_incomplete(att):
+            # Recorded evidence that skips a parsed window is unreliable under any rule.
+            return w.unobserved(f"extraction_attempt_{k}_window_evidence_incomplete")
         if _MERGE_RULE["value"] != "min" and att.n_chunks > 1 and not _window_evidence_usable(att):
             return w.unobserved(f"extraction_attempt_{k}_window_evidence_not_observed")
         w.score = att.extraction_score

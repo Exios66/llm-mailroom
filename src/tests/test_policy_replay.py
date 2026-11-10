@@ -918,6 +918,29 @@ def test_cr6_an_attempt_whose_every_window_failed_is_observed_like_min():
     assert (cr6.outcome, cr6.path) == (mn.outcome, mn.path)
 
 
+
+def test_cr6_an_old_all_failed_attempt_without_evidence_reaches_its_retry():
+    """#204 review: a pre-evidence record whose first attempt lost every window must replay
+    its recorded retry under cr6 (and so count the retry's cost), exactly as under min."""
+    dead = _windowed(confs=None, fields=None, recorded=0.0, failed_chunks=2)
+    rec = record(sorters=[sorter(0.97)], extractions=[dead, extract(0.95, attempt=2)])
+    cr6 = pr.replay(rec, POLICY, merge_rule="cr6")
+    mn = pr.replay(rec, POLICY, merge_rule="min")
+    assert "extraction_attempt_1_window_evidence_not_observed" not in cr6.reasons
+    assert (cr6.outcome, cr6.path) == (mn.outcome, mn.path)
+    assert "retry_extract" in cr6.path
+
+
+@pytest.mark.parametrize("rule", ["min", "cr6"])
+def test_window_evidence_that_skips_a_parsed_window_is_unobserved(rule):
+    """#204 review: three parsed windows but evidence for one must not auto-archive on it."""
+    short = extract(0.99, n_chunks=3, window_confidences=[0.99], window_has_fields=[True])
+    rec = record(sorters=[sorter(0.97)], extractions=[short])
+    out = pr.replay(rec, POLICY, merge_rule=rule)
+    assert out.outcome == pr.UNOBSERVED
+    assert out.reasons == ["extraction_attempt_1_window_evidence_incomplete"]
+
+
 def test_old_records_without_window_fields_still_load():
     old = extract(0.9).model_dump(exclude={"window_confidences", "window_has_fields"})
     att = ExtractionAttempt.model_validate(old)
