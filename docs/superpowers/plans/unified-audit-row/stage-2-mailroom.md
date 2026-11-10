@@ -218,7 +218,7 @@
   - State keys `scoring_common` (adherence plus the tier-0 result), `scoring` (the archive block plus `scored_payload`) and `extraction_adherence`.
   - `score_document_block(state_like: dict) -> dict`, the pure function the nodes and the rescore CLI (M14) share.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_one_node_per_registry_entry`.
   - `test_routes_each_corpus_type`, parametrised over the five types.
   - `test_corpus_absent_and_unknown_route_to_generic`.
@@ -229,10 +229,12 @@
   - `test_each_scoring_node_has_trace_visit`.
   - `test_benchmark_rows_get_headline` (G3): CUAD and MAUD rows reach `score_document_block` with their raw label maps, and the block has `headline_score` and `headline_metric`.
   - `test_doc_subclass_from_final_state` (G5): the scoring call gets the final `state["doc_subclass"]` (set near `build_graph.py:831`), not the classifier's first guess and not nothing.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `schema_lookup` is `schemas.documents.get_extraction_schema`. `taxonomy_bytes` is read once from `src/config/taxonomy.yaml`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (collection error: `graph.scoring_nodes` missing)
+- [x] **Step 3: Implement.** `schema_lookup` is `schemas.documents.get_extraction_schema`. `taxonomy_bytes` is read once from `src/config/taxonomy.yaml`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) `score_common` holds tier 0 as the payload adherence check plus the chosen scorer; the dojo's field-map suite (also tier 0) runs inside `score_archive_block` in the type node, so it is not run twice. (2) The type nodes and the rescore CLI share `score_document_block(state_like, *, adherence=None)`. (3) A scorer exception does not fail the document: the block is `{status: "error", reason, scorer}`, and the failing type node's visit shows it. (4) G3 is solved with a scoring-only adapter (`scoring_ground_truth`) instead of changing `catalog_expected_fields`, so the field scoring that `emit_pipeline_scores` reads is unchanged (Global Constraints). (5) Keys starting with `_` (the `_report` that `compile_report` adds) are dropped before adherence and scoring. (6) The scoring spans are `score-common` and `score-<type>` (observation type `evaluator`).
 
 ### Task M7: Row builder and terminal nodes
 

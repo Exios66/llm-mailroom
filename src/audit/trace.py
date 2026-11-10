@@ -63,6 +63,17 @@ NODE_DECISION_FIELDS: dict[str, tuple[str, ...]] = {
     "archive": ("stage", "failure_class", "error_message"),
 }
 
+def decision_fields(node: str) -> tuple[str, ...]:
+    """State fields recorded in a visit's ``decision``; the scoring family shares one list per role."""
+    if node in NODE_DECISION_FIELDS:
+        return NODE_DECISION_FIELDS[node]
+    if node == "score_common":
+        return ("scoring_common",)
+    if node.startswith("score_"):
+        return ("scoring", "extraction_adherence")
+    return ()
+
+
 #: Graph node -> attempt stage and the state counter that numbers its attempts.
 _ATTEMPT_COUNTERS: dict[str, tuple[str, str]] = {
     "classify": ("classification", "classification_attempts"),
@@ -210,7 +221,7 @@ def visit(node: str, state: dict, update: dict, *, started_at, ended_at, status:
     merged = {**state, **update}
     llm = llm or {}
     visit_id = f"v-{uuid.uuid4().hex}"
-    decision = {f: merged.get(f) for f in NODE_DECISION_FIELDS.get(node, ())}
+    decision = {f: merged.get(f) for f in decision_fields(node)}
     if event:
         decision["audit_event"] = event
     decisions = decisions_for(node, state, update, event=event)
@@ -312,6 +323,6 @@ def run_calls_count() -> int:
 
 __all__ = [
     "DECISION_KEYS", "DECISION_TYPES", "FULL_TRACE_KEYS", "LLMCallInfo", "NODE_DECISION_FIELDS", "OUTCOMES",
-    "STATUSES", "VISIT_KEYS", "append_visits", "attempt_id_for", "begin_visit", "decisions_for", "end_visit",
+    "STATUSES", "VISIT_KEYS", "append_visits", "attempt_id_for", "decision_fields", "begin_visit", "decisions_for", "end_visit",
     "full_trace_enabled", "llm_info_since", "node_name", "record_visit", "run_calls_count", "visit",
 ]

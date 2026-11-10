@@ -62,7 +62,7 @@ def run_graph(temp_base_dir, monkeypatch, mocker):
 
 def test_intake_to_archive_preserves_node_outputs_and_original_bytes(run_graph):
     order, states, final, source = run_graph()
-    assert order == ["intake", "classify", "extract", "compile_report", "catalog_write", "archive"]
+    assert order == ["intake", "classify", "extract", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
     intake, classified, extracted = (states[n] for n in ("intake", "classify", "extract"))
     assert intake["doc_text"] == CLEAN
     assert intake["intake_changed"] is True
@@ -113,7 +113,7 @@ def test_transient_classification_retries_keep_clean_text_and_attempt_budget(run
     success = deepcopy(run_graph.sorter.return_value)
     run_graph.sorter.side_effect = [openai.APIConnectionError(request=None), success]
     order, states, final, _ = run_graph()
-    assert order == ["intake", "classify", "classify", "extract", "compile_report", "catalog_write", "archive"]
+    assert order == ["intake", "classify", "classify", "extract", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
     assert [c.args[0] for c in run_graph.sorter.call_args_list] == [CLEAN, CLEAN]
     assert states["classify"]["classification_attempts"] == 1
     assert states["classify"]["transient_error"] is False
@@ -126,7 +126,7 @@ def test_guarded_extraction_is_replaced_before_report_and_archive(run_graph):
         {**deepcopy(FIELDS), "confidence": 0.99},
     ]
     order, states, final, _ = run_graph()
-    assert order == ["intake", "classify", "extract", "retry_extract", "compile_report", "catalog_write", "archive"]
+    assert order == ["intake", "classify", "extract", "retry_extract", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
     assert states["extract"]["extraction_guardrail"]
     assert states["retry_extract"]["extraction_attempts"] == 2
     assert states["retry_extract"]["extracted_data"]["parties"] == ["Acme", "Beta"]
@@ -184,7 +184,7 @@ def test_optional_intake_pass_keeps_prepared_text_and_advisory_prior(run_graph, 
             "changes_applied": ["Removed OCR artifacts"], "sections": [],
         }
     order, states, final, _ = run_graph()
-    assert order == ["intake", "classify", "extract", "compile_report", "catalog_write", "archive"]
+    assert order == ["intake", "classify", "extract", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
     assert states["intake"]["doc_text"] == CLEAN
     assert run_graph.sorter.call_args.args == (CLEAN,)
     prior = run_graph.sorter.call_args.kwargs["intake_prior"]
@@ -209,7 +209,7 @@ def test_reviewer_winning_class_controls_specialist_and_report(run_graph, mocker
         "reasoning": "Agreement between two parties",
     })
     order, states, final, _ = run_graph()
-    assert order == ["intake", "classify", "retry_classify", "review_classify", "extract", "compile_report", "catalog_write", "archive"]
+    assert order == ["intake", "classify", "retry_classify", "review_classify", "extract", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
     assert reviewer.call_args.args == (CLEAN,)
     assert states["review_classify"]["review_verdict"] == "reviewer_overrides"
     assert states["review_classify"]["doc_type"] == "contract"
@@ -236,7 +236,7 @@ def test_judge_findings_and_arbiter_fix_list_reach_reextraction(run_graph, mocke
         "fields_to_fix": ["governing_law"],
     })
     order, states, final, _ = run_graph()
-    assert order == ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "compile_report", "catalog_write", "archive"]
+    assert order == ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
     assert judge.call_args.kwargs == {"doc_type": "contract", "extracted": {**first, "cuad_family": None, "cuad_clauses": [], "maud_clauses": [], "merger_consideration": None}, "doc_text": CLEAN}
     assert arbiter.call_args.kwargs["extracted"] == {**first, "cuad_family": None, "cuad_clauses": [], "maud_clauses": [], "merger_consideration": None}
     assert arbiter.call_args.kwargs["judge_findings"] == ["governing_law contradicts source"]

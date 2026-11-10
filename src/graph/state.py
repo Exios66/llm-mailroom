@@ -153,4 +153,9 @@ class DocumentState(TypedDict, total=False):
     # ``traced_node``. ``trace_incomplete`` marks a run resumed from a checkpoint
     # written before the trace existed.
     audit_trace: Annotated[list[dict], append_visits]
+    # Scoring node family (spec §3.1, §5.1): tier 0 result and route, the dojo
+    # archive block (+ ``scored_payload``) and the payload adherence check.
+    scoring_common: dict[str, Any] | None
+    scoring: dict[str, Any] | None
+    extraction_adherence: dict[str, Any] | None
     trace_incomplete: bool

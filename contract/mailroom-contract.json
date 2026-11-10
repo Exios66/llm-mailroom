@@ -75,6 +75,41 @@
         "id": "review_classify",
         "span": "classify-document",
         "observation_type": "agent"
+      },
+      {
+        "id": "score_common",
+        "span": "score-common",
+        "observation_type": "evaluator"
+      },
+      {
+        "id": "score_contract",
+        "span": "score-contract",
+        "observation_type": "evaluator"
+      },
+      {
+        "id": "score_corporate_record",
+        "span": "score-corporate-record",
+        "observation_type": "evaluator"
+      },
+      {
+        "id": "score_correspondence",
+        "span": "score-correspondence",
+        "observation_type": "evaluator"
+      },
+      {
+        "id": "score_generic",
+        "span": "score-generic",
+        "observation_type": "evaluator"
+      },
+      {
+        "id": "score_insurance_claim",
+        "span": "score-insurance-claim",
+        "observation_type": "evaluator"
+      },
+      {
+        "id": "score_merger_agreement",
+        "span": "score-merger-agreement",
+        "observation_type": "evaluator"
       }
     ],
     "edges": [
@@ -194,15 +229,15 @@
       },
       {
         "source": "compile_report",
-        "target": "catalog_write",
+        "target": "human_review",
         "conditional": true,
         "label": null
       },
       {
         "source": "compile_report",
-        "target": "human_review",
+        "target": "score_common",
         "conditional": true,
-        "label": null
+        "label": "catalog_write"
       },
       {
         "source": "extract",
@@ -365,6 +400,78 @@
         "target": "review_classify",
         "conditional": true,
         "label": null
+      },
+      {
+        "source": "score_common",
+        "target": "score_contract",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "score_common",
+        "target": "score_corporate_record",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "score_common",
+        "target": "score_correspondence",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "score_common",
+        "target": "score_generic",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "score_common",
+        "target": "score_insurance_claim",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "score_common",
+        "target": "score_merger_agreement",
+        "conditional": true,
+        "label": null
+      },
+      {
+        "source": "score_contract",
+        "target": "catalog_write",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "score_corporate_record",
+        "target": "catalog_write",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "score_correspondence",
+        "target": "catalog_write",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "score_generic",
+        "target": "catalog_write",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "score_insurance_claim",
+        "target": "catalog_write",
+        "conditional": false,
+        "label": null
+      },
+      {
+        "source": "score_merger_agreement",
+        "target": "catalog_write",
+        "conditional": false,
+        "label": null
       }
     ]
   },
@@ -385,6 +492,13 @@
     "normalize-intake": "span",
     "pipeline-result": "generation",
     "route-for-review": "span",
+    "score-common": "evaluator",
+    "score-contract": "evaluator",
+    "score-corporate-record": "evaluator",
+    "score-correspondence": "evaluator",
+    "score-generic": "evaluator",
+    "score-insurance-claim": "evaluator",
+    "score-merger-agreement": "evaluator",
     "transcribe-pdf": "retriever",
     "write-catalog": "span"
   },

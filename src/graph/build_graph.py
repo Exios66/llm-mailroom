@@ -3598,8 +3598,14 @@ def build_graph(checkpointer=None):
         "failed": END,
     })
 
+    # Unified audit row (spec §5.1): the report is scored before it is catalogued.
+    from graph.scoring_nodes import add_scoring_nodes
+
+    add_scoring_nodes(
+        workflow, next_node="catalog_write", wrap=lambda span, fn: traced_node(span)(_bounded(fn))
+    )
     workflow.add_conditional_edges("compile_report", after_report, {
-        "catalog_write": "catalog_write",
+        "catalog_write": "score_common",
         "human_review": "human_review",
     })
     workflow.add_edge("catalog_write", "archive")
