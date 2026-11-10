@@ -5,9 +5,11 @@ Enforces the four duties promised in ``notebooks/PLAN.md`` (§Guards):
 1. every planned notebook exists with title + honesty-label cells, and the
    shared bench module imports network-free;
 2. headless re-execution of every notebook via ``nbclient`` from the repo
-   root, plus one representative from notebooks/ (all notebooks share one
-   cwd bootstrap, which a static guard pins), regenerates cleanly — cell
-   error status must match the committed stored outputs (zero errors);
+   root, plus ``CWD_NOTEBOOKS`` (00 and 14) from notebooks/, regenerates
+   cleanly — cell error status must match the committed stored outputs
+   (zero errors) and a notebooks/ run must leave no new files there. That
+   is sound because a static guard pins every notebook cell and lab module
+   to one cwd bootstrap with no other cwd read or cwd-relative path;
 3. ``pipeline_lab`` unit pins: band math matches the ``graph.routing``
    literals, sandbox teardown restores env, step-log capture reports node
    names in graph order;
@@ -238,46 +240,158 @@ def _stored_error_count(fname: str) -> int:
 
 
 # Every notebook locates the repo through ONE shared bootstrap: ``ROOT = Path.cwd()`` then walk
-# up to the directory holding ``pyproject.toml``. No other cell, and no ``notebooks/*.py`` lab
-# module, reads the working directory (``test_cwd_dependence_is_confined_to_the_root_bootstrap``
-# enforces that). So the second PLAN cwd exercises the same code in every notebook, and running
-# it for all 15 notebooks only re-executes them (~80 s) without testing anything new. Each
-# notebook runs from the repo root; the ``notebooks/`` start is run for this one cheap
-# representative, whose bootstrap is the canonical form, to prove the walk-up works.
-CWD_REPRESENTATIVE = "00_pipeline_anatomy.ipynb"
+# up to the directory holding ``pyproject.toml``. A static guard (``_cwd_findings``) enforces that
+# nothing else in a notebook cell or a ``notebooks/*.py`` lab module reads the working directory
+# or names a cwd-relative path (``Path("data/x")``, ``open("x")``, ``os.listdir("x")`` ...). So the
+# second PLAN cwd exercises the same code in every notebook, and re-executing all 15 from
+# ``notebooks/`` (~80 s) would only repeat it. Each notebook runs from the repo root. The
+# ``notebooks/`` start runs for two cheap notebooks:
+#   - 00, whose bootstrap is the canonical form, to prove the walk-up works;
+#   - 14, the one notebook that writes files (a pilot attachment under ``data/pilot_runs``).
+# Execution alone cannot catch a misplaced write (14 ran green from ``notebooks/`` while creating
+# ``notebooks/data/``), so those runs also assert that nothing new appeared under ``notebooks/``.
+CWD_NOTEBOOKS = ("00_pipeline_anatomy.ipynb", "14_gmail_pilot.ipynb")
 
 _REEXEC_CASES = [(fname, "repo_root") for fname in sorted(PLANNED)] + [
-    (CWD_REPRESENTATIVE, "notebooks_dir")
+    (fname, "notebooks_dir") for fname in CWD_NOTEBOOKS
 ]
 
-_CWD_READERS = ("Path.cwd()", "os.getcwd", "chdir")
 _ROOT_WALK_UP = (
     "ROOT = Path.cwd()",
     'while ROOT != ROOT.parent and not (ROOT / "pyproject.toml").exists():',
     "ROOT = ROOT.parent",
 )
+_CWD_CALLS = {"cwd", "getcwd", "getcwdb", "chdir", "fchdir"}
+_PATH_CTORS = {"Path", "PurePath", "PosixPath", "WindowsPath"}
+# Functions whose first argument is a filesystem path resolved against the working directory.
+# Methods that take a pattern or content (``Path.glob("*.json")``, ``Path.write_text("x")``) are not
+# paths; their receiver is a ``Path(...)`` and is covered by the constructor rule.
+_FS_CALLS = {"open", "listdir", "scandir", "mkdir", "makedirs", "isfile", "isdir", "exists",
+             "remove", "unlink", "rmtree"}
+_GLOB_MODULE_CALLS = {"glob", "iglob"}
+_CWD_MAGIC = re.compile(r"^\s*[%!].*\b(cd|pushd|popd|chdir)\b")
+
+
+def _call_name(node: ast.Call) -> str:
+    """Bare name of the callable (``Path.cwd`` -> ``cwd``, ``open`` -> ``open``)."""
+    func = node.func
+    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+
+
+def _is_relative_literal(node: ast.expr) -> bool:
+    """True for a string literal that is neither absolute nor a ``~`` home path."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return not node.value.startswith(("/", "~"))
+    if isinstance(node, ast.JoinedStr) and node.values and isinstance(node.values[0], ast.Constant):
+        return not str(node.values[0].value).startswith(("/", "~"))
+    return False
+
+
+def _cwd_findings(source: str, *, allow_bootstrap: bool) -> list[str]:
+    """Every way ``source`` depends on the working directory, except the shared bootstrap.
+
+    Flags cwd reads (``Path.cwd``, ``os.getcwd``, ``chdir``, ``os.curdir``, ``%cd``), ``Path()`` with
+    no argument, and a relative string literal handed to ``Path(...)`` or a filesystem call. With
+    ``allow_bootstrap`` the one ``ROOT = Path.cwd()`` assignment, and cwd reads inside an
+    ``assert`` message, are permitted.
+    """
+    findings: list[str] = []
+    lines = []
+    for line in source.splitlines():
+        if _CWD_MAGIC.match(line):
+            findings.append(f"magic changes or reads cwd: {line.strip()!r}")
+        lines.append("pass" if line.lstrip().startswith(("%", "!")) else line)
+    tree = ast.parse("\n".join(lines))
+    allowed: set[int] = set()
+    if allow_bootstrap:
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                    and [t.id for t in node.targets if isinstance(t, ast.Name)] == ["ROOT"]
+                    and _call_name(node.value) == "cwd"):
+                allowed.add(id(node.value))
+            elif isinstance(node, ast.Assert) and node.msg is not None:
+                allowed.update(id(n) for n in ast.walk(node.msg))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr == "curdir":
+            findings.append(f"line {node.lineno}: os.curdir")
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node)
+        if name in _CWD_CALLS and id(node) not in allowed:
+            findings.append(f"line {node.lineno}: {name}() reads or changes the working directory")
+        elif name in _PATH_CTORS and not node.args:
+            findings.append(f"line {node.lineno}: {name}() with no argument is the working directory")
+        elif (node.args and _is_relative_literal(node.args[0]) and (
+                name in _PATH_CTORS | _FS_CALLS
+                or (name in _GLOB_MODULE_CALLS and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "glob"))):
+            findings.append(f"line {node.lineno}: {name}() on a cwd-relative literal path")
+    return findings
+
+
+def _notebook_code_cells(fname: str) -> list[str]:
+    """Source of every code cell of a planned notebook."""
+    nb = json.loads((NB_DIR / fname).read_text())
+    return ["".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code"]
+
+
+@pytest.mark.parametrize("source,expected", [
+    ('ROOT = Path.cwd()\nassert ROOT, f"not found above {Path.cwd()}"\n', 0),
+    ('import os\nx = os.getcwd()\n', 1),
+    ('ROOT = Path.cwd()\nelsewhere = Path.cwd()\n', 1),
+    ('os.chdir("/tmp")\n', 1),
+    ('d = Path("data/pilot_runs") / "x"\n', 1),
+    ('d = Path(f"data/{x}")\n', 1),
+    ('open("notes.txt")\n', 1),
+    ('os.listdir("out")\n', 1),
+    ('import glob\nglob.glob("out/*.json")\n', 1),
+    ('list(d.glob("*.json"))\np.write_text("x")\n', 0),
+    ('p = Path()\n', 1),
+    ('p = os.curdir\n', 1),
+    ('%cd ..\nx = 1\n', 1),
+    ('d = ROOT / "data" / "pilot_runs"\nq = Path("/tmp/x")\nopen(path)\n', 0),
+])
+def test_cwd_findings_detects_each_way_of_depending_on_the_working_directory(source: str, expected: int) -> None:
+    """The static guard flags cwd reads and cwd-relative paths, and passes root-anchored code."""
+    assert len(_cwd_findings(source, allow_bootstrap=True)) == expected, source
+
+
+def test_the_bootstrap_is_only_allowed_when_asked_for() -> None:
+    """Lab modules get no bootstrap allowance: the same assignment is a finding there."""
+    assert _cwd_findings("ROOT = Path.cwd()\n", allow_bootstrap=False)
 
 
 @pytest.mark.parametrize("fname", sorted(PLANNED))
 def test_cwd_dependence_is_confined_to_the_root_bootstrap(fname: str) -> None:
-    """The justification for running the ``notebooks/`` cwd only once: in every notebook the
-    working directory is read only by cells that walk up to the repo root first."""
-    nb = json.loads((NB_DIR / fname).read_text())
-    readers = [
-        "".join(c["source"])
-        for c in nb["cells"]
-        if c["cell_type"] == "code" and any(m in "".join(c["source"]) for m in _CWD_READERS)
-    ]
-    assert readers, f"{fname}: no cell finds the repo root; cwd handling changed, re-audit"
-    for src in readers:
+    """The justification for running the ``notebooks/`` cwd only for ``CWD_NOTEBOOKS``: each
+    notebook finds the repo root by walking up from the cwd once, and nothing else in any code
+    cell reads the working directory or uses a cwd-relative path."""
+    cells = _notebook_code_cells(fname)
+    bootstrap = [src for src in cells if "ROOT = Path.cwd()" in src]
+    assert bootstrap, f"{fname}: no cell finds the repo root; cwd handling changed, re-audit"
+    for src in bootstrap:
         for line in _ROOT_WALK_UP:
-            assert line in src, f"{fname}: cwd read outside the root walk-up bootstrap ({line!r} missing)"
-        assert "Path.cwd()" in src and "os.getcwd" not in src and "chdir" not in src, fname
-    for module in NB_DIR.glob("*.py"):
-        text = module.read_text()
+            assert line in src, f"{fname}: root bootstrap incomplete ({line!r} missing)"
+    for n, src in enumerate(cells):
+        findings = _cwd_findings(src, allow_bootstrap=True)
+        assert not findings, f"{fname} code cell {n}: {findings}"
+
+
+def test_lab_modules_never_depend_on_the_working_directory() -> None:
+    """``notebooks/*.py`` helpers are imported by every notebook, so they get no cwd allowance."""
+    for module in sorted(NB_DIR.glob("*.py")):
         if module.name == "_build_extension_notebooks.py":
             continue  # generator script, never imported or executed by a notebook
-        assert not any(m in text for m in _CWD_READERS), f"{module.name} reads the working directory"
+        findings = _cwd_findings(module.read_text(), allow_bootstrap=False)
+        assert not findings, f"{module.name}: {findings}"
+
+
+def _notebooks_dir_entries() -> set[Path]:
+    """Every path under ``notebooks/`` except bytecode and checkpoint caches."""
+    return {
+        p for p in NB_DIR.rglob("*")
+        if "__pycache__" not in p.parts and ".ipynb_checkpoints" not in p.parts
+    }
 
 
 @pytest.mark.parametrize("fname,cwd_name", _REEXEC_CASES)
@@ -288,7 +402,11 @@ def test_headless_reexecution_matches_stored_outputs(
     and from ``notebooks/`` itself for the cwd representative (see ``CWD_REPRESENTATIVE``),
     with stored outputs regenerating cleanly (cell error status compared, not pixel output)."""
     monkeypatch.chdir(REPO_ROOT if cwd_name == "repo_root" else NB_DIR)
+    before = _notebooks_dir_entries()
 
     fresh_errors = _execute_nb(NB_DIR / fname, Path.cwd())
     assert fresh_errors == 0, f"{fname} @{cwd_name}: regenerated {fresh_errors} errors"
+    if cwd_name == "notebooks_dir":
+        stray = sorted(str(p.relative_to(NB_DIR)) for p in _notebooks_dir_entries() - before)
+        assert not stray, f"{fname} wrote into notebooks/ instead of the repo root: {stray}"
     assert _stored_error_count(fname) == 0, f"{fname}: COMMITTED outputs contain errors"

@@ -23,10 +23,14 @@ from scripts import calibrate_thresholds as ct
 
 TOL = 0.03  # |proposed - planted| on a 3,000-per-class corpus (observed max ~0.02 over 3 seeds)
 
-# Only the accuracy test above needs 3,000 per class (TOL is calibrated to it). Every other test checks
-# behaviour (target derivation, null-policy normalization, refusal of a thin class, CLI wiring), so it
-# runs on a smaller corpus: calibration cost grows much faster than linearly, and a 3,000-per-class
-# calibration costs ~17 s per call versus ~4 s at 900 and ~3 s at 500.
+# The module-scoped 3,000-per-class `corpus` and the calibration `result` built from it serve two tests
+# that need the full size: the accuracy test (TOL is calibrated to it) and
+# `test_candidate_replays_and_only_calibrated_values_change`, which replays the candidate on the
+# held-out `test` split of that same corpus. `test_target_is_derived_from_the_cost_ratio` only borrows
+# the fixture and slices 200 records off it. The remaining tests check behaviour (null-policy
+# normalization, refusal of a thin class, CLI wiring), so they run on a smaller corpus: calibration cost
+# grows much faster than linearly, and a 3,000-per-class calibration costs ~17 s per call versus ~4 s at
+# 900 and ~3 s at 500.
 BEHAVIOUR_N_PER_CLASS = 900
 
 
@@ -56,6 +60,7 @@ def test_planted_cutoff_is_recovered_within_tolerance(result):
 
 
 def test_target_is_derived_from_the_cost_ratio(corpus):
+    """The calibration target follows the human/error cost ratio, whatever the amount of data."""
     train, _ = pr.select_split(corpus, "train")
     small = train[:200]  # the target comes from the cost ratio alone, not from how much data there is
     assert ct.calibrate(small, pr.current_policy())["params"]["target"] == pytest.approx(0.95)
@@ -76,6 +81,7 @@ def test_a_null_by_class_base_policy_is_normalized_before_calibration():
 
 
 def test_undersampled_class_gets_no_cutoff_and_keeps_its_current_value():
+    """A class with too few records is refused a cutoff and keeps the value already in the policy."""
     recs = generate_records({**{c: BEHAVIOUR_N_PER_CLASS for c in SORTER_CURVES}, "correspondence": 80}, seed=2)
     train, _ = pr.select_split(recs, "train")
     base = pr.current_policy()
@@ -129,6 +135,7 @@ def test_candidate_replays_and_only_calibrated_values_change(corpus, result):
 
 
 def test_cli_writes_a_loadable_candidate_and_never_touches_the_taxonomy(tmp_path, capsys):
+    """The CLI writes a loadable candidate policy and leaves taxonomy.yaml byte-identical."""
     before = CONFIG_PATH.read_bytes()
     recs = tmp_path / "r.jsonl"
     pr.dump_records(generate_records(500, seed=4), recs)

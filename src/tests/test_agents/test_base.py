@@ -22,6 +22,11 @@ class TestVendoredProviderSeam:
         from langchain_agents import base_agent as lc_base
 
         monkeypatch.setattr(lc_base, "ChatOpenAI", _CaptureChatOpenAI)
+        # Provider configs are built once from the environment; an earlier test in the same
+        # process may have cached them, so rebuild them from the env these tests set.
+        from llm import providers
+
+        monkeypatch.setattr(providers, "_providers_cache", None)
         return captured
 
     @pytest.mark.no_langchain_mock
@@ -171,6 +176,7 @@ class TestVendoredRetryContract:
         return delays
 
     def test_retryable_error_is_retried(self, monkeypatch):
+        """A transient connection error is retried until it succeeds, backing off once per failed attempt."""
         from langchain_agents.base_agent import BaseAgent
 
         class A(BaseAgent):
@@ -198,6 +204,7 @@ class TestVendoredRetryContract:
         assert len(delays) == 2 and all(d > 0 for d in delays), delays  # one backoff per failed attempt
 
     def test_non_retryable_error_not_retried(self, monkeypatch):
+        """A 400 is raised on the first attempt, with no retry and no backoff."""
         from langchain_agents.base_agent import BaseAgent
 
         class A(BaseAgent):
@@ -225,6 +232,7 @@ class TestVendoredRetryContract:
         assert delays == []  # and never backed off
 
     def test_exhausted_attempts_raise(self, monkeypatch):
+        """After the configured attempts the last error is raised, with no sleep after the final one."""
         from langchain_agents.base_agent import BaseAgent
 
         class A(BaseAgent):
