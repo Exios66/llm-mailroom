@@ -128,19 +128,36 @@ def changed_files(base: str) -> list[str]:
     return sorted(set(committed + uncommitted + untracked))
 
 
-def select(changed: list[str], depth: int = 0) -> list[str]:
-    files = _python_files()
-    known = set(files)
+class Index:
+    """The import graph of ``src/``: build once, then select for any number of changes."""
+
+    def __init__(self) -> None:
+        """Parse every ``src`` module and invert the import edges (``importers[dep]``)."""
+        self.files = _python_files()
+        known = set(self.files)
+        self.importers: dict[str, set[str]] = defaultdict(set)
+        for mod, path in self.files.items():
+            for dep in _imports(path, mod, known):
+                self.importers[dep].add(mod)
+        self.path_to_mod = {str(p.relative_to(REPO)): m for m, p in self.files.items()}
+        self._test_text: dict[str, str] = {}
+
+    def test_text(self, mod: str) -> str:
+        """Source text of a test module, read once."""
+        if mod not in self._test_text:
+            self._test_text[mod] = self.files[mod].read_text(encoding="utf-8", errors="ignore")
+        return self._test_text[mod]
+
+
+def select(changed: list[str], depth: int = 0, index: Index | None = None) -> list[str]:
+    """Test files that can see ``changed``; pass a shared ``index`` to avoid re-parsing ``src``."""
+    index = index or Index()
+    files = index.files
     if SELECT_ALL & set(changed):
         return sorted(str(p.relative_to(REPO)) for m, p in files.items() if _is_test(p))
 
-    importers: dict[str, set[str]] = defaultdict(set)
-    for mod, path in files.items():
-        for dep in _imports(path, mod, known):
-            importers[dep].add(mod)
-
-    path_to_mod = {str(p.relative_to(REPO)): m for m, p in files.items()}
-    seeds = {path_to_mod[c] for c in changed if c in path_to_mod}
+    importers = index.importers
+    seeds = {index.path_to_mod[c] for c in changed if c in index.path_to_mod}
 
     # Walk importers breadth-first. Tests are collected at every level;
     # bounded local mode expands non-test modules up to ``depth`` hops.
@@ -168,7 +185,7 @@ def select(changed: list[str], depth: int = 0) -> list[str]:
     if data_names:
         for mod, path in files.items():
             if _is_test(path):
-                text = path.read_text(encoding="utf-8", errors="ignore")
+                text = index.test_text(mod)
                 if any(name in text for name in data_names):
                     selected.add(str(path.relative_to(REPO)))
     return sorted(selected)

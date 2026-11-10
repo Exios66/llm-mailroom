@@ -13,7 +13,7 @@ The full GitBook breakdown — 55 strata, configs, source cards, EDA reports, an
 | Documents | 3,302 (2,979 train, 323 test) |
 | Document classes | 5 |
 | Class-by-subclass strata | 55 |
-| Pinned revision | `ed7576b6` (tag v9.1) |
+| Pinned revision | `ccd040f6` (tag v9.3) |
 | Frozen parent | [`mailroom-corpus`](https://huggingface.co/datasets/Lucius-Morningstar/mailroom-corpus) v8, 2,000 rows, revision `eafe1ab4` |
 
 ### Classes and sources

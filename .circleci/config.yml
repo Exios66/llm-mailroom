@@ -1,8 +1,11 @@
 version: 2.1
 
-# CircleCI is the CI hub. One small executor; scoped PR runs and one weekly
-# full/coverage backstop conserve free-tier credits. Keep ci/circleci: test
-# as the required check. A scoped green cache can never stand in for full.
+# CircleCI is the CI hub. One small executor; tiered PR runs (docs, tests,
+# affected, full: see src/scripts/ci_tests.py, which prints the tier and the
+# reason first) and one weekly full/coverage backstop conserve free-tier
+# credits. Keep ci/circleci: test as the required check. A scoped green cache
+# can never stand in for full. Coverage (branch + per-test contexts) is the
+# slowest part of a full run, so only the weekly backstop collects it.
 parameters:
   full_suite:
     type: boolean
@@ -20,6 +23,9 @@ jobs:
       force_full:
         type: boolean
         default: false
+      coverage:
+        type: boolean
+        default: false
     executor: py
     steps:
       - checkout
@@ -27,7 +33,7 @@ jobs:
           keys:
             - ci-baseline-v1-{{ .Branch }}-
       - run:
-          name: Plan smoke, affected or full tests
+          name: Plan the test tier (docs, tests, affected or full)
           command: |
             mkdir -p test-results
             # Fetch failure is deliberately not fatal here: an unavailable
@@ -47,9 +53,14 @@ jobs:
             if [ "<< parameters.force_full >>" = true ]; then
               full_arg="--full"
             fi
+            cov_arg=""
+            if [ "<< parameters.coverage >>" = true ]; then
+              cov_arg="--coverage"
+            fi
             printf 'export MAILROOM_TEST_BASE=%q\n' "$base" >> "$BASH_ENV"
             printf 'export MAILROOM_TEST_FULL_ARG=%q\n' "$full_arg" >> "$BASH_ENV"
-            PYTHONPATH=src python src/scripts/ci_tests.py --base "$base" --branch "$CIRCLE_BRANCH" $full_arg
+            printf 'export MAILROOM_TEST_COV_ARG=%q\n' "$cov_arg" >> "$BASH_ENV"
+            PYTHONPATH=src python src/scripts/ci_tests.py --base "$base" --branch "$CIRCLE_BRANCH" $full_arg $cov_arg
             git rev-parse 'HEAD^{tree}' > test-results/tree
       - restore_cache:
           keys:
@@ -85,7 +96,7 @@ jobs:
           name: Execute the test cascade and relevant experiment gate
           command: |
             # Re-plan instead of trusting a saved plan that could be stale.
-            PYTHONPATH=src python src/scripts/ci_tests.py --base "$MAILROOM_TEST_BASE" --branch "$CIRCLE_BRANCH" $MAILROOM_TEST_FULL_ARG --run
+            PYTHONPATH=src python src/scripts/ci_tests.py --base "$MAILROOM_TEST_BASE" --branch "$CIRCLE_BRANCH" $MAILROOM_TEST_FULL_ARG $MAILROOM_TEST_COV_ARG --run
           no_output_timeout: 20m
       - store_test_results:
           path: test-results
@@ -127,3 +138,4 @@ workflows:
     jobs:
       - test:
           force_full: true
+          coverage: true

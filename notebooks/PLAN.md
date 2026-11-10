@@ -241,9 +241,22 @@ New `src/tests/test_notebook_suite.py`:
 
 1. Every notebook exists, has expected title/honesty cells, and its module
    imports network-free.
-2. Headless execution of every notebook via `nbclient` from a hostile cwd
-   (repo root AND `notebooks/` itself) with stored outputs regenerating
-   cleanly.
+2. Headless execution via `nbclient` with stored outputs regenerating
+   cleanly. Every planned notebook runs from the repo root; only the
+   notebooks in `CWD_NOTEBOOKS` (00, the canonical bootstrap, and 14, the
+   one that writes files) also run from `notebooks/` itself, and that run
+   fails if anything new appears under `notebooks/`. This is sound only
+   while the static guard holds: each notebook reads the working directory
+   exactly once, in the shared `ROOT = Path.cwd()` walk-up to
+   `pyproject.toml`, and no cell or `notebooks/*.py` lab module reads it
+   anywhere else (`Path.cwd`, `os.getcwd`, `chdir`, `os.curdir`, `%cd`) or
+   hands a cwd-relative string literal to a path constructor or filesystem
+   call (`Path("data/x")`, `open("x")`, `os.listdir("x")`). Anchor data
+   paths to `ROOT`. The guard is static and has limits: it allows a cwd read
+   inside an `assert` message (diagnostics only), and it cannot see a
+   relative path that arrives through a variable or another call. If a
+   notebook needs cwd-dependent behaviour the guard cannot see, add it to
+   `CWD_NOTEBOOKS`.
 3. `pipeline_lab` unit pins: band math matches `graph.routing` literals;
    sandbox restores env; step-log capture returns node names in graph order.
 4. No notebook cell text contains an API key pattern or performs

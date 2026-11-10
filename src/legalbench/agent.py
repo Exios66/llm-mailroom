@@ -48,6 +48,7 @@ class LegalBenchAgent(BaseAgent):
 
     def answer_binary(self, question: str, document_text: str) -> dict[str, Any]:
         """Yes/no answer with evidence + confidence."""
+        self._last_usage = None  # a call that fails early must not report the last call's usage
         schema = build_structured_schema(
             {
                 "answer": {"type": "string", "enum": ["yes", "no"]},
@@ -66,6 +67,7 @@ class LegalBenchAgent(BaseAgent):
 
     def classify_family(self, document_text: str) -> dict[str, Any]:
         """One-of-N family classification with confidence."""
+        self._last_usage = None  # a call that fails early must not report the last call's usage
         schema = build_structured_schema(
             {
                 "family": {"type": "string", "enum": list(self._classes)},
@@ -80,7 +82,9 @@ class LegalBenchAgent(BaseAgent):
 
     def usage(self) -> dict[str, Any]:
         """Last call's usage/cost ({} when unknown)."""
-        usage = self._last_usage or {}
+        usage = self._last_usage
+        if not usage:
+            return {}  # no call produced usage: stay empty, not zero-valued
         return {
             "prompt_tokens": int(usage.get("prompt_tokens") or 0),
             "completion_tokens": int(usage.get("completion_tokens") or 0),
