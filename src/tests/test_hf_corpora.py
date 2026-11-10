@@ -108,16 +108,19 @@ def test_set_active_corpus_roundtrip():
 def test_unpinned_corpus_warns_once(caplog):
     """A pipeline corpus with revision: None floats on the Hub tip — the
     guard must warn (once per slug) so the next unpinned ingest is visible."""
+    import copy
+
     import pipeline.hf_corpora as corpora
 
     corpora._UNPINNED_WARNED.clear()  # warn-once set may be seeded by earlier tests
-    probes = [
-        c for c in corpora.CORPORA.values() if not c.get("revision")
-    ]
-    assert probes, "expected at least one unpinned pipeline corpus"
+    # Every pipeline corpus in CORPORA is pinned now (#196); the guard is
+    # exercised on a synthetic unpinned entry.
+    assert all(c.get("revision") for c in corpora.pipeline_corpora())
+    probe = copy.deepcopy(next(c for c in corpora.CORPORA.values() if c.get("pipeline")))
+    probe["revision"] = None
     with caplog.at_level("WARNING", logger="llm_mailroom.hf_corpora"):
         for _ in range(2):
-            corpora.warn_unpinned(probes[0])
+            corpora.warn_unpinned(probe)
     assert len([r for r in caplog.records if "UNPINNED" in r.getMessage()]) == 1
     corpora._UNPINNED_WARNED.clear()  # keep other tests un-prefixed
 

@@ -239,57 +239,64 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
     window's tail (``overlap_chars``, paragraph-aligned) so content crossing a
     cut is visible on both sides — the caller's merge dedupes.
 
-    Returns ``[(window, base_offset)]`` where ``base_offset`` is the window's
-    start position in ``text`` (the overlap prefix belongs to the previous
-    window and is NOT counted toward ``base_offset``; it is re-sent for
-    context only). Mirrors the extraction chunker's overlap guarantee.
+    Returns ``[(window, window_start)]`` where ``window_start`` is the
+    window's first character's position in ``text``. A window after the
+    first BEGINS with its overlap tail, so its start position is inside the
+    previous chunk's span — document-absolute offsets reported relative to
+    the full window text (tail included) translate by ``window_start``
+    (#199: the tail is part of the window text the model reads; the old
+    per-chunk base made every window ≥2 shift its section offsets).
+    Every window is a contiguous slice of ``text`` --
+    ``text[start:start + len(window)] == window`` -- so the translation is
+    exact even across a hard-split paragraph (no synthetic joiner is
+    inserted).
     """
     if not text:
         return []
     if len(text) <= budget:
         return [(text, 0)]
-    paragraphs = [p for p in text.split("\n\n") if p.strip()]
-    chunks: list[str] = []
-    bases: list[int] = []
-    current: list[str] = []
-    current_len = 0
-    current_start = 0
-    cursor = 0
-    for para in paragraphs:
-        para_start = text.find(para, cursor)
-        if para_start == -1:
-            para_start = cursor
-        while len(para) > budget:  # pathological single paragraph
-            if current:
-                chunks.append("\n\n".join(current))
-                bases.append(current_start)
-                current, current_len = [], 0
-            chunks.append(para[:budget])
-            bases.append(para_start)
-            para = para[budget:]
+    # Every window is a CONTIGUOUS slice of ``text`` (``text[start:end]``), so
+    # a section offset relative to the window translates to the document by
+    # adding ``start`` exactly -- including across a hard-split boundary,
+    # where re-joining pieces with a synthetic "\n\n" would shift offsets by
+    # two characters.
+    paragraphs: list[tuple[int, int]] = []  # (start, end) of each non-blank paragraph
+    pos = 0
+    for para in text.split("\n\n"):
+        if para.strip():
+            paragraphs.append((pos, pos + len(para)))
+        pos += len(para) + 2
+    spans: list[tuple[int, int]] = []
+    current_start: int | None = None
+    current_end = 0
+    for para_start, para_end in paragraphs:
+        while para_end - para_start > budget:  # pathological single paragraph
+            if current_start is not None:
+                spans.append((current_start, current_end))
+                current_start = None
+            spans.append((para_start, para_start + budget))
             para_start += budget
-            cursor = para_start
-        if current and current_len + len(para) + 2 > budget:
-            chunks.append("\n\n".join(current))
-            bases.append(current_start)
-            current, current_len = [], 0
-        if not current:
+        if current_start is not None and para_end - current_start > budget:
+            spans.append((current_start, current_end))
+            current_start = None
+        if current_start is None:
             current_start = para_start
-        current.append(para)
-        current_len += len(para) + 2
-        cursor = para_start + len(para)
-    if current:
-        chunks.append("\n\n".join(current))
-        bases.append(current_start)
-    if len(chunks) > 1 and overlap_chars > 0:
-        overlapped: list[tuple[str, int]] = [(chunks[0], bases[0])]
-        for i in range(1, len(chunks)):
-            tail = chunks[i - 1][-overlap_chars:]
-            if "\n\n" in tail:
-                tail = tail[tail.find("\n\n") + 2:]
-            overlapped.append((f"{tail}\n\n{chunks[i]}", bases[i]))
+        current_end = para_end
+    if current_start is not None:
+        spans.append((current_start, current_end))
+    if len(spans) > 1 and overlap_chars > 0:
+        overlapped: list[tuple[str, int]] = [(text[spans[0][0] : spans[0][1]], spans[0][0])]
+        for i in range(1, len(spans)):
+            prev_start, prev_end = spans[i - 1]
+            raw_start = max(prev_start, prev_end - overlap_chars)
+            raw_tail = text[raw_start:prev_end]
+            trim = 0
+            if "\n\n" in raw_tail:
+                trim = raw_tail.find("\n\n") + 2
+            tail_start = raw_start + trim
+            overlapped.append((text[tail_start : spans[i][1]], tail_start))
         return overlapped
-    return list(zip(chunks, bases))
+    return [(text[start:end], start) for start, end in spans]
 
 
 def validate_intake(result: dict, text: str) -> dict:

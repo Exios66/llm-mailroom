@@ -222,11 +222,17 @@ def _client():
     return client
 
 
+def _all_configs_ensured() -> bool:
+    """True once EVERY spec is known to exist (a partial cache is not done)."""
+    return all(spec["name"] in _configs_ensured for spec in SCORE_CONFIGS)
+
+
 def ensure_score_configs() -> list[str]:
     """Create any missing score configs. Idempotent and process-cached — safe
     to call on every startup. Returns the names of configs that exist after
-    the call."""
-    if _configs_ensured:
+    the call. Specs whose creation failed are NOT cached and are retried on
+    the next call, while the specs that succeeded stay cached."""
+    if _all_configs_ensured():
         return list(_configs_ensured)
     client = _client()
     if client is None:
@@ -240,32 +246,42 @@ def ensure_score_configs() -> list[str]:
                 if getattr(c, "id", None):
                     _config_ids[c.name] = c.id
         except Exception:
-            existing = []
-        created = list(existing)
+            # Do NOT fall through to create-all: duplicates would be rejected
+            # and a partial cache would stick for the process lifetime (#201).
+            logger.warning("score_config_fetch_failed")
+            return []
         for spec in SCORE_CONFIGS:
-            wire_name = langfuse_score_name(spec["name"])
-            if spec["name"] in existing or wire_name in existing:
-                continue
-            kwargs = {"name": wire_name, "data_type": spec["data_type"]}
-            if spec.get("min_value") is not None:
-                kwargs["min_value"] = spec["min_value"]
-            if spec.get("max_value") is not None:
-                kwargs["max_value"] = spec["max_value"]
-            if spec.get("categories"):
-                from langfuse.api.commons.types.config_category import ConfigCategory
+            if spec["name"] in _configs_ensured:
+                continue  # created/seen on an earlier call; only retry the missing specs
+            try:
+                wire_name = langfuse_score_name(spec["name"])
+                if spec["name"] in existing or wire_name in existing:
+                    _configs_ensured.add(spec["name"])
+                    continue
+                kwargs = {"name": wire_name, "data_type": spec["data_type"]}
+                if spec.get("min_value") is not None:
+                    kwargs["min_value"] = spec["min_value"]
+                if spec.get("max_value") is not None:
+                    kwargs["max_value"] = spec["max_value"]
+                if spec.get("categories"):
+                    from langfuse.api.commons.types.config_category import ConfigCategory
 
-                kwargs["categories"] = [
-                    ConfigCategory(value=c["value"], label=c["label"]) for c in spec["categories"]
-                ]
-            made = client.api.score_configs.create(**kwargs)
-            if getattr(made, "id", None):
-                _config_ids[wire_name] = made.id
-            created.append(wire_name)
-            logger.info("score_config_created", name=wire_name, data_type=spec["data_type"])
+                    kwargs["categories"] = [
+                        ConfigCategory(value=c["value"], label=c["label"])
+                        for c in spec["categories"]
+                    ]
+                made = client.api.score_configs.create(**kwargs)
+                if getattr(made, "id", None):
+                    _config_ids[wire_name] = made.id
+                # Cache per-spec success only: a mid-loop failure must not
+                # cache the specs after it (#201).
+                _configs_ensured.add(spec["name"])
+                logger.info("score_config_created", name=wire_name, data_type=spec["data_type"])
+            except Exception as exc:
+                logger.warning("score_config_create_failed", name=spec["name"], detail=str(exc)[:200])
     except Exception:
         logger.warning("score_config_creation_failed", exc_info=True)
-    _configs_ensured.update(created)
-    return created
+    return list(_configs_ensured)
 
 
 def warmup_score_configs(blocking: bool = False) -> None:
@@ -284,7 +300,7 @@ def warmup_score_configs(blocking: bool = False) -> None:
     import time
 
     global _last_warmup_attempt
-    if _configs_ensured:
+    if _all_configs_ensured():
         return
     now = time.monotonic()
     if now - _last_warmup_attempt < _WARMUP_RETRY_SECONDS:
