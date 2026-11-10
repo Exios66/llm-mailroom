@@ -781,6 +781,11 @@ def _write_doc_audit_event(doc_id: str, matter_id: str, edges: list[dict], run_i
                 prev_hash=prev,
             )
             await write_audit_entry(entry)
+            # The unified row (roadmap M8): an addendum once the row exists,
+            # else a ``relations`` visit on the parked trace.
+            from audit.events import record_document_event
+
+            await record_document_event(doc_id, "relations_linked", entry.detail, actor="relations")
 
         _run(_write())
     except Exception:

@@ -784,6 +784,7 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
             manifest.touch()
             save_manifest(manifest)
         await _write_review_audit_entry(doc_id, manifest.matter_id, event, notes, detail=detail)
+        await _record_review_event(doc_id, {**detail, **({"notes": notes} if notes else {})})
         logger.info("review_recorded", doc_id=doc_id, decision=decision)
         body = {
             "status": "ok",
@@ -828,6 +829,11 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
                 **({"class_override": class_override} if class_override else {}),
             },
         )
+        await _record_review_event(doc_id, {
+            "decision": decision, "disposition": "requeue", "inbox_file": dest.name,
+            **({"class_override": class_override} if class_override else {}),
+            **({"notes": notes} if notes else {}),
+        })
         logger.info("review_requeued", doc_id=doc_id, inbox_file=dest.name)
         body = {
             "status": "ok",
@@ -1093,6 +1099,14 @@ async def _write_review_audit_entry(
         await write_audit_entry(entry)
     except Exception:
         logger.exception("review_audit_entry_failed", doc_id=doc_id, event=event)
+
+
+async def _record_review_event(doc_id: str, detail: dict) -> None:
+    """The decision on the unified audit row (roadmap M8): a ``review_decision`` addendum
+    once the document has a row, else a ``human_review`` visit on its parked trace."""
+    from audit.events import record_document_event
+
+    await record_document_event(doc_id, "review_decision", detail)
 
 
 async def _move_rejected_to_failed(doc_id: str, manifest) -> None:

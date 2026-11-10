@@ -58,6 +58,22 @@ def model_payload(extracted: Any) -> Any:
     return extracted
 
 
+def human_corrected(state_like: Mapping[str, Any]) -> bool:
+    """True when a person changed the fields (spec §5.4), not when they approved the model's as is.
+
+    The state's ``extraction_source`` is ``human`` for both (calibration keys on
+    it); the ``human_label`` says which. Without a label the fields count as the
+    person's.
+    """
+    if state_like.get("extraction_source") != "human":
+        return False
+    label = state_like.get("human_label")
+    if not isinstance(label, Mapping):
+        return True
+    return bool(label.get("resolution") == "correct" or label.get("field_corrections")
+                or label.get("removed_fields"))
+
+
 def adherence_for(state_like: Mapping[str, Any]) -> dict[str, Any]:
     """Tier 0: ``assess_extraction_payload`` on the final payload against the mailroom pydantic schema."""
     from llm_dojo_scoring import assess_extraction_payload
@@ -92,7 +108,7 @@ def score_document_block(state_like: Mapping[str, Any], *, adherence: dict | Non
         expected_subclass=gt.get("expected_subclass"),
         doc_subclass=state_like.get("doc_subclass"),
     )
-    block["scored_payload"] = "human_corrected" if state_like.get("extraction_source") == "human" else "model"
+    block["scored_payload"] = "human_corrected" if human_corrected(state_like) else "model"
     return {"scoring": block, "extraction_adherence": adherence}
 
 
@@ -120,7 +136,7 @@ def _make_type_node(scorer: str):
             return {"scoring": {
                 "status": "error", "reason": f"{type(exc).__name__}: {exc}",
                 "scorer": {"doc_type": scorer, "module": None, "subclass": None, "tiers_run": []},
-                "scored_payload": "human_corrected" if state.get("extraction_source") == "human" else "model",
+                "scored_payload": "human_corrected" if human_corrected(state) else "model",
             }}
 
     node.__name__ = f"score_{scorer}_node"
@@ -150,6 +166,6 @@ def add_scoring_nodes(graph, *, next_node: str = "catalog_write", wrap=None) -> 
 
 
 __all__ = [
-    "GENERIC", "add_scoring_nodes", "adherence_for", "model_payload", "score_common_node", "score_document_block",
+    "GENERIC", "add_scoring_nodes", "adherence_for", "human_corrected", "model_payload", "score_common_node", "score_document_block",
     "score_route", "scorer_for", "scorer_types", "span_name", "taxonomy_bytes",
 ]

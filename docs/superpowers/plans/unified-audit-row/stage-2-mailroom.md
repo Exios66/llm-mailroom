@@ -285,7 +285,7 @@
 **Interfaces:**
 - Produces: `async def record_document_event(doc_id: str, kind: str, detail: dict) -> Literal["addendum", "trace"]`. It writes an addendum when the row exists; otherwise it appends a visit to the parked checkpoint through `graph.update_state(config, {"audit_trace": [visit]})`, so the reducer applies (review item A2).
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_complete_without_data_scores_and_archives_model_extraction`: `pipeline_success` is false and `extraction_source` is `"model"`.
   - `test_complete_with_data_is_human_correction`: a `human_correction` sub-row carrying the diff, reviewer and time; `scored_payload` is `"human_corrected"`; no extract node in the trace after the review.
   - `test_resume_reruns_extract`.
@@ -293,10 +293,12 @@
   - `test_record_and_requeue_before_row_land_in_trace`.
   - `test_record_after_row_is_review_decision_addendum`.
   - `test_model_scores_not_credited_with_correction`: the last model attempt's scores are kept on its sub-row.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (5 failed on the M7 commit; the resume and override tests pin unchanged behavior and passed)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) `disposition=complete` already resumed the graph at `compile_report` (through `human_review -> compile_report`, or a fresh run that starts there when the checkpoint is gone), so `review_resolve.py` and `resume_from_review` needed no change; `complete_human_extraction` stays for direct callers. (2) The state's `extraction_source` stays `human` for as-is approvals too (calibration, the catalog and `_model_scoring_view` key on it); the row's `extraction_source` and `scored_payload` read `scoring_nodes.human_corrected`, which looks at the `human_label` (`correct`, `field_corrections` or `removed_fields`). (3) The correction sub-row is stage `extraction` with trigger `human_correction` (the stage list stays the three model stages) and the next attempt number. (4) `record_document_event` returns `None` (logged `audit_event_unrecorded`) when the document has no row and nothing is parked; the interface's two values cover the cases that write. (5) The pre-row visit is appended with `update_state` and no `as_node`: the interrupted `human_review` is scheduled again and resumes as before (a probe and `test_record_and_requeue_before_row_land_in_trace` show it). (6) The legacy per-event entries (`review_recorded`, `review_requeued`, `relations_linked`) are still written next to the new records until the legacy writers are retired.
 
 ### Task M9: Trace sinks
 

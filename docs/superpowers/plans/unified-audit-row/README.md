@@ -91,7 +91,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**18/33 tasks done.**
+**19/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -112,10 +112,10 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 2 | M5 | Trace collection in state | llm-mailroom | 5/5 | done |
 | 2 | M6 | Scoring node family | llm-mailroom | 5/5 | done |
 | 2 | M7 | Row builder and terminal nodes | llm-mailroom | 5/5 | done |
-| 2 | M8 | Human review paths and pre-row events | llm-mailroom | 0/5 | ready |
+| 2 | M8 | Human review paths and pre-row events | llm-mailroom | 5/5 | done |
 | 2 | M9 | Trace sinks | llm-mailroom | 0/5 | ready |
 | 2 | M10 | Write-failure fallback and `audit-reconcile` | llm-mailroom | 0/5 | blocked |
-| 2 | M11 | Readers and `audit_row_metrics` | llm-mailroom | 0/5 | blocked |
+| 2 | M11 | Readers and `audit_row_metrics` | llm-mailroom | 0/5 | ready |
 | 2 | M12 | Warehouse, `audit-report` and Langfuse scores | llm-mailroom | 0/5 | blocked |
 | 2 | M14 | Rescore CLI | llm-mailroom | 0/5 | ready |
 | 2 | M15 | One scoring path (retire the legacy scorers) | llm-mailroom | 0/5 | ready |

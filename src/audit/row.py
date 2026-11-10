@@ -190,6 +190,50 @@ def attempts_from_trace(trace: list[dict], state: Mapping[str, Any] | None = Non
     return out
 
 
+def human_correction_row(state: Mapping[str, Any], attempts: list[AttemptRow]) -> AttemptRow | None:
+    """The ``human_correction`` extraction sub-row: the person's diff, who, when (spec §5.4).
+
+    ``None`` unless a person changed the fields. The model attempts before it keep
+    their own scores, so the model is never credited with the correction.
+    """
+    from graph.scoring_nodes import human_corrected, model_payload
+
+    if not human_corrected(state):
+        return None
+    label = state.get("human_label") if isinstance(state.get("human_label"), Mapping) else {}
+    snapshot = label.get("model_snapshot") if isinstance(label.get("model_snapshot"), Mapping) else {}
+    before = snapshot.get("extracted_data") if isinstance(snapshot.get("extracted_data"), Mapping) else {}
+    final = model_payload(state.get("extracted_data"))
+    final = final if isinstance(final, Mapping) else {}
+    changed = label.get("field_corrections")
+    if not isinstance(changed, Mapping) or not changed:
+        changed = {k: v for k, v in final.items() if before.get(k) != v}
+    at = _ts(label.get("resolved_at"))
+    numbers = [a.attempt_no for a in attempts if a.stage == "extraction"]
+    return AttemptRow(
+        attempt_id=f"att-{state.get('doc_id')}-extraction-human-1",
+        stage="extraction",
+        attempt_no=(max(numbers) if numbers else 0) + 1,
+        trigger="human_correction",
+        outcome="ok",
+        started_at=at,
+        ended_at=at,
+        detail={
+            "nodes": ["human_review"],
+            "reviewer": label.get("reviewer"),
+            "resolved_at": label.get("resolved_at"),
+            "resolution": label.get("resolution"),
+            "diff": {
+                "changed": {k: {"before": before.get(k), "after": v} for k, v in changed.items()},
+                "removed": list(label.get("removed_fields") or []),
+            },
+            "extracted_data": dict(final),
+            "adherence": state.get("extraction_adherence"),
+            "scoring": state.get("scoring"),
+        },
+    )
+
+
 # ---------------------------------------------------------------- the row
 
 
@@ -198,14 +242,15 @@ def _last_visit(trace: list[dict], nodes: tuple[str, ...]) -> dict:
 
 
 def _extraction(state: Mapping[str, Any], trace: list[dict]) -> dict[str, Any]:
-    from graph.scoring_nodes import model_payload
+    from graph.scoring_nodes import human_corrected, model_payload
 
     last = _last_visit(trace, _EXTRACT_NODES)
     event = (last.get("decision") or {}).get("audit_event") or {}
     data = state.get("extracted_data")
     return {
         "extracted_data": model_payload(data) if data is not None else None,
-        "extraction_source": state.get("extraction_source") or ("model" if data is not None else None),
+        # ``human`` only when a person changed the fields; an as-is approval is the model's (§5.4).
+        "extraction_source": ("human" if human_corrected(state) else "model") if data is not None else None,
         "extraction_confidence": state.get("extraction_confidence"),
         "extraction_attempts": state.get("extraction_attempts"),
         "adherence": state.get("extraction_adherence"),
@@ -296,8 +341,14 @@ def build_row(
         event=event,
         actor=actor,
         detail=detail,
-        attempts=attempts_from_trace(trace, state),
+        attempts=_attempts(trace, state),
     )
+
+
+def _attempts(trace: list[dict], state: Mapping[str, Any]) -> list[AttemptRow]:
+    attempts = attempts_from_trace(trace, state)
+    correction = human_correction_row(state, attempts)
+    return attempts + [correction] if correction else attempts
 
 
 def _run(coro_fn):
@@ -343,5 +394,6 @@ def write_row(
 
 __all__ = [
     "EVENT_STAGE", "EXTRACTION_KEYS", "REF_KEYS", "ROW_DETAIL_KEYS", "ROW_SCHEMA", "attempts_from_trace",
+    "human_correction_row",
     "build_row", "row_metrics", "write_row",
 ]
