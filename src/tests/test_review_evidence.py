@@ -66,6 +66,23 @@ def decision_lane(monkeypatch, mock_langchain_llm):
             REVIEWER_LABEL, "bylaws", 0.95, "decision-model-1"
         )
     )
+
+    # A parked decision review reaches the classification arbiter, which builds its own
+    # OpenAI client through ``get_llm`` and is not covered by the LangChain fake above:
+    # unstubbed, every test here made a live model call (~2 s each) and its outcome rested
+    # on what that model said. Pin the arbiter to "send it to a person" (the same lane its
+    # failure takes), so the document parks for review as these tests intend. The arbiter
+    # itself is covered by test_classification_arbiter.py.
+    import agents.arbiter as arbiter_mod
+
+    class _ParkingArbiter:
+        """Stand-in arbiter that always sends the document to a person."""
+
+        def arbitrate_classification(self, **kwargs):
+            """Return the human-review verdict without calling a model."""
+            return {"decision": "human_review", "confidence": None, "reasoning": "stubbed arbiter"}
+
+    monkeypatch.setattr(arbiter_mod, "ClassificationArbiterAgent", _ParkingArbiter)
     return mock_langchain_llm
 
 
