@@ -10,7 +10,7 @@ PYTHONPATH=src .venv/bin/python tools/gt-label-workbook/build_gt_workbook.py --r
 The workbook holds the full document text, so it is a private, offline record: write it
 outside the repository. `*.xlsx` and the `<name>_texts/` fallback folder are git-ignored.
 
-`--revision` (a tag, branch or commit; default `FULL_CORPUS_REVISION`, v9.1 at the time of writing) is resolved to a
+`--revision` (a tag, branch or commit; default `FULL_CORPUS_REVISION`, Hub tag v9.3 as of 2026-11-10) is resolved to a
 commit sha through the Hub API (`/api/datasets/<id>/revision/<rev>`, read-only). A revision that does not resolve exits
 non-zero before anything is downloaded. The parquet files are then downloaded from
 `resolve/<sha>/parquet/<config>/<split>/`, so the workbook is built from exactly that commit (not from the viewer's
