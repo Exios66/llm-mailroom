@@ -4,7 +4,7 @@
 Default corpus is ``Lucius-Morningstar/mailroom-dataset`` schema **v9** (the
 targeted full 3,302-doc surface; v9 = §84 hardened ground_truth on top of
 the frozen v8 base — HUB-028 insurance LOB expansion + full GT conformance,
-hardened at `eafe1ab4`, GT-closure at `46a4d3c2`, active pin Hub tag `v9.1` / `ed7576b6`).
+hardened at `eafe1ab4`, GT-closure at `46a4d3c2`, active pin Hub tag `v9.3` / `ccd040f6`).
 Class × subtype
 examples come from
 ``docclass-pilot``. Any other pipeline-ready Lucius-Morningstar dataset
@@ -92,6 +92,9 @@ from pipeline.hf_corpora import (  # noqa: E402
 
 DATASET_ID = FULL_CORPUS_ID
 DATASET_REVISION = FULL_CORPUS_REVISION
+
+# Score with the calibrated taxonomy, not dojo defaults (#192).
+import observability.scoring_wiring  # noqa: F401,E402
 # §45 evaluation-trace identity (HUB-022): rides on every pilot trace so any
 # experiment is reproducible from dataset revision + taxonomy surface.
 DATASET_IDENTITY = {
@@ -1195,6 +1198,35 @@ def _paginate_viewer(*, split: str, max_scan: int, config: str) -> list[dict]:
     return rows
 
 
+def _plain(value):
+    """numpy / NaN cell -> the plain python value ``datasets`` would yield."""
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    if isinstance(value, float) and value != value:
+        return None
+    return value
+
+
+def _fallback_rows(*, split: str, max_scan: int, config: str) -> list[dict]:
+    """Rows when ``datasets.load_dataset`` is unavailable or failed.
+
+    A pinned corpus is loaded through the revision-enforcing loader
+    (``pipeline.hf_corpus_loader.load_config_frame``): it raises when the pin
+    cannot be enforced rather than reading Dataset Viewer rows, which always
+    serve the CURRENT revision while the report records the pin. Only an
+    unpinned corpus (``revision: None``, already warned about) uses the Viewer.
+    """
+    corpus = active_corpus()
+    if not corpus.get("revision"):
+        return _paginate_viewer(split=split, max_scan=max_scan, config=config)
+    from pipeline.hf_corpus_loader import load_config_frame
+
+    frame, _ = load_config_frame(
+        corpus["id"], config, split=split, revision=corpus["revision"], max_rows=_scan_cap(max_scan)
+    )
+    return [{k: _plain(v) for k, v in rec.items()} for rec in frame.to_dict("records")]
+
+
 def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
     """Map filename → {expected, expected_subclass} from config=ground_truth.
 
@@ -1216,7 +1248,7 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
         ds = load_dataset(corpus["id"], gt_config, **kwargs)
         raw_rows = _take_rows(ds, max_scan)
     except Exception:
-        raw_rows = _paginate_viewer(split=split, max_scan=max_scan, config=gt_config)
+        raw_rows = _fallback_rows(split=split, max_scan=max_scan, config=gt_config)
     for row in raw_rows:
         filename = str(row.get("filename") or "").strip()
         expected = str(row.get("expected") or "").strip()
@@ -1257,7 +1289,7 @@ def load_hf_rows(*, split: str, max_scan: int) -> list[dict]:
         ds = load_dataset(corpus["id"], **kwargs)
         default_rows = _take_rows(ds, max_scan)
     except Exception:
-        default_rows = _paginate_viewer(split=split, max_scan=max_scan, config="default")
+        default_rows = _fallback_rows(split=split, max_scan=max_scan, config="default")
     for row in default_rows:
         item = parse_hf_row(adapt_hub_row(row, corpus), labels)
         if item:

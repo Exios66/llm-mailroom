@@ -204,35 +204,61 @@ def test_review_existing_collision_and_identical_replay_preserve_sources(temp_ba
     assert sorted(path.name for path in review_dir().iterdir()) == [dest.name]
 
 
-@pytest.mark.parametrize("failure", ["source_link", "copy", "publication_link"])
-def test_failed_review_publication_keeps_source_and_removes_staging(temp_base_dir, monkeypatch, failure):
+@pytest.mark.parametrize("failure", ["source_link", "source_link_exdev", "publication_link"])
+def test_link_failures_fall_back_to_no_clobber_publication(temp_base_dir, monkeypatch, failure):
+    """PR #202 review: a filesystem without hard links must still publish."""
     from pipeline import bins
 
     source = temp_base_dir / "source.txt"
     source.write_bytes(b"complete private legal document")
-    real_link, real_copy = os.link, bins.shutil.copy2
+    real_link = os.link
 
     def link(src, dest, *args, **kwargs):
         if Path(src) == source:
-            code = errno.EPERM if failure == "source_link" else errno.EXDEV
+            code = errno.EXDEV if failure == "source_link_exdev" else errno.EPERM
             raise OSError(code, "injected source link failure")
         if failure == "publication_link":
             assert Path(src).read_bytes() == source.read_bytes()
             raise OSError(errno.EPERM, "injected publication link failure")
         return real_link(src, dest, *args, **kwargs)
 
+    monkeypatch.setattr(os, "link", link)
+    dest, newly = bins.park_for_review(source, _review_manifest())
+    assert newly is True
+    assert dest.read_bytes() == b"complete private legal document"
+    assert not source.exists()
+    assert list(bins.review_dir().iterdir()) == [dest]  # no staging file left
+
+
+@pytest.mark.parametrize("failure", ["copy", "replace"])
+def test_failed_review_publication_keeps_source_and_removes_staging(temp_base_dir, monkeypatch, failure):
+    from pipeline import bins
+
+    source = temp_base_dir / "source.txt"
+    source.write_bytes(b"complete private legal document")
+    real_replace, real_copyfile = os.replace, bins.shutil.copyfile
+
+    def refuse_link(*args, **kwargs):
+        raise OSError(errno.EPERM, "no hard links")
+
     def copy(src, dest, *args, **kwargs):
         if failure == "copy":
             Path(dest).write_bytes(b"partial")
             raise OSError(errno.ENOSPC, "injected copy failure")
-        return real_copy(src, dest, *args, **kwargs)
+        return real_copyfile(src, dest, *args, **kwargs)
 
-    monkeypatch.setattr(os, "link", link)
-    monkeypatch.setattr(bins.shutil, "copy2", copy)
+    def replace(src, dest, *args, **kwargs):
+        if failure == "replace":
+            raise OSError(errno.EIO, "injected publication failure")
+        return real_replace(src, dest, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", refuse_link)
+    monkeypatch.setattr(bins.shutil, "copyfile", copy)
+    monkeypatch.setattr(os, "replace", replace)
     with pytest.raises(OSError, match="injected"):
         bins.park_for_review(source, _review_manifest())
     assert source.read_bytes() == b"complete private legal document"
-    assert list(bins.review_dir().iterdir()) == []
+    assert list(bins.review_dir().iterdir()) == []  # staging and reservation removed
     assert list(bins.manifests_dir().iterdir()) == []
 
 
