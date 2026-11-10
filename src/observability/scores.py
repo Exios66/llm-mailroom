@@ -127,6 +127,8 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "extraction_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_f2", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    # The scoring node family's tier-0 schema adherence (unified audit row, roadmap M12).
+    {"name": "schema_adherence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "entity_list_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "determination_consistency", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "amount_exactness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
@@ -588,6 +590,37 @@ def emit_pipeline_scores(state: dict, metrics: dict | None = None, *, precompute
         for name, value in scores.items():
             score_trace(name, value, data_type=_score_data_type(name))
     return scores
+
+
+#: Scoring block key -> registered score name (unified audit row spec §7).
+SCORING_BLOCK_SCORES = (
+    ("overall_score", "extraction_overall_score"),
+    ("extraction_f1", "extraction_f1"),
+    ("extraction_f2", "extraction_f2"),
+)
+
+
+def emit_scoring_scores(scoring: dict | None, adherence: dict | None, *, trace_id: str | None = None) -> dict:
+    """Attach the row's scoring block to the trace under its registered names.
+
+    ``overall_score`` goes out as ``extraction_overall_score``, then
+    ``extraction_f1``, ``extraction_f2`` and ``schema_adherence``; a value the
+    block does not have is not sent. With a ``trace_id`` each score gets the id
+    ``<trace_id>-<name>``, so a second emission for the same trace replaces the
+    first. Returns what it attached (or would attach, when Langfuse is off).
+    """
+    out: dict = {}
+    for key, name in SCORING_BLOCK_SCORES:
+        value = (scoring or {}).get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[name] = float(value)
+    value = (adherence or {}).get("schema_adherence")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        out["schema_adherence"] = float(value)
+    if out and is_enabled():
+        for name, val in out.items():
+            score_trace(name, val, data_type="NUMERIC", score_id=f"{trace_id}-{name}" if trace_id else None)
+    return out
 
 
 def compute_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:

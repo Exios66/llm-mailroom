@@ -4263,6 +4263,12 @@ def _execute_run(
             _persist_scores(result, score_values)
         except Exception:
             logger.exception("post_run_scoring_failed", doc_id=result.get("doc_id"))
+        # The row's scoring block under its registered names (unified audit row spec §7).
+        try:
+            pipeline_scores.emit_scoring_scores(
+                result.get("scoring"), result.get("extraction_adherence"), trace_id=result.get("trace_id"))
+        except Exception:
+            logger.exception("scoring_block_emit_failed", doc_id=result.get("doc_id"))
         # A-10: persist end-to-end provenance (doc → run → trace → prompt →
         # model → cost) to the catalog row so the chain is reconstructable even
         # with tracing off (the live-DB audit found trace_id empty 60/60).

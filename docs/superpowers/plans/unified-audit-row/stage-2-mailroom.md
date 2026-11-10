@@ -409,17 +409,19 @@
 - Modify: `src/observability/scores.py`. When Langfuse is configured, also emit `overall_score`, `extraction_f1`, `extraction_f2` and `schema_adherence`.
 - Test: `src/tests/test_warehouse_audit.py`, `src/tests/test_audit_report.py` with the golden `src/tests/fixtures/audit/audit_report.md`
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_parquet_round_trip_rows_attempts_addenda`: keyed merge by `entry_id`, `attempt_id` and `addendum_id`.
   - `test_legacy_exported_once`.
   - `test_manifest_maps_doc_to_hash_and_files`.
   - `test_audit_report_golden`: per live type it shows the schema, n, model, route, F1 and F2, with uncollected metrics labelled.
   - `test_report_reads_db_or_parquet_identically`.
   - `test_langfuse_scoring_emission_names`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (8 failed on the M11 commit: no unified warehouse files, `audit.report` and `emit_scoring_scores` missing)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The daily `audit_<date>.parquet` file keeps the per-event entries as before, because callers and tests join on it; `audit_legacy.parquet` is the one-time copy of the migrated history, written on the first export after the migration and recorded as `legacy_export` in the manifest, and later per-event entries (pre-row events) keep reaching the daily file. (2) The manifest's `documents` entry lists only the files that hold something of that document (`audit_attempts_` and `audit_addenda_` are left out when it has none) and is replaced by the newest export that included it. (3) The report has a section for each type with at least one row and a registered extraction schema; other types are listed by count. Route is `Modal` when the extraction model equals a `gateway.tiers.*.alias` in `taxonomy.yaml`, else `API`. Booleans show as a rate, numbers as a mean, each with the n that collected it. (4) Reading Parquet keeps the newest export of each `entry_id` across the daily files. (5) `schema_adherence` is added to `SCORE_CONFIGS` (it is in the dojo registry), so the contract gains one score config; The-Mailroom's schema mirror needs it. The scoring-block scores carry the id `<trace_id>-<name>`, so a later emission replaces rather than duplicates; the legacy `extraction_overall_score` emitters are M15's. (6) Extra tests: `test_cli_writes_report`, `test_run_pipeline_emits_the_row_scoring_block`.
 
 ### Task M14: Rescore CLI
 

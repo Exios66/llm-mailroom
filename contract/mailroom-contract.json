@@ -952,6 +952,10 @@
         "data_type": "NUMERIC"
       },
       {
+        "name": "schema_adherence",
+        "data_type": "NUMERIC"
+      },
+      {
         "name": "schema_valid",
         "data_type": "BOOLEAN"
       },
