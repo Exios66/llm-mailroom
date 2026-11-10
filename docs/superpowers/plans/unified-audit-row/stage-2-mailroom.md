@@ -317,7 +317,7 @@
   - `active_sinks() -> list[TraceSink]`, ordered with `sql` first.
   - `record_io(...) -> tuple[str | None, str, list[str]]`, returning `(trace_sink, io_sha256, also_in)`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_sql_sink_always_active`.
   - `test_phoenix_added_when_importable_enabled_and_reachable`: use a fake collector on localhost and the 1-second probe.
   - `test_phoenix_skipped_on_railway_localhost_endpoint`.
@@ -326,10 +326,12 @@
   - `test_sink_failure_does_not_fail_node`.
   - `test_full_trace_copies_io_into_visit`.
   - `test_io_sha_is_sha256_of_prompt_and_completion`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** The adapters reuse the clients in `src/observability/tracing.py`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (11 errors on the M7 commit: `audit.sinks.phoenix` missing)
+- [x] **Step 3: Implement.** The adapters reuse the clients in `src/observability/tracing.py`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The hosted rule covers Railway (`RAILWAY_ENVIRONMENT` / `RAILWAY_PROJECT_ID`) as well as the Hugging Face Space rule that `resolve_provider_name` already has; only a localhost endpoint is skipped there. (2) The probe is a TCP connect with a 1-second timeout, cached per endpoint for 60 seconds, so a visit never waits on it more than once a minute. (3) `phoenix`, `langfuse`, `braintrust` and `otlp` are write-only: `fetch_io` and `fetch_pending` return nothing (reading back would need each service's query API); only `sql` reads back, which is what `audit-reconcile` (M10) needs. (4) The built-ins are listed in the `mailroom.trace_sinks` group for discovery, but the loader resolves them by name, so they follow the rules above and work without a reinstall; any other name in the group is active once installed. (5) The spool table lives in `sql.py` (`capture_pending`, `fetch_pending`, `drop_pending`) so M10 only adds the write-failure path and the reconcile CLI. (6) `test_phoenix_skipped_when_unreachable` and `test_pending_rows_round_trip_through_spool` were added for the probe's negative case and the spool.
 
 ### Task M10: Write-failure fallback and `audit-reconcile`
 

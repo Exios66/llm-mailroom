@@ -90,11 +90,14 @@ def test_visit_reads_the_llm_calls_of_its_node(monkeypatch):
         return {"doc_type": "contract", "classification_attempts": 1}
 
     monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
+    monkeypatch.setenv("PHOENIX_TRACING", "disabled")
+    monkeypatch.delenv("MAILROOM_TRACE_SINKS", raising=False)
     (v,) = classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})["audit_trace"]
     assert tuple(v) == VISIT_KEYS
     assert (v["node"], v["model"], v["prompt_version"]) == ("classify", "served", 4)
     assert (v["prompt_tokens"], v["completion_tokens"]) == (120, 30)
-    assert v["io_sha256"] == io_sha256("p1", "c1") and v["trace_sink"] is None and v["also_in"] == []
+    # The always-on sql sink keeps the I/O (M9); no other sink is active here.
+    assert v["io_sha256"] == io_sha256("p1", "c1") and v["trace_sink"] == "sql" and v["also_in"] == []
     monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "1")
     (v,) = classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})["audit_trace"]
     assert (v["prompt"], v["completion"]) == ("p1", "c1")

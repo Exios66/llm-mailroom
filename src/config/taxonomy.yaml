@@ -555,6 +555,12 @@ relations:
   context_limit: 6
   embedding_text_chars: 8000
 
+# Unified audit row (spec §5.5). full_trace copies each visit's prompt and
+# completion into the row (MAILROOM_AUDIT_FULL_TRACE wins when set). Off by
+# default: document text and personal data would then land in the audit DB.
+audit:
+  full_trace: false
+
 agents:
   # HUB-037: specialized Gmail triage agent — the free OpenRouter triage team.
   # Dispatched ONLY on single-document Gmail inbox instances (one accepted

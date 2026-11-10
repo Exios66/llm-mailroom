@@ -225,9 +225,9 @@ def visit(node: str, state: dict, update: dict, *, started_at, ended_at, status:
     if event:
         decision["audit_event"] = event
     decisions = decisions_for(node, state, update, event=event)
-    sink, sha = None, None
+    sink, sha, also_in = None, None, []
     if llm.get("prompt") is not None or llm.get("completion") is not None:
-        sink, sha = record_io(visit_id=visit_id, doc_id=merged.get("doc_id"), prompt=llm.get("prompt"),
+        sink, sha, also_in = record_io(visit_id=visit_id, doc_id=merged.get("doc_id"), prompt=llm.get("prompt"),
                               completion=llm.get("completion"))
     record = {
         "visit_id": visit_id,
@@ -247,7 +247,7 @@ def visit(node: str, state: dict, update: dict, *, started_at, ended_at, status:
         "decision": decision,
         "trace_sink": sink,
         "span_id": span_id,
-        "also_in": [],
+        "also_in": also_in,
         "io_sha256": sha,
     }
     if full_trace if full_trace is not None else full_trace_enabled():
