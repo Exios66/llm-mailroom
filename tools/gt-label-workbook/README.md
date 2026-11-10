@@ -10,13 +10,17 @@ PYTHONPATH=src .venv/bin/python tools/gt-label-workbook/build_gt_workbook.py --r
 The workbook holds the full document text, so it is a private, offline record: write it
 outside the repository. `*.xlsx` and the `<name>_texts/` fallback folder are git-ignored.
 
-`--revision` defaults to `FULL_CORPUS_REVISION` (v9.1 at the time of writing); pass the release you want to label.
+`--revision` (a tag, branch or commit; default `FULL_CORPUS_REVISION`, v9.1 at the time of writing) is resolved to a
+commit sha through the Hub API (`/api/datasets/<id>/revision/<rev>`, read-only). A revision that does not resolve exits
+non-zero before anything is downloaded. The parquet files are then downloaded from
+`resolve/<sha>/parquet/<config>/<split>/`, so the workbook is built from exactly that commit (not from the viewer's
+`refs/convert/parquet` branch, which can lag). The sha is printed in the run's JSON and written on the README sheet and in
+the workbook properties.
 
-- **Input:** `config=ground_truth` (train + test) of the pipeline corpus at `FULL_CORPUS_REVISION`
-  (`src/pipeline/hf_corpora.py`). It is loaded read-only through `pipeline.hf_corpus_loader`, which needs
-  network access to the Hub. `--revision` picks another revision. `--parquet-dir DIR` builds
-  offline from `gt_train.parquet` and `gt_test.parquet` (plus `default_train.parquet` and
-  `default_test.parquet` for the text, see `--to-label`).
+- **Input:** `config=ground_truth` (train + test) and, for `--to-label`, `config=default` (the document text), as
+  above; network read access to the Hub is needed. `--parquet-dir DIR` builds offline from `gt_train.parquet` and
+  `gt_test.parquet` (plus `default_train.parquet` and `default_test.parquet` for the text); the commit is then not
+  resolved and the README says so.
 - **Output sheets:**
   - **README:** how to edit, and the status codes.
   - **Summary:** live coverage formulas.
@@ -25,14 +29,15 @@ outside the repository. `*.xlsx` and the `<name>_texts/` fallback folder are git
   - **One sheet per class:** a value column and a status column for every field the Dojo scores,
     including fields the dataset never labels (`UNLABELED`, highlighted yellow).
   - **`To Label – <Class>`** (insurance claims, corporate records, correspondence by default): one row
-    per document with a field still to label, sorted by subclass then `document_id`. Columns:
-    `document_id`, `split`, `subclass`, `filename`, `Open original` (only when the dataset gives a source
-    link), `Open text`, `fields needing labels`, then a yellow value cell and a status cell for each field
-    that needs a label on at least one row, then `still missing (live)` and `date flags`. A document is listed
+    per document with a field still to label, sorted by subclass then `document_id`. Columns, in order:
+    `document_id`, `filename`, `split`, `Open original` (only when the dataset gives a source link), `Open text`,
+    `subclass` (drop-down), then a value cell and a status cell for each field that needs a label on at least one
+    row, then `still missing (live)` and `date flags`, then grouped, hidden helpers (`fields needing labels (as
+    built)`, `dataset subclass`, `needs mask`). A document is listed
     when a field is `UNLABELED` or `pending_annotation`, or a date label is flagged `NO YEAR`,
     `NO DAY/MONTH` or `UNPARSEABLE`. Dates must include the year.
   - **`Text – <Class>`**: the full document text from the `default` config, one block per document (a
-    header row with a `back to To Label` link, then the text). Excel holds 32,767 characters per cell, so
+    header row with a `back to To Label` link, then the text in `part i/n` rows). Excel holds 32,767 characters per cell, so
     text is split over consecutive rows of at most 32,000 characters, at blank lines or line breaks where
     possible; the joined rows equal the original. Control characters XML cannot store are shown as their
     symbol (U+0001 becomes U+2401), one for one. If the texts would exceed `--max-workbook-mb` (default 150),
@@ -45,8 +50,25 @@ outside the repository. `*.xlsx` and the `<name>_texts/` fallback folder are git
   records); insurance and correspondence rows carry no source URL, so that column is left out of their
   sheets. A file the repo does hold would link to `huggingface.co/datasets/<id>/blob/<commit sha>/<path>`.
   sec.gov answers scripts with HTTP 403 (undeclared automated tool), so these links open in a browser but
-  cannot be checked from a script here. The dataset viewer's `?q=` search is not used on these sheets because
-  it could not be verified.
+  cannot be checked from a script here. The class sheets' `Hub viewer` link opens the viewer's text search for the
+  filename in the `default` config (not the document_id, which that config lacks); the viewer's search index can
+  take a minute to load, so treat it as best effort.
+- **Drop-downs and highlights:** status, subclass and every closed-vocabulary field (intent, claim_type,
+  coverage_determination, record_type, urgency, communication_type, ...) are Excel list validations (Google Sheets
+  shows chips) fed from a hidden `Lists` sheet through named ranges (`lst_status`, `lst_subclass_<class>`,
+  `lst_enum_<class>_<field>`). Vocabularies come from the Dojo (`extraction_schema(...).json_schema()` enums,
+  `extraction_subtypes`, `RECORD_TYPES`). Yellow = a label is missing; green (conditional formatting, works in
+  Excel and LibreOffice) = a person filled a gap, set a status of `verified` / `schema_documented_absence` /
+  `not_applicable`, or changed the subclass. Dataset values stay unhighlighted. `verified` is the only status that
+  is not a dataset code: a person sets it after checking a value, and a flagged date stays counted as missing until it
+  is `verified`.
+- **Formulas:** `still missing (live)`, `Labels missing` and the Summary roll-ups count status cells only
+  (`SUMPRODUCT` with a column mask), use only functions Excel, LibreOffice and Google Sheets share, and follow edits.
+  `fields needing labels (as built)` and `still missing (live)` agree at build time. Filter, do not sort: links between
+  sheets point at fixed rows.
+- **Derived fields:** `communication_type`, `cuad_family` and `merger_consideration` are derived from the subclass (the
+  Dojo's own rule) and shown as populated, never as gaps. Corporate records include `filing_number` for the subclasses
+  that carry it; the per-row missing set equals the Dojo's `unlabeled_fields`.
 - **Columns follow the Dojo:**
   - `extraction_schema(doc_type).field_types`;
   - corporate-record subclass entity fields;
