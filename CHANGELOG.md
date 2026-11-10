@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Interim llm-dojo-scoring pin `f95c318` (unreleased Dojo `main`, after v0.28.1).** Brings in llm-dojo-scoring#135: date scoring no longer reads the clock, compares only the date components both sides state, caps a dated prediction against a yearless label at 0.67, and the entity-list date matcher is stricter. **Date-field scores on yearless or dayless ground-truth rows move**, so re-score stored runs with `dojo-rescore` before comparing them with older runs. Fully dated pairs score as before. The vendored fallback snapshot (`vendor/llm-dojo-scoring/`) is refreshed to the same commit, and the Dojo's production sorter prompt key is now `sorter_condensed_v5`, matching `src/llm/prompts.py`. No Dojo release is cut yet.
+
 ### Added
 
 - **`run_pilot.py` runs on real documents from the pinned HF corpus.** `--dataset {samples,hf}` (with `--per-class`, `--seed`, `--split`) builds the pilot set from `Lucius-Morningstar/mailroom-dataset` through `hf_corpus_loader.load_corpus` at the pinned revision and writes each document's full text into the run's base dir. In `--mock`, a checkout without `docs/examples/samples/manifest.csv` falls back to it; `--real` needs `--dataset hf` named explicitly. Corpus rows count as real samples.

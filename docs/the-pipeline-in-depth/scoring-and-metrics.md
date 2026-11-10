@@ -59,7 +59,7 @@ The fields `confidence` and `reasoning` are never scored.
 
 ### Per-field match rules
 
-Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/field_scoring.py`](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/field_scoring.py).
+Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/scoring/field_scoring.py`](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/scoring/field_scoring.py).
 
 | Type | Rule | Score |
 |---|---|---|
@@ -74,9 +74,14 @@ Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/field_scoring
 **Date rules, in order:**
 
 1. If the expected text holds no real date (a blank template line such as `_____ day of ________` or a bare label), an empty prediction scores 1.0 and any prediction scores 0.0.
-2. If the expected date phrase appears inside the prediction (or the other way round), score 1.0.
-3. If both parse: same date is 1.0; same year and month is 0.67; within 45 days is 0.67; same year or same month only is 0.33; otherwise 0.0.
-4. If either side does not parse, fall back to the `name` rule.
+2. An exact copy of the expected text scores 1.0. Containment counts only for whole dates: a prediction that is a prefix of a dated label (`18 August` vs `18 August 2014`) or that holds a different day as a substring (`11 August 2014` vs `1 August 2014`) is not a match.
+3. Compare only the components (year, month, day) each side states. No component is ever filled in from the clock or a placeholder.
+   - Both fully dated: same date is 1.0; same year and month, or within 45 days, is 0.67; same year or same month only is 0.33; otherwise 0.0. A year mismatch is never 1.0.
+   - The prediction omits a component the label states: at most 0.67 (0.67 when two or more components agree, 0.33 when only the year or month does).
+   - The label omits a component (yearless or dayless): 1.0 when the prediction agrees on everything the label states, except that a prediction stating a year against a yearless label scores at most **0.67** (the label cannot verify it).
+   - A prediction naming two different years the label does not state scores at most 0.67. A prediction stating no date component (`12`, `Tuesday`) scores 0.0.
+   - Two-digit years use a fixed pivot (`00`–`68` → 20xx, `69`–`99` → 19xx).
+4. If neither side parses to any date component, fall back to the `name` rule; a garbled prediction keeps fuzzy credit only when it names a four-digit year (at most 0.33 for the wrong year, 0.67 against a partial label).
 
 **Containment fields.** These fields are scored with the `containment` rule when their type is `name` or `free_text`: `governing_law`, `term_length`, `renewal_terms`, `subject_matter`.
 
@@ -145,7 +150,7 @@ A suite score is per document. Run-level numbers (for example "overall 0.5104" i
 | `field_exact_rate` / `field_partial_rate` / `field_miss_rate` | Share of field scores that are `>= 1.0` / between 0 and 1 / `<= 0.0` |
 | `entity_list_precision` / `recall` / `raw_f1` | Per-field means of the list scores |
 | `list_micro_precision` / `recall` / `f1` | Pooled over all list fields: `matched / n_predicted`, `matched / n_expected`, harmonic mean |
-| `date_mae_days`, `duration_mae_days`, `money_mae_usd` | Mean absolute error over pairs where both sides parse (plus medians) |
+| `date_mae_days`, `duration_mae_days`, `money_mae_usd` | Mean absolute error over pairs where both sides parse to a full date; partial (yearless or dayless) dates are skipped (plus medians) |
 | `date_r2`, `duration_r2` | `1 - SS_res / SS_tot` over the same pairs; `None` with fewer than 2 pairs or zero variance |
 | `span_count_mae`, `span_count_signed_mean` | Predicted minus expected list length per document (positive means over-extraction) |
 
@@ -389,7 +394,7 @@ At import, every name in `SCORE_CONFIGS` is checked against the llm-dojo-scoring
 - [`src/agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), [`arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py), [`sorter_reviewer.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/sorter_reviewer.py)
 - [`src/graph/routing.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/routing.py), [`src/graph/build_graph.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/build_graph.py), [`src/pipeline/reconsideration.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/pipeline/reconsideration.py), [`src/config/taxonomy.yaml`](https://github.com/Exios66/llm-mailroom/blob/main/src/config/taxonomy.yaml)
 - [`src/legalbench/scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/scoring.py), [`src/scripts/run_quality_judges.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_quality_judges.py), [`src/scripts/sync_evaluators.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/sync_evaluators.py), [`src/scripts/run_pilot.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_pilot.py)
-- [llm-dojo-scoring `field_scoring.py` (f95c318)](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/field_scoring.py) and [`config.py`](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/config.py)
+- [llm-dojo-scoring `field_scoring.py` (f95c318)](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/scoring/field_scoring.py) and [`config.py`](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/config.py)
 - [eval-environment API-leg reports](https://github.com/LLM-Mailroom-Services/eval-environment/blob/main/reports/api-comparisons/README.md) and [`docs/scoring.md`](https://github.com/LLM-Mailroom-Services/eval-environment/blob/main/docs/scoring.md)
 - [mailroom-ml reports](https://github.com/LLM-Mailroom-Services/mailroom-ml/blob/main/reports/README.md)
 - [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md), [`src/legalbench/reports/experiment_log.md`](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/reports/experiment_log.md)
