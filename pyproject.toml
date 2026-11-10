@@ -50,10 +50,12 @@ dependencies = [
     "pyarrow>=15.0",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
+    # Interim pin f95c318 (llm-dojo-scoring#135, unreleased): date scoring hardening —
+    # year-verified dates, strict list date matching; no version cut yet.
     # v0.28.1 release (00a2a7f, llm-dojo-scoring#130/#131): the sorter guide files a bylaw
     # amendment under bylaws, never board_resolution (agrees with sorter_condensed_v5).
     # v0.28.0 (cab9768, #124): v10 alignment — Contract/Merger v2 field maps, gt_from_v10_row.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@00a2a7f7b058a4ade06b027c2afbd8b03bea6a5f",
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@f95c3188a1a634a9a2354afd5351edd8dd152a89",
 ]
 
 [project.optional-dependencies]
