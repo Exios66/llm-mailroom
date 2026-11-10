@@ -76,7 +76,10 @@ def decision_lane(monkeypatch, mock_langchain_llm):
     import agents.arbiter as arbiter_mod
 
     class _ParkingArbiter:
+        """Stand-in arbiter that always sends the document to a person."""
+
         def arbitrate_classification(self, **kwargs):
+            """Return the human-review verdict without calling a model."""
             return {"decision": "human_review", "confidence": None, "reasoning": "stubbed arbiter"}
 
     monkeypatch.setattr(arbiter_mod, "ClassificationArbiterAgent", _ParkingArbiter)
