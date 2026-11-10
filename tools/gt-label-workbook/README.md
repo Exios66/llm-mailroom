@@ -26,8 +26,12 @@ the workbook properties.
   - **Summary:** live coverage formulas.
   - **Date Audit:** every date label, one span per row, with the year, month and day it states. Labels
     flagged `MISSING LABEL`, `NO YEAR`, `NO DAY/MONTH` or `UNPARSEABLE` need a corrected value.
-  - **One sheet per class:** a value column and a status column for every field the Dojo scores,
-    including fields the dataset never labels (`UNLABELED`, highlighted yellow).
+  - **One sheet per class:** a value column and a status column for every field the Dojo scores that the
+    dataset labels for that class (a value or a `gt_presence` key on at least one row); a field with no label
+    yet is `UNLABELED`, highlighted yellow. A pipeline output field the dataset never carries for a class
+    (for example insurance `claim_checklist`) is not a labelling target and gets no column; the README sheet
+    and the build summary (`dropped_fields`) list them. Corporate records keep the Dojo's per-subclass entity
+    fields, and fields derived from CUAD (contracts), MAUD or the subclass stay.
   - **`To Label – <Class>`** (insurance claims, corporate records, correspondence by default): one row
     per document with a field still to label, sorted by subclass then `document_id`. Columns, in order:
     `document_id`, `filename`, `split`, `Open original` (only when the dataset gives a source link), `Open text`,

@@ -41,8 +41,9 @@ def rows():
         "gt_presence": json.dumps({"cuad_clause_labels": "populated"}),
     }
     pending = {"cuad_clause_labels": "{}", "gt_presence": json.dumps({"cuad_clause_labels": "pending_annotation"})}
+    # communication_date has a gt_presence key but no value: a labelling target, still unlabelled.
     mail = {"intent": "request", "subject_matter": "Meeting", "keywords": '["meeting"]',
-            "gt_presence": json.dumps({"intent": "populated"})}
+            "gt_presence": json.dumps({"intent": "populated", "communication_date": "populated"})}
     return pd.DataFrame([
         _row("DOC-1", "contract", "Supply", contract),
         _row("DOC-2", "contract", "Supply", pending, split="test"),
@@ -56,8 +57,11 @@ def test_every_scored_field_gets_a_value_and_status_column(tool, rows, tmp_path)
     assert stats["sheets"] == ["Contracts", "Correspondence"]
     wb = load_workbook(out)
     headers = [c.value for c in wb["Correspondence"][1]]
-    # communication_date is scored by the Dojo but never labelled in the dataset.
+    # communication_date is a dataset field (gt_presence key) with no label yet.
     assert "communication_date" in headers and "communication_date | status" in headers
+    # sender is a pipeline field the dataset never carries for these rows: no column.
+    assert "sender" not in headers and "sender | status" not in headers
+    assert "sender" in stats["dropped_fields"]["correspondence"]
     col = headers.index("communication_date") + 1
     assert wb["Correspondence"].cell(row=2, column=col + 1).value == "UNLABELED"
     assert wb["Correspondence"].cell(row=2, column=col).fill.fgColor.rgb == tool.TODO.fgColor.rgb
@@ -742,3 +746,20 @@ def test_libreoffice_recalculates_the_counts_after_edits_with_no_errors(tool, la
     summary = [[c.value for c in r] for r in after["Summary"].iter_rows()]
     corr = next(r for r in summary if r[0] == "To Label – Correspondence")
     assert corr[1:6] == [2, 2, 0, 2, 2]  # documents, as built, still missing, resolved, nothing left
+
+
+def test_insurance_claim_checklist_is_not_a_labelling_target(tool, tmp_path):
+    """claim_checklist is a pipeline output the dataset never labels: no column on any sheet,
+    so it never puts every claim on the To Label sheet."""
+    gt = _full_gt(tool, "insurance_claim")
+    gt.pop("claim_checklist", None)
+    presence = json.loads(gt["gt_presence"])
+    presence.pop("claim_checklist", None)
+    gt["gt_presence"] = json.dumps(presence)
+    rows = pd.DataFrame([_doc(tool, "DOC-I", "insurance_claim", "carrier", "Claim text.", gt)])
+    _, stats, wb = _build(tool, rows, tmp_path, to_label=("insurance_claim",))
+    assert "claim_checklist" in stats["dropped_fields"]["insurance_claim"]
+    for name in wb.sheetnames:
+        assert "claim_checklist" not in _headers(wb[name]), name
+    assert stats["to_label"].get("To Label – Insurance Claims", 0) == 0
+    assert "claim_checklist" in _readme_text(wb)
