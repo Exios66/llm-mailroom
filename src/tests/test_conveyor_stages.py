@@ -522,9 +522,12 @@ class TestAbortResolvesStaleClaimPath:
         from pipeline import bins
 
         inbox = bins.inbox_dir()
-        claimed = bins.processing_dir("wtest") / "doc.pdf"
-        bins.processing_dir("wtest").mkdir(parents=True, exist_ok=True)
-        claimed.write_bytes(b"claimed bytes")
+        inbox.mkdir(parents=True, exist_ok=True)
+        (inbox / "doc.pdf").write_bytes(b"claimed bytes")
+        # Claim it the way intake does, so this run's claim is recorded; a
+        # same-named file this run never claimed is covered (and left alone)
+        # by test_bins_terminal_recovery.
+        claimed = bins.claim_file(inbox / "doc.pdf", "wtest")
 
         initial_state = {
             "doc_id": "aborted-doc-1",
