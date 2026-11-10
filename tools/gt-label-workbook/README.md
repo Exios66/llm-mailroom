@@ -32,8 +32,8 @@ the workbook properties.
     (for example insurance `claim_checklist`) is not a labelling target and gets no column; the README sheet
     and the build summary (`dropped_fields`) list them. Corporate records keep the Dojo's per-subclass entity
     fields, and fields derived from CUAD (contracts), MAUD or the subclass stay.
-  - **`To Label – <Class>`** (insurance claims, corporate records, correspondence by default): one row
-    per document with a field still to label, sorted by subclass then `document_id`. Columns, in order:
+  - **`To Label – <Class>`** (insurance claims, corporate records, correspondence by default; a class with
+    nothing left to label gets no sheet): one row per document with a field still to label, sorted by subclass then `document_id`. Columns, in order:
     `document_id`, `filename`, `split`, `Open original` (only when the dataset gives a source link), `Open text`,
     `subclass` (drop-down), then a value cell and a status cell for each field that needs a label on at least one
     row, then `still missing (live)` and `date flags`, then grouped, hidden helpers (`fields needing labels (as
