@@ -11,7 +11,8 @@ The findings below are kept as audited. PR #202 resolves them as follows:
 
 | Issue | Status |
 |---|---|
-| #191, #192, #193, #194, #196, #197, #199, #201 | Fixed in PR #202, each with a regression test |
+| #191, #192, #194, #196, #197, #199, #201 | Fixed in PR #202, each with a regression test. For #192, `graph/build_graph.py` now imports `observability.scoring_wiring` at module load, so the finding below no longer blocks real runs |
+| #193 | Fixed in PR #202: the API handler runs `mode_status` off the event loop (`asyncio.to_thread`), so the readout reports the seeded sweep and edge count, and a failed ledger or relations-DB read in `mode_status` now logs a warning (`relations_mode_ledger_read_failed`, `relations_mode_db_read_failed`) instead of being swallowed silently. Both have regression tests in `src/tests/test_relations_mode.py` |
 | #195 | Loader part fixed in PR #202: every parquet shard is loaded and a `content_sha256` mismatch is logged. The **yearless-date scorer fix is not done**: it belongs in `llm-dojo-scoring`, so yearless ground-truth dates still score against the run year until that lands and the pin moves |
 | #198 | Superseded: main shipped v0.9.3 through the scripted release flow, and `release.py check` is OK. PR #202 no longer carries a release cut |
 
@@ -25,7 +26,7 @@ PR #202 survived two bot review rounds; the fixes below refined the first pass:
   `fsync` runs before `copystat` (a read-only source no longer fails the
   standoff). Filesystems without hard links are supported.
 - The stale-claim abort recovery is ownership-fenced: the run's own recorded
-  claim is authoritative-or-absent; the by-name fallback is best effort,
+  claim is authoritative-or-absent, and without a recorded claim the abort path moves nothing,
   and the failed-path locator accepts only names this document's own move
   could produce (another document's doc-suffixed name is rejected).
 - The loader rejects a revision it cannot enforce, reads only the pinned
@@ -161,7 +162,7 @@ All findings are tracked as GitHub issues #191–#201
 | 8 | #201 | per-spec success caching; fetch failure bails | unit test with a mocked failing create |
 | 9 | #197 | `.get(key, fallback)` chain; usage capture only on success row; comment tracks usage fix | `legalbench/langfuse_tracing` unit test for 0.0 macro_f1 |
 | 10 | #195 | dojo date fix (yearless GT = month/day compare) + `setdefault` shard handling + integrity gate in `sync_dataset` | dojo field_scoring + loader tests |
-| 11 | #200 | delete the three dead names; one merge helper; `list_inbox_files()` fallback | `pytest src/tests/test_lean_cleanup_200.py src/tests/test_api_upload.py src/tests/test_routing_hardening.py -q` |
+| 11 | #200 | delete the three dead names; one merge helper; `list_inbox_files()` fallback | Regression check only: `pytest src/tests/test_lean_cleanup_200.py src/tests/test_api_upload.py src/tests/test_routing_hardening.py -q` shows that nothing broke; it does not show that the helpers were merged. The consolidation is checked separately, by reading the code: when it is done, `grep -nE "def _merge_(triage|sorter_reads)" src/agents/` finds at most one definition, and both `agents/intake.py` and `agents/sorter.py` call it. Not done in PR #202 (see Remediation status) |
 | 12 | Sandbox | commit the in-flight vendor refresh; re-vendor `llm-mailroom @ main` post-#198; re-run sandbox gates | sandbox CI green on the committed branch |
 
 After orders 1–8 land: re-run the two hermetic gates
