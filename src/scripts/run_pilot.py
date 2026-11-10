@@ -72,6 +72,9 @@ from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
 
+# Score with the calibrated taxonomy, not dojo defaults (#192).
+import observability.scoring_wiring  # noqa: F401,E402
+
 # NOTE: no `OPENROUTER_API_KEY` placeholder is ever set here. Mock runs patch
 # get_llm entirely (no key needed); real runs must resolve a REAL key from the
 # environment — llm/providers.py rejects the historical "mock-key" placeholder,

@@ -30,7 +30,7 @@ manifests/<doc_id>.json      ← JSON sidecar per document
   - Entry: `python pipeline/watcher.py` (blocking loop; Ctrl-C to stop).
 - `bins.py`
   - Paths are built from `config/taxonomy.yaml` `pipeline.bins` templates with `{base_dir}` → `MAILROOM_BASE_DIR` env (default `./data`).
-  - Key functions: `inbox_dir()`, `processing_dir(worker_id)`, `classified_dir(doc_type)`, `review_dir()`, `failed_dir()`, `archive_dir(matter_id, doc_type)`, `manifests_dir()`, `claim_file`, `move_to_classified`, `move_to_review`, `move_to_failed`, `move_to_archive`, `save_manifest`/`load_manifest`, `get_worker_id`, `list_inbox_files`.
+  - Key functions: `inbox_dir()`, `processing_dir(worker_id)`, `classified_dir(doc_type)`, `review_dir()`, `failed_dir()`, `archive_dir(matter_id, doc_type)`, `manifests_dir()`, `claim_file`, `move_to_review`, `move_to_failed`, `move_to_archive`, `save_manifest`/`load_manifest`, `get_worker_id`, `list_inbox_files`.
   - Caches config at module level (`_config`) — restart the process after editing `taxonomy.yaml`.
 - `config.py` — `load_config()` is `@lru_cache(maxsize=1)`; `get_agent_config`, `get_confidence_thresholds`, `get_all_doc_types`, `get_doc_class`, `get_extraction_schema_name`.
 - `gmail_intake.py`

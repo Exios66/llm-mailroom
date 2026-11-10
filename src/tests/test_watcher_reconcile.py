@@ -180,6 +180,66 @@ class TestArchiveCollisionSafe:
         dest = bins.move_to_archive(src, "M1", "contract", doc_id="doc-1")
         assert dest.name == "fresh.pdf"
 
+    def test_re_failed_same_doc_id_never_overwrites(self, temp_base_dir):
+        """PR #202 review: the doc-tagged fallback itself must not clobber a
+        previously preserved copy of the same doc_id."""
+        from pipeline import bins
+
+        failed = bins.failed_dir()
+        failed.mkdir(parents=True, exist_ok=True)
+        (failed / "claim.pdf").write_bytes(b"first bytes")
+
+        src = temp_base_dir / "claim.pdf"
+        src.write_bytes(b"second bytes")
+        dest2 = bins.move_to_failed(src, doc_id="doc-9")
+        assert dest2.name == "claim--doc-9.pdf"
+        assert (failed / "claim.pdf").read_bytes() == b"first bytes"
+
+        src.write_bytes(b"third bytes")
+        dest3 = bins.move_to_failed(src, doc_id="doc-9")
+        assert dest3.name == "claim--1.pdf"
+        assert (failed / "claim--doc-9.pdf").read_bytes() == b"second bytes"
+        assert dest3.read_bytes() == b"third bytes"
+        assert not src.exists()
+
+    def test_archive_doc_id_fallback_also_never_clobbers(self, temp_base_dir):
+        """Same contract as the failed bin, for the A-20 archive path."""
+        from pipeline import bins
+
+        archive = bins.archive_dir("M1", "contract")
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / "doc.pdf").write_bytes(b"original")
+        (archive / "doc--doc-abc.pdf").write_bytes(b"first re-archive")
+
+        src = temp_base_dir / "doc.pdf"
+        src.write_bytes(b"second re-archive")
+        dest = bins.move_to_archive(src, "M1", "contract", doc_id="doc-abc")
+        assert dest.name == "doc--1.pdf"
+        assert (archive / "doc--doc-abc.pdf").read_bytes() == b"first re-archive"
+        assert dest.read_bytes() == b"second re-archive"
+        assert not src.exists()
+
+
+class TestFindClaimedFile:
+    """PR #202 review: the abort path may hold a stale pre-claim path."""
+
+    def test_find_claimed_file_newest_wins(self, temp_base_dir):
+        import time
+
+        from pipeline import bins
+
+        (bins.processing_dir("w1")).mkdir(parents=True, exist_ok=True)
+        (bins.processing_dir("w2")).mkdir(parents=True, exist_ok=True)
+        old = bins.processing_dir("w1") / "claim.pdf"
+        new = bins.processing_dir("w2") / "claim.pdf"
+        old.write_bytes(b"old")
+        new.write_bytes(b"new")
+        time.sleep(0.01)
+        old.touch()
+        assert bins.find_claimed_file("claim.pdf") == old
+        assert bins.find_claimed_file("missing.txt") is None
+        assert bins.find_claimed_file("") is None
+
 
 class TestCatalogReconciliation:
     """HUB-051 G4: stale catalog PROCESSING rows reconcile from their

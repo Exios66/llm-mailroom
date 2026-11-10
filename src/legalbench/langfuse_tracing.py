@@ -95,12 +95,13 @@ def attach_run_scores(scores: dict[str, Any], task_id: str) -> None:
     value = scores.get("accuracy")
     if isinstance(value, (int, float)):
         score_trace("legalbench_accuracy", float(value), data_type="NUMERIC")
-    value = scores.get("macro_f1") or scores.get("macro_category_accuracy") or scores.get("yes_f1")
+    # A legit 0.0 must not fall through the fallback chain (#197).
+    value = scores.get("macro_f1", scores.get("macro_category_accuracy", scores.get("yes_f1")))
     if isinstance(value, (int, float)):
         score_trace("legalbench_macro_f1", float(value), data_type="NUMERIC")
     value = scores.get("calibration_error")
     if isinstance(value, (int, float)):
         score_trace("legalbench_calibration_error", float(value), data_type="NUMERIC")
-    value = scores.get("n_questions") or scores.get("n_documents")
+    value = scores.get("n_questions", scores.get("n_documents"))
     if isinstance(value, (int, float)):
         score_trace("legalbench_n_questions", float(value), data_type="NUMERIC")
