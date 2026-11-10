@@ -304,12 +304,16 @@ def _cwd_findings(source: str, *, allow_bootstrap: bool) -> list[str]:
     tree = ast.parse("\n".join(lines))
     allowed: set[int] = set()
     if allow_bootstrap:
+        # Only the FIRST ``ROOT = Path.cwd()`` is the bootstrap: a later one would reset ROOT to
+        # the starting directory after the walk-up.
+        boots = [node for node in ast.walk(tree)
+                 if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
+                 and [t.id for t in node.targets if isinstance(t, ast.Name)] == ["ROOT"]
+                 and _call_name(node.value) == "cwd"]
+        if boots:
+            allowed.add(id(min(boots, key=lambda n: (n.lineno, n.col_offset)).value))
         for node in ast.walk(tree):
-            if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
-                    and [t.id for t in node.targets if isinstance(t, ast.Name)] == ["ROOT"]
-                    and _call_name(node.value) == "cwd"):
-                allowed.add(id(node.value))
-            elif isinstance(node, ast.Assert) and node.msg is not None:
+            if isinstance(node, ast.Assert) and node.msg is not None:
                 allowed.update(id(n) for n in ast.walk(node.msg))
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute) and node.attr == "curdir":
@@ -339,6 +343,7 @@ def _notebook_code_cells(fname: str) -> list[str]:
     ('ROOT = Path.cwd()\nassert ROOT, f"not found above {Path.cwd()}"\n', 0),
     ('import os\nx = os.getcwd()\n', 1),
     ('ROOT = Path.cwd()\nelsewhere = Path.cwd()\n', 1),
+    ('ROOT = Path.cwd()\nROOT = ROOT.parent\nROOT = Path.cwd()\n', 1),
     ('os.chdir("/tmp")\n', 1),
     ('d = Path("data/pilot_runs") / "x"\n', 1),
     ('d = Path(f"data/{x}")\n', 1),
@@ -369,6 +374,10 @@ def test_cwd_dependence_is_confined_to_the_root_bootstrap(fname: str) -> None:
     cells = _notebook_code_cells(fname)
     bootstrap = [src for src in cells if "ROOT = Path.cwd()" in src]
     assert bootstrap, f"{fname}: no cell finds the repo root; cwd handling changed, re-audit"
+    # Each cell may hold one bootstrap, so a second one in a later cell would also pass per
+    # cell: allow exactly one per notebook.
+    assert sum(src.count("ROOT = Path.cwd()") for src in cells) == 1, (
+        f"{fname}: more than one ROOT = Path.cwd(); a later one resets ROOT to the start cwd")
     for src in bootstrap:
         for line in _ROOT_WALK_UP:
             assert line in src, f"{fname}: root bootstrap incomplete ({line!r} missing)"
