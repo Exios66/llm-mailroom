@@ -193,6 +193,8 @@ class TestTopology:
             # Scoring node family (unified audit row M6): one per dojo registry entry + generic.
             "score_common", "score_contract", "score_corporate_record", "score_correspondence",
             "score_insurance_claim", "score_merger_agreement", "score_generic",
+            # Terminal audit row for a failed tray decision (M7).
+            "audit_failed",
         }
         assert nodes == expected
 

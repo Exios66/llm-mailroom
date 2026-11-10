@@ -252,7 +252,7 @@
 **Interfaces:**
 - Produces: `build_row(state: dict, *, event: str, actor: str) -> TerminalRow` and `attempts_from_trace(trace: list[dict]) -> list[AttemptRow]`. The `detail` keys are exactly those in the spec §4.1 table, with `row_schema: 1`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_detail_keys_exactly_spec`.
   - `test_uncollected_fields_are_null`.
   - `test_metrics_equal_emit_pipeline_scores`.
@@ -263,10 +263,12 @@
   - `test_watcher_abort_writes_failed_row`.
   - `test_subrows_per_retry_and_arbiter_rescue`.
   - `test_trace_incomplete_flag_on_old_checkpoint`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (12 failed on the M6 commit)
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The row is built in `src/audit/row.py` and written by the terminal nodes through `write_row`, which never raises; `agents/archivist.py` keeps its file work and legacy entry, and the `archive` node writes the row next to it, so the archivist stays procedural. (2) Only two edges reach `END` (`archive`, `audit_failed`): the judge stop and a rejected tray park both end through `human_review -> failed -> audit_failed`, and an intake failure raises into the `run_pipeline` abort path, which writes the `failed` row from the last checkpoint's trace. The stopping node is the one before `audit_failed` in `nodes_visited`; no row key was added for it (§4.1 is exact). (3) The triage lane runs outside the graph, so its row has no trace and records the triage read as its decision fields, with actor `triage`. (4) Directly consecutive visits with one `attempt_id` are one attempt; any visit in between (a `human_review` before a resume) starts a new sub-row, suffixed `.2`. (5) G6: `validate_extraction` takes `schema_valid` from `assess_extraction_payload` behind its existing edges (parse flag, empty payload, unregistered class), so routing does not move; a parity test pins it. `audit-row-schema.md` is left to M13. (6) The run start for `run_duration` is a context variable set by `run_pipeline`, not a state field, so checkpoints do not change.
 
 ### Task M8: Human review paths and pre-row events
 

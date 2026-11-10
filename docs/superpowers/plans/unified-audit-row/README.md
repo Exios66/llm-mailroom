@@ -91,7 +91,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**17/33 tasks done.**
+**18/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -111,8 +111,8 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 2 | M4 | Verification | llm-mailroom | 5/5 | done |
 | 2 | M5 | Trace collection in state | llm-mailroom | 5/5 | done |
 | 2 | M6 | Scoring node family | llm-mailroom | 5/5 | done |
-| 2 | M7 | Row builder and terminal nodes | llm-mailroom | 0/5 | ready |
-| 2 | M8 | Human review paths and pre-row events | llm-mailroom | 0/5 | blocked |
+| 2 | M7 | Row builder and terminal nodes | llm-mailroom | 5/5 | done |
+| 2 | M8 | Human review paths and pre-row events | llm-mailroom | 0/5 | ready |
 | 2 | M9 | Trace sinks | llm-mailroom | 0/5 | ready |
 | 2 | M10 | Write-failure fallback and `audit-reconcile` | llm-mailroom | 0/5 | blocked |
 | 2 | M11 | Readers and `audit_row_metrics` | llm-mailroom | 0/5 | blocked |
