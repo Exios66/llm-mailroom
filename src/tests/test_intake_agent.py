@@ -178,21 +178,15 @@ def test_sliding_windows_cover_every_character():
     bases = [b for _, b in windows]
     assert bases == sorted(bases)
     assert bases[0] == 0
-    # full coverage: the chunk spans (excluding re-sent overlap prefixes) are
-    # contiguous and reach the end of the text — every character is read.
-    last_end = 0
-    for i, (chunk, base) in enumerate(windows):
-        overlap_prefix = 0
-        if i > 0:
-            prev = windows[i - 1][0]
-            tail = prev[-200:]
-            if "\n\n" in tail:
-                tail = tail[tail.find("\n\n") + 2:]
-            overlap_prefix = len(tail) + 2
-        span_end = base + len(chunk) - overlap_prefix
-        assert span_end > last_end or i == 0
-        last_end = span_end
-    assert last_end >= len(text) - 5
+    # every window i>0 BEGINS at its overlap tail's position in the document
+    # (#199: the base is the window's start, not its chunk's start)
+    for i in range(1, len(windows)):
+        prev_window, prev_start = windows[i - 1]
+        assert prev_start < windows[i][1] < prev_start + len(prev_window)
+    # full coverage: window_start + window length reaches the end — every
+    # character is read.
+    last_window, last_start = windows[-1]
+    assert last_start + len(last_window) >= len(text) - 5
 
 
 def test_sliding_windows_single_window_when_within_budget():
@@ -207,6 +201,76 @@ def test_sliding_windows_hard_splits_pathological_paragraph():
     for chunk, base in windows:
         assert len(chunk) <= 1200 + 102 + 5  # budget + overlap prefix + slack
     assert "".join(c for c, _ in windows).count("A") >= 5000
+
+
+def _offset_text():
+    """Paragraphs, a pathological (hard-split) paragraph, irregular separators."""
+    parts = [f"Paragraph {i} " + "x" * 60 for i in range(6)]
+    parts.append("".join(f"CLAUSE-{i:02d}" + "y" * 90 for i in range(12)))  # ~1.2k, no blank line
+    parts.extend(f"Closing paragraph {i} " + "z" * 50 for i in range(6))
+    return "\n\n".join(parts[:3]) + "\n\n\n\n" + "\n\n".join(parts[3:])
+
+
+def test_sliding_windows_are_exact_contiguous_source_slices():
+    """Every window is ``text[start:start+len]`` -- including across hard splits.
+
+    A synthetic blank-line joiner between the overlap tail and the chunk
+    (the old behaviour) shifts every translated section offset by two
+    characters after a hard-split boundary.
+    """
+    text = _offset_text()
+    windows = sliding_windows(text, 300, 45)
+    assert len(windows) > 5
+    for window, start in windows:
+        assert text[start : start + len(window)] == window
+    # a hard-split boundary exists: some window starts mid-paragraph (no blank line before it)
+    assert any(start > 0 and text[start - 2 : start] != "\n\n" for _w, start in windows)
+    # contiguous coverage: each window starts at or before the previous window's end
+    for (prev, prev_start), (_cur, start) in zip(windows, windows[1:]):
+        assert start <= prev_start + len(prev)
+    last, last_start = windows[-1]
+    assert last_start + len(last) == len(text)
+
+
+def test_sliding_windows_hard_split_has_no_joiner_between_pieces():
+    text = "A" * 100 + "B" * 100 + "C" * 100
+    windows = sliding_windows(text, 100, 10)
+    assert [start for _w, start in windows] == [0, 90, 190]
+    assert [w for w, _s in windows] == [text[:100], text[90:200], text[190:300]]
+
+
+def test_intake_run_translates_section_offsets_across_hard_split(monkeypatch):
+    """Sections the model reports relative to each window land on the right source slice."""
+    monkeypatch.delenv("MAILROOM_LLM_INTAKE", raising=False)
+    text = _offset_text()
+    agent = _agent_with(MagicMock())
+    monkeypatch.setattr(agent, "_configured_max_input_chars", lambda: 300)
+
+    def _create(**kwargs):
+        user = [m for m in kwargs["messages"] if m["role"] == "user"][-1]["content"]
+        window = user.split("Document text:\n", 1)[1]
+        sections = []
+        pos = 0
+        while (idx := window.find("CLAUSE-", pos)) != -1:
+            sections.append(
+                {"heading": window[idx : idx + 9], "role": "other",
+                 "start_offset": idx, "end_offset": idx + 9}
+            )
+            pos = idx + 9
+        choice = MagicMock()
+        choice.message.content = _intake_json(sections=sections)
+        completion = MagicMock()
+        completion.choices = [choice]
+        return completion
+
+    agent.client.chat.completions.create.side_effect = _create
+    prep = agent.intake_run(text)
+    assert prep["windows"] > 5
+    # (_intake_json adds a default "Agreement" section to clause-free windows)
+    clauses = [s for s in prep["sections"] if s["heading"].startswith("CLAUSE-")]
+    assert {s["heading"] for s in clauses} == {f"CLAUSE-{i:02d}" for i in range(12)}
+    for s in clauses:
+        assert text[s["start_offset"] : s["end_offset"]] == s["heading"]
 
 
 # ---------------------------------------------------------------------------
