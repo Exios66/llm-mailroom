@@ -150,7 +150,9 @@ A suite score is per document. Run-level numbers (for example "overall 0.5104" i
 | `field_exact_rate` / `field_partial_rate` / `field_miss_rate` | Share of field scores that are `>= 1.0` / between 0 and 1 / `<= 0.0` |
 | `entity_list_precision` / `recall` / `raw_f1` | Per-field means of the list scores |
 | `list_micro_precision` / `recall` / `f1` | Pooled over all list fields: `matched / n_predicted`, `matched / n_expected`, harmonic mean |
-| `date_mae_days`, `duration_mae_days`, `money_mae_usd` | Mean absolute error over pairs where both sides parse to a full date; partial (yearless or dayless) dates are skipped (plus medians) |
+| `date_mae_days` | Mean absolute error in days over pairs where both sides parse to a full date; partial (yearless or dayless) dates are skipped (median: `date_median_ae_days`) |
+| `duration_mae_days` | Mean absolute error in days over pairs where both sides parse to a duration (median: `duration_median_ae_days`) |
+| `money_mae_usd` | Mean absolute error in US dollars over pairs where both sides parse to an amount (median: `money_median_ae_usd`) |
 | `date_r2`, `duration_r2` | `1 - SS_res / SS_tot` over the same pairs; `None` with fewer than 2 pairs or zero variance |
 | `span_count_mae`, `span_count_signed_mean` | Predicted minus expected list length per document (positive means over-extraction) |
 
