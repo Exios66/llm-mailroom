@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 
 import pytest
 from llm_dojo_scoring import __version__ as DOJO_VERSION
@@ -178,8 +179,9 @@ def test_inbox_filename_forces_txt_for_pdf_and_htm():
 def test_load_ground_truth_labels_reads_expected_fields(monkeypatch):
     from scripts.run_hf_pilot import load_ground_truth_labels
 
+    monkeypatch.setitem(sys.modules, "datasets", None)  # force the fallback loader
     monkeypatch.setattr(
-        "scripts.run_hf_pilot._paginate_viewer",
+        "scripts.run_hf_pilot._fallback_rows",
         lambda **kw: [
             {
                 "filename": "a.htm",
@@ -203,7 +205,6 @@ def test_load_ground_truth_labels_reads_expected_fields(monkeypatch):
     assert labels["a.htm"]["expected_subclass"] == "bylaws"
     assert labels["b.pdf"]["expected"] == "contract"
     assert "skip.pdf" not in labels
-    import sys
     from scripts import run_hf_pilot as mod
 
     monkeypatch.setattr(sys, "argv", ["run_hf_pilot.py", "--check"])

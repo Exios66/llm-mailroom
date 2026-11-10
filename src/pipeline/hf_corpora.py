@@ -41,11 +41,25 @@ FULL_CORPUS_SCHEMA = "v9"
 # (historical traces carry the immutable `source-docclass-merged` tag;
 # slug/aliases are plumbing, not identity).
 FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
-# Hub tag v9.1 → ed7576b6 (2026-09-27: successor pin after GT-closure tip
-# 46a4d3c2; 3,302 rows, schema unchanged; configs default / ground_truth /
-# bundles / streams / fixtures).
+# Hub tag v9.3 → ccd040f6a1b6b414bdefd161cdc622b68f6dacf8 (2026-11-09; also the
+# Hub `main` that day). Rows, document_ids and text are unchanged from v9.1
+# (3,302 rows; configs default / ground_truth / bundles / streams / fixtures,
+# each with train and test). Ground-truth changes: v9.2 has six
+# annotation_method regimes, sec_edgar annotation_source for 91 EX-10
+# contracts, related_document_ids on 23 rows, and drops the `_published`
+# column (ground_truth is 35 columns); v9.2.1/v9.3 repair corporate labels
+# (entity_name, record_type, subject_matter, keywords; 12 records
+# re-subclassed), add per-subclass corporate gt_presence keys (37 keys) and
+# set merger agreements' expected_specialist to merger_agreement_specialist
+# (it was contracts_specialist). The v9.3 tag was re-pointed once on its
+# release day, so the pin is the commit itself, not the movable tag (the tag
+# object ff4ca546 still resolves to this commit; Hub `main` was also this
+# commit on 2026-11-10). Loads record the resolved commit as provenance
+# `revision_resolved` (hf_corpus_loader.load_revision_frame).
+# Previous pin: tag v9.1 (data commit ed7576b6; the tag now resolves to the
+# docs commit bc9eab28 on top of it).
 # Pinned per the corpus plan §44 — never evaluate against unpinned main.
-FULL_CORPUS_REVISION = "v9.1"
+FULL_CORPUS_REVISION = "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8"  # Hub tag v9.3
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 # Hub HF classes present in mailroom-dataset (v9) — identical to the canonical
@@ -81,7 +95,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "docclass-pilot": {
         "slug": "docclass-pilot",
         "id": EXAMPLES_ID,
-        "revision": None,
+        "revision": "c37469e86b3eec2cdbd0bb205820bddce502af3e",
         "schema": FULL_CORPUS_SCHEMA,
         "role": "class_subclass_examples",
         "pipeline": True,
@@ -96,7 +110,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "enron-correspondence-dedup": {
         "slug": "enron-correspondence-dedup",
         "id": f"{ORG}/enron-correspondence-dedup",
-        "revision": None,
+        "revision": "993919b4387f017b2fcff5902102de609ad41464",
         "schema": None,
         "role": "correspondence_full",
         "pipeline": True,
@@ -111,7 +125,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "cms-desynpuf-insurance-claims": {
         "slug": "cms-desynpuf-insurance-claims",
         "id": f"{ORG}/cms-desynpuf-insurance-claims",
-        "revision": None,
+        "revision": "875da3aa1c4cf0220be7e3fe11e489ec7490e840",
         "schema": None,
         "role": "insurance_claims",
         "pipeline": True,
@@ -126,7 +140,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "mailroom-cuad-contracts-full": {
         "slug": "mailroom-cuad-contracts-full",
         "id": f"{ORG}/mailroom-cuad-contracts-full",
-        "revision": None,
+        "revision": "e69afe340b48133b7173d74b8ad220fcd28a1a6e",
         "schema": None,
         "role": "cuad_contracts",
         "pipeline": True,
@@ -141,7 +155,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "mailroom-cuad-contracts": {
         "slug": "mailroom-cuad-contracts",
         "id": f"{ORG}/mailroom-cuad-contracts",
-        "revision": None,
+        "revision": "efdd23644bd70305f44a524953bd60cdeba0a11f",
         "schema": None,
         "role": "cuad_contracts_sample",
         "pipeline": True,
@@ -156,7 +170,7 @@ CORPORA: dict[str, dict[str, Any]] = {
     "legalbench-full": {
         "slug": "legalbench-full",
         "id": f"{ORG}/legalbench-full",
-        "revision": None,
+        "revision": "1a13e8f63fb0448b2888d49d9a9d9cadffdeb287",
         "schema": None,
         "role": "legalbench_tasks",
         "pipeline": False,

@@ -83,13 +83,19 @@ def test_reject_move_failure_cannot_expose_stale_review_bytes(temp_base_dir, cli
     real_move = bins.shutil.move
     attempts = []
 
+    # The failed-bin mover publishes via the atomic link+unlink primitive
+    # (no-clobber, PR #202); inject the failure at the mover itself so the
+    # rejection path is exercised exactly as before.
+    real_mover = bins._move_review_file_no_clobber
+
     def fail_rejection_move(source, destination, *args, **kwargs):
         if str(source) == str(legacy):
             attempts.append((source, destination))
             raise PermissionError("injected filesystem move failure")
-        return real_move(source, destination, *args, **kwargs)
+        return real_mover(source, destination, *args, **kwargs)
 
-    monkeypatch.setattr(bins.shutil, "move", fail_rejection_move)
+    monkeypatch.setattr(bins, "_move_review_file_no_clobber", fail_rejection_move)
+    monkeypatch.setattr(bins.shutil, "move", real_move)
     rejected = client.post("/review/SIBLING/resolve", json={"decision": "rejected"})
     assert rejected.status_code == 200, rejected.text
     assert len(attempts) == 1
