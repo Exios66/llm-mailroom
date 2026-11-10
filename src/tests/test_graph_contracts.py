@@ -100,8 +100,11 @@ def test_intake_to_archive_preserves_node_outputs_and_original_bytes(run_graph):
     from schemas.audit import AuditLogEntry, verify_chain
 
     audit = asyncio.run(get_audit_chain(doc_id))
-    assert [entry["event"] for entry in audit] == ["ingested", "classified", "extracted", "archived"]
-    assert audit[0]["detail"]["file_sha256"] == audit[-1]["detail"]["file_sha256"] == intake["file_sha256"]
+    # Unified audit row (M5): stage events are trace visits; only the terminal write is a row.
+    assert [entry["event"] for entry in audit] == ["archived"]
+    assert audit[-1]["detail"]["file_sha256"] == intake["file_sha256"]
+    ingested = final.values["audit_trace"][0]["decision"]["audit_event"]
+    assert ingested["event"] == "ingested" and ingested["detail"]["file_sha256"] == intake["file_sha256"]
     assert verify_chain([AuditLogEntry(doc_id=doc_id, **{k: v for k, v in entry.items() if k != "seq"}) for entry in audit])
     assert not source.exists()
 

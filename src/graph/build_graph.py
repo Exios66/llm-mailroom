@@ -14,6 +14,8 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
 
+from audit.trace import record_visit
+
 from graph.state import DocumentState
 # Wires taxonomy.yaml into llm-dojo-scoring at import time (#192): without it
 # field scoring / judge gating run on package defaults, not the calibrated map.
@@ -751,13 +753,7 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
     # hash (sha256) + size so post-archive substitution is detectable.
     file_hash = _file_sha256(file_path)
     ingest_detail = {"file_sha256": file_hash, "size_bytes": _file_size(file_path)}
-    _emit_stage_audit(
-        {"doc_id": manifest.doc_id, "matter_id": matter_id, "stage": PipelineStage.PROCESSING.value,
-         "original_filename": file_path.name},
-        "ingested",
-        actor="pipeline",
-        detail=ingest_detail,
-    )
+    record_visit("ingested", actor="pipeline", detail=ingest_detail)
     # Carry the hash in state so archive verification + provenance persistence
     # can compare against it (A-7).
     intake_state = {
@@ -953,7 +949,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     }
     # A-1: the classification decision (incl. guardrail issues) is part of the
     # compliance record.
-    _emit_stage_audit({**state, **result}, "classified", actor="sorter",
+    record_visit("classified", actor="sorter",
                       detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None})
     return result
 
@@ -2023,9 +2019,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     except Exception:
         pass
     # A-1: record the extraction decision (attempt, guardrail issues, conflict).
-    _emit_stage_audit(
-        {**state, **result_dict},
-        "extracted",
+    record_visit("extracted",
         actor=state.get("doc_type", "specialist"),
         detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None,
                 "conflict_detected": bool(conflict_detected),
@@ -2356,9 +2350,7 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         decision=decision,
         retry_count=updates.get("arbiter_retry_count", state.get("arbiter_retry_count", 0)),
     )
-    _emit_stage_audit(
-        {**state, **updates},
-        "arbiter_decided",
+    record_visit("arbiter_decided",
         actor="arbiter",
         detail={
             "decision": decision,
@@ -2622,9 +2614,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         "file_path": str(dest) if dest is not None else file_path_str,
     }
     if newly_parked:
-        _emit_stage_audit(
-            {**state, **parked},
-            "routed_to_review",
+        record_visit("routed_to_review",
             actor="pipeline",
             detail={
                 "reason": esc_reason,
@@ -2969,7 +2959,7 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
     }
     # A-1: Boss adjudication is part of the compliance record ("who decided
     # what, based on what").
-    _emit_stage_audit({**state, **result}, "boss_adjudicated", actor="boss",
+    record_visit("boss_adjudicated", actor="boss",
                       detail={"decision": decision, "reasoning": reasoning,
                               "context_records": len(matter_context)})
     return result
@@ -3343,48 +3333,6 @@ def _write_audit_log(entry):
         _run_coro(_write)
     except Exception:
         logger.exception("audit_log_write_error")
-
-
-def _emit_stage_audit(state: dict, event: str, actor: str = "pipeline", detail: dict | None = None) -> None:
-    """Append a hash-chained audit entry for a stage transition (audit A-1).
-
-    Before this, only the archivist and review decisions produced audit
-    entries — classify/extract/retries/guardrails/Boss/review-routing/failures
-    existed only in state + Langfuse. This gives every stage transition a
-    chained, durable record so the compliance log answers "what decisions were
-    made about this document, and when".
-
-    Best-effort by design (an audit-write failure must never fail the run),
-    but unlike the old swallow, the failure is logged with the event name so
-    an operator can detect a gap (AUDIT_GAP).
-    """
-    doc_id = state.get("doc_id")
-    if not doc_id:
-        return
-    try:
-        from schemas.audit import build_audit_entry
-
-        entry = build_audit_entry(
-            doc_id=doc_id,
-            matter_id=state.get("matter_id", "DEFAULT"),
-            event=event,
-            actor=actor,
-            detail={
-                **(detail or {}),
-                "stage": state.get("stage"),
-                "doc_type": state.get("doc_type"),
-                "contract_subtype": state.get("contract_subtype"),
-            "doc_subclass": state.get("doc_subclass"),
-                "classification_confidence": state.get("classification_confidence"),
-                "extraction_confidence": state.get("extraction_confidence"),
-                "escalation_reason": state.get("escalation_reason"),
-                "run_attempt": state.get("run_attempt"),
-            },
-            prev_hash=_latest_audit_hash(doc_id),
-        )
-        _write_audit_log(entry)
-    except Exception:
-        logger.warning("audit_gap", event=event, doc_id=doc_id, exc_info=True)
 
 
 def _persist_scores(state: dict, scores: dict):
@@ -3800,19 +3748,10 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         _write_catalog_record(state, manifest)
     except Exception:
         logger.exception("abort_catalog_write_error", doc_id=manifest.doc_id)
-    # A-1: a failed/aborted run is a compliance-record event (previously only
-    # archived/reviewed runs left audit entries).
-    try:
-        _emit_stage_audit(
-            state,
-            "run_aborted",
-            actor="pipeline",
-            detail={"reason": reason, "failure_class": failure_class or "unexpected"},
-        )
-    except Exception:
-        logger.exception("abort_audit_write_error", doc_id=manifest.doc_id)
+    # The failed audit row for an aborted run is written by the terminal
+    # writer (roadmap M7); per-stage audit rows are no longer written (§5.2).
     # Completion echo (HUB-037): failed Gmail-intake runs report on-thread
-    # too — AFTER the run_aborted audit entry so the trail is complete.
+    # too.
     from pipeline.gmail_intake import dispatch_intake_echo
 
     dispatch_intake_echo(manifest.model_dump(mode="json"))
