@@ -182,7 +182,7 @@
   - `attempt_id_for(state: dict, node: str) -> str`, which is deterministic from `doc_id`, stage and counters.
   - `decisions_for(node, state, update) -> list[dict]` in the sandbox schema `{question, type, answer, p, expected, options, source}`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_traced_node_appends_one_visit_per_call`.
   - `test_visit_fields_match_spec`: exactly the §4.4 keys, with `prompt` and `completion` only when `full_trace` is on.
   - `test_decisions_match_sandbox_schema`: validate against the fixture copied from the sandbox's `job/node_trace.py`.
@@ -191,10 +191,12 @@
   - `test_trace_survives_checkpoint_resume`.
   - `test_old_checkpoint_without_trace_resumes` (review item A3): resume a recorded pre-upgrade checkpoint fixture; the trace starts empty and `trace_incomplete` is set.
   - `test_no_stage_rows_written_during_run`: `audit_log` stays empty until a terminal node runs.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `traced_node` measures timing and reads the LLM call info that the LLM wrapper already records (tokens, cost, model, prompt version). It hands prompt and completion to the sink layer (M9) through `audit.sinks.record_io`; until M9 lands, that is a no-op returning `(None, sha256)`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL. (10 failed)
+- [x] **Step 3: Implement.** `traced_node` measures timing and reads the LLM call info that the LLM wrapper already records (tokens, cost, model, prompt version). It hands prompt and completion to the sink layer (M9) through `audit.sinks.record_io`; until M9 lands, that is a no-op returning `(None, sha256)`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (result in Exios66/llm-mailroom#160, "Testing")
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160)
+
+> Rulings: (1) The visit's `node` is the graph node name, taken from the node function (`classify_node` -> `classify`), so `retry_classify` and `classify` stay apart although they share a span. (2) The old stage events are notes on the node's own visit (`record_visit` -> `decision["audit_event"]`), carried through a context variable so node return values are unchanged. The abort path's `run_aborted` event runs outside a node; its failed row comes with M7. (3) `attempt_id` is `att-<doc_id>-<stage>-r<run_attempt>-<n>` from the stage counter after the node ran; a transient failure names the attempt that runs next, so its retry shares the id. Nodes outside classification, extraction and judge have `attempt_id: null`. (4) `trace_incomplete` is set when a node other than `intake` sees an empty trace: LangGraph gives a missing reducer channel an empty list, so "key absent" cannot be told apart. (5) A node interrupted by `interrupt()` returns no update, so its pause is not a visit; the visit is recorded when the node completes after the resume. (6) Several LLM calls in one node are one visit: tokens and cost are summed, model and prompt version are the last call's, prompts and completions are joined. (7) The decision schema fixture is written from spec §4.4; the sandbox's `job/node_trace.py` was not reachable, so the contract test has not been compared with it. The old-checkpoint test builds the pre-upgrade checkpoint in the test (an untraced node) instead of a recorded binary fixture.
 
 ### Task M6: Scoring node family
 
