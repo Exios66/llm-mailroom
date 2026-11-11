@@ -143,9 +143,10 @@ class BaseAgent(ABC):
         zero tokens or an empty effort omits the corresponding request option.
         Reasoning options are shaped for the resolved backend.
 
-        Records returned token usage. Propagates RunDeadlineExceeded before an
-        attempt past the run deadline, and provider errors that are not retried or
-        persist after the retry limit.
+        Records returned token usage with the serialized request, text completion,
+        and prompt version when available. Propagates RunDeadlineExceeded before
+        an attempt past the run deadline, and provider errors that are not retried
+        or persist after the retry limit.
         """
         from pipeline.limits import get_run_deadline, record_usage
 
@@ -178,8 +179,19 @@ class BaseAgent(ABC):
         response = retry_chat_completion(self.client, **kwargs)
         served_model = getattr(response, "model", None)
         served_model = served_model if isinstance(served_model, str) and served_model else None
+        try:
+            completion = response.choices[0].message.content
+        except (AttributeError, IndexError, TypeError):
+            completion = None
+        version = getattr(langfuse_prompt, "version", None) if langfuse_prompt is not None else None
         record_usage(
-            getattr(response, "usage", None), self.model, agent=self.agent_name, served_model=served_model
+            getattr(response, "usage", None),
+            self.model,
+            agent=self.agent_name,
+            served_model=served_model,
+            prompt=json.dumps(messages, ensure_ascii=False, default=str),
+            completion=completion if isinstance(completion, str) else None,
+            prompt_version=version if isinstance(version, (str, int)) else None,
         )
         content = response.choices[0].message.content or ""
         logger.info("llm_response", agent=self.agent_name, length=len(content), served_model=served_model)

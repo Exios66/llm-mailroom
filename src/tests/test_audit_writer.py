@@ -616,3 +616,99 @@ def test_empty_attempt_timestamp_matches_unknown_time():
     expected = attempt_hash(sub, matter_id="matter", actor="test")
     assert attempt_hash({**sub, "started_at": "", "ended_at": ""},
                         matter_id="matter", actor="test") == expected
+
+
+# ---------------------------------------------------------------- ported from PR #160 (M4)
+
+
+async def test_attempt_stored_empty_started_at_round_trips(audit_db):
+    """PR #160 review: an attempt sub-row whose stored started_at is "" (the
+    documented unknown-start shape) must hash and verify, not raise."""
+    from audit.writer import attempt_hash, get_row, write_terminal_row
+
+    first = _attempt(1)
+    first.started_at = None
+    await write_terminal_row(_row("doc-empty-start", attempts=[first]))
+    row = await get_row("doc-empty-start")
+    for sub in row["sub_rows"]:
+        sub["started_at"] = ""
+        assert sub["entry_hash"] == attempt_hash(sub, matter_id="M-1", actor="archivist")
+
+
+def test_document_lock_key_never_collides_with_the_chain_lock():
+    """The per-document key must be the one the live per-event writer takes too.
+
+    Adapted from PR #160: the merged storage layer keeps this branch's
+    ``audit_doc:`` key (the key ``storage.audit_log.write_audit_entry`` already
+    holds) and exposes it through PR #160's ``doc_lock_key`` helper, so there is
+    exactly one per-document lock namespace.
+    """
+    from audit.writer import CHAIN_LOCK
+    from storage.audit_log import doc_lock_key
+
+    assert doc_lock_key("chain") != CHAIN_LOCK
+    assert doc_lock_key("doc-1") == "audit_doc:doc-1"
+
+
+async def test_addendum_without_attempts_drops_caller_supplied_attempt_refs(audit_db):
+    """A caller-supplied ``attempts`` list may not smuggle foreign hash refs in.
+
+    Adapted from PR #160 to this branch's writer contract: the inherited key is
+    replaced with the addendum's own (empty) list rather than removed entirely,
+    so the stored detail can never list hashes without matching sub-rows.
+    """
+    from audit.models import Addendum
+    from audit.writer import get_row, write_addendum, write_terminal_row
+
+    await write_terminal_row(_row("doc-i"))
+    forged = [{"attempt_id": "att-x", "entry_hash": "0" * 64}]
+    await write_addendum(Addendum("doc-i", "review_decision", "reviewer", {"decision": "approve", "attempts": forged}))
+    (add,) = (await get_row("doc-i"))["addenda"]
+    assert add["detail"] == {"decision": "approve", "attempts": []}
+    assert add["sub_rows"] == []
+
+
+def test_sub_row_detail_is_a_deep_snapshot():
+    from audit.writer import _build_sub_rows
+
+    att = _attempt(1)
+    (rec,), _ = _build_sub_rows([att], parent_id="row-1", doc_id="doc-c", matter_id="M-1", actor="a")
+    att.detail["extracted_data"]["n"] = 99
+    assert rec.detail == {"extracted_data": {"n": 1}}
+
+
+@pytest.mark.parametrize("field, value", [
+    ("parent_id", "row-2"), ("doc_id", "doc-2"), ("attempt_id", "att-2"), ("stage", "judge"),
+    ("attempt_no", 2), ("trigger", "retry"), ("outcome", "error"),
+    ("started_at", "2026-11-03T09:00:09+00:00"), ("ended_at", "2026-11-03T09:00:09+00:00"),
+    ("detail", {"extracted_data": {"n": 2}}),
+])
+def test_every_attempt_field_changes_the_attempt_hash(field, value):
+    from audit.writer import attempt_hash
+
+    sub = {"parent_id": "row-1", "doc_id": "doc-1", "attempt_id": "att-1", "stage": "extraction",
+           "attempt_no": 1, "trigger": "initial", "outcome": "ok",
+           "started_at": "2026-11-03T09:00:01+00:00", "ended_at": "2026-11-03T09:00:02+00:00",
+           "detail": {"extracted_data": {"n": 1}}}
+    base = attempt_hash(sub, matter_id="M-1", actor="a")
+    assert attempt_hash({**sub, field: value}, matter_id="M-1", actor="a") != base
+    assert attempt_hash(sub, matter_id="M-2", actor="a") != base
+    assert attempt_hash(sub, matter_id="M-1", actor="b") != base
+
+
+def test_verify_audit_chains_checks_unified_rows(audit_db, monkeypatch, capsys):
+    import asyncio as _asyncio
+    import importlib.util
+    import sys
+
+    from audit.writer import write_terminal_row
+
+    _asyncio.run(write_terminal_row(_row("doc-v", attempts=[_attempt(1)])))
+    path = Path(__file__).resolve().parents[1] / "scripts" / "verify_audit_chains.py"
+    spec = importlib.util.spec_from_file_location("verify_audit_chains_under_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setattr(sys, "argv", ["verify_audit_chains.py"])
+    assert mod.main() == 0  # M4: unified rows are verified, not refused
+    out = capsys.readouterr().out
+    assert "main chain" in out and "sub-rows" in out and "checked=1" in out

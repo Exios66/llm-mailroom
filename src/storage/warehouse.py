@@ -2,9 +2,13 @@
 
 Layout under ``{MAILROOM_BASE_DIR}/warehouse/``::
 
-    documents_YYYY-MM-DD.parquet   # terminal-stage catalog rows
-    audit_YYYY-MM-DD.parquet       # audit_log rows for those doc_ids
-    manifest.json                  # schema version + export watermark
+    documents_YYYY-MM-DD.parquet       # terminal-stage catalog rows
+    audit_YYYY-MM-DD.parquet           # per-event audit entries for those doc_ids
+    audit_rows_YYYY-MM-DD.parquet      # unified rows + audit_row_metrics columns (key entry_id)
+    audit_attempts_YYYY-MM-DD.parquet  # their sub-rows (key attempt_id, parent_id)
+    audit_addenda_YYYY-MM-DD.parquet   # their addenda (key addendum_id, doc_id)
+    audit_legacy.parquet               # the migrated per-event history, written once
+    manifest.json                      # schema version, export watermark, doc_id -> entry_hash + files
 
 Join key: ``doc_id``. Routine export runs after archive/failed (best-effort).
 Full/incremental backfill: ``scripts/export_warehouse.py``.
@@ -131,6 +135,22 @@ def daily_audit_path(stamp: date) -> Path:
     return warehouse_dir() / f"audit_{stamp.isoformat()}.parquet"
 
 
+def daily_audit_rows_path(stamp: date) -> Path:
+    return warehouse_dir() / f"audit_rows_{stamp.isoformat()}.parquet"
+
+
+def daily_audit_attempts_path(stamp: date) -> Path:
+    return warehouse_dir() / f"audit_attempts_{stamp.isoformat()}.parquet"
+
+
+def daily_audit_addenda_path(stamp: date) -> Path:
+    return warehouse_dir() / f"audit_addenda_{stamp.isoformat()}.parquet"
+
+
+def audit_legacy_path() -> Path:
+    return warehouse_dir() / "audit_legacy.parquet"
+
+
 def _utc_iso(dt: datetime | None) -> str | None:
     if dt is None:
         return None
@@ -232,6 +252,79 @@ def audit_to_row(entry: dict[str, Any]) -> dict[str, Any]:
         "timestamp": ts,
         "exported_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value if value is not None else {}, sort_keys=True, default=str)
+
+
+def unified_to_rows(full: dict[str, Any]) -> tuple[dict, list[dict], list[dict]]:
+    """One ``get_row`` result as its ``audit_rows``, ``audit_attempts`` and ``audit_addenda`` records."""
+    from audit.metrics import metrics_for
+
+    now = datetime.now(timezone.utc).isoformat()
+    row = {
+        "entry_id": full["entry_id"], "doc_id": full["doc_id"], "matter_id": full.get("matter_id"),
+        "seq": full.get("seq"), "event": full["event"], "actor": full.get("actor"),
+        "timestamp": full.get("timestamp"), "prev_hash": full.get("prev_hash"),
+        "entry_hash": full.get("entry_hash"), "detail_json": _json(full.get("detail")),
+        **metrics_for(full), "exported_at": now,
+    }
+    addenda = list(full.get("addenda") or [])
+    subs = list(full.get("sub_rows") or []) + [s for a in addenda for s in a.get("sub_rows") or []]
+    attempts = [
+        {**{k: s.get(k) for k in ("attempt_id", "parent_id", "doc_id", "stage", "attempt_no", "trigger",
+                                  "outcome", "started_at", "ended_at", "entry_hash")},
+         "detail_json": _json(s.get("detail")), "exported_at": now}
+        for s in subs
+    ]
+    adds = [
+        {"addendum_id": a["addendum_id"], "doc_id": full["doc_id"], "kind": a["kind"], "seq": a.get("seq"),
+         "actor": a.get("actor"), "timestamp": a.get("timestamp"), "prev_hash": a.get("prev_hash"),
+         "entry_hash": a.get("entry_hash"), "detail_json": _json(a.get("detail")), "exported_at": now}
+        for a in addenda
+    ]
+    return row, attempts, adds
+
+
+async def fetch_unified_rows(doc_ids: list[str]) -> list[dict[str, Any]]:
+    """Fetch unified rows for distinct IDs in request order, omitting missing rows.
+
+    Return an empty list if the audit migration is pending; other errors propagate.
+    """
+    from audit.models import AuditMigrationPending
+    from audit.writer import get_row
+
+    out = []
+    for doc_id in dict.fromkeys(doc_ids):
+        try:
+            full = await get_row(doc_id)
+        except AuditMigrationPending:
+            return []
+        if full is not None:
+            out.append(full)
+    return out
+
+
+async def fetch_legacy_history() -> list[dict[str, Any]] | None:
+    """Every ``audit_log_legacy`` entry once the migration has run; ``None`` before it."""
+    from sqlalchemy import select
+
+    from storage.audit_log import AuditLegacyRecord, event_log_model
+    from storage.db import async_session, ensure_schema
+
+    ensure_schema()
+    async with async_session() as session:
+        if await event_log_model(session) is not AuditLegacyRecord:
+            return None
+        records = (await session.execute(select(AuditLegacyRecord))).scalars().all()
+    records = sorted(records, key=lambda r: (r.doc_id, r.seq, r.timestamp))
+    return [
+        {"entry_id": r.entry_id, "doc_id": r.doc_id, "matter_id": r.matter_id, "event": r.event,
+         "actor": r.actor, "detail": r.detail, "prev_hash": r.prev_hash, "entry_hash": r.entry_hash,
+         "seq": r.seq, "timestamp": r.timestamp}
+        for r in records
+    ]
 
 
 def _require_pyarrow():
@@ -405,7 +498,15 @@ async def export_to_warehouse(
     since: datetime | None = None,
     full: bool = False,
 ) -> dict[str, Any]:
-    """Export terminal documents + audit rows into daily Parquet files."""
+    """Export terminal documents and their audit history to Parquet.
+
+    ``stamp`` selects the daily files and defaults to today's UTC date. With no
+    IDs or ``since``, the manifest watermark selects later updates; ``full``
+    clears the ``since`` filter. A nonempty export also records migrated legacy
+    history once. Return status and export counts, or a skipped status when
+    export is disabled. Database and write errors propagate, including a missing
+    pyarrow dependency when export is forced on.
+    """
     if not warehouse_export_enabled():
         return {"status": "skipped", "reason": "warehouse export disabled or pyarrow missing"}
 
@@ -436,14 +537,17 @@ async def export_to_warehouse(
     audit_raw = await fetch_audit_rows_for_doc_ids(ids)
     audit_rows = [audit_to_row(e) for e in audit_raw]
 
+    unified = [unified_to_rows(full) for full in await fetch_unified_rows(ids)]
+    legacy = None if "legacy_export" in wh_manifest else await fetch_legacy_history()
+
     doc_path = daily_documents_path(stamp)
     audit_path = daily_audit_path(stamp)
     latest_updated = max(
         (r.updated_at for r in records if r.updated_at is not None),
         default=None,
     )
-    n_docs, n_audit, wh_manifest = _publish_export(
-        stamp, doc_rows, audit_rows, latest_updated
+    n_docs, n_audit, wh_manifest, n_legacy = _publish_export(
+        stamp, doc_rows, audit_rows, latest_updated, unified=unified, legacy=legacy
     )
 
     logger.info(
@@ -460,14 +564,44 @@ async def export_to_warehouse(
         "audit_path": str(audit_path),
         "exported_documents": len(doc_rows),
         "exported_audit_entries": len(audit_rows),
+        "exported_audit_rows": len(unified),
+        "exported_audit_attempts": sum(len(u[1]) for u in unified),
+        "exported_audit_addenda": sum(len(u[2]) for u in unified),
+        "exported_audit_legacy": n_legacy,
         "total_documents_in_file": n_docs,
         "total_audit_in_file": n_audit,
         "manifest": wh_manifest,
     }
 
 
-def _publish_export(stamp, doc_rows, audit_rows, latest_updated):
-    """Commit both daily upserts and fresh manifest state without an await."""
+def _publish_unified(stamp, unified, manifest) -> None:
+    """Upsert the unified rows, sub-rows and addenda, and map each doc to its files (caller holds the lock)."""
+    if not unified:
+        return
+    paths = (daily_audit_rows_path(stamp), daily_audit_attempts_path(stamp), daily_audit_addenda_path(stamp))
+    _write_parquet_rows_unlocked(paths[0], [u[0] for u in unified], merge_key="entry_id")
+    _write_parquet_rows_unlocked(paths[1], [a for u in unified for a in u[1]], merge_key="attempt_id")
+    _write_parquet_rows_unlocked(paths[2], [a for u in unified for a in u[2]], merge_key="addendum_id")
+    docs = manifest.setdefault("documents", {})
+    for row, attempts, addenda in unified:
+        files = [paths[0].name] + ([paths[1].name] if attempts else []) + ([paths[2].name] if addenda else [])
+        docs[row["doc_id"]] = {"entry_hash": row["entry_hash"], "export_date": stamp.isoformat(), "files": files}
+
+
+def _publish_legacy(legacy, manifest) -> int:
+    """Write ``audit_legacy.parquet`` the first time an export sees the migrated history (caller holds the lock)."""
+    if legacy is None or "legacy_export" in manifest:
+        return 0
+    rows = [audit_to_row(e) for e in legacy]
+    if rows:
+        _write_parquet_rows_unlocked(audit_legacy_path(), rows, merge_key="entry_id")
+    manifest["legacy_export"] = {"file": audit_legacy_path().name, "rows": len(rows),
+                                 "exported_at": datetime.now(timezone.utc).isoformat()}
+    return len(rows)
+
+
+def _publish_export(stamp, doc_rows, audit_rows, latest_updated, *, unified=(), legacy=None):
+    """Commit the daily upserts and fresh manifest state without an await."""
     with _publication_lock(warehouse_dir()):
         doc_path = daily_documents_path(stamp)
         audit_path = daily_audit_path(stamp)
@@ -476,6 +610,8 @@ def _publish_export(stamp, doc_rows, audit_rows, latest_updated):
         # Load after acquiring the lock: a concurrent exporter may have
         # committed another day or advanced the watermark while DB rows loaded.
         manifest = load_warehouse_manifest()
+        _publish_unified(stamp, list(unified), manifest)
+        n_legacy = _publish_legacy(legacy, manifest)
         now = datetime.now(timezone.utc).isoformat()
         manifest["last_export_at"] = now
         if latest_updated is not None:
@@ -498,7 +634,7 @@ def _publish_export(stamp, doc_rows, audit_rows, latest_updated):
             "batch_audit_entries": len(audit_rows),
         }
         save_warehouse_manifest(manifest)
-        return n_docs, n_audit, manifest
+        return n_docs, n_audit, manifest, n_legacy
 
 
 def _run_async(coro):

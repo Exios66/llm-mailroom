@@ -94,8 +94,15 @@ def _embed_watcher_running() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Start the optional embedded watcher and stop it when the app shuts down.
+
+    A held watcher lock skips watcher startup; watcher stop errors are logged.
+    """
     global _embedded_watcher
     _ensure_dirs()
+    from audit.sinks.sql import warn_if_ephemeral
+
+    warn_if_ephemeral()
     watcher = None
     from pipeline.watcher import Watcher, WatcherLockHeld, embed_watcher_enabled
 
@@ -784,6 +791,7 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
             manifest.touch()
             save_manifest(manifest)
         await _write_review_audit_entry(doc_id, manifest.matter_id, event, notes, detail=detail)
+        await _record_review_event(doc_id, {**detail, **({"notes": notes} if notes else {})})
         logger.info("review_recorded", doc_id=doc_id, decision=decision)
         body = {
             "status": "ok",
@@ -828,6 +836,11 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
                 **({"class_override": class_override} if class_override else {}),
             },
         )
+        await _record_review_event(doc_id, {
+            "decision": decision, "disposition": "requeue", "inbox_file": dest.name,
+            **({"class_override": class_override} if class_override else {}),
+            **({"notes": notes} if notes else {}),
+        })
         logger.info("review_requeued", doc_id=doc_id, inbox_file=dest.name)
         body = {
             "status": "ok",
@@ -1095,6 +1108,14 @@ async def _write_review_audit_entry(
         logger.exception("review_audit_entry_failed", doc_id=doc_id, event=event)
 
 
+async def _record_review_event(doc_id: str, detail: dict) -> None:
+    """The decision on the unified audit row (roadmap M8): a ``review_decision`` addendum
+    once the document has a row, else a ``human_review`` visit on its parked trace."""
+    from audit.events import record_document_event
+
+    await record_document_event(doc_id, "review_decision", detail)
+
+
 async def _move_rejected_to_failed(doc_id: str, manifest) -> None:
     """Close the conveyor loop for a rejected review: move the file from the
     review bin to the failed bin and flip the catalog record to failed.
@@ -1201,37 +1222,18 @@ async def get_matter(matter_id: str):
 
 @app.get("/audit/{doc_id}", dependencies=[Depends(_require_token)])
 async def get_audit_trail(doc_id: str):
+    """Return a document's unified audit entries and legacy chain (spec §7).
+
+    An unknown document has empty unified entries. Invalid IDs raise HTTP 400;
+    failures reading the audit view become HTTP 500.
+    """
     _validate_doc_id(doc_id)
     try:
-        from storage.audit_log import get_audit_chain
-        from schemas.audit import verify_chain
-        records = await get_audit_chain(doc_id)
-        from schemas.audit import AuditLogEntry
-        entries = [
-            AuditLogEntry(
-                entry_id=r["entry_id"],
-                doc_id=doc_id,
-                matter_id=r.get("matter_id") or "",
-                event=r["event"],
-                actor=r["actor"],
-                detail=r["detail"],
-                prev_hash=r["prev_hash"],
-                entry_hash=r["entry_hash"],
-                timestamp=r["timestamp"],
-            )
-            for r in records
-        ]
-        chain_valid = verify_chain(entries)
-        return {
-            "doc_id": doc_id,
-            "chain_length": len(records),
-            "chain_valid": chain_valid,
-            "entries": [
-                {**r, "timestamp": r["timestamp"].isoformat() if hasattr(r["timestamp"], "isoformat") else r["timestamp"]}
-                for r in records
-            ],
-        }
+        from audit.readers import doc_view
+
+        return await doc_view(doc_id)
     except Exception:
+        logger.exception("audit_trail_failed", doc_id=doc_id)
         raise HTTPException(500, "Audit log unavailable")
 
 
@@ -1244,11 +1246,17 @@ async def analyze_audit_database(
 
     Returns event/actor histograms, per-doc chain health, review-related event
     counts, and the newest entries — for operator audits without opening sqlite3.
+    ``unified`` adds the unified-row summary (spec §7): rows by event and outcome,
+    addenda by kind, attempts per stage, retry and rescue rates, pending and
+    recovered counts, and the verifier's checks.
     """
     try:
+        from audit.readers import unified_summary
         from storage.audit_log import analyze_audit_db
 
-        return await analyze_audit_db(verify_chains=verify, event_limit=recent)
+        report = await analyze_audit_db(verify_chains=verify, event_limit=recent)
+        report["unified"] = await unified_summary(verify=verify)
+        return report
     except Exception:
         logger.exception("audit_analyze_failed")
         raise HTTPException(500, "Audit analysis unavailable")

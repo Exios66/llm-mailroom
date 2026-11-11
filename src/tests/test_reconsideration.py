@@ -349,7 +349,7 @@ def test_classify_graph_has_gt_miss_edge():
     edges = {(e.source, e.target) for e in g.get_graph().edges}
     assert ("classify", "review_classify") in edges
     assert ("compile_report", "human_review") in edges
-    assert ("compile_report", "catalog_write") in edges
+    assert ("compile_report", "score_common") in edges  # scored before catalog_write (unified audit row M6)
 
 
 def test_low_sorter_confidence_is_named_only_when_nothing_else_explains_the_park():

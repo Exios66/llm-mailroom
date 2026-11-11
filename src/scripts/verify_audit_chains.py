@@ -65,6 +65,18 @@ async def _all_chains():
     return chains
 
 
+#: Report section names as the operator-facing labels (PR #160's wording).
+#: ``SECTIONS`` (the order) comes from ``audit.verify``, the single source.
+_LABELS = {
+    "main": "main chain",
+    "subrows": "sub-rows",
+    "addenda": "addenda",
+    "legacy": "legacy chains",
+    "trace_io": "trace I/O",
+    "pending": "pending records",
+}
+
+
 def _verify(doc_id: str, records: list[dict]) -> dict:
     from schemas.audit import AuditLogEntry, verify_chain
 
@@ -99,25 +111,24 @@ def main() -> int:
     ap.add_argument(
         "--check-sinks",
         action="store_true",
-        help="request external-sink checks (reported as uncollected until roadmap M9)",
+        help="also ask for external-sink checks (the offline verifier reports them uncollected)",
     )
     args = ap.parse_args()
 
     if not args.doc:
-        from audit.verify import verify_audit_db
+        from audit.verify import SECTIONS, verify_audit_db
 
         report = asyncio.run(verify_audit_db(check_sinks=args.check_sinks))
         if args.json:
-            print(json.dumps(report.as_dict(), indent=2))
+            print(json.dumps(report.as_dict(), indent=2, default=str))
             return 0 if report.ok else 1
-        sections = ("main", "subrows", "addenda", "legacy", "trace_io", "pending")
         print("audit verification:" + ("" if report.migrated else " (migration pending)"))
-        for name in sections:
+        for name in SECTIONS:
             section = getattr(report, name)
             state = "OK " if section.ok else "BROKEN"
             collected = "" if section.collected else "  [not collected]"
             print(
-                f"  [{state}] {name:<9} checked={section.checked} "
+                f"  [{state}] {_LABELS[name]:<16} checked={section.checked} "
                 f"failures={len(section.failures)}{collected}"
             )
             if section.note:

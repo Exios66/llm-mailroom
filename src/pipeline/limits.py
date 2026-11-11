@@ -42,6 +42,7 @@ class RunBudgetExceeded(Exception):
 
 _run_usage: contextvars.ContextVar[list] = contextvars.ContextVar("run_usage", default=[])
 _run_deadline: contextvars.ContextVar = contextvars.ContextVar("run_deadline", default=None)
+_run_started: contextvars.ContextVar = contextvars.ContextVar("run_started", default=None)
 
 
 def reset_run_usage() -> None:
@@ -54,15 +55,32 @@ def set_run_deadline(deadline: float | None) -> None:
     _run_deadline.set(deadline)
 
 
+def set_run_started(started_at: float | None) -> None:
+    """Wall-clock start of the current ``run_pipeline`` invocation (for the audit row's metrics)."""
+    _run_started.set(started_at)
+
+
+def get_run_started() -> float | None:
+    """Return the current run's wall-clock start, or ``None`` before it is set."""
+    return _run_started.get()
+
+
 def get_run_deadline() -> float | None:
     return _run_deadline.get()
 
 
 def record_usage(
-    usage, model: str | None = None, agent: str | None = None, served_model: str | None = None
+    usage,
+    model: str | None = None,
+    agent: str | None = None,
+    served_model: str | None = None,
+    *,
+    prompt: str | None = None,
+    completion: str | None = None,
+    prompt_version: str | int | None = None,
 ) -> None:
     """Append an OpenAI-compatible usage object to the current run's
-    accumulator. Tolerates mocks and odd shapes: only real int counts count.
+    accumulator. Tolerates mocks and odd shapes: only integer counts are kept.
 
     Accepts SDK ``CompletionUsage`` objects (``usage.prompt_tokens``) and
     LangChain ``usage_metadata`` dicts (``usage["input_tokens"]`` /
@@ -72,26 +90,47 @@ def record_usage(
     ``served_model`` is the model the provider reports having answered with
     (``response.model``) — it differs from ``model`` behind a router such as
     ``openrouter/free`` or a ``models`` fallback chain.
+
+    ``prompt``, ``completion`` and ``prompt_version`` are kept for the node's
+    audit visit (``audit.trace``, spec §4.4); callers that have them pass them.
     """
     if usage is None:
         return
     if isinstance(usage, dict):
-        prompt = usage.get("input_tokens") or usage.get("prompt_tokens")
-        completion = usage.get("output_tokens") or usage.get("completion_tokens")
+        prompt_tokens = usage.get("input_tokens") or usage.get("prompt_tokens")
+        completion_tokens = usage.get("output_tokens") or usage.get("completion_tokens")
     else:
-        prompt = getattr(usage, "prompt_tokens", None)
-        completion = getattr(usage, "completion_tokens", None)
-    if not isinstance(prompt, int) or not isinstance(completion, int):
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+    if not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int):
         return
     _run_usage.get().append(
         {
-            "prompt_tokens": prompt,
-            "completion_tokens": completion,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
             "model": model,
             "agent": agent,
             "served_model": served_model if isinstance(served_model, str) and served_model else None,
+            "prompt": prompt,
+            "completion": completion,
+            "prompt_version": prompt_version,
         }
     )
+
+
+def run_calls() -> list[dict]:
+    """Return the current run's mutable LLM-call accumulator, oldest first."""
+    return _run_usage.get()
+
+
+def call_cost_usd(call: dict) -> float | None:
+    """USD cost of one recorded call from ``cost_models``; ``None`` when the model has no price."""
+    price = _price_for(call.get("model"))
+    if not price:
+        return None
+    return (call["prompt_tokens"] / 1e6) * float(price.get("input_per_million", 0)) + (
+        call["completion_tokens"] / 1e6
+    ) * float(price.get("output_per_million", 0))
 
 
 def usage_summary() -> dict:

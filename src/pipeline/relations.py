@@ -755,7 +755,11 @@ def _llm_judgment_edges(
 
 def _write_doc_audit_event(doc_id: str, matter_id: str, edges: list[dict], run_id: str) -> None:
     """Append a ``relations_linked`` event to the DOCUMENT's own audit chain —
-    best-effort; a failure never disturbs the relations path."""
+    best-effort; a failure never disturbs the relations path.
+
+    After the chained entry is written, also record the event on the unified
+    audit row or the parked trace.
+    """
     try:
         from schemas.audit import build_audit_entry
         from storage.audit_log import get_latest_audit_hash, write_audit_entry
@@ -781,6 +785,11 @@ def _write_doc_audit_event(doc_id: str, matter_id: str, edges: list[dict], run_i
                 prev_hash=prev,
             )
             await write_audit_entry(entry)
+            # The unified row (roadmap M8): an addendum once the row exists,
+            # else a ``relations`` visit on the parked trace.
+            from audit.events import record_document_event
+
+            await record_document_event(doc_id, "relations_linked", entry.detail, actor="relations")
 
         _run(_write())
     except Exception:
