@@ -70,3 +70,7 @@ graphify-out/
 
 # Autoresearch loop state (per-machine iteration logs and dashboards)
 experiments/autoresearch/state/
+
+# Ground-truth label workbooks hold the full corpus text: private, never tracked
+*.xlsx
+*_texts/
