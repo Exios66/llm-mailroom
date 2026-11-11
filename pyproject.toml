@@ -121,6 +121,8 @@ dev = [
     # (no build isolation), matching [build-system].requires.
     "setuptools>=68.0",
     "wheel",
+    # tools/gt-label-workbook writes the ground-truth label workbook (.xlsx).
+    "openpyxl>=3.1",
 ]
 
 [tool.setuptools.packages.find]
