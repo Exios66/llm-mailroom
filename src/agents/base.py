@@ -271,15 +271,20 @@ class BaseAgent(ABC):
         chunking never changes small-document output. Longer documents are
         split on paragraph boundaries (vendored ``_SpecialistBase`` splitter),
         each window extracted, and merged (list union + first-non-null scalar
-        + MIN confidence). A transient provider error is re-raised so the
-        node's transient routing retries; a chunk that fails to parse (or
-        raises a non-transient error) is counted in ``_failed_chunks`` and caps
-        the merged confidence below the class ``low`` threshold.
+        + MIN confidence over the windows that produced fields). A transient
+        provider error is re-raised so the node's transient routing retries; a
+        chunk that fails to parse (or raises a non-transient error) is counted
+        in ``_failed_chunks`` and caps the merged confidence below the class
+        ``low`` threshold.
 
         Page images attach to the first window only (additive vision, bounded
         cost). ``handoff_context`` is prefixed onto every window.
         """
-        from langchain_agents.specialist_agents import _SpecialistBase, finalize_chunked_merge
+        from langchain_agents.specialist_agents import (
+            _SpecialistBase,
+            finalize_chunked_merge,
+            window_evidence,
+        )
         from llm.retry import is_transient_error
 
         if handoff_context is None:
@@ -292,6 +297,9 @@ class BaseAgent(ABC):
             )
         merged: dict | None = None
         failed = 0
+        window_confs: list = []
+        window_fields: list = []
+        self._last_window_confidences = self._last_window_has_fields = None
         for index, chunk in enumerate(chunks, start=1):
             header = (
                 f"EXTRACTION CHUNK {index} OF {len(chunks)} — this is one "
@@ -320,6 +328,9 @@ class BaseAgent(ABC):
             if result.get("_parse_error"):
                 failed += 1
                 continue
+            conf, has_fields = window_evidence(result)  # before the merge mutates lists
+            window_confs.append(conf)
+            window_fields.append(has_fields)
             merged = (
                 result
                 if merged is None
@@ -327,10 +338,12 @@ class BaseAgent(ABC):
             )
         self._last_chunked = True
         self._last_failed_chunks = failed
+        self._last_window_confidences, self._last_window_has_fields = window_confs, window_fields
         if merged is None:
             return {"_parse_error": True, "confidence": 0.0}
         return finalize_chunked_merge(
-            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed
+            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed,
+            window_confidences=window_confs, window_has_fields=window_fields,
         )
 
 
