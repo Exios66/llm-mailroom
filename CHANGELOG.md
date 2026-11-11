@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Native audit workbench integration** (`tools/pipeline-diagnostics/`): the React panel follows a recorded run or looks up audit documents independently, with paginated discovery, refresh, row/addendum attempts, hash links and explicit verification limits. Authenticated read-only API routes and `mailroom-diagnostics audit --json` support both current per-event storage and the optional unified schema. Missing stores remain missing; raw audit detail and unknown journal payloads are excluded from responses. This viewer does not migrate storage or activate the unfinished audit writer/scoring rollout.
+
 - **Unified audit storage foundation, opt-in** (roadmap M2/M3 plus a storage-scope-limited M4 verifier; `src/storage/audit_migrate.py`, `src/audit/`). This lands the storage layer only: no graph node, terminal writer, trace sink or scoring path calls it yet, and the roadmap stays unfinished.
   - New tables: `audit_attempts`, `audit_addenda`, `audit_meta`, `audit_trace_io` and `audit_log_legacy`. An explicitly migrated `audit_log` holds one row per document with a unique `doc_id` and one global `seq`; before that it keeps the current per-event shape.
   - **The migration is never automatic.** Startup logs `audit_migration_pending` and changes nothing unless `MAILROOM_AUDIT_MIGRATE=1` (SQLite and Postgres alike). A fresh database still creates the new tables, but the marker, the unique indexes and the legacy copy wait for the explicit step. Ordinary runs keep writing the current `audit_log` through `write_audit_entry`.
