@@ -20,11 +20,12 @@ layer can actually observe and says so when it cannot:
 * **trace_io** — every stored ``audit_trace_io`` row matches ``io_sha256``.
 
 **Not collected, and reported as such:** manifests parked with
-``audit_written: pending`` and sink pending records belong to roadmap M9/M10 and
-do not exist in this foundation layer. The ``pending`` section is marked
-``collected=False``; it never claims proof of rows or I/O that were never
-captured. External trace sinks are likewise unverified unless a future layer
-implements them.
+``audit_written: pending`` / ``pending_partial`` and the records the trace sinks
+hold (M9/M10) are not scored by this verifier. They are real data, but a parked
+row is a known gap rather than a stored row to verify: the ``pending`` section
+stays ``collected=False`` so verification never claims proof of a row that only
+exists in a sink, and ``python src/scripts/audit_reconcile.py`` is what reports
+and closes those gaps. External sinks are likewise not queried here.
 
 Hashing is unchanged: rows and addenda use
 ``audit.writer.hash_entry`` / ``schemas.audit.compute_audit_hash`` (v2, with the
@@ -64,8 +65,8 @@ MIGRATION_KEY = "migration"
 def io_sha256(prompt: str | None, completion: str | None) -> str:
     """Canonical SHA-256 of one trace-I/O payload (spec §4.4).
 
-    The future ``sql`` sink (roadmap M9) must use this helper, so the writer and
-    the verifier cannot drift. ``None`` is part of the payload (a missing
+    The ``sql`` sink (``audit/sinks/sql.py``) writes through this helper, so the
+    sink, the writer and the verifier cannot drift. ``None`` is part of the payload (a missing
     completion is distinct from an empty one).
     """
     payload = json.dumps(
@@ -111,6 +112,10 @@ class CheckReport:
         }
 
 
+#: The report sections, in the order the CLI and the summary readers present them.
+SECTIONS: tuple[str, ...] = ("main", "subrows", "addenda", "legacy", "trace_io", "pending")
+
+
 @dataclass
 class VerifyReport:
     """The whole verification result; ``ok`` ignores uncollected sections."""
@@ -143,11 +148,12 @@ class VerifyReport:
 
 def _pending_report(check_sinks: bool) -> CheckReport:
     note = (
-        "pending manifests and sink pending records are not collected in this "
-        "foundation layer (roadmap M9/M10); no proof is claimed"
+        "pending manifests and sink pending records (M9/M10) are not collected here: "
+        "a parked row is a gap rather than a stored row (run scripts/audit_reconcile.py); "
+        "no proof is claimed"
     )
     if check_sinks:
-        note += "; external sinks are not implemented yet either"
+        note += "; external sinks are not queried by the offline verifier"
     return CheckReport(collected=False, note=note)
 
 

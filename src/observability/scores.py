@@ -127,6 +127,8 @@ SCORE_CONFIGS: list[dict] = [
     {"name": "extraction_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "extraction_f2", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
+    # The scoring node family's tier-0 schema adherence (unified audit row, roadmap M12).
+    {"name": "schema_adherence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "entity_list_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "determination_consistency", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
     {"name": "amount_exactness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
@@ -450,6 +452,12 @@ def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
     Returns {"parse_error": bool, "schema_valid": bool}. `parse_error` is set
     when the specialist itself flagged a JSON parse failure; `schema_valid` is
     false when the data fails to validate against the schema.
+
+    ``schema_valid`` is the dojo's (``assess_extraction_payload``, gap G6), so
+    the routing gate, the ``schema_valid`` score and the audit row's
+    ``extraction.adherence`` share one definition. The mailroom keeps its
+    stricter edges: a flagged parse error, an empty payload and a class with
+    no registered schema are never valid (the dojo would pass the last one).
     """
     parsed = {
         "parse_error": bool(extracted_data and extracted_data.get("_parse_error")),
@@ -462,18 +470,21 @@ def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
         return parsed
     from schemas.documents import get_extraction_schema
 
-    model = get_extraction_schema(doc_type)
-    if model is None:
+    if get_extraction_schema(doc_type) is None:
         # No schema registered: this is not a live extractable class
         # (unknown / retired / hallucinated). Treating it as valid used to
         # let junk payloads look schema-clean and retry instead of parking.
-        parsed["schema_valid"] = False
         return parsed
+    from llm_dojo_scoring import assess_extraction_payload
+
     try:
-        model.model_validate(extracted_data)
-        parsed["schema_valid"] = True
+        verdict = assess_extraction_payload(
+            dict(extracted_data), doc_type, schema_lookup=get_extraction_schema
+        )
     except Exception:
-        parsed["schema_valid"] = False
+        logger.warning("schema_adherence_failed", doc_type=doc_type, exc_info=True)
+        return parsed
+    parsed["schema_valid"] = bool(verdict.get("schema_valid")) and not verdict.get("parse_error")
     return parsed
 
 
@@ -562,7 +573,7 @@ def _score_data_type(name: str) -> str | None:
     return None
 
 
-def emit_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
+def emit_pipeline_scores(state: dict, metrics: dict | None = None, *, precomputed: dict | None = None) -> dict:
     """Attach self-evident production scores for a finished run (no ground
     truth required) plus the always-on core run metrics. Called from
     `graph/build_graph.py:run_pipeline`. Returns the computed scores so
@@ -570,7 +581,50 @@ def emit_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
 
     Score computation is backend-agnostic and always runs; only the Langfuse
     trace attachment is gated on the active backend (a no-op otherwise).
+    ``precomputed`` is the dict a terminal node already stored on the audit
+    row (``compute_pipeline_scores`` output): it is attached as is, so the row
+    and the emitted scores are the same numbers.
     """
+    scores = dict(precomputed) if precomputed is not None else compute_pipeline_scores(state, metrics)
+    if is_enabled():
+        for name, value in scores.items():
+            score_trace(name, value, data_type=_score_data_type(name))
+    return scores
+
+
+#: Scoring block key -> registered score name (unified audit row spec §7).
+SCORING_BLOCK_SCORES = (
+    ("overall_score", "extraction_overall_score"),
+    ("extraction_f1", "extraction_f1"),
+    ("extraction_f2", "extraction_f2"),
+)
+
+
+def emit_scoring_scores(scoring: dict | None, adherence: dict | None, *, trace_id: str | None = None) -> dict:
+    """Attach the row's scoring block to the trace under its registered names.
+
+    ``overall_score`` goes out as ``extraction_overall_score``, then
+    ``extraction_f1``, ``extraction_f2`` and ``schema_adherence``; a value the
+    block does not have is not sent. With a ``trace_id`` each score gets the id
+    ``<trace_id>-<name>``, so a second emission for the same trace replaces the
+    first. Returns what it attached (or would attach, when Langfuse is off).
+    """
+    out: dict = {}
+    for key, name in SCORING_BLOCK_SCORES:
+        value = (scoring or {}).get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[name] = float(value)
+    value = (adherence or {}).get("schema_adherence")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        out["schema_adherence"] = float(value)
+    if out and is_enabled():
+        for name, val in out.items():
+            score_trace(name, val, data_type="NUMERIC", score_id=f"{trace_id}-{name}" if trace_id else None)
+    return out
+
+
+def compute_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
+    """The scores ``emit_pipeline_scores`` attaches, computed without attaching anything."""
     stage = state.get("stage")
     extracted = state.get("extracted_data") or {}
     checks = validate_extraction(state.get("doc_type"), extracted)
@@ -610,7 +664,4 @@ def emit_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
         if expected_stage:
             scores["stage_correct"] = int(str(stage or "") == str(expected_stage))
     scores["success_rate"] = int(first_pass_success(state, scores))
-    if is_enabled():
-        for name, value in scores.items():
-            score_trace(name, value, data_type=_score_data_type(name))
     return scores

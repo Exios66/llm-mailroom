@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 from enum import Enum
 import uuid
+from typing import Literal
 
 
 class PipelineStage(str, Enum):
@@ -78,6 +79,13 @@ class DocumentManifest(BaseModel):
     # `source` (`gmail` / `upload`), plus channel metadata (message_id, sender,
     # subject, received_at / uploaded_at). None = a bare filesystem drop.
     intake: dict | None = None
+    # Unified audit row (spec §5.6): True once the row is committed; "pending"
+    # when a sink holds the complete record for ``audit-reconcile``,
+    # "pending_partial" when only decisions-only copies were kept; False when no
+    # sink took it (``audit_gap``). None until a terminal node wrote it.
+    # ``audit_pending_refs`` names the sink copies: [{sink, ref, complete}].
+    audit_written: bool | Literal["pending", "pending_partial"] | None = None
+    audit_pending_refs: list[dict] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

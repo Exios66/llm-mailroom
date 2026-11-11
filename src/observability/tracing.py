@@ -27,6 +27,7 @@ Two integration points:
 
 import functools
 import os
+from datetime import datetime, timezone
 import structlog
 from contextlib import contextmanager
 
@@ -191,8 +192,16 @@ NODE_OBSERVATION_TYPES = {
     "route-for-review": "span",
     "adjudicate-conflict": "agent",
     "compile-report": "agent",
+    "score-common": "evaluator",
+    "score-contract": "evaluator",
+    "score-corporate-record": "evaluator",
+    "score-correspondence": "evaluator",
+    "score-insurance-claim": "evaluator",
+    "score-merger-agreement": "evaluator",
+    "score-generic": "evaluator",
     "write-catalog": "span",
     "archive-document": "span",
+    "audit-failed": "span",
     "pipeline-result": "generation",
     "answer-question": "generation",
 }
@@ -220,21 +229,61 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
     def deco(fn):
         """Wrap ``fn`` so each call opens the ``name`` observation."""
 
+        from audit.trace import node_name
+
+        node = node_name(fn)
+
+        def run(state):
+            """Call ``fn`` and return ``(result, visit)``; the visit is ``None`` for a non-dict result."""
+            from audit import trace
+
+            started = datetime.now(timezone.utc)
+            calls_before = trace.run_calls_count()
+            token = trace.begin_visit()
+            try:
+                result = fn(state)
+            finally:
+                event = trace.end_visit(token)
+            if not isinstance(result, dict):
+                return result, None
+            try:
+                visit = trace.visit(
+                    node, state, result, started_at=started, ended_at=datetime.now(timezone.utc),
+                    llm=trace.llm_info_since(calls_before), event=event,
+                )
+            except Exception:
+                logger.warning("audit_visit_failed", node=node, exc_info=True)
+                return result, None
+            return result, visit
+
+        def with_visit(state, result, visit, span=None):
+            if visit is None:
+                return result
+            if span is not None and visit.get("span_id") is None:
+                span_id = getattr(span, "id", None)
+                visit["span_id"] = span_id if isinstance(span_id, str) else None
+            extra = {"audit_trace": [visit]}
+            if not (state or {}).get("audit_trace") and node != "intake":
+                # The run did not start at intake under this code: a checkpoint written
+                # before the trace existed (spec §5.2). The row records the gap.
+                extra["trace_incomplete"] = True
+            return {**result, **extra}
+
         @functools.wraps(fn)
         def wrapper(state):
-            """Run the node inside its span, then flush for the live floor."""
+            """Run the node inside its span, append its audit visit, then flush for the live floor."""
             provider = resolve_provider_name()
             if provider != "langfuse":
-                result = fn(state)
+                result, visit = run(state)
                 if provider != "none":
                     flush()
-                return result
+                return with_visit(state, result, visit)
 
             from .langfuse_setup import observation
 
             inp = summarize_input(state) if summarize_input else _state_summary(state)
             with observation(name, as_type=obs_type, input=inp) as span:
-                result = fn(state)
+                result, visit = run(state)
                 if span is not None:
                     if summarize_output:
                         out = summarize_output(result)
@@ -246,7 +295,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
                         out = _result_summary(result, state)
                     span.update(output=out)
                 flush()
-                return result
+                return with_visit(state, result, visit, span)
 
         # Read by src/scripts/export_contract.py to map graph nodes to spans,
         # with the type the span is actually opened as (``as_type`` wins).

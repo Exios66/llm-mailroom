@@ -301,7 +301,7 @@ def test_echo_and_relations_scan_fire_only_when_newly_parked(temp_base_dir, mock
 
     mocker.patch("pipeline.bins.park_for_review", return_value=(Path("r.txt"), newly_parked))
     mocker.patch("graph.build_graph._catalog_upsert")
-    mocker.patch("graph.build_graph._emit_stage_audit")
+    mocker.patch("graph.build_graph.record_visit")
     echo = mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
     scan = mocker.patch("pipeline.relations.dispatch_relations_scan")
     mocker.patch("graph.build_graph.interrupt", side_effect=_Stop)
@@ -473,7 +473,7 @@ def test_aborted_human_applied_run_keeps_label_and_source(temp_base_dir, mocker)
     from pipeline.bins import load_manifest
 
     mocker.patch("graph.build_graph._write_catalog_record")
-    mocker.patch("graph.build_graph._emit_stage_audit")
+    mocker.patch("graph.build_graph.record_visit")
     mocker.patch("graph.build_graph._maybe_export_warehouse")
     mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
     mocker.patch("pipeline.relations.dispatch_relations_scan")
@@ -778,7 +778,7 @@ def test_aborted_live_resume_keeps_the_correction_and_moves_the_review_file(temp
 
     # The run never returns (deadline, crash): the abort path sees only that state.
     mocker.patch("graph.build_graph._write_catalog_record")
-    mocker.patch("graph.build_graph._emit_stage_audit")
+    mocker.patch("graph.build_graph.record_visit")
     mocker.patch("graph.build_graph._maybe_export_warehouse")
     mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
     mocker.patch("pipeline.relations.dispatch_relations_scan")

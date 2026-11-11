@@ -300,3 +300,25 @@ def _presence_from_cuad_lines(lines: Any) -> dict[str, dict] | None:
         cat: _presence_entry(cat in present, present.get(cat, ""))
         for cat in CUAD_CLAUSE_CATEGORIES
     }
+
+
+RAW_LABEL_MAPS = ("cuad_clause_labels", "maud_clause_labels")
+
+
+def scoring_ground_truth(gt: dict | None) -> dict[str, Any] | None:
+    """Expected payload for the dojo document scorers (unified audit row M6, gap G3).
+
+    ``expected_fields`` as the run carries them, plus the raw ``cuad_clause_labels``
+    / ``maud_clause_labels`` maps unchanged: the dojo type modules read the raw
+    maps, which ``catalog_expected_fields`` flattens into ``cuad_clauses`` /
+    ``maud_clauses``. A raw map in ``expected_fields`` wins over one at the top
+    level. ``None`` when the run has no ground truth to score against.
+    """
+    if not isinstance(gt, dict):
+        return None
+    fields = gt.get("expected_fields")
+    expected: dict[str, Any] = dict(fields) if isinstance(fields, dict) else {}
+    for key in RAW_LABEL_MAPS:
+        if expected.get(key) in (None, "") and gt.get(key) not in (None, ""):
+            expected[key] = gt[key]
+    return expected or None

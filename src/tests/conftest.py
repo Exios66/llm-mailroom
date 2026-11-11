@@ -109,6 +109,23 @@ def temp_base_dir():
         os.environ.pop("MAILROOM_BASE_DIR", None)
 
 
+@pytest.fixture
+def migrated_audit_db(temp_base_dir):
+    """Take the explicit unified-audit migration on the default test database.
+
+    The migration is an operator step in this storage layer (startup never runs
+    it without ``MAILROOM_AUDIT_MIGRATE=1``), so a test that exercises the
+    unified row takes it exactly like a deployment does. Depends on
+    ``temp_base_dir`` so the database URL is already pointed at the test's base
+    directory when the migration creates/migrates the file.
+    """
+    import asyncio
+
+    from storage import audit_migrate
+
+    return asyncio.run(audit_migrate.migrate_audit_log())
+
+
 @pytest.fixture(autouse=True)
 def _reopen_watcher_claim_gate():
     """A test that calls ``Watcher.stop()`` closes the module-level claim gate;

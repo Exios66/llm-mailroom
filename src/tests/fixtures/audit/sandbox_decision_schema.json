@@ -1,0 +1,7 @@
+{
+  "_source": "Spec 2026-11-03-unified-audit-row-design.md section 4.4: the decision record of the sandbox's job/node_trace.py. Written from the spec; not yet compared with the sandbox file (that repository is not reachable from this checkout). Refresh it from the sandbox when it is.",
+  "keys": ["question", "type", "answer", "p", "expected", "options", "source"],
+  "types": ["noul", "choice", "score"],
+  "string_keys": ["question", "type", "source"],
+  "nullable_keys": ["p", "expected", "options"]
+}

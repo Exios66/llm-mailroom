@@ -1,6 +1,8 @@
 from typing import TypedDict, Annotated, Any
 from langgraph.graph.message import add_messages
 
+from audit.trace import append_visits
+
 
 class DocumentState(TypedDict, total=False):
     doc_id: str
@@ -147,3 +149,16 @@ class DocumentState(TypedDict, total=False):
     # Classified abort reason (llm_timeout / llm_auth / io_error / …).
     failure_class: str | None
     messages: Annotated[list, add_messages]
+    # Unified audit row (spec §4.4, §5.2): one visit per node call, appended by
+    # ``traced_node``. ``trace_incomplete`` marks a run resumed from a checkpoint
+    # written before the trace existed.
+    audit_trace: Annotated[list[dict], append_visits]
+    # Scoring node family (spec §3.1, §5.1): tier 0 result and route, the dojo
+    # archive block (+ ``scored_payload``) and the payload adherence check.
+    scoring_common: dict[str, Any] | None
+    scoring: dict[str, Any] | None
+    extraction_adherence: dict[str, Any] | None
+    # Set by a terminal node: the row's ``metrics`` (``compute_pipeline_scores``
+    # + ``subclass_correct``), reused by ``run_pipeline`` so both agree.
+    audit_metrics: dict[str, Any] | None
+    trace_incomplete: bool
