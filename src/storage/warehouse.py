@@ -351,11 +351,18 @@ async def fetch_terminal_documents(
 
 
 async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any]]:
+    """Return per-event audit rows with doc ids, or ``[]`` for no requested ids.
+
+    After migration, read legacy history, excluding unified rows and addenda.
+    Up to 50 ids preserve request order with each chain in sequence order;
+    larger requests return rows ordered by doc id, sequence, and timestamp.
+    Schema initialization may migrate legacy data; database errors propagate.
+    """
     if not doc_ids:
         return []
     from sqlalchemy import select
 
-    from storage.audit_log import AuditLogRecord, get_audit_chain
+    from storage.audit_log import _hold_read_snapshot, event_log_model, get_audit_chain
     from storage.db import async_session, ensure_schema
 
     ensure_schema()
@@ -366,11 +373,11 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
             rows.extend({**row, "doc_id": doc_id} for row in await get_audit_chain(doc_id))
         return rows
     async with async_session() as session:
-        records: list[AuditLogRecord] = []
+        await _hold_read_snapshot(session)
+        Model = await event_log_model(session)
+        records: list[Any] = []
         for chunk in _doc_id_chunks(doc_ids):
-            result = await session.execute(
-                select(AuditLogRecord).where(AuditLogRecord.doc_id.in_(chunk))
-            )
+            result = await session.execute(select(Model).where(Model.doc_id.in_(chunk)))
             records.extend(result.scalars().all())
         records.sort(key=lambda rec: (rec.doc_id, rec.seq, rec.timestamp))
         for rec in records:

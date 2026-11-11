@@ -33,6 +33,11 @@ def _set_test_env():
     # LLM-assisted intake (HUB-038) is also opt-in-able; tests stay on the
     # deterministic clerk unless a case opts in (patched gate + mock client).
     os.environ["MAILROOM_LLM_INTAKE"] = "0"
+    # Unified-audit migration is an explicit operator step; a developer's .env
+    # may have MAILROOM_AUDIT_MIGRATE=1, which would migrate every test database
+    # under the suite. Force it off here; the deliberate migration tests
+    # (test_audit_migrate.py, test_audit_log.py, ...) override it themselves.
+    os.environ["MAILROOM_AUDIT_MIGRATE"] = "0"
     # Passive provider health (pager input) writes <base_dir>/provider_health.json
     # on every LLM attempt; test_provider_health.py opts back in.
     os.environ["MAILROOM_PROVIDER_HEALTH"] = "0"
