@@ -36,6 +36,12 @@ def watcher_env(temp_base_dir, monkeypatch):
     monkeypatch.setenv("WATCHER_POLL_INTERVAL_SECONDS", "0.05")
     monkeypatch.setenv("MAILROOM_WATCHDOG", "0")
     import pipeline.watcher as watcher
+    from watchdog.observers.polling import PollingObserver
+
+    # Exercise real filesystem delivery without the platform's native event
+    # service (FSEvents startup can block indefinitely in a headless macOS run).
+    # Queueing, claiming, rescan and concurrency assertions remain unchanged.
+    monkeypatch.setattr(watcher, "Observer", lambda: PollingObserver(timeout=0.05))
 
     watcher._active_files.clear()
     yield watcher

@@ -222,3 +222,164 @@ def test_ensure_schema_creates_postgres_schema_without_loop(monkeypatch):
     monkeypatch.setattr(db, "_create_schema_async", _fake_create_schema)
     assert db.ensure_schema() is True
     assert calls == [url]
+
+
+async def test_event_writer_holds_document_lock_through_commit_without_exclusive_chain_lock(monkeypatch):
+    """The Postgres chain gate is taken shared (via execute); an exclusive
+    acquire of the same key deadlocks concurrent writers (PR #160 review)."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, MagicMock
+
+    from storage import audit_log
+
+    session = MagicMock()
+    session.get_bind.return_value.dialect.name = "postgresql"
+    result = MagicMock()
+    result.first.return_value = None
+    session.execute = AsyncMock(return_value=result)
+    session.flush = AsyncMock()
+    held = []
+
+    async def lock(session_arg, key):
+        assert session_arg is session
+        held.append(key)
+
+    async def model(session_arg):
+        assert held == ["audit_doc:doc"]
+        return audit_log.AuditLegacyRecord
+
+    async def commit():
+        assert held == ["audit_doc:doc"]
+        assert isinstance(session.add.call_args.args[0], audit_log.AuditLegacyRecord)
+        held.clear()
+
+    session.commit = AsyncMock(side_effect=commit)
+
+    @asynccontextmanager
+    async def session_scope():
+        yield session
+
+    monkeypatch.setattr(audit_log, "ensure_schema", lambda: None)
+    monkeypatch.setattr(audit_log, "async_session", session_scope)
+    monkeypatch.setattr(audit_log, "acquire_write_lock", lock)
+    monkeypatch.setattr(audit_log, "event_log_model", model)
+    entry = build_audit_entry("doc", "matter", "classified", "sorter", {})
+    await audit_log.write_audit_entry(entry)
+    session.commit.assert_awaited_once()
+    assert held == []
+    assert any("pg_advisory_xact_lock_shared" in str(call.args[0])
+               for call in session.execute.await_args_list)
+
+
+async def test_default_schema_is_legacy_compatible_until_explicit_migration(tmp_path, monkeypatch):
+    """Default startup must NOT install the unified shape (PR #160 safety gate).
+
+    A fresh database keeps the current per-event ``audit_log``: many rows per
+    document and a per-document ``seq``. If ``create_all`` installed the
+    unified unique ``doc_id``/``seq`` constraints (and the startup migration
+    were off), the second per-event write would fail. Only the explicit
+    migration installs the unique indexes, after copying the rows out.
+    """
+    import sqlite3
+
+    from storage import audit_migrate, db
+    from storage.audit_log import get_audit_chain, get_latest_audit_hash, write_audit_entry
+
+    path = tmp_path / "mailroom.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
+    monkeypatch.delenv("MAILROOM_AUDIT_MIGRATE", raising=False)
+    monkeypatch.setattr(db, "_schema_checked_url", None)
+    assert db.ensure_schema()
+
+    for doc_id in ("doc-a", "doc-b"):
+        prev = ""
+        for event in ("classified", "extracted"):
+            entry = build_audit_entry(
+                doc_id, "matter-1", event, "test", {"doc": doc_id}, prev_hash=prev
+            )
+            await write_audit_entry(entry)
+            prev = await get_latest_audit_hash(doc_id)
+
+    def _unique(column: str) -> bool | None:
+        with sqlite3.connect(path) as conn:
+            for _seq, name, unique, *_ in conn.execute("PRAGMA index_list(audit_log)"):
+                cols = [r[2] for r in conn.execute(f"PRAGMA index_info({name})")]
+                if cols == [column]:
+                    return bool(unique)
+        return None
+
+    with sqlite3.connect(path) as conn:
+        assert conn.execute(
+            "SELECT doc_id, seq FROM audit_log ORDER BY doc_id, seq"
+        ).fetchall() == [("doc-a", 1), ("doc-a", 2), ("doc-b", 1), ("doc-b", 2)]
+        assert conn.execute("SELECT count(*) FROM audit_meta").fetchone()[0] == 0
+    assert _unique("doc_id") is False
+    assert _unique("seq") is False
+    assert len(await get_audit_chain("doc-a")) == 2
+
+    # The explicit operator command is what installs the unified shape.
+    migrated = await audit_migrate.migrate_audit_log()
+    assert migrated.migrated is True and migrated.legacy_rows == 4
+    assert _unique("doc_id") is True
+    assert _unique("seq") is True
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT count(*) FROM audit_log").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM audit_log_legacy").fetchone()[0] == 4
+        assert conn.execute("SELECT count(*) FROM audit_meta").fetchone()[0] == 1
+
+    # The legacy bridge keeps the current writer and readers working.
+    entry = build_audit_entry("doc-a", "matter-1", "review_completed", "test", {})
+    await write_audit_entry(entry)
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT count(*) FROM audit_log").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM audit_log_legacy").fetchone()[0] == 5
+    assert len(await get_audit_chain("doc-a")) == 3
+
+
+async def test_legacy_orm_seq_default_is_zero(tmp_path, monkeypatch):
+    """The default-off ORM keeps current main's ``seq=0`` default.
+
+    Legacy rows/manual construction may omit ``seq``; removing the default would
+    turn a compatible insert into a NOT NULL failure. Unified writers pass a
+    positive seq explicitly and the explicit migration's unique index still
+    protects them.
+    """
+    import sqlite3
+
+    from storage import db
+    from storage.audit_log import AuditLogRecord
+    from storage.catalog import DocumentRecord
+    from storage.db import async_session
+
+    path = tmp_path / "mailroom.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
+    monkeypatch.delenv("MAILROOM_AUDIT_MIGRATE", raising=False)
+    monkeypatch.setattr(db, "_schema_checked_url", None)
+    assert db.ensure_schema()
+
+    async with async_session() as session:
+        session.add(
+            DocumentRecord(
+                doc_id="doc-default",
+                matter_id="matter-1",
+                original_filename="a.pdf",
+                stage="processing",
+            )
+        )
+        await session.flush()  # parent before the FK child
+        session.add(
+            AuditLogRecord(
+                entry_id="entry-default",
+                doc_id="doc-default",
+                matter_id="matter-1",
+                event="classified",
+                actor="test",
+                detail={},
+                prev_hash="",
+                entry_hash="hash",
+            )
+        )
+        await session.commit()
+
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("SELECT seq FROM audit_log").fetchall() == [(0,)]
