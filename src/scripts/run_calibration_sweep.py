@@ -517,9 +517,21 @@ def _extraction_attempt(doc: Doc, n: int, doc_type: str, step: Step, text: str, 
     raw = step.cap.extract_conf[-1] if step.cap.extract_conf else None
     n_chunks = 1
     failed_chunks = 0
+    window_confidences: list[float | None] | None = None
+    window_has_fields: list[bool] | None = None
     for agent in step.cap.agents:  # both specialist implementations keep the counts on the instance
         n_chunks = max(n_chunks, int(getattr(agent, "_last_n_chunks", 1) or 1))
         failed_chunks = max(failed_chunks, int(getattr(agent, "_last_failed_chunks", 0) or 0))
+        agent_confs = getattr(agent, "_last_window_confidences", None)
+        agent_fields = getattr(agent, "_last_window_has_fields", None)
+        if (
+            isinstance(agent_confs, list)
+            and isinstance(agent_fields, list)
+            and len(agent_confs) == len(agent_fields)
+            and int(getattr(agent, "_last_n_chunks", 1) or 1) > 1
+        ):
+            window_confidences = [_num(c) for c in agent_confs]
+            window_has_fields = [bool(h) for h in agent_fields]
     # ``schema_valid`` is None ONLY when there is nothing to validate (a transient error, or no
     # extracted data): routing does not run the schema gate then either (``after_extraction``
     # checks ``if extracted:``). Whenever there is an extraction it is a bool. If the validator
@@ -548,6 +560,8 @@ def _extraction_attempt(doc: Doc, n: int, doc_type: str, step: Step, text: str, 
         conflict_detected=bool(u.get("conflict_detected")),
         n_chunks=n_chunks,
         failed_chunks=failed_chunks,
+        window_confidences=window_confidences,
+        window_has_fields=window_has_fields,
         extraction_score=score,
         hallucination_rate=halluc,
         transient_error=step.transient_error,
@@ -1146,7 +1160,9 @@ class _Writer:
         self._lock = threading.Lock()
 
     def write(self, record: RunRecord) -> None:
-        line = record.model_dump_json()
+        from schemas.run_record import record_jsonl_line
+
+        line = record_jsonl_line(record)
         with self._lock:
             self._fh.write(line + "\n")
             self._fh.flush()

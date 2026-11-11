@@ -33,6 +33,11 @@ def _set_test_env():
     # LLM-assisted intake (HUB-038) is also opt-in-able; tests stay on the
     # deterministic clerk unless a case opts in (patched gate + mock client).
     os.environ["MAILROOM_LLM_INTAKE"] = "0"
+    # Unified-audit migration is an explicit operator step; a developer's .env
+    # may have MAILROOM_AUDIT_MIGRATE=1, which would migrate every test database
+    # under the suite. Force it off here; the deliberate migration tests
+    # (test_audit_migrate.py, test_audit_log.py, ...) override it themselves.
+    os.environ["MAILROOM_AUDIT_MIGRATE"] = "0"
     # Passive provider health (pager input) writes <base_dir>/provider_health.json
     # on every LLM attempt; test_provider_health.py opts back in.
     os.environ["MAILROOM_PROVIDER_HEALTH"] = "0"
@@ -102,6 +107,23 @@ def temp_base_dir():
             pass
         yield Path(tmpdir)
         os.environ.pop("MAILROOM_BASE_DIR", None)
+
+
+@pytest.fixture
+def migrated_audit_db(temp_base_dir):
+    """Take the explicit unified-audit migration on the default test database.
+
+    The migration is an operator step in this storage layer (startup never runs
+    it without ``MAILROOM_AUDIT_MIGRATE=1``), so a test that exercises the
+    unified row takes it exactly like a deployment does. Depends on
+    ``temp_base_dir`` so the database URL is already pointed at the test's base
+    directory when the migration creates/migrates the file.
+    """
+    import asyncio
+
+    from storage import audit_migrate
+
+    return asyncio.run(audit_migrate.migrate_audit_log())
 
 
 @pytest.fixture(autouse=True)

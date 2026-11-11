@@ -4,7 +4,7 @@ LangGraph pipeline that processes legal documents through specialist LLM agents
 (intake → classify → extract → judge/arbiter → report → archive), with filesystem bins,
 a SQLite catalog and hash-chained audit log, a FastAPI producer on :8000, and
 Langfuse / Braintrust / Phoenix tracing. Python 3.11+. This repo **owns pipeline
-behavior**: the 14-node graph, agents, prompts, storage and API.
+behavior**: the 22-node graph (14 pipeline nodes, the 7-node scoring family and the `audit_failed` terminal node), agents, prompts, storage and API.
 
 `AGENTS.md` is the long-form manual (~60 KB) and is **not** auto-loaded. Read the matching
 section on demand ("Architecture", "Config gotchas", "Testing quirks", "Releases",
@@ -36,7 +36,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 
 | Path | What lives there |
 |:---|:---|
-| `src/graph/` | `build_graph.py` (14 nodes, including `classification_arbiter`; `run_pipeline`, tracing wrappers), `routing.py` (conditional edges) |
+| `src/graph/` | `build_graph.py` (22 nodes, including `classification_arbiter` and `audit_failed`; `run_pipeline`, tracing wrappers), `scoring_nodes.py` (`score_common` + one `score_<type>` per dojo scorer), `routing.py` (conditional edges) |
 | `src/agents/` | LLM agents (`BaseAgent` subclasses: sorter, specialists, judge, boss, relations, triage) and procedural ones (reporter, archivist, pdf_transcriber, image_extractor, intake clerk) |
 | `src/llm/` | `client.py:get_llm`, `providers.py`, `retry.py`, `prompts.py` (Langfuse-managed prompts + fallbacks), `vision.py` |
 | `src/pipeline/` | watcher, bins, guards, Gmail intake, relations, ops monitor, pager, env/logging/config |
@@ -48,6 +48,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 | `src/scripts/` | operator and maintenance CLIs (pilots, gates, sync, release, bumps) |
 | `src/tests/` | pipeline pytest suite; `conftest.py` mocks every LLM client |
 | `tools/pipeline-diagnostics/` | native inspect/check CLI, workbench plan, nested tests with their own hermetic fixtures |
+| `tools/gt-label-workbook/` | builds the editable ground-truth label workbook (`.xlsx`) from the pinned corpus; tests in `src/tests/test_gt_label_workbook.py` |
 | `src/legalbench/` | LegalBench evaluation submodule |
 | `deploy/` | compose files, LiteLLM gateway, Modal vLLM, HF Space payload |
 | `contract/` | generated display contract (`export_contract.py --write`) |

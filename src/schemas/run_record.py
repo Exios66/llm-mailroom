@@ -133,6 +133,11 @@ class ExtractionAttempt(_Model):
     conflict_detected: bool = False
     n_chunks: int = 1
     failed_chunks: int = 0
+    # Per-window evidence of a chunked extraction (windows that parsed, document order;
+    # same length). Lets a replay re-derive the merged confidence under another merge
+    # rule (``policy_replay`` ``merge_rule``). None = recorded before CR6, or not chunked.
+    window_confidences: list[float | None] | None = None
+    window_has_fields: list[bool] | None = None
     # Offline Dojo score of THIS attempt vs gold fields (never seen by routing).
     extraction_score: float | None = None
     hallucination_rate: float | None = None
@@ -254,3 +259,31 @@ def to_review_record(record: RunRecord) -> dict[str, Any]:
         "dataset_revision": record.run.dataset_revision,
         "split": record.run.split,
     }
+
+
+_WINDOW_KEYS = ("window_confidences", "window_has_fields")
+
+
+def _drop_empty_window_keys(value):
+    if isinstance(value, dict):
+        return {
+            k: _drop_empty_window_keys(v)
+            for k, v in value.items()
+            if not (k in _WINDOW_KEYS and v is None)
+        }
+    if isinstance(value, list):
+        return [_drop_empty_window_keys(v) for v in value]
+    return value
+
+
+def record_jsonl_line(record: "RunRecord") -> str:
+    """Compact JSON for one record, without per-window keys that carry no evidence.
+
+    Main and earlier branches validate with ``extra="forbid"`` and do not know the CR6
+    window fields, so an attempt without window evidence is written without them and
+    stays readable there. A chunked attempt that carries evidence keeps them: that data
+    needs this schema to be read.
+    """
+    import json
+
+    return json.dumps(_drop_empty_window_keys(record.model_dump(mode="json")), separators=(",", ":"))

@@ -12,7 +12,13 @@
 
 ## Global Constraints
 
-- Hash version 2 is unchanged and byte-identical with the dojo's `format_audit_entry`. `seq` is not hashed.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:c535bdb0c904ded435f306b2b9d61a0fa37eaf52df9c675a9f35781bc3931aac -->
+
+- Hash version 2 is unchanged and byte-identical with the dojo's `archive_entry_hash`. `format_audit_entry` builds and normalizes the dojo detail object before hashing with `archive_entry_hash`. `seq` is not hashed.
+
+<!-- /coderabbit-ai-generated:v1 -->
 - Fields not collected on a run are `null`, never filled in.
 - `audit.full_trace` / `MAILROOM_AUDIT_FULL_TRACE` defaults to off.
 - The current graph order stays as it is: judge before arbiter (KANBAN-063), and the boss escalation path.
@@ -29,6 +35,13 @@
 - A document that already has legacy rows is processed again after migration: a new row is written and the legacy rows are untouched. A second terminal write for the same `doc_id` becomes a `resumed` addendum.
 
 ---
+
+> **Status (2026-11-10):** tasks **M4–M12 are implemented and merged** — PR #160
+> (`claude/unified-audit-row-wip`: M4 `4956a23`, M5 `ed927df`, M6 `b2779d3`, M7 `52061fd`,
+> M8 `dabfc64`, M9 `dec9b0e`, M10 `05337d3`, M11 `3b53a0b` + `47692b3`, M12 `d4a8675`)
+> merged onto this stack's opt-in storage foundation. Their steps below are ticked on that
+> basis; M13, M14 and M15 remain open. Per-task evidence (failing-test counts, full-suite
+> runs) is recorded in those commits.
 
 ### Task M1: Adopt dojo 0.27.0
 
@@ -60,7 +73,7 @@
 **Interfaces:**
 - Produces: `async def migrate_audit_log(*, backup_dir: Path | None = None) -> MigrationResult` (`migrated: bool`, `legacy_rows: int`, `backup_path: str | None`) and `async def rollback_audit_migration() -> RollbackResult`. CLI: `python -m storage.audit_migrate [--rollback]`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_migrates_legacy_rows_byte_for_byte`: every legacy column equals the original, and `verify_legacy_chain` passes.
   - `test_migration_is_idempotent`: a second run gives `migrated=False` and no changes.
   - `test_concurrent_startup_migrates_once`: two `ensure_schema` calls run under `asyncio.gather`.
@@ -69,10 +82,13 @@
   - `test_postgres_requires_opt_in`: with a Postgres URL and no `MAILROOM_AUDIT_MIGRATE=1`, the result is `migrated=False` and `audit_migration_pending` is logged.
   - `test_ddl_compiles_for_postgres`.
   - `test_rollback_restores_audit_log`: new tables are renamed `*_v2_<ts>`, and `audit_log` holds the legacy rows again.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Everything runs under `acquire_write_lock(session, "audit_log:chain")`. Check `audit_meta` first. Add unique indexes on `audit_log.doc_id` and `audit_log.seq`. SQLite: copy the DB file to `backup_dir` (default `<db dir>/backups/`). Postgres: proceed only with the opt-in, in one transaction. Write `audit_meta = {migrated_at, legacy_rows, legacy_tail_hashes_sha256}`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** Everything runs under `acquire_write_lock(session, "audit_log:chain")`. Check `audit_meta` first. Add unique indexes on `audit_log.doc_id` and `audit_log.seq` only after copying/emptying (the default-off ORM stays legacy-compatible). SQLite: an exclusive 0600 copy of the DB file to `backup_dir` (default `<db dir>/backups/`). **Startup is opt-in on SQLite and Postgres alike (`MAILROOM_AUDIT_MIGRATE=1`); the CLI is explicit.** Postgres: in one transaction, after the operator quiesces old writers and takes a `pg_dump`, with `LOCK TABLE audit_log IN ACCESS EXCLUSIVE MODE` for the copy+delete window. Write `audit_meta = {migrated_at, legacy_rows, legacy_tail_hashes_sha256}`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `ba73947`)
+
+> **Status:** foundation re-landed on the stackable `feat/unified-audit-foundation-refresh` branch, not merged. The foundation refresh changes Step 3's default to opt-in on both backends and leaves M4's full gate and M5–M15 for later branches.
+> Rulings: (1) interim bridge `storage.audit_log.event_log_model()` sends the old per-event writer `write_audit_entry` and its readers to `audit_log_legacy` once `audit_meta` records the migration (removed by M7/M8/M11 when the per-event writers go); (2) the copy check compares row counts plus a digest over every legacy column, not only hashes; (3) `test_storage_concurrency.py` keeps asserting the default per-event `audit_log`, because default startup does not migrate.
 
 ### Task M3: Row and addendum writers
 
@@ -92,8 +108,14 @@
   - `async def get_row(doc_id) -> dict | None`.
   - `EVENTS = ("archived", "failed", "triage_archived", "triage_reviewed")` and `ADDENDUM_KINDS = ("rescore", "resumed", "review_decision", "relations_linked", "recovered_detail")`.
 
-- [ ] **Step 1: Write the tests.**
-  - `test_row_hash_matches_dojo_format_audit_entry`: compare against `llm_dojo_scoring.format_audit_entry` on the same inputs.
+- [x] **Step 1: Write the tests.**
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:decf93b9b8e0421d93ee9ba20f43447799abd909e0dc19d621972660b559ec53 -->
+
+  - `test_row_hash_matches_dojo_format_audit_entry`: compare the stored row hash against `llm_dojo_scoring.archive_entry_hash` on the same inputs, and reproduce the hash from `format_audit_entry` using its built and normalized detail object.
+
+<!-- /coderabbit-ai-generated:v1 -->
   - `test_rows_chain_globally_by_seq`.
   - `test_subrow_hashes_listed_in_parent_detail_attempts`.
   - `test_subrows_and_row_commit_atomically`: a failure injected after the sub-row insert leaves neither.
@@ -104,10 +126,14 @@
   - `test_concurrent_documents_do_not_fork_chain`: 20 documents under `asyncio.gather`.
   - `test_unknown_event_rejected`.
   - `test_writer_refuses_while_migration_pending`: with no `audit_meta` (Postgres opt-in not given), `write_terminal_row` raises `AuditMigrationPending` and writes nothing to `audit_log` (spec §6). M10 routes that error into the §5.6 fallback.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and `audit_log:<doc_id>` for addenda.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** Hash with the existing `compute_audit_hash` (v2). Sub-row `entry_id` = `attempt_id`, `event` = `attempt:<stage>`. The parent's `detail.attempts` is filled with sub-row hashes before the parent is hashed. Use the global lock `audit_log:chain` for rows and the separate per-document `audit_doc:<doc_id>` namespace for addenda (never the global key).
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite. (full suite 2632 passed, 37 skipped)
+- [x] **Step 5: Commit.** (Exios66/llm-mailroom#160, `3b6e5b9`)
+
+> **Status:** implemented on draft PR #160 (`3b6e5b9`), not merged yet. `src/audit/{models,writer}.py`, 16 tests in `src/tests/test_audit_writer.py`; `audit*` added to the wheel packages in `pyproject.toml`.
+> Rulings: (1) a sub-row hashes an envelope of its columns (`attempt_detail_envelope`: parent_id, stage, attempt_no, trigger, outcome, started_at, ended_at, detail) with `prev_hash=""`, `entry_id=attempt_id`, `event=attempt:<stage>`, timestamp `started_at`; M4 must recompute with `audit.writer.attempt_hash`. (2) `test_row_hash_matches_dojo_format_audit_entry` compares with the dojo's `archive_entry_hash` (what `format_audit_entry` hashes with), because `format_audit_entry` fills its own detail template. (3) SQLite's `BEGIN IMMEDIATE` already serializes processes, so `test_seq_conflict_retries` simulates the A17 race with a stale tail read; conflicts retry 5 times, then `AuditWriteError`. (4) A `resumed` addendum keeps the event the second terminal write asked for in `detail.event`. (5) `get_row` returns the row with `sub_rows` and `addenda` (each with its `sub_rows`), timestamps as UTC ISO strings. (6) The writers add a minimal `documents` row when the catalog has none (FK), as the per-event writer does.
+> For M4: use `audit.writer.hash_entry` (naive SQLite timestamps are read as UTC) and `attempt_hash`; rows chain by `seq`, addenda per document from the row's `entry_hash`.
 
 ### Task M4: Verification
 
@@ -124,7 +150,7 @@
 **Interfaces:**
 - Produces: `async def verify_audit_db(*, check_sinks: bool = False) -> VerifyReport`. `VerifyReport` has `main`, `subrows`, `addenda`, `legacy`, `trace_io` and `pending`, each `{ok: bool, checked: int, failures: list[dict]}`, plus `ok`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_clean_db_verifies`.
   - `test_tampered_row_detail_fails_main`.
   - `test_deleted_subrow_fails_subrows`.
@@ -135,10 +161,10 @@
   - `test_recovered_row_detail_sha_checked`.
   - `test_pending_manifest_without_row_reported`.
   - `test_script_exits_nonzero_on_failure`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement** the five checks and the pending report.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement** the five checks and the pending report.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M5: Trace collection in state
 
@@ -161,7 +187,7 @@
   - `attempt_id_for(state: dict, node: str) -> str`, which is deterministic from `doc_id`, stage and counters.
   - `decisions_for(node, state, update) -> list[dict]` in the sandbox schema `{question, type, answer, p, expected, options, source}`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_traced_node_appends_one_visit_per_call`.
   - `test_visit_fields_match_spec`: exactly the §4.4 keys, with `prompt` and `completion` only when `full_trace` is on.
   - `test_decisions_match_sandbox_schema`: validate against the fixture copied from the sandbox's `job/node_trace.py`.
@@ -170,10 +196,10 @@
   - `test_trace_survives_checkpoint_resume`.
   - `test_old_checkpoint_without_trace_resumes` (review item A3): resume a recorded pre-upgrade checkpoint fixture; the trace starts empty and `trace_incomplete` is set.
   - `test_no_stage_rows_written_during_run`: `audit_log` stays empty until a terminal node runs.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `traced_node` measures timing and reads the LLM call info that the LLM wrapper already records (tokens, cost, model, prompt version). It hands prompt and completion to the sink layer (M9) through `audit.sinks.record_io`; until M9 lands, that is a no-op returning `(None, sha256)`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** `traced_node` measures timing and reads the LLM call info that the LLM wrapper already records (tokens, cost, model, prompt version). It hands prompt and completion to the sink layer (M9) through `audit.sinks.record_io`; until M9 lands, that is a no-op returning `(None, sha256)`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M6: Scoring node family
 
@@ -195,7 +221,7 @@
   - State keys `scoring_common` (adherence plus the tier-0 result), `scoring` (the archive block plus `scored_payload`) and `extraction_adherence`.
   - `score_document_block(state_like: dict) -> dict`, the pure function the nodes and the rescore CLI (M14) share.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_one_node_per_registry_entry`.
   - `test_routes_each_corpus_type`, parametrised over the five types.
   - `test_corpus_absent_and_unknown_route_to_generic`.
@@ -206,10 +232,10 @@
   - `test_each_scoring_node_has_trace_visit`.
   - `test_benchmark_rows_get_headline` (G3): CUAD and MAUD rows reach `score_document_block` with their raw label maps, and the block has `headline_score` and `headline_metric`.
   - `test_doc_subclass_from_final_state` (G5): the scoring call gets the final `state["doc_subclass"]` (set near `build_graph.py:831`), not the classifier's first guess and not nothing.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `schema_lookup` is `schemas.documents.get_extraction_schema`. `taxonomy_bytes` is read once from `src/config/taxonomy.yaml`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** `schema_lookup` is `schemas.documents.get_extraction_schema`. `taxonomy_bytes` is read once from `src/config/taxonomy.yaml`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M7: Row builder and terminal nodes
 
@@ -227,7 +253,7 @@
 **Interfaces:**
 - Produces: `build_row(state: dict, *, event: str, actor: str) -> TerminalRow` and `attempts_from_trace(trace: list[dict]) -> list[AttemptRow]`. The `detail` keys are exactly those in the spec §4.1 table, with `row_schema: 1`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_detail_keys_exactly_spec`.
   - `test_uncollected_fields_are_null`.
   - `test_metrics_equal_emit_pipeline_scores`.
@@ -238,10 +264,10 @@
   - `test_watcher_abort_writes_failed_row`.
   - `test_subrows_per_retry_and_arbiter_rescue`.
   - `test_trace_incomplete_flag_on_old_checkpoint`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M8: Human review paths and pre-row events
 
@@ -258,7 +284,7 @@
 **Interfaces:**
 - Produces: `async def record_document_event(doc_id: str, kind: str, detail: dict) -> Literal["addendum", "trace"]`. It writes an addendum when the row exists; otherwise it appends a visit to the parked checkpoint through `graph.update_state(config, {"audit_trace": [visit]})`, so the reducer applies (review item A2).
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_complete_without_data_scores_and_archives_model_extraction`: `pipeline_success` is false and `extraction_source` is `"model"`.
   - `test_complete_with_data_is_human_correction`: a `human_correction` sub-row carrying the diff, reviewer and time; `scored_payload` is `"human_corrected"`; no extract node in the trace after the review.
   - `test_resume_reruns_extract`.
@@ -266,10 +292,10 @@
   - `test_record_and_requeue_before_row_land_in_trace`.
   - `test_record_after_row_is_review_decision_addendum`.
   - `test_model_scores_not_credited_with_correction`: the last model attempt's scores are kept on its sub-row.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M9: Trace sinks
 
@@ -288,7 +314,7 @@
   - `active_sinks() -> list[TraceSink]`, ordered with `sql` first.
   - `record_io(...) -> tuple[str | None, str, list[str]]`, returning `(trace_sink, io_sha256, also_in)`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_sql_sink_always_active`.
   - `test_phoenix_added_when_importable_enabled_and_reachable`: use a fake collector on localhost and the 1-second probe.
   - `test_phoenix_skipped_on_railway_localhost_endpoint`.
@@ -297,10 +323,10 @@
   - `test_sink_failure_does_not_fail_node`.
   - `test_full_trace_copies_io_into_visit`.
   - `test_io_sha_is_sha256_of_prompt_and_completion`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.** The adapters reuse the clients in `src/observability/tracing.py`.
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.** The adapters reuse the clients in `src/observability/tracing.py`.
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M10: Write-failure fallback and `audit-reconcile`
 
@@ -317,7 +343,7 @@
 **Interfaces:**
 - Produces: `async def reconcile(*, dry_run: bool = False) -> ReconcileReport` (`recovered`, `skipped_existing`, `rejected_hash`). The spool path comes from `MAILROOM_AUDIT_SPOOL_PATH`, defaulting to `<db dir>/audit_spool.db`.
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_three_failures_then_pending_capture`.
   - `test_manifest_marked_pending_and_run_succeeds`.
   - `test_oversize_payload_sends_decisions_only_plus_sha` (Review Focus).
@@ -330,10 +356,10 @@
   - `test_ephemeral_spool_warning` (review item A6).
   - `test_migration_pending_takes_fallback`: `AuditMigrationPending` from the writer is handled like a failed commit; the record is parked and `audit-reconcile` writes it after the migration (spec §6).
   - `test_decisions_only_copy_reconciles_as_partial`: with only a decisions-only copy, reconcile writes it with `recovered_from.complete = false`, and logs `audit_gap_partial`; the manifest said `pending_partial`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M11: Readers and `audit_row_metrics`
 
@@ -349,7 +375,7 @@
 **Interfaces:**
 - Produces: `audit_row_metrics(row: dict, addenda: list[dict], attempts: list[dict]) -> dict` with exactly the spec §7 keys. `overall_extraction_score` is `scoring.headline_score` when set, else `scoring.overall_score`; `suite_overall_extraction_score` is `scoring.overall_score` (review item A1).
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_audit_doc_contract`: the keys `doc_id`, `chain_length`, `chain_valid` and `entries` keep their names, and the new keys are `legacy`, `pending` and `warehouse`. Entries are ordered row, sub-rows, then each addendum with its sub-rows, and each has `kind` and `parent_id`.
   - `test_audit_summary_rates`.
   - `test_metrics_keys_exactly_spec`.
@@ -357,10 +383,10 @@
   - `test_resumed_supplies_outcome`.
   - `test_model_only_counterparts_from_last_model_attempt`.
   - `test_headline_mapping`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M12: Warehouse, `audit-report` and Langfuse scores
 
@@ -374,17 +400,17 @@
 - Modify: `src/observability/scores.py`. When Langfuse is configured, also emit `overall_score`, `extraction_f1`, `extraction_f2` and `schema_adherence`.
 - Test: `src/tests/test_warehouse_audit.py`, `src/tests/test_audit_report.py` with the golden `src/tests/fixtures/audit/audit_report.md`
 
-- [ ] **Step 1: Write the tests.**
+- [x] **Step 1: Write the tests.**
   - `test_parquet_round_trip_rows_attempts_addenda`: keyed merge by `entry_id`, `attempt_id` and `addendum_id`.
   - `test_legacy_exported_once`.
   - `test_manifest_maps_doc_to_hash_and_files`.
   - `test_audit_report_golden`: per live type it shows the schema, n, model, route, F1 and F2, with uncollected metrics labelled.
   - `test_report_reads_db_or_parquet_identically`.
   - `test_langfuse_scoring_emission_names`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run them.** Expected: PASS. Run the full suite.
-- [ ] **Step 5: Commit.**
+- [x] **Step 2: Run them.** Expected: FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run them.** Expected: PASS. Run the full suite.
+- [x] **Step 5: Commit.**
 
 ### Task M14: Rescore CLI
 
