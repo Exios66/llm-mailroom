@@ -84,7 +84,13 @@ def _latency_ms(detail: Mapping[str, Any]) -> float | None:
 def audit_row_metrics(
     row: Mapping[str, Any], addenda: list[Mapping[str, Any]], attempts: list[Mapping[str, Any]]
 ) -> dict[str, Any]:
-    """The flat §7 record for one document. ``attempts`` are the row's and its addenda's sub-rows."""
+    """Return the flat §7 record for one row and its addenda and sub-rows.
+
+    ``attempts`` includes sub-rows of both the row and its addenda. The latest
+    rescore and resume addenda can update scores and outcome. Model-only scores
+    use the last model extraction attempt, or the current scores if no model
+    attempt or human correction exists. Uncollected numeric values remain ``None``.
+    """
     detail = _d(row.get("detail"))
     metrics = _d(detail.get("metrics"))
     extraction = _d(detail.get("extraction"))

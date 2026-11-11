@@ -576,14 +576,13 @@ def _score_data_type(name: str) -> str | None:
 def emit_pipeline_scores(state: dict, metrics: dict | None = None, *, precomputed: dict | None = None) -> dict:
     """Attach self-evident production scores for a finished run (no ground
     truth required) plus the always-on core run metrics. Called from
-    `graph/build_graph.py:run_pipeline`. Returns the computed scores so
+    `graph/build_graph.py:_execute_run`. Returns the selected scores so
     callers can persist them locally too.
 
-    Score computation is backend-agnostic and always runs; only the Langfuse
-    trace attachment is gated on the active backend (a no-op otherwise).
-    ``precomputed`` is the dict a terminal node already stored on the audit
-    row (``compute_pipeline_scores`` output): it is attached as is, so the row
-    and the emitted scores are the same numbers.
+    Score selection is backend-agnostic; only the Langfuse trace attachment is
+    gated on the active backend (a no-op otherwise).
+    ``precomputed`` supplies audit-row metrics to emit without recomputation
+    when a terminal node has already calculated them.
     """
     scores = dict(precomputed) if precomputed is not None else compute_pipeline_scores(state, metrics)
     if is_enabled():
@@ -624,7 +623,11 @@ def emit_scoring_scores(scoring: dict | None, adherence: dict | None, *, trace_i
 
 
 def compute_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
-    """The scores ``emit_pipeline_scores`` attaches, computed without attaching anything."""
+    """Compute run scores without attaching them to a trace.
+
+    Include numeric ``metrics`` and any available classification or stage
+    ground truth; return the values consumed by ``emit_pipeline_scores``.
+    """
     stage = state.get("stage")
     extracted = state.get("extracted_data") or {}
     checks = validate_extraction(state.get("doc_type"), extracted)

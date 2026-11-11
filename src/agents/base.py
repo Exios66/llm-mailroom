@@ -143,9 +143,10 @@ class BaseAgent(ABC):
         zero tokens or an empty effort omits the corresponding request option.
         Reasoning options are shaped for the resolved backend.
 
-        Records returned token usage. Propagates RunDeadlineExceeded before an
-        attempt past the run deadline, and provider errors that are not retried or
-        persist after the retry limit.
+        Records returned token usage with the serialized request, text completion,
+        and prompt version when available. Propagates RunDeadlineExceeded before
+        an attempt past the run deadline, and provider errors that are not retried
+        or persist after the retry limit.
         """
         from pipeline.limits import get_run_deadline, record_usage
 

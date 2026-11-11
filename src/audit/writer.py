@@ -345,7 +345,10 @@ async def _write_terminal_row_once(
     entry_id: str | None = None,
     recovered_from: dict[str, Any] | None = None,
 ) -> WriteResult:
-    """One bounded transaction attempt loop for a new terminal row."""
+    """Retry a terminal-row transaction; write a resumed addendum if the row exists.
+
+    A new row uses the supplied entry id and recovery provenance when provided.
+    """
     # A reconcile write keeps the entry id its pending record was captured
     # under; an ordinary write mints a fresh one.
     preset_id = entry_id
@@ -718,11 +721,13 @@ def decisions_only_record(row: TerminalRow, full: dict[str, Any]) -> dict[str, A
 
 
 async def commit_or_park(row: TerminalRow) -> CommitOutcome:
-    """Commit the row; after ``COMMIT_ATTEMPTS`` failures hand it to the trace sinks (§5.6).
+    """Commit the row or park it in trace sinks after bounded failures (§5.6).
 
     ``AuditMigrationPending`` counts as a failure, so the record waits for
-    ``audit-reconcile`` after the migration. Never raises for a write failure:
-    the run that produced the row still succeeds.
+    ``audit-reconcile`` after the migration. Return ``written`` on success,
+    ``pending`` if a sink holds a full copy, ``pending_partial`` if only reduced
+    copies survive, or ``gap`` if none do. Database write failures lead to
+    parking; malformed rows still raise ``ValueError``.
     """
     import asyncio
 

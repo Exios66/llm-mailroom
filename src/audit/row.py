@@ -127,7 +127,11 @@ def _attempt_detail(stage: str, group: list[dict], state: Mapping[str, Any]) -> 
 
 
 def _attempt_scores(state: Mapping[str, Any], data: Any, last: Mapping[str, Any]) -> dict[str, Any]:
-    """Adherence for every extraction attempt, plus its own scoring block when ground truth exists (§4.2)."""
+    """Score one extraction attempt when possible (§4.2).
+
+    Compute adherence and, when ground truth is truthy, add scoring. On an
+    error, log it and return ``adherence=None``.
+    """
     try:
         from graph.scoring_nodes import adherence_for, score_document_block
 
@@ -148,6 +152,7 @@ def attempts_from_trace(trace: list[dict], state: Mapping[str, Any] | None = Non
     judge pass and its arbiter) are one attempt. ``trigger`` comes from what ran
     before it: ``initial`` for a stage's first attempt, ``retry`` for a retry
     node, ``arbiter_rescue`` after an arbiter, ``resume`` after a human review.
+    If an attempt id reappears later, the new sub-row gets a numeric suffix.
     """
     state = state or {}
     groups: list[tuple[str, list[dict], dict | None]] = []
@@ -295,7 +300,12 @@ def build_row(
     metrics: Mapping[str, Any] | None = None,
     terminal_node: str | None = None,
 ) -> TerminalRow:
-    """The row for a document that reached a terminal node. ``detail`` keys are exactly ``ROW_DETAIL_KEYS``."""
+    """Build a terminal row with exactly ``ROW_DETAIL_KEYS`` in ``detail``.
+
+    ``terminal_node`` is appended to ``nodes_visited`` when it is not already
+    the last trace node; ``refs.file_sha256`` falls back to the state value
+    when absent.
+    """
     from audit.trace import full_trace_enabled
 
     trace = [dict(v) for v in (state.get("audit_trace") or []) if isinstance(v, Mapping)]
@@ -352,6 +362,7 @@ def _attempts(trace: list[dict], state: Mapping[str, Any]) -> list[AttemptRow]:
 
 
 def _run(coro_fn):
+    """Run an async writer from synchronous code, using a thread if a loop is active."""
     import asyncio
 
     try:
@@ -373,7 +384,13 @@ def write_row(
     metrics: Mapping[str, Any] | None = None,
     terminal_node: str | None = None,
 ) -> WriteResult | None:
-    """Build and write the row; log and return ``None`` on any failure (the run itself succeeded)."""
+    """Build and commit a terminal row, or park it after write failures.
+
+    Return the committed ``WriteResult``; return ``None`` when the row is
+    skipped, cannot be built or written, or remains pending in a sink. These
+    failures are logged so they do not abort the completed pipeline run.
+    The manifest is marked with the commit or pending status when possible.
+    """
     doc_id = state.get("doc_id")
     if not doc_id:
         logger.warning("audit_row_skipped_no_doc_id", event_name=event)
@@ -398,7 +415,11 @@ _AUDIT_WRITTEN = {"written": True, "pending": "pending", "pending_partial": "pen
 
 
 def mark_manifest(doc_id: str, status: str, refs=()) -> None:
-    """Record on the manifest whether the row is committed or waiting in a sink (§5.6 step 2)."""
+    """Record the row's write status and sink refs on an existing manifest.
+
+    Missing manifests and load or save errors are ignored after logging the
+    latter; this best-effort update never raises (§5.6 step 2).
+    """
     try:
         from pipeline.bins import load_manifest, save_manifest
 

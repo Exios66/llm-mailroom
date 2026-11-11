@@ -32,6 +32,7 @@ def _record(detail: Mapping[str, Any], metrics: Mapping[str, Any]) -> dict[str, 
 
 
 async def records_from_db() -> list[dict[str, Any]]:
+    """Read unified rows and flatten their metrics and extraction model for reporting."""
     from audit.metrics import metrics_for
     from audit.readers import all_rows
 
@@ -74,6 +75,12 @@ def _cell(values: list[Any]) -> str:
 
 
 def build_report(records: list[Mapping[str, Any]]) -> str:
+    """Render per-schema Markdown tables from flat audit metric records.
+
+    Missing metrics read ``not collected``; types without an extraction schema
+    are listed in a separate section. Model routes use configured gateway
+    aliases, and numeric metrics are averaged over collected values only.
+    """
     from pipeline.config import get_extraction_schema_name
 
     modal = _modal_aliases()

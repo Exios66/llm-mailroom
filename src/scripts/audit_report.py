@@ -30,6 +30,10 @@ setup_logging()
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Render the audit report from the database or Parquet to stdout or a file.
+
+    Return 0 after writing; read and write errors propagate.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--parquet", type=Path, default=None,
                         help="read the audit_rows_<date>.parquet files in this directory instead of the DB")

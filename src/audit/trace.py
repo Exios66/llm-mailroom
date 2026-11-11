@@ -105,7 +105,7 @@ def append_visits(left: list | None, right: list | None) -> list:
 
 
 def full_trace_enabled() -> bool:
-    """``MAILROOM_AUDIT_FULL_TRACE`` (wins when set) or taxonomy ``audit.full_trace``; default off."""
+    """Use a non-empty ``MAILROOM_AUDIT_FULL_TRACE`` override, then taxonomy; default off."""
     raw = os.environ.get("MAILROOM_AUDIT_FULL_TRACE")
     if raw is not None and raw.strip():
         return raw.strip().lower() in ("1", "true", "yes", "on")
@@ -213,7 +213,11 @@ def _outcome(status: str, update: dict) -> str:
 def visit(node: str, state: dict, update: dict, *, started_at, ended_at, status: str = "done",
           llm: LLMCallInfo | None = None, span_id: str | None = None, event: dict | None = None,
           full_trace: bool | None = None) -> dict:
-    """Build one §4.4 visit record. Fields the run did not collect are ``None``."""
+    """Build one §4.4 visit from the state after this node's update.
+
+    Store captured LLM I/O in active sinks when present; copy it into the
+    visit only in full-trace mode. Uncollected optional scalar fields are ``None``.
+    """
     from audit.sinks import record_io
 
     state = state or {}
@@ -284,7 +288,8 @@ def record_visit(event: str, *, actor: str = "pipeline", detail: dict | None = N
     """Attach an event to the running node's visit (``decision["audit_event"]``).
 
     Replaces the old per-stage audit rows: nothing is written to the audit DB.
-    Outside a traced node the note is dropped.
+    A later call in the same node replaces the earlier note. Outside a traced
+    node the note is dropped.
     """
     slot = _current_event.get()
     if slot is None:
@@ -294,7 +299,11 @@ def record_visit(event: str, *, actor: str = "pipeline", detail: dict | None = N
 
 
 def llm_info_since(start: int) -> LLMCallInfo | None:
-    """Combine the LLM calls recorded since index ``start`` of the run's usage list into one ``LLMCallInfo``."""
+    """Aggregate calls since ``start``, or return ``None`` when there are none.
+
+    Sum token counts and known costs, join captured I/O, and use the last
+    call's model and prompt version. Cost stays ``None`` if every cost is unknown.
+    """
     from pipeline.limits import call_cost_usd, run_calls
 
     calls = run_calls()[start:]

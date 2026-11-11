@@ -32,6 +32,7 @@ setup_logging()
 
 
 async def _run(args: argparse.Namespace) -> dict:
+    """Collect legacy and unified audit summaries, optionally joining catalog counts."""
     from storage.audit_log import analyze_audit_db
     from storage.db import ensure_schema
 
@@ -107,6 +108,7 @@ def _print_human(report: dict) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Print the audit summary; return 1 if any checked chain or unified check fails."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable JSON")
     ap.add_argument("--no-verify", action="store_true", help="skip hash-chain verification")

@@ -40,7 +40,7 @@ _probe_cache: dict[str, tuple[float, bool]] = {}
 
 
 def probe_cached(url: str) -> bool:
-    """``probe`` at most once a minute per endpoint, so a visit never waits on it twice."""
+    """Cache each endpoint's TCP probe result for up to one minute."""
     now = time.monotonic()
     hit = _probe_cache.get(url)
     if hit is not None and now - hit[0] < PROBE_TTL_S:
@@ -77,6 +77,7 @@ class PhoenixSink:
 
     @staticmethod
     def usable() -> bool:
+        """Require the SDK, enabled tracing, and a reachable allowed endpoint."""
         try:
             import opentelemetry.sdk.trace  # noqa: F401
         except Exception:

@@ -577,8 +577,8 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
        (messy / over-sorter-budget): TRIAGE (advisory read), CLEAN
        (structural repair, re-normalized), PREPARE (section map) — sliding
        windows, never truncated.
-    4. Write the processing manifest + catalog record + the ``ingested``
-       compliance audit event (A-1/A-7).
+    4. Write the processing manifest and catalog record, and note ``ingested``
+       on this node's audit visit with the file hash and size (A-1/A-7).
 
     The intake work product is what the sorter depends on: the advisory
     triage rides ``state.intake_prep`` and is fed to ``classify`` as a labeled
@@ -795,6 +795,12 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
 
 
 def classify_node(state: DocumentState) -> dict[str, Any]:
+    """Classify the document and note successful decisions on the audit visit.
+
+    Empty text and non-transient errors return a low-confidence review result;
+    transient provider errors return a retryable state without consuming a
+    classification attempt.
+    """
     doc_text = state.get("doc_text", "")
     if not doc_text or not doc_text.strip():
         logger.warning("empty_doc_text_classify", doc_id=state.get("doc_id"))
@@ -1919,6 +1925,12 @@ def _detect_conflict(state: dict, extracted_data: dict | None) -> tuple[bool, li
 
 
 def extract_node(state: DocumentState) -> dict[str, Any]:
+    """Dispatch to the document specialist and return its guarded extraction.
+
+    Successful attempts note the decision on the audit visit. Transient
+    provider errors return a retryable state without consuming an extraction
+    attempt; other specialist errors become parse-level failures for routing.
+    """
     doc_type = state.get("doc_type", "")
     doc_text = state.get("doc_text", "")
     doc_pages = state.get("doc_pages") or []
@@ -2278,8 +2290,8 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
 
     Bounded decisions only (accept_with_caveats / retry with fix-list up to
     ``arbiter_retry_max`` / human_review). Any arbiter failure escalates
-    fail-safe. Decisions are audited immediately and later copied onto the
-    terminal manifest (archive or review/failed).
+    fail-safe. Successful decisions are noted on this node's audit visit and
+    later copied onto the terminal manifest (archive or review/failed).
     """
     from agents.arbiter import ArbiterAgent
     from llm.retry import is_transient_error
@@ -2893,6 +2905,11 @@ def _finalize_human_rejection(
 
 
 def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
+    """Adjudicate with archived matter context and note the decision on the audit visit.
+
+    Transient provider errors return a retryable state; other adjudication
+    errors default to human review.
+    """
     from agents.boss import BossAgent
 
     boss = BossAgent()
@@ -3143,6 +3160,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     The manifest and catalog row carry any reviewer evidence from the state
     (``with_review_evidence``), so an approved or auto-accepted document keeps
     both reviewers' opinions and causes after it leaves the review bin.
+    Writes the terminal audit row and returns its metrics with the archived stage.
     """
     from pipeline.review_resolve import with_review_evidence
 
@@ -3262,7 +3280,11 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
 
 def _terminal_audit_row(state: dict, *, event: str, actor: str, terminal_node: str | None = None,
                         refs: dict | None = None) -> dict | None:
-    """Write the document's unified audit row; returns the row's ``metrics`` (best-effort, never raises)."""
+    """Write a terminal audit row and return its metrics, even if writing fails.
+
+    A metrics computation error is logged and returns ``None`` for the metrics;
+    row writing is best-effort.
+    """
     from audit.row import EVENT_STAGE, row_metrics, write_row
 
     try:
@@ -3531,6 +3553,7 @@ def _touch_heartbeat(state: dict) -> None:
 
 
 def build_graph(checkpointer=None):
+    """Compile the document graph with scoring before catalog write and audit rows at terminal nodes."""
     if checkpointer is None:
         checkpointer = _build_checkpointer()
 
@@ -3735,6 +3758,8 @@ def _finalize_aborted(
     returns a result dict that still carries doc/attempt fields so the run is
     scored (run_aborted=1) and visible in the catalog instead of stranding in
     processing/. ``failure_class`` distinguishes timeout vs auth vs I/O.
+    ``checkpoint`` supplies the last trace and decisions for the failed audit
+    row; abort outcome fields from ``initial_state`` take precedence.
     """
     from pipeline.bins import move_to_failed, save_manifest
     from schemas.manifest import DocumentManifest, PipelineStage
@@ -4065,7 +4090,8 @@ def _execute_run(
 
     ``invoke_input`` + ``thread_id`` resume a paused ``interrupt()`` via
     ``Command(resume=...)``. An interrupt pause is a successful review park,
-    not an aborted run.
+    not an aborted run. Terminal audit metrics are reused for emitted scores
+    when available, and scoring-block scores are emitted separately.
     """
     import os
     from pipeline import limits

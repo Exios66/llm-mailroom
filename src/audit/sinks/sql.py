@@ -91,6 +91,7 @@ class SqlSink:
     name = "sql"
 
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
+        """Upsert one visit's I/O in the audit database and return its visit id."""
         from storage.audit_log import AuditTraceIORecord
         from storage.db import async_session, ensure_schema
 
@@ -108,6 +109,7 @@ class SqlSink:
         return visit_id
 
     def fetch_io(self, ref: str) -> dict | None:
+        """Read stored I/O and its digest by visit id, or ``None`` if absent."""
         from sqlalchemy import select
 
         from storage.audit_log import AuditTraceIORecord
@@ -128,6 +130,7 @@ class SqlSink:
         return _run(read)
 
     def capture_pending(self, record: dict[str, Any]) -> str | None:
+        """Commit a pending record to the separate SQLite spool and return its reference."""
         ref = f"pend-{uuid.uuid4().hex}"
         with _spool() as conn:
             conn.execute(
@@ -138,6 +141,7 @@ class SqlSink:
         return ref
 
     def fetch_pending(self) -> list[dict]:
+        """Return spooled records with their references, oldest first; empty if no spool exists."""
         path = spool_path()
         if not path.exists():
             return []

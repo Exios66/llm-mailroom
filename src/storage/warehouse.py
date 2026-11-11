@@ -288,7 +288,10 @@ def unified_to_rows(full: dict[str, Any]) -> tuple[dict, list[dict], list[dict]]
 
 
 async def fetch_unified_rows(doc_ids: list[str]) -> list[dict[str, Any]]:
-    """``get_row`` for each id that has a unified row (none before the migration)."""
+    """Fetch unified rows for distinct IDs in request order, omitting missing rows.
+
+    Return an empty list if the audit migration is pending; other errors propagate.
+    """
     from audit.models import AuditMigrationPending
     from audit.writer import get_row
 
@@ -495,7 +498,15 @@ async def export_to_warehouse(
     since: datetime | None = None,
     full: bool = False,
 ) -> dict[str, Any]:
-    """Export terminal documents + audit rows into daily Parquet files."""
+    """Export terminal documents and their audit history to Parquet.
+
+    ``stamp`` selects the daily files and defaults to today's UTC date. With no
+    IDs or ``since``, the manifest watermark selects later updates; ``full``
+    clears the ``since`` filter. A nonempty export also records migrated legacy
+    history once. Return status and export counts, or a skipped status when
+    export is disabled. Database and write errors propagate, including a missing
+    pyarrow dependency when export is forced on.
+    """
     if not warehouse_export_enabled():
         return {"status": "skipped", "reason": "warehouse export disabled or pyarrow missing"}
 
