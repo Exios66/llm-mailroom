@@ -1137,11 +1137,23 @@ def artifacts(base_dir: Path) -> dict[str, Any]:
     else:
         result["catalog"] = None
 
-    # The audit chain lives in the same DB (`audit_log` table, hash-chained
-    # per doc_id) — not in flat files.
+    # The per-event audit chain lives in the same DB. After the explicit
+    # unified-audit migration the live event history is `audit_log_legacy`
+    # (`audit_log` then holds one unified row per document), so read the table
+    # the migration marker points at. Default (no marker) stays on `audit_log`.
     catalog_out = result["catalog"]
-    audit_table = catalog_out.get("audit_log") if isinstance(catalog_out, dict) else None
+    event_table = "audit_log"
+    if isinstance(catalog_out, dict):
+        meta = catalog_out.get("audit_meta") or {}
+        meta_columns = meta.get("columns", [])
+        if "key" in meta_columns:
+            key_at = meta_columns.index("key")
+            migrated = any(row[key_at] == "migration" for row in meta.get("rows", []))
+            if migrated and "audit_log_legacy" in catalog_out.get("tables", []):
+                event_table = "audit_log_legacy"
+    audit_table = catalog_out.get(event_table) if isinstance(catalog_out, dict) else None
     result["audit_chain"] = audit_table.get("rows", []) if isinstance(audit_table, dict) else []
+    result["audit_event_table"] = event_table
     return result
 
 
