@@ -200,10 +200,11 @@ def _build_into(out: Path, tmp: Path, db) -> int:
     if out.exists():
         out.unlink()
     dest = sqlite3.connect(out)
+    source = sqlite3.connect(src)
     try:
-        with sqlite3.connect(src) as source:
-            source.backup(dest)
+        source.backup(dest)
     finally:
+        source.close()
         dest.close()
     return written
 

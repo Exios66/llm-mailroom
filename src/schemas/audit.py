@@ -92,8 +92,8 @@ def build_audit_entry(
     return entry
 
 
-def verify_chain(entries: list[AuditLogEntry]) -> bool:
-    """Verify a chain. v2 entries are checked with the v2 algorithm (their
+def verify_legacy_chain(entries: list[AuditLogEntry]) -> bool:
+    """Verify one document's per-event chain. v2 entries are checked with the v2 algorithm (their
     prev_hash links make the v2 fields tamper-evident); v1 entries (matter_id
     or actor empty) fall back to the v1 algorithm so old rows stay valid."""
     if not entries:
@@ -116,3 +116,17 @@ def verify_chain(entries: list[AuditLogEntry]) -> bool:
         if entry.entry_hash != expected_hash:
             return False
     return True
+
+
+def verify_chain(entries: list[AuditLogEntry]) -> bool:
+    """Per-event chain check, kept under its old name for the per-event readers.
+
+    INTERIM ALIAS (removed when the readers move over, roadmap M11). It accepts
+    only per-event ``AuditLogEntry`` chains and dispatches them to
+    :func:`verify_legacy_chain`; unified rows, sub-rows and addenda are verified
+    by ``audit.verify.verify_audit_db``. Raise ``TypeError`` for any other shape.
+    """
+    entries = list(entries)
+    if any(not isinstance(e, AuditLogEntry) for e in entries):
+        raise TypeError("verify_chain takes AuditLogEntry chains; use audit.verify.verify_audit_db for unified rows")
+    return verify_legacy_chain(entries)

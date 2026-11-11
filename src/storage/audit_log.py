@@ -8,6 +8,17 @@ from .db import Base, acquire_write_lock, async_session, begin_read_snapshot, en
 logger = structlog.get_logger(__name__)
 
 
+def doc_lock_key(doc_id: str) -> str:
+    """The per-document write-lock key for the audit chains.
+
+    The ``audit_doc:`` prefix is the key the per-event writer already takes, so
+    the unified writers (terminal row addenda) and the per-event writer serialize
+    on the SAME lock for a document. It keeps a document named ``chain`` apart
+    from the global ``audit_log:chain`` key.
+    """
+    return f"audit_doc:{doc_id}"
+
+
 class AuditLogRecord(Base):
     """One hash-chained row per document (unified audit row, spec §4.1).
 
@@ -250,7 +261,7 @@ async def _write_audit_entry_once(entry) -> AuditLogRecord | AuditLegacyRecord:
         # Serialize the whole read-tail-then-append for this doc: without a
         # write lock, concurrent appenders read the same tail/max(seq) and
         # fork the chain (duplicate prev_hash and seq).
-        await acquire_write_lock(session, f"audit_doc:{entry.doc_id}")
+        await acquire_write_lock(session, doc_lock_key(entry.doc_id))
         # The shared chain gate taken above (Postgres) is held until commit
         # and already excludes the migration's exclusive lock. Taking that
         # same key exclusively here deadlocks concurrent writers: each holds

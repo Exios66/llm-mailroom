@@ -4,8 +4,10 @@
   tail by ``seq``, links the new row to it and inserts the row and its attempt
   sub-rows in one transaction. If the document already has a row it writes a
   ``resumed`` addendum instead.
-* ``write_addendum`` takes the per-document ``audit_doc:<doc_id>`` lock and
-  appends to the document's addendum chain, which starts at the row's hash.
+* ``write_addendum`` takes the per-document ``doc_lock_key(doc_id)`` lock
+  (``audit_doc:<doc_id>``, kept apart from the global ``audit_log:chain`` key
+  even for a document named ``chain``) and appends to the document's addendum
+  chain, which starts at the row's hash.
 
 Every hash is hash version 2 (``schemas.audit.compute_audit_hash``),
 byte-identical with the dojo's ``archive_entry_hash``. The dojo's
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import copy
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -46,6 +48,7 @@ from storage.audit_log import (
     AuditAttemptRecord,
     AuditLogRecord,
     AuditMetaRecord,
+    doc_lock_key,
 )
 from storage.db import (
     acquire_write_lock,
@@ -67,6 +70,7 @@ MAX_ATTEMPTS = 5
 def _utc(ts: datetime | str | None) -> datetime | None:
     """Normalize to UTC, treating naive values as UTC and preserving ``None``.
 
+    The empty string (the stored unknown-start shape) normalizes like ``None``.
     Raise ``ValueError`` if a string is not a valid ISO datetime.
     """
     if ts is None or ts == "":
@@ -285,13 +289,20 @@ def _is_retryable(exc: IntegrityError) -> bool:
 # ---------------------------------------------------------------- writers
 
 
-async def write_terminal_row(row: TerminalRow) -> WriteResult:
+async def write_terminal_row(
+    row: TerminalRow, *, entry_id: str | None = None, recovered_from: dict[str, Any] | None = None
+) -> WriteResult:
     """Commit a terminal row and its attempts, returning its entry id, hash, and sequence.
 
     A new row joins the global chain and creates a minimal catalog document
     if needed. Its ``detail.attempts`` is replaced with attempt hash references.
     An existing row is preserved; the call writes a ``resumed`` addendum with
     the requested event in ``detail.event`` and returns its identity instead.
+
+    ``entry_id`` and ``recovered_from`` are for ``audit-reconcile`` (§5.6): the
+    row keeps the id its pending record was captured under, so its attempt
+    hashes and ``detail`` are the captured ones, and ``detail.recovered_from``
+    is added after the attempts are listed.
 
     Raise ``ValueError`` for an unknown event or invalid attempt timestamp,
     ``AuditMigrationPending`` if the migration marker is absent, and
@@ -316,16 +327,28 @@ async def write_terminal_row(row: TerminalRow) -> WriteResult:
     # attempt, so every retry re-reads the chain tail.
     return await run_write_with_retry(
         lambda: _write_terminal_row_once(
-            row, detail=snapshot_detail, attempts=snapshot_attempts
+            row,
+            detail=snapshot_detail,
+            attempts=snapshot_attempts,
+            entry_id=entry_id,
+            recovered_from=_snapshot_detail(recovered_from) if recovered_from is not None else None,
         ),
         attempts=MAX_ATTEMPTS,
     )
 
 
 async def _write_terminal_row_once(
-    row: TerminalRow, *, detail: dict[str, Any], attempts: list[AttemptRow]
+    row: TerminalRow,
+    *,
+    detail: dict[str, Any],
+    attempts: list[AttemptRow],
+    entry_id: str | None = None,
+    recovered_from: dict[str, Any] | None = None,
 ) -> WriteResult:
     """One bounded transaction attempt loop for a new terminal row."""
+    # A reconcile write keeps the entry id its pending record was captured
+    # under; an ordinary write mints a fresh one.
+    preset_id = entry_id
     for attempt in range(1, MAX_ATTEMPTS + 1):
         async with async_session() as session:
             try:
@@ -351,13 +374,18 @@ async def _write_terminal_row_once(
                 tail = await _read_tail(session)
                 seq = (tail.seq if tail else 0) + 1
                 prev_hash = tail.entry_hash if tail else ""
-                entry_id = _new_id("row")
+                entry_id = preset_id or _new_id("row")
                 timestamp = datetime.now(timezone.utc)
                 subs, listed = _build_sub_rows(
                     attempts, parent_id=entry_id, doc_id=row.doc_id,
                     matter_id=row.matter_id, actor=row.actor,
                 )
                 row_detail = {**detail, "attempts": listed}
+                if recovered_from is not None:
+                    # Added after the attempts are listed, so the recovered
+                    # row's hash covers exactly what the pending record held
+                    # plus this provenance block.
+                    row_detail["recovered_from"] = copy.deepcopy(recovered_from)
                 entry_hash = hash_entry(
                     prev_hash=prev_hash, doc_id=row.doc_id, entry_id=entry_id, event=row.event,
                     detail=row_detail, matter_id=row.matter_id, actor=row.actor, timestamp=timestamp,
@@ -464,7 +492,7 @@ async def _write_addendum_once(
                 # Both live INSIDE the try so a lock failure rolls the session
                 # back and reaches the retry wrapper.
                 await _take_migration_gate(session)
-                await acquire_write_lock(session, f"audit_doc:{add.doc_id}")
+                await acquire_write_lock(session, doc_lock_key(add.doc_id))
                 await _require_migrated(session)
                 row = await _existing_row(session, add.doc_id)
                 if row is None:
@@ -607,3 +635,120 @@ async def get_row(doc_id: str) -> dict[str, Any] | None:
             for a in adds
         ],
     }
+
+
+# ---------------------------------------------------------------- write-failure fallback (§5.6)
+
+#: Attempts to commit a terminal row before it is parked in the sinks, and the waits between them.
+COMMIT_ATTEMPTS = 3
+RETRY_DELAYS_S = (0.1, 0.3)
+
+
+@dataclass(frozen=True)
+class CommitOutcome:
+    """How a terminal row ended: ``written``, ``pending``, ``pending_partial`` or ``gap``."""
+
+    status: str
+    result: WriteResult | None = None
+    refs: tuple[dict[str, Any], ...] = ()
+
+
+def _prepare(row: TerminalRow, entry_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The row's ``detail`` and sub-rows exactly as ``write_terminal_row`` would store them under ``entry_id``."""
+    records, listed = _build_sub_rows(
+        row.attempts, parent_id=entry_id, doc_id=row.doc_id, matter_id=row.matter_id, actor=row.actor,
+    )
+    subs = [_sub_row_dict(rec) for rec in records]
+    return {**copy.deepcopy(row.detail), "attempts": listed}, subs
+
+
+def pending_record(row: TerminalRow, *, entry_id: str | None = None) -> dict[str, Any]:
+    """The complete pending record of §5.6 step 1, captured under a fixed ``entry_id``.
+
+    ``detail`` is the stored form (``detail.attempts`` lists the sub-row hashes),
+    so ``detail_sha256`` is what the verifier recomputes on the recovered row.
+    """
+    from audit.digests import detail_sha256
+
+    entry_id = entry_id or _new_id("row")
+    detail, subs = _prepare(row, entry_id)
+    return {
+        "entry_id": entry_id, "doc_id": row.doc_id, "matter_id": row.matter_id, "event": row.event,
+        "actor": row.actor, "detail": detail, "sub_rows": subs,
+        "sub_row_hashes": [s["entry_hash"] for s in subs], "detail_sha256": detail_sha256(detail),
+        "captured_at": datetime.now(timezone.utc).isoformat(), "complete": True,
+    }
+
+
+def _decisions_view(visits: Any) -> list[dict[str, Any]]:
+    keep = ("visit_id", "node", "attempt_id", "status", "outcome", "decisions")
+    return [{k: v.get(k) for k in keep} for v in visits or [] if isinstance(v, dict)]
+
+
+def decisions_only_record(row: TerminalRow, full: dict[str, Any]) -> dict[str, Any]:
+    """The decisions-only copy for a sink whose limit the full record exceeds (§5.6 step 1).
+
+    The trace keeps each visit's identity and ``decisions``; sub-rows keep their
+    nodes and decisions; extraction data, I/O and scoring detail are dropped. It
+    carries its own ``detail_sha256`` and the full record's as ``full_detail_sha256``.
+    """
+    from audit.digests import detail_sha256
+
+    detail = copy.deepcopy(row.detail)
+    detail["trace"] = _decisions_view(detail.get("trace"))
+    detail["extraction"] = None
+    detail["scoring"] = None
+    attempts = [
+        AttemptRow(
+            attempt_id=a.attempt_id, stage=a.stage, attempt_no=a.attempt_no, trigger=a.trigger,
+            outcome=a.outcome, started_at=a.started_at, ended_at=a.ended_at,
+            detail={"nodes": (a.detail or {}).get("nodes"), "decisions": (a.detail or {}).get("decisions")},
+        )
+        for a in row.attempts
+    ]
+    small = TerminalRow(doc_id=row.doc_id, matter_id=row.matter_id, event=row.event, actor=row.actor,
+                        detail=detail, attempts=attempts)
+    stored, subs = _prepare(small, full["entry_id"])
+    return {
+        **{k: full[k] for k in ("entry_id", "doc_id", "matter_id", "event", "actor", "captured_at")},
+        "detail": stored, "sub_rows": subs, "sub_row_hashes": [s["entry_hash"] for s in subs],
+        "detail_sha256": detail_sha256(stored), "complete": False,
+        "full_detail_sha256": full["detail_sha256"],
+    }
+
+
+async def commit_or_park(row: TerminalRow) -> CommitOutcome:
+    """Commit the row; after ``COMMIT_ATTEMPTS`` failures hand it to the trace sinks (§5.6).
+
+    ``AuditMigrationPending`` counts as a failure, so the record waits for
+    ``audit-reconcile`` after the migration. Never raises for a write failure:
+    the run that produced the row still succeeds.
+    """
+    import asyncio
+
+    from audit import sinks
+
+    error: BaseException | None = None
+    for attempt in range(1, COMMIT_ATTEMPTS + 1):
+        try:
+            return CommitOutcome("written", await write_terminal_row(row))
+        except ValueError:
+            raise  # a malformed row is a bug, not a write failure
+        except Exception as exc:  # noqa: BLE001 - any failure to commit takes the fallback
+            error = exc
+            logger.warning("audit_row_commit_failed", doc_id=row.doc_id, attempt=attempt,
+                           error=f"{type(exc).__name__}: {exc}")
+            if attempt < COMMIT_ATTEMPTS:
+                await asyncio.sleep(RETRY_DELAYS_S[min(attempt - 1, len(RETRY_DELAYS_S) - 1)])
+    full = pending_record(row)
+    refs = tuple(sinks.capture_pending(full, partial=lambda: decisions_only_record(row, full)))
+    detail = {"doc_id": row.doc_id, "event_name": row.event, "refs": list(refs),
+              "error": f"{type(error).__name__}: {error}" if error else None}
+    if any(r["complete"] for r in refs):
+        logger.info("audit_pending", **detail)
+        return CommitOutcome("pending", refs=refs)
+    if refs:
+        logger.warning("audit_pending_partial", **detail)
+        return CommitOutcome("pending_partial", refs=refs)
+    logger.error("audit_gap", **detail)
+    return CommitOutcome("gap")
