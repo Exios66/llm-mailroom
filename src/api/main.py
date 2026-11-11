@@ -94,6 +94,10 @@ def _embed_watcher_running() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Start the optional embedded watcher and stop it when the app shuts down.
+
+    A held watcher lock skips watcher startup; watcher stop errors are logged.
+    """
     global _embedded_watcher
     _ensure_dirs()
     from audit.sinks.sql import warn_if_ephemeral
@@ -1218,7 +1222,11 @@ async def get_matter(matter_id: str):
 
 @app.get("/audit/{doc_id}", dependencies=[Depends(_require_token)])
 async def get_audit_trail(doc_id: str):
-    """One document's unified row, sub-rows and addenda, with its legacy chain beside them (spec §7)."""
+    """Return a document's unified audit entries and legacy chain (spec §7).
+
+    An unknown document has empty unified entries. Invalid IDs raise HTTP 400;
+    failures reading the audit view become HTTP 500.
+    """
     _validate_doc_id(doc_id)
     try:
         from audit.readers import doc_view

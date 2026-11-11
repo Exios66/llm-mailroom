@@ -35,6 +35,10 @@ setup_logging()
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Reconcile pending records and print a report; return 1 on a hash mismatch.
+
+    ``--dry-run`` reports without writing or removing pending records.
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dry-run", action="store_true", help="report only; write nothing and keep the spool")
     parser.add_argument("--json", action="store_true", help="print the report as JSON")

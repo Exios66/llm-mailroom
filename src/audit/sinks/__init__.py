@@ -36,7 +36,7 @@ class TraceSink(Protocol):
         """Store one visit's I/O; return a reference to it, or ``None`` when not stored."""
 
     def capture_pending(self, record: dict) -> str | None:
-        """Keep a row that could not be committed (§5.6); return a reference."""
+        """Keep an uncommitted row (§5.6); return its reference or ``None`` if not stored."""
 
     def fetch_pending(self) -> list[dict]:
         """The pending rows this sink holds (empty for write-only sinks)."""
@@ -81,7 +81,11 @@ def _builtin(name: str) -> TraceSink | None:
 
 
 def active_sinks() -> list[TraceSink]:
-    """The sinks in use now, ``sql`` first. Read from the environment on every call."""
+    """Load available sinks, with ``sql`` first when available.
+
+    Read the environment on each call; skip unusable built-ins and log load
+    failures or invalid entry points.
+    """
     requested = _requested()
     sinks: list[TraceSink] = []
     for name in ("sql", "phoenix", *[n for n in OPT_IN if n in requested]):
@@ -117,7 +121,9 @@ def record_io(
 ) -> tuple[str | None, str, list[str]]:
     """Hand one visit's prompt and completion to every active sink.
 
-    Returns ``(first sink that accepted it or None, io_sha256, the other sinks that accepted it)``.
+    Sink failures are logged and skipped. Return the first accepting sink, the
+    I/O digest, and the other accepting sinks; the digest is returned even if
+    no sink accepts the payload.
     """
     accepted: list[str] = []
     for sink in active_sinks():
@@ -141,7 +147,8 @@ def capture_pending(record: dict[str, Any], *, partial=None) -> list[dict[str, A
 
     A sink with ``max_payload_bytes`` smaller than the record gets the
     decisions-only copy that ``partial()`` builds (marked ``complete: false``).
-    Returns ``[{"sink", "ref", "complete"}]`` for each sink that kept a copy.
+    Skip sinks that reject either payload or raise while storing it. Return
+    ``[{"sink", "ref", "complete"}]`` for each sink that kept a copy.
     """
     kept: list[dict[str, Any]] = []
     small: dict[str, Any] | None = None

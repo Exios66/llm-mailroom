@@ -1335,6 +1335,11 @@ class Watcher:
         self._relations_sweeper = None
 
     def start(self):
+        """Start inbox processing and embedded workers under the watcher lock.
+
+        Warn about ephemeral audit storage before acquiring the lock; release
+        startup resources if a later step fails.
+        """
         global _watcher_owned, _STATUS_STARTED_AT
         from datetime import datetime, timezone
 

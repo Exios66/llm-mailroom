@@ -91,6 +91,7 @@ def score_document_block(state_like: Mapping[str, Any], *, adherence: dict | Non
     """Score one document from its final state (or a stored row, for the rescore CLI).
 
     Returns ``{"scoring": <score_archive_block output + scored_payload>, "extraction_adherence": ...}``.
+    Reuses supplied adherence; scoring errors propagate to the caller.
     """
     from llm_dojo_scoring import score_archive_block
     from observability.extraction_gt import scoring_ground_truth
@@ -113,7 +114,7 @@ def score_document_block(state_like: Mapping[str, Any], *, adherence: dict | Non
 
 
 def score_common_node(state: dict) -> dict[str, Any]:
-    """Tier 0 for every document; records which scorer the route picks."""
+    """Run tier 0 and record the chosen scorer, or an error if adherence fails."""
     route = scorer_for(state.get("doc_type"))
     try:
         adherence = adherence_for(state)
@@ -128,6 +129,7 @@ def score_common_node(state: dict) -> dict[str, Any]:
 
 
 def _make_type_node(scorer: str):
+    """Build a scorer node that records scoring failures without failing the document."""
     def node(state: dict) -> dict[str, Any]:
         try:
             return score_document_block(state, adherence=state.get("extraction_adherence"))

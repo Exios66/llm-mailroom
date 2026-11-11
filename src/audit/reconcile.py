@@ -32,6 +32,7 @@ class ReconcileReport:
     docs: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
+        """Return the counters, dry-run flag and per-document actions as a dict."""
         return {k: getattr(self, k) for k in ("recovered", "partial", "gap_closed", "skipped_existing",
                                                "rejected_hash", "dry_run", "docs")}
 
@@ -59,7 +60,7 @@ def _attempts(record: dict[str, Any]):
 
 
 def hash_ok(record: dict[str, Any]) -> bool:
-    """The record's ``detail`` and sub-rows still hash to what was captured."""
+    """Check the captured detail and sub-row hashes; reject malformed records."""
     from audit.digests import detail_sha256
     from audit.writer import _build_sub_rows
 
@@ -120,7 +121,13 @@ def _row_of(rec: dict[str, Any]):
 
 
 async def reconcile(*, dry_run: bool = False) -> ReconcileReport:
-    """Write every waiting row once; see the module docstring for the rules."""
+    """Reconcile valid pending sink records and report the action for each document.
+
+    Prefer a complete copy; a partial row is supplemented by a matching complete
+    copy in a later run. ``dry_run`` counts proposed actions without writing rows,
+    addenda or manifests or dropping sink copies. Read and write errors from the
+    audit database propagate; sink fetch and drop failures are logged.
+    """
     from audit.models import Addendum
     from audit.row import mark_manifest
     from audit.writer import get_row, write_addendum, write_terminal_row

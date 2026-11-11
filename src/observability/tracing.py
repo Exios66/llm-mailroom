@@ -222,19 +222,23 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
     backend is ``flush()``ed so The-Mailroom's live floor can move the
     envelope on the next poll tick instead of waiting for
     ``LANGFUSE_FLUSH_INTERVAL`` or process exit.
+
+    For dict results, appends an audit visit with timing, LLM usage, and any
+    event recorded by the node. Visit construction failures are logged without
+    changing the node result; exceptions from the node still propagate.
     """
 
     obs_type = as_type or observation_type_for(name)
 
     def deco(fn):
-        """Wrap ``fn`` so each call opens the ``name`` observation."""
+        """Wrap ``fn`` with the observation and audit-visit capture."""
 
         from audit.trace import node_name
 
         node = node_name(fn)
 
         def run(state):
-            """Call ``fn`` and return ``(result, visit)``; the visit is ``None`` for a non-dict result."""
+            """Call ``fn`` and return its result and visit, if one can be built."""
             from audit import trace
 
             started = datetime.now(timezone.utc)
@@ -257,6 +261,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
             return result, visit
 
         def with_visit(state, result, visit, span=None):
+            """Add the visit to a dict update, flagging a non-intake run with no prior trace."""
             if visit is None:
                 return result
             if span is not None and visit.get("span_id") is None:

@@ -61,6 +61,7 @@ def set_run_started(started_at: float | None) -> None:
 
 
 def get_run_started() -> float | None:
+    """Return the current run's wall-clock start, or ``None`` before it is set."""
     return _run_started.get()
 
 
@@ -79,7 +80,7 @@ def record_usage(
     prompt_version: str | int | None = None,
 ) -> None:
     """Append an OpenAI-compatible usage object to the current run's
-    accumulator. Tolerates mocks and odd shapes: only real int counts count.
+    accumulator. Tolerates mocks and odd shapes: only integer counts are kept.
 
     Accepts SDK ``CompletionUsage`` objects (``usage.prompt_tokens``) and
     LangChain ``usage_metadata`` dicts (``usage["input_tokens"]`` /
@@ -118,7 +119,7 @@ def record_usage(
 
 
 def run_calls() -> list[dict]:
-    """The current run's recorded LLM calls, oldest first (read-only view for the audit trace)."""
+    """Return the current run's mutable LLM-call accumulator, oldest first."""
     return _run_usage.get()
 
 

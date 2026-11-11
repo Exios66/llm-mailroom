@@ -83,7 +83,7 @@ async def doc_valid(doc_id: str) -> bool:
     hash, each addendum's hash and its link to the row/per-document chain, every
     sub-row's hash under its own parent's matter id and actor, and the parent's
     ``detail.attempts`` membership (each sub-row listed exactly once with its
-    stored hash).
+    stored hash). Database read errors propagate.
     """
     from sqlalchemy import select
 
@@ -169,7 +169,12 @@ async def doc_valid(doc_id: str) -> bool:
 
 
 async def doc_view(doc_id: str) -> dict[str, Any]:
-    """``GET /audit/{doc_id}`` (spec §7). A document with no row has empty ``entries``."""
+    """Build the ``GET /audit/{doc_id}`` view (spec §7).
+
+    With no unified row, ``entries`` is empty and ``chain_valid`` is ``True``;
+    the legacy chain and any pending or warehouse references are still read.
+    Only a pending audit migration is treated as an absent unified row.
+    """
     from audit.models import AuditMigrationPending
     from audit.writer import get_row
 
@@ -235,7 +240,12 @@ def _pending_count() -> int:
 
 
 async def unified_summary(*, verify: bool = True) -> dict[str, Any]:
-    """The unified-row part of ``GET /audit`` (spec §7)."""
+    """Summarize unified rows for ``GET /audit`` (spec §7).
+
+    Rates use the number of rows as their denominator and are ``None`` when
+    there are no rows. ``verify=False`` leaves ``checks`` as ``None``; otherwise
+    the full audit verifier supplies the section results.
+    """
     from audit.metrics import metrics_for
 
     rows = await all_rows()
