@@ -10,11 +10,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.auth import _require_token
 
 from . import __version__
+from .audit import (
+    DEFAULT_LIST_LIMIT,
+    MAX_LIST_LIMIT,
+    document_audit,
+    list_documents,
+    valid_doc_id,
+)
 from .checks import run_checks
 from .models import SNAPSHOT_SCHEMA_VERSION
 from .runs import list_experiments, list_runs, load_experiment, load_run
@@ -43,11 +50,18 @@ def capabilities() -> dict[str, Any]:
             "running_worker_snapshot": False,
             "runs": True,
             "experiments": True,
+            "audit": True,
             "live_events": False,
             "replay": "cli",
             "calibration": False,
             "bundles": False,
             "ui": "optional-not-built-in-this-slice",
+        },
+        "audit": {
+            "read_only": True,
+            "schema_modes": ["event-chain", "unified-row"],
+            "verifies": ["audit chain", "terminal row", "attempts", "addenda", "migrated legacy"],
+            "truncated_reads_verified": False,
         },
         "mount": MOUNT,
         "docs": "tools/pipeline-diagnostics/QUICKSTART.md",
@@ -105,3 +119,24 @@ def get_experiment(experiment_id: str) -> dict[str, Any]:
     if payload is None:
         raise HTTPException(404, "experiment not found")
     return payload
+
+
+@router.get("/audit/documents")
+def get_audit_documents(
+    limit: int = Query(DEFAULT_LIST_LIMIT, ge=1, le=MAX_LIST_LIMIT),
+    offset: int = Query(0, ge=0, le=100_000),
+) -> dict[str, Any]:
+    """Bounded document ids from the audit store (no raw audit detail).
+
+    An absent store is reported in ``store`` with a safe reason code; it is
+    never created and its path is never echoed.
+    """
+    return list_documents(limit=limit, offset=offset)
+
+
+@router.get("/audit/documents/{doc_id}")
+def get_audit_document(doc_id: str) -> dict[str, Any]:
+    """One document's audit record, verification verdict and redacted view."""
+    if not valid_doc_id(doc_id):
+        raise HTTPException(422, "invalid document id")
+    return document_audit(doc_id)
