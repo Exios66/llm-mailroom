@@ -2,15 +2,17 @@
 
 The native workbench must diagnose **today's code**, then add capabilities as staged work lands. It must not require unmerged code to launch or pretend unsupported evidence is available.
 
-This document describes the target compatibility contract. The first D0a snapshot/check CLI works against current-main compiled wiring and contract artifacts; the HTTP/React/live/replay workbench remains planned. Runnable commands and their scope are in [QUICKSTART.md](QUICKSTART.md).
+This document is the **historical compatibility target** recorded for the staged work; the revision matrix below describes inspected heads, not the current tree. For what runs today, use [QUICKSTART.md](QUICKSTART.md).
+
+**Current state (2026-11-09):** PR 203 and PR 215 are merged on `main` (`1b9477c`); this diagnostics branch is merged up to that revision. PR 204 remains held and is **not** part of the current tree. Do not describe the older inspected heads below as current.
 
 ## Revision matrix
 
 | Revision under diagnosis | Existing inputs | Native tool support to implement | Honest limitation |
 | --- | --- | --- | --- |
-| Current inspected main, `35ca9a4` | Compiled graph/exporter, taxonomy, routing functions, existing mock fixtures and audit/status APIs | Topology/source inspection, isolated router scenarios, gap witnesses and bundles; exact events after D2 hooks | No assumption that RunRecord, policy replay or new human-applied report-tail routes exist |
-| PR 203 staged head, inspected `bee18cb0` | Adds RunRecord, replay/calibration/hillclimb/stress outputs and review-tail paths | Adapt actual schemas, show new connections, consume evidence and run isolated policy comparisons | Some branches remain unobserved; staged schemas can change before merge |
-| PR 203 plus PR 204 candidate, inspected PR 204 head `719f3816` | Changes field-less-window confidence merge; topology can stay identical | Implementation/merge comparison using compatible per-window observations and trusted revision-specific code | Aggregate confidence records cannot reconstruct missing window evidence; real-quality acceptance remains gated |
+| Historical inspected main, `35ca9a4` (not current) | Compiled graph/exporter, taxonomy, routing functions, existing mock fixtures and audit/status APIs | Topology/source inspection, isolated router scenarios, gap witnesses and bundles; exact events after D2 hooks | No assumption that RunRecord, policy replay or new human-applied report-tail routes exist |
+| PR 203 staged head at inspection, `bee18cb0` (now merged as `main` `1b9477c`; SHA kept for evidence history) | Adds RunRecord, replay/calibration/hillclimb/stress outputs and review-tail paths | Adapt actual schemas, show new connections, consume evidence and run isolated policy comparisons | Some branches remain unobserved; staged schemas can change before merge |
+| PR 203 plus PR 204 candidate, inspected PR 204 head `719f3816` (PR 204 still held) | Changes field-less-window confidence merge; topology can stay identical | Implementation/merge comparison using compatible per-window observations and trusted revision-specific code | Aggregate confidence records cannot reconstruct missing window evidence; real-quality acceptance remains gated |
 
 SHAs identify inspected inputs, not a permanent promise about branch contents. Refresh exact revisions and capabilities before generating evidence. PR 204 is stacked on the PR 203 branch; show any additional baseline drift rather than attributing all differences to the merge change.
 
@@ -45,9 +47,33 @@ Missing intended behavior requires a declared expectation, issue or failing scen
 
 Generate and validate trusted revision artifacts in separate prepared checkouts. Import their data into the workbench; do not automatically execute arbitrary PR code or switch the user's active checkout. Refresh the matrix against merged main when staged work lands.
 
-## Landing with the incoming PRs
+## Audit store compatibility
 
-Refresh PR heads before every landing check. The latest inspected PR 203 is `bee18cb0ba550c0d20043a5a04ac0814012d0454`; PR 204 remains `719f3816ca08f3079531d56130dcdbc5159af573`. The original `d18851fa` inspection is historical.
+The audit viewer reads two shapes and never assumes the roadmap writers finished:
+
+| Store shape | How it is recognized | What is verified | Honest limitation |
+| --- | --- | --- | --- |
+| Per-event chain (today) | `audit_log` without a unique `doc_id` index and no migration marker | Every row's v2 hash and the per-document `prev_hash` links, via `schemas.audit.verify_chain` | Many rows per document; no attempt sub-rows or addenda exist to verify |
+| Unified row (foundation M2/M3) | `audit_meta` holds the migration marker, or `audit_log.doc_id` carries a unique index | Terminal row hash, its immediate predecessor link and `seq` continuity, each addendum hash + contiguous per-document `seq`/chain, and every attempt sub-row/reference exactly once through `audit.writer.attempt_hash` | Missing foundation writer package leaves attempt sub-rows `unverified`; the viewer never reimplements that hashing rule. This is a per-document scope, not a proof of the whole database chain |
+| Migrated legacy section | `audit_log_legacy` present | The preserved per-document chains with `verify_chain` | Reported as a separate `legacy` section, never merged into the terminal row |
+| No store / no schema / unreadable / no sync Postgres driver | File or table probe | Nothing | `unavailable` with a safe reason code; no path, URL or credential is returned |
+
+Auxiliary table presence is not a shape signal: the foundation's `ensure_schema` creates `audit_attempts`/`audit_addenda`/`audit_meta` even while the migration is pending and `audit_log` still holds per-event rows. The migration marker (or a unique `doc_id` index) is authoritative; otherwise the store is read as an event chain.
+
+All reads for one document run inside a single read-only snapshot (explicit SQLite `BEGIN`, Postgres `REPEATABLE READ`). A bounded read that is truncated is reported as `unverified`, never `verified`. Truncation never invents a failure: when the addenda section is cut short, an attempt whose parent lies in the unread part is unverified rather than an orphan, while a hash mismatch observed on a read row still fails. A marker that explicitly says `migrated: false` is ambiguous (the reader fails closed, it does not treat the store as unified). More than one terminal `audit_log` row for a document is `failed` with `duplicate-terminal-row`, because a marker-only store may lack the unique `doc_id` index; the detail read fetches two rows and the listing reports a counted `entries`, not an assumed `1`. The viewer does not create, migrate or initialize the storage schema. Startup migration is off on both SQLite and Postgres unless `MAILROOM_AUDIT_MIGRATE=1` is explicitly set. The deliberate `python -m storage.audit_migrate` CLI bypasses that knob on SQLite; Postgres always requires it. Opening the viewer requires neither migration nor this flag.
+
+The document listing is bounded in *output* (`limit`/`offset`), not in scan work: it paginates a `GROUP BY doc_id` over the union of `audit_log` and `audit_log_legacy`, so a large store may scan/aggregate both tables per page.
+
+**Verification scope.** This is deliberately narrower than the offline `audit.verify.verify_audit_db()` verifier, which walks the whole store. The HTTP viewer verifies one document: the row's hash, the link to its **immediate predecessor**, `seq` continuity, the addenda chain and every attempt sub-row/reference. It does not prove the rest of the global chain, so its verdict must not be described as a whole-database proof. No document-scoped verifier is imported or probed; the offline verifier remains the whole-store tool and is free to initialize/migrate explicitly.
+
+**Integration needs:**
+
+- `audit.writer.hash_entry(*, prev_hash, doc_id, entry_id, event, detail, matter_id, actor, timestamp)` / `attempt_hash(sub, *, matter_id=..., actor=...)` must remain importable without schema initialization, so a read-only consumer can recompute hashes exactly (no duplicated hashing rules). `hash_entry` takes keyword fields, not a row object.
+- No read path may require `ensure_schema()`/migration; the viewer constructs its own read-only engine.
+
+## Landing with the incoming PRs (historical inspection notes)
+
+**Historical.** These notes describe the pre-merge inspection of PR 203 (`bee18cb0`) and PR 204 (`719f3816`). PR 203 landed on `main` at `1b9477c`; PR 204 remains held. Refresh heads before any new landing check; do not present `bee18cb0` as the current 203 revision.
 
 1. Preserve the native feature branch. Prepare a disposable candidate from its exact commit and merge the trusted PR 203 head there; never switch a user's active checkout or run real-model collectors.
 2. Retain both PRs' `CHANGELOG.md` Unreleased entries if they conflict, then regenerate `docs/changelog/` with `sync_gitbook_changelog.py`. Generated pages must never be hand-merged. Initial preflight found only these three changelog-related conflicts, with no implementation conflicts.

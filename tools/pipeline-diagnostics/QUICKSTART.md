@@ -32,7 +32,7 @@ Install the parent from this checkout first. The tool does not depend on the unr
 
 Default inspection compiles the installed parent pipeline's graph in a fresh CLI interpreter, disables tracing and labels the result a **workspace preview**, not an active worker. Artifact mode reads the supplied bounded JSON without importing the graph; it records the artifact digest and does not claim the file matches running code. Keep stdout separate from stderr when capturing machine-readable JSON.
 
-`check` covers endpoint consistency and reachability from the declared entry only. Exit 0 means these checks found no structural findings; exit 1 means a structural finding with a witness; exit 2 means invalid input or a runtime failure. Exit 3 is reserved for future incomplete-evidence operations. An empty findings list is not proof of complete routing, correct guards or model quality.
+`check` covers endpoint consistency and reachability from the declared entry only. Exit 0 means these checks found no structural findings; exit 1 means a structural finding with a witness; exit 2 means invalid input or a runtime failure. Audit inspection uses exit 3 for unavailable, truncated or missing evidence; structural `check` currently emits only 0, 1 or 2. An empty findings list is not proof of complete routing, correct guards or model quality.
 
 For a file-backed preview that a long-lived client can read without compiling in-process:
 
@@ -102,7 +102,40 @@ MAILROOM_DIAGNOSTICS_STATIC=tools/pipeline-diagnostics/frontend/dist \
 
 To mount the same read-only routes on the normal producer API, set `MAILROOM_DIAGNOSTICS_MOUNT=1` before starting it. The mount is off by default; a missing nested package logs a warning and never fails API startup.
 
-### 5. Compare the canonical display contract
+### 5. Inspect and verify an audit record
+
+The audit routes are read-only and use the same authentication as every other diagnostics route. They read the configured storage URL (`DATABASE_URL`, else `<MAILROOM_BASE_DIR>/mailroom.db`) through a dedicated connection that only issues `SELECT`s inside one read-only snapshot. Reading never creates a database, initializes a schema or runs the migration.
+
+```bash
+# Bounded document listing (newest first) and one document's record
+curl -s 'http://127.0.0.1:8100/v1/diagnostics/audit/documents?limit=25'
+curl -s 'http://127.0.0.1:8100/v1/diagnostics/audit/documents/demo-contract-001'
+
+# Same semantics for agents; exit 0 verified, 1 failed, 2 invalid input,
+# 3 not-recorded/unavailable/unverified
+.venv/bin/mailroom-diagnostics audit demo-contract-001 --json
+.venv/bin/mailroom-diagnostics audit --list --json
+```
+
+The response distinguishes the record shape (`event-chain`, `unified-row`, migrated `legacy-events`, `not-recorded`, `unavailable`) from the verification verdict (`verified`, `failed`, `unverified`, `unavailable`, `not-recorded`). A truncated read is never called verified, and attempt sub-rows are only verified through the foundation's own hasher.
+
+Replace `demo-contract-001` with an ID from your listing. In the React screen, **Audit record** jumps to the panel. Select a recorded run to follow its document, or uncheck **Follow selected run document** for independent lookup. **Previous page** / **Next page** browse the listing; **Refresh audit and list** reloads the active record. Desktop keeps the graph alongside the inspector; mobile places the inspector and audit controls first.
+
+To see the screen's states without touching real data, seed a synthetic store in an explicit temporary directory:
+
+```bash
+# event-chain (today), or --schema unified for the optional row+attempts+addenda shape
+.venv/bin/python -m mailroom_diagnostics.seed_audit_demo --out /tmp/audit-demo --schema unified
+DATABASE_URL="sqlite+aiosqlite:////tmp/audit-demo/mailroom.db" \
+  .venv/bin/mailroom-diagnostics serve
+# then open /v1/diagnostics/audit/documents and .../demo-contract-001
+```
+
+The seeder refuses the configured mailroom base directory, a repository `data/` directory, a filesystem root, or an existing database without `--force`. All of its content is synthetic.
+
+**Scope note:** this is the diagnostics viewer/API layer only. The unified audit row's tables/migration/writers (foundation M2/M3, verification M4 and the later M5–M15 scoring/writer rollout) land in separate PRs; the viewer reads what exists and says so when it cannot verify. It never writes, migrates or initializes the audit store.
+
+### 6. Compare the canonical display contract
 
 ```bash
 PYTHONPATH=src OBSERVABILITY_PROVIDER=none .venv/bin/python src/scripts/export_contract.py --check
@@ -112,7 +145,7 @@ This checks the canonical export against `contract/mailroom-contract.json` witho
 
 This is topology inspection. It does not prove routing correctness, show every guard condition, or establish whether a rarely used edge is needed.
 
-### 6. Exercise native and existing routing fixtures
+### 7. Exercise native and existing routing fixtures
 
 ```bash
 .venv/bin/python -m pytest src/tests/test_routing.py src/tests/test_graph_contracts.py -q
@@ -122,7 +155,7 @@ This is topology inspection. It does not prove routing correctness, show every g
 
 Tests use mocked model clients. They do not require a paid model run. The first command exercises existing current-main scenarios, the second checks the native package/exporter/CI planner, and the third checks documentation. A passing finite fixture set is not proof that every possible route is correct. Results are reported separately with their actual exit codes.
 
-### 7. Resume the implementation sequence
+### 8. Resume the implementation sequence
 
 Read [PLAN.md](PLAN.md) for D0–D4 and follow the task IDs in [HANDOFF.md](HANDOFF.md). D0a starts inspection/checks; D0.3/D0.4 complete app/provenance/packaging work before D1's graph. D2 captures exact execution, D3 adds compatible calibration adapters, and D4 covers per-window comparison and delivery hardening.
 
@@ -131,7 +164,7 @@ Read [PLAN.md](PLAN.md) for D0–D4 and follow the task IDs in [HANDOFF.md](HAND
 1. Install the nested Python package from this folder into the repository venv (step 1).
 2. For the React screen, build `frontend/` with its committed lockfile, or use packaged assets. Node stays optional for end users.
 3. Optional: record real-document journals with the live-corpus smoke run (step 3).
-4. Run the standalone `serve` operation (step 4): inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
+4. Run the standalone `serve` operation (step 4) and inspect an audit record (step 5): inspection-only mode, no watcher, no Gmail/status effects, no trace-service connection.
 5. Open `/diagnostics`; the screen identifies the source as a workspace preview, lists unavailable capabilities explicitly, and loads recorded runs/experiments from `MAILROOM_BASE_DIR`.
 6. For an already-running pipeline, set `MAILROOM_DIAGNOSTICS_MOUNT=1` and mount the same read-only router on this repository's API.
 
