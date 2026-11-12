@@ -40,7 +40,7 @@ result = suite.score(expected_fields, predicted_fields)
 ci = dojo.bootstrap_ci([1.0, 0.0, 1.0, 1.0])
 ```
 
-Command-line tools: `dojo-analyze` (report on a results workbook), `dojo-export` (rebuild workbooks from an experiment log), `dojo-sync` (pull live runs from Langfuse or Phoenix).
+Command-line tool: `dojo-version` (release awareness). The workbook, report and trace-sync CLIs (`dojo-analyze`, `dojo-export`, `dojo-rescore`, `dojo-sync`) were removed in the production slim-down; re-score a stored run with `get_suite(...).score(...)`.
 
 ## Key modules
 
@@ -71,7 +71,6 @@ llm-mailroom pins it as a git dependency. When dojo publishes a release, a workf
 - [docs/GT_METADATA.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/GT_METADATA.md) — ground-truth parsing
 - [docs/MAUD_LABELS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/MAUD_LABELS.md) — MAUD answer classes
 - [docs/ARCHIVE_SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/ARCHIVE_SCORING.md) — archive scoring block
-- [docs/GRID_REPORTS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/GRID_REPORTS.md) — specialist grid reports for GPU studies
 - [docs/PROMPTS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/PROMPTS.md) — prompt catalog
 - [docs/MIGRATION.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/MIGRATION.md) — upgrading between versions
 - [CHANGELOG.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/CHANGELOG.md)
