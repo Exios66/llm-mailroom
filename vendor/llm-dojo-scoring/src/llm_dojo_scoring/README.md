@@ -8,7 +8,6 @@ llm_dojo_scoring/
 ├── __init__.py        public API re-exports (score_extraction, score_task, suites, …)
 ├── _layout.py         legacy flat import paths → subpackage modules
 ├── config.py          process-wide settings (LLM_DOJO_SCORING_CONFIG)
-├── cli.py             dojo-analyze / dojo-export / dojo-rescore / dojo-sync / dojo-version
 ├── prompts/           importable prompt catalog and frozen eval-environment lineage
 ├── schemas/           what the dataset rows mean
 ├── scoring/           deterministic scorers
@@ -22,7 +21,8 @@ llm_dojo_scoring/
 
 | Subpackage | Module | What it does |
 |:---|:---|:---|
-| **`schemas/`** | `corpus` | mailroom-dataset alignment: doc types, subclasses, extraction fields, the CMS source-table mapping |
+| **`schemas/`** | `doc_classes` | The one hand-edited registry of document classes, their extraction fields and field types; every other class/field table derives from it. Stdlib-only leaf |
+| | `corpus` | mailroom-dataset alignment: doc types, subclasses, extraction fields, the CMS source-table mapping |
 | | `gt_metadata` | Hub `gt_fields` / `gt_presence` parsing into scoring-ready fields |
 | | `intents` | Controlled `intent` vocabularies for the classes that carry one |
 | | `equivalences` | Subtype and doc-subclass normalization and equivalence |
@@ -42,7 +42,6 @@ llm_dojo_scoring/
 | | `agent_rubrics` | Dependency-free isolation-eval rubrics |
 | | `tasks` | `score_task`: task-aware scoring across the document hierarchy |
 | | `reviewer` | Reviewer-lane scorecard: class/subclass, risk bound, calibration, routing, verdicts, cost |
-| | `rescore` | Re-score stored predictions under the current scorer and report score moves |
 | | `suites` | Dedicated per-agent scoring suites: the API consumers call |
 | | `trace_knobs` | Confidence and reasoning captured as experimental knobs |
 | **`pipeline/`** | `mailroom` | The live llm-mailroom pipeline contract |
@@ -51,19 +50,18 @@ llm_dojo_scoring/
 | | `pipeline_scoring`, `pipeline_verdict` | Pipeline classification, lifecycle reports and verdict thresholds |
 | | `archive` | Archivist scoring block and the hash-chained `archived` audit row |
 | | `sandbox_scoring` | Sandbox MAUD/CUAD rubrics, including the per-field contract truth |
-| | `sandbox_agent_scoring`, `sandbox_composite`, `sandbox_schema_adherence` | Sandbox isolation rubrics, chained policy, payload quality |
+| | `sandbox_schema_adherence` | Sandbox payload quality |
 | **`metrics/`** | `registry`, `metric_meta` | Every score name → tier, and its citation/GT metadata |
 | | `bundles`, `doc_bundles`, `pruning` | Named metric groupings and the tier filter |
 | | `profiles` | One declarative scoring identity per agent |
 | | `emitter` | The one routing layer for scores (JSONL manifest, Langfuse sink) |
 | | `scorecard_honesty` | Fail-closed GT, metric identity, provenance and completion checks |
 | | `score_changelog` | Machine ledger of releases that moved a score |
-| **`analysis/`** | `bootstrap`, `diagnostics`, `error_analysis`, `failure_modes` | Statistics and diagnostics over runs |
+| **`analysis/`** | `bootstrap`, `calibration`, `diagnostics`, `failure_modes` | Statistics and diagnostics over runs |
 | | `calibration` | Exact risk bounds, sample size, ECE/Brier, AUROC, cutoffs |
-| | `interpret`, `report`, `visualize` | Verdicts, Markdown report, plots |
-| | `export`, `io`, `experiment` | Workbook/codebook export, artifact loaders, experiment-log records |
-| | `grid`, `serving`, `cost` | Specialist grid reports, local-vs-API serving, token cost |
-| **`integrations/`** | `langfuse_sync`, `phoenix_sync` | Pull live traces from Langfuse and Phoenix/OTLP |
+| | `experiment` | Experiment-log records |
+| | `serving`, `cost` | Local-vs-API serving, token cost |
+| **`integrations/`** | `update_awareness` | `dojo-version` release awareness |
 | | `update_awareness` | Opt-in release discovery behind `dojo-version` |
 
 ## Imports

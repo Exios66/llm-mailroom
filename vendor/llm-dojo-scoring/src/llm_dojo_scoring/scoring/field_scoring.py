@@ -134,6 +134,22 @@ def expected_cms_source_table(doc_class: str | None, expected: Any) -> str | Non
     return token
 
 
+def is_unstated_cms_marker(key: str, cms_table: str | None, predicted: Any) -> bool:
+    """True for a CMS row's ``cms_source_table`` that the prediction does not state (#132).
+
+    The marker is derived from the row's subclass, not labelled in the ground truth. A
+    prediction states a table either in ``cms_source_table`` or, as the frozen insurance
+    prompt does, as a table token on ``claim_type``; both are scored. A prediction that
+    states no table at all (``claim_type`` holds the product line) is neither a miss nor a
+    hit: the marker is not scored for it.
+    """
+    if key != "cms_source_table" or cms_table is None or not isinstance(predicted, dict):
+        return False
+    if not is_empty_value(parse_json_container(predicted.get(key))):
+        return False
+    return str(predicted.get("claim_type") or "").strip().lower() not in CMS_CLAIM_TYPES
+
+
 def get_ambiguous_band() -> tuple[float, float]:
     """Return the configured global half-open judge-review score band."""
     return get_settings().field_scoring.ambiguous_band
@@ -506,15 +522,21 @@ def _parse_money(text) -> Optional[float]:
     if not isinstance(text, str):
         return None
     s = text.strip().upper().replace(",", "").replace("$", "").replace("€", "").replace("£", "")
+    # Currency words come off first, so "1.2M USD" and "USD 1.2M" reach the
+    # K/M/B suffix check as "1.2M" (#133).
+    for tail in (" USD", " DOLLARS", " DOLLAR", " EUROS", " EUR"):
+        if s.endswith(tail):
+            s = s[: -len(tail)].rstrip()
+            break
+    for head in ("USD ", "US ", "EUR "):
+        if s.startswith(head):
+            s = s[len(head):].lstrip()
+            break
     multiplier = 1.0
     for suffix, m in (("M", 1e6), ("K", 1e3), ("B", 1e9)):
         if s.endswith(suffix):
             multiplier = m
             s = s[:-1].rstrip()
-            break
-    for tail in (" USD", " DOLLARS", " EUROS"):
-        if s.endswith(tail):
-            s = s[: -len(tail)].rstrip()
             break
     if not s:
         return None
@@ -1762,6 +1784,8 @@ def score_extraction(
         if key in NEVER_SCORED_FIELDS:
             continue
         if key in RETIRED_PROMPT_KEYS and key not in field_types:
+            continue
+        if is_unstated_cms_marker(key, cms_table, predicted):
             continue
         exp_value = parse_json_container(exp_value)
         if is_empty_value(exp_value):

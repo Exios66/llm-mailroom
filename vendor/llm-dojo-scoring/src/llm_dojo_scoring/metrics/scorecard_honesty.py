@@ -14,6 +14,7 @@ from statistics import fmean
 from typing import Any, Mapping, Sequence
 
 from .. import __version__
+from ..schemas.doc_classes import LIVE_DOC_TYPES
 from ..schemas.gt_metadata import is_empty_value
 from ..schemas.maud import is_maud_class
 
@@ -184,13 +185,7 @@ DEFAULT_INSURANCE_SCHEMA_GATE = DEFAULT_SCHEMA_GATE
 
 #: Per-class promotion thresholds — every live extract class is gated (#18).
 #: Override a class here (or pass ``threshold=``) rather than skipping it.
-SCHEMA_PROMOTION_GATES: dict[str, float] = {
-    "contract": DEFAULT_SCHEMA_GATE,
-    "merger_agreement": DEFAULT_SCHEMA_GATE,
-    "corporate_record": DEFAULT_SCHEMA_GATE,
-    "correspondence": DEFAULT_SCHEMA_GATE,
-    "insurance_claim": DEFAULT_SCHEMA_GATE,
-}
+SCHEMA_PROMOTION_GATES: dict[str, float] = {key: DEFAULT_SCHEMA_GATE for key in LIVE_DOC_TYPES}
 
 _TRIAGE_GT_KEYS: frozenset[str] = frozenset(
     {

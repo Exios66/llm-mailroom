@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from ..schemas import doc_classes
 from ..scoring._paired import require_equal_lengths
 
 from .intake import (
@@ -65,24 +66,16 @@ __all__ = [
 
 
 #: Live taxonomy classes that dispatch to a specialist (mailroom-issues
-#: #236–#238). ``merger_agreement`` is ``MergerAgreementExtraction``, not
-#: an extract alias of ``contract``.
-LIVE_DOC_TYPES: tuple[str, ...] = (
-    "contract",
-    "merger_agreement",
-    "corporate_record",
-    "correspondence",
-    "insurance_claim",
-)
+#: #236–#238): the live classes of ``schemas/doc_classes.py``.
+#: ``merger_agreement`` is ``MergerAgreementExtraction``, not an extract alias
+#: of ``contract``.
+LIVE_DOC_TYPES: tuple[str, ...] = doc_classes.LIVE_DOC_TYPES
 
-#: Retired from the live pipeline. Sorter emits ``unknown``; scoring
-#: suites remain for historical traces / LegalBench. ``compliance_filing``
-#: left the live extract roster with the mailroom 2026-09-15 cut.
-RETIRED_DOC_TYPES: tuple[str, ...] = (
-    "court_opinion",
-    "due_diligence",
-    "compliance_filing",
-)
+#: Retired from the live pipeline (``live=False`` in ``schemas/doc_classes.py``).
+#: Sorter emits ``unknown``; scoring suites remain for historical traces /
+#: LegalBench. ``compliance_filing`` left the live extract roster with the
+#: mailroom 2026-09-15 cut.
+RETIRED_DOC_TYPES: tuple[str, ...] = doc_classes.RETIRED_DOC_TYPES
 
 #: Routing token — not a taxonomy class and not a specialist.
 UNKNOWN_DOC_TYPE = "unknown"
@@ -95,25 +88,11 @@ EXTRACT_CLASS_ALIASES: dict[str, str] = {}
 #: Labels the sorter / Lane A reviewer may emit.
 SORTER_LABEL_SET: tuple[str, ...] = LIVE_DOC_TYPES + (UNKNOWN_DOC_TYPE,)
 
-LIVE_SPECIALISTS: tuple[str, ...] = (
-    "contracts_specialist",
-    "merger_agreement_specialist",
-    "corporate_records_specialist",
-    "correspondence_specialist",
-    "insurance_claims_specialist",
-)
+LIVE_SPECIALISTS: tuple[str, ...] = tuple(doc_classes.DOC_CLASSES[key].specialist for key in LIVE_DOC_TYPES)
 
-RETIRED_SPECIALISTS: tuple[str, ...] = (
-    "court_opinions_specialist",
-    "due_diligence_specialist",
-    "compliance_specialist",
-)
+RETIRED_SPECIALISTS: tuple[str, ...] = tuple(doc_classes.DOC_CLASSES[key].specialist for key in RETIRED_DOC_TYPES)
 
-RETIRED_AUDITORS: tuple[str, ...] = (
-    "court_opinions_auditor",
-    "due_diligence_auditor",
-    "compliance_auditor",
-)
+RETIRED_AUDITORS: tuple[str, ...] = tuple(doc_classes.DOC_CLASSES[key].auditor for key in RETIRED_DOC_TYPES)
 
 INTAKE_AGENT = "intake"
 

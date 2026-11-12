@@ -14,9 +14,10 @@ making the contract data, not prose:
 * :data:`MAUD_CONSIDERATION_SUBCLASSES` — the five ``subclass`` /
   ``merger_consideration`` tokens, their mapping from the MAUD
   ``Type of Consideration`` classes, and *documentation-only* entity hints.
-* :data:`MergerAgreementExtraction` — the 21 scored v2 fields (0.28.0), asserted equal to
-  ``DEFAULT_FIELD_TYPES["merger_agreement"]`` at import time (drift fails
-  loudly).
+* :data:`MergerAgreementExtraction` — the scored v2 fields (0.28.0): the
+  ``merger_agreement`` fields of ``schemas/doc_classes.py`` with an empty value and
+  prompt text each, checked against that registry at import time (a field without a
+  descriptor fails loudly).
 * Helpers: :func:`maud_question`, :func:`maud_questions`,
   :func:`maud_json_schema`, :func:`render_maud_question_block`,
   :func:`parse_maud_clause`, :func:`maud_answers_to_clauses`.
@@ -42,14 +43,13 @@ from ..config import (
     MAUD_CONSIDERATION_LABELS,
     MAUD_CONSIDERATION_TYPES,
 )
+from . import doc_classes
 from .corpus import (
-    CORPUS_EXTRACTION_FIELDS,
     MAUD_CLAUSE_CATEGORIES,
     MAUD_QUESTION_KEYS,
 )
 from .maud import MAUD_ANSWER_CLASSES, MAUD_VARIABLE_CLASS_QUESTIONS
 from .intents import MERGER_INTENTS
-from ..scoring.suites import DEFAULT_FIELD_TYPES
 
 __all__ = [
     "MAUD_CONSIDERATION_SUBCLASSES",
@@ -676,79 +676,79 @@ class EntitySchema:
         return {f.name: ([] if f.empty == [] else None) for f in self.fields}
 
 
+def _merger_field(name: str, empty: Any, description: str) -> EntityField:
+    """A merger descriptor whose scoring type is the registry's, not restated here."""
+    types = doc_classes.field_types("merger_agreement")
+    if name not in types:
+        raise AssertionError(f"maud_schema: {name!r} is not a merger_agreement field in schemas/doc_classes.py")
+    return EntityField(name, types[name], empty, description)
+
+
+#: ``MergerAgreementExtraction`` v2 (0.28.0): names and scoring types come from the
+#: ``merger_agreement`` entry of ``schemas/doc_classes.py``; this table adds each
+#: field's empty value and prompt text.
 MergerAgreementExtraction = EntitySchema(
     name="MergerAgreementExtraction",
     doc_type="merger_agreement",
     fields=(
-        EntityField("document_name", "name", None, "Agreement title as stated."),
-        EntityField(
-            "parties", "entity_list:name", [],
+        _merger_field("document_name", None, "Agreement title as stated."),
+        _merger_field("parties", [],
             "Parent, Merger Sub, Target and any other contracting entity, as written.",
         ),
-        EntityField("acquirer", "name", None, "The Parent (acquirer), as printed."),
-        EntityField("target", "name", None, "The Company (target), as printed."),
-        EntityField(
-            "merger_sub", "entity_list:name", [],
+        _merger_field("acquirer", None, "The Parent (acquirer), as printed."),
+        _merger_field("target", None, "The Company (target), as printed."),
+        _merger_field("merger_sub", [],
             "The merger subsidiary or subsidiaries, as printed; [] when none.",
         ),
-        EntityField("signatories", "entity_list:name", [], "Persons signing for each party, as printed."),
-        EntityField(
-            "effective_date", "date", None,
+        _merger_field("signatories", [], "Persons signing for each party, as printed."),
+        _merger_field("effective_date", None,
             "Calendar date YYYY-MM-DD only; null when only an Effective Time is defined.",
         ),
-        EntityField(
-            "effective_time", "free_text", None,
+        _merger_field("effective_time", None,
             "Clock / time zone / defined-term Effective Time as written.",
         ),
-        EntityField("governing_law", "name", None, "Governing-law sentence; no forum/venue."),
-        EntityField("per_share_cash_amount", "money", None, "Cash paid per Target share, e.g. '$45.00'."),
-        EntityField("exchange_ratio", "free_text", None, "Parent shares per Target share, as stated."),
-        EntityField("target_termination_fee", "money", None, "Termination fee payable by the Target."),
-        EntityField(
-            "parent_termination_fee", "money", None,
+        _merger_field("governing_law", None, "Governing-law sentence; no forum/venue."),
+        _merger_field("per_share_cash_amount", None, "Cash paid per Target share, e.g. '$45.00'."),
+        _merger_field("exchange_ratio", None, "Parent shares per Target share, as stated."),
+        _merger_field("target_termination_fee", None, "Termination fee payable by the Target."),
+        _merger_field("parent_termination_fee", None,
             "Reverse termination fee payable by the Parent.",
         ),
-        EntityField(
-            "outside_date", "date", None,
+        _merger_field("outside_date", None,
             "End / Outside Date as YYYY-MM-DD, or as printed when relative.",
         ),
-        EntityField(
-            "financial_advisors", "entity_list:name", [],
+        _merger_field("financial_advisors", [],
             "Financial advisors named in the brokers and fairness-opinion sections.",
         ),
-        EntityField(
-            "legal_counsel", "entity_list:name", [],
+        _merger_field("legal_counsel", [],
             "Law firms named on the notice 'with a copy to' lines.",
         ),
-        EntityField(
-            "merger_consideration", "label", None,
+        _merger_field("merger_consideration", None,
             "Exactly one token: " + ", ".join(MAUD_CONSIDERATION_TYPES) + ".",
         ),
-        EntityField(
-            "maud_clauses", "entity_list:free_text", [],
+        _merger_field("maud_clauses", [],
             "Answered MAUD questions as '<Question>: <Hub valid_class>'; omit unanswered.",
         ),
-        EntityField(
-            "intent", "label", None,
+        _merger_field("intent", None,
             "Exactly one token: " + ", ".join(MERGER_INTENTS) + " (plan_of_merger is effect_merger).",
         ),
-        EntityField("subject_matter", "free_text", None, "One grounded sentence."),
-        EntityField("keywords", "entity_list:name", [], "Up to 8 phrases copied from the text."),
+        _merger_field("subject_matter", None, "One grounded sentence."),
+        _merger_field("keywords", [], "Up to 8 phrases copied from the text."),
     ),
 )
 
 
 def _parity_problems() -> list[str]:
-    """Report merger-agreement field type, order, and count mismatches with live schemas."""
+    """Report merger-agreement descriptor names or order that differ from the registry."""
     problems: list[str] = []
-    live = DEFAULT_FIELD_TYPES["merger_agreement"]
-    mine = MergerAgreementExtraction.field_types
-    if mine != live:
-        problems.append(f"field types differ from DEFAULT_FIELD_TYPES: {mine} != {live}")
-    if tuple(mine) != tuple(CORPUS_EXTRACTION_FIELDS["merger_agreement"]):
-        problems.append("field order differs from CORPUS_EXTRACTION_FIELDS")
-    if len(mine) != 21:
-        problems.append(f"expected 21 scored fields, found {len(mine)}")
+    registry = doc_classes.field_names("merger_agreement")
+    described = tuple(MergerAgreementExtraction.field_types)
+    if described != registry:
+        problems.append(
+            "prompt descriptors drifted from the merger_agreement fields in schemas/doc_classes.py "
+            f"(no descriptor for {[f for f in registry if f not in described]}, "
+            f"descriptor without a field {[f for f in described if f not in registry]}, or wrong order)"
+        )
     return problems
 
 

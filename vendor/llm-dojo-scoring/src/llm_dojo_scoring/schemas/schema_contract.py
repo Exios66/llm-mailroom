@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from . import doc_classes
 from .corpus import CORPUS_DOC_TYPES
-from ..scoring.suites import DEFAULT_FIELD_TYPES
 
 __all__ = [
     "EMPTY_OVERRIDES",
@@ -44,7 +44,7 @@ def contract_empty_value(doc_type: str, field: str) -> Any:
     override = EMPTY_OVERRIDES.get(doc_type, {})
     if field in override:
         return override[field]
-    field_type = DEFAULT_FIELD_TYPES[doc_type][field]
+    field_type = doc_classes.field_types(doc_type)[field]
     return [] if str(field_type).startswith("entity_list") else None
 
 
@@ -52,7 +52,7 @@ def contract_empty_payload(doc_type: str) -> dict[str, Any]:
     """A fully-unstated extraction: every scored field at its empty value."""
     return {
         field: contract_empty_value(doc_type, field)
-        for field in DEFAULT_FIELD_TYPES[doc_type]
+        for field in doc_classes.field_names(doc_type)
     }
 
 
@@ -100,7 +100,7 @@ def contract_violations(
     probes = contract_empty_payload(doc_type)
     probes.update(fields or {})
     bad: list[str] = []
-    for field in DEFAULT_FIELD_TYPES[doc_type]:
+    for field in doc_classes.field_names(doc_type):
         if _rejects(model, field, probes[field]):
             bad.append(field)
     return bad

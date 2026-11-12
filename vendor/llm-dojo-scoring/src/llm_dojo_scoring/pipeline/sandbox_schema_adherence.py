@@ -16,6 +16,8 @@ import json
 import re
 from typing import Any, Callable, Collection, Mapping, Sequence
 
+from ..schemas import doc_classes
+
 #: ``doc_type -> pydantic model class or None`` (mailroom's ``get_extraction_schema``).
 SchemaLookup = Callable[[str], Any]
 
@@ -51,61 +53,27 @@ _NON_EXTRACTION_GT_KEYS = frozenset(
 )
 
 
-_FALLBACK_SCHEMA_KEYS: dict[str, frozenset[str]] = {
-    "correspondence": frozenset(
-        {
-            "sender", "recipient", "additional_recipients", "communication_type",
-            "communication_date", "demand_amount", "action_items", "urgency",
-            "intent", "subject_matter", "keywords",
-        }
-    ),
-    # ContractExtraction v2 (0.28.0) plus the v1 parse-compat keys, which are
-    # accepted (never extra) but not scored.
-    "contract": frozenset(
-        {
-            "document_name", "parties", "party_roles", "signatories", "agreement_date",
-            "effective_date", "expiration_date", "term_length", "renewal_terms",
-            "termination_notice_period", "governing_law", "dispute_forum", "contract_value",
-            "payment_terms", "territory", "cuad_family", "cuad_clauses",
-            "merger_consideration", "maud_clauses",
-        }
-    ),
-    "insurance_claim": frozenset(
-        {
-            "claim_number", "policy_number", "insurer", "insured_party", "claim_type",
-            "date_of_loss", "date_filed", "claimed_amount", "adjuster",
-            "damages_description", "coverage_determination", "denial_reasons",
-            "supporting_documents", "intent", "subject_matter", "keywords",
-            "claim_checklist",
-        }
-    ),
-    "corporate_record": frozenset(
-        {
-            "entity_name", "record_type", "effective_date", "signatories", "jurisdiction",
-            "filing_number", "intent", "subject_matter", "keywords",
-        }
-    ),
-    "merger_agreement": frozenset(
-        {
-            "document_name", "parties", "acquirer", "target", "merger_sub", "signatories",
-            "effective_date", "effective_time", "governing_law", "per_share_cash_amount",
-            "exchange_ratio", "target_termination_fee", "parent_termination_fee",
-            "outside_date", "financial_advisors", "legal_counsel", "merger_consideration",
-            "maud_clauses", "intent", "subject_matter", "keywords",
-        }
-    ),
-}
-
-
 #: v1 contract keys v2 accepts but never scores (``cuad_schema.CONTRACT_PARSE_COMPAT_FIELDS``).
 _PARSE_COMPAT_KEYS: dict[str, frozenset[str]] = {
     "contract": frozenset({"merger_consideration", "maud_clauses"}),
 }
 
+#: Legacy order of the adherence tables (it decides which suffix match wins in
+#: :func:`schema_keys_for`); a class added to the registry is appended after these.
+_ADHERENCE_ORDER = ("correspondence", "contract", "insurance_claim", "corporate_record", "merger_agreement")
+
+#: Built-in extraction keys per live class: the fields of ``schemas/doc_classes.py``
+#: plus, for a contract, the v1 parse-compat keys, which are accepted (never extra)
+#: but not scored.
+_FALLBACK_SCHEMA_KEYS: dict[str, frozenset[str]] = {
+    key: frozenset(doc_classes.field_names(key)) | _PARSE_COMPAT_KEYS.get(key, frozenset())
+    for key in doc_classes.in_order(doc_classes.LIVE_DOC_TYPES, _ADHERENCE_ORDER)
+}
+
 
 _JSON_OBJECT_START = re.compile(r'\{\s*["}]')
 
-_MODEL_CLASSES = ("correspondence", "contract", "insurance_claim", "corporate_record", "merger_agreement")
+_MODEL_CLASSES = doc_classes.in_order(doc_classes.LIVE_DOC_TYPES, _ADHERENCE_ORDER)
 
 
 def schema_keys_for(

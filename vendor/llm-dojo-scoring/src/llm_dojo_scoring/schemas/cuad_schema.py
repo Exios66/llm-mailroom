@@ -12,8 +12,8 @@ surfaces that previously lived in separate places:
   CUAD folder surfaces that normalize to each, a short definition, the
   characteristically salient (high-prior) categories, and optional
   family-specific entity hints;
-* the **17 scored ContractExtraction v2 fields** (:data:`CONTRACT_EXTRACTION_FIELDS`,
-  0.28.0) with scoring type, empty value, and description, plus the two v1
+* the **scored ContractExtraction v2 fields** (:data:`CONTRACT_EXTRACTION_FIELDS`,
+  0.28.0: the ``contract`` fields of ``schemas/doc_classes.py``) with scoring type, empty value, and description, plus the two v1
   parse-compat keys that are accepted but never scored
   (:data:`CONTRACT_PARSE_COMPAT_FIELDS`);
 * helpers to look categories/families up, order questions per family, render a
@@ -27,7 +27,8 @@ Authority and invariants (checked at import — a mismatch raises
   order here is the CUAD / frozen-prompt order, not alphabetical;
 * family keys are exactly ``corpus.DOC_TYPE_SUBCLASSES["contract"]`` and the
   folder surfaces cover ``corpus.RAW_CORPUS_SUBCLASS_SURFACES["contract"]``;
-* the field descriptor reproduces ``DEFAULT_FIELD_TYPES["contract"]`` exactly.
+* the field descriptors cover exactly the ``contract`` fields of ``schemas/doc_classes.py``,
+  in order (a field added there without a descriptor here fails the import).
 
 Documentation/prompt aids only: nothing here changes what is scored.
 ``family_fields`` hints, ``group`` / ``answer_format`` metadata and the
@@ -45,13 +46,13 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from ..config import CONTRACT_SUBTYPE_LABELS, SUBTYPE_UNKNOWN
+from . import doc_classes
 from .corpus import (
     RAW_CORPUS_SUBCLASS_SURFACES,
     CUAD_CLAUSE_CATEGORIES,
     DOC_TYPE_SUBCLASSES,
 )
 from .equivalences import normalize_subtype
-from ..scoring.suites import DEFAULT_FIELD_TYPES
 
 __all__ = [
     "CUAD_ANSWER_FORMATS",
@@ -719,76 +720,85 @@ CONTRACT_PARTY_ROLES: tuple[str, ...] = (
     "principal", "partner", "lender", "borrower", "other",
 )
 
+def _contract_field(name: str, empty_kind: str, description: str) -> CuadField:
+    """A contract descriptor whose scoring type is the registry's, not restated here."""
+    types = doc_classes.field_types("contract")
+    if name not in types:
+        raise RuntimeError(f"cuad_schema: {name!r} is not a contract field in schemas/doc_classes.py")
+    return CuadField(name, types[name], empty_kind, description)
+
+
 #: ContractExtraction v2 (0.28.0, mailroom-dataset v10 plan A1): the scored fields,
-#: in schema order. ``cuad_family`` is a closed ``label``; the entity fields from
+#: in schema order. Names and scoring types come from the ``contract`` entry of
+#: ``schemas/doc_classes.py``; this table adds each field's empty kind and prompt text. ``cuad_family`` is a closed ``label``; the entity fields from
 #: ``party_roles`` on are new in v2.
 CONTRACT_EXTRACTION_FIELDS: tuple[CuadField, ...] = (
-    CuadField(
-        "document_name", "name", "null",
+    _contract_field(
+        "document_name", "null",
         "The contract's name as given (e.g. 'Web Hosting Agreement'); never invented from the file name.",
     ),
-    CuadField(
-        "parties", "entity_list:name", "list",
+    _contract_field(
+        "parties", "list",
         "Distinct named contracting parties: full legal name plus parenthetical alias when the text gives one.",
     ),
-    CuadField(
-        "party_roles", "entity_list:free_text", "list",
+    _contract_field(
+        "party_roles", "list",
         "One '<party>: <role>' line per party; role is one of " + ", ".join(CONTRACT_PARTY_ROLES) + ".",
     ),
-    CuadField(
-        "signatories", "entity_list:name", "list",
+    _contract_field(
+        "signatories", "list",
         "Persons who sign the contract, as printed.",
     ),
-    CuadField(
-        "agreement_date", "date", "null",
+    _contract_field(
+        "agreement_date", "null",
         "The 'dated as of' or signature date as ISO YYYY-MM-DD.",
     ),
-    CuadField(
-        "effective_date", "date", "null",
+    _contract_field(
+        "effective_date", "null",
         "Date the agreement takes effect as ISO YYYY-MM-DD; a defined Effective Date wins over the signature date.",
     ),
-    CuadField(
-        "expiration_date", "date", "null",
+    _contract_field(
+        "expiration_date", "null",
         "End of the initial term as ISO YYYY-MM-DD when the text states it as a date; else null.",
     ),
-    CuadField(
-        "term_length", "free_text", "null",
+    _contract_field(
+        "term_length", "null",
         "Duration of the agreement itself (commencement through end / earlier termination), not a sub-period.",
     ),
-    CuadField(
-        "renewal_terms", "free_text", "null",
+    _contract_field(
+        "renewal_terms", "null",
         "Renewal, extension or rollover language, including evergreen 'continues until terminated on N days notice'.",
     ),
-    CuadField(
-        "termination_notice_period", "free_text", "null",
+    _contract_field(
+        "termination_notice_period", "null",
         "Notice needed to terminate the contract or to stop a renewal, as stated.",
     ),
-    CuadField(
-        "governing_law", "name", "null",
+    _contract_field(
+        "governing_law", "null",
         "Only the sentence naming the jurisdiction whose laws govern; no forum, venue or attorneys' fees.",
     ),
-    CuadField(
-        "dispute_forum", "name", "null",
+    _contract_field(
+        "dispute_forum", "null",
         "Courts or arbitral seat for disputes, kept separate from governing law.",
     ),
-    CuadField(
-        "contract_value", "money", "null",
+    _contract_field(
+        "contract_value", "null",
         "Monetary consideration as a plain currency phrase ('$2,000,000'); $0 is a stated amount; never computed.",
     ),
-    CuadField(
-        "payment_terms", "free_text", "null",
+    _contract_field(
+        "payment_terms", "null",
         "How and when the consideration is paid, as stated.",
     ),
-    CuadField(
-        "territory", "free_text", "null",
+    _contract_field(
+        "territory", "null",
         "The stated territory of the grant, distribution or service.",
     ),
-    CuadField(
-        "cuad_family", "label", "null",
+    _contract_field(
+        "cuad_family", "null",
         "Exactly one CUAD family key (25 families) or 'other'; null only when not a CUAD commercial contract.",
     ),
-    CuadField(
-        "cuad_clauses", "entity_list:free_text", "list",
+    _contract_field(
+        "cuad_clauses", "list",
         "Present CUAD categories only, as '<Atticus category>: <short verbatim evidence span>'.",
     ),
 )
@@ -841,8 +851,14 @@ def _check_invariants() -> None:
         for hint in fam.family_fields:
             if hint.informs is not None and hint.informs not in CONTRACT_FIELD_TYPES:
                 raise RuntimeError(f"cuad_schema: {fam.key}.{hint.name} informs unknown field")
-    if CONTRACT_FIELD_TYPES != DEFAULT_FIELD_TYPES["contract"]:
-        raise RuntimeError("cuad_schema field descriptor drifted from DEFAULT_FIELD_TYPES['contract']")
+    registry = doc_classes.field_names("contract")
+    described = tuple(CONTRACT_FIELD_TYPES)
+    if described != registry:
+        raise RuntimeError(
+            "cuad_schema: prompt descriptors drifted from the contract fields in schemas/doc_classes.py "
+            f"(no descriptor for {[f for f in registry if f not in described]}, "
+            f"descriptor without a field {[f for f in described if f not in registry]}, or wrong order)"
+        )
 
 
 _check_invariants()
@@ -1062,8 +1078,8 @@ def cuad_json_schema(*, include_trace: bool = True) -> dict[str, Any]:
     keys (``merger_consideration``, ``maud_clauses``) are not in the v2 schema:
     a guided decoder never emits them. Every scored field is required.
     ``include_trace`` adds the prompt's unscored ``reasoning`` object and
-    ``confidence`` number; set it ``False`` for a schema over exactly the 17
-    scored keys.
+    ``confidence`` number; set it ``False`` for a schema over exactly the scored
+    keys.
     """
     iso_date = {"type": ["string", "null"], "pattern": r"^\d{4}-\d{2}-\d{2}$", "default": None}
     props: dict[str, Any] = {}
