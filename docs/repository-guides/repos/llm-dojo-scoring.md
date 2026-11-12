@@ -64,13 +64,13 @@ llm-mailroom pins it as a git dependency. When dojo publishes a release, a workf
 ## Its documentation
 
 - [README](https://github.com/Exios66/llm-dojo-scoring/blob/main/README.md)
-- [docs/SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/SCORING.md) — scoring methodology
-- [docs/EXTRACTION_SCHEMAS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/EXTRACTION_SCHEMAS.md) — the live extraction schemas for the five classes
-- [docs/METRIC_IDS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/METRIC_IDS.md) — metric identity per document class
-- [docs/SCORECARD_HONESTY.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/SCORECARD_HONESTY.md) — what a scorecard can and cannot claim
-- [docs/GT_METADATA.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/GT_METADATA.md) — ground-truth parsing
-- [docs/MAUD_LABELS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/MAUD_LABELS.md) — MAUD answer classes
-- [docs/ARCHIVE_SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/ARCHIVE_SCORING.md) — archive scoring block
-- [docs/PROMPTS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/PROMPTS.md) — prompt catalog
-- [docs/MIGRATION.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/MIGRATION.md) — upgrading between versions
+- [docs/guides/SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/guides/SCORING.md) — scoring methodology
+- [docs/schemas/EXTRACTION_SCHEMAS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/schemas/EXTRACTION_SCHEMAS.md) — the live extraction schemas for the five classes
+- [docs/contracts/METRIC_IDS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/contracts/METRIC_IDS.md) — metric identity per document class
+- [docs/contracts/SCORECARD_HONESTY.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/contracts/SCORECARD_HONESTY.md) — what a scorecard can and cannot claim
+- [docs/schemas/GT_METADATA.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/schemas/GT_METADATA.md) — ground-truth parsing
+- [docs/schemas/MAUD_LABELS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/schemas/MAUD_LABELS.md) — MAUD answer classes
+- [docs/contracts/ARCHIVE_SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/contracts/ARCHIVE_SCORING.md) — archive scoring block
+- [docs/guides/PROMPTS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/guides/PROMPTS.md) — prompt catalog
+- [docs/guides/MIGRATION.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/guides/MIGRATION.md) — upgrading between versions
 - [CHANGELOG.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/CHANGELOG.md)
