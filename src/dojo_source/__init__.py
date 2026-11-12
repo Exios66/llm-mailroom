@@ -4,8 +4,10 @@ llm-mailroom depends on the Dojo through its pyproject git pin, so the installed
 always the primary source. ``vendor/llm-dojo-scoring/src`` in a checkout holds a tracked
 snapshot of the same pinned commit; :func:`install` registers an import hook that serves the
 snapshot only when the installed release is missing or fails while importing (a broken or
-partial install, a dependency outage; a lazy root is also asked for :data:`REQUIRED_ROOT_NAMES`), so scoring keeps working when the release cannot be
-loaded. Nothing is imported eagerly: the hook acts on the first ``import llm_dojo_scoring``.
+partial install, a dependency outage), so scoring keeps working when the release cannot be
+loaded. Nothing happens at :func:`install`: the hook acts on the first ``import llm_dojo_scoring``.
+When the installed root is lazy (PEP 562 ``_LAZY``), that first import also resolves every name
+in :data:`REQUIRED_ROOT_NAMES`, so a broken backing module or a missing name falls back too.
 
 ``MAILROOM_DOJO_SOURCE``: ``auto`` (default, installed then vendored), ``installed`` (no
 fallback) or ``vendored`` (always the snapshot). ``MAILROOM_DOJO_VENDOR`` points at another
