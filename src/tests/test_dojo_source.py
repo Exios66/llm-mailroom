@@ -99,36 +99,47 @@ def test_broken_release_falls_back(tmp_path):
     assert status["file"].startswith(str(ROOT / "vendor"))
 
 
-_LAZY_ROOT = (
-    '__version__ = "9.9.9-lazy"\n'
-    "_LAZY = {'warm_embedding_model': ('scoring.field_scoring', 'warm_embedding_model')}\n"
-    "def __getattr__(name):\n"
-    "    import importlib\n"
-    "    if name in _LAZY:\n"
-    "        mod, attr = _LAZY[name]\n"
-    "        return getattr(importlib.import_module(f'{__name__}.{mod}'), attr)\n"
-    "    raise AttributeError(name)\n"
-)
+def _lazy_release(tmp_path: Path, field_scoring: str, *, missing: str | None = None) -> str:
+    """A fake installed Dojo with a PEP 562 root that defers every required name to ``scoring.field_scoring``."""
+    names = [n for n in dojo_source.REQUIRED_ROOT_NAMES if n not in ("__version__", missing)]
+    site = _fake_release(
+        tmp_path,
+        '__version__ = "9.9.9-lazy"\n'
+        f"_LAZY = {{n: ('scoring.field_scoring', n) for n in {names!r}}}\n"
+        "def __getattr__(name):\n"
+        "    import importlib\n"
+        "    if name in _LAZY:\n"
+        "        mod, attr = _LAZY[name]\n"
+        "        return getattr(importlib.import_module(f'{__name__}.{mod}'), attr)\n"
+        "    raise AttributeError(name)\n",
+    )
+    scoring = Path(site) / "llm_dojo_scoring" / "scoring"
+    scoring.mkdir()
+    (scoring / "__init__.py").write_text("", encoding="utf-8")
+    if field_scoring == "healthy":
+        field_scoring = "".join(f"{n} = None\n" for n in names)
+    (scoring / "field_scoring.py").write_text(field_scoring, encoding="utf-8")
+    return site
 
 
 def test_lazy_root_with_broken_submodule_falls_back(tmp_path):
     """A lazy root imports cleanly even when a required name's module is broken; the hook must still fall back."""
-    site = _fake_release(tmp_path, _LAZY_ROOT)
-    scoring = Path(site) / "llm_dojo_scoring" / "scoring"
-    scoring.mkdir()
-    (scoring / "__init__.py").write_text("", encoding="utf-8")
-    (scoring / "field_scoring.py").write_text('raise ImportError("broken field_scoring")\n', encoding="utf-8")
+    site = _lazy_release(tmp_path, 'raise ImportError("broken field_scoring")\n')
     status = _probe(tmp_path, site, names=("warm_embedding_model",))
     assert status["source"] == "vendored" and "broken field_scoring" in status["reason"]
     assert status["file"].startswith(str(ROOT / "vendor"))
 
 
+def test_lazy_root_missing_a_required_name_falls_back(tmp_path):
+    """A lazy release that no longer exports a name mailroom imports is rejected at import, not at use."""
+    site = _lazy_release(tmp_path, "healthy", missing="warm_embedding_model")
+    status = _probe(tmp_path, site, names=("warm_embedding_model",))
+    assert status["source"] == "vendored" and "warm_embedding_model" in status["reason"]
+
+
 def test_lazy_root_with_healthy_submodules_stays_installed(tmp_path):
-    site = _fake_release(tmp_path, _LAZY_ROOT)
-    scoring = Path(site) / "llm_dojo_scoring" / "scoring"
-    scoring.mkdir()
-    (scoring / "__init__.py").write_text("", encoding="utf-8")
-    (scoring / "field_scoring.py").write_text("def warm_embedding_model():\n    return None\n", encoding="utf-8")
+    """The same lazy release with every required name intact is kept as the installed Dojo."""
+    site = _lazy_release(tmp_path, "healthy")
     status = _probe(tmp_path, site, names=("warm_embedding_model",))
     assert status["source"] == "installed" and status["version"] == "9.9.9-lazy"
 
