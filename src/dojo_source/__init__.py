@@ -96,10 +96,10 @@ class _FallbackLoader(importlib.abc.Loader):
         lazy = getattr(module, "_LAZY", None)
         if lazy is None:
             return  # an eager root already imported everything
-        deferred = {**getattr(module, "_SUBMODULES", {}), **lazy}
+        # Resolve every required name: a broken backing module raises here, and so does a name the
+        # release no longer exports, so either one takes the vendored fallback instead of failing at use.
         for name in REQUIRED_ROOT_NAMES:
-            if name in deferred:
-                getattr(module, name)
+            getattr(module, name)
 
     def exec_module(self, module) -> None:
         try:
