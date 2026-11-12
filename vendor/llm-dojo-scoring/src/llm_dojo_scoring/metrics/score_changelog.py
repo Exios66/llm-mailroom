@@ -70,6 +70,7 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
             "pipeline.extraction.overall",
             "pipeline.extraction.field_micro_f1",
             "pipeline.extraction.field_micro_f2",
+            "pipeline.extraction.field_micro_precision",
             "pipeline.extraction.field_micro_recall",
         ),
         "change": (

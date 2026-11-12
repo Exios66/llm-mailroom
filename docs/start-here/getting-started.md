@@ -96,7 +96,7 @@ mailroom-web            # http://127.0.0.1:8001
 ## 6. Score extraction output
 
 ```bash
-pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@402317e7aa7b91b09ce0ebd2b7b769c9e0d88025"
+pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@46811485ce516392b3f72d3269ed9e43b7ca9ed8"
 ```
 
 ```python
