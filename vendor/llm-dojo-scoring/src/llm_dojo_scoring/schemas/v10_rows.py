@@ -33,6 +33,7 @@ import math
 from collections import Counter
 from typing import Any, Iterable, Mapping
 
+from .doc_classes import LIVE_DOC_TYPES, in_order
 from .gt_metadata import GT_PRESENCE_KEY
 
 __all__ = [
@@ -76,7 +77,9 @@ V10_LEGACY_KEYS: dict[str, str] = {
 #: Document class -> its v10 typed config name.
 V10_GT_CONFIGS: dict[str, str] = {
     cls: f"gt_{cls}"
-    for cls in ("contract", "merger_agreement", "correspondence", "insurance_claim", "corporate_record")
+    for cls in in_order(
+        LIVE_DOC_TYPES, ("contract", "merger_agreement", "correspondence", "insurance_claim", "corporate_record")
+    )
 }
 
 

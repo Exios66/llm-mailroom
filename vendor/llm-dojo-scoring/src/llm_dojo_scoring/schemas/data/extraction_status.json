@@ -1,5 +1,5 @@
 {
- "commit": "0a2f829248525cf434ed49e38c3ac43b05090ba6",
+ "commit": "ccd040f6a1b6b414bdefd161cdc622b68f6dacf8",
  "config": "ground_truth",
  "dataset": "Lucius-Morningstar/mailroom-dataset",
  "doc_types": {
@@ -1176,6 +1176,292 @@
    }
   }
  },
- "revision": "v9.2.1",
- "rows": 3302
+ "label_categories": {
+  "contract": {
+   "cuad_clause_labels": {
+    "Affiliate License-Licensee": {
+     "labeled": 509,
+     "with_spans": 58
+    },
+    "Affiliate License-Licensor": {
+     "labeled": 509,
+     "with_spans": 22
+    },
+    "Agreement Date": {
+     "labeled": 509,
+     "with_spans": 469
+    },
+    "Anti-Assignment": {
+     "labeled": 509,
+     "with_spans": 373
+    },
+    "Audit Rights": {
+     "labeled": 509,
+     "with_spans": 213
+    },
+    "Cap On Liability": {
+     "labeled": 509,
+     "with_spans": 274
+    },
+    "Change Of Control": {
+     "labeled": 509,
+     "with_spans": 120
+    },
+    "Competitive Restriction Exception": {
+     "labeled": 509,
+     "with_spans": 76
+    },
+    "Covenant Not To Sue": {
+     "labeled": 509,
+     "with_spans": 99
+    },
+    "Document Name": {
+     "labeled": 509,
+     "with_spans": 509
+    },
+    "Effective Date": {
+     "labeled": 509,
+     "with_spans": 389
+    },
+    "Exclusivity": {
+     "labeled": 509,
+     "with_spans": 179
+    },
+    "Expiration Date": {
+     "labeled": 509,
+     "with_spans": 412
+    },
+    "Governing Law": {
+     "labeled": 509,
+     "with_spans": 436
+    },
+    "Insurance": {
+     "labeled": 509,
+     "with_spans": 165
+    },
+    "Ip Ownership Assignment": {
+     "labeled": 509,
+     "with_spans": 124
+    },
+    "Irrevocable Or Perpetual License": {
+     "labeled": 509,
+     "with_spans": 69
+    },
+    "Joint Ip Ownership": {
+     "labeled": 509,
+     "with_spans": 45
+    },
+    "License Grant": {
+     "labeled": 509,
+     "with_spans": 254
+    },
+    "Liquidated Damages": {
+     "labeled": 509,
+     "with_spans": 61
+    },
+    "Minimum Commitment": {
+     "labeled": 509,
+     "with_spans": 165
+    },
+    "Most Favored Nation": {
+     "labeled": 509,
+     "with_spans": 28
+    },
+    "No-Solicit Of Customers": {
+     "labeled": 509,
+     "with_spans": 34
+    },
+    "No-Solicit Of Employees": {
+     "labeled": 509,
+     "with_spans": 59
+    },
+    "Non-Compete": {
+     "labeled": 509,
+     "with_spans": 118
+    },
+    "Non-Disparagement": {
+     "labeled": 509,
+     "with_spans": 38
+    },
+    "Non-Transferable License": {
+     "labeled": 509,
+     "with_spans": 137
+    },
+    "Notice Period To Terminate Renewal": {
+     "labeled": 509,
+     "with_spans": 111
+    },
+    "Parties": {
+     "labeled": 509,
+     "with_spans": 508
+    },
+    "Post-Termination Services": {
+     "labeled": 509,
+     "with_spans": 181
+    },
+    "Price Restrictions": {
+     "labeled": 509,
+     "with_spans": 15
+    },
+    "Renewal Term": {
+     "labeled": 509,
+     "with_spans": 176
+    },
+    "Revenue/Profit Sharing": {
+     "labeled": 509,
+     "with_spans": 165
+    },
+    "Rofr/Rofo/Rofn": {
+     "labeled": 509,
+     "with_spans": 84
+    },
+    "Source Code Escrow": {
+     "labeled": 509,
+     "with_spans": 13
+    },
+    "Termination For Convenience": {
+     "labeled": 509,
+     "with_spans": 182
+    },
+    "Third Party Beneficiary": {
+     "labeled": 509,
+     "with_spans": 32
+    },
+    "Uncapped Liability": {
+     "labeled": 509,
+     "with_spans": 110
+    },
+    "Unlimited/All-You-Can-Eat-License": {
+     "labeled": 509,
+     "with_spans": 17
+    },
+    "Volume Restriction": {
+     "labeled": 509,
+     "with_spans": 82
+    },
+    "Warranty Duration": {
+     "labeled": 509,
+     "with_spans": 75
+    }
+   }
+  }
+ },
+ "revision": "v9.3",
+ "rows": 3302,
+ "vocabulary": {
+  "corporate_record": {
+   "intent": {
+    "outside_vocabulary": {},
+    "rows_with_value": 450,
+    "values": {
+     "authority_delegation": 26,
+     "corporate_action_approval": 32,
+     "entity_formation": 134,
+     "governance_rules": 97,
+     "investor_rights": 106,
+     "other": 55
+    }
+   },
+   "record_type": {
+    "outside_vocabulary": {},
+    "rows_with_value": 450,
+    "values": {
+     "articles_of_incorporation": 134,
+     "bylaws": 36,
+     "other": 205,
+     "powers_of_attorney": 26,
+     "rights_instrument": 49
+    }
+   }
+  },
+  "correspondence": {
+   "content_topic": {
+    "outside_vocabulary": {},
+    "rows_with_value": 1000,
+    "values": {
+     "announcements": 15,
+     "energy_market": 100,
+     "finance_earnings": 21,
+     "general_business": 537,
+     "hr_personnel": 73,
+     "it_systems": 25,
+     "legal_contracts": 53,
+     "marketing_clients": 56,
+     "regulatory": 46,
+     "scheduling": 54,
+     "travel_logistics": 20
+    }
+   },
+   "intent": {
+    "outside_vocabulary": {},
+    "rows_with_value": 1000,
+    "values": {
+     "analysis": 28,
+     "meeting_invite": 124,
+     "notice": 177,
+     "other": 123,
+     "payment_demand": 37,
+     "press_communication": 97,
+     "request": 221,
+     "update": 193
+    }
+   },
+   "sentiment_label": {
+    "outside_vocabulary": {},
+    "rows_with_value": 1000,
+    "values": {
+     "negative": 180,
+     "neutral": 566,
+     "positive": 254
+    }
+   }
+  },
+  "insurance_claim": {
+   "claim_type": {
+    "outside_vocabulary": {},
+    "rows_with_value": 1100,
+    "values": {
+     "auto": 300,
+     "health": 600,
+     "liability": 0,
+     "life": 0,
+     "other": 0,
+     "property": 200,
+     "workers_comp": 0
+    }
+   },
+   "coverage_determination": {
+    "outside_vocabulary": {},
+    "rows_with_value": 1100,
+    "values": {
+     "approved": 660,
+     "denied": 36,
+     "partial": 0,
+     "pending": 404
+    }
+   },
+   "intent": {
+    "outside_vocabulary": {},
+    "rows_with_value": 1100,
+    "values": {
+     "claim_data_record": 600,
+     "claim_filing": 350,
+     "coverage_determination": 150,
+     "loss_report": 0,
+     "other": 0
+    }
+   }
+  },
+  "merger_agreement": {
+   "intent": {
+    "outside_vocabulary": {},
+    "rows_with_value": 0,
+    "values": {
+     "amend_merger": 0,
+     "effect_merger": 0,
+     "other": 0
+    }
+   }
+  }
+ }
 }
