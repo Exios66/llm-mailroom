@@ -40,7 +40,7 @@ result = suite.score(expected_fields, predicted_fields)
 ci = dojo.bootstrap_ci([1.0, 0.0, 1.0, 1.0])
 ```
 
-Command-line tool: `dojo-version` (release awareness). The workbook, report and trace-sync CLIs (`dojo-analyze`, `dojo-export`, `dojo-rescore`, `dojo-sync`) were removed in the production slim-down; re-score a stored run with `get_suite(...).score(...)`.
+Command-line tool: `dojo-version` (release awareness). The workbook, report and trace-sync CLIs (`dojo-analyze`, `dojo-export`, `dojo-rescore`, `dojo-sync`) were removed in the production slim-down. There is no packaged rescoring CLI. To re-score a stored run, load each document's stored expected and predicted values, call `get_suite(<agent>).score(expected=..., predicted=...)` again, and store the new result alongside the old one so the two scorer versions stay comparable.
 
 ## Key modules
 

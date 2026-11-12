@@ -102,8 +102,10 @@ Local check / apply:
 
 ```bash
 PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --check
-PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag 402317e7aa7b91b09ce0ebd2b7b769c9e0d88025
+PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --allow-missing-release --tag 402317e7aa7b91b09ce0ebd2b7b769c9e0d88025
 ```
+
+`--allow-missing-release` skips release verification so an interim commit with no Dojo release (such as `402317e`) can be pinned; without it the script rejects an unreleased commit.
 
 ## Corpus feeds (external in the DMR-093 target)
 

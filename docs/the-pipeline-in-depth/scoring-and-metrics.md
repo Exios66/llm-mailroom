@@ -105,7 +105,7 @@ f1        = 2 * precision * recall / (precision + recall)   (0 when matched = 0)
 `score_extraction` produces one result per document:
 
 - Only expected fields with a non-null, non-empty value are scored. A null expectation is not a requirement.
-- A missing prediction for a required field scores 0.0 (except the blank-date case above).
+- A missing prediction for a required field scores 0.0 (except the blank-date case above, and one CMS case: on CMS insurance rows the subclass-derived `cms_source_table` is not scored when the prediction states no table; a stated table is still scored).
 - **`overall_score` is the plain mean of the per-field scores** (rounded to 4 places), or `None` if no field was scored.
 - `ambiguous_fields` lists every field whose score falls inside the ambiguous band `0.5 <= score <= 0.85`. `needs_judge_review` is true when that list is not empty.
 
