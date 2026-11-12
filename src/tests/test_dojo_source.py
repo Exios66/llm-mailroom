@@ -52,13 +52,17 @@ _HIDE_INSTALLED = (
 )
 
 
-def _probe(tmp_path: Path, extra_path: str | None, **env: str) -> dict:
-    """Import the Dojo in a fresh interpreter with the real release hidden, ``extra_path`` first."""
+def _probe(tmp_path: Path, extra_path: str | None, names: tuple[str, ...] = (), **env: str) -> dict:
+    """Import the Dojo in a fresh interpreter with the real release hidden, ``extra_path`` first.
+
+    ``names`` are then imported with ``from llm_dojo_scoring import <name>``, as the API does.
+    """
     import json
 
     path = [str(SRC)] + ([extra_path] if extra_path else [])
     code = (_HIDE_INSTALLED + f"sys.path[:0] = {path!r}\n"
             "import dojo_source, llm_dojo_scoring, json\n"
+            + "".join(f"from llm_dojo_scoring import {n}\n" for n in names) +
             "print(json.dumps({**dojo_source.status(), 'file': llm_dojo_scoring.__file__,"
             " 'version': getattr(llm_dojo_scoring, '__version__', None)}))\n")
     run_env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
@@ -93,6 +97,57 @@ def test_broken_release_falls_back(tmp_path):
     status = _probe(tmp_path, site)
     assert status["source"] == "vendored" and "simulated outage" in status["reason"]
     assert status["file"].startswith(str(ROOT / "vendor"))
+
+
+_LAZY_ROOT = (
+    '__version__ = "9.9.9-lazy"\n'
+    "_LAZY = {'warm_embedding_model': ('scoring.field_scoring', 'warm_embedding_model')}\n"
+    "def __getattr__(name):\n"
+    "    import importlib\n"
+    "    if name in _LAZY:\n"
+    "        mod, attr = _LAZY[name]\n"
+    "        return getattr(importlib.import_module(f'{__name__}.{mod}'), attr)\n"
+    "    raise AttributeError(name)\n"
+)
+
+
+def test_lazy_root_with_broken_submodule_falls_back(tmp_path):
+    """A lazy root imports cleanly even when a required name's module is broken; the hook must still fall back."""
+    site = _fake_release(tmp_path, _LAZY_ROOT)
+    scoring = Path(site) / "llm_dojo_scoring" / "scoring"
+    scoring.mkdir()
+    (scoring / "__init__.py").write_text("", encoding="utf-8")
+    (scoring / "field_scoring.py").write_text('raise ImportError("broken field_scoring")\n', encoding="utf-8")
+    status = _probe(tmp_path, site, names=("warm_embedding_model",))
+    assert status["source"] == "vendored" and "broken field_scoring" in status["reason"]
+    assert status["file"].startswith(str(ROOT / "vendor"))
+
+
+def test_lazy_root_with_healthy_submodules_stays_installed(tmp_path):
+    site = _fake_release(tmp_path, _LAZY_ROOT)
+    scoring = Path(site) / "llm_dojo_scoring" / "scoring"
+    scoring.mkdir()
+    (scoring / "__init__.py").write_text("", encoding="utf-8")
+    (scoring / "field_scoring.py").write_text("def warm_embedding_model():\n    return None\n", encoding="utf-8")
+    status = _probe(tmp_path, site, names=("warm_embedding_model",))
+    assert status["source"] == "installed" and status["version"] == "9.9.9-lazy"
+
+
+def test_required_root_names_cover_every_root_import():
+    """REQUIRED_ROOT_NAMES must list every ``from llm_dojo_scoring import X`` made by src/ and tools/."""
+    import ast
+
+    found: set[str] = set()
+    for base in (ROOT / "src", ROOT / "tools"):
+        for path in base.rglob("*.py"):
+            if {"vendor", ".venv", "node_modules"} & set(path.relative_to(ROOT).parts):
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module == dojo_source.PACKAGE:
+                    found.update(alias.name for alias in node.names)
+    assert found, "the AST scan found no root imports"
+    missing = found - set(dojo_source.REQUIRED_ROOT_NAMES)
+    assert not missing, f"add to dojo_source.REQUIRED_ROOT_NAMES: {sorted(missing)}"
 
 
 def test_modes(tmp_path):
