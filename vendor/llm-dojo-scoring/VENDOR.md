@@ -15,5 +15,6 @@ import, so scoring survives a broken install or a dependency outage. Set
 
 Never patch this tree. When the pin moves (`src/scripts/bump_dojo_scoring.py`), replace the
 snapshot with the new commit's tree and update the commit and version recorded here;
-`src/tests/test_dojo_source.py` fails while the commit and version recorded in this file
-disagree with the pyproject pin. It does not compare the snapshot's contents with that commit.
+`src/tests/test_dojo_source.py` fails while the commit recorded in this file differs from the
+pyproject pin, or the version recorded here differs from the snapshot's `__version__`. It does
+not compare the rest of the snapshot with that commit.
