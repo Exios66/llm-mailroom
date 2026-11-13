@@ -1201,9 +1201,13 @@ class ScoringSuite:
             for idx, (exp, pred, result) in enumerate(
                 zip(peeled_exp, peeled_pred, extraction)
             ):
-                if idx in unscorable_rows or not isinstance(
-                    result, ExtractionScoreResult
+                if (
+                    idx in unscorable_rows
+                    or not isinstance(result, ExtractionScoreResult)
+                    or (isinstance(exp, dict) and not exp)
                 ):
+                    # A row with no expected fields has no events: its
+                    # predicted keys must not count as false positives.
                     continue
                 row_presence = (
                     presence[idx]
