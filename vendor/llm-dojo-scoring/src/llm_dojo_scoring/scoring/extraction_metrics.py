@@ -149,7 +149,10 @@ def extraction_binary_metrics(
             key in RETIRED_PROMPT_KEYS and key not in types
         ):
             continue
-        if key not in expected and not _is_empty(value):
+        # A schema field the ground truth does not label is excluded on both
+        # sides (it is not in ``result.field_scores`` either); only an
+        # off-schema key, or a value on a field labelled empty, is an FP.
+        if key not in expected and key not in types and not _is_empty(value):
             fp += 1
 
     precision = round(tp / (tp + fp), 4) if (tp + fp) else 0.0

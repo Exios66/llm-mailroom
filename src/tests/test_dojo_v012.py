@@ -23,7 +23,7 @@ def test_installed_dojo_is_v0280():
     pin = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(
         encoding="utf-8"
     )
-    assert "llm-dojo-scoring.git@46811485ce516392b3f72d3269ed9e43b7ca9ed8" in pin
+    assert "llm-dojo-scoring.git@f4f7e92d82956d48dad5976e40e321befc57e03d" in pin
     version = re.match(r"(\d+)\.(\d+)", llm_dojo_scoring.__version__)
     assert version is not None
     assert tuple(map(int, version.groups())) >= (0, 12)
