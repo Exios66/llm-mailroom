@@ -98,8 +98,9 @@ def test_hf_sample_carries_the_routing_gold():
     assert sample["expected_stage"] == "archived"
 
 
-def test_scoring_failure_is_logged_not_swallowed(monkeypatch):
-    """A Dojo crash falls back to ``None`` but leaves a logged exception."""
+@pytest.mark.parametrize("error", [RuntimeError, KeyError, TypeError])
+def test_scoring_failure_is_logged_not_swallowed(monkeypatch, error):
+    """A Dojo crash inside scoring (any type) falls back to ``None`` but is logged."""
     from observability import suite_scoring
 
     events = []
@@ -108,7 +109,7 @@ def test_scoring_failure_is_logged_not_swallowed(monkeypatch):
 
     class Boom:
         def score_document(self, *a, **k):
-            raise RuntimeError("dojo bug")
+            raise error("dojo bug")
 
     monkeypatch.setattr("llm_dojo_scoring.get_suite", lambda name: Boom())
     assert score_document_payload("contract", {}, {"parties": ["A"]}) is None
