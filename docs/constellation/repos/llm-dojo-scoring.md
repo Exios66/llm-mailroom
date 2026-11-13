@@ -40,7 +40,7 @@ result = suite.score(expected_fields, predicted_fields)
 ci = dojo.bootstrap_ci([1.0, 0.0, 1.0, 1.0])
 ```
 
-Command-line tool: `dojo-version` (release awareness). The workbook, report and trace-sync CLIs (`dojo-analyze`, `dojo-export`, `dojo-rescore`, `dojo-sync`) were removed in the production slim-down. There is no packaged rescoring CLI. To re-score a stored run, load each document's stored expected and predicted values, call `get_suite(<agent>).score_document(expected=..., predicted=...)` again (it returns the field-micro precision, recall, F1 and F2 that a bare `score()` call leaves out), and store the new result alongside the old one so the two scorer versions stay comparable.
+Command-line tool: `dojo-version` (release awareness). The workbook, report and trace-sync CLIs (`dojo-analyze`, `dojo-export`, `dojo-rescore`, `dojo-sync`) were removed in the production slim-down. There is no packaged rescoring CLI. To re-score a stored extraction run, load each document's stored expected and predicted values, call the extraction suite's `get_suite(<agent>).score_document(expected=..., predicted=...)` again (it returns the field-micro precision, recall, F1 and F2 that a bare `score()` call leaves out), and store the new result alongside the old one so the two scorer versions stay comparable (`score_document` accepts extraction suites only; re-score classification runs with `get_suite(<agent>).score(...)`).
 
 ## Key modules
 
