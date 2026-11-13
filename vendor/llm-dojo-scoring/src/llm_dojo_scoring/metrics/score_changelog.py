@@ -82,6 +82,32 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
         ),
         "rescore_required": True,
     },
+    {
+        # Second 0.29.0 change set (field-micro and label honesty on Hub rows).
+        "version": "0.29.0",
+        "metric_ids": (
+            "pipeline.extraction.field_micro_f1",
+            "pipeline.extraction.field_micro_f2",
+            "pipeline.extraction.field_micro_precision",
+            "pipeline.extraction.field_micro_recall",
+            "maud.question.micro_accuracy",
+            "pipeline.enron.topic_accuracy",
+            "pipeline.enron.topic_f1_macro",
+            "pipeline.enron.sentiment_accuracy",
+            "pipeline.enron.sentiment_f1_macro",
+        ),
+        "change": (
+            "Field-micro P/R/F1/F2 exclude a schema field the ground truth does not "
+            "label on both sides (a correct value there was a false positive); an "
+            "off-schema key, or a value on a field labelled empty, is still one. A row "
+            "with no labelled extraction field (presence-only CUAD, MAUD-only merger, "
+            "no GT) gets them as null from the suite and doc scorers, not 0.0. A MAUD-only merger payload's "
+            "headline metric_id is maud.question.micro_accuracy (overall is null). "
+            "A blank or literal 'nan' content_topic / sentiment_label is not a label: "
+            "no topic or sentiment score is emitted for it (it scored 0.0)."
+        ),
+        "rescore_required": True,
+    },
 )
 
 
