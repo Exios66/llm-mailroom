@@ -973,8 +973,9 @@ def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict
         pool = sorted(by_class[cls], key=lambda x: x["sample"]["filename"])
         for item in rng.sample(pool, min(per_class, len(pool))):
             rec, sample = item["rec"], item["sample"]
-            fields = hp.expected_fields_for_sample(sample)
             meta = hp.expected_fields_meta(sample)
+            # Gold is the dataset-labelled fields only; post-hoc fills are not labels.
+            fields = hp.labelled_fields(hp.expected_fields_for_sample(sample), meta.get("sources"))
             review_expected = rec.get("review_expected")
             docs.append(Doc(
                 doc_id=sample["filename"], filename=sample["filename"], text=sample["text"],
