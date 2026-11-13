@@ -189,6 +189,9 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
         "maud_clauses": flatten_maud_clause_labels(maud_raw),
         "chars": len(str(text)),
     }
+    expected_stage = str(gt.get("expected_stage") or row.get("expected_stage") or "").strip()
+    if expected_stage:
+        sample["expected_stage"] = expected_stage
     for key in INSURANCE_GT_KEYS:
         raw = gt.get(key)
         if raw in (None, ""):
@@ -1261,6 +1264,7 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
             "maud_clause_labels": row.get("maud_clause_labels"),
             "content_topic": row.get("content_topic"),
             "sentiment_label": row.get("sentiment_label"),
+            "expected_stage": str(row.get("expected_stage") or "").strip(),
         }
         for key in (*INSURANCE_GT_KEYS, *CORPORATE_GT_KEYS, *CORRESPONDENCE_GT_KEYS):
             if row.get(key) not in (None, ""):
@@ -1508,6 +1512,9 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     }
     if sample.get("expected_subclass"):
         ground_truth["expected_subclass"] = sample["expected_subclass"]
+    if sample.get("expected_stage"):
+        # Routing gold: lets the run emit ``stage_correct``.
+        ground_truth["expected_stage"] = sample["expected_stage"]
     expected_fields = expected_fields_for_sample(sample)
     gt_meta = expected_fields_meta(sample)
     if expected_fields:
