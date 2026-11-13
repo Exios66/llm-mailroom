@@ -24,7 +24,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
 from llm_dojo_scoring.field_scoring import ExtractionScoreResult, score_extraction
+
+logger = structlog.get_logger(__name__)
 
 # Score names we emit when a suite returns extras. Must exist in SCORE_CONFIGS
 # and the dojo registry. ``field_presence`` is deliberately absent — the Dojo registry
@@ -121,6 +124,10 @@ def score_document_payload(
         from llm_dojo_scoring import get_suite
 
         suite = get_suite(doc_class)
+    except (KeyError, TypeError):
+        # No live extraction suite for this class (unknown or non-extraction).
+        return None
+    try:
         stamps = {k: v for k, v in provenance.items() if v is not None}
         return suite.score_document(
             expected,
@@ -130,6 +137,7 @@ def score_document_payload(
             **stamps,
         )
     except Exception:
+        logger.exception("score_document_payload_failed", doc_class=doc_class)
         return None
 
 
