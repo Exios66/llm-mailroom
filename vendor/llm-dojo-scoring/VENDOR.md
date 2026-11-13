@@ -14,5 +14,6 @@ import, so scoring survives a broken install or a dependency outage. Set
 `MAILROOM_DOJO_SOURCE=vendored` to force it, `installed` to disable the fallback.
 
 Never patch this tree. When the pin moves (`src/scripts/bump_dojo_scoring.py`), replace the
-snapshot with the new commit's tree; `src/tests/test_dojo_source.py` fails while the
-snapshot and the pyproject pin disagree.
+snapshot with the new commit's tree and update the commit and version recorded here;
+`src/tests/test_dojo_source.py` fails while the commit and version recorded in this file
+disagree with the pyproject pin. It does not compare the snapshot's contents with that commit.

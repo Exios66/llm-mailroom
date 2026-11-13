@@ -64,7 +64,7 @@ Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/scoring/field
 | Type | Rule | Score |
 |---|---|---|
 | `id` | Uppercase, strip punctuation and whitespace, then exact match | 1.0 or 0.0 |
-| `money` | Strip `$ € £` and commas, expand `K`/`M`/`B`, drop ` USD`/` DOLLARS`/` EUROS`, parse to a float. Match when the difference is at most **0.01** (one cent). If either side does not parse, fall back to the `name` rule | 1.0 or 0.0 (or the `name` score) |
+| `money` | Uppercase, strip `$ € £` and commas, drop one trailing ` USD`/` DOLLARS`/` DOLLAR`/` EUROS`/` EUR` and one leading `USD `/`US `/`EUR `, then expand a `K`/`M`/`B` suffix and parse to a float (so `1.2M USD` is 1,200,000). Match when the difference is at most **0.01** (one cent). If either side does not parse, fall back to the `name` rule | 1.0 or 0.0 (or the `name` score) |
 | `date` | See the date rules below | 1.0, 0.67, 0.33 or 0.0 (or the `name` score) |
 | `name` | Normalize (uppercase, strip punctuation and corporate suffixes such as `INC`, `LLC`, `LTD`). If all expected tokens appear in the prediction, score 1.0. Otherwise take the token-set ratio, and also Jaro-Winkler when the two share at least one token; keep the higher | 0.0 to 1.0 |
 | `free_text` | SQuAD-style token F1 over lowercase token multisets | 0.0 to 1.0 |
@@ -107,7 +107,7 @@ f1        = 2 * precision * recall / (precision + recall)   (0 when matched = 0)
 - Only expected fields with a non-null, non-empty value are scored. A null expectation is not a requirement.
 - A missing prediction for a required field scores 0.0 (except the blank-date case above, and one CMS case: on CMS insurance rows the subclass-derived `cms_source_table` is not scored when the prediction states no table; a stated table is still scored).
 - **`overall_score` is the plain mean of the per-field scores** (rounded to 4 places), or `None` if no field was scored.
-- `ambiguous_fields` lists every field whose score falls inside the ambiguous band `0.5 <= score <= 0.85`. `needs_judge_review` is true when that list is not empty.
+- `ambiguous_fields` lists every field whose score falls inside its type's ambiguity band from `type_bands` (see the note below); the global band `0.5 <= score <= 0.85` applies only to a field type with no band. `needs_judge_review` is true when that list is not empty.
 
 ```text
 overall_score = sum(field_scores) / count(field_scores)
