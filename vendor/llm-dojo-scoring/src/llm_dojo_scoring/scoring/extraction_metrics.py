@@ -35,7 +35,7 @@ from .field_scoring import (
     score_extraction,
 )
 from ..schemas.corpus import CMS_DOCUMENTED_ABSENT_FIELDS
-from ..schemas.gt_metadata import is_empty_value
+from ..schemas.gt_metadata import is_empty_value, parse_json_container
 
 _EMPTY = (None, "", [], {})
 
@@ -43,6 +43,18 @@ _EMPTY = (None, "", [], {})
 def _is_empty(value: Any) -> bool:
     """Empty / null / stringified-empty (``"[]"``, ``"{}"``) — never an event."""
     return is_empty_value(value)
+
+
+def _cms_absent_prediction(value: Any) -> Any:
+    """A CMS documented-absent prediction with blank list items removed.
+
+    ``score_extraction`` treats ``[None, ""]`` on ``denial_reasons`` as silence,
+    so field-micro does too.
+    """
+    value = parse_json_container(value)
+    if isinstance(value, (list, tuple)):
+        return [item for item in value if not _is_empty(item)]
+    return value
 
 
 def _public_prf(
@@ -122,16 +134,18 @@ def extraction_binary_metrics(
 
     cms_table = expected_cms_source_table(doc_class, expected)
     expected_items = list(expected.items())
+    cms_added: set[str] = set()
     if cms_table is not None:
         # A CMS row's documented-absent fields are labelled empty even when the
         # row omits them, so a stated value stays a false positive (the same
         # rule ``score_extraction`` applies); silence on an omitted key earns no
         # empty-field credit.
-        expected_items += [
-            (key, "") for key in CMS_DOCUMENTED_ABSENT_FIELDS
+        cms_added = {
+            key for key in CMS_DOCUMENTED_ABSENT_FIELDS
             if key not in expected and (not types or key in types)
-            and not _is_empty(predicted.get(key))
-        ]
+            and not _is_empty(_cms_absent_prediction(predicted.get(key)))
+        }
+        expected_items += [(key, "") for key in CMS_DOCUMENTED_ABSENT_FIELDS if key in cms_added]
     for name, exp_val in expected_items:
         if name in NEVER_SCORED_FIELDS or (
             name in RETIRED_PROMPT_KEYS and name not in types
@@ -140,7 +154,10 @@ def extraction_binary_metrics(
         if is_unstated_cms_marker(name, cms_table, predicted):
             continue
         if _is_empty(exp_val):
-            if _is_empty(predicted.get(name)):
+            pred_val = predicted.get(name)
+            if cms_table is not None and name in CMS_DOCUMENTED_ABSENT_FIELDS:
+                pred_val = _cms_absent_prediction(pred_val)
+            if _is_empty(pred_val):
                 n_correctly_empty += 1
             elif penalize_spurious_empty:
                 n_spurious_fill += 1
@@ -164,7 +181,10 @@ def extraction_binary_metrics(
         # A schema field the ground truth does not label is excluded on both
         # sides (it is not in ``result.field_scores`` either); only an
         # off-schema key, or a value on a field labelled empty, is an FP.
-        if key not in expected and key not in types and not _is_empty(value):
+        if cms_table is not None and key in CMS_DOCUMENTED_ABSENT_FIELDS:
+            value = _cms_absent_prediction(value)
+        if (key not in expected and key not in types and key not in cms_added
+                and not _is_empty(value)):
             fp += 1
 
     precision = round(tp / (tp + fp), 4) if (tp + fp) else 0.0
