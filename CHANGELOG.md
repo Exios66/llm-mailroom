@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`calibrate_field_scoring.py` runs on Python 3.11 again.** Its table printer nested same-type quotes inside an f-string, which only Python 3.12 accepts; the band label is now built before the `print`. The new root-import scan in `test_dojo_source.py` parses every file under `src/` and `tools/` and found this on the 3.11 CI image.
 - **Audit remediation (#191-#201).**
   - Grounded field scoring now receives the real transcription (`result["doc_text"]`), not the pre-invoke snapshot that never carries it (#191), and `observability.scoring_wiring` is imported by `build_graph.py`, `run_pilot.py` and `run_hf_pilot.py` so field scoring, judge gating and the embedding rescue run on the calibrated `taxonomy.yaml` maps instead of Dojo package defaults (#192).
   - `GET /api/relations/mode` runs `mode_status()` off the event loop (#193).
