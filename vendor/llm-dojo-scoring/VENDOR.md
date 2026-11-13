@@ -2,7 +2,7 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `f4f7e92d82956d48dad5976e40e321befc57e03d` (untagged interim pin, after `v0.28.1`: llm-dojo-scoring#136 production slim-down + #138 CUAD per-category counts + #139 scoring fixes D1-D4)
+- Exact source commit: `62e9925155154f77a8661c83bab6482ebca13ee6` (untagged interim pin, after `v0.28.1`: llm-dojo-scoring#136 production slim-down + #138 CUAD per-category counts + #139 scoring fixes D1-D4 and their CodeRabbit fixes)
 - Source package version: `0.28.1` (`__version__` at that commit; the code is ahead of the `v0.28.1` tag)
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
   That includes the package data `schemas/data/extraction_status.json`, which `.gitignore`

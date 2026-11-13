@@ -34,6 +34,7 @@ from .field_scoring import (
     ExtractionScoreResult,
     score_extraction,
 )
+from ..schemas.corpus import CMS_DOCUMENTED_ABSENT_FIELDS
 from ..schemas.gt_metadata import is_empty_value
 
 _EMPTY = (None, "", [], {})
@@ -120,7 +121,18 @@ def extraction_binary_metrics(
     n_spurious_fill = 0
 
     cms_table = expected_cms_source_table(doc_class, expected)
-    for name, exp_val in expected.items():
+    expected_items = list(expected.items())
+    if cms_table is not None:
+        # A CMS row's documented-absent fields are labelled empty even when the
+        # row omits them, so a stated value stays a false positive (the same
+        # rule ``score_extraction`` applies); silence on an omitted key earns no
+        # empty-field credit.
+        expected_items += [
+            (key, "") for key in CMS_DOCUMENTED_ABSENT_FIELDS
+            if key not in expected and (not types or key in types)
+            and not _is_empty(predicted.get(key))
+        ]
+    for name, exp_val in expected_items:
         if name in NEVER_SCORED_FIELDS or (
             name in RETIRED_PROMPT_KEYS and name not in types
         ):
