@@ -163,3 +163,35 @@ def test_pipeline_scores_only_labelled_fields(
     assert result["stage"] == "archived"
     assert captured, "a grounded archived run must call the field scorer"
     assert captured[0]["expected"] == {"parties": ["Acme Corp", "Beta LLC"]}
+
+
+def test_pilot_report_scores_only_labelled_fields():
+    """The HF pilot's row score (and report re-scoring) ignore post-hoc fills.
+
+    The prediction matches every dataset label and leaves the regex-guessed
+    fields blank, so its labelled score is 1.0 whatever the regex guessed.
+    """
+    from scripts.run_hf_pilot import (
+        enrich_sample_row,
+        expected_fields_for_sample,
+        expected_fields_meta,
+        labelled_fields,
+        score_row_extraction,
+    )
+
+    text = "From: Avery Example\nTo: Casey Example\nDate: March 3, 2024\nPlease review."
+    labels = {"intent": "other", "keywords": ["review"],
+              "subject_matter": "A request to review a draft."}
+    sample = _sample("correspondence", "email", text=text, **labels)
+    fields = expected_fields_for_sample(sample)
+    sources = expected_fields_meta(sample)["sources"]
+    assert any(src == "posthoc" for src in sources.values())
+    predicted = {**labels, "communication_type": "email"}
+
+    pilot = score_row_extraction(predicted, labelled_fields(fields, sources), "correspondence")
+    assert pilot["overall_score"] == 1.0
+
+    row = {"expected": "correspondence", "expected_subclass": "email",
+           "predicted_subtype": "email", "extracted_data": predicted,
+           "expected_fields": fields, "expected_fields_sources": sources}
+    assert enrich_sample_row(row)["extraction_overall_score"] == 1.0
