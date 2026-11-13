@@ -58,9 +58,16 @@ MERGER_GT_KEYS: tuple[str, ...] = (
 )
 
 
+#: Placeholder strings the dataset uses for "no label" (e.g. ``"nan"`` on
+#: insurance ``content_topic``). They are absence, never a label value.
+_NULL_TOKENS = frozenset({"nan", "none", "null", "n/a"})
+
+
 def _put(dst: dict[str, Any], key: str, value: Any) -> None:
     coerced = coerce_gt_value(value)
     if coerced in (None, "", [], {}):
+        return
+    if isinstance(coerced, str) and coerced.strip().lower() in _NULL_TOKENS:
         return
     dst[key] = coerced
 
@@ -97,9 +104,18 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
         if token:
             expected_fields["merger_consideration"] = token
     if hf_class == "corporate_record":
-        if subclass:
-            token = normalize_record_type(subclass)
-            expected_fields["record_type"] = token or subclass
+        # The dataset's own ``record_type`` label is the gold. The subclass is a
+        # fallback only when it names a value of the closed vocabulary: a
+        # subclass such as ``board_resolution`` is labelled ``other``, and
+        # ``charter_amendment`` is labelled ``articles_of_incorporation``.
+        hub_record_type = normalize_record_type(
+            expected_fields.get("record_type") or sample.get("record_type")
+        )
+        token = hub_record_type or (normalize_record_type(subclass) if subclass else "")
+        if token:
+            expected_fields["record_type"] = token
+        else:
+            expected_fields.pop("record_type", None)
         # Legacy Hub column → semantic enrichment
         legacy_provisions = sample.get("key_provisions")
         if legacy_provisions and not expected_fields.get("subject_matter"):
@@ -121,7 +137,8 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
     if hf_class == "correspondence":
         if subclass:
             token = normalize_communication_type(subclass)
-            expected_fields["communication_type"] = token or subclass
+            if token:
+                expected_fields["communication_type"] = token
         legacy_points = sample.get("key_points")
         if legacy_points and not expected_fields.get("subject_matter"):
             coerced = coerce_gt_value(legacy_points)
@@ -169,6 +186,26 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
         if val not in (None, ""):
             _put(expected_fields, key, val)
     return expected_fields
+
+
+def labelled_expected_fields(ground_truth: dict[str, Any] | None) -> dict[str, Any]:
+    """Expected fields that come from dataset labels: the gold for scoring.
+
+    ``build_expected_fields`` adds post-hoc regex fills (source ``"posthoc"``)
+    so routing can check field coverage. Those values are guesses from the
+    document text, not labels, so field scoring and the grounded judge use
+    only fields whose source is ``"hub"``. Without an
+    ``expected_fields_sources`` map (an explicit manifest), every field counts.
+    """
+    if not isinstance(ground_truth, dict):
+        return {}
+    fields = ground_truth.get("expected_fields")
+    if not isinstance(fields, dict):
+        return {}
+    sources = ground_truth.get("expected_fields_sources")
+    if not isinstance(sources, dict):
+        return dict(fields)
+    return {key: value for key, value in fields.items() if sources.get(key, "hub") == "hub"}
 
 
 def build_expected_fields(sample: dict) -> tuple[dict[str, Any], dict[str, Any]]:
