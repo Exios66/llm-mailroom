@@ -6,7 +6,7 @@
 | :--- | :--- |
 | Repository | [Exios66/llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) |
 | Monorepo path | `packages/llm-dojo-scoring` |
-| Latest | v0.28.1 as of 2026-11-07 (llm-mailroom pins f95c3188a1a634a9a2354afd5351edd8dd152a89) |
+| Latest | v0.28.1 as of 2026-11-07 (llm-mailroom pins 46811485ce516392b3f72d3269ed9e43b7ca9ed8) |
 | Used by | llm-mailroom, eval-environment, local-mailroom-sandbox |
 
 ## What it does
@@ -27,7 +27,7 @@ An optional embedding similarity "rescues" names and free text that are worded d
 ## Quick start
 
 ```bash
-pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@f95c3188a1a634a9a2354afd5351edd8dd152a89"
+pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@46811485ce516392b3f72d3269ed9e43b7ca9ed8"
 pip install -e ".[embeddings]"   # optional extras: embeddings, tracing, dev, all
 ```
 
@@ -40,7 +40,7 @@ result = suite.score(expected_fields, predicted_fields)
 ci = dojo.bootstrap_ci([1.0, 0.0, 1.0, 1.0])
 ```
 
-Command-line tools: `dojo-analyze` (report on a results workbook), `dojo-export` (rebuild workbooks from an experiment log), `dojo-sync` (pull live runs from Langfuse or Phoenix).
+Command-line tool: `dojo-version` (release awareness). The workbook, report and trace-sync CLIs (`dojo-analyze`, `dojo-export`, `dojo-rescore`, `dojo-sync`) were removed in the production slim-down. There is no packaged rescoring CLI. To re-score a stored extraction run, load each document's stored expected and predicted values, call the extraction suite's `get_suite(<agent>).score_document(expected=..., predicted=...)` again (it returns the field-micro precision, recall, F1 and F2 that a bare `score()` call leaves out), and store the new result alongside the old one so the two scorer versions stay comparable (`score_document` accepts extraction suites only; re-score classification runs with `get_suite(<agent>).score(...)`).
 
 ## Key modules
 
@@ -64,14 +64,13 @@ llm-mailroom pins it as a git dependency. When dojo publishes a release, a workf
 ## Its documentation
 
 - [README](https://github.com/Exios66/llm-dojo-scoring/blob/main/README.md)
-- [docs/SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/SCORING.md) — scoring methodology
-- [docs/EXTRACTION_SCHEMAS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/EXTRACTION_SCHEMAS.md) — the live extraction schemas for the five classes
-- [docs/METRIC_IDS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/METRIC_IDS.md) — metric identity per document class
-- [docs/SCORECARD_HONESTY.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/SCORECARD_HONESTY.md) — what a scorecard can and cannot claim
-- [docs/GT_METADATA.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/GT_METADATA.md) — ground-truth parsing
-- [docs/MAUD_LABELS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/MAUD_LABELS.md) — MAUD answer classes
-- [docs/ARCHIVE_SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/ARCHIVE_SCORING.md) — archive scoring block
-- [docs/GRID_REPORTS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/GRID_REPORTS.md) — specialist grid reports for GPU studies
-- [docs/PROMPTS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/PROMPTS.md) — prompt catalog
-- [docs/MIGRATION.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/MIGRATION.md) — upgrading between versions
+- [docs/guides/SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/guides/SCORING.md) — scoring methodology
+- [docs/schemas/EXTRACTION_SCHEMAS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/schemas/EXTRACTION_SCHEMAS.md) — the live extraction schemas for the five classes
+- [docs/contracts/METRIC_IDS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/contracts/METRIC_IDS.md) — metric identity per document class
+- [docs/contracts/SCORECARD_HONESTY.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/contracts/SCORECARD_HONESTY.md) — what a scorecard can and cannot claim
+- [docs/schemas/GT_METADATA.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/schemas/GT_METADATA.md) — ground-truth parsing
+- [docs/schemas/MAUD_LABELS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/schemas/MAUD_LABELS.md) — MAUD answer classes
+- [docs/contracts/ARCHIVE_SCORING.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/contracts/ARCHIVE_SCORING.md) — archive scoring block
+- [docs/guides/PROMPTS.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/guides/PROMPTS.md) — prompt catalog
+- [docs/guides/MIGRATION.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/docs/guides/MIGRATION.md) — upgrading between versions
 - [CHANGELOG.md](https://github.com/Exios66/llm-dojo-scoring/blob/main/CHANGELOG.md)

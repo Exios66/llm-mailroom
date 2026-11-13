@@ -29,6 +29,8 @@ from ..scoring.field_scoring import (
     expected_cms_source_table,
     score_extraction,
 )
+from ..schemas import doc_classes
+from ..schemas.doc_classes import LIVE_DOC_TYPES
 from ..schemas.gt_metadata import CMS_SOURCE_TABLE_KEY, is_empty_value
 from ..metrics.scorecard_honesty import (
     _METRIC_ID_BY_NAME,
@@ -126,14 +128,9 @@ ARCHIVE_SCORING_V027_KEYS: frozenset[str] = frozenset(
     {"headline_score", "headline_metric", "unlabeled_fields", "entity_list_f1", "scorer"}
 )
 
-#: Live extraction classes that reach the archive (#238).
-LIVE_ARCHIVE_DOC_TYPES: tuple[str, ...] = (
-    "contract",
-    "merger_agreement",
-    "corporate_record",
-    "correspondence",
-    "insurance_claim",
-)
+#: Live extraction classes that reach the archive (#238): the live classes of
+#: ``schemas/doc_classes.py``.
+LIVE_ARCHIVE_DOC_TYPES: tuple[str, ...] = LIVE_DOC_TYPES
 
 #: Top-level columns of a hash-chained audit row (#236). ``entry_hash`` is
 #: computed; ``seq`` is the DB sequence and is not hashed.
@@ -356,11 +353,9 @@ def _live_field_types(doc_class: str, field_types: Mapping[str, str] | None) -> 
     """Return ``field_types`` as given, else the live default map for ``doc_class``."""
     if field_types:
         return dict(field_types)
-    from ..scoring.suites import DEFAULT_FIELD_TYPES
-
-    mapped = DEFAULT_FIELD_TYPES.get(doc_class)
+    mapped = doc_classes.field_types(doc_class) if doc_class in doc_classes.DOC_CLASSES else None
     if mapped:
-        return dict(mapped)
+        return mapped
     raise KeyError(
         f"no live field map for {doc_class!r}; known: {sorted(LIVE_ARCHIVE_DOC_TYPES)}"
     )

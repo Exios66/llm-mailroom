@@ -23,6 +23,8 @@ from typing import Any
 
 import yaml
 
+from .schemas.doc_classes import DOC_CLASSES, LIVE_DOC_TYPES, RETIRED_DOC_TYPES
+
 # ---------------------------------------------------------------------------
 # Contract subtypes (CUAD corpus, 25 families + "other")
 # ---------------------------------------------------------------------------
@@ -154,28 +156,20 @@ DOCCLASS_FAILURE_MODES: dict[str, dict[str, str]] = {
 # Additional document hierarchy (issue #19 / KANBAN-047) — task registries
 # ---------------------------------------------------------------------------
 
-# Full historical + live class set the scorer still understands.
+# Full historical + live class set the scorer still understands, derived from
+# ``schemas/doc_classes.py`` (edit the registry, not these lists).
 # Live pipeline extracts five of these; court_opinion, due_diligence, and
 # compliance_filing are RETIRED (sorter emits ``unknown``); merger_agreement
 # is ``MergerAgreementExtraction``. See :mod:`llm_dojo_scoring.pipeline.mailroom`.
-DOC_CLASS_KEYS: list[str] = [
-    "contract", "corporate_record", "due_diligence", "correspondence",
-    "compliance_filing", "court_opinion", "insurance_claim",
-    "merger_agreement",
-]
-LIVE_DOC_CLASS_KEYS: list[str] = [
-    "contract", "merger_agreement", "corporate_record", "correspondence",
-    "insurance_claim",
-]
+DOC_CLASS_KEYS: list[str] = list(DOC_CLASSES)
+LIVE_DOC_CLASS_KEYS: list[str] = list(LIVE_DOC_TYPES)
 # Retired classes: excluded from the classifier's valid label set. The live
 # pipeline extracts five classes (``LIVE_DOC_CLASS_KEYS``); court_opinion,
 # due_diligence, and compliance_filing are RETIRED (sorter emits ``unknown``,
 # and llm-mailroom taxonomy.yaml no longer carries a compliance_filing class).
 # merger_agreement is ``MergerAgreementExtraction``. See
 # :mod:`llm_dojo_scoring.pipeline.mailroom`.
-RETIRED_DOC_CLASS_KEYS: list[str] = [
-    "court_opinion", "due_diligence", "compliance_filing",
-]
+RETIRED_DOC_CLASS_KEYS: list[str] = list(RETIRED_DOC_TYPES)
 
 # MAUD merger-agreement consideration-type subclass (expert GT dimension —
 # `Type of Consideration`). Keys are the canonical snake_case form used by the

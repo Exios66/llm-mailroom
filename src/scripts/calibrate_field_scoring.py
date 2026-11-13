@@ -323,10 +323,12 @@ def main() -> int:
     print("-" * len(hdr))
     for ft in sorted(report["field_types"]):
         d = report["field_types"][ft]
+        lo, hi = d["suggested_band"]
+        band = f"{lo}–{hi}"
         print(
             f"{ft:<22}{str(d['n_correct'])+'/'+str(d['n_incorrect']):>10}"
             f"{d['correct_p10_p50_p90'][1]:>12.3f}{d['incorrect_p10_p50_p90'][1]:>10.3f}"
-            f"{f'{d['suggested_band'][0]}–{d['suggested_band'][1]}':>18}  {d['verdict']}"
+            f"{band:>18}  {d['verdict']}"
         )
     print()
     print("Reading: 'correct p50' vs 'bad p50' must be well separated. A verdict of")

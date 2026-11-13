@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from typing import Any, Iterable
 
 from ..metrics.bundles import Bundle, bundle_metric_names
+from ..schemas import doc_classes
 from .field_scoring import ExtractionScoreResult, score_extraction, score_field
 from ..metrics.profiles import AgentProfile, DEFAULT_PROFILES, get_profile
 from ..metrics.registry import load_registry
@@ -43,7 +44,6 @@ __all__ = [
     "ScoringSuite",
     "DEFAULT_SUITES",
     "DEFAULT_FIELD_TYPES",
-    "LEGACY_FULL_EXTRACTION_FIELD_TYPES",
     "SPECIALIST_DOC_TYPES",
     "DOC_TYPE_ALIASES",
     "get_suite",
@@ -53,16 +53,10 @@ __all__ = [
 ]
 
 
-#: Specialist profile name → native mailroom document class.
+#: Specialist profile name → native mailroom document class (derived from
+#: ``schemas/doc_classes.py``; edit the registry, not this table).
 SPECIALIST_DOC_TYPES: dict[str, str] = {
-    "contracts_specialist": "contract",
-    "merger_agreement_specialist": "merger_agreement",
-    "corporate_records_specialist": "corporate_record",
-    "due_diligence_specialist": "due_diligence",
-    "correspondence_specialist": "correspondence",
-    "compliance_specialist": "compliance_filing",
-    "court_opinions_specialist": "court_opinion",
-    "insurance_claims_specialist": "insurance_claim",
+    doc_classes.DOC_CLASSES[key].specialist: key for key in doc_classes.ROSTER_DOC_TYPES
 }
 
 #: Doc-type lookup aliases (mailroom ``doc_type`` → specialist suite).
@@ -73,192 +67,16 @@ DOC_TYPE_ALIASES: dict[str, str] = {
 }
 
 #: Default field→scoring-type maps, mirrored from llm-mailroom
-#: ``config/taxonomy.yaml`` / ``EXTRACTION_SCHEMAS`` (v0.6.0 pared product).
-#: Open-ended ``key_obligations`` / ``termination_clauses`` / ``key_provisions``
-#: / long ``key_points`` are retired from the live board — score CUAD/MAUD/
-#: insurance checklists + the semantic trio instead. Override with
-#: ``field_types=`` on ``score()``, or use
-#: :data:`LEGACY_FULL_EXTRACTION_FIELD_TYPES` for historical free-text dumps.
+#: ``config/taxonomy.yaml`` / ``EXTRACTION_SCHEMAS`` (v0.6.0 pared product) and
+#: derived from the document-class registry (``schemas/doc_classes.py``: edit the
+#: field there, not here). Open-ended ``key_obligations`` / ``termination_clauses``
+#: / ``key_provisions`` / long ``key_points`` are retired from the live board — score
+#: CUAD/MAUD/insurance checklists + the semantic trio instead. Override with
+#: ``field_types=`` on ``score()``.
 DEFAULT_FIELD_TYPES: dict[str, dict[str, str]] = {
-    # ContractExtraction v2 (0.28.0, mailroom-dataset v10): the parse-compat
-    # ``merger_consideration`` / ``maud_clauses`` left the live map
-    # (``cuad_schema.CONTRACT_PARSE_COMPAT_FIELDS``) and the entity fields joined.
-    "contract": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "party_roles": "entity_list:free_text",
-        "signatories": "entity_list:name",
-        "agreement_date": "date",
-        "effective_date": "date",
-        "expiration_date": "date",
-        "term_length": "free_text",
-        "renewal_terms": "free_text",
-        "termination_notice_period": "free_text",
-        "governing_law": "name",
-        "dispute_forum": "name",
-        "contract_value": "money",
-        "payment_terms": "free_text",
-        "territory": "free_text",
-        "cuad_family": "label",
-        "cuad_clauses": "entity_list:free_text",
-    },
-    "corporate_record": {
-        "entity_name": "name",
-        "record_type": "name",
-        "effective_date": "date",
-        "signatories": "entity_list:name",
-        "jurisdiction": "name",
-        "filing_number": "id",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
-    "due_diligence": {
-        "target_entity": "name",
-        "diligence_type": "name",
-        "material_findings": "entity_list:free_text",
-        "risk_flags": "entity_list:free_text",
-        "outstanding_items": "entity_list:free_text",
-        "document_date": "date",
-        "prepared_by": "name",
-    },
-    "correspondence": {
-        "sender": "name",
-        "recipient": "name",
-        "additional_recipients": "entity_list",
-        "communication_type": "label",
-        "communication_date": "date",
-        "demand_amount": "money",
-        "action_items": "entity_list",
-        "urgency": "label",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
-    "compliance_filing": {
-        "filing_type": "name",
-        "regulatory_body": "name",
-        "filing_date": "date",
-        "due_date": "date",
-        "entity_name": "name",
-        "key_requirements": "entity_list:free_text",
-        "status": "name",
-        "reference_number": "id",
-    },
-    "court_opinion": {
-        "case_name": "name",
-        "court": "name",
-        "date_decided": "date",
-        "docket_number": "id",
-        "opinion_type": "name",
-        "parties": "entity_list:name",
-        "holding": "free_text",
-        "legal_issues": "entity_list:free_text",
-        "outcome": "free_text",
-        "citations": "entity_list:id",
-        "authored_by": "name",
-    },
-    "insurance_claim": {
-        "claim_number": "id",
-        "policy_number": "id",
-        "insurer": "name",
-        "insured_party": "name",
-        "claim_type": "label",
-        "date_of_loss": "date",
-        "date_filed": "date",
-        "claimed_amount": "money",
-        "adjuster": "name",
-        "damages_description": "free_text",
-        "coverage_determination": "label",
-        "denial_reasons": "entity_list:free_text",
-        "supporting_documents": "entity_list",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-        "claim_checklist": "entity_list:free_text",
-    },
-    # MergerAgreementExtraction v2 (0.28.0, mailroom-dataset v10).
-    "merger_agreement": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "acquirer": "name",
-        "target": "name",
-        "merger_sub": "entity_list:name",
-        "signatories": "entity_list:name",
-        "effective_date": "date",
-        "effective_time": "free_text",
-        "governing_law": "name",
-        "per_share_cash_amount": "money",
-        "exchange_ratio": "free_text",
-        "target_termination_fee": "money",
-        "parent_termination_fee": "money",
-        "outside_date": "date",
-        "financial_advisors": "entity_list:name",
-        "legal_counsel": "entity_list:name",
-        "merger_consideration": "label",
-        "maud_clauses": "entity_list:free_text",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
+    key: doc_classes.field_types(key) for key in doc_classes.DOC_CLASSES
 }
 
-#: Pre-v0.6.0 mailroom field maps that still score open-ended free-text
-#: obligation dumps. Use only for historical rescoring — live board numbers
-#: should use :data:`DEFAULT_FIELD_TYPES`.
-LEGACY_FULL_EXTRACTION_FIELD_TYPES: dict[str, dict[str, str]] = {
-    "contract": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "effective_date": "date",
-        "term_length": "free_text",
-        "termination_clauses": "entity_list:free_text",
-        "governing_law": "name",
-        "key_obligations": "entity_list:free_text",
-        "contract_value": "money",
-        "renewal_terms": "free_text",
-        "cuad_family": "name",
-        "merger_consideration": "name",
-        "cuad_clauses": "entity_list:free_text",
-        "maud_clauses": "entity_list:free_text",
-    },
-    "merger_agreement": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "effective_date": "date",
-        "term_length": "free_text",
-        "termination_clauses": "entity_list:free_text",
-        "governing_law": "name",
-        "key_obligations": "entity_list:free_text",
-        "contract_value": "money",
-        "renewal_terms": "free_text",
-        "cuad_family": "name",
-        "merger_consideration": "name",
-        "cuad_clauses": "entity_list:free_text",
-        "maud_clauses": "entity_list:free_text",
-    },
-    "corporate_record": {
-        "entity_name": "name",
-        "record_type": "name",
-        "effective_date": "date",
-        "key_provisions": "entity_list:free_text",
-        "signatories": "entity_list:name",
-        "jurisdiction": "name",
-        "filing_number": "id",
-    },
-    "correspondence": {
-        "sender": "name",
-        "recipient": "name",
-        "additional_recipients": "entity_list",
-        "communication_type": "name",
-        "communication_date": "date",
-        "key_points": "entity_list",
-        "demand_amount": "money",
-        "action_items": "entity_list",
-        "urgency": "name",
-        "referenced_communications": "entity_list",
-    },
-}
 
 #: Per-agent extras on top of the task-bundle surface. Only names that
 #: already resolve in the registry (no invented KPIs).
