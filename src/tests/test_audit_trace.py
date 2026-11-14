@@ -255,3 +255,64 @@ def test_record_visit_outside_a_node_is_dropped():
     from audit.trace import record_visit
 
     record_visit("orphan", detail={"x": 1})  # no traced node is running: nothing to attach to, no error
+
+
+def test_failed_node_visit_is_kept_with_its_llm_calls(monkeypatch):
+    """A node that raises never applies an update, so its visit is handed to the run's collector (T11)."""
+    from observability.tracing import collect_unapplied_visits, traced_node
+    from pipeline.limits import record_usage, reset_run_usage
+
+    class Usage:
+        prompt_tokens, completion_tokens = 50, 5
+
+    reset_run_usage()
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+
+    @traced_node("classify-document")
+    def classify_node(state):
+        record_usage(Usage(), "test-model", served_model="served", prompt="p", completion="c")
+        raise RuntimeError("boom")
+
+    with collect_unapplied_visits() as unapplied:
+        with pytest.raises(RuntimeError, match="boom"):  # the node's exception still propagates
+            classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})
+    (v,) = unapplied
+    assert (v["node"], v["status"], v["outcome"]) == ("classify", "error", "fail")
+    assert (v["model"], v["prompt_tokens"], v["completion_tokens"]) == ("served", 50, 5)
+
+
+def test_interrupt_visit_is_paused_and_keeps_its_note(monkeypatch):
+    """A node that parks and calls ``interrupt()`` leaves a paused visit with the note it recorded (T24)."""
+    from langgraph.errors import GraphInterrupt
+
+    from audit.trace import record_visit
+    from observability.tracing import collect_unapplied_visits, traced_node
+
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+
+    @traced_node("route-for-review")
+    def human_review_node(state):
+        record_visit("routed_to_review", detail={"reason": "low confidence"})
+        raise GraphInterrupt()
+
+    with collect_unapplied_visits() as unapplied:
+        with pytest.raises(GraphInterrupt):
+            human_review_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})
+    (v,) = unapplied
+    assert (v["node"], v["status"], v["outcome"]) == ("human_review", "paused", "ok")
+    assert v["decision"]["audit_event"]["event"] == "routed_to_review"
+    assert v["decision"]["audit_event"]["detail"] == {"reason": "low confidence"}
+
+
+def test_no_collector_outside_a_run_is_harmless(monkeypatch):
+    from observability.tracing import traced_node
+
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+
+    @traced_node("classify-document")
+    def classify_node(state):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})

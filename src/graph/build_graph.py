@@ -3739,14 +3739,37 @@ def _abort_review_evidence(state: dict, doc_id: str | None) -> dict[str, Any]:
     }
 
 
-def _checkpoint_values(graph, config) -> dict:
-    """The last checkpointed state of this run (its trace and decisions), or ``{}``."""
+def _checkpoint_values(graph, config, unapplied: list[dict] | None = None) -> dict:
+    """The last checkpointed state of this run (its trace and decisions), or ``{}``.
+
+    ``unapplied`` are the visits of nodes that raised (see
+    ``tracing.collect_unapplied_visits``); the checkpoint never saw them, so they
+    are added to the returned ``audit_trace``.
+    """
     try:
         snapshot = graph.get_state(config)
         values = getattr(snapshot, "values", None)
-        return dict(values) if isinstance(values, dict) else {}
+        checkpoint = dict(values) if isinstance(values, dict) else {}
     except Exception:
-        return {}
+        checkpoint = {}
+    if unapplied:
+        checkpoint["audit_trace"] = [*(checkpoint.get("audit_trace") or []), *unapplied]
+    return checkpoint
+
+
+def _append_unapplied_visits(graph, config, unapplied: list[dict]) -> None:
+    """Add the visits of a node that paused in ``interrupt()`` to the parked checkpoint.
+
+    The node's own update (and so its visit) is dropped when it pauses; the same
+    ``update_state`` append that records a review decision on a parked document
+    (``audit.events``) puts it back. Best-effort: a pause is never failed by it.
+    """
+    if not unapplied:
+        return
+    try:
+        graph.update_state(config, {"audit_trace": list(unapplied)})
+    except Exception:
+        logger.warning("audit_visit_unrecorded", exc_info=True)
 
 
 def _finalize_aborted(
@@ -3759,7 +3782,8 @@ def _finalize_aborted(
     scored (run_aborted=1) and visible in the catalog instead of stranding in
     processing/. ``failure_class`` distinguishes timeout vs auth vs I/O.
     ``checkpoint`` supplies the last trace and decisions for the failed audit
-    row; abort outcome fields from ``initial_state`` take precedence.
+    row; only the abort's own outcome fields (stage, error, failure class) are
+    laid over it, never the rest of ``initial_state``.
     """
     from pipeline.bins import move_to_failed, save_manifest
     from schemas.manifest import DocumentManifest, PipelineStage
@@ -3805,6 +3829,13 @@ def _finalize_aborted(
         manifest.escalation_reason = tagged
         state["error_message"] = tagged
         state["escalation_reason"] = tagged
+    # What the abort itself decided. Only these keys are laid over the checkpoint
+    # for the audit row: the rest of ``state`` is the run's initial-state defaults
+    # (``doc_type=None``, counters at 0) and must not hide what the run had decided.
+    abort_outcome = {k: state[k] for k in ("doc_id", "stage", "run_aborted", "error_message")}
+    if failure_class:
+        abort_outcome["failure_class"] = state["failure_class"]
+        abort_outcome["escalation_reason"] = state["escalation_reason"]
 
     file_path_str = state.get("file_path") or ""
     if file_path_str and not Path(file_path_str).exists():
@@ -3843,7 +3874,7 @@ def _finalize_aborted(
     # Unified audit row (spec §5.3): the failed row, from the last checkpoint
     # (its trace and decisions) overlaid with the abort outcome.
     state["audit_metrics"] = _terminal_audit_row(
-        {**(checkpoint or {}), **state}, event="failed", actor="pipeline"
+        {**state, **(checkpoint or {}), **abort_outcome}, event="failed", actor="pipeline"
     )
     # Completion echo (HUB-037): failed Gmail-intake runs report on-thread
     # too.
@@ -4229,8 +4260,12 @@ def _execute_run(
         if invoke_input is None:
             payload = initial_state
         _run_log.bind_contextvars(trace_id=state_trace_id)
+        # A node that raises or pauses in ``interrupt()`` returns no update, so
+        # LangGraph drops its visit; the collector hands those visits back here.
+        unapplied: list[dict] = []
         try:
-            result = graph.invoke(payload, config)
+            with tracing.collect_unapplied_visits() as unapplied:
+                result = graph.invoke(payload, config)
         except GraphInterrupt:
             result = {**initial_state, "__interrupt__": True}
         except (limits.RunDeadlineExceeded, limits.RunBudgetExceeded) as exc:
@@ -4248,7 +4283,7 @@ def _execute_run(
                 initial_state,
                 classified["reason"],
                 failure_class=classified["failure_class"],
-                checkpoint=_checkpoint_values(graph, config),
+                checkpoint=_checkpoint_values(graph, config, unapplied),
             )
         except Exception as exc:
             from pipeline.failures import classify_run_failure
@@ -4263,9 +4298,10 @@ def _execute_run(
                 initial_state,
                 classified["reason"],
                 failure_class=classified["failure_class"],
-                checkpoint=_checkpoint_values(graph, config),
+                checkpoint=_checkpoint_values(graph, config, unapplied),
             )
         if _result_is_interrupted(result):
+            _append_unapplied_visits(graph, config, unapplied)
             result = _paused_review_result(result, initial_state, thread_id, state_trace_id)
         elif result.get("stage") in {PipelineStage.ARCHIVED.value, PipelineStage.FAILED.value}:
             _discard_checkpoints(graph, thread_id)

@@ -30,6 +30,26 @@ _JSON_MODE_SYSTEM_NOTE = (
 )
 
 
+def _without_page_images(messages: list[dict]) -> list[dict]:
+    """A copy of ``messages`` with each page image replaced by ``{"type": "image_url", "omitted": True}``.
+
+    The recorded prompt (the audit visit, the trace sinks) is text; page data
+    URIs would add megabytes per call. The request itself is not touched.
+    """
+    out = []
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            content = [
+                {"type": "image_url", "omitted": True}
+                if isinstance(part, dict) and part.get("type") == "image_url" else part
+                for part in content
+            ]
+            message = {**message, "content": content}
+        out.append(message)
+    return out
+
+
 class BaseAgent(ABC):
     agent_name: str
 
@@ -189,7 +209,7 @@ class BaseAgent(ABC):
             self.model,
             agent=self.agent_name,
             served_model=served_model,
-            prompt=json.dumps(messages, ensure_ascii=False, default=str),
+            prompt=json.dumps(_without_page_images(messages), ensure_ascii=False, default=str),
             completion=completion if isinstance(completion, str) else None,
             prompt_version=version if isinstance(version, (str, int)) else None,
         )

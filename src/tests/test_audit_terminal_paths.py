@@ -131,3 +131,45 @@ def test_watcher_abort_writes_failed_row(run_graph, temp_base_dir, mocker):
     # The checkpoint's trace up to the failing node is kept.
     assert detail["nodes_visited"][:2] == ["intake", "classify"]
     assert _single(_row(result["doc_id"]))
+
+
+def test_abort_failed_row_keeps_checkpointed_decisions(run_graph, temp_base_dir, mocker):
+    """An abort overlays only its own outcome: the checkpoint's classification must survive in the failed row."""
+    from graph import build_graph as bg
+    from pipeline.limits import RunBudgetExceeded
+
+    def heartbeat(state):
+        if state.get("doc_type"):
+            raise RunBudgetExceeded(9999, 10)
+
+    mocker.patch.object(bg, "_touch_heartbeat", side_effect=heartbeat)
+    source = temp_base_dir / "pipeline" / "inbox" / "abort-keeps.txt"
+    source.write_text("Service Agreement between Acme and Beta.")
+    result = bg.run_pipeline(source, "M-ABORT-KEEP")
+    assert result["stage"] == "failed"
+    detail = _row(result["doc_id"])["detail"]
+    # The row is the failed outcome ...
+    assert detail["stage"] == "failed" and detail["pipeline_success"] is False and detail["error_message"]
+    # ... on top of what the run had decided before it stopped (the initial-state defaults must not win).
+    assert detail["doc_type"] == "contract"
+    assert detail["classification_attempts"] >= 1
+    assert detail["classification_confidence"] == 0.99
+
+
+def test_abort_failed_row_includes_the_node_that_raised(run_graph, temp_base_dir, mocker):
+    """The node that hit the hard limit is in the failed row's trace, as an error visit (T11)."""
+    from graph import build_graph as bg
+    from pipeline.limits import RunBudgetExceeded
+
+    def heartbeat(state):
+        if state.get("doc_type"):
+            raise RunBudgetExceeded(9999, 10)
+
+    mocker.patch.object(bg, "_touch_heartbeat", side_effect=heartbeat)
+    source = temp_base_dir / "pipeline" / "inbox" / "abort-node.txt"
+    source.write_text("Service Agreement between Acme and Beta.")
+    result = bg.run_pipeline(source, "M-ABORT-NODE")
+    trace = _row(result["doc_id"])["detail"]["trace"]
+    failing = trace[-1]
+    assert [v["node"] for v in trace][:2] == ["intake", "classify"]
+    assert len(trace) == 3 and failing["status"] == "error" and failing["outcome"] == "fail"

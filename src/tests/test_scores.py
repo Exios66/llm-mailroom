@@ -59,6 +59,34 @@ class TestValidateExtraction:
         assert result["parse_error"] is False
         assert result["schema_valid"] is True
 
+    # A corporate_record subclass registers extension fields whose types the dojo checks:
+    # ``incorporators`` is a list of names, here a bare string.
+    BAD_EXTENSION = {"entity_name": "Acme Inc", "incorporators": "Jane Doe"}
+
+    def test_corporate_extension_types_are_checked_with_the_subclass(self):
+        from observability.scores import validate_extraction
+
+        result = validate_extraction(
+            "corporate_record", self.BAD_EXTENSION, doc_subclass="articles_of_incorporation"
+        )
+        assert result["schema_valid"] is False
+
+    def test_corporate_extension_without_subclass_keeps_core_check_only(self):
+        from observability.scores import validate_extraction
+
+        assert validate_extraction("corporate_record", self.BAD_EXTENSION)["schema_valid"] is True
+
+    def test_run_score_agrees_with_the_scoring_node_on_extension_fields(self):
+        from graph.scoring_nodes import adherence_for
+        from observability.scores import compute_pipeline_scores
+
+        state = {
+            "doc_type": "corporate_record", "doc_subclass": "articles_of_incorporation",
+            "extracted_data": dict(self.BAD_EXTENSION), "stage": "archived",
+        }
+        assert adherence_for(state)["schema_valid"] is False
+        assert compute_pipeline_scores(state)["schema_valid"] == 0
+
 
 class TestEmitPipelineScores:
     def test_scores_computed_when_tracing_disabled(self):

@@ -25,6 +25,7 @@ Two integration points:
   when tracing is disabled.
 """
 
+import contextvars
 import functools
 import os
 from datetime import datetime, timezone
@@ -32,6 +33,30 @@ import structlog
 from contextlib import contextmanager
 
 logger = structlog.get_logger(__name__)
+
+# Visits of node calls that never returned an update: a node that raised, or one
+# that paused in ``interrupt()``. LangGraph drops such a node's update, so its
+# visit cannot travel through the ``audit_trace`` reducer; ``_execute_run`` opens
+# this collector around the invoke and applies what it holds itself.
+_unapplied_visits: contextvars.ContextVar[list | None] = contextvars.ContextVar(
+    "audit_unapplied_visits", default=None
+)
+
+
+@contextmanager
+def collect_unapplied_visits():
+    """Collect the audit visits of node calls that raised or paused instead of returning.
+
+    Yields the list the visits are appended to, in call order. Outside this
+    block such visits are dropped. LangGraph runs nodes in copies of the calling
+    context, so the list (a shared object) is what carries them out.
+    """
+    bucket: list[dict] = []
+    token = _unapplied_visits.set(bucket)
+    try:
+        yield bucket
+    finally:
+        _unapplied_visits.reset(token)
 
 
 def resolve_provider_name() -> str:
@@ -211,6 +236,20 @@ def observation_type_for(name: str, default: str = "span") -> str:
     return NODE_OBSERVATION_TYPES.get(name, default)
 
 
+def _unapplied_status(exc: BaseException) -> str | None:
+    """Visit status for a node that raised ``exc``: ``paused`` for ``interrupt()``, ``error`` for a failure.
+
+    Other LangGraph control-flow signals are not failures and leave no visit.
+    """
+    from langgraph.errors import GraphBubbleUp, GraphInterrupt
+
+    if isinstance(exc, GraphInterrupt):
+        return "paused"
+    if isinstance(exc, GraphBubbleUp):
+        return None
+    return "error"
+
+
 def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=None):
     """Decorator that wraps a graph node fn in a named observation span.
 
@@ -225,7 +264,10 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
 
     For dict results, appends an audit visit with timing, LLM usage, and any
     event recorded by the node. Visit construction failures are logged without
-    changing the node result; exceptions from the node still propagate.
+    changing the node result; exceptions from the node still propagate. A node
+    that raises or pauses in ``interrupt()`` returns no update, so its visit
+    (``status`` ``error`` or ``paused``) goes to the open
+    :func:`collect_unapplied_visits` block instead.
     """
 
     obs_type = as_type or observation_type_for(name)
@@ -237,6 +279,21 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
 
         node = node_name(fn)
 
+        def keep_unapplied(node, state, started, calls_before, event, status):
+            """Hand the visit of a node that raised or paused to the run's collector, if one is open."""
+            from audit import trace
+
+            bucket = _unapplied_visits.get()
+            if bucket is None:
+                return
+            try:
+                bucket.append(trace.visit(
+                    node, state, {}, started_at=started, ended_at=datetime.now(timezone.utc),
+                    status=status, llm=trace.llm_info_since(calls_before), event=event,
+                ))
+            except Exception:
+                logger.warning("audit_visit_failed", node=node, exc_info=True)
+
         def run(state):
             """Call ``fn`` and return its result and visit, if one can be built."""
             from audit import trace
@@ -244,10 +301,16 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
             started = datetime.now(timezone.utc)
             calls_before = trace.run_calls_count()
             token = trace.begin_visit()
+            unapplied_status = None
             try:
                 result = fn(state)
+            except Exception as exc:
+                unapplied_status = _unapplied_status(exc)
+                raise
             finally:
                 event = trace.end_visit(token)
+                if unapplied_status:
+                    keep_unapplied(node, state, started, calls_before, event, unapplied_status)
             if not isinstance(result, dict):
                 return result, None
             try:

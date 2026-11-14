@@ -446,7 +446,7 @@ def emit_in_pipeline_judge_scores(state: dict) -> None:
             create_trace_score(str(trace_id), "judge_notes", notes, data_type="TEXT")
 
 
-def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
+def validate_extraction(doc_type: str, extracted_data: dict | None, doc_subclass: str | None = None) -> dict:
     """Check an extraction against the doc type's pydantic schema.
 
     Returns {"parse_error": bool, "schema_valid": bool}. `parse_error` is set
@@ -458,6 +458,9 @@ def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
     ``extraction.adherence`` share one definition. The mailroom keeps its
     stricter edges: a flagged parse error, an empty payload and a class with
     no registered schema are never valid (the dojo would pass the last one).
+
+    ``doc_subclass`` selects a corporate record's extension fields and their
+    types, as the scoring node does; omit it and only the core fields are checked.
     """
     parsed = {
         "parse_error": bool(extracted_data and extracted_data.get("_parse_error")),
@@ -479,7 +482,7 @@ def validate_extraction(doc_type: str, extracted_data: dict | None) -> dict:
 
     try:
         verdict = assess_extraction_payload(
-            dict(extracted_data), doc_type, schema_lookup=get_extraction_schema
+            dict(extracted_data), doc_type, doc_subclass, schema_lookup=get_extraction_schema
         )
     except Exception:
         logger.warning("schema_adherence_failed", doc_type=doc_type, exc_info=True)
@@ -630,7 +633,7 @@ def compute_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
     """
     stage = state.get("stage")
     extracted = state.get("extracted_data") or {}
-    checks = validate_extraction(state.get("doc_type"), extracted)
+    checks = validate_extraction(state.get("doc_type"), extracted, state.get("doc_subclass"))
     guardrail_fired = bool(state.get("extraction_guardrail")) or bool(state.get("classification_guardrail"))
     scores = {
         "parse_error": int(checks["parse_error"]),
