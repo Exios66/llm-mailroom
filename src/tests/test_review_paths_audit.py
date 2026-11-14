@@ -141,3 +141,29 @@ def test_record_after_row_is_review_decision_addendum(api, temp_base_dir, llm, m
     assert [a["kind"] for a in _row(doc_id)["addenda"]] == ["review_decision", "relations_linked"]
     # No row and nothing parked: nothing to attach to, and no error.
     assert asyncio.run(record_document_event("no-such-doc", "review_decision", {})) is None
+
+
+async def test_unmigrated_database_is_an_info_event_not_a_traceback(monkeypatch):
+    """T16 (#229): audit migration is opt-in, so ``AuditMigrationPending`` is the default state."""
+    from audit import events, writer
+    from audit.models import AuditMigrationPending
+
+    async def pending(_doc_id):
+        raise AuditMigrationPending("audit_meta has no migration record")
+
+    seen: list[tuple[str, str, dict]] = []
+
+    class Rec:
+        def __getattr__(self, level):
+            def log(event, *a, **kw):
+                seen.append((level, event, kw))
+            return log
+
+    monkeypatch.setattr(writer, "get_row", pending)
+    monkeypatch.setattr(events, "logger", Rec())
+
+    assert await events.record_document_event("d-1", "review_decision", {}) is None
+    assert [(lvl, ev) for lvl, ev, _ in seen] == [("info", "audit_event_unrecorded")]
+    kw = seen[0][2]
+    assert kw["reason"] == "migration_pending" and not kw.get("exc_info")
+    assert (kw["doc_id"], kw["kind"]) == ("d-1", "review_decision")

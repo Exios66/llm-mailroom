@@ -53,9 +53,10 @@ async def record_document_event(
 
     Returns which one was written, or ``None`` when neither could be (no row and
     no parked checkpoint, the audit tables not migrated, or a write error; each
-    is logged as ``audit_event_unrecorded``).
+    is logged as ``audit_event_unrecorded``: at info with ``reason="migration_pending"``
+    and no traceback for the migration, at warning otherwise).
     """
-    from audit.models import Addendum
+    from audit.models import Addendum, AuditMigrationPending
     from audit.writer import get_row, write_addendum
 
     try:
@@ -65,6 +66,9 @@ async def record_document_event(
         if await asyncio.to_thread(_append_to_checkpoint, doc_id, kind, actor, detail):
             return "trace"
         logger.warning("audit_event_unrecorded", doc_id=doc_id, kind=kind, reason="no_row_no_checkpoint")
+    except AuditMigrationPending:
+        # Opt-in migration: this is the default state of an unmigrated install, not a fault.
+        logger.info("audit_event_unrecorded", doc_id=doc_id, kind=kind, reason="migration_pending")
     except Exception:
         logger.warning("audit_event_unrecorded", doc_id=doc_id, kind=kind, exc_info=True)
     return None
