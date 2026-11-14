@@ -60,7 +60,7 @@
 **Files:**
 - Modify: `src/storage/audit_log.py`. `AuditLogRecord` gets a unique `doc_id` and a global `seq`. Add new models `AuditAttemptRecord`, `AuditAddendumRecord`, `AuditLegacyRecord`, `AuditMetaRecord` and `AuditTraceIORecord`.
 - Create: `src/storage/audit_migrate.py`
-- Modify: `src/storage/db.py`. `ensure_schema` calls `migrate_audit_log`.
+- Modify: `src/storage/db.py`. `ensure_schema` calls `migrate_at_startup` (opt-in via `MAILROOM_AUDIT_MIGRATE=1`).
 - Test: `src/tests/test_audit_migrate.py`; fixture `src/tests/fixtures/audit/legacy_audit.db`, built by a fixture script from today's writer.
 
 **Interfaces:**
@@ -72,7 +72,7 @@
   - `test_concurrent_startup_migrates_once`: two `ensure_schema` calls run under `asyncio.gather`.
   - `test_counts_or_hash_mismatch_aborts_without_emptying`.
   - `test_sqlite_backup_written`.
-  - `test_postgres_requires_opt_in`: with a Postgres URL and no `MAILROOM_AUDIT_MIGRATE=1`, the result is `migrated=False` and `audit_migration_pending` is logged.
+  - `test_startup_requires_opt_in_on_sqlite_and_postgres` and `test_explicit_postgres_migration_still_requires_opt_in`: with the Postgres dialect forced (the `_dialect_name` seam, no server) and no `MAILROOM_AUDIT_MIGRATE=1`, the result is `migrated=False` with `reason="opt_in_required"`, and the startup path logs `audit_migration_pending`.
   - `test_ddl_compiles_for_postgres`.
   - `test_rollback_restores_audit_log`: new tables are renamed `*_v2_<ts>`, and `audit_log` holds the legacy rows again.
 - [x] **Step 2: Run them.** Expected: FAIL.
