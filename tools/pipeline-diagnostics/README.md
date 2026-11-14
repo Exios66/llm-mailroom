@@ -62,7 +62,7 @@ The diagnostics layer reads the audit store **read-only** and reports what it ca
 | `GET /v1/diagnostics/audit/documents?limit=&offset=` | Bounded, newest-first document ids from the audit tables (no raw detail) |
 | `GET /v1/diagnostics/audit/documents/{doc_id}` | One document's record, derived status, redacted projection and verification verdict |
 
-The same payloads are available to agents through `mailroom-diagnostics audit <doc_id> --json` and `mailroom-diagnostics audit --list --json` (exit 0 verified, 1 failed verification, 2 invalid input, 3 not-recorded/unavailable/unverified).
+The same payloads are available to agents through `mailroom-diagnostics audit <doc_id> --json` (exit 0 verified, 1 failed verification, 2 invalid input, 3 not-recorded/unavailable/unverified) and `mailroom-diagnostics audit --list --json`. The listing verifies nothing: it exits 0 whenever the store is available and 3 when it is not, so a 0 from `--list` is never a verification result; run `audit <doc_id>` on a listed document to verify it.
 
 **Listing cost.** The listing returns a bounded page (`limit`/`offset`), but it groups ids with `GROUP BY doc_id` over the union of `audit_log` and `audit_log_legacy`. That aggregate is not an index-only lookup: on a large store the database may scan and aggregate both tables for every page. The per-document detail read (below) is separately bounded.
 

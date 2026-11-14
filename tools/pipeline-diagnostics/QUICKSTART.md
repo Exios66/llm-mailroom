@@ -111,9 +111,10 @@ The audit routes are read-only and use the same authentication as every other di
 curl -s 'http://127.0.0.1:8100/v1/diagnostics/audit/documents?limit=25'
 curl -s 'http://127.0.0.1:8100/v1/diagnostics/audit/documents/demo-contract-001'
 
-# Same semantics for agents; exit 0 verified, 1 failed, 2 invalid input,
-# 3 not-recorded/unavailable/unverified
+# Same semantics for agents. Verifying one document: exit 0 verified, 1 failed,
+# 2 invalid input, 3 not-recorded/unavailable/unverified
 .venv/bin/mailroom-diagnostics audit demo-contract-001 --json
+# Discovery only: verifies nothing; exit 0 = store available, 3 = store unavailable
 .venv/bin/mailroom-diagnostics audit --list --json
 ```
 
