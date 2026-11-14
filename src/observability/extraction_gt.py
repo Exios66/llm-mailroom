@@ -135,10 +135,15 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
             if val not in (None, ""):
                 _put(expected_fields, key, val)
     if hf_class == "correspondence":
-        if subclass:
-            token = normalize_communication_type(subclass)
-            if token:
-                expected_fields["communication_type"] = token
+        # As for ``record_type``: the dataset's own ``communication_type`` label
+        # is the gold, and the subclass is a fallback only when it names a value
+        # of the closed vocabulary.
+        hub_type = normalize_communication_type(
+            expected_fields.get("communication_type") or sample.get("communication_type")
+        )
+        token = hub_type or (normalize_communication_type(subclass) if subclass else "")
+        if token:
+            expected_fields["communication_type"] = token
         legacy_points = sample.get("key_points")
         if legacy_points and not expected_fields.get("subject_matter"):
             coerced = coerce_gt_value(legacy_points)

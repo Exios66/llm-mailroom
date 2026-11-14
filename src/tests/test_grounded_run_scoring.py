@@ -55,6 +55,18 @@ def test_corporate_record_type_gold_is_the_dataset_label(subclass, record_type):
     assert payload["extraction"].overall_score == 1.0
 
 
+@pytest.mark.parametrize(("subclass", "label", "gold"), [
+    ("letter", "memo", "memo"),
+    ("cover_letter", "email", "email"),
+    ("letter", None, "letter"),
+])
+def test_correspondence_communication_type_gold_is_the_dataset_label(subclass, label, gold):
+    """A Hub ``communication_type`` label wins over the subclass; the subclass only fills a gap."""
+    labels = {} if label is None else {"communication_type": label}
+    sample = _sample("correspondence", subclass, **labels)
+    assert catalog_expected_fields(sample)["communication_type"] == gold
+
+
 def test_nan_label_is_not_expected_and_emits_no_zero():
     """A ``"nan"`` topic / sentiment cell is absence, so no 0.0 topic score."""
     labels = {
