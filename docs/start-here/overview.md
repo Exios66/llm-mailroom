@@ -76,11 +76,11 @@ Older copies, forks, earlier monorepo attempts and the repositories retired from
 
 ## Current versions
 
-Package versions and pins refreshed 2026-10-23 from each repository's README and pins; the Dojo release and consumer pin were updated 2026-11-04 and again 2026-11-07. The llm-mailroom row is moved by `release.py cut` on every release (v0.9.3, cut 2026-11-07). Check the repository itself before relying on a number.
+Package versions and pins refreshed 2026-10-23 from each repository's README and pins; the Dojo release and consumer pin were updated 2026-11-04 and again 2026-11-07, and the consumer pin again on 2026-11-12. The llm-mailroom row is moved by `release.py cut` on every release (v0.9.3, cut 2026-11-07). Check the repository itself before relying on a number.
 
 | Item             | Version                                                |
 | ---------------- | ------------------------------------------------------ |
 | llm-mailroom     | v0.9.3                                                 |
-| llm-dojo-scoring | v0.28.1 latest as of 2026-11-07; llm-mailroom pins f95c3188a1a634a9a2354afd5351edd8dd152a89 |
+| llm-dojo-scoring | v0.28.1 latest as of 2026-11-07; llm-mailroom pins 46811485ce516392b3f72d3269ed9e43b7ca9ed8 |
 | The-Mailroom     | v0.5.0                                                 |
 | mailroom-dataset | schema v9, commit `ccd040f6` (tag v9.3), 3,302 documents, as of 2026-11-09 |

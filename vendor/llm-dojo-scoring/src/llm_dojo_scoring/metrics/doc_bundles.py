@@ -41,6 +41,7 @@ insurance_claim     1,100 rows: 600 CMS DE-SynPUF (source-table subclass,
 
 from __future__ import annotations
 
+from ..schemas.doc_classes import DOC_CLASSES
 from .bundles import Bundle
 from .registry import Registry, load_registry
 
@@ -54,17 +55,9 @@ __all__ = [
 
 #: The canonical document classes, in mailroom taxonomy order (the sorter's
 #: 7 labels) plus ``merger_agreement`` — the MAUD-grounded class scored
-#: as ``MergerAgreementExtraction`` (mailroom-issues #237 / #238).
-DOC_TYPES: tuple[str, ...] = (
-    "contract",
-    "corporate_record",
-    "due_diligence",
-    "correspondence",
-    "compliance_filing",
-    "court_opinion",
-    "insurance_claim",
-    "merger_agreement",
-)
+#: as ``MergerAgreementExtraction`` (mailroom-issues #237 / #238). Derived from
+#: ``schemas/doc_classes.py``.
+DOC_TYPES: tuple[str, ...] = tuple(DOC_CLASSES)
 
 
 def _doc(
