@@ -38,6 +38,7 @@ from typing import Iterable
 
 import yaml
 
+from ..schemas import doc_classes
 from .metric_meta import ALLOWED_GROUND_TRUTH, METRIC_META
 
 __all__ = [
@@ -63,26 +64,16 @@ __all__ = [
 # (``SPECIALISTS``, ``AUDITORS``, ``CLASSIFIERS``, ``TRANSCRIBERS``) expand
 # to these tuples so a newly added specialist cannot be omitted from the
 # extraction metric surface (the v0.7.0 ``insurance_claims_specialist`` gap).
-# All specialists the registry still scores (live + retired historical).
-SPECIALIST_AGENTS: tuple[str, ...] = (
-    "contracts_specialist",
-    "merger_agreement_specialist",
-    "corporate_records_specialist",
-    "due_diligence_specialist",
-    "correspondence_specialist",
-    "compliance_specialist",
-    "court_opinions_specialist",
-    "insurance_claims_specialist",
+# All specialists the registry still scores (live + retired historical), derived
+# from ``schemas/doc_classes.py`` (edit the registry, not this list).
+SPECIALIST_AGENTS: tuple[str, ...] = tuple(
+    doc_classes.DOC_CLASSES[key].specialist for key in doc_classes.ROSTER_DOC_TYPES
 )
 #: Live llm-mailroom extraction roster (mailroom-issues #236–#238).
 #: Retired specialists stay in SPECIALIST_AGENTS so historical traces
 #: still validate.
-LIVE_SPECIALIST_AGENTS: tuple[str, ...] = (
-    "contracts_specialist",
-    "merger_agreement_specialist",
-    "corporate_records_specialist",
-    "correspondence_specialist",
-    "insurance_claims_specialist",
+LIVE_SPECIALIST_AGENTS: tuple[str, ...] = tuple(
+    doc_classes.DOC_CLASSES[key].specialist for key in doc_classes.LIVE_DOC_TYPES
 )
 
 AUDITOR_AGENTS: tuple[str, ...] = (
@@ -346,7 +337,7 @@ metrics:
     aggregation: mean
     source: "extraction_metrics.extraction_binary_metrics"
     citation: "ACE / CoNLL / SemEval slot filling; TP requires typed score ≥ 1.0. F1 is van Rijsbergen β=1."
-    inclusion: "Skipped when expected is empty/null. Empty GT field values are not FN. List F1 is None if no list fields."
+    inclusion: "Skipped when expected is empty/null. Empty GT field values are not FN. List F1 is None if no list fields. A schema field the GT does not label is excluded on both sides (a value there is not an FP); with no labelled field the suite reports P/R/F1/F2 as null."
     ground_truth: required
   extraction_f2:
     tier: 0

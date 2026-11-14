@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from typing import Any, Iterable
 
 from ..metrics.bundles import Bundle, bundle_metric_names
+from ..schemas import doc_classes
 from .field_scoring import ExtractionScoreResult, score_extraction, score_field
 from ..metrics.profiles import AgentProfile, DEFAULT_PROFILES, get_profile
 from ..metrics.registry import load_registry
@@ -43,7 +44,6 @@ __all__ = [
     "ScoringSuite",
     "DEFAULT_SUITES",
     "DEFAULT_FIELD_TYPES",
-    "LEGACY_FULL_EXTRACTION_FIELD_TYPES",
     "SPECIALIST_DOC_TYPES",
     "DOC_TYPE_ALIASES",
     "get_suite",
@@ -53,16 +53,10 @@ __all__ = [
 ]
 
 
-#: Specialist profile name → native mailroom document class.
+#: Specialist profile name → native mailroom document class (derived from
+#: ``schemas/doc_classes.py``; edit the registry, not this table).
 SPECIALIST_DOC_TYPES: dict[str, str] = {
-    "contracts_specialist": "contract",
-    "merger_agreement_specialist": "merger_agreement",
-    "corporate_records_specialist": "corporate_record",
-    "due_diligence_specialist": "due_diligence",
-    "correspondence_specialist": "correspondence",
-    "compliance_specialist": "compliance_filing",
-    "court_opinions_specialist": "court_opinion",
-    "insurance_claims_specialist": "insurance_claim",
+    doc_classes.DOC_CLASSES[key].specialist: key for key in doc_classes.ROSTER_DOC_TYPES
 }
 
 #: Doc-type lookup aliases (mailroom ``doc_type`` → specialist suite).
@@ -73,192 +67,16 @@ DOC_TYPE_ALIASES: dict[str, str] = {
 }
 
 #: Default field→scoring-type maps, mirrored from llm-mailroom
-#: ``config/taxonomy.yaml`` / ``EXTRACTION_SCHEMAS`` (v0.6.0 pared product).
-#: Open-ended ``key_obligations`` / ``termination_clauses`` / ``key_provisions``
-#: / long ``key_points`` are retired from the live board — score CUAD/MAUD/
-#: insurance checklists + the semantic trio instead. Override with
-#: ``field_types=`` on ``score()``, or use
-#: :data:`LEGACY_FULL_EXTRACTION_FIELD_TYPES` for historical free-text dumps.
+#: ``config/taxonomy.yaml`` / ``EXTRACTION_SCHEMAS`` (v0.6.0 pared product) and
+#: derived from the document-class registry (``schemas/doc_classes.py``: edit the
+#: field there, not here). Open-ended ``key_obligations`` / ``termination_clauses``
+#: / ``key_provisions`` / long ``key_points`` are retired from the live board — score
+#: CUAD/MAUD/insurance checklists + the semantic trio instead. Override with
+#: ``field_types=`` on ``score()``.
 DEFAULT_FIELD_TYPES: dict[str, dict[str, str]] = {
-    # ContractExtraction v2 (0.28.0, mailroom-dataset v10): the parse-compat
-    # ``merger_consideration`` / ``maud_clauses`` left the live map
-    # (``cuad_schema.CONTRACT_PARSE_COMPAT_FIELDS``) and the entity fields joined.
-    "contract": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "party_roles": "entity_list:free_text",
-        "signatories": "entity_list:name",
-        "agreement_date": "date",
-        "effective_date": "date",
-        "expiration_date": "date",
-        "term_length": "free_text",
-        "renewal_terms": "free_text",
-        "termination_notice_period": "free_text",
-        "governing_law": "name",
-        "dispute_forum": "name",
-        "contract_value": "money",
-        "payment_terms": "free_text",
-        "territory": "free_text",
-        "cuad_family": "label",
-        "cuad_clauses": "entity_list:free_text",
-    },
-    "corporate_record": {
-        "entity_name": "name",
-        "record_type": "name",
-        "effective_date": "date",
-        "signatories": "entity_list:name",
-        "jurisdiction": "name",
-        "filing_number": "id",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
-    "due_diligence": {
-        "target_entity": "name",
-        "diligence_type": "name",
-        "material_findings": "entity_list:free_text",
-        "risk_flags": "entity_list:free_text",
-        "outstanding_items": "entity_list:free_text",
-        "document_date": "date",
-        "prepared_by": "name",
-    },
-    "correspondence": {
-        "sender": "name",
-        "recipient": "name",
-        "additional_recipients": "entity_list",
-        "communication_type": "label",
-        "communication_date": "date",
-        "demand_amount": "money",
-        "action_items": "entity_list",
-        "urgency": "label",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
-    "compliance_filing": {
-        "filing_type": "name",
-        "regulatory_body": "name",
-        "filing_date": "date",
-        "due_date": "date",
-        "entity_name": "name",
-        "key_requirements": "entity_list:free_text",
-        "status": "name",
-        "reference_number": "id",
-    },
-    "court_opinion": {
-        "case_name": "name",
-        "court": "name",
-        "date_decided": "date",
-        "docket_number": "id",
-        "opinion_type": "name",
-        "parties": "entity_list:name",
-        "holding": "free_text",
-        "legal_issues": "entity_list:free_text",
-        "outcome": "free_text",
-        "citations": "entity_list:id",
-        "authored_by": "name",
-    },
-    "insurance_claim": {
-        "claim_number": "id",
-        "policy_number": "id",
-        "insurer": "name",
-        "insured_party": "name",
-        "claim_type": "label",
-        "date_of_loss": "date",
-        "date_filed": "date",
-        "claimed_amount": "money",
-        "adjuster": "name",
-        "damages_description": "free_text",
-        "coverage_determination": "label",
-        "denial_reasons": "entity_list:free_text",
-        "supporting_documents": "entity_list",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-        "claim_checklist": "entity_list:free_text",
-    },
-    # MergerAgreementExtraction v2 (0.28.0, mailroom-dataset v10).
-    "merger_agreement": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "acquirer": "name",
-        "target": "name",
-        "merger_sub": "entity_list:name",
-        "signatories": "entity_list:name",
-        "effective_date": "date",
-        "effective_time": "free_text",
-        "governing_law": "name",
-        "per_share_cash_amount": "money",
-        "exchange_ratio": "free_text",
-        "target_termination_fee": "money",
-        "parent_termination_fee": "money",
-        "outside_date": "date",
-        "financial_advisors": "entity_list:name",
-        "legal_counsel": "entity_list:name",
-        "merger_consideration": "label",
-        "maud_clauses": "entity_list:free_text",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
+    key: doc_classes.field_types(key) for key in doc_classes.DOC_CLASSES
 }
 
-#: Pre-v0.6.0 mailroom field maps that still score open-ended free-text
-#: obligation dumps. Use only for historical rescoring — live board numbers
-#: should use :data:`DEFAULT_FIELD_TYPES`.
-LEGACY_FULL_EXTRACTION_FIELD_TYPES: dict[str, dict[str, str]] = {
-    "contract": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "effective_date": "date",
-        "term_length": "free_text",
-        "termination_clauses": "entity_list:free_text",
-        "governing_law": "name",
-        "key_obligations": "entity_list:free_text",
-        "contract_value": "money",
-        "renewal_terms": "free_text",
-        "cuad_family": "name",
-        "merger_consideration": "name",
-        "cuad_clauses": "entity_list:free_text",
-        "maud_clauses": "entity_list:free_text",
-    },
-    "merger_agreement": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "effective_date": "date",
-        "term_length": "free_text",
-        "termination_clauses": "entity_list:free_text",
-        "governing_law": "name",
-        "key_obligations": "entity_list:free_text",
-        "contract_value": "money",
-        "renewal_terms": "free_text",
-        "cuad_family": "name",
-        "merger_consideration": "name",
-        "cuad_clauses": "entity_list:free_text",
-        "maud_clauses": "entity_list:free_text",
-    },
-    "corporate_record": {
-        "entity_name": "name",
-        "record_type": "name",
-        "effective_date": "date",
-        "key_provisions": "entity_list:free_text",
-        "signatories": "entity_list:name",
-        "jurisdiction": "name",
-        "filing_number": "id",
-    },
-    "correspondence": {
-        "sender": "name",
-        "recipient": "name",
-        "additional_recipients": "entity_list",
-        "communication_type": "name",
-        "communication_date": "date",
-        "key_points": "entity_list",
-        "demand_amount": "money",
-        "action_items": "entity_list",
-        "urgency": "name",
-        "referenced_communications": "entity_list",
-    },
-}
 
 #: Per-agent extras on top of the task-bundle surface. Only names that
 #: already resolve in the registry (no invented KPIs).
@@ -513,6 +331,42 @@ def _task_key_for(profile: AgentProfile, kind: str) -> str | None:
         return "multiclass"
     return None
 
+
+
+def _labelled_label_pairs(expected: Any, predicted: Any) -> tuple[Any, Any]:
+    """Keep only label pairs whose expected label is present.
+
+    A blank expected label (``None``, ``""``, ``"nan"``, ``"none"``…) is not
+    ground truth, so its pair is dropped. Returns ``(None, None)`` when no
+    labelled pair is left; a missing prediction for a labelled pair becomes
+    ``""`` (a miss). Lists of unequal length pass through unchanged so the
+    content scorer raises its usual length error.
+    """
+    from ..schemas import gt_metadata as _gtm
+
+    if expected is None:
+        return None, None
+    if isinstance(expected, (list, tuple)):
+        if not expected:
+            return None, None
+        preds = (
+            list(predicted)
+            if isinstance(predicted, (list, tuple))
+            else [predicted] * len(expected)
+        )
+        if len(preds) != len(expected):
+            return expected, predicted
+        kept = [
+            (exp, pred)
+            for exp, pred in zip(expected, preds)
+            if not _gtm.is_empty_value(exp)
+        ]
+        if not kept:
+            return None, None
+        return [exp for exp, _ in kept], ["" if p is None else p for _, p in kept]
+    if _gtm.is_empty_value(expected):
+        return None, None
+    return expected, "" if predicted is None else predicted
 
 
 def _subclass_kwarg(kwargs: Mapping[str, Any]) -> Any:
@@ -1266,14 +1120,19 @@ class ScoringSuite:
         else:
             extraction = _run(expected, predicted, doc_text, audit_predictions)
 
-        if topic_e is not None or topic_p is not None:
+        # A label the dataset leaves blank (``""``, ``None``, the literal
+        # ``"nan"``) is not ground truth: drop those pairs instead of scoring
+        # the prediction against an empty label.
+        topic_e, topic_p = _labelled_label_pairs(topic_e, topic_p)
+        sent_e, sent_p = _labelled_label_pairs(sent_e, sent_p)
+        if topic_e is not None:
             extras.update(
                 score_correspondence_content(
                     expected_topic=topic_e if topic_e is not None else "",
                     predicted_topic=topic_p if topic_p is not None else "",
                 )
             )
-        if sent_e is not None or sent_p is not None:
+        if sent_e is not None:
             extras.update(
                 score_correspondence_content(
                     expected_sentiment=sent_e if sent_e is not None else "",
@@ -1328,18 +1187,27 @@ class ScoringSuite:
         # explicitly null rather than reporting a misleading 0.0.
         has_extraction_events = any(
             not _gtm.is_empty_value(value)
-            for exp in peeled_exp
-            if isinstance(exp, dict)
+            for idx, exp in enumerate(peeled_exp)
+            if idx not in unscorable_rows and isinstance(exp, dict)
             for value in exp.values()
         )
-        if presence and not has_extraction_events:
+        if not has_extraction_events:
+            # No labelled extraction field (presence-only CUAD rows, MAUD-only
+            # merger rows): field-micro P/R/F1/F2 are undefined, so they stay
+            # null rather than reporting a misleading 0.0.
             prf_payload = prf_bundle_keys({})
         elif is_batch and peeled_exp:
             rows = []
             for idx, (exp, pred, result) in enumerate(
                 zip(peeled_exp, peeled_pred, extraction)
             ):
-                if not isinstance(result, ExtractionScoreResult):
+                if (
+                    idx in unscorable_rows
+                    or not isinstance(result, ExtractionScoreResult)
+                    or (isinstance(exp, dict) and not exp)
+                ):
+                    # A row with no expected fields has no events: its
+                    # predicted keys must not count as false positives.
                     continue
                 row_presence = (
                     presence[idx]
@@ -1474,6 +1342,17 @@ class ScoringSuite:
             # Single-document payload: flatten the document's own overall
             # score so consumers do not have to dig into the dataclass.
             payload["overall_score"] = extraction.overall_score
+        rows = extraction if is_batch else [extraction]
+        if (
+            not presence
+            and filtered.get("maud_question_accuracy") is not None
+            and all(getattr(row, "overall_score", None) is None for row in rows)
+        ):
+            # MAUD-only merger GT (one document or a whole batch): no
+            # extraction field is scored, so the headline is the MAUD question
+            # accuracy, not a null overall.
+            mid = metric_id_for("maud_question_accuracy", doc_class=doc_class)
+            payload["metric_id"] = mid
         return _stamp(payload, mid)
 
     def _score_audit(

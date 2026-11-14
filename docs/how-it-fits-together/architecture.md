@@ -117,7 +117,7 @@ flowchart LR
 
 | Consumer               | Depends on                                | How                                                                          |
 | ---------------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
-| llm-mailroom           | llm-dojo-scoring                          | git pin `@f95c3188a1a634a9a2354afd5351edd8dd152a89`; changed through explicit release adoption                                              |
+| llm-mailroom           | llm-dojo-scoring                          | git pin `@74b532a3aa5efad8f587e2f5edb24aa8a43b17f0`; changed through explicit release adoption                                              |
 | llm-mailroom           | mailroom-ml                               | optional, lazily imported at intake                                          |
 | eval-environment       | llm-mailroom (and dojo through it)        | editable path source to a sibling checkout, set in `[tool.uv.sources]`       |
 | local-mailroom-sandbox | llm-mailroom, llm-dojo-scoring            | tracked snapshots under `vendor/`                                            |

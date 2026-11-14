@@ -488,7 +488,14 @@ def chained_composite(sorter_score: float, extractor_score: float,
     into one chained run score.
 
     The extractor carries the document-level output the pipeline is ultimately
-    judged on, so it dominates the default weighting (0.25 / 0.75)."""
+    judged on, so it dominates the default weighting (0.25 / 0.75). A missing
+    half raises instead of scoring as 0, which would hide the failed stage."""
+    if sorter_score is None or extractor_score is None:
+        raise RuntimeError(
+            "chained eval: composite score cannot be derived — sorter "
+            f"score={sorter_score!r}, extractor score={extractor_score!r}; "
+            "a 0-sentinel composite would silently hide the failed half"
+        )
     w_s, w_e = weights
     return round(w_s * float(sorter_score) + w_e * float(extractor_score), 4)
 

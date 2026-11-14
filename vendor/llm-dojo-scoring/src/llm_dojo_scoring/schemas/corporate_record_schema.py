@@ -22,8 +22,8 @@ The flat nine-field ``CorporateRecordExtraction`` (``entity_name`` /
   fill (published v9 GT has no key-entity label on any of the 450 rows).
 * :func:`audit_gt_row` / :func:`audit_gt_rows` — label-quality audit.
 
-Core types are asserted equal to ``DEFAULT_FIELD_TYPES["corporate_record"]`` at
-import time. Extension entities are scored only once the dataset labels them
+Core fields and types come from the ``corporate_record`` entry of
+``schemas/doc_classes.py``. Extension entities are scored only once the dataset labels them
 (``gt_presence`` ``populated`` / ``schema_documented_absence``).
 """
 
@@ -33,6 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
+from . import doc_classes
 from .corpus import DOC_TYPE_SUBCLASSES
 from .gt_metadata import (
     gt_presence_map,
@@ -40,7 +41,6 @@ from .gt_metadata import (
     parse_gt_fields,
     parse_json_container,
 )
-from ..scoring.suites import DEFAULT_FIELD_TYPES
 
 __all__ = [
     "CORE_FIELDS",
@@ -63,7 +63,7 @@ __all__ = [
     "unlabeled_fields",
 ]
 
-CORE_FIELDS: tuple[str, ...] = tuple(DEFAULT_FIELD_TYPES["corporate_record"])
+CORE_FIELDS: tuple[str, ...] = doc_classes.field_names("corporate_record")
 
 #: Core fields that name a real-world entity / fact in the document. These are
 #: the fields the published GT leaves blank; ``intent`` / ``subject_matter`` /
@@ -417,7 +417,8 @@ def scored_field_types(subclass: Any, gt: Mapping[str, Any] | str | None = None)
     ``ValueError`` from :func:`parse_gt_fields`.
     """
     schema = subclass_schema(subclass)
-    out = {f: DEFAULT_FIELD_TYPES["corporate_record"][f] for f in schema.core_applicable}
+    core = doc_classes.field_types("corporate_record")
+    out = {f: core[f] for f in schema.core_applicable}
     if gt is not None:
         parsed = parse_gt_fields(gt)
         presence = gt_presence_map(parsed)
@@ -536,11 +537,12 @@ def corporate_record_json_schema(subclass: Any = None) -> dict[str, Any]:
     ``RECORD_TYPES`` token or null, rather than only the subclass's mapped token.
     """
     if subclass is None:
-        types = dict(DEFAULT_FIELD_TYPES["corporate_record"])
+        types = doc_classes.field_types("corporate_record")
         title = "CorporateRecordExtraction"
     else:
         schema = subclass_schema(subclass)
-        types = {f: DEFAULT_FIELD_TYPES["corporate_record"][f] for f in CORE_FIELDS}
+        core = doc_classes.field_types("corporate_record")
+        types = {f: core[f] for f in CORE_FIELDS}
         types.update({e.key: e.type for e in schema.entities})
         title = f"CorporateRecordExtraction[{schema.subclass}]"
     props = {k: _json_for(t) for k, t in types.items()}
