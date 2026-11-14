@@ -120,18 +120,92 @@ def _row_of(rec: dict[str, Any]):
                        attempts=_attempts(rec))
 
 
+async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict[str, Any]], *,
+                         dry_run: bool) -> bool:
+    """Reconcile one document. Return ``False`` when another writer committed its row first.
+
+    The existence check and the write are separate transactions, so a concurrent
+    reconcile (or the live writer) can win in between. The write therefore asks
+    for ``if_absent``; on ``AuditRowExists`` nothing has been counted or dropped
+    and the caller runs the document again, now through the existing-row path.
+    """
+    from audit.models import Addendum, AuditRowExists
+    from audit.row import mark_manifest
+    from audit.writer import get_row, write_addendum, write_terminal_row
+
+    unique: dict[str, dict[str, Any]] = {}
+    for rec in copies:
+        unique.setdefault(rec["detail_sha256"], rec)
+    complete = [r for r in unique.values() if r.get("complete", True)]
+    row = await get_row(doc_id)
+    if row is not None:
+        rf = (row.get("detail") or {}).get("recovered_from") or {}
+        closed = any(a["kind"] == "recovered_detail" for a in row.get("addenda") or [])
+        if rf.get("complete") is False and not closed and complete:
+            match = [r for r in complete if r["detail_sha256"] == rf.get("full_detail_sha256")]
+            report.rejected_hash += len(complete) - len(match)
+            for r in complete:
+                if r not in match:
+                    logger.error("audit_reconcile_hash_mismatch", doc_id=doc_id, sink=r["_sink"],
+                                 ref=r.get("ref"), reason="not_the_partial_rows_full_record")
+            if match:
+                rec = match[0]
+                report.gap_closed += 1
+                report.docs.append({"doc_id": doc_id, "action": "recovered_detail"})
+                if not dry_run:
+                    await write_addendum(Addendum(
+                        doc_id=doc_id, kind="recovered_detail", actor="audit-reconcile",
+                        # The sub-rows ride in the detail: their attempt ids are the partial row's.
+                        detail={"detail": rec["detail"], "sub_rows": rec["sub_rows"],
+                                "recovered_from": _recovered_from(rec)},
+                    ))
+                    mark_manifest(doc_id, "written")
+                    logger.info("audit_gap_closed", doc_id=doc_id, sink=rec["_sink"])
+                    _drop(copies)
+                return True
+        report.skipped_existing += 1
+        report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
+        if not dry_run and (rf.get("complete") is not False or closed):
+            _drop(copies)  # the row (and any recovered detail) is in place: the copies are spent
+        return True
+
+    rec = complete[0] if complete else next(iter(unique.values()))
+    is_partial = not rec.get("complete", True)
+    if not dry_run:
+        try:
+            await write_terminal_row(_row_of(rec), entry_id=rec["entry_id"], recovered_from=_recovered_from(rec),
+                                     if_absent=True)
+        except AuditRowExists:
+            logger.info("audit_reconcile_lost_race", doc_id=doc_id)
+            return False
+        mark_manifest(doc_id, "written")
+    report.docs.append({"doc_id": doc_id, "action": "partial" if is_partial else "recovered"})
+    if is_partial:
+        report.partial += 1
+    else:
+        report.recovered += 1
+    if dry_run:
+        return True
+    if is_partial:
+        logger.error("audit_gap_partial", doc_id=doc_id, sink=rec["_sink"],
+                     full_detail_sha256=rec.get("full_detail_sha256"))
+        # Keep the copies: a complete one may still turn up in another sink.
+    else:
+        logger.info("audit_row_recovered", doc_id=doc_id, sink=rec["_sink"])
+        _drop(copies)
+    return True
+
+
 async def reconcile(*, dry_run: bool = False) -> ReconcileReport:
     """Reconcile valid pending sink records and report the action for each document.
 
     Prefer a complete copy; a partial row is supplemented by a matching complete
     copy in a later run. ``dry_run`` counts proposed actions without writing rows,
     addenda or manifests or dropping sink copies. Read and write errors from the
-    audit database propagate; sink fetch and drop failures are logged.
+    audit database propagate; sink fetch and drop failures are logged. Runs may
+    overlap: a document whose row appears between the check and the write is
+    reported as ``skipped_existing`` (never as a ``resumed`` addendum).
     """
-    from audit.models import Addendum
-    from audit.row import mark_manifest
-    from audit.writer import get_row, write_addendum, write_terminal_row
-
     report = ReconcileReport(dry_run=dry_run)
     by_doc: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for rec in _gather():
@@ -143,60 +217,9 @@ async def reconcile(*, dry_run: bool = False) -> ReconcileReport:
         by_doc[rec["doc_id"]].append(rec)
 
     for doc_id, copies in sorted(by_doc.items()):
-        unique: dict[str, dict[str, Any]] = {}
-        for rec in copies:
-            unique.setdefault(rec["detail_sha256"], rec)
-        complete = [r for r in unique.values() if r.get("complete", True)]
-        row = await get_row(doc_id)
-        if row is not None:
-            rf = (row.get("detail") or {}).get("recovered_from") or {}
-            closed = any(a["kind"] == "recovered_detail" for a in row.get("addenda") or [])
-            if rf.get("complete") is False and not closed and complete:
-                match = [r for r in complete if r["detail_sha256"] == rf.get("full_detail_sha256")]
-                report.rejected_hash += len(complete) - len(match)
-                for r in complete:
-                    if r not in match:
-                        logger.error("audit_reconcile_hash_mismatch", doc_id=doc_id, sink=r["_sink"],
-                                     ref=r.get("ref"), reason="not_the_partial_rows_full_record")
-                if match:
-                    rec = match[0]
-                    report.gap_closed += 1
-                    report.docs.append({"doc_id": doc_id, "action": "recovered_detail"})
-                    if not dry_run:
-                        await write_addendum(Addendum(
-                            doc_id=doc_id, kind="recovered_detail", actor="audit-reconcile",
-                            # The sub-rows ride in the detail: their attempt ids are the partial row's.
-                            detail={"detail": rec["detail"], "sub_rows": rec["sub_rows"],
-                                    "recovered_from": _recovered_from(rec)},
-                        ))
-                        mark_manifest(doc_id, "written")
-                        logger.info("audit_gap_closed", doc_id=doc_id, sink=rec["_sink"])
-                        _drop(copies)
-                    continue
-            report.skipped_existing += 1
-            report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
-            if not dry_run and (rf.get("complete") is not False or closed):
-                _drop(copies)  # the row (and any recovered detail) is in place: the copies are spent
-            continue
-
-        rec = complete[0] if complete else next(iter(unique.values()))
-        is_partial = not rec.get("complete", True)
-        report.docs.append({"doc_id": doc_id, "action": "partial" if is_partial else "recovered"})
-        if is_partial:
-            report.partial += 1
-        else:
-            report.recovered += 1
-        if dry_run:
-            continue
-        await write_terminal_row(_row_of(rec), entry_id=rec["entry_id"], recovered_from=_recovered_from(rec))
-        mark_manifest(doc_id, "written")
-        if is_partial:
-            logger.error("audit_gap_partial", doc_id=doc_id, sink=rec["_sink"],
-                         full_detail_sha256=rec.get("full_detail_sha256"))
-            # Keep the copies: a complete one may still turn up in another sink.
-        else:
-            logger.info("audit_row_recovered", doc_id=doc_id, sink=rec["_sink"])
-            _drop(copies)
+        # A lost race leaves a row behind, so the second pass takes the existing-row path.
+        if not await _reconcile_doc(report, doc_id, copies, dry_run=dry_run):
+            await _reconcile_doc(report, doc_id, copies, dry_run=dry_run)
     return report
 
 

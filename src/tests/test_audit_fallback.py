@@ -262,6 +262,43 @@ async def test_reconcile_skips_doc_with_row(sinks, db_down):
     assert sinks[0].fetch_pending() == []
 
 
+async def test_reconcile_skips_a_row_a_concurrent_writer_commits_after_the_check(sinks, db_down, monkeypatch):
+    """T6 (#229): two reconciles can both see no row; the loser must not append ``resumed``."""
+    from audit import writer
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row, write_terminal_row
+
+    await commit_or_park(_row())
+    db_down[0] = None
+    real_get_row = get_row
+
+    async def racing_get_row(doc_id):
+        seen = await real_get_row(doc_id)  # reconcile's read: no row yet ...
+        if seen is None:
+            await write_terminal_row(_row(doc_id))  # ... then another writer commits it
+        return seen
+
+    monkeypatch.setattr(writer, "get_row", racing_get_row)
+    report = await reconcile()
+    row = await real_get_row("d-1")
+    assert row["addenda"] == []
+    assert (report.recovered, report.partial, report.skipped_existing) == (0, 0, 1)
+    assert report.docs == [{"doc_id": "d-1", "action": "skipped_existing"}]
+
+
+async def test_two_concurrent_reconciles_write_one_row_and_no_addendum(sinks, db_down):
+    import asyncio
+
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row
+
+    await commit_or_park(_row())
+    db_down[0] = None
+    first, second = await asyncio.gather(reconcile(), reconcile())
+    assert first.recovered + second.recovered == 1
+    assert (await get_row("d-1"))["addenda"] == []
+
+
 async def test_decisions_only_copy_reconciles_as_partial(sinks, db_down, logs):
     from audit.reconcile import reconcile
     from audit.row import mark_manifest
@@ -351,6 +388,49 @@ def test_ephemeral_spool_warning(monkeypatch, tmp_path, logs):
     assert warn_if_ephemeral() is False and logs == []
     monkeypatch.setenv("MAILROOM_AUDIT_SPOOL_PATH", str(tmp_path / "elsewhere" / "audit_spool.db"))
     assert warn_if_ephemeral() is True and logs == ["audit_spool_ephemeral"]
+
+
+async def test_complete_copy_only_in_write_only_sinks_is_not_reported_pending(sinks, db_down, logs):
+    """T9 (#229): ``audit-reconcile`` cannot read a write-only sink, so ``pending`` would never clear."""
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row
+
+    class WriteOnly(FakeSink):
+        def fetch_pending(self):
+            return []
+
+    external = WriteOnly("phoenix")
+    sinks[:] = [external]
+    out = await commit_or_park(_row())
+    assert len(external.pending) == 1
+    assert out.status == "gap"
+    assert [r["sink"] for r in out.refs] == ["phoenix"]  # the copy is still named for an operator
+    assert "audit_gap" in logs and "audit_pending" not in logs
+    db_down[0] = None
+    assert (await reconcile()).recovered == 0 and await get_row("d-1") is None
+
+
+async def test_readable_decisions_only_copy_beats_write_only_complete_copy(sinks, db_down):
+    from audit.writer import commit_or_park
+
+    class WriteOnly(FakeSink):
+        def fetch_pending(self):
+            return []
+
+    sinks[:] = [WriteOnly("phoenix"), FakeSink("tiny", max_payload_bytes=12_000)]
+    out = await commit_or_park(_row(big=True))
+    assert out.status == "pending_partial"
+
+
+async def test_complete_copy_in_a_readable_sink_stays_pending(sinks, db_down):
+    from audit.writer import commit_or_park
+
+    class WriteOnly(FakeSink):
+        def fetch_pending(self):
+            return []
+
+    sinks[:] = [WriteOnly("phoenix"), sinks[0]]
+    assert (await commit_or_park(_row())).status == "pending"
 
 
 async def test_migration_pending_takes_fallback(sinks, db_down):

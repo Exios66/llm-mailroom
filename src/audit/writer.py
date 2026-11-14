@@ -37,6 +37,7 @@ from audit.models import (
     Addendum,
     AttemptRow,
     AuditMigrationPending,
+    AuditRowExists,
     AuditWriteError,
     NoAuditRow,
     TerminalRow,
@@ -290,7 +291,11 @@ def _is_retryable(exc: IntegrityError) -> bool:
 
 
 async def write_terminal_row(
-    row: TerminalRow, *, entry_id: str | None = None, recovered_from: dict[str, Any] | None = None
+    row: TerminalRow,
+    *,
+    entry_id: str | None = None,
+    recovered_from: dict[str, Any] | None = None,
+    if_absent: bool = False,
 ) -> WriteResult:
     """Commit a terminal row and its attempts, returning its entry id, hash, and sequence.
 
@@ -302,7 +307,10 @@ async def write_terminal_row(
     ``entry_id`` and ``recovered_from`` are for ``audit-reconcile`` (§5.6): the
     row keeps the id its pending record was captured under, so its attempt
     hashes and ``detail`` are the captured ones, and ``detail.recovered_from``
-    is added after the attempts are listed.
+    is added after the attempts are listed. ``if_absent`` is for the same
+    caller: the existing-row check runs under the chain lock, so a reconcile
+    that raced another writer gets ``AuditRowExists`` instead of a ``resumed``
+    addendum (which would be wrong for a recovered record).
 
     Raise ``ValueError`` for an unknown event or invalid attempt timestamp,
     ``AuditMigrationPending`` if the migration marker is absent, and
@@ -332,6 +340,7 @@ async def write_terminal_row(
             attempts=snapshot_attempts,
             entry_id=entry_id,
             recovered_from=_snapshot_detail(recovered_from) if recovered_from is not None else None,
+            if_absent=if_absent,
         ),
         attempts=MAX_ATTEMPTS,
     )
@@ -344,10 +353,12 @@ async def _write_terminal_row_once(
     attempts: list[AttemptRow],
     entry_id: str | None = None,
     recovered_from: dict[str, Any] | None = None,
+    if_absent: bool = False,
 ) -> WriteResult:
     """Retry a terminal-row transaction; write a resumed addendum if the row exists.
 
     A new row uses the supplied entry id and recovery provenance when provided.
+    With ``if_absent`` an existing row raises ``AuditRowExists`` instead.
     """
     # A reconcile write keeps the entry id its pending record was captured
     # under; an ordinary write mints a fresh one.
@@ -363,6 +374,8 @@ async def _write_terminal_row_once(
                 await _require_migrated(session)
                 if await _existing_row(session, row.doc_id) is not None:
                     await session.rollback()
+                    if if_absent:
+                        raise AuditRowExists(f"document {row.doc_id} already has an audit row")
                     resumed = _as_resumed(row, detail=detail, attempts=attempts)
                     # No nested retry wrapper: a transient lock error here
                     # bubbles to the terminal row's wrapper, which replays the
@@ -649,7 +662,11 @@ RETRY_DELAYS_S = (0.1, 0.3)
 
 @dataclass(frozen=True)
 class CommitOutcome:
-    """How a terminal row ended: ``written``, ``pending``, ``pending_partial`` or ``gap``."""
+    """How a terminal row ended: ``written``, ``pending``, ``pending_partial`` or ``gap``.
+
+    ``refs`` names every sink copy, including those of a ``gap`` that only
+    write-only sinks hold.
+    """
 
     status: str
     result: WriteResult | None = None
@@ -720,13 +737,27 @@ def decisions_only_record(row: TerminalRow, full: dict[str, Any]) -> dict[str, A
     }
 
 
+def _reconcile_reads(sink_name: str) -> bool:
+    """Whether ``audit-reconcile`` can fetch pending records from this sink.
+
+    Of the built-in sinks only ``sql`` (its spool) reads back; the others are
+    write-only (``fetch_pending`` returns ``[]``). An installed entry-point sink
+    is assumed to implement the full ``TraceSink`` protocol.
+    """
+    from audit import sinks
+
+    return sink_name == "sql" or sink_name not in sinks.BUILTIN
+
+
 async def commit_or_park(row: TerminalRow) -> CommitOutcome:
     """Commit the row or park it in trace sinks after bounded failures (§5.6).
 
     ``AuditMigrationPending`` counts as a failure, so the record waits for
     ``audit-reconcile`` after the migration. Return ``written`` on success,
-    ``pending`` if a sink holds a full copy, ``pending_partial`` if only reduced
-    copies survive, or ``gap`` if none do. Database write failures lead to
+    ``pending`` if a sink that ``audit-reconcile`` can read holds a full copy,
+    ``pending_partial`` if only reduced copies of that kind survive, or ``gap``
+    if none do (a copy kept only by write-only sinks is a ``gap`` that still
+    lists its refs). Database write failures lead to
     parking; malformed rows still raise ``ValueError``.
     """
     import asyncio
@@ -749,11 +780,18 @@ async def commit_or_park(row: TerminalRow) -> CommitOutcome:
     refs = tuple(sinks.capture_pending(full, partial=lambda: decisions_only_record(row, full)))
     detail = {"doc_id": row.doc_id, "event_name": row.event, "refs": list(refs),
               "error": f"{type(error).__name__}: {error}" if error else None}
-    if any(r["complete"] for r in refs):
+    # Only a sink that ``audit-reconcile`` can read back makes the row pending: a
+    # copy held by a write-only sink exists, but nothing will ever recover it.
+    readable = [r for r in refs if _reconcile_reads(r["sink"])]
+    if any(r["complete"] for r in readable):
         logger.info("audit_pending", **detail)
         return CommitOutcome("pending", refs=refs)
-    if refs:
+    if readable:
         logger.warning("audit_pending_partial", **detail)
         return CommitOutcome("pending_partial", refs=refs)
+    if refs:
+        # The refs stay on the manifest so an operator can fetch the copy by hand.
+        logger.error("audit_gap", **detail, reason="only_write_only_sinks")
+        return CommitOutcome("gap", refs=refs)
     logger.error("audit_gap", **detail)
     return CommitOutcome("gap")

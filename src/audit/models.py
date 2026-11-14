@@ -27,6 +27,10 @@ class AuditMigrationPending(AuditWriteError):
     terminal nodes take the §5.6 fallback (roadmap M10)."""
 
 
+class AuditRowExists(AuditWriteError):
+    """``write_terminal_row(..., if_absent=True)`` found the document's row already committed."""
+
+
 class NoAuditRow(AuditWriteError):
     """An addendum was written for a document that has no row (spec §4.3)."""
 
