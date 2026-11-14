@@ -150,3 +150,33 @@ def test_analyze_script_prints_unified(client, capsys):
     out = capsys.readouterr().out
     report = json.loads(out[out.index("{"):])
     assert report["unified"]["rows"] == 1
+
+
+def test_analyze_no_verify_skips_unified_checks_and_exit_status(client, capsys, tmp_path):
+    """T25 (#229): ``--no-verify`` skips the unified verifier too, and ``unified.checks.ok`` drives the exit status."""
+    import importlib.util
+    import json
+    import sqlite3
+    from pathlib import Path
+
+    _write("a")
+    with sqlite3.connect(tmp_path / "mailroom.db") as conn:
+        conn.execute("UPDATE audit_log SET actor = 'mallory' WHERE doc_id = 'a'")
+    spec = importlib.util.spec_from_file_location(
+        "analyze_audit_db_cli_nv", Path(__file__).resolve().parents[1] / "scripts" / "analyze_audit_db.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def run(*flags):
+        capsys.readouterr()
+        code = mod.main(["--json", *flags])
+        out = capsys.readouterr().out
+        return code, json.loads(out[out.index("{"):])
+
+    code, report = run()
+    assert code == 1 and report["unified"]["checks"]["ok"] is False
+    code, report = run("--no-verify")
+    assert code == 0 and report["unified"]["checks"] is None
+
+    help_text = " ".join(mod.__doc__.split())
+    assert "--no-verify" in help_text and "unified" in help_text and "Exit status" in help_text

@@ -463,3 +463,26 @@ def test_cli_dry_run_json(sinks, db_down, capsys):
     assert mod.main(["--dry-run", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["recovered"] == 1 and out["dry_run"] is True
+
+
+def test_cli_json_stdout_is_only_the_report_when_reconcile_logs(sinks, db_down, tmp_path, monkeypatch):
+    """T26 (#229): a recovered row logs ``audit_row_recovered``; ``--json`` stdout must still parse."""
+    import asyncio
+    import json
+    import os
+    import subprocess
+    import sys
+
+    from audit.writer import commit_or_park
+
+    asyncio.run(commit_or_park(_row()))
+    db_down[0] = None
+    src = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(src), "LOG_FORMAT": "json", "LOG_LEVEL": "INFO"}
+    env.pop("LOG_FILE", None)
+    done = subprocess.run([sys.executable, str(src / "scripts" / "audit_reconcile.py"), "--json"],
+                          capture_output=True, text=True, env=env, cwd=tmp_path, timeout=120)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout)["recovered"] == 1  # stdout is the JSON report and nothing else
+    logged = [json.loads(line) for line in done.stderr.splitlines() if line.startswith("{")]
+    assert "audit_row_recovered" in [e.get("event") for e in logged]  # the logs went to stderr, level kept

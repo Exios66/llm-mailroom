@@ -10,6 +10,13 @@ Usage:
     PYTHONPATH=src python src/scripts/analyze_audit_db.py --json
     PYTHONPATH=src python src/scripts/analyze_audit_db.py --no-verify --recent 50
     PYTHONPATH=src python src/scripts/analyze_audit_db.py --join-catalog
+
+``--no-verify`` skips every hash check: the per-document legacy chains and the
+unified-row verifier (``audit.verify``) behind ``unified.checks``.
+
+Exit status: 0 normally; 1 when a checked legacy chain is broken or the unified
+verifier reports a failure (``unified.checks.ok`` is false). With ``--no-verify``
+nothing is checked, so the status is 0.
 """
 
 from __future__ import annotations
@@ -111,7 +118,12 @@ def main(argv: list[str] | None = None) -> int:
     """Print the audit summary; return 1 if any checked chain or unified check fails."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable JSON")
-    ap.add_argument("--no-verify", action="store_true", help="skip hash-chain verification")
+    ap.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="skip all hash verification: the legacy per-document chains and the unified-row checks "
+        "(the exit status then cannot be 1)",
+    )
     ap.add_argument("--recent", type=int, default=20, help="recent events to include")
     ap.add_argument(
         "--join-catalog",

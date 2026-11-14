@@ -12,6 +12,9 @@ Usage:
     python src/scripts/audit_reconcile.py --dry-run   # report what would be written
     python src/scripts/audit_reconcile.py --json      # machine-readable report
 
+With ``--json`` stdout is the report and nothing else: log lines go to stderr
+(the level and format still come from ``LOG_LEVEL`` / ``LOG_FORMAT``).
+
 Exit status: 0 when every copy verified, 1 when any copy was refused for a hash mismatch.
 """
 
@@ -34,15 +37,20 @@ from pipeline.logging import setup_logging  # noqa: E402
 setup_logging()
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--dry-run", action="store_true", help="report only; write nothing and keep the spool")
+    parser.add_argument("--json", action="store_true",
+                        help="print the report as JSON on stdout (log lines go to stderr)")
+    return parser
+
+
 def main(argv: list[str] | None = None) -> int:
     """Reconcile pending records and print a report; return 1 on a hash mismatch.
 
     ``--dry-run`` reports without writing or removing pending records.
     """
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--dry-run", action="store_true", help="report only; write nothing and keep the spool")
-    parser.add_argument("--json", action="store_true", help="print the report as JSON")
-    args = parser.parse_args(argv)
+    args = _parser().parse_args(argv)
 
     from audit.reconcile import reconcile
 
@@ -58,4 +66,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # Only the script entry point re-points the logs: main() is also called in-process.
+    if _parser().parse_known_args()[0].json:
+        import structlog
+
+        structlog.configure(logger_factory=structlog.PrintLoggerFactory(sys.stderr))  # level is kept
     sys.exit(main())
