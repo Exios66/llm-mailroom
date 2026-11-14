@@ -21,7 +21,7 @@ For the pipeline stages referenced below, see [Pipeline flowchart](flowchart.md)
 
 | Layer | What it does | Code |
 |---|---|---|
-| Scoring library | Per-field matchers, document score, specialist suites, metric registry | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring), pinned at **f95c3188a1a634a9a2354afd5351edd8dd152a89** in `pyproject.toml` (`llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@f95c3188a1a634a9a2354afd5351edd8dd152a89`) |
+| Scoring library | Per-field matchers, document score, specialist suites, metric registry | [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring), pinned at **46811485ce516392b3f72d3269ed9e43b7ca9ed8** in `pyproject.toml` (`llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@46811485ce516392b3f72d3269ed9e43b7ca9ed8`) |
 | Wiring | Loads `taxonomy.yaml` into the library's settings at import time | [`observability/scoring_wiring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/scoring_wiring.py) |
 | Specialist suites | One suite per live extract class, mapped to its specialist | [`observability/specialist_suites.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/specialist_suites.py), [`observability/suite_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/suite_scoring.py) |
 | Trace wiring | Pushes field and document scores to Langfuse | [`observability/langfuse_field_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/langfuse_field_scoring.py), [`observability/scores.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/observability/scores.py) |
@@ -32,7 +32,7 @@ For the pipeline stages referenced below, see [Pipeline flowchart](flowchart.md)
 | LLM judges | Completeness, classification and correctness rubrics | [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), [`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py), [`agents/sorter_reviewer.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/sorter_reviewer.py) |
 | Routing | Confidence bands, judge gate, arbiter bounds | [`graph/routing.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/routing.py) |
 
-> **Version note.** The pipeline pins llm-dojo-scoring **f95c3188a1a634a9a2354afd5351edd8dd152a89**. The eval-environment repo, where most measured numbers come from, resolved the library at **v0.15.0** (its `pyproject.toml` comment). Scores from different library versions are not guaranteed to be comparable.
+> **Version note.** The pipeline pins llm-dojo-scoring **46811485ce516392b3f72d3269ed9e43b7ca9ed8**. The eval-environment repo, where most measured numbers come from, resolved the library at **v0.15.0** (its `pyproject.toml` comment). Scores from different library versions are not guaranteed to be comparable.
 
 ### Field types
 
@@ -59,12 +59,12 @@ The fields `confidence` and `reasoning` are never scored.
 
 ### Per-field match rules
 
-Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/scoring/field_scoring.py`](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/scoring/field_scoring.py).
+Every rule returns a score from 0 to 1. Source: [`llm_dojo_scoring/scoring/field_scoring.py`](https://github.com/Exios66/llm-dojo-scoring/blob/46811485ce516392b3f72d3269ed9e43b7ca9ed8/llm_dojo_scoring/scoring/field_scoring.py).
 
 | Type | Rule | Score |
 |---|---|---|
 | `id` | Uppercase, strip punctuation and whitespace, then exact match | 1.0 or 0.0 |
-| `money` | Strip `$ € £` and commas, expand `K`/`M`/`B`, drop ` USD`/` DOLLARS`/` EUROS`, parse to a float. Match when the difference is at most **0.01** (one cent). If either side does not parse, fall back to the `name` rule | 1.0 or 0.0 (or the `name` score) |
+| `money` | Uppercase, strip `$ € £` and commas, drop one trailing ` USD`/` DOLLARS`/` DOLLAR`/` EUROS`/` EUR` and one leading `USD `/`US `/`EUR `, then expand a `K`/`M`/`B` suffix and parse to a float (so `1.2M USD` is 1,200,000). Match when the difference is at most **0.01** (one cent). If either side does not parse, fall back to the `name` rule | 1.0 or 0.0 (or the `name` score) |
 | `date` | See the date rules below | 1.0, 0.67, 0.33 or 0.0 (or the `name` score) |
 | `name` | Normalize (uppercase, strip punctuation and corporate suffixes such as `INC`, `LLC`, `LTD`). If all expected tokens appear in the prediction, score 1.0. Otherwise take the token-set ratio, and also Jaro-Winkler when the two share at least one token; keep the higher | 0.0 to 1.0 |
 | `free_text` | SQuAD-style token F1 over lowercase token multisets | 0.0 to 1.0 |
@@ -105,15 +105,15 @@ f1        = 2 * precision * recall / (precision + recall)   (0 when matched = 0)
 `score_extraction` produces one result per document:
 
 - Only expected fields with a non-null, non-empty value are scored. A null expectation is not a requirement.
-- A missing prediction for a required field scores 0.0 (except the blank-date case above).
+- A missing prediction for a required field scores 0.0 (except the blank-date case above, and one CMS case: on CMS insurance rows the subclass-derived `cms_source_table` is not scored when the prediction states no table; a stated table is still scored).
 - **`overall_score` is the plain mean of the per-field scores** (rounded to 4 places), or `None` if no field was scored.
-- `ambiguous_fields` lists every field whose score falls inside the ambiguous band `0.5 <= score <= 0.85`. `needs_judge_review` is true when that list is not empty.
+- `ambiguous_fields` lists every field whose score falls inside its type's ambiguity band from `type_bands` (see the note below); the global band `0.5 <= score < 0.85` applies only to a field type with no band. `needs_judge_review` is true when that list is not empty.
 
 ```text
 overall_score = sum(field_scores) / count(field_scores)
 ```
 
-> **Note on `type_bands`.** `taxonomy.yaml` defines per-type bands (`date: never`, `id: never`, `money: [0.675, 0.938]`, `free_text: [0.6, 0.95]`, `name: [0.5, 1.0]`, `entity_list: [0.5, 1.0]`) and comments say they were calibrated by [`scripts/calibrate_field_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/calibrate_field_scoring.py). In the pinned f95c3188a1a634a9a2354afd5351edd8dd152a89, `score_extraction` calls `field_is_ambiguous` for every scored field. That function applies the field type's band from `type_bands` (wired from `taxonomy.yaml` by `observability/scoring_wiring.py`) and falls back to the global `ambiguous_band` [0.5, 0.85] only for a type with no band. So the per-type bands decide `needs_judge_review`: a `date` or `id` field never escalates, and a `money` field escalates only inside [0.675, 0.938).
+> **Note on `type_bands`.** `taxonomy.yaml` defines per-type bands (`date: never`, `id: never`, `money: [0.675, 0.938]`, `free_text: [0.6, 0.95]`, `name: [0.5, 1.0]`, `entity_list: [0.5, 1.0]`) and comments say they were calibrated by [`scripts/calibrate_field_scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/calibrate_field_scoring.py). In the pinned 46811485ce516392b3f72d3269ed9e43b7ca9ed8, `score_extraction` calls `field_is_ambiguous` for every scored field. That function applies the field type's band from `type_bands` (wired from `taxonomy.yaml` by `observability/scoring_wiring.py`) and falls back to the global `ambiguous_band` [0.5, 0.85] only for a type with no band. So the per-type bands decide `needs_judge_review`: a `date` or `id` field never escalates, and a `money` field escalates only inside [0.675, 0.938).
 
 **Factuality audit.** When the source text is available (`factuality_verification.enabled: true`), every field the model filled in is checked, including fields with no ground-truth label. A predicted item is "true" when it matches a ground-truth label at the 0.6 threshold or when at least **70%** of its tokens (`token_coverage: 0.7`) appear in the source document. This gives `verified_precision` and `hallucination_rate` per field. The document-level values are means over audited fields.
 
@@ -345,7 +345,7 @@ The vision report it mentions (`pilot-vision-tradeoff.md`) is not in this repo; 
 - No recorded run of `calibrate_field_scoring.py`; only the resulting band values in `taxonomy.yaml`.
 - No recorded output of `run_quality_judges.py` (judge completeness, correctness, classification means).
 - The LegalBench log has only a placeholder entry.
-- Specialist runs are small (20 to 100 documents) and use library v0.15.0, while the pipeline pins f95c3188a1a634a9a2354afd5351edd8dd152a89.
+- Specialist runs are small (20 to 100 documents) and use library v0.15.0, while the pipeline pins 46811485ce516392b3f72d3269ed9e43b7ca9ed8.
 
 ---
 
@@ -396,7 +396,7 @@ At import, every name in `SCORE_CONFIGS` is checked against the llm-dojo-scoring
 - [`src/agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), [`arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py), [`sorter_reviewer.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/sorter_reviewer.py)
 - [`src/graph/routing.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/routing.py), [`src/graph/build_graph.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/graph/build_graph.py), [`src/pipeline/reconsideration.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/pipeline/reconsideration.py), [`src/config/taxonomy.yaml`](https://github.com/Exios66/llm-mailroom/blob/main/src/config/taxonomy.yaml)
 - [`src/legalbench/scoring.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/scoring.py), [`src/scripts/run_quality_judges.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_quality_judges.py), [`src/scripts/sync_evaluators.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/sync_evaluators.py), [`src/scripts/run_pilot.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_pilot.py)
-- [llm-dojo-scoring `field_scoring.py` (f95c318)](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/scoring/field_scoring.py) and [`config.py`](https://github.com/Exios66/llm-dojo-scoring/blob/f95c3188a1a634a9a2354afd5351edd8dd152a89/llm_dojo_scoring/config.py)
+- [llm-dojo-scoring `field_scoring.py` (4681148)](https://github.com/Exios66/llm-dojo-scoring/blob/46811485ce516392b3f72d3269ed9e43b7ca9ed8/llm_dojo_scoring/scoring/field_scoring.py) and [`config.py`](https://github.com/Exios66/llm-dojo-scoring/blob/46811485ce516392b3f72d3269ed9e43b7ca9ed8/llm_dojo_scoring/config.py)
 - [eval-environment API-leg reports](https://github.com/LLM-Mailroom-Services/eval-environment/blob/main/reports/api-comparisons/README.md) and [`docs/scoring.md`](https://github.com/LLM-Mailroom-Services/eval-environment/blob/main/docs/scoring.md)
 - [mailroom-ml reports](https://github.com/LLM-Mailroom-Services/mailroom-ml/blob/main/reports/README.md)
 - [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md), [`src/legalbench/reports/experiment_log.md`](https://github.com/Exios66/llm-mailroom/blob/main/src/legalbench/reports/experiment_log.md)

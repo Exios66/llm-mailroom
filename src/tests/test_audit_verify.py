@@ -43,14 +43,14 @@ def _q(path: Path, sql: str, *args) -> list[tuple]:
         return conn.execute(sql, args).fetchall()
 
 
-def _attempt(n: int, stage: str = "extraction", tag: str = "", **detail):
+def _attempt(n: int, stage: str = "extraction", tag: str = "", trigger: str = "initial", **detail):
     from audit.models import AttemptRow
 
     return AttemptRow(
         attempt_id=f"att-{stage}-{n}-{tag}",
         stage=stage,
         attempt_no=n,
-        trigger="initial",
+        trigger=trigger,
         outcome="ok",
         started_at=datetime(2026, 11, 3, 9, 0, n, tzinfo=timezone.utc),
         ended_at=datetime(2026, 11, 3, 9, 0, n + 1, tzinfo=timezone.utc),
@@ -196,6 +196,98 @@ async def test_extra_subrow_fails_subrows(audit_db):
 
     assert report.ok is False
     assert {f["kind"] for f in report.subrows.failures} == {"not_listed_by_parent"}
+
+
+async def test_seeded_attempts_keep_their_trigger(audit_db):
+    """The helper must pass ``trigger`` through, not bury it in ``detail``."""
+    await _seed_row_and_addendum()
+
+    triggers = {
+        attempt_id: trigger
+        for attempt_id, trigger in _q(
+            audit_db, "SELECT attempt_id, trigger FROM audit_attempts ORDER BY attempt_id"
+        )
+    }
+
+    assert triggers["att-extraction-2-"] == "retry"
+    assert triggers["att-extraction-1-"] == "initial"
+
+
+async def test_unknown_event_with_valid_hash_fails_main(audit_db):
+    """The writer refuses events outside ``EVENTS``; a stored row must be held to the same set."""
+    from audit.verify import verify_audit_db
+    from audit.writer import get_row, hash_entry, write_terminal_row
+
+    await write_terminal_row(_row("doc-v"))
+    row = await get_row("doc-v")
+    digest = hash_entry(
+        prev_hash=row["prev_hash"],
+        doc_id="doc-v",
+        entry_id=row["entry_id"],
+        event="deleted",
+        detail=row["detail"],
+        matter_id=row["matter_id"],
+        actor=row["actor"],
+        timestamp=row["timestamp"],
+    )
+    with sqlite3.connect(audit_db) as conn:
+        conn.execute(
+            "UPDATE audit_log SET event = 'deleted', entry_hash = ? WHERE doc_id = 'doc-v'",
+            (digest,),
+        )
+
+    report = await verify_audit_db()
+
+    assert report.ok is False
+    assert [(f["kind"], f["event"]) for f in report.main.failures] == [("unknown_event", "deleted")]
+
+
+@pytest.mark.parametrize(
+    ("column", "bad_value", "kind"),
+    [("stage", "teleport", "unknown_stage"), ("trigger", "magic", "unknown_trigger")],
+)
+async def test_unknown_attempt_vocabulary_with_valid_hashes_fails_subrows(
+    audit_db, column, bad_value, kind
+):
+    """Forge an attempt whose hash, parent listing and parent row hash are all consistent."""
+    from audit.verify import verify_audit_db
+    from audit.writer import attempt_hash, get_row, hash_entry
+
+    await _seed_row_and_addendum()
+    row = await get_row("doc-v")
+    sub = dict(next(s for s in row["sub_rows"] if s["attempt_id"] == "att-extraction-2-"))
+    sub[column] = bad_value
+    sub_hash = attempt_hash(sub, matter_id=row["matter_id"], actor=row["actor"])
+    detail = json.loads(json.dumps(row["detail"]))
+    for ref in detail["attempts"]:
+        if ref["attempt_id"] == sub["attempt_id"]:
+            ref["entry_hash"] = sub_hash
+            ref["stage"] = sub["stage"]
+    row_hash = hash_entry(
+        prev_hash=row["prev_hash"],
+        doc_id=row["doc_id"],
+        entry_id=row["entry_id"],
+        event=row["event"],
+        detail=detail,
+        matter_id=row["matter_id"],
+        actor=row["actor"],
+        timestamp=row["timestamp"],
+    )
+    with sqlite3.connect(audit_db) as conn:
+        conn.execute(
+            f"UPDATE audit_attempts SET {column} = ?, entry_hash = ? WHERE attempt_id = ?",
+            (bad_value, sub_hash, sub["attempt_id"]),
+        )
+        conn.execute(
+            "UPDATE audit_log SET detail = ?, entry_hash = ? WHERE doc_id = ?",
+            (json.dumps(detail), row_hash, row["doc_id"]),
+        )
+
+    report = await verify_audit_db()
+
+    assert report.main.ok is True  # every hash was recomputed; only the vocabulary is wrong
+    assert report.ok is False
+    assert [f["kind"] for f in report.subrows.failures] == [kind]
 
 
 async def test_edited_addendum_fails_addenda(audit_db):
@@ -601,3 +693,51 @@ async def test_verification_reads_one_read_only_snapshot(audit_db):
         sql.lstrip().upper().startswith("SELECT")
         for sql in statements[1:]
     ), statements
+
+
+def test_verify_script_doc_mode_reads_only_the_requested_chain(tmp_path, monkeypatch, capsys):
+    """``--doc`` verifies one document with one chain read, whatever else the database holds."""
+    import importlib.util
+    import sys
+
+    from schemas.audit import build_audit_entry
+    from storage import audit_log
+    from storage.audit_log import write_audit_entry
+
+    path = tmp_path / "mailroom.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{path}")
+    monkeypatch.delenv("MAILROOM_AUDIT_MIGRATE", raising=False)
+    monkeypatch.setattr(db, "_schema_checked_url", None)
+    assert db.ensure_schema()
+    for doc_id in ("doc-a", "doc-b", "doc-c"):
+        asyncio.run(
+            write_audit_entry(
+                build_audit_entry(
+                    doc_id=doc_id,
+                    matter_id="M-1",
+                    event="classified",
+                    actor="sorter",
+                    detail={},
+                    prev_hash="",
+                )
+            )
+        )
+
+    requested: list[str] = []
+    real = audit_log.get_audit_chain
+
+    async def spy(doc_id: str):
+        requested.append(doc_id)
+        return await real(doc_id)
+
+    monkeypatch.setattr(audit_log, "get_audit_chain", spy)
+    script = Path(__file__).resolve().parent.parent / "scripts" / "verify_audit_chains.py"
+    spec = importlib.util.spec_from_file_location("verify_audit_chains_under_test", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(sys, "argv", ["verify_audit_chains.py", "--doc", "doc-b"])
+
+    assert module.main() == 0
+
+    assert requested == ["doc-b"]
+    assert "1 chain(s) checked, 0 broken" in capsys.readouterr().out
