@@ -141,3 +141,18 @@ def test_record_after_row_is_review_decision_addendum(api, temp_base_dir, llm, m
     assert [a["kind"] for a in _row(doc_id)["addenda"]] == ["review_decision", "relations_linked"]
     # No row and nothing parked: nothing to attach to, and no error.
     assert asyncio.run(record_document_event("no-such-doc", "review_decision", {})) is None
+
+
+def test_park_lands_in_trace_as_paused_visit_with_routed_to_review(api, temp_base_dir, llm, mocker):
+    """The park's ``routed_to_review`` note survives the ``interrupt()`` that discards the node's update (T24)."""
+    doc_id = _extraction_park(temp_base_dir, "parked.txt")
+    _forbid_llm(mocker, llm)
+    assert _resolve(api, doc_id, resolution="approve_as_is").status_code == 200
+    trace = _row(doc_id)["detail"]["trace"]
+    parks = [v for v in trace if (v["decision"].get("audit_event") or {}).get("event") == "routed_to_review"]
+    assert parks, "no routed_to_review event in the trace"
+    assert all(v["node"] == "human_review" and v["status"] == "paused" for v in parks)
+    assert parks[0]["decision"]["audit_event"]["detail"]["reason"]
+    # The paused visit precedes the visit of the replay that took the decision.
+    nodes = [(v["node"], v["status"]) for v in trace if v["node"] == "human_review"]
+    assert nodes[0] == ("human_review", "paused") and nodes[-1] == ("human_review", "done")
