@@ -3759,7 +3759,8 @@ def _finalize_aborted(
     scored (run_aborted=1) and visible in the catalog instead of stranding in
     processing/. ``failure_class`` distinguishes timeout vs auth vs I/O.
     ``checkpoint`` supplies the last trace and decisions for the failed audit
-    row; abort outcome fields from ``initial_state`` take precedence.
+    row; only the abort's own outcome fields (stage, error, failure class) are
+    laid over it, never the rest of ``initial_state``.
     """
     from pipeline.bins import move_to_failed, save_manifest
     from schemas.manifest import DocumentManifest, PipelineStage
@@ -3805,6 +3806,13 @@ def _finalize_aborted(
         manifest.escalation_reason = tagged
         state["error_message"] = tagged
         state["escalation_reason"] = tagged
+    # What the abort itself decided. Only these keys are laid over the checkpoint
+    # for the audit row: the rest of ``state`` is the run's initial-state defaults
+    # (``doc_type=None``, counters at 0) and must not hide what the run had decided.
+    abort_outcome = {k: state[k] for k in ("doc_id", "stage", "run_aborted", "error_message")}
+    if failure_class:
+        abort_outcome["failure_class"] = state["failure_class"]
+        abort_outcome["escalation_reason"] = state["escalation_reason"]
 
     file_path_str = state.get("file_path") or ""
     if file_path_str and not Path(file_path_str).exists():
@@ -3843,7 +3851,7 @@ def _finalize_aborted(
     # Unified audit row (spec §5.3): the failed row, from the last checkpoint
     # (its trace and decisions) overlaid with the abort outcome.
     state["audit_metrics"] = _terminal_audit_row(
-        {**(checkpoint or {}), **state}, event="failed", actor="pipeline"
+        {**state, **(checkpoint or {}), **abort_outcome}, event="failed", actor="pipeline"
     )
     # Completion echo (HUB-037): failed Gmail-intake runs report on-thread
     # too.
