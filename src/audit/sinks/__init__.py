@@ -30,6 +30,9 @@ ENTRY_POINT_GROUP = "mailroom.trace_sinks"
 
 @runtime_checkable
 class TraceSink(Protocol):
+    """A sink may also set ``recoverable = False`` when ``fetch_pending`` never returns what it kept
+    (the write-only built-ins do); a sink that leaves it unset is assumed to read its copies back."""
+
     name: str
 
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
@@ -148,7 +151,10 @@ def capture_pending(record: dict[str, Any], *, partial=None) -> list[dict[str, A
     A sink with ``max_payload_bytes`` smaller than the record gets the
     decisions-only copy that ``partial()`` builds (marked ``complete: false``).
     Skip sinks that reject either payload or raise while storing it. Return
-    ``[{"sink", "ref", "complete"}]`` for each sink that kept a copy.
+    ``[{"sink", "ref", "complete", "recoverable"}]`` for each sink that kept a copy.
+    ``complete`` means a complete copy that ``audit-reconcile`` can read back: it
+    is ``False`` for a decisions-only copy and for a write-only sink (its ``ref``
+    only locates the external copy), so such a copy never makes a row ``pending``.
     """
     kept: list[dict[str, Any]] = []
     small: dict[str, Any] | None = None
@@ -172,7 +178,9 @@ def capture_pending(record: dict[str, Any], *, partial=None) -> list[dict[str, A
             logger.warning("trace_sink_capture_failed", sink=name, exc_info=True)
             continue
         if ref is not None:
-            kept.append({"sink": name, "ref": ref, "complete": bool(payload.get("complete", True))})
+            recoverable = bool(getattr(sink, "recoverable", True))
+            kept.append({"sink": name, "ref": ref, "recoverable": recoverable,
+                         "complete": bool(payload.get("complete", True)) and recoverable})
     return kept
 
 

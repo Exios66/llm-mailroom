@@ -89,6 +89,7 @@ def _run(coro_fn):
 
 class SqlSink:
     name = "sql"
+    recoverable = True  # ``fetch_pending`` reads the spool back for ``audit-reconcile``
 
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
         """Upsert one visit's I/O in the audit database and return its visit id."""
@@ -141,13 +142,27 @@ class SqlSink:
         return ref
 
     def fetch_pending(self) -> list[dict]:
-        """Return spooled records with their references, oldest first; empty if no spool exists."""
+        """Return spooled records with their references, oldest first; empty if no spool exists.
+
+        A row whose ``record`` is not a JSON object (corrupt or truncated) is logged
+        and skipped, so one bad row never hides the valid ones from ``audit-reconcile``.
+        """
         path = spool_path()
         if not path.exists():
             return []
         with _spool() as conn:
             rows = conn.execute("SELECT ref, record FROM pending_rows ORDER BY created_at, ref").fetchall()
-        return [{"ref": ref, **json.loads(record)} for ref, record in rows]
+        out: list[dict] = []
+        for ref, record in rows:
+            try:
+                parsed = json.loads(record)
+            except (TypeError, ValueError):
+                parsed = None
+            if not isinstance(parsed, dict):
+                logger.warning("audit_spool_row_malformed", ref=ref)
+                continue
+            out.append({**parsed, "ref": ref})  # the spool key wins over any ``ref`` inside the record
+        return out
 
     def drop_pending(self, ref: str) -> None:
         """Forget a pending row once it is committed (``audit-reconcile``)."""

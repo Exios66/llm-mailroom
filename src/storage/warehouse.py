@@ -318,7 +318,8 @@ async def fetch_legacy_history() -> list[dict[str, Any]] | None:
         if await event_log_model(session) is not AuditLegacyRecord:
             return None
         records = (await session.execute(select(AuditLegacyRecord))).scalars().all()
-    records = sorted(records, key=lambda r: (r.doc_id, r.seq, r.timestamp))
+    # Pre-seq rows hold NULL ``seq`` (the column is nullable here); count them as 0, as the writer does.
+    records = sorted(records, key=lambda r: (r.doc_id, r.seq or 0, r.timestamp))
     return [
         {"entry_id": r.entry_id, "doc_id": r.doc_id, "matter_id": r.matter_id, "event": r.event,
          "actor": r.actor, "detail": r.detail, "prev_hash": r.prev_hash, "entry_hash": r.entry_hash,
@@ -415,8 +416,15 @@ async def fetch_terminal_documents(
     doc_ids: list[str] | None = None,
     since: datetime | None = None,
 ) -> list:
-    from sqlalchemy import select
+    """Terminal catalog documents: the requested ``doc_ids``, else those changed after ``since``.
 
+    "Changed" is a catalog update or a newer audit addendum: an addendum (rescore,
+    review decision, ...) never touches the catalog row, so the catalog watermark
+    alone would leave that document's exported audit row stale. Database errors propagate.
+    """
+    from sqlalchemy import or_, select
+
+    from storage.audit_log import AuditAddendumRecord
     from storage.catalog import DocumentRecord
     from storage.db import async_session, ensure_schema
 
@@ -437,7 +445,10 @@ async def fetch_terminal_documents(
             DocumentRecord.stage.in_(tuple(TERMINAL_STAGES))
         )
         if since is not None:
-            query = query.where(DocumentRecord.updated_at > since)
+            addendum_docs = select(AuditAddendumRecord.doc_id).where(AuditAddendumRecord.timestamp > since)
+            query = query.where(
+                or_(DocumentRecord.updated_at > since, DocumentRecord.doc_id.in_(addendum_docs))
+            )
         query = query.order_by(DocumentRecord.updated_at)
         result = await session.execute(query)
         return list(result.scalars().all())
@@ -502,8 +513,9 @@ async def export_to_warehouse(
     """Export terminal documents and their audit history to Parquet.
 
     ``stamp`` selects the daily files and defaults to today's UTC date. With no
-    IDs or ``since``, the manifest watermark selects later updates; ``full``
-    clears the ``since`` filter. A nonempty export also records migrated legacy
+    IDs or ``since``, the manifest watermark selects documents whose catalog row
+    or audit addenda changed after it; ``full`` clears the ``since`` filter. Any
+    export, even one that selects no document, also records migrated legacy
     history once. Return status and export counts, or a skipped status when
     export is disabled. Database and write errors propagate, including a missing
     pyarrow dependency when export is forced on.
@@ -526,10 +538,12 @@ async def export_to_warehouse(
 
     records = await fetch_terminal_documents(doc_ids=doc_ids, since=since)
     if not records:
+        # No document to export, but the one-time migrated history must not wait for one.
         return {
             "status": "ok",
             "exported_documents": 0,
             "exported_audit_entries": 0,
+            "exported_audit_legacy": await _export_legacy_alone(wh_manifest),
             "stamp": stamp.isoformat(),
         }
 
@@ -587,6 +601,23 @@ def _publish_unified(stamp, unified, manifest) -> None:
     for row, attempts, addenda in unified:
         files = [paths[0].name] + ([paths[1].name] if attempts else []) + ([paths[2].name] if addenda else [])
         docs[row["doc_id"]] = {"entry_hash": row["entry_hash"], "export_date": stamp.isoformat(), "files": files}
+
+
+async def _export_legacy_alone(wh_manifest: dict[str, Any]) -> int:
+    """Record the migrated legacy history once when an export selected no document; return its row count."""
+    if "legacy_export" in wh_manifest:
+        return 0
+    legacy = await fetch_legacy_history()
+    if legacy is None:
+        return 0
+    with _publication_lock(warehouse_dir()):
+        # Load after acquiring the lock: another exporter may have stamped it meanwhile.
+        manifest = load_warehouse_manifest()
+        if "legacy_export" in manifest:
+            return 0
+        n_legacy = _publish_legacy(legacy, manifest)
+        save_warehouse_manifest(manifest)
+        return n_legacy
 
 
 def _publish_legacy(legacy, manifest) -> int:

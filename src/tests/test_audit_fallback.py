@@ -486,3 +486,24 @@ def test_cli_json_stdout_is_only_the_report_when_reconcile_logs(sinks, db_down, 
     assert json.loads(done.stdout)["recovered"] == 1  # stdout is the JSON report and nothing else
     logged = [json.loads(line) for line in done.stderr.splitlines() if line.startswith("{")]
     assert "audit_row_recovered" in [e.get("event") for e in logged]  # the logs went to stderr, level kept
+
+
+async def test_row_held_only_by_write_only_sinks_is_not_reported_pending(sinks, db_down, logs):
+    """Review thread T19: ``audit-reconcile`` cannot read a write-only copy back, so ``pending`` would be a promise nobody keeps."""
+    from audit.writer import commit_or_park
+
+    class WriteOnly(FakeSink):
+        recoverable = False
+
+        def fetch_pending(self):
+            return []
+
+    class SqlDown(FakeSink):
+        def capture_pending(self, record):
+            raise OSError("spool disk full")
+
+    sinks[:] = [SqlDown("sql"), WriteOnly("langfuse")]
+    out = await commit_or_park(_row())
+    assert out.status != "pending"
+    assert out.status == "pending_partial" and [r["sink"] for r in out.refs] == ["langfuse"]
+    assert "audit_pending" not in logs

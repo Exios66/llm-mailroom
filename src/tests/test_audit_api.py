@@ -180,3 +180,29 @@ def test_analyze_no_verify_skips_unified_checks_and_exit_status(client, capsys, 
 
     help_text = " ".join(mod.__doc__.split())
     assert "--no-verify" in help_text and "unified" in help_text and "Exit status" in help_text
+
+
+@pytest.mark.parametrize("stored", [
+    '[1, 2]',  # the whole detail is not an object
+    '{"attempts": 5}',  # attempts is not a list
+    '{"attempts": "x"}',
+    '{"attempts": [3, {"attempt_id": ["unhashable"], "entry_hash": "h"}, {"attempt_id": "a", "entry_hash": 7}]}',
+])
+def test_audit_doc_with_malformed_parent_detail_is_invalid_not_a_500(client, stored):
+    """Review thread T17: a tampered parent ``detail`` fails the check, as ``verify.py`` does, and never raises."""
+    _write("d-m", attempts=[_att("d-m", "classification", 1)])
+    import sqlite3
+
+    path = db._resolve_url().split("///", 1)[1]
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE audit_log SET detail = ? WHERE doc_id = 'd-m'", (stored,))
+    resp = client.get("/audit/d-m", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["chain_valid"] is False
+    assert asyncio.run(_doc_valid("d-m")) is False
+
+
+async def _doc_valid(doc_id):
+    from audit.readers import doc_valid
+
+    return await doc_valid(doc_id)
