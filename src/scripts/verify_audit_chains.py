@@ -13,8 +13,8 @@ Two modes:
 Nonzero exit when anything checked is broken — so restore/backup flows can gate
 on it. In the default full-report mode the verification reads run in one
 read-only snapshot; ``--doc ID`` reads the legacy per-document chains in
-separate statements and makes no single-snapshot guarantee. The explicit
-``ensure_schema()`` at startup may create missing tables and, only with
+separate statements and makes no single-snapshot guarantee. The readers call
+``ensure_schema()``, which may create missing tables and, only with
 ``MAILROOM_AUDIT_MIGRATE=1``, run the opt-in migration; the verifier never
 migrates by itself.
 
@@ -43,26 +43,6 @@ load_env()
 from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
-
-from storage.db import ensure_schema  # noqa: E402
-
-
-async def _all_chains():
-    """Return per-event chains keyed by doc id, reading legacy history after migration."""
-    from sqlalchemy import select, distinct
-    from storage.audit_log import event_log_model, get_audit_chain
-
-    ensure_schema()
-    from storage.db import async_session
-
-    async with async_session() as session:
-        Model = await event_log_model(session)
-        rows = await session.execute(select(distinct(Model.doc_id)))
-        doc_ids = [r[0] for r in rows.all()]
-    chains = {}
-    for doc_id in doc_ids:
-        chains[doc_id] = await get_audit_chain(doc_id)
-    return chains
 
 
 def _verify(doc_id: str, records: list[dict]) -> dict:
@@ -129,7 +109,10 @@ def main() -> int:
             return 1
         return 0
 
-    chains = {args.doc: asyncio.run(_all_chains()).get(args.doc, [])}
+    from storage.audit_log import get_audit_chain
+
+    # One query for the requested document; it reads the legacy table after a migration.
+    chains = {args.doc: asyncio.run(get_audit_chain(args.doc))}
     if not chains.get(args.doc):
         print(f"no audit entries for {args.doc}")
         return 0

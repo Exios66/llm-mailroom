@@ -43,7 +43,7 @@ from typing import Any
 import structlog
 from sqlalchemy import select
 
-from audit.models import ADDENDUM_KINDS
+from audit.models import ADDENDUM_KINDS, EVENTS, STAGES, TRIGGERS
 from audit.writer import _take_migration_gate, attempt_hash, hash_entry
 from schemas.audit import AuditLogEntry, verify_chain
 from storage.audit_log import (
@@ -256,6 +256,11 @@ async def _check_main(session, migrated: bool) -> CheckReport:
                 expected=previous_hash,
                 actual=record.prev_hash,
             )
+        if record.event not in EVENTS:
+            # The writer refuses events outside EVENTS; a valid hash does not excuse one.
+            report.fail(
+                kind="unknown_event", doc_id=record.doc_id, seq=record.seq, event=record.event
+            )
         try:
             expected = _row_hash(record)
         except Exception as exc:  # invalid timestamp/type: bounded failure, not a crash
@@ -378,6 +383,12 @@ async def _check_subrows(session, migrated: bool) -> CheckReport:
             else:
                 if attempt.entry_hash != expected:
                     report.fail(kind="hash_mismatch", attempt_id=attempt.attempt_id)
+        if attempt.stage not in STAGES:
+            report.fail(kind="unknown_stage", attempt_id=attempt.attempt_id, stage=attempt.stage)
+        if attempt.trigger not in TRIGGERS:
+            report.fail(
+                kind="unknown_trigger", attempt_id=attempt.attempt_id, trigger=attempt.trigger
+            )
         if attempt.doc_id != record.doc_id:
             report.fail(
                 kind="doc_mismatch",
