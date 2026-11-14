@@ -167,3 +167,81 @@ def test_manifest_maps_doc_to_hash_and_files(wh):
     assert docs["d-2"]["export_date"] == "2026-11-03"  # untouched by a batch it was not in
     assert asyncio.run(doc_view("d-1"))["warehouse"] == {
         "export_date": "2026-11-04", "files": docs["d-1"]["files"]}
+
+
+def _null_legacy_seq(where: str) -> None:
+    """Make some migrated legacy rows look like pre-``seq`` rows (NULL, as ``ALTER TABLE ADD COLUMN`` leaves them)."""
+    from sqlalchemy import text
+
+    async def go():
+        async with db.async_session() as session:
+            await session.execute(text(f"UPDATE audit_log_legacy SET seq = NULL WHERE {where}"))
+            await session.commit()
+
+    asyncio.run(go())
+
+
+def test_legacy_history_with_null_seq_mixed_with_integers_still_sorts(wh):
+    """Review threads T3/T27: a NULL ``seq`` next to an integer ``seq`` must not abort the export."""
+    legacy_event("d-1", "intake_received")
+    legacy_event("d-1", "classified")
+    legacy_event("d-1", "extracted")
+    seed("d-1")
+    _null_legacy_seq("seq = 1")  # one pre-seq row, the others keep integers
+
+    history = asyncio.run(wh.fetch_legacy_history())
+    assert [e["event"] for e in history] == ["intake_received", "classified", "extracted"]
+    assert [e["seq"] for e in history] == [None, 2, 3]  # stored values are exported untouched
+
+    result = asyncio.run(wh.export_to_warehouse(doc_ids=["d-1"], stamp=DAY1))
+    assert result["exported_audit_legacy"] == 3
+    assert "legacy_export" in wh.load_warehouse_manifest()
+
+
+def test_legacy_exported_even_when_no_terminal_document_is_selected(wh):
+    """Review thread T5: an empty selection (here a future watermark) must not skip the one-time legacy export."""
+    legacy_event("d-1")
+    legacy_event("d-1", "classified")
+    seed("d-1")
+
+    empty = asyncio.run(wh.export_to_warehouse(since=datetime(2099, 1, 1, tzinfo=timezone.utc), stamp=DAY1))
+    assert empty["exported_documents"] == 0
+    assert empty["exported_audit_legacy"] == 2
+    assert sorted(e["event"] for e in wh._read_parquet_rows(wh.audit_legacy_path())) == ["classified", "intake_received"]
+    stamp = wh.load_warehouse_manifest()["legacy_export"]
+    assert stamp["rows"] == 2
+
+    # Still exactly once: the next export, empty or not, leaves the file and the stamp alone.
+    mtime = wh.audit_legacy_path().stat().st_mtime_ns
+    later = asyncio.run(wh.export_to_warehouse(doc_ids=["d-1"], stamp=DAY1))
+    assert later["exported_audit_legacy"] == 0
+    assert wh.audit_legacy_path().stat().st_mtime_ns == mtime
+    assert wh.load_warehouse_manifest()["legacy_export"] == stamp
+
+
+def test_empty_selection_with_no_legacy_rows_writes_no_file(wh):
+    """An empty export over an empty legacy history stays a no-op for the files (it only stamps the manifest)."""
+    result = asyncio.run(wh.export_to_warehouse(doc_ids=["nobody"], stamp=DAY1))
+    assert result["exported_documents"] == 0
+    assert result["exported_audit_legacy"] == 0
+    assert not wh.audit_legacy_path().exists()
+    assert wh.load_warehouse_manifest()["legacy_export"]["rows"] == 0
+
+
+def test_incremental_export_reselects_a_document_whose_addendum_is_newer_than_the_watermark(wh):
+    """Review thread T4: an addendum never touches the catalog row, so the watermark alone would skip it."""
+    seed("d-1")
+    seed("d-2")
+    first = asyncio.run(wh.export_to_warehouse(stamp=DAY1))  # watermark = newest catalog update
+    assert first["exported_documents"] == 2 and first["exported_audit_addenda"] == 0
+
+    add_addendum("d-1", "review_decision")  # no catalog write: documents.updated_at is unchanged
+    second = asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    assert second["exported_documents"] == 1  # only d-1, not d-2
+    assert second["exported_audit_addenda"] == 1
+    adds = wh._read_parquet_rows(wh.daily_audit_addenda_path(DAY1))
+    assert [(a["doc_id"], a["kind"]) for a in adds] == [("d-1", "review_decision")]
+
+    # Re-selecting is idempotent: the same addendum merges by key, never duplicates.
+    asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    assert len(wh._read_parquet_rows(wh.daily_audit_addenda_path(DAY1))) == 1
