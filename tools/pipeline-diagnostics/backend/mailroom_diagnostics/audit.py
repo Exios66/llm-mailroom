@@ -1284,6 +1284,7 @@ def document_audit(doc_id: str) -> dict[str, Any]:
         "limits": {
             "events": MAX_EVENTS,
             "attempts": MAX_ATTEMPTS,
+            "foreign_attempts": MAX_FOREIGN_ATTEMPTS,
             "addenda": MAX_ADDENDA,
             "decision_fields": MAX_DECISION_FIELDS,
         },

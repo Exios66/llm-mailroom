@@ -875,6 +875,7 @@ def test_foreign_doc_rows_past_the_cap_still_fail_instead_of_truncating(client, 
     assert verification["failures"]
     assert all(f["reason"] == "attempt-doc-mismatch" for f in verification["failures"])
     assert any("470 further sub-row(s) of other documents" in note for note in verification["notes"])
+    assert payload["limits"]["foreign_attempts"] == 50
 
 
 def test_foreign_doc_row_still_fails_when_this_documents_own_rows_are_truncated(
