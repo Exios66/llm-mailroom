@@ -123,6 +123,37 @@ def test_decisions_match_sandbox_schema(run_graph):
     assert "contract" in classified["options"]
 
 
+def test_fixture_matches_the_sandbox_node_trace_when_a_checkout_is_given():
+    """T28 (#229): re-check the fixture against the sandbox's own ``normalize_decision``.
+
+    Set ``MAILROOM_SANDBOX_CHECKOUT`` to a ``local-mailroom-sandbox`` checkout; without it the
+    test is skipped (the sandbox is a separate repository).
+    """
+    import importlib.util
+    import os
+
+    from audit.trace import decisions_for
+
+    root = os.environ.get("MAILROOM_SANDBOX_CHECKOUT")
+    path = Path(root) / "src" / "mailroom_sandbox" / "job" / "node_trace.py" if root else None
+    if path is None or not path.is_file():
+        pytest.skip("MAILROOM_SANDBOX_CHECKOUT does not point at a local-mailroom-sandbox checkout")
+    spec = importlib.util.spec_from_file_location("sandbox_node_trace_under_test", path)
+    sandbox = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sandbox)
+
+    schema = json.loads(FIXTURE.read_text())
+    assert tuple(schema["types"]) == tuple(sandbox.DECISION_TYPES)
+    probe = sandbox.normalize_decision({"question": "q", "type": "choice", "answer": "a"})
+    assert list(probe) == schema["keys"]
+    ours = decisions_for("classify", {"doc_id": "d"}, {"doc_type": "contract", "classification_confidence": 0.9})
+    ours += decisions_for("judge_verify", {}, {"judge_verdict": "pass", "judge_score": 0.9})
+    assert ours
+    for d in ours:  # the sandbox accepts every decision we write and keeps its identity
+        kept = sandbox.normalize_decision(d)
+        assert kept is not None and (kept["question"], kept["type"]) == (d["question"], d["type"])
+
+
 def test_attempt_ids_follow_retry_counters(run_graph):
     from audit.trace import attempt_id_for
 
