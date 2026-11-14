@@ -1652,8 +1652,10 @@ def _read_unified(
             if foreign_total > len(foreign_rows):
                 foreign_unlisted = foreign_total - len(foreign_rows)
 
-    # Verification saw every sub-row naming this record; the projection shows
-    # only this document's own, never another document's content.
+    # Verification saw this document's own sub-rows plus up to
+    # MAX_FOREIGN_ATTEMPTS rows of other documents naming this record (the rest
+    # are counted in a note); the projection shows only this document's own,
+    # never another document's content.
     attempt_projection = [
         _project_attempt(item) for item in attempts if item.get("doc_id") == doc_id
     ]
