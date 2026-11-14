@@ -216,3 +216,24 @@ def test_pending_rows_round_trip_through_spool(monkeypatch, tmp_path):
     assert pending["doc_id"] == "d-p" and pending["ref"].startswith("pend-")
     SqlSink().drop_pending(pending["ref"])
     assert SqlSink().fetch_pending() == []
+
+
+def test_sql_sink_stores_io_even_when_full_trace_is_off(monkeypatch):
+    """T22 (#229): ``audit.full_trace: false`` keeps I/O out of the row, not out of ``audit_trace_io``.
+
+    The taxonomy comment for ``audit.full_trace`` says so; this pins the behavior it describes.
+    """
+    from datetime import datetime, timezone
+
+    from audit.sinks.sql import SqlSink
+    from audit.trace import visit
+
+    monkeypatch.setenv("PHOENIX_TRACING", "disabled")
+    monkeypatch.delenv("MAILROOM_TRACE_SINKS", raising=False)
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
+    now = datetime.now(timezone.utc)
+    v = visit("classify", {"doc_id": "d-pii"}, {}, started_at=now, ended_at=now,
+              llm={"prompt": "Jane Doe, SSN 000-00-0000", "completion": "ok", "model": "m"})
+    assert "prompt" not in v and "completion" not in v  # not in the row ...
+    stored = SqlSink().fetch_io(v["visit_id"])
+    assert stored["prompt"] == "Jane Doe, SSN 000-00-0000" and stored["sha256"] == v["io_sha256"]  # ... but stored
