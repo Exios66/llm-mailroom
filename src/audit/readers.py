@@ -76,6 +76,39 @@ def _warehouse(doc_id: str) -> dict[str, Any] | None:
     return {"export_date": entry.get("export_date"), "files": list(entry.get("files") or [])}
 
 
+def _listed_attempts(detail: Any, report: Any, parent_id: str) -> dict[str, str]:
+    """``attempt_id -> entry_hash`` from a parent's stored ``detail.attempts``, failing malformed shapes.
+
+    Mirrors the verifier's sub-row section: a tampered ``detail`` is reported on
+    ``report``, never raised, so ``GET /audit/{doc_id}`` answers ``chain_valid: false``.
+    """
+    listed: dict[str, str] = {}
+    if not isinstance(detail, dict):
+        report.fail(kind="detail_not_object", parent_id=parent_id, actual_type=type(detail).__name__)
+        return listed
+    refs = detail.get("attempts")
+    if refs is None:
+        return listed
+    if not isinstance(refs, list):
+        report.fail(kind="attempts_not_a_list", parent_id=parent_id)
+        return listed
+    for ref in refs:
+        if not isinstance(ref, dict):
+            report.fail(kind="attempt_ref_malformed", parent_id=parent_id)
+            continue
+        attempt_id, ref_hash = ref.get("attempt_id"), ref.get("entry_hash")
+        if not isinstance(attempt_id, str) or not attempt_id:
+            report.fail(kind="attempt_ref_malformed", parent_id=parent_id, reason="attempt_id_not_string")
+        elif not isinstance(ref_hash, str) or not ref_hash:
+            report.fail(kind="attempt_ref_malformed", parent_id=parent_id, attempt_id=attempt_id,
+                        reason="entry_hash_not_string")
+        elif attempt_id in listed:
+            report.fail(kind="duplicate_attempt_ref", parent_id=parent_id, attempt_id=attempt_id)
+        else:
+            listed[attempt_id] = ref_hash
+    return listed
+
+
 async def doc_valid(doc_id: str) -> bool:
     """The document's row, addenda chain and sub-rows recompute to their stored hashes.
 
@@ -132,6 +165,12 @@ async def doc_valid(doc_id: str) -> bool:
         parents[add.addendum_id] = (matter_id, add.actor, add.detail)
 
     sub_report.checked = len(subs)
+    # Each parent's listing is read once, and only for parents that have sub-rows.
+    listed_by_parent = {
+        parent_id: _listed_attempts(parents[parent_id][2], sub_report, parent_id)
+        for parent_id in dict.fromkeys(sub.parent_id for sub in subs)
+        if parent_id in parents
+    }
     for sub in subs:
         parent = parents.get(sub.parent_id)
         if parent is None:
@@ -154,13 +193,7 @@ async def doc_valid(doc_id: str) -> bool:
             sub_report.fail(
                 kind="doc_mismatch", attempt_id=sub.attempt_id, expected=doc_id, actual=sub.doc_id
             )
-        refs = (parents[sub.parent_id][2] or {}).get("attempts") or []
-        listed = {
-            ref.get("attempt_id"): ref.get("entry_hash")
-            for ref in refs
-            if isinstance(ref, dict)
-        }
-        if listed.get(sub.attempt_id) != sub.entry_hash:
+        if listed_by_parent[sub.parent_id].get(sub.attempt_id) != sub.entry_hash:
             sub_report.fail(
                 kind="not_listed_by_parent", attempt_id=sub.attempt_id, parent_id=sub.parent_id
             )

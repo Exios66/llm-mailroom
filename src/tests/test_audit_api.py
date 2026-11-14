@@ -150,3 +150,29 @@ def test_analyze_script_prints_unified(client, capsys):
     out = capsys.readouterr().out
     report = json.loads(out[out.index("{"):])
     assert report["unified"]["rows"] == 1
+
+
+@pytest.mark.parametrize("stored", [
+    '[1, 2]',  # the whole detail is not an object
+    '{"attempts": 5}',  # attempts is not a list
+    '{"attempts": "x"}',
+    '{"attempts": [3, {"attempt_id": ["unhashable"], "entry_hash": "h"}, {"attempt_id": "a", "entry_hash": 7}]}',
+])
+def test_audit_doc_with_malformed_parent_detail_is_invalid_not_a_500(client, stored):
+    """Review thread T17: a tampered parent ``detail`` fails the check, as ``verify.py`` does, and never raises."""
+    _write("d-m", attempts=[_att("d-m", "classification", 1)])
+    import sqlite3
+
+    path = db._resolve_url().split("///", 1)[1]
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE audit_log SET detail = ? WHERE doc_id = 'd-m'", (stored,))
+    resp = client.get("/audit/d-m", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["chain_valid"] is False
+    assert asyncio.run(_doc_valid("d-m")) is False
+
+
+async def _doc_valid(doc_id):
+    from audit.readers import doc_valid
+
+    return await doc_valid(doc_id)
