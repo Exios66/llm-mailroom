@@ -772,6 +772,100 @@ def test_attempt_from_another_documents_parent_fails(client, make_store):
     )
 
 
+@pytest.mark.parametrize("parent", [f"row-{DOC}", f"add-{DOC}-1"])
+def test_attempt_naming_this_parent_under_another_doc_id_fails(client, make_store, parent):
+    """An unlisted sub-row that names this record's parent but carries another doc id.
+
+    Filtering attempts by ``doc_id`` alone never reads it, so the record stayed
+    verified; the foundation verifier reports it as a document mismatch.
+    """
+    db = make_store("unified")
+    _attempt_row(db, attempt_id="foreign-doc-1", parent_id=parent, doc_id="demo-other-doc-9")
+
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "failed"
+    assert {
+        "scope": "attempts",
+        "id": "foreign-doc-1",
+        "reason": "attempt-doc-mismatch",
+    } in payload["verification"]["failures"]
+    # Another document's sub-row is reported, never projected into this record.
+    assert all(item["attempt_id"] != "foreign-doc-1" for item in payload["record"]["attempts"])
+    assert "foreign-doc-1" not in json.dumps(payload["record"])
+
+
+def _rekind_addendum(db: Path, kind: str) -> None:
+    """Rewrite the seeded addendum's kind and re-hash it, so only the kind is wrong."""
+    from audit.writer import hash_entry
+
+    conn = sqlite3.connect(db)
+    try:
+        row = conn.execute("SELECT matter_id FROM audit_log WHERE doc_id = ?", (DOC,)).fetchone()
+        add = conn.execute(
+            "SELECT addendum_id, actor, timestamp, detail, prev_hash FROM audit_addenda WHERE doc_id = ?",
+            (DOC,),
+        ).fetchone()
+        digest = hash_entry(
+            prev_hash=add[4],
+            doc_id=DOC,
+            entry_id=add[0],
+            event=kind,
+            detail=json.loads(add[3]),
+            matter_id=row[0],
+            actor=add[1],
+            timestamp=add[2],
+        )
+        conn.execute(
+            "UPDATE audit_addenda SET kind = ?, entry_hash = ? WHERE doc_id = ?", (kind, digest, DOC)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_rehashed_addendum_with_an_unsupported_kind_fails(client, make_store):
+    db = make_store("unified")
+    _rekind_addendum(db, "bogus-kind")
+
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "failed"
+    failures = payload["verification"]["failures"]
+    assert {"scope": "addenda", "id": f"add-{DOC}-1", "reason": "unknown-kind"} in failures
+    # The hash itself is valid: the kind check is what catches it.
+    assert not any(failure["reason"] == "hash-mismatch" for failure in failures)
+
+
+def test_addendum_kind_fallback_mirrors_the_foundation_list():
+    from audit.models import ADDENDUM_KINDS
+
+    from mailroom_diagnostics import audit
+
+    assert audit._ADDENDUM_KINDS_FALLBACK == tuple(ADDENDUM_KINDS)
+    assert audit._addendum_kinds() == tuple(ADDENDUM_KINDS)
+
+
+@pytest.mark.parametrize(
+    "kind", ["rescore", "resumed", "review_decision", "relations_linked", "recovered_detail"]
+)
+def test_every_foundation_addendum_kind_verifies(client, make_store, kind):
+    db = make_store("unified")
+    _rekind_addendum(db, kind)
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "verified"
+
+
+def test_addendum_kind_check_still_runs_without_the_foundation(client, make_store, monkeypatch):
+    from mailroom_diagnostics import audit
+
+    monkeypatch.setattr(audit, "_foundation_writer", lambda: (None, None))
+    monkeypatch.setattr(audit, "_foundation_addendum_kinds", lambda: None)
+    db = make_store("unified")
+    _rekind_addendum(db, "bogus-kind")
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "failed"
+    assert any(f["reason"] == "unknown-kind" for f in payload["verification"]["failures"])
+
+
 def test_attempt_row_not_listed_by_its_parent_fails(client, make_store):
     db = make_store("unified")
     _attempt_row(db, attempt_id="unlisted-1", parent_id=f"row-{DOC}")

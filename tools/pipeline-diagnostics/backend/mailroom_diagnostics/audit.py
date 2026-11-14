@@ -46,7 +46,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Literal
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import bindparam, create_engine, inspect, text
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.pool import NullPool
 
@@ -571,6 +571,32 @@ def _foundation_writer() -> tuple[Any, Any] | tuple[None, None]:
     return None, None
 
 
+# Addendum kinds the foundation writes and verifies (``audit.models``). Used
+# only when that package is not importable; a test pins the two together.
+_ADDENDUM_KINDS_FALLBACK = (
+    "rescore",
+    "resumed",
+    "review_decision",
+    "relations_linked",
+    "recovered_detail",
+)
+
+
+def _foundation_addendum_kinds() -> tuple[str, ...] | None:
+    try:
+        kinds = getattr(importlib.import_module("audit.models"), "ADDENDUM_KINDS", None)
+        if kinds:
+            return tuple(kinds)
+    except Exception:
+        pass
+    return None
+
+
+def _addendum_kinds() -> tuple[str, ...]:
+    """Allowed addendum kinds: the foundation's own list, else the mirrored one."""
+    return _foundation_addendum_kinds() or _ADDENDUM_KINDS_FALLBACK
+
+
 def _recompute_row_hash(
     row: dict[str, Any], *, hash_entry: Any | None
 ) -> tuple[str | None, str | None]:
@@ -880,9 +906,14 @@ def _verify_unified(
 
     previous = row.get("entry_hash") if row is not None else None
     expected_seq = 1
+    allowed_kinds = _addendum_kinds()
     for addendum in addenda:
         checked["addenda"] += 1
         addendum_id = _as_str(addendum.get("addendum_id"))
+        # The foundation verifier rejects a kind its writer never emits; a
+        # correctly rehashed row with another kind must not verify here either.
+        if addendum.get("kind") not in allowed_kinds:
+            failures.append({"scope": "addenda", "id": addendum_id, "reason": "unknown-kind"})
         data = _addendum_hash_input(addendum, matter_id=matter_id)
         expected, reason = _recompute_row_hash(data, hash_entry=hash_entry)
         if reason is not None:
@@ -1527,23 +1558,9 @@ def _read_unified(
     # addenda/attempt reads.
     _notify("mid", conn)
 
-    attempts_total = 0
     attempts: list[dict[str, Any]] = []
     addenda: list[dict[str, Any]] = []
     truncated: list[str] = []
-    if "audit_attempts" in tables:
-        attempts_total = _count(conn, "audit_attempts", "doc_id = :doc", {"doc": doc_id})
-        result = conn.execute(
-            text(
-                "SELECT * FROM audit_attempts WHERE doc_id = :doc "
-                "ORDER BY stage, attempt_no, attempt_id LIMIT :limit"
-            ),
-            {"doc": doc_id, "limit": MAX_ATTEMPTS + 1},
-        )
-        attempts = [_row_dict(item) for item in result]
-        if len(attempts) > MAX_ATTEMPTS or attempts_total > MAX_ATTEMPTS:
-            truncated.append("attempts")
-            attempts = attempts[:MAX_ATTEMPTS]
     if "audit_addenda" in tables:
         addenda_total = _count(conn, "audit_addenda", "doc_id = :doc", {"doc": doc_id})
         result = conn.execute(
@@ -1556,8 +1573,43 @@ def _read_unified(
         if len(addenda) > MAX_ADDENDA or addenda_total > MAX_ADDENDA:
             truncated.append("addenda")
             addenda = addenda[:MAX_ADDENDA]
+    if "audit_attempts" in tables:
+        # A sub-row belongs to this record by its document id OR by naming one
+        # of its parents. Filtering by document id alone never reads a row that
+        # names this row/addendum under another document id, so it could not be
+        # reported (the foundation verifier checks every sub-row's parentage).
+        parent_ids = [
+            value
+            for value in (data.get("entry_id"), *(item.get("addendum_id") for item in addenda))
+            if isinstance(value, str) and value
+        ]
+        owned = "(doc_id = :doc OR parent_id IN :parents)"
+        attempts_total = int(
+            conn.execute(
+                text(f"SELECT COUNT(*) FROM audit_attempts WHERE {owned}").bindparams(
+                    bindparam("parents", expanding=True)
+                ),
+                {"doc": doc_id, "parents": parent_ids},
+            ).scalar()
+            or 0
+        )
+        result = conn.execute(
+            text(
+                f"SELECT * FROM audit_attempts WHERE {owned} "
+                "ORDER BY stage, attempt_no, attempt_id LIMIT :limit"
+            ).bindparams(bindparam("parents", expanding=True)),
+            {"doc": doc_id, "parents": parent_ids, "limit": MAX_ATTEMPTS + 1},
+        )
+        attempts = [_row_dict(item) for item in result]
+        if len(attempts) > MAX_ATTEMPTS or attempts_total > MAX_ATTEMPTS:
+            truncated.append("attempts")
+            attempts = attempts[:MAX_ATTEMPTS]
 
-    attempt_projection = [_project_attempt(item) for item in attempts]
+    # Verification saw every sub-row naming this record; the projection shows
+    # only this document's own, never another document's content.
+    attempt_projection = [
+        _project_attempt(item) for item in attempts if item.get("doc_id") == doc_id
+    ]
     parent_of = {_as_str(item.get("attempt_id")): _as_str(item.get("parent_id")) for item in attempts}
     row_id = _as_str(data.get("entry_id"))
     event = _as_str(data.get("event"), limit=64)
@@ -1575,7 +1627,13 @@ def _read_unified(
         "terminal": event in _TERMINAL_STATUS,
         "decision_fields": _decision_fields(data.get("detail")),
         "attempts": [item for item in attempt_projection if parent_of.get(item["attempt_id"]) == row_id],
-        "attempts_total": len([item for item in attempts if _as_str(item.get("parent_id")) == row_id]),
+        "attempts_total": len(
+            [
+                item
+                for item in attempts
+                if item.get("doc_id") == doc_id and _as_str(item.get("parent_id")) == row_id
+            ]
+        ),
         "addenda": [],
     }
     for addendum in addenda:
