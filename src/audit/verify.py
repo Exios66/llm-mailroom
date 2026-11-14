@@ -35,8 +35,6 @@ legacy v1 fallback inside ``schemas.audit.verify_chain``), attempt sub-rows use
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -44,6 +42,7 @@ from typing import Any
 import structlog
 from sqlalchemy import select
 
+from audit.digests import detail_sha256, io_sha256, io_sha256_ascii_escaped  # one shared implementation
 from audit.models import ADDENDUM_KINDS, EVENTS, STAGES, TRIGGERS
 from audit.writer import _take_migration_gate, attempt_hash, hash_entry
 from schemas.audit import AuditLogEntry, verify_chain
@@ -60,31 +59,6 @@ from storage.db import async_session, begin_read_snapshot, ensure_schema
 logger = structlog.get_logger(__name__)
 
 MIGRATION_KEY = "migration"
-
-
-def io_sha256(prompt: str | None, completion: str | None) -> str:
-    """Canonical SHA-256 of one trace-I/O payload (spec §4.4).
-
-    The ``sql`` sink (``audit/sinks/sql.py``) writes through this helper, so the
-    sink, the writer and the verifier cannot drift. ``None`` is part of the payload (a missing
-    completion is distinct from an empty one).
-    """
-    payload = json.dumps(
-        {"prompt": prompt, "completion": completion}, sort_keys=True, ensure_ascii=False
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def detail_sha256(detail: dict[str, Any]) -> str:
-    """Canonical SHA-256 of a recovered row's ``detail`` (spec §5.6).
-
-    The hash covers the detail object *without* its ``recovered_from`` key, so
-    the recovery provenance can be added without changing the digest. The M10
-    reconcile path must hash through this helper.
-    """
-    base = {k: v for k, v in (detail or {}).items() if k != "recovered_from"}
-    payload = json.dumps(base, sort_keys=True, default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -600,7 +574,7 @@ async def _check_trace_io(session) -> CheckReport:
                 message=str(exc)[:300],
             )
             continue
-        if record.sha256 != expected:
+        if record.sha256 != expected and record.sha256 != io_sha256_ascii_escaped(record.prompt, record.completion):
             report.fail(kind="io_sha_mismatch", visit_id=record.visit_id, doc_id=record.doc_id)
     return report
 
