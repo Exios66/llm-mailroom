@@ -14,6 +14,7 @@ def _span():
 
 class BraintrustSink:
     name = "braintrust"
+    recoverable = False  # write-only: ``fetch_pending`` is always empty
 
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
         span = _span()

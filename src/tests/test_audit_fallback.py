@@ -383,3 +383,24 @@ def test_cli_dry_run_json(sinks, db_down, capsys):
     assert mod.main(["--dry-run", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["recovered"] == 1 and out["dry_run"] is True
+
+
+async def test_row_held_only_by_write_only_sinks_is_not_reported_pending(sinks, db_down, logs):
+    """Review thread T19: ``audit-reconcile`` cannot read a write-only copy back, so ``pending`` would be a promise nobody keeps."""
+    from audit.writer import commit_or_park
+
+    class WriteOnly(FakeSink):
+        recoverable = False
+
+        def fetch_pending(self):
+            return []
+
+    class SqlDown(FakeSink):
+        def capture_pending(self, record):
+            raise OSError("spool disk full")
+
+    sinks[:] = [SqlDown("sql"), WriteOnly("langfuse")]
+    out = await commit_or_park(_row())
+    assert out.status != "pending"
+    assert out.status == "pending_partial" and [r["sink"] for r in out.refs] == ["langfuse"]
+    assert "audit_pending" not in logs

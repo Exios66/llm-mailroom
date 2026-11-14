@@ -74,6 +74,7 @@ def _tracer():
 
 class PhoenixSink:
     name = "phoenix"
+    recoverable = False  # write-only: ``fetch_pending`` is always empty
 
     @staticmethod
     def usable() -> bool:
@@ -100,12 +101,16 @@ class PhoenixSink:
             span.set_attribute("input.value", prompt or "")
             span.set_attribute("output.value", completion or "")
             span.set_attribute("audit.io_sha256", io_sha256(prompt, completion))
+            if not span.is_recording():
+                return None  # provider init failed: the span is a no-op and stored nothing
             return format(span.get_span_context().span_id, "016x")
 
     def capture_pending(self, record: dict[str, Any]) -> str | None:
         with _tracer().start_as_current_span("audit.pending_row") as span:
             span.set_attribute("audit.doc_id", str(record.get("doc_id") or ""))
             span.set_attribute("audit.record", json.dumps(record, default=str))
+            if not span.is_recording():
+                return None
             return format(span.get_span_context().span_id, "016x")
 
     def fetch_pending(self) -> list[dict]:

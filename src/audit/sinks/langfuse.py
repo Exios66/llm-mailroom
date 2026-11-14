@@ -16,6 +16,7 @@ def _client():
 
 class LangfuseSink:
     name = "langfuse"
+    recoverable = False  # write-only: ``fetch_pending`` is always empty
 
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
         client = _client()

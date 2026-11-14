@@ -216,3 +216,109 @@ def test_pending_rows_round_trip_through_spool(monkeypatch, tmp_path):
     assert pending["doc_id"] == "d-p" and pending["ref"].startswith("pend-")
     SqlSink().drop_pending(pending["ref"])
     assert SqlSink().fetch_pending() == []
+
+
+def test_one_malformed_spool_row_does_not_block_the_valid_ones(monkeypatch, tmp_path):
+    """Review thread T21: ``audit-reconcile`` reads the spool through ``fetch_pending``; one bad row must not hide the rest."""
+    import sqlite3
+
+    from audit.sinks import capture_pending
+    from audit.sinks.sql import SqlSink
+
+    monkeypatch.setenv("PHOENIX_TRACING", "disabled")
+    monkeypatch.setenv("MAILROOM_AUDIT_SPOOL_PATH", str(tmp_path / "spool.db"))
+    capture_pending({"doc_id": "d-1", "event": "archived"})
+    with sqlite3.connect(tmp_path / "spool.db") as conn:
+        conn.execute("INSERT INTO pending_rows (ref, doc_id, record, created_at) VALUES "
+                     "('pend-bad', 'd-bad', '{\"truncated\": ', '2000-01-01T00:00:00+00:00')")
+        conn.execute("INSERT INTO pending_rows (ref, doc_id, record, created_at) VALUES "
+                     "('pend-list', 'd-list', '[1, 2]', '2000-01-01T00:00:01+00:00')")
+    capture_pending({"doc_id": "d-2", "event": "archived"})
+
+    pending = SqlSink().fetch_pending()
+    assert sorted(p["doc_id"] for p in pending) == ["d-1", "d-2"]
+    assert all(p["ref"].startswith("pend-") and p["ref"] not in ("pend-bad", "pend-list") for p in pending)
+
+
+class _Recording:
+    """A span that records, or not, like the SDK's or the API's no-op one."""
+
+    def __init__(self, recording):
+        self._recording = recording
+        self.attributes = {}
+
+    def is_recording(self):
+        return self._recording
+
+    def set_attribute(self, key, value):
+        self.attributes[key] = value
+
+    def get_span_context(self):
+        from opentelemetry import trace
+
+        # A no-op tracer can still propagate a *valid* parent context, so validity proves nothing.
+        return trace.SpanContext(trace_id=0xABC, span_id=0xDEF, is_remote=False)
+
+
+class _Tracer:
+    def __init__(self, recording):
+        self.span = _Recording(recording)
+
+    def start_as_current_span(self, name):
+        import contextlib
+
+        return contextlib.nullcontext(self.span)
+
+
+@pytest.mark.parametrize("module, cls", [("otlp", "OtlpSink"), ("phoenix", "PhoenixSink")])
+@pytest.mark.parametrize("recording, kept", [(False, False), (True, True)])
+def test_otel_sinks_keep_a_reference_only_for_a_recording_span(monkeypatch, module, cls, recording, kept):
+    """Review thread T20: a span nobody records (no provider, failed init) stored nothing, so it has no reference."""
+    pytest.importorskip("opentelemetry.trace")
+    import importlib
+
+    mod = importlib.import_module(f"audit.sinks.{module}")
+    tracer = _Tracer(recording)
+    monkeypatch.setattr(mod, "_tracer", lambda: tracer)
+    sink = getattr(mod, cls)()
+
+    io_ref = sink.record_io("v-1", "d-1", "prompt", "completion")
+    pending_ref = sink.capture_pending({"doc_id": "d-1", "event": "archived"})
+
+    assert (io_ref is not None, pending_ref is not None) == (kept, kept)
+    if kept:
+        assert io_ref == format(0xDEF, "016x")
+
+
+@pytest.mark.parametrize("name", ["braintrust", "langfuse", "otlp", "phoenix"])
+def test_write_only_sinks_are_not_recoverable(name):
+    """Review thread T19: these sinks always return ``[]`` from ``fetch_pending``, so ``audit-reconcile`` cannot read them back."""
+    import importlib
+
+    cls = {"braintrust": "BraintrustSink", "langfuse": "LangfuseSink", "otlp": "OtlpSink", "phoenix": "PhoenixSink"}[name]
+    sink = getattr(importlib.import_module(f"audit.sinks.{name}"), cls)()
+    assert sink.fetch_pending() == []
+    assert sink.recoverable is False
+
+
+def test_capture_pending_marks_a_copy_only_a_recoverable_sink_can_return_as_complete(monkeypatch):
+    """Review thread T19: a write-only sink keeps a locating reference, never a complete recoverable copy."""
+    from audit import sinks
+
+    class WriteOnly:
+        name = "write-only"
+        recoverable = False
+
+        def capture_pending(self, record):
+            return "span-1"
+
+    class ReadBack:
+        name = "read-back"  # no ``recoverable`` attribute: a third-party sink that implements ``fetch_pending``
+
+        def capture_pending(self, record):
+            return "kept-1"
+
+    monkeypatch.setattr(sinks, "active_sinks", lambda: [WriteOnly(), ReadBack()])
+    kept = sinks.capture_pending({"doc_id": "d-1"})
+    assert [(k["sink"], k["complete"], k["recoverable"]) for k in kept] == [
+        ("write-only", False, False), ("read-back", True, True)]
