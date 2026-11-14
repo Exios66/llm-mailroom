@@ -57,6 +57,10 @@ MAX_LIST_LIMIT = 100
 MAX_LIST_OFFSET = 100_000
 MAX_EVENTS = 2000
 MAX_ATTEMPTS = 500
+# Sub-rows of ANOTHER document that name this record's parents. Each is a
+# failure on its own, so reading a handful proves tampering; the rest are only
+# counted. They never share the budget of this document's own attempts.
+MAX_FOREIGN_ATTEMPTS = 50
 MAX_ADDENDA = 200
 MAX_DECISION_FIELDS = 40
 MAX_FIELD_NAME = 64
@@ -941,6 +945,16 @@ def _verify_unified(
     if "attempts" in truncated:
         notes.append("attempt sub-rows exceed the bounded read; they are not verified")
         attempts_verified = False
+        # The cap bounds only this document's own rows. A sub-row of another
+        # document that names one of these parents is tampering on its own and
+        # is reported even though the rest of the attempts are not verified.
+        parent_doc = {pid: parent.get("doc_id") for parent in parents if (pid := _text(parent.get("parent_id")))}
+        for item in attempts:
+            parent_id = _text(item.get("parent_id"))
+            if parent_id in parent_doc and _text(item.get("doc_id")) != parent_doc[parent_id]:
+                failures.append(
+                    {"scope": "attempts", "id": _text(item.get("attempt_id")), "reason": "attempt-doc-mismatch"}
+                )
     else:
         attempts_verified = _verify_attempts(
             parents=parents,
@@ -1312,6 +1326,7 @@ def document_audit(doc_id: str) -> dict[str, Any]:
                 _read_unified(conn, doc_id, tables, legacy_rows, legacy_total, payload)
             else:
                 _read_event_chain(conn, doc_id, legacy_rows, legacy_total, payload)
+            _sanitize_failure_ids(payload["verification"])
             return payload
     except AuditStoreUnavailable as exc:
         payload["store"] = {
@@ -1340,6 +1355,19 @@ def document_audit(doc_id: str) -> dict[str, Any]:
             "included in this read-only response"
         )
         return payload
+
+
+def _sanitize_failure_ids(verification: dict[str, Any]) -> None:
+    """Make every ``failures[].id`` safe to display, in the JSON API and the CLI.
+
+    Ids come from stored rows, and sub-rows are selected by ``parent_id``, so a
+    row of another document can carry any string as its id. Control characters
+    (terminal escapes) are dropped and the length is capped like every other
+    displayed id. Display only: verification already ran on the raw values.
+    """
+    for failure in verification.get("failures") or []:
+        if "id" in failure:
+            failure["id"] = _as_str(failure["id"], limit=128)
 
 
 def _read_legacy(
@@ -1561,6 +1589,7 @@ def _read_unified(
     attempts: list[dict[str, Any]] = []
     addenda: list[dict[str, Any]] = []
     truncated: list[str] = []
+    foreign_unlisted = 0
     if "audit_addenda" in tables:
         addenda_total = _count(conn, "audit_addenda", "doc_id = :doc", {"doc": doc_id})
         result = conn.execute(
@@ -1583,27 +1612,44 @@ def _read_unified(
             for value in (data.get("entry_id"), *(item.get("addendum_id") for item in addenda))
             if isinstance(value, str) and value
         ]
-        owned = "(doc_id = :doc OR parent_id IN :parents)"
-        attempts_total = int(
-            conn.execute(
-                text(f"SELECT COUNT(*) FROM audit_attempts WHERE {owned}").bindparams(
-                    bindparam("parents", expanding=True)
-                ),
-                {"doc": doc_id, "parents": parent_ids},
-            ).scalar()
-            or 0
-        )
+        # This document's own rows are capped on their own. Rows of ANOTHER
+        # document that name one of these parents are read through a separate,
+        # smaller query: they can never use up the own-row budget (which would
+        # turn tampering into "truncated"), and each one is a failure by itself.
+        attempts_total = _count(conn, "audit_attempts", "doc_id = :doc", {"doc": doc_id})
         result = conn.execute(
             text(
-                f"SELECT * FROM audit_attempts WHERE {owned} "
+                "SELECT * FROM audit_attempts WHERE doc_id = :doc "
                 "ORDER BY stage, attempt_no, attempt_id LIMIT :limit"
-            ).bindparams(bindparam("parents", expanding=True)),
-            {"doc": doc_id, "parents": parent_ids, "limit": MAX_ATTEMPTS + 1},
+            ),
+            {"doc": doc_id, "limit": MAX_ATTEMPTS + 1},
         )
         attempts = [_row_dict(item) for item in result]
         if len(attempts) > MAX_ATTEMPTS or attempts_total > MAX_ATTEMPTS:
             truncated.append("attempts")
             attempts = attempts[:MAX_ATTEMPTS]
+        if parent_ids:
+            foreign = "(doc_id IS NULL OR doc_id != :doc) AND parent_id IN :parents"
+            foreign_total = int(
+                conn.execute(
+                    text(f"SELECT COUNT(*) FROM audit_attempts WHERE {foreign}").bindparams(
+                        bindparam("parents", expanding=True)
+                    ),
+                    {"doc": doc_id, "parents": parent_ids},
+                ).scalar()
+                or 0
+            )
+            result = conn.execute(
+                text(
+                    f"SELECT * FROM audit_attempts WHERE {foreign} "
+                    "ORDER BY stage, attempt_no, attempt_id LIMIT :limit"
+                ).bindparams(bindparam("parents", expanding=True)),
+                {"doc": doc_id, "parents": parent_ids, "limit": MAX_FOREIGN_ATTEMPTS},
+            )
+            foreign_rows = [_row_dict(item) for item in result]
+            attempts.extend(foreign_rows)
+            if foreign_total > len(foreign_rows):
+                foreign_unlisted = foreign_total - len(foreign_rows)
 
     # Verification saw every sub-row naming this record; the projection shows
     # only this document's own, never another document's content.
@@ -1654,6 +1700,11 @@ def _read_unified(
         matter_id=matter_id,
         attempts_available="audit_attempts" in tables,
     )
+    if foreign_unlisted:
+        payload["verification"]["notes"].append(
+            f"{foreign_unlisted} further sub-row(s) of other documents name this record's "
+            "parents and are not listed"
+        )
     if legacy_total > len(legacy_rows):
         payload["verification"]["truncated"] = True
         payload["verification"]["notes"].append("legacy section exceeds the bounded read")

@@ -794,6 +794,116 @@ def test_attempt_naming_this_parent_under_another_doc_id_fails(client, make_stor
     assert "foreign-doc-1" not in json.dumps(payload["record"])
 
 
+def _bulk_attempt_rows(db: Path, rows: list[tuple[str, str, str]]) -> None:
+    """Insert (attempt_id, parent_id, doc_id) sub-rows; the hash is irrelevant here."""
+    conn = sqlite3.connect(db)
+    try:
+        conn.executemany(
+            "INSERT INTO audit_attempts VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (aid, parent, doc, "extraction", 100 + index, "initial", "ok", None, None, "{}", "")
+                for index, (aid, parent, doc) in enumerate(rows)
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    ["\x1b]0;PWNED\x07evil", "x" * 5000, "a\x1b[2Jb\nFAKE-LINE", "\x07\x00\x1b"],
+)
+def test_failure_ids_from_stored_rows_are_sanitized_and_bounded(client, make_store, hostile):
+    """A sub-row from ANOTHER document is selected by parent_id, so its id is hostile input."""
+    db = make_store("unified")
+    _attempt_row(db, attempt_id=hostile, parent_id=f"row-{DOC}", doc_id="demo-other-doc-9")
+
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    failures = payload["verification"]["failures"]
+    assert payload["verification"]["status"] == "failed"
+    assert any(f["reason"] == "attempt-doc-mismatch" for f in failures)
+    for failure in failures:
+        failure_id = failure["id"]
+        assert failure_id is None or (
+            len(failure_id) <= 128 and all(ch.isprintable() for ch in failure_id)
+        ), repr(failure_id)
+
+
+def test_cli_text_mode_never_echoes_control_characters_from_stored_ids(make_store):
+    db = make_store("unified")
+    _attempt_row(
+        db,
+        attempt_id="\x1b]0;PWNED\x07evil",
+        parent_id=f"row-{DOC}",
+        doc_id="demo-other-doc-9",
+    )
+    env = dict(os.environ)
+    env.update({"OBSERVABILITY_PROVIDER": "none", "DATABASE_URL": f"sqlite+aiosqlite:///{db}"})
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "mailroom_diagnostics", "audit", DOC],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 1, result.stderr
+    assert "attempt-doc-mismatch" in result.stdout
+    assert "\x1b" not in result.stdout
+    assert "\x07" not in result.stdout
+
+
+def test_foreign_doc_rows_past_the_cap_still_fail_instead_of_truncating(client, make_store):
+    """520 sub-rows of another document naming this parent must read as tampering.
+
+    They used to count toward the 500-attempt cap, so the verdict became
+    ``unverified`` (incomplete) with no failure at all.
+    """
+    db = make_store("unified")
+    _bulk_attempt_rows(
+        db,
+        [(f"foreign-{index:04d}", f"row-{DOC}", "demo-other-doc-9") for index in range(520)],
+    )
+
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    verification = payload["verification"]
+    assert verification["status"] == "failed"
+    assert verification["truncated"] is False
+    assert verification["failures"]
+    assert all(f["reason"] == "attempt-doc-mismatch" for f in verification["failures"])
+    assert any("470 further sub-row(s) of other documents" in note for note in verification["notes"])
+
+
+def test_foreign_doc_row_still_fails_when_this_documents_own_rows_are_truncated(
+    client, make_store, monkeypatch
+):
+    from mailroom_diagnostics import audit
+
+    db = make_store("unified")
+    _bulk_attempt_rows(
+        db,
+        [
+            ("own-a", f"row-{DOC}", DOC),
+            ("own-b", f"row-{DOC}", DOC),
+            ("own-c", f"row-{DOC}", DOC),
+            ("foreign-1", f"row-{DOC}", "demo-other-doc-9"),
+        ],
+    )
+    monkeypatch.setattr(audit, "MAX_ATTEMPTS", 1)
+
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    verification = payload["verification"]
+    assert verification["truncated"] is True
+    assert verification["status"] == "failed"
+    assert {"scope": "attempts", "id": "foreign-1", "reason": "attempt-doc-mismatch"} in verification[
+        "failures"
+    ]
+    assert "foreign-1" not in json.dumps(payload["record"])
+
+
 def _rekind_addendum(db: Path, kind: str) -> None:
     """Rewrite the seeded addendum's kind and re-hash it, so only the kind is wrong."""
     from audit.writer import hash_entry
