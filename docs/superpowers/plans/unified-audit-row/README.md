@@ -69,11 +69,9 @@ Read this first if you are picking the work up.
 - **Released:** llm-mailroom v0.9.1 (tag `v0.9.1` at `2284832`, the #162 merge).
 - **Next task: M4 (verification)** on the #160 branch, then M5 onward in order. Commit
   and push after every task, tick the steps here, and refresh #150.
-- **Working notes:** the full mailroom suite takes about 5 minutes. On a cold uv cache,
-  `test_wheel_runtime_catalog` fails until you run
-  `uv build --no-sources --wheel --out-dir /tmp/uv-warm .` once. `ruff` is not a gate in
+- **Working notes:** the full mailroom suite takes about 5 minutes. `ruff` is not a gate in
   this repo. `docs/changelog/` is generated: after a CHANGELOG merge conflict, run
-  `python src/scripts/sync_gitbook_changelog.py`. Never hand-edit versions; use
+  `PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py`. Never hand-edit versions; use
   `src/scripts/release.py cut`.
 
 ## Foundation refresh (stackable branch, 2026-11-09)
