@@ -63,6 +63,25 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
         ),
         "rescore_required": True,
     },
+    {
+        # Proposed next release; the version is cut separately with release.py.
+        "version": "0.29.0",
+        "metric_ids": (
+            "pipeline.extraction.overall",
+            "pipeline.extraction.field_micro_f1",
+            "pipeline.extraction.field_micro_f2",
+            "pipeline.extraction.field_micro_precision",
+            "pipeline.extraction.field_micro_recall",
+        ),
+        "change": (
+            "Money parsing reads a currency word next to a K/M/B suffix ('1.2M USD', "
+            "'USD 1.2M'; #133). On a CMS insurance row the subclass-derived "
+            "cms_source_table is no longer scored when the prediction states no table "
+            "(a perfect carrier extraction scored 0.9412; #132); a stated table, on "
+            "cms_source_table or claim_type, is still scored."
+        ),
+        "rescore_required": True,
+    },
 )
 
 

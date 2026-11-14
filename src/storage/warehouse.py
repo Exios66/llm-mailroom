@@ -379,7 +379,8 @@ async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any
         for chunk in _doc_id_chunks(doc_ids):
             result = await session.execute(select(Model).where(Model.doc_id.in_(chunk)))
             records.extend(result.scalars().all())
-        records.sort(key=lambda rec: (rec.doc_id, rec.seq, rec.timestamp))
+        # Pre-seq rows hold NULL ``seq``; the writer counts them as 0 (``tail.seq or 0``).
+        records.sort(key=lambda rec: (rec.doc_id, rec.seq or 0, rec.timestamp))
         for rec in records:
             rows.append(
                 {

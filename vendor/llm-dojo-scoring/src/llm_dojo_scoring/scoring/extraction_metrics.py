@@ -27,6 +27,8 @@ from typing import Any, Mapping
 
 from .classification import fbeta
 from .field_scoring import (
+    expected_cms_source_table,
+    is_unstated_cms_marker,
     NEVER_SCORED_FIELDS,
     RETIRED_PROMPT_KEYS,
     ExtractionScoreResult,
@@ -117,10 +119,13 @@ def extraction_binary_metrics(
     n_correctly_empty = 0
     n_spurious_fill = 0
 
+    cms_table = expected_cms_source_table(doc_class, expected)
     for name, exp_val in expected.items():
         if name in NEVER_SCORED_FIELDS or (
             name in RETIRED_PROMPT_KEYS and name not in types
         ):
+            continue
+        if is_unstated_cms_marker(name, cms_table, predicted):
             continue
         if _is_empty(exp_val):
             if _is_empty(predicted.get(name)):

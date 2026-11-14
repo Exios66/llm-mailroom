@@ -243,6 +243,48 @@ def test_audit_fetch_over_the_limit_orders_by_doc_then_seq_without_duplicates(
     ]
 
 
+def test_audit_fetch_over_the_limit_tolerates_null_seq_from_pre_seq_rows(
+    warehouse_env, temp_base_dir
+):
+    """Rows written before ``seq`` existed hold NULL; mixed with integer ``seq`` they must still sort."""
+    import asyncio
+
+    from sqlalchemy import text
+
+    from schemas.audit import build_audit_entry
+    from storage import audit_migrate
+    from storage.audit_log import write_audit_entry
+    from storage.db import async_session
+    from storage.warehouse import fetch_audit_rows_for_doc_ids
+
+    _seed_terminal_doc(temp_base_dir, doc_id="z-doc")
+    asyncio.run(
+        write_audit_entry(
+            build_audit_entry(
+                doc_id="z-doc",
+                matter_id="M-WH",
+                event="reviewed",
+                actor="pipeline",
+                detail={},
+                prev_hash="",
+            )
+        )
+    )
+
+    async def _null_first_seq() -> None:
+        # The migrated history lives in ``audit_log_legacy``, whose ``seq`` is nullable.
+        await audit_migrate.migrate_audit_log(backup_dir=temp_base_dir / "backups")
+        async with async_session() as session:
+            await session.execute(text("UPDATE audit_log_legacy SET seq = NULL WHERE seq = 1"))
+            await session.commit()
+
+    asyncio.run(_null_first_seq())
+
+    rows = asyncio.run(fetch_audit_rows_for_doc_ids(_ids_spanning_bind_limit("z-doc", "z-doc")))
+
+    assert [(row["doc_id"], row["seq"]) for row in rows] == [("z-doc", None), ("z-doc", 2)]
+
+
 def test_terminal_fetch_splits_ids_over_the_driver_bind_limit(
     warehouse_env, temp_base_dir, statement_bind_counts
 ):
