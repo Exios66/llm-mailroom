@@ -50,6 +50,9 @@ dependencies = [
     "pyarrow>=15.0",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
+    # Interim pin 74b532a (llm-dojo-scoring#136 + #138 + #139, unreleased): field-micro excludes
+    # unlabelled schema fields, null P/R/F1 with no labelled field, MAUD-only merger headline,
+    # blank/"nan" topic and sentiment labels dropped.
     # Interim pin 4681148 (llm-dojo-scoring#136 + #138, unreleased): production slim-down
     # (lazy package root, unused modules and CLIs deleted, one document-class registry),
     # money with a currency word and suffix, unstated CMS marker, CUAD per-category counts.
@@ -58,7 +61,7 @@ dependencies = [
     # v0.28.1 release (00a2a7f, llm-dojo-scoring#130/#131): the sorter guide files a bylaw
     # amendment under bylaws, never board_resolution (agrees with sorter_condensed_v5).
     # v0.28.0 (cab9768, #124): v10 alignment — Contract/Merger v2 field maps, gt_from_v10_row.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@46811485ce516392b3f72d3269ed9e43b7ca9ed8",
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@74b532a3aa5efad8f587e2f5edb24aa8a43b17f0",
 ]
 
 [project.optional-dependencies]

@@ -3927,8 +3927,13 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
         return
     import json
 
+    from observability.extraction_gt import labelled_expected_fields
+
     ground_truth = state.get("ground_truth")
-    grounded = bool(ground_truth and ground_truth.get("expected_fields"))
+    # Only dataset-labelled fields are literal expected values; post-hoc regex
+    # fills stay out of the judge input.
+    labelled_fields = labelled_expected_fields(ground_truth)
+    grounded = bool(labelled_fields)
     extracted_data = result.get("extracted_data") or {}
     # `_report` is a derived catalog summary and may contain a full recursive
     # copy of the extraction. It is not part of any specialist schema and must
@@ -3959,7 +3964,7 @@ def _emit_pipeline_result(root, result: dict, state: dict, judge_required: bool 
             "Compare them only with output.extracted_data for this same document.\n\n"
             "EXPECTED_FIELDS\n"
             "```json\n"
-            f"{json.dumps(ground_truth['expected_fields'], ensure_ascii=False, indent=2)}\n"
+            f"{json.dumps(labelled_fields, ensure_ascii=False, indent=2)}\n"
             "```"
         )
         metadata = {"pipeline": "mailroom", "grounded": True, "input_format": "expected-fields-only"}
@@ -4253,7 +4258,11 @@ def _execute_run(
         # the LLM judge below: an unambiguous deterministic verdict skips the
         # `pipeline-result` generation entirely (2 evaluator calls saved).
         judge_required = None
-        expected_fields = (initial_state.get("ground_truth") or {}).get("expected_fields")
+        from observability.extraction_gt import labelled_expected_fields
+
+        # Score against dataset labels only: post-hoc regex fills are routing
+        # hints, and scoring them as gold would gate the judge on a guess.
+        expected_fields = labelled_expected_fields(initial_state.get("ground_truth"))
         if expected_fields:
             from llm_dojo_scoring import get_field_types, score_extraction
             from observability.langfuse_field_scoring import score_and_log_extraction
