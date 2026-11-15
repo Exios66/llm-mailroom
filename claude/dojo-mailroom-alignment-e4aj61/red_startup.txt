@@ -1,0 +1,84 @@
+<repo>/.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.....FFF.                                                                [100%]
+=================================== FAILURES ===================================
+______ test_api_lifespan_refuses_to_start_when_a_specialist_pin_is_broken ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f0254d7fbd0>
+reload_api = <fastapi.applications.FastAPI object at 0x7f024f5fdf90>
+broken_specialist_pin = <module 'llm.frozen_v1' from '<repo>/src/llm/frozen_v1/__init__.py'>
+
+    def test_api_lifespan_refuses_to_start_when_a_specialist_pin_is_broken(
+        monkeypatch, reload_api, broken_specialist_pin
+    ):
+        """The API must not come up (and accept uploads) on a Dojo pin that cannot
+        serve the frozen specialist prompts, whether or not the watcher is embedded."""
+        started = []
+    
+        class FakeWatcher:
+            worker_id = "test-worker"
+            _running = False
+    
+            def start(self):
+                started.append("start")
+    
+            def stop(self):
+                started.append("stop")
+    
+        monkeypatch.setenv("MAILROOM_EMBED_WATCHER", "1")
+        monkeypatch.setattr("pipeline.watcher.Watcher", FakeWatcher)
+>       with pytest.raises(broken_specialist_pin.SpecialistPinError, match="corporate_records_specialist"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE SpecialistPinError
+
+src/tests/test_embedded_watcher.py:124: Failed
+----------------------------- Captured stdout call -----------------------------
+[2m2026-11-15T02:14:13.810347Z[0m [[32m[1minfo     [0m] [1membedded_watcher_started      [0m [36mworker_id[0m=[35mtest-worker[0m
+______ test_api_lifespan_refuses_a_broken_pin_without_an_embedded_watcher ______
+
+reload_api = <fastapi.applications.FastAPI object at 0x7f025415ce10>
+broken_specialist_pin = <module 'llm.frozen_v1' from '<repo>/src/llm/frozen_v1/__init__.py'>
+
+    def test_api_lifespan_refuses_a_broken_pin_without_an_embedded_watcher(
+        reload_api, broken_specialist_pin
+    ):
+        from pipeline.watcher import embed_watcher_enabled
+    
+        assert embed_watcher_enabled() is False
+>       with pytest.raises(broken_specialist_pin.SpecialistPinError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE SpecialistPinError
+
+src/tests/test_embedded_watcher.py:136: Failed
+______________ test_watcher_start_refuses_a_broken_specialist_pin ______________
+
+temp_base_dir = PosixPath('/tmp/tmpxsxezgh7')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f0254da5e50>
+broken_specialist_pin = <module 'llm.frozen_v1' from '<repo>/src/llm/frozen_v1/__init__.py'>
+
+    def test_watcher_start_refuses_a_broken_specialist_pin(
+        temp_base_dir, monkeypatch, broken_specialist_pin
+    ):
+        """No lock, observer, inbox scan or worker thread before the pin check passes."""
+        import pipeline.watcher as watcher_mod
+    
+        monkeypatch.setattr(watcher_mod, "Observer", MagicMock)
+        w = watcher_mod.Watcher()
+        w.observer = MagicMock()
+        try:
+>           with pytest.raises(broken_specialist_pin.SpecialistPinError, match="corporate_records_specialist"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE SpecialistPinError
+
+src/tests/test_embedded_watcher.py:151: Failed
+----------------------------- Captured stdout call -----------------------------
+[2m2026-11-15T02:14:13.896358Z[0m [[32m[1minfo     [0m] [1mwatcher_starting              [0m [36minbox[0m=[35m/tmp/tmpxsxezgh7/pipeline/inbox[0m [36mworker_id[0m=[35m48f2ecda[0m
+[2m2026-11-15T02:14:13.897276Z[0m [[32m[1minfo     [0m] [1mwatcher_running               [0m [36minbox[0m=[35m/tmp/tmpxsxezgh7/pipeline/inbox[0m
+[2m2026-11-15T02:14:13.898437Z[0m [[32m[1minfo     [0m] [1mwatcher_stopped               [0m
+=========================== short test summary info ============================
+FAILED src/tests/test_embedded_watcher.py::test_api_lifespan_refuses_to_start_when_a_specialist_pin_is_broken
+FAILED src/tests/test_embedded_watcher.py::test_api_lifespan_refuses_a_broken_pin_without_an_embedded_watcher
+FAILED src/tests/test_embedded_watcher.py::test_watcher_start_refuses_a_broken_specialist_pin
+3 failed, 6 passed in 4.97s
