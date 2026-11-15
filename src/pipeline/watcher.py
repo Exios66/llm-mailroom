@@ -1304,6 +1304,13 @@ class Watcher:
         global _watcher_owned, _STATUS_STARTED_AT
         from datetime import datetime, timezone
 
+        # Before the lock, the observer or the inbox scan: a Dojo pin that cannot
+        # serve the frozen specialist prompts must stop the watcher, not file every
+        # document under failed/. Raises SpecialistPinError (not WatcherLockHeld).
+        from llm.frozen_v1 import verify_specialist_pins
+
+        verify_specialist_pins()
+
         inbox = inbox_dir()
         ensure_dirs(inbox)
         _STATUS_STARTED_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
