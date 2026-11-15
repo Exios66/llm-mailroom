@@ -4676,6 +4676,7 @@ def _resolve_rejection(manifest, review_file: Path, payload: dict) -> dict[str, 
     )
     if thread_id:
         _discard_checkpoints(graph, thread_id)
+    _stateless_reject_audit_row(manifest, outcome["file_path"], label if isinstance(label, dict) else None)
     logger.info("review_stateless_reject", doc_id=manifest.doc_id)
     return {
         "doc_id": manifest.doc_id,
@@ -4684,6 +4685,56 @@ def _resolve_rejection(manifest, review_file: Path, payload: dict) -> dict[str, 
         "review_decision": "rejected",
         "file_path": outcome["file_path"],
     }
+
+
+def _stateless_reject_audit_row(manifest, file_path: str, label: dict | None) -> None:
+    """Write the ``failed`` row of a rejection that has no live checkpoint (spec §5.1, §5.3).
+
+    The live rejection reaches ``audit_failed`` through the graph. After a restart the
+    checkpoint is gone, so this builds the same row from what the manifest kept: the
+    parked decisions and the reviewer's rejection as a ``human_review`` visit, then the
+    ``audit_failed`` terminal node. The parked trace is lost with the checkpoint, so the
+    row says ``trace_incomplete`` rather than inventing it. Best-effort like every audit
+    write: ``write_row`` never raises and marks the manifest.
+    """
+    from datetime import datetime, timezone
+
+    from audit.trace import visit
+    from pipeline.bins import load_manifest
+
+    doc_id = manifest.doc_id
+    # Reload: ``_finalize_human_rejection`` just saved the failed stage, reason and label.
+    current = load_manifest(doc_id) or manifest
+    state: dict[str, Any] = {
+        "doc_id": doc_id,
+        "matter_id": current.matter_id,
+        "original_filename": current.original_filename,
+        "stage": PipelineStage.FAILED.value,
+        "review_decision": "rejected",
+        "escalation_reason": current.escalation_reason,
+        "trace_id": current.trace_id,
+        "doc_type": current.doc_type,
+        "contract_subtype": current.contract_subtype,
+        "doc_subclass": getattr(current, "doc_subclass", None),
+        "classification_confidence": current.classification_confidence,
+        "classification_attempts": current.classification_attempts,
+        "extracted_data": current.extracted_data,
+        "extraction_confidence": current.extraction_confidence,
+        "extraction_attempts": current.extraction_attempts,
+        "file_path": file_path,
+        "file_sha256": (_file_sha256(file_path) if file_path else "") or None,
+        "trace_incomplete": True,
+        **_manifest_evidence_state(current),
+        **({"human_label": label} if label is not None else {}),
+    }
+    try:
+        now = datetime.now(timezone.utc)
+        state["audit_trace"] = [visit("human_review", state, {}, started_at=now, ended_at=now)]
+        _terminal_audit_row(state, event="failed", actor="pipeline", terminal_node="audit_failed")
+    except Exception:
+        # The file, catalog and manifest are already final: a row that cannot be built must not turn
+        # a completed rejection into a 500.
+        logger.exception("audit_row_build_failed", doc_id=doc_id, event_name="failed")
 
 
 def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> dict[str, Any]:
