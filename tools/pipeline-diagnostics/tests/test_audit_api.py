@@ -1090,6 +1090,11 @@ def _minimal_unified_store(
     matter_id: str = "DEMO-MATTER-1",
     attempt_started: str | None = None,
     attempt_ended: str | None = None,
+    event: str = "archived",
+    attempt_stage: str = "extraction",
+    attempt_trigger: str = "initial",
+    ref_stage: str = "extraction",
+    ref_attempt_no: int = 1,
 ) -> Path:
     """One unified document whose every stored detail is the object ``{}``.
 
@@ -1121,9 +1126,9 @@ def _minimal_unified_store(
                 "attempt_id": attempt_id,
                 "parent_id": row_id,
                 "doc_id": DOC,
-                "stage": "extraction",
+                "stage": attempt_stage,
                 "attempt_no": 1,
-                "trigger": "initial",
+                "trigger": attempt_trigger,
                 "outcome": "ok",
                 "started_at": attempt_started,
                 "ended_at": attempt_ended,
@@ -1136,9 +1141,9 @@ def _minimal_unified_store(
                     attempt_id,
                     row_id,
                     DOC,
-                    "extraction",
+                    attempt_stage,
                     1,
-                    "initial",
+                    attempt_trigger,
                     "ok",
                     attempt_started,
                     attempt_ended,
@@ -1149,8 +1154,8 @@ def _minimal_unified_store(
             main_detail["attempts"] = [
                 {
                     "attempt_id": attempt_id,
-                    "stage": "extraction",
-                    "attempt_no": 1,
+                    "stage": ref_stage,
+                    "attempt_no": ref_attempt_no,
                     "entry_hash": digest,
                 }
             ]
@@ -1158,7 +1163,7 @@ def _minimal_unified_store(
             prev_hash="",
             doc_id=DOC,
             entry_id=row_id,
-            event="archived",
+            event=event,
             detail=main_detail,
             matter_id=matter_id,
             actor=actor,
@@ -1170,7 +1175,7 @@ def _minimal_unified_store(
                 row_id,
                 DOC,
                 matter_id,
-                "archived",
+                event,
                 actor,
                 json.dumps(main_detail),
                 "",
@@ -1907,3 +1912,114 @@ def test_missing_attempts_table_without_references_is_never_verified(client, tmp
     assert verification["status"] == "unverified"
     assert not verification["failures"]
     assert any("attempt" in note for note in verification["notes"])
+
+
+def test_rehashed_row_with_an_unknown_event_fails(client, tmp_path, monkeypatch):
+    _minimal_unified_store(tmp_path, monkeypatch, event="bogus-event")
+
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "failed"
+    assert {"scope": "main", "id": f"row-{DOC}", "reason": "unknown-event"} in verification["failures"]
+    # The hash is valid: only the event check can catch this row.
+    assert not any(failure["reason"] == "hash-mismatch" for failure in verification["failures"])
+
+
+@pytest.mark.parametrize("event", ["archived", "failed", "triage_archived", "triage_reviewed"])
+def test_every_foundation_event_verifies(client, tmp_path, monkeypatch, event):
+    _minimal_unified_store(tmp_path, monkeypatch, event=event)
+    assert client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"][
+        "status"
+    ] == "verified"
+
+
+def test_row_event_check_still_runs_without_the_foundation_lists(client, tmp_path, monkeypatch):
+    from mailroom_diagnostics import audit
+
+    monkeypatch.setattr(audit, "_foundation_events", lambda: None)
+    _minimal_unified_store(tmp_path, monkeypatch, event="bogus-event")
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "failed"
+    assert any(failure["reason"] == "unknown-event" for failure in verification["failures"])
+
+
+def test_foundation_fallback_lists_mirror_the_writer():
+    from audit.models import EVENTS, STAGES, TRIGGERS
+
+    from mailroom_diagnostics import audit
+
+    assert audit._EVENTS_FALLBACK == tuple(EVENTS)
+    assert audit._STAGES_FALLBACK == tuple(STAGES)
+    assert audit._TRIGGERS_FALLBACK == tuple(TRIGGERS)
+    assert audit._allowed_events() == tuple(EVENTS)
+    assert audit._allowed_stages() == tuple(STAGES)
+    assert audit._allowed_triggers() == tuple(TRIGGERS)
+
+
+def test_rehashed_attempt_with_an_unknown_stage_fails(client, tmp_path, monkeypatch):
+    _minimal_unified_store(
+        tmp_path, monkeypatch, with_attempt=True, attempt_stage="bogus-stage", ref_stage="bogus-stage"
+    )
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "failed"
+    assert {
+        "scope": "attempts",
+        "id": f"{DOC}-attempt-1",
+        "reason": "unknown-stage",
+    } in verification["failures"]
+    assert not any(failure["reason"] == "hash-mismatch" for failure in verification["failures"])
+
+
+def test_rehashed_attempt_with_an_unknown_trigger_fails(client, tmp_path, monkeypatch):
+    _minimal_unified_store(tmp_path, monkeypatch, with_attempt=True, attempt_trigger="bogus-trigger")
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "failed"
+    assert {
+        "scope": "attempts",
+        "id": f"{DOC}-attempt-1",
+        "reason": "unknown-trigger",
+    } in verification["failures"]
+    assert not any(failure["reason"] == "hash-mismatch" for failure in verification["failures"])
+
+
+@pytest.mark.parametrize("stage", ["classification", "extraction", "judge"])
+@pytest.mark.parametrize(
+    "trigger", ["initial", "retry", "arbiter_rescue", "human_correction", "transient", "resume"]
+)
+def test_every_foundation_stage_and_trigger_verifies(client, tmp_path, monkeypatch, stage, trigger):
+    _minimal_unified_store(
+        tmp_path, monkeypatch, with_attempt=True, attempt_stage=stage, ref_stage=stage, attempt_trigger=trigger
+    )
+    assert client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"][
+        "status"
+    ] == "verified"
+
+
+def test_attempt_stage_check_still_runs_without_the_foundation_lists(client, tmp_path, monkeypatch):
+    from mailroom_diagnostics import audit
+
+    monkeypatch.setattr(audit, "_foundation_stages", lambda: None)
+    monkeypatch.setattr(audit, "_foundation_triggers", lambda: None)
+    _minimal_unified_store(
+        tmp_path, monkeypatch, with_attempt=True, attempt_stage="bogus-stage", ref_stage="bogus-stage"
+    )
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "failed"
+    assert any(failure["reason"] == "unknown-stage" for failure in verification["failures"])
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"ref_stage": "judge"}, {"ref_attempt_no": 2}],
+    ids=["stage", "attempt_no"],
+)
+def test_parent_reference_disagreeing_with_the_sub_row_fails(client, tmp_path, monkeypatch, overrides):
+    _minimal_unified_store(tmp_path, monkeypatch, with_attempt=True, **overrides)
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "failed"
+    assert {
+        "scope": "attempts",
+        "id": f"{DOC}-attempt-1",
+        "reason": "attempt-ref-mismatch",
+    } in verification["failures"]
+    # Both rows hash correctly on their own; only the cross-check sees the lie.
+    assert not any(failure["reason"] == "hash-mismatch" for failure in verification["failures"])

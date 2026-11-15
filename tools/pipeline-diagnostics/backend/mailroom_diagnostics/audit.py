@@ -586,19 +586,63 @@ _ADDENDUM_KINDS_FALLBACK = (
 )
 
 
-def _foundation_addendum_kinds() -> tuple[str, ...] | None:
+# Terminal events, attempt stages and attempt triggers the foundation writer
+# accepts (``audit.models``). The foundation verifier rejects anything else even
+# when the hash is valid, so this reader must too. Same fallback rule as above.
+_EVENTS_FALLBACK = ("archived", "failed", "triage_archived", "triage_reviewed")
+_STAGES_FALLBACK = ("classification", "extraction", "judge")
+_TRIGGERS_FALLBACK = (
+    "initial",
+    "retry",
+    "arbiter_rescue",
+    "human_correction",
+    "transient",
+    "resume",
+)
+
+
+def _foundation_models_tuple(name: str) -> tuple[str, ...] | None:
+    """A constant tuple from ``audit.models`` (plain dataclasses, no runtime), or None."""
     try:
-        kinds = getattr(importlib.import_module("audit.models"), "ADDENDUM_KINDS", None)
-        if kinds:
-            return tuple(kinds)
+        values = getattr(importlib.import_module("audit.models"), name, None)
+        if values:
+            return tuple(values)
     except Exception:
         pass
     return None
 
 
+def _foundation_addendum_kinds() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("ADDENDUM_KINDS")
+
+
+def _foundation_events() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("EVENTS")
+
+
+def _foundation_stages() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("STAGES")
+
+
+def _foundation_triggers() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("TRIGGERS")
+
+
 def _addendum_kinds() -> tuple[str, ...]:
     """Allowed addendum kinds: the foundation's own list, else the mirrored one."""
     return _foundation_addendum_kinds() or _ADDENDUM_KINDS_FALLBACK
+
+
+def _allowed_events() -> tuple[str, ...]:
+    return _foundation_events() or _EVENTS_FALLBACK
+
+
+def _allowed_stages() -> tuple[str, ...]:
+    return _foundation_stages() or _STAGES_FALLBACK
+
+
+def _allowed_triggers() -> tuple[str, ...]:
+    return _foundation_triggers() or _TRIGGERS_FALLBACK
 
 
 def _recompute_row_hash(
@@ -714,6 +758,12 @@ def _verify_attempts(
 
     parent_by_id: dict[str, dict[str, Any]] = {}
     refs: dict[str, dict[str, str | None]] = {}
+    # What each parent's reference claims about its sub-row (stage, attempt_no),
+    # raw as stored; keyed by (parent id, attempt id). A key the reference does
+    # not carry makes no claim.
+    ref_claims: dict[tuple[str, str], dict[str, Any]] = {}
+    allowed_stages = _allowed_stages()
+    allowed_triggers = _allowed_triggers()
     for parent in parents:
         parent_id = _text(parent.get("parent_id"))
         if not parent_id:
@@ -741,6 +791,9 @@ def _verify_attempts(
                 failures.append({"scope": "attempts", "id": attempt_id, "reason": "attempt-ref-duplicate"})
                 continue
             refs[parent_id][attempt_id] = _text(ref.get("entry_hash"))
+            ref_claims[(parent_id, attempt_id)] = {
+                key: ref[key] for key in ("stage", "attempt_no") if key in ref
+            }
 
     by_id: dict[str, dict[str, Any]] = {}
     for item in attempts:
@@ -778,6 +831,24 @@ def _verify_attempts(
         detail = item.get("detail")
         if not isinstance(detail, dict):
             failures.append({"scope": "attempts", "id": attempt_id, "reason": "detail-not-object"})
+            continue
+        # The foundation verifier rejects a stage/trigger its writer never
+        # emits, and a parent reference that disagrees with its sub-row. A valid
+        # hash excuses neither, so these run before (and without) the hasher.
+        # Values are compared raw, never through the display trimming.
+        stage = item.get("stage")
+        if stage not in allowed_stages:
+            failures.append({"scope": "attempts", "id": attempt_id, "reason": "unknown-stage"})
+            continue
+        if item.get("trigger") not in allowed_triggers:
+            failures.append({"scope": "attempts", "id": attempt_id, "reason": "unknown-trigger"})
+            continue
+        claims = ref_claims.get((parent_id, attempt_id), {})
+        if any(
+            type(claim) is not type(item.get(key)) or claim != item.get(key)
+            for key, claim in claims.items()
+        ):
+            failures.append({"scope": "attempts", "id": attempt_id, "reason": "attempt-ref-mismatch"})
             continue
         if attempt_hash is None:
             continue
@@ -888,6 +959,10 @@ def _verify_unified(
             failures.append({"scope": "main", "id": row_id, "reason": reason})
         elif expected != row.get("entry_hash"):
             failures.append({"scope": "main", "id": row_id, "reason": "hash-mismatch"})
+        # The foundation verifier rejects an event its writer never emits; a
+        # correctly hashed row with another event must not verify here either.
+        if row.get("event") not in _allowed_events():
+            failures.append({"scope": "main", "id": row_id, "reason": "unknown-event"})
         row_seq = _as_int(row.get("seq"))
         if predecessor is None:
             if row.get("prev_hash") != "":
