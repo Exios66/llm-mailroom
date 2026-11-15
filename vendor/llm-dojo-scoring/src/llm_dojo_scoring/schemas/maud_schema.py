@@ -44,6 +44,13 @@ from ..config import (
     MAUD_CONSIDERATION_TYPES,
 )
 from . import doc_classes
+from .gt_metadata import (
+    ABSENT_PRESENCE_STATUSES,
+    gt_presence_map,
+    is_empty_value,
+    parse_gt_fields,
+    parse_json_container,
+)
 from .corpus import (
     MAUD_CLAUSE_CATEGORIES,
     MAUD_QUESTION_KEYS,
@@ -66,6 +73,7 @@ __all__ = [
     "MergerAgreementExtraction",
     "category_mismatches",
     "consideration_subclass",
+    "hub_merger_expected_fields",
     "maud_answers_to_clauses",
     "maud_clause_line",
     "maud_clauses_to_answers",
@@ -858,6 +866,148 @@ def maud_clauses_to_answers(lines: Iterable[str]) -> dict[str, str]:
         if parsed is not None:
             out[parsed[0]] = parsed[1]
     return out
+
+
+def _label_answer(question: str, record: object) -> str:
+    """One Hub ``maud_clause_labels`` record -> its answer text.
+
+    A record is ``{"answer": ..., "category": ...}`` (or a bare answer). Blank,
+    ``None``, ``"nan"`` and empty containers are unanswered (``""``). A record
+    the MAUD content scorer treats as ambiguous also returns ``""``, so it never
+    becomes gold: an explicit ``gt_ambiguous`` / ``ambiguous`` flag, a list of
+    several distinct answers (the Hub's multi-label form, as a list or as JSON
+    text) and a slash-collapsed answer that is not itself a catalog class
+    (:func:`~llm_dojo_scoring.metrics.scorecard_honesty.detect_maud_gt_ambiguity`).
+    A list that repeats one answer is that answer.
+    """
+    from ..metrics.scorecard_honesty import detect_maud_gt_ambiguity
+
+    mapping = record if isinstance(record, Mapping) else None
+    if mapping is not None and (mapping.get("gt_ambiguous") or mapping.get("ambiguous")):
+        return ""
+    answer = parse_json_container(mapping.get("answer") if mapping is not None else record)
+    if isinstance(answer, (list, tuple)):
+        distinct: dict[str, str] = {}
+        for item in answer:
+            if not _blank_answer(item):
+                distinct.setdefault(str(item).strip().casefold(), str(item).strip())
+        if len(distinct) > 1:
+            return ""
+        answer = next(iter(distinct.values()), "")
+    if _blank_answer(answer):
+        return ""
+    text = str(answer).strip()
+    valid = mapping.get("valid_classes") if mapping is not None else None
+    if isinstance(valid, str):
+        valid = [valid]
+    probe: dict[str, Any] = {"answer": text}
+    if isinstance(valid, (list, tuple)):
+        probe["valid_classes"] = [str(item) for item in valid if not _blank_answer(item)]
+    if detect_maud_gt_ambiguity({str(question).strip(): probe}):
+        return ""
+    return text
+
+
+def _blank_answer(value: object) -> bool:
+    """True for a missing MAUD answer: ``None``, NaN, ``""``, ``"nan"`` or an empty container.
+
+    Unlike :func:`is_empty_value`, the string ``"None"`` is **not** blank here: it is a
+    Hub class (no matching right, no fiduciary exception) and must stay gold.
+    """
+    if value is None:
+        return True
+    if isinstance(value, float):
+        return value != value
+    if isinstance(value, (list, tuple, dict, set)):
+        return not value
+    return str(value).strip().lower() in {"", "nan"}
+
+
+def hub_merger_expected_fields(
+    gt_fields: Mapping[str, Any] | str | None, subclass: str | None = None
+) -> dict[str, Any]:
+    """Merger extraction gold from one Hub row's MAUD question labels.
+
+    The Hub labels a merger agreement with ``maud_clause_labels`` (a
+    ``{question: {"answer": <Hub class>, ...}}`` map; categorical answers, no
+    text spans) and the row's ``expected_subclass``. Neither is an extraction
+    field, so this converts them, the way ``cuad_clause_labels`` feed a
+    contract, into the two merger fields they truthfully answer:
+
+    ``maud_clauses``
+        One ``'<Question>: <Hub class>'`` line per **answered** question, in
+        catalog order (:data:`MAUD_QUESTIONS`) and then unknown questions in row
+        order, deduplicated. An answer the catalog validates is rendered with
+        the verbatim Hub class (:func:`maud_clause_line`). An answer or question
+        the catalog does not know is kept verbatim as ``'<Question>: <answer>'``
+        (the lenient rule of :func:`maud_answers_to_clauses`), because the Hub is
+        the ground truth: dropping it would score the model as right for omitting
+        a labelled answer. Blank, missing and ``"nan"`` answers are not labels; the Hub class
+        ``"None"`` is an answer and stays gold. A question the MAUD content scorer treats as
+        ambiguous (flagged ``gt_ambiguous``, or holding several distinct answers) is
+        skipped, so it stays unscored there and here (:func:`_label_answer`).
+    ``merger_consideration``
+        The subclass token of the row's ``Type of Consideration`` answer,
+        falling back to *subclass* (then the row's own ``expected_subclass``).
+        The unannotated ``other`` subclass never becomes gold.
+
+    A field is omitted when the row gives no truth for it; nothing is invented.
+    ``maud_clause_labels`` marked absent by ``gt_presence`` (``pending_annotation``,
+    ``not_applicable``, ``schema_documented_absence``) contributes nothing, so a
+    pending row yields at most the subclass-derived ``merger_consideration``.
+    *gt_fields* is a Hub row as a mapping, a JSON string or a Python dict-repr
+    string; malformed input raises like :func:`parse_gt_fields`.
+    """
+    fields = parse_gt_fields(gt_fields if gt_fields is not None else {})
+    labels = parse_json_container(fields.get("maud_clause_labels"))
+    if gt_presence_map(fields).get("maud_clause_labels") in ABSENT_PRESENCE_STATUSES:
+        labels = {}
+    answers: list[tuple[str, str]] = []
+    if isinstance(labels, Mapping):
+        for question, record in labels.items():
+            answer = _label_answer(str(question), record)
+            if answer:
+                answers.append((str(question).strip(), answer))
+    order = {q.name: i for i, q in enumerate(MAUD_QUESTIONS)}
+
+    def catalog_position(item: tuple[str, str]) -> int:
+        """Catalog index of the question, or past the end for an unknown one."""
+        try:
+            return order[maud_question(item[0]).name]
+        except KeyError:
+            return len(order)
+
+    lines: dict[str, None] = {}
+    token: str | None = None
+    for question, answer in sorted(answers, key=catalog_position):  # stable sort
+        try:
+            line = maud_clause_line(question, answer)
+        except (KeyError, ValueError):
+            line = f"{question}: {answer}"
+        lines.setdefault(line)
+        if token is None and _qkey(question) == _qkey("Type of Consideration"):
+            token = _consideration_token(answer)
+    if token is None:
+        token = _consideration_token(subclass) or _consideration_token(
+            fields.get("expected_subclass")
+        )
+    out: dict[str, Any] = {}
+    if lines:
+        out["maud_clauses"] = list(lines)
+    if token is not None:
+        out["merger_consideration"] = token
+    return out
+
+
+def _consideration_token(value: object) -> str | None:
+    """Subclass token for *value*, or ``None`` when blank, unknown or ``other``."""
+    if is_empty_value(value):
+        return None
+    try:
+        token = consideration_subclass(value).token
+    except ValueError:
+        return None
+    return None if token == "other" else token
 
 
 def scorer_fold_collisions() -> dict[str, list[tuple[str, ...]]]:

@@ -14,6 +14,7 @@ llm_dojo_scoring/
 ├── pipeline/          mailroom pipeline and sandbox contracts
 ├── metrics/           metric identity and emission
 ├── analysis/          run analysis and reporting
+├── ml/                contract mailroom-ml vendors; intake-classifier scorecard
 └── integrations/      trace sinks and release awareness
 ```
 
@@ -61,6 +62,8 @@ llm_dojo_scoring/
 | | `calibration` | Exact risk bounds, sample size, ECE/Brier, AUROC, cutoffs |
 | | `experiment` | Experiment-log records |
 | | `serving`, `cost` | Local-vs-API serving, token cost |
+| **`ml/`** | `contract` | `ml_contract()`: the label and intake tables `mailroom-ml` vendors as `ml/data/ml_contract.json` |
+| | `metrics` | `score_intake_model`: accuracy, macro F1, ECE, fast-path coverage and risk |
 | **`integrations/`** | `update_awareness` | `dojo-version` release awareness |
 | | `update_awareness` | Opt-in release discovery behind `dojo-version` |
 

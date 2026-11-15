@@ -2,11 +2,13 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `74b532a3aa5efad8f587e2f5edb24aa8a43b17f0` (untagged interim pin, after `v0.28.1`: llm-dojo-scoring#136 production slim-down + #138 CUAD per-category counts + #139 scoring fixes D1-D4 and their CodeRabbit fixes)
-- Source package version: `0.28.1` (`__version__` at that commit; the code is ahead of the `v0.28.1` tag)
+- Exact source commit: `93eedd8c3270ce95af56f1e17ce40bae3d03b330` (untagged: the Dojo `v0.30.0` head, i.e. the 0.30.0 cut plus llm-dojo-scoring#157; no GitHub release exists yet)
+- Source package version: `0.30.0` (`__version__` at that commit)
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
-  That includes the package data `schemas/data/extraction_status.json`, which `.gitignore`
-  re-includes explicitly (its `data/` rule had dropped it from earlier snapshots).
+  That includes the package data `schemas/data/extraction_status.json`, `ml/data/ml_contract.json`
+  and `prompts/data/alignment_gaps.json`, which `.gitignore` re-includes explicitly (its `data/`
+  rule would otherwise drop them). The tracked file list equals `git ls-tree -r` of
+  `llm_dojo_scoring/` at that commit (131 files).
 
 The installed release (the pyproject git pin) is the primary Dojo. This snapshot is the
 backup that `src/dojo_source` serves only when the installed release is missing or fails to
