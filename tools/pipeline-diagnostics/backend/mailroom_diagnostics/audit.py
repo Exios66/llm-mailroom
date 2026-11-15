@@ -833,9 +833,12 @@ def _verify_attempts(
             failures.append({"scope": "attempts", "id": attempt_id, "reason": "detail-not-object"})
             continue
         # The foundation verifier rejects a stage/trigger its writer never
-        # emits, and a parent reference that disagrees with its sub-row. A valid
-        # hash excuses neither, so these run before (and without) the hasher.
-        # Values are compared raw, never through the display trimming.
+        # emits; a valid hash does not excuse one, so these run before (and
+        # without) the hasher. The parent-reference check below is stricter than
+        # the foundation verifier: the writer always copies the sub-row's stage
+        # and int attempt_no into the reference, so any disagreement (including
+        # a type change such as "1" for 1) means the rows were not written
+        # together. Values are compared raw, never through the display trimming.
         stage = item.get("stage")
         if stage not in allowed_stages:
             failures.append({"scope": "attempts", "id": attempt_id, "reason": "unknown-stage"})
