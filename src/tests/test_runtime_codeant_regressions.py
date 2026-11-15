@@ -151,7 +151,8 @@ print("RESULT:" + json.dumps(result), flush=True)
     results = []
     try:
         deadline = time.monotonic() + 15
-        while not all(path.exists() for path in ready):
+        # write_text creates the file before it writes, so wait for the content, not the name.
+        while not all(path.exists() and path.read_text() for path in ready):
             assert time.monotonic() < deadline, "workers did not reach publication barrier"
             assert all(worker.poll() is None for worker in workers), "worker exited before barrier"
             time.sleep(.005)
