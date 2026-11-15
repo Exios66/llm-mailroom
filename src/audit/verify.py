@@ -8,12 +8,15 @@ layer can actually observe and says so when it cannot:
 
 * **main** — the global terminal-row chain in ``audit_log`` (``seq`` order,
   ``prev_hash`` links, recomputed v2 hashes, unique ``doc_id``, and the
-  ``recovered_from.detail_sha256`` binding when a recovered row carries one).
+  ``recovered_from.detail_sha256`` binding: a recovered row must carry a digest and it must match).
 * **subrows** — every ``audit_attempts`` row recomputes, belongs to a known
   parent, and is listed by that parent's ``detail.attempts`` (missing, extra and
   edited rows all fail).
 * **addenda** — each document's ``audit_addenda`` chain starts at the row hash,
-  increments its per-document ``seq`` and links to the previous addendum.
+  increments its per-document ``seq`` and links to the previous addendum. A
+  ``recovered_detail`` addendum is bound twice: its carried detail must hash to
+  ``recovered_from.detail_sha256``, and that must be the partial row's
+  ``recovered_from.full_detail_sha256``; a recovered addendum without a digest fails.
 * **legacy** — the previous release's per-document chain. After an explicit
   migration this reads ``audit_log_legacy``; before one it reads the live
   per-event ``audit_log``, so the verifier is useful in both states.
@@ -205,6 +208,50 @@ def _hash_failure(report: CheckReport, exc: BaseException, **context: Any) -> No
     )
 
 
+def _recovered_digest(recovered: Any) -> str | None:
+    """``recovered_from.detail_sha256`` when it is a non-empty string, else ``None`` (missing, empty or malformed)."""
+    digest = recovered.get("detail_sha256") if isinstance(recovered, dict) else None
+    return digest if isinstance(digest, str) and digest else None
+
+
+def _check_addendum_recovery(report: CheckReport, record, detail: dict[str, Any], row) -> None:
+    """Bind an addendum written by ``audit-reconcile`` to the digest it carries.
+
+    A ``recovered_detail`` addendum carries the complete detail in ``detail["detail"]``: its
+    recomputed digest must equal ``recovered_from.detail_sha256``, and that must be the
+    ``full_detail_sha256`` its partial row named, so a forged detail cannot pass by being rehashed
+    into the addendum. A ``resumed`` addendum recovered from a sink must carry a digest too (its
+    stored detail lists new attempt ids, so the digest is not recomputable from it).
+    """
+    doc_id, seq = record.doc_id, record.seq
+    recovered = detail.get("recovered_from")
+    digest = _recovered_digest(recovered)
+    if record.kind != "recovered_detail":
+        if "recovered_from" in detail and digest is None:
+            report.fail(kind="recovered_detail_unbound", doc_id=doc_id, seq=seq)
+        return
+    if digest is None:
+        report.fail(kind="recovered_detail_unbound", doc_id=doc_id, seq=seq)
+        return
+    inner = detail.get("detail")
+    if not isinstance(inner, dict):
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="no_detail")
+        return
+    try:
+        bound = detail_sha256(inner) == digest
+    except Exception as exc:
+        _hash_failure(report, exc, doc_id=doc_id, seq=seq)
+        return
+    if not bound:
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq)
+    row_recovered = (row.detail or {}).get("recovered_from") if isinstance(row.detail, dict) else None
+    full = row_recovered.get("full_detail_sha256") if isinstance(row_recovered, dict) else None
+    if not (isinstance(row_recovered, dict) and row_recovered.get("complete") is False and full):
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="row_not_partial")
+    elif full != digest:
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="not_the_rows_full_record")
+
+
 async def _check_main(session, migrated: bool) -> CheckReport:
     if not migrated:
         return CheckReport(
@@ -251,13 +298,21 @@ async def _check_main(session, migrated: bool) -> CheckReport:
         detail = _detail_object(
             record.detail, report=report, owner="doc_id", owner_id=record.doc_id
         )
-        recovered = detail.get("recovered_from") if detail is not None else None
-        if isinstance(recovered, dict) and recovered.get("detail_sha256"):
-            actual = detail_sha256(detail or {})
-            if actual != recovered["detail_sha256"]:
-                report.fail(
-                    kind="recovered_detail_mismatch", doc_id=record.doc_id, seq=record.seq
-                )
+        if detail is not None and "recovered_from" in detail:
+            digest = _recovered_digest(detail["recovered_from"])
+            if digest is None:
+                # A recovered row names the digest of what it recovered; without one nothing binds it.
+                report.fail(kind="recovered_detail_unbound", doc_id=record.doc_id, seq=record.seq)
+            else:
+                try:
+                    bound = detail_sha256(detail) == digest
+                except Exception as exc:
+                    _hash_failure(report, exc, doc_id=record.doc_id, seq=record.seq)
+                else:
+                    if not bound:
+                        report.fail(
+                            kind="recovered_detail_mismatch", doc_id=record.doc_id, seq=record.seq
+                        )
         previous_hash = record.entry_hash
         previous_seq = record.seq
     return report
@@ -479,9 +534,11 @@ async def _check_addenda(session, migrated: bool) -> CheckReport:
                     seq=record.seq,
                     addendum_kind=record.kind,
                 )
-            _detail_object(
+            stored = _detail_object(
                 record.detail, report=report, owner="doc_id", owner_id=doc_id
             )
+            if stored is not None:
+                _check_addendum_recovery(report, record, stored, row)
             try:
                 expected = _addendum_hash(record, matter_id=row.matter_id)
             except Exception as exc:

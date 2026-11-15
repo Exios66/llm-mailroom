@@ -773,3 +773,135 @@ async def test_a_failing_park_step_is_a_gap_outcome(sinks, db_down, monkeypatch,
     assert write_row({"doc_id": "d-1", "matter_id": "M", "doc_type": "contract"}, event="archived",
                      actor="archivist") is None
     assert _manifest().audit_written is False
+
+
+# ---------------------------------------------------------------- the verifier binds recovered records to their digests (review fix R4)
+
+
+async def _closed_partial(sinks, db_down):
+    """d-1 recovered from a decisions-only copy, then closed by its complete copy (a ``recovered_detail`` addendum)."""
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park
+
+    small = FakeSink("small", max_payload_bytes=8_000)
+    late = FakeSink("late")
+    sinks[:] = [small, late]
+    _save_manifest()
+    await commit_or_park(_row(big=True))
+    held = late.pending.copy()
+    late.pending.clear()
+    db_down[0] = None
+    await reconcile()
+    late.pending.update(held)
+    assert (await reconcile()).gap_closed == 1
+
+
+async def _forge(model, mutate, *, doc_id="d-1"):
+    """Apply ``mutate(detail)`` to the document's (only) addendum or row and rehash it, so only the binding can catch it."""
+    import copy
+
+    from sqlalchemy import select
+
+    from audit.writer import hash_entry
+    from storage.audit_log import AuditAddendumRecord, AuditLogRecord
+    from storage.db import async_session
+
+    async with async_session() as s:
+        row = (await s.execute(select(AuditLogRecord).where(AuditLogRecord.doc_id == doc_id))).scalars().one()
+        rec = row if model == "row" else (
+            await s.execute(select(AuditAddendumRecord).where(AuditAddendumRecord.doc_id == doc_id))
+        ).scalars().one()
+        detail = copy.deepcopy(rec.detail)
+        mutate(detail)
+        rec.detail = detail
+        rec.entry_hash = hash_entry(
+            prev_hash=rec.prev_hash, doc_id=rec.doc_id,
+            entry_id=rec.entry_id if model == "row" else rec.addendum_id,
+            event=rec.event if model == "row" else rec.kind, detail=detail, matter_id=row.matter_id,
+            actor=rec.actor, timestamp=rec.timestamp,
+        )
+        await s.commit()
+
+
+def _failure_kinds(report):
+    return {f["kind"] for section in (report.main, report.addenda) for f in section.failures}
+
+
+async def test_a_forged_and_rehashed_recovered_detail_addendum_fails_verification(sinks, db_down):
+    from audit.verify import verify_audit_db
+
+    await _closed_partial(sinks, db_down)
+    assert (await verify_audit_db()).ok  # the honest chain verifies
+
+    await _forge("addendum", lambda d: d["detail"].update(doc_type="FORGED"))
+    report = await verify_audit_db()
+    assert not report.ok and "recovered_detail_mismatch" in _failure_kinds(report)
+
+
+async def test_a_recovered_detail_addendum_must_be_the_rows_full_record(sinks, db_down):
+    """Forging the carried detail AND its digest still fails: the row's ``full_detail_sha256`` names the record."""
+    from audit.digests import detail_sha256
+    from audit.verify import verify_audit_db
+
+    await _closed_partial(sinks, db_down)
+
+    def swap(d):
+        d["detail"]["doc_type"] = "FORGED"
+        d["recovered_from"]["detail_sha256"] = detail_sha256(d["detail"])
+
+    await _forge("addendum", swap)
+    report = await verify_audit_db()
+    assert not report.ok and "recovered_detail_mismatch" in _failure_kinds(report)
+    assert not report.main.failures  # the row itself is untouched
+
+
+@pytest.mark.parametrize("value", ["", None, "drop"])
+async def test_a_recovered_detail_addendum_without_a_digest_fails(sinks, db_down, value):
+    from audit.verify import verify_audit_db
+
+    await _closed_partial(sinks, db_down)
+
+    def strip(d):
+        if value == "drop":
+            d["recovered_from"].pop("detail_sha256")
+        else:
+            d["recovered_from"]["detail_sha256"] = value
+
+    await _forge("addendum", strip)
+    report = await verify_audit_db()
+    assert not report.ok and "recovered_detail_unbound" in _failure_kinds(report)
+
+
+@pytest.mark.parametrize("value", ["", None, "drop"])
+async def test_a_recovered_row_without_a_digest_fails(sinks, db_down, value):
+    from audit.reconcile import reconcile
+    from audit.verify import verify_audit_db
+    from audit.writer import commit_or_park
+
+    await commit_or_park(_row())
+    db_down[0] = None
+    await reconcile()
+    assert (await verify_audit_db()).ok
+
+    def strip(d):
+        if value == "drop":
+            d["recovered_from"].pop("detail_sha256")
+        else:
+            d["recovered_from"]["detail_sha256"] = value
+
+    await _forge("row", strip)
+    report = await verify_audit_db()
+    assert not report.ok and "recovered_detail_unbound" in _failure_kinds(report)
+
+
+async def test_a_resumed_addendum_recovered_from_a_sink_must_carry_its_digest(sinks, db_down):
+    from audit.verify import verify_audit_db
+
+    await _row_then_parked_repeat(db_down)
+    from audit.reconcile import reconcile
+
+    await reconcile()
+    assert (await verify_audit_db()).ok
+    await _forge("addendum", lambda d: d["recovered_from"].update(detail_sha256=""))
+    report = await verify_audit_db()
+    assert not report.ok and "recovered_detail_unbound" in _failure_kinds(report)
