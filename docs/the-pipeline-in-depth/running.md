@@ -22,7 +22,7 @@ cp .env.example .env              # add OPENROUTER_API_KEY for real runs
 pip install -e ".[dev]"
 ```
 
-The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@74b532a3aa5efad8f587e2f5edb24aa8a43b17f0`), so `pip` needs `git` and network access on first install.
+The core dependencies include `llm-dojo-scoring`, pinned as a git dependency (`@93eedd8c3270ce95af56f1e17ce40bae3d03b330`), so `pip` needs `git` and network access on first install.
 
 ### Optional extras
 
@@ -33,7 +33,7 @@ All extras are declared in `[project.optional-dependencies]` in `pyproject.toml`
 | `dev` | pytest, pytest-asyncio, pytest-mock, httpx, nbformat, nbclient, ipykernel | Running the test suite |
 | `embeddings` | scipy, sentence-transformers | Embedding second signal and Hungarian matcher in field scoring (degrades gracefully without) |
 | `postgres` | psycopg | Postgres storage engine (SQLite is the default) |
-| `deploy` | modal 1.5.5 | Deploying the Modal vLLM app in `deploy/` (never imported by the pipeline) |
+| `deploy` | modal 1.6.2 | Deploying the Modal vLLM app in `deploy/` (never imported by the pipeline) |
 | `bert` | onnxruntime, tokenizers, huggingface-hub | BERT intake fast-path (ONNX inference only) |
 | `notebooks` | ipywidgets, jupyterlab | `notebooks/dataset_browser.ipynb` |
 

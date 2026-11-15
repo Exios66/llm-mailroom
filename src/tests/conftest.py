@@ -109,6 +109,30 @@ def temp_base_dir():
         os.environ.pop("MAILROOM_BASE_DIR", None)
 
 
+@pytest.fixture
+def broken_specialist_pin():
+    """Point one specialist's ``lineage.json`` sha256 at bytes no catalog record has.
+
+    ``load_specialist_v1`` is ``lru_cache``d, so the cache is cleared on the way in
+    (the broken pin is read) and on the way out (later tests resolve the real pin
+    again). Uses its own ``MonkeyPatch`` so the undo runs before the final clear.
+    """
+    import copy
+
+    import llm.frozen_v1 as frozen
+
+    mp = pytest.MonkeyPatch()
+    broken = copy.deepcopy(frozen.lineage())
+    broken["specialists"]["corporate_records_specialist"]["sha256"] = "0" * 64
+    mp.setattr(frozen, "lineage", lambda: broken)
+    frozen.load_specialist_v1.cache_clear()
+    try:
+        yield frozen
+    finally:
+        mp.undo()
+        frozen.load_specialist_v1.cache_clear()
+
+
 @pytest.fixture(autouse=True)
 def _reopen_watcher_claim_gate():
     """A test that calls ``Watcher.stop()`` closes the module-level claim gate;

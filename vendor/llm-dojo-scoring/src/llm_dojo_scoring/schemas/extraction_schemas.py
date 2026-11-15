@@ -26,8 +26,10 @@ Field status is read from the mailroom-dataset v9 lineage
 ``derived``
     Truth comes from a label source, not from ``gt_fields``: CUAD clause labels
     (contract metadata fields), MAUD clause labels, or the subtype itself
-    (``cuad_family``, ``merger_consideration``, ``record_type``,
-    ``communication_type``, ``cms_source_table``).
+    (``cuad_family``, ``record_type``, ``communication_type``, ``cms_source_table``).
+    Merger ``maud_clauses`` and ``merger_consideration`` are converted from the MAUD
+    labels (``maud_schema.hub_merger_expected_fields``): the ``Type of Consideration``
+    answer gives the token, falling back to the subtype (hence source ``subtype``).
 ``documented_absent``
     The schema documents the field as absent for this subtype: an empty answer
     is right and a stated value is a false positive (CMS ``adjuster``).
@@ -104,6 +106,13 @@ _CUAD_DERIVED: dict[str, str] = {
     "term_length": "Expiration Date",
     "renewal_terms": "Renewal Term",
     "cuad_clauses": "all CUAD categories",
+}
+
+#: How the merger gold is converted from the MAUD labels
+#: (``maud_schema.hub_merger_expected_fields``).
+_MAUD_NOTES: dict[str, str] = {
+    "maud_clauses": "one '<Question>: <Hub class>' line per answered question",
+    "merger_consideration": "the Type of Consideration answer, else the row's subtype",
 }
 
 #: Fields whose truth is the row's subtype itself.
@@ -397,13 +406,15 @@ def _build(doc_type: str, subtype: str | None) -> ExtractionSchema:
             continue
         if doc_type == "merger_agreement" and name == "maud_clauses":
             status, coverage = _label_status(counts.get("maud_clause_labels"), rows)
-            fields[name] = FieldSchema(name, field_type, status, "maud_clause_labels", coverage)
+            fields[name] = FieldSchema(name, field_type, status, "maud_clause_labels", coverage,
+                                       note=_MAUD_NOTES[name])
             continue
         if _SUBTYPE_DERIVED.get(doc_type) == name or (
             doc_type == "insurance_claim" and name == "cms_source_table"
         ):
+            note = _MAUD_NOTES.get(name) if doc_type == "merger_agreement" else None
             fields[name] = FieldSchema(name, field_type, "derived", "subtype", 1.0 if rows else None,
-                                       note="truth is the row's subtype"
+                                       note=note or "truth is the row's subtype"
                                        + (" (CMS tables only)" if name == "cms_source_table" else ""))
             continue
         status, coverage = _classify(counts.get(name), rows)

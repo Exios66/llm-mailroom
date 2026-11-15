@@ -18,7 +18,7 @@ time, or to an interim SHA before a release, always via `src/scripts/bump_dojo_s
 PYTHONPATH=src .venv/bin/python src/scripts/bump_dojo_scoring.py --check
 ```
 
-Prints `current=`, `desired=`, `up_to_date=`. Exit **0** = up to date, **2** = behind.
+Prints `current=`, `desired=`, `up_to_date=`. Exit **0** = up to date, **2** = behind, or the pin is already the release's commit but release metadata (latest rows, staged note) is stale (`release_metadata_stale=true`, `stale=<path>` lines; `--apply` fixes it and keeps the SHA).
 An interim SHA pin that the latest tag does not contain is reported up to date on
 purpose — the auto-bump never downgrades it.
 

@@ -17,25 +17,35 @@ prompts:
   priming: []
 - agent: contracts_specialist
   family: production
-  version: v1
+  version: v2
   kind: llm
   metrics_bundle: extraction
   doc_bundle: contract
-  source_repo: llm-mailroom
-  source_key: frozen_v1
+  source_repo: llm-dojo-scoring
+  source_key: production_v2
   source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: contracts_specialist.production.md
+  notes: 'Production v2, authored here: llm-mailroom frozen_v1 plus every field the registry scores
+    (schemas/doc_classes.py). source_commit is the llm-mailroom commit of the frozen_v1 base it derives
+    from, not a commit of this repo. The production_prompts v1 row and the lineage JSON keep the frozen
+    bytes. llm-mailroom still serves frozen_v1 until it adopts v2; scripts/sync_production_prompts.py
+    skips this row.'
   priming: []
 - agent: merger_agreement_specialist
   family: production
-  version: v1
+  version: v2
   kind: llm
   metrics_bundle: extraction
   doc_bundle: merger_agreement
-  source_repo: llm-mailroom
-  source_key: frozen_v1
+  source_repo: llm-dojo-scoring
+  source_key: production_v2
   source_commit: 19203eac07f67c215f50af2fd498560ce195adae
   template: merger_agreement_specialist.production.md
+  notes: 'Production v2, authored here: llm-mailroom frozen_v1 plus every field the registry scores
+    (schemas/doc_classes.py). source_commit is the llm-mailroom commit of the frozen_v1 base it derives
+    from, not a commit of this repo. The production_prompts v1 row and the lineage JSON keep the frozen
+    bytes. llm-mailroom still serves frozen_v1 until it adopts v2; scripts/sync_production_prompts.py
+    skips this row.'
   priming: []
 - agent: corporate_records_specialist
   family: production
