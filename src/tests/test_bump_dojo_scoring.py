@@ -712,3 +712,55 @@ def test_release_label_names_the_version_for_a_commit_pin():
     assert _rewrite_text(row, sha, release="v0.28.0", today="2026-11-06") == (
         f"| Latest | v0.28.0 as of 2026-11-06 (llm-mailroom pins {sha}) |"
     )
+
+
+STAGED_SHA = "93eedd8c3270ce95af56f1e17ce40bae3d03b330"
+NEXT_SHA = "cab976807854129d1cfea4897dbff5b6e337a62b"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "| Latest | v0.29.0 as of 2026-11-15, 0.30.0 staged and untagged (llm-mailroom pins {ref}) |",
+        "| llm-dojo-scoring | v0.29.0 latest as of 2026-11-15, 0.30.0 staged and untagged; llm-mailroom pins {ref} |",
+    ],
+)
+def test_latest_rows_with_a_staged_note_are_rewritten_by_the_release_that_lands_it(template):
+    """The rows the 0.30.0 re-pin wrote must be rewritable by the bump that follows it.
+
+    A commit pin of the staged release advances the row to the release and drops the
+    "staged and untagged" note, which is no longer true once it is tagged.
+    """
+    before = template.format(ref=STAGED_SHA)
+    after = _rewrite_text(before, NEXT_SHA, release="v0.30.0", today="2026-11-20")
+    assert "v0.30.0" in after and "2026-11-20" in after
+    assert "staged" not in after
+    assert "v0.29.0" not in after
+    assert NEXT_SHA in after and STAGED_SHA not in after
+
+
+def test_staged_note_is_kept_while_the_release_is_still_untagged():
+    """A pin to an older release moves the pin only; the staged note stays true."""
+    row = "| Latest | v0.28.0 as of 2026-11-06, 0.30.0 staged and untagged (llm-mailroom pins v0.28.0) |"
+    after = _rewrite_text(row, "v0.29.0", today="2026-11-15")
+    assert after == (
+        "| Latest | v0.29.0 as of 2026-11-15, 0.30.0 staged and untagged (llm-mailroom pins v0.29.0) |"
+    )
+    # An interim commit pin (no release label) leaves the version, date and note alone.
+    assert _rewrite_text(row, STAGED_SHA, today="2026-11-15") == row.replace(
+        "pins v0.28.0", f"pins {STAGED_SHA}"
+    )
+
+
+def test_documented_apply_command_with_missing_release_flag_is_rewritten():
+    """docs/pipeline-reference-llm-mailroom/sister-repos.md documents the flag before --tag."""
+    cmd = (
+        "PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply "
+        "--allow-missing-release --tag {ref}"
+    )
+    assert _rewrite_text(cmd.format(ref=STAGED_SHA), NEXT_SHA) == cmd.format(ref=NEXT_SHA)
+    # --allow-missing-release rejects a tag target on --apply (see main()), so a tag
+    # target must not leave the documented command with the flag.
+    assert _rewrite_text(cmd.format(ref=STAGED_SHA), "v0.30.0") == (
+        "PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.30.0"
+    )
