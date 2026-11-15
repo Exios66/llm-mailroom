@@ -59,10 +59,19 @@ def load_specialist_v1(agent_name: str) -> str:
     """
     if agent_name not in SPECIALIST_AGENTS:
         raise KeyError(f"no frozen-v1 stem for {agent_name!r}")
-    from llm_dojo_scoring.prompts import list_prompts
-
-    pin = lineage()["specialists"][agent_name]
-    expected, chars = pin["sha256"], pin["chars"]
+    try:
+        pin = lineage()["specialists"][agent_name]
+        expected, chars = pin["sha256"], pin["chars"]
+    except (KeyError, TypeError) as exc:
+        raise SpecialistPinError(
+            f"{agent_name}: lineage.json has no usable sha256/chars pin ({exc!r})"
+        ) from exc
+    try:
+        from llm_dojo_scoring.prompts import list_prompts
+    except ImportError as exc:
+        raise SpecialistPinError(
+            f"{agent_name}: the pinned llm-dojo-scoring prompt catalog does not import ({exc!r})"
+        ) from exc
     for family in CATALOG_FAMILIES:
         for record in list_prompts(agent=agent_name, family=family):
             if record.kind != "llm" or _sha256(record.text) != expected:

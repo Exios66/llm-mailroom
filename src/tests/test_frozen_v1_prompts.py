@@ -184,6 +184,26 @@ def test_unmatched_lineage_sha_fails_fast_and_names_the_pin(monkeypatch):
         load_specialist_v1.cache_clear()
 
 
+def test_a_missing_lineage_entry_is_a_pin_error_and_is_aggregated(monkeypatch):
+    import copy
+
+    import pytest
+
+    from llm import frozen_v1 as F
+
+    broken = copy.deepcopy(F.lineage())
+    del broken["specialists"]["correspondence_specialist"]["chars"]
+    monkeypatch.setattr(F, "lineage", lambda: broken)
+    load_specialist_v1.cache_clear()
+    try:
+        with pytest.raises(F.SpecialistPinError, match="correspondence_specialist: lineage.json"):
+            load_specialist_v1("correspondence_specialist")
+        with pytest.raises(F.SpecialistPinError, match="correspondence_specialist"):
+            F.verify_specialist_pins()
+    finally:
+        load_specialist_v1.cache_clear()
+
+
 def test_verify_specialist_pins_reports_every_unresolvable_agent(monkeypatch):
     import pytest
 
