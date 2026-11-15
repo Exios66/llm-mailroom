@@ -1876,3 +1876,34 @@ def test_seeder_never_overwrites_a_symlinked_configured_store(tmp_path, monkeypa
     assert live.is_file(), "--force must not delete the store the base directory points at"
     with sqlite3.connect(live) as conn:
         assert conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0] > 0
+
+
+def test_missing_addenda_table_is_never_verified(client, make_store):
+    db = make_store("unified")
+    _exec(db, "DROP TABLE audit_addenda")
+
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "unverified"
+    assert any("addenda" in note for note in verification["notes"])
+
+
+def test_missing_addenda_table_without_addenda_is_never_verified(client, tmp_path, monkeypatch):
+    db = _minimal_unified_store(tmp_path, monkeypatch)
+    assert client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"][
+        "status"
+    ] == "verified"
+    _exec(db, "DROP TABLE audit_addenda")
+
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "unverified"
+    assert not verification["failures"]
+
+
+def test_missing_attempts_table_without_references_is_never_verified(client, tmp_path, monkeypatch):
+    db = _minimal_unified_store(tmp_path, monkeypatch)
+    _exec(db, "DROP TABLE audit_attempts")
+
+    verification = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["verification"]
+    assert verification["status"] == "unverified"
+    assert not verification["failures"]
+    assert any("attempt" in note for note in verification["notes"])
