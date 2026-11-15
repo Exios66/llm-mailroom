@@ -59,6 +59,7 @@ _PLACEHOLDER = """<!doctype html>
     <li><a href="/v1/diagnostics/capabilities">/v1/diagnostics/capabilities</a></li>
     <li><a href="/v1/diagnostics/snapshot">/v1/diagnostics/snapshot</a></li>
     <li><a href="/v1/diagnostics/findings">/v1/diagnostics/findings</a></li>
+    <li><a href="/v1/diagnostics/audit/documents">/v1/diagnostics/audit/documents</a> (read-only audit store)</li>
   </ul>
   <h2>Build the screen (planned phase D1.1)</h2>
   <pre>npm --prefix tools/pipeline-diagnostics/frontend install
