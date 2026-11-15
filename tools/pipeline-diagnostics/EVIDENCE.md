@@ -30,6 +30,8 @@ Do not embed private document contents, environment secrets, client names, absol
 | Replay is isolated | Concurrent and sequential job tests, immutable policy inputs, fresh interpreter identities and unchanged live worker config; missing observations stay unobserved |
 | A policy/merge change improves quality | Existing objective/guard outputs on compatible real held-out evidence, provenance and paired comparison; synthetic/mock evidence does not qualify |
 | Installed build works | Isolated wheel installation and packaged resource/API smoke; editable checkout imports alone do not prove distribution usability |
+| An audit record is verified honestly | Seeded synthetic store for each schema mode; verified and tampered cases; a bounded/truncated case that is not called verified; absence/unreadable cases that create nothing; redaction assertions on raw detail values; snapshot-consistency regression (writer commits between reads) |
+| Journal leaves are render-safe | A journal/experiment fixture with object leaves in `document`, `outcome`, `events`, `transitions` and `runs`; API responses contain text/null leaves only |
 | Performance meets a target | Method, fixed inputs, environment, sample count, baseline/candidate distributions and overhead; no fabricated p95 or cost figures |
 
 ## Current checkpoint versus feature completion

@@ -12,6 +12,7 @@ import {
   writeToken,
 } from "./api";
 import { ConnectionTable } from "./components/ConnectionTable";
+import { AuditPanel } from "./components/AuditPanel";
 import { FindingsPanel } from "./components/FindingsPanel";
 import { GraphView } from "./components/GraphView";
 import { Inspector } from "./components/Inspector";
@@ -78,6 +79,7 @@ export default function App() {
   const [runJournal, setRunJournal] = useState<RunJournal | null>(null);
   const [runStep, setRunStep] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [auditRefreshVersion, setAuditRefreshVersion] = useState(0);
   const reducedMotion = useReducedMotion();
   const loadSequence = useRef(0);
   const runSequence = useRef(0);
@@ -87,6 +89,7 @@ export default function App() {
 
   const load = useCallback(async (signal: AbortSignal, quiet: boolean) => {
     const sequence = ++loadSequence.current;
+    setAuditRefreshVersion((version) => version + 1);
     if (!quiet) setLoading(true);
     try {
       const [snapshotResult, reportResult, runsResult, experimentsResult] =
@@ -256,6 +259,9 @@ export default function App() {
       <a className="skip-link" href="#connections">
         Skip to connection list
       </a>
+      <a className="skip-link skip-link--audit" href="#audit-panel">
+        Jump to audit record
+      </a>
 
       <header className="app-header">
         <div>
@@ -324,6 +330,10 @@ export default function App() {
           </button>
         </div>
       </section>
+      <nav className="quick-jumps" aria-label="Workbench sections">
+        <a href="#audit-panel">Audit record</a>
+        <a href="#connections">Connection list</a>
+      </nav>
 
       <div role="status" className="sr-only">
         {announcement}
@@ -387,6 +397,7 @@ export default function App() {
                   setRunStep(null);
                 }}
               />
+              <AuditPanel followedDocId={runJournal?.document.doc_id ?? null} refreshKey={auditRefreshVersion} />
               <Inspector selection={selection} model={model} onSelect={setSelection} />
               <FindingsPanel
                 report={report}

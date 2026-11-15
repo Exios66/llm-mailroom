@@ -4,8 +4,9 @@ Machine mode (``--json``) writes exactly one JSON document to stdout; logs and
 human notes go to stderr. This CLI is a preview, never the active worker, and
 it never contacts a network service or a model.
 
-Exit codes: 0 clean, 1 observed structural finding, 2 invalid input or runtime
-failure, 3 reserved for incomplete evidence (not emitted by this slice).
+Exit codes: 0 clean or verified, 1 observed structural finding or failed
+verification, 2 invalid input or runtime failure, 3 the evidence is incomplete
+(store unavailable, bounded read truncated, or no record).
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from .snapshot import build_workspace_snapshot, load_artifact
 EXIT_OK = 0
 EXIT_FINDINGS = 1
 EXIT_INVALID = 2
-EXIT_INCOMPLETE = 3  # reserved: no partial-evidence mode in this slice
+EXIT_INCOMPLETE = 3  # evidence exists but is incomplete (unavailable/truncated/not recorded)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -98,6 +99,21 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("MAILROOM_DIAGNOSTICS_PORT", "8100"),
         help="TCP port (default 8100, or MAILROOM_DIAGNOSTICS_PORT)",
     )
+
+    audit = sub.add_parser(
+        "audit", help="read one document's audit record and verify its hash chain"
+    )
+    audit.add_argument(
+        "doc_id", metavar="DOC_ID", nargs="?", help="document id to inspect (omit with --list)"
+    )
+    audit.add_argument("--json", action="store_true", help="write one JSON document to stdout")
+    audit.add_argument(
+        "--list",
+        action="store_true",
+        help="list bounded document ids from the audit store instead of one record",
+    )
+    audit.add_argument("--limit", type=int, default=25, help="listing size (1-100)")
+    audit.add_argument("--offset", type=int, default=0, help="listing offset")
     return parser
 
 
@@ -130,6 +146,8 @@ def _run(raw_args: list[str]) -> int:
             state = refresh(Path.cwd(), base)
             _emit(state.to_dict(), args.json, _preview_text(state))
             return EXIT_OK if state.error is None else EXIT_INCOMPLETE
+        if args.command == "audit":
+            return _audit(args)
         snapshot = _snapshot(args)
         if args.command == "inspect":
             _emit(snapshot.model_dump(mode="json"), args.json, _inspect_text(snapshot))
@@ -250,4 +268,62 @@ def _check_text(report: CheckReport) -> str:
         )
     for finding in report.findings:
         lines.append(f"{finding.severity.upper()} {finding.id} {finding.message}")
+    return "\n".join(lines)
+
+
+def _audit(args: argparse.Namespace) -> int:
+    """Read-only audit inspection; exit 3 means the evidence is incomplete."""
+    from .audit import document_audit, list_documents, valid_doc_id
+
+    if args.list:
+        payload = list_documents(limit=args.limit, offset=args.offset)
+        store = payload.get("store") or {}
+        lines = [
+            f"audit store: {store.get('state')} / {store.get('schema') or store.get('reason')}",
+        ]
+        for document in payload["documents"]:
+            lines.append(
+                f"{document['doc_id']}  {document.get('event') or 'events'}"
+                f"  {document.get('timestamp') or 'unknown'}"
+            )
+        _emit(payload, args.json, "\n".join(lines))
+        return EXIT_OK if store.get("state") == "available" else EXIT_INCOMPLETE
+    if not valid_doc_id(args.doc_id or ""):
+        raise DiagnosticsError("invalid-arguments", "invalid document id")
+    payload = document_audit(args.doc_id)
+    _emit(payload, args.json, _audit_text(payload))
+    status = payload["verification"]["status"]
+    if status == "failed":
+        return EXIT_FINDINGS
+    if status == "verified":
+        return EXIT_OK
+    return EXIT_INCOMPLETE
+
+
+def _audit_text(payload: dict[str, Any]) -> str:
+    verdict = payload["verification"]["status"]
+    record = payload["record"]
+    store = payload.get("store") or {}
+    lines = [
+        f"document {payload['doc_id']}  store={store.get('schema') or store.get('reason')}"
+        f"  record={record.get('state')}  verification={verdict}",
+    ]
+    if record.get("state") == "unified-row":
+        lines.append(
+            f"row {record.get('entry_id')}  event={record.get('event')}"
+            f"  seq={record.get('seq')}  attempts={len(record.get('attempts') or [])}"
+            f"  addenda={len(record.get('addenda') or [])}"
+        )
+    elif record.get("state") == "event-chain":
+        lines.append(
+            f"events {record.get('entries')}  last={record.get('last_event')}"
+            f"  updated={record.get('updated_at')}"
+        )
+    legacy = payload.get("legacy") or {}
+    if legacy.get("state") == "present":
+        lines.append(f"legacy events {legacy.get('count')} (migrated section)")
+    for failure in payload["verification"]["failures"]:
+        lines.append(f"FAILED {failure.get('scope')} {failure.get('id') or ''} {failure.get('reason')}")
+    for note in payload["verification"]["notes"]:
+        lines.append(f"note: {note}")
     return "\n".join(lines)
