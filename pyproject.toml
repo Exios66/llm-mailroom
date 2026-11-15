@@ -53,7 +53,8 @@ dependencies = [
     # Interim pin 93eedd8 (Dojo v0.30.0 head: the 0.30.0 cut plus llm-dojo-scoring#157; untagged,
     # not released): prompt catalog moved contracts and merger production to v2, which the
     # mailroom does NOT adopt; llm/frozen_v1 pins the specialist prompts by content (lineage.json
-    # sha256) and the metric registry only gained metrics.
+    # sha256) and the metric registry only gained metrics. Scores move: merger maud_clauses is
+    # scored question by question (and the labelled-run judge gate with it); see CHANGELOG.md.
     # Interim pin 74b532a (llm-dojo-scoring#136 + #138 + #139, unreleased): field-micro excludes
     # unlabelled schema fields, null P/R/F1 with no labelled field, MAUD-only merger headline,
     # blank/"nan" topic and sentiment labels dropped.
