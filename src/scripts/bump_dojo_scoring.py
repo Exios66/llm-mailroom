@@ -530,7 +530,10 @@ def main(argv: list[str] | None = None) -> int:
     ``--check`` returns 0 for a matching pin, a SHA at the target release's
     commit, or an interim SHA not contained in the target release, and 2 when
     an update is needed. ``--apply`` resolves release tags to commit pins and
-    writes recognized pin files unless ``--dry-run`` is set. Return 1 for a
+    writes recognized pin files unless ``--dry-run`` is set. When the pin is
+    already the target release's commit, ``--apply`` keeps the SHA and only
+    rewrites the release metadata (latest-release rows, staged note, release
+    label prose), returning 0. Return 1 for a
     missing release, a target SHA absent from the latest release, a refused
     SHA downgrade, or no changes when the pins differ; otherwise return 0.
     ``--allow-missing-release`` skips the release-existence
@@ -604,8 +607,17 @@ def main(argv: list[str] | None = None) -> int:
         if release_commit(desired) == current:
             # The pin already IS the release's exact commit. Rewriting it to
             # the tag name would trade an immutable install contract for a
-            # movable ref, so both --check and --apply leave it alone.
+            # movable ref, so the pin stays the SHA in both modes. --apply
+            # still runs the release-metadata rewrite (latest rows, staged
+            # note, "release commit" prose), which a release tagged on the
+            # already-pinned commit would otherwise leave stale; --check
+            # stays read-only.
             print("immutable_pin=true")
+            if args.apply:
+                changed = apply_pin(current, dry_run=args.dry_run, release=desired)
+                for path in changed:
+                    print(f"updated={path.relative_to(REPO_ROOT)}")
+                print(f"changed={len(changed)} dry_run={args.dry_run}")
             print("up_to_date=true")
             return 0
         if not tag_contains_commit(current, desired):
