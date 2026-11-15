@@ -195,3 +195,26 @@ def test_scoring_imports_under_vendored_source(tmp_path):
     assert status["source"] == "vendored"
     assert status["file"].startswith(str(ROOT / "vendor"))
     assert status["missing"] == []
+
+
+def test_specialist_pins_resolve_from_the_vendored_snapshot(tmp_path):
+    """Under the forced fallback, all five lineage-pinned prompts resolve from the snapshot's catalog."""
+    code = (_HIDE_INSTALLED + f"sys.path[:0] = [{str(SRC)!r}]\n"
+            "import dojo_source, json, hashlib\n"
+            "from llm.frozen_v1 import SPECIALIST_AGENTS, lineage, load_specialist_v1, verify_specialist_pins\n"
+            "import llm_dojo_scoring as d\n"
+            "verify_specialist_pins()\n"
+            "shas = {a: hashlib.sha256(load_specialist_v1(a).encode()).hexdigest() for a in SPECIALIST_AGENTS}\n"
+            "want = {a: r['sha256'] for a, r in lineage()['specialists'].items()}\n"
+            "print(json.dumps({**dojo_source.status(), 'file': d.__file__, 'ok': shas == want}))\n")
+    run_env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    run_env["MAILROOM_DOJO_SOURCE"] = "vendored"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=run_env,
+                         cwd=tmp_path, timeout=120)
+    assert out.returncode == 0, out.stderr[-2000:]
+    import json
+
+    status = json.loads(out.stdout.strip().splitlines()[-1])
+    assert status["source"] == "vendored"
+    assert status["file"].startswith(str(ROOT / "vendor"))
+    assert status["ok"] is True

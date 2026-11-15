@@ -3542,6 +3542,11 @@ def build_graph(checkpointer=None):
     # Fail fast: every live taxonomy class must have a specialist extract arm.
     # A missing arm used to silently stub-extract and retry the same miss.
     _build_specialist_dispatch()
+    # Likewise every specialist prompt must resolve to its lineage-pinned bytes now,
+    # not on the first extracted document (llm/frozen_v1: content-pinned to the Dojo catalog).
+    from llm.frozen_v1 import verify_specialist_pins
+
+    verify_specialist_pins()
 
     workflow = StateGraph(DocumentState)
 

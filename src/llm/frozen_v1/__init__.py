@@ -1,10 +1,13 @@
 """Frozen v1 specialist prompts for the LangGraph extract nodes.
 
 Production extraction uses these stems, not the llm-entity-extraction
-contracts/sorter lineage. The text is served from the ``llm-dojo-scoring``
-``production`` catalog (pinned in pyproject.toml); ``lineage.json``
-records the sha256 and length of each prompt. The legacy ``*.txt`` files in
-this directory are superseded and no longer packaged.
+contracts/sorter lineage. The prompt version is pinned **by content**:
+``lineage.json`` records the sha256 and length of each prompt, and the text is
+the record in the ``llm-dojo-scoring`` prompt catalog (pinned in pyproject.toml)
+whose bytes hash to that sha256. A Dojo bump never changes the served prompt;
+if the pinned Dojo no longer carries the pinned bytes, loading fails with
+:class:`SpecialistPinError` rather than serving other bytes. The legacy ``*.txt``
+files in this directory are superseded and no longer packaged.
 """
 
 from __future__ import annotations
@@ -31,22 +34,77 @@ def lineage() -> dict:
     return json.loads(_LINEAGE_PATH.read_text(encoding="utf-8"))
 
 
+#: Dojo catalog families searched for the pinned bytes, in order. Both are searched
+#: because the family that holds a given stem moves between Dojo releases (0.30.0:
+#: contracts and merger v1 left ``production`` but remain in ``production_prompts``;
+#: corporate v6 stays in ``production`` while ``production_prompts`` holds an
+#: unpromoted v7 candidate). The sha256 decides, never the family.
+CATALOG_FAMILIES: tuple[str, ...] = ("production", "production_prompts")
+
+
+class SpecialistPinError(RuntimeError):
+    """The pinned Dojo catalog holds no record matching a lineage-pinned specialist prompt."""
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 @lru_cache(maxsize=None)
 def load_specialist_v1(agent_name: str) -> str:
-    """Return the frozen v1 prompt text from the dojo ``production`` catalog."""
+    """Return the frozen v1 prompt text: the Dojo catalog record matching the lineage sha256.
+
+    Raises :class:`SpecialistPinError` (naming the agent, the expected sha256 and the
+    families searched) when no record matches; there is no fallback to other bytes.
+    """
     if agent_name not in SPECIALIST_AGENTS:
         raise KeyError(f"no frozen-v1 stem for {agent_name!r}")
-    from llm_dojo_scoring.prompts import get_prompt
+    from llm_dojo_scoring.prompts import list_prompts
 
-    return get_prompt(agent_name, family="production").text
+    pin = lineage()["specialists"][agent_name]
+    expected, chars = pin["sha256"], pin["chars"]
+    for family in CATALOG_FAMILIES:
+        for record in list_prompts(agent=agent_name, family=family):
+            if record.kind != "llm" or _sha256(record.text) != expected:
+                continue
+            if len(record.text) != chars:
+                raise SpecialistPinError(
+                    f"{agent_name}: catalog record {family}/{record.version} matches the pinned "
+                    f"sha256 {expected} but has {len(record.text)} chars, lineage.json says {chars}"
+                )
+            return record.text
+    raise SpecialistPinError(
+        f"{agent_name}: no prompt in the pinned llm-dojo-scoring catalog hashes to the "
+        f"lineage.json sha256 {expected} (families searched: {', '.join(CATALOG_FAMILIES)}). "
+        "The pinned Dojo no longer carries the frozen prompt; re-pin the Dojo to a revision "
+        "that does, or re-freeze lineage.json deliberately."
+    )
 
 
 def specialist_sha256(agent_name: str) -> str:
-    return hashlib.sha256(load_specialist_v1(agent_name).encode("utf-8")).hexdigest()
+    return _sha256(load_specialist_v1(agent_name))
+
+
+def verify_specialist_pins() -> None:
+    """Resolve every specialist pin now; raise one :class:`SpecialistPinError` listing all failures.
+
+    Called when the graph is built, so a Dojo pin that cannot serve the frozen prompts
+    stops the process at startup instead of on the first extracted document.
+    """
+    failures: list[str] = []
+    for agent in SPECIALIST_AGENTS:
+        try:
+            load_specialist_v1(agent)
+        except SpecialistPinError as exc:
+            failures.append(str(exc))
+    if failures:
+        raise SpecialistPinError("; ".join(failures))
 
 
 def bind_production_specialists(prompt_versions: dict[str, str]) -> None:
     """Point production specialist aliases at frozen v1 (in-place).
+
+    Raises :class:`SpecialistPinError` when a pinned prompt cannot be resolved.
 
     Historical entity-extraction keys (``contracts_specialist_v1`` … ``v33``)
     stay on the dict for eval loops.
