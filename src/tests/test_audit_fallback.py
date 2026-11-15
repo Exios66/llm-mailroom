@@ -688,3 +688,58 @@ async def test_partial_recovery_keeps_the_manifest_pending_partial_until_the_com
     report = await reconcile()
     assert report.gap_closed == 1
     assert _manifest().audit_written is True and _manifest().audit_pending_refs == []
+
+
+# ---------------------------------------------------------------- one failing document does not stop the run (review fix R5)
+
+
+async def test_a_poison_document_does_not_block_the_next_one(sinks, db_down, monkeypatch, logs):
+    from audit import writer
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row
+
+    _save_manifest("a-doc")
+    _save_manifest("z-doc")
+    await commit_or_park(_row("a-doc"))
+    await commit_or_park(_row("z-doc"))
+    db_down[0] = None
+    real = writer.write_terminal_row
+
+    async def poison(row, **kw):
+        if row.doc_id == "a-doc":
+            raise RuntimeError("non-retryable db error")
+        return await real(row, **kw)
+
+    monkeypatch.setattr(writer, "write_terminal_row", poison)
+    report = await reconcile()  # must not raise
+    assert report.failed == 1 and report.recovered == 1
+    assert await get_row("z-doc") is not None and await get_row("a-doc") is None
+    assert [d for d in report.docs if d["doc_id"] == "a-doc"] == [
+        {"doc_id": "a-doc", "action": "failed", "error": "RuntimeError: non-retryable db error"}]
+    assert "audit_reconcile_doc_failed" in logs
+    # The failed document keeps its copy for the next run; the recovered one is spent.
+    assert [r["doc_id"] for r in sinks[0].fetch_pending()] == ["a-doc"]
+    assert _manifest("z-doc").audit_written is True and _manifest("a-doc").audit_written is None
+
+    monkeypatch.setattr(writer, "write_terminal_row", real)  # the poison is gone: the next run recovers it
+    again = await reconcile()
+    assert (again.recovered, again.failed) == (1, 0) and await get_row("a-doc") is not None
+
+
+async def test_a_pending_migration_still_stops_reconcile(sinks, db_down, monkeypatch):
+    """Nothing can be written before the migration: one error, not one per document."""
+    from audit import writer
+    from audit.models import AuditMigrationPending
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park
+
+    await commit_or_park(_row("a-doc"))
+    await commit_or_park(_row("z-doc"))
+
+    async def pending(doc_id):
+        raise AuditMigrationPending("audit_meta has no migration record")
+
+    monkeypatch.setattr(writer, "get_row", pending)
+    with pytest.raises(AuditMigrationPending):
+        await reconcile()
+    assert len(sinks[0].fetch_pending()) == 2

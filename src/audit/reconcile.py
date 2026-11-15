@@ -23,6 +23,8 @@ from typing import Any
 
 import structlog
 
+from audit.models import AuditMigrationPending
+
 logger = structlog.get_logger(__name__)
 
 
@@ -355,10 +357,18 @@ async def reconcile(*, dry_run: bool = False) -> ReconcileReport:
     """Reconcile valid pending sink records and report the action for each document.
 
     Prefer a complete copy; a partial row is supplemented by a matching complete
-    copy in a later run. ``dry_run`` counts proposed actions without writing rows,
-    addenda or manifests or dropping sink copies. Read and write errors from the
-    audit database propagate; sink fetch and drop failures are logged. Runs may
-    overlap: a document whose row appears between the check and the write is
+    copy in a later run; a copy that is a later terminal write of a document with
+    a row becomes a ``resumed`` addendum. ``dry_run`` counts proposed actions without
+    writing rows, addenda or manifests or dropping sink copies.
+
+    Each document is isolated: an error while reading or writing one (a constraint
+    violation, a bad record, a lock that outlasted the retries) is logged as
+    ``audit_reconcile_doc_failed``, counted in ``failed`` and listed in ``docs``; its
+    copies stay in the sinks for the next run and the other documents are still
+    reconciled. ``AuditMigrationPending`` is the one error that propagates: it means
+    the audit tables are not migrated, so no document can be written and one error is
+    more honest than one failure per document. Sink fetch and drop failures are logged.
+    Runs may overlap: a document whose row appears between the check and the write is
     reported as ``skipped_existing`` (never as a ``resumed`` addendum).
     """
     report = ReconcileReport(dry_run=dry_run)
@@ -372,9 +382,17 @@ async def reconcile(*, dry_run: bool = False) -> ReconcileReport:
         by_doc[rec["doc_id"]].append(rec)
 
     for doc_id, copies in sorted(by_doc.items()):
-        # A lost race leaves a row behind, so the second pass takes the existing-row path.
-        if not await _reconcile_doc(report, doc_id, copies, dry_run=dry_run):
-            await _reconcile_doc(report, doc_id, copies, dry_run=dry_run)
+        try:
+            # A lost race leaves a row behind, so the second pass takes the existing-row path.
+            if not await _reconcile_doc(report, doc_id, copies, dry_run=dry_run):
+                await _reconcile_doc(report, doc_id, copies, dry_run=dry_run)
+        except AuditMigrationPending:
+            raise  # no document can be written before the migration: stop, do not log one failure per document
+        except Exception as exc:  # noqa: BLE001 - one bad document must not strand the ones after it
+            report.failed += 1
+            report.docs.append({"doc_id": doc_id, "action": "failed", "error": f"{type(exc).__name__}: {exc}"})
+            logger.error("audit_reconcile_doc_failed", doc_id=doc_id, error=f"{type(exc).__name__}: {exc}",
+                         exc_info=True)
     return report
 
 
