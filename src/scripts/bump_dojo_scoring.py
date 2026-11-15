@@ -529,11 +529,14 @@ def main(argv: list[str] | None = None) -> int:
     Print the current and desired refs and check results or updated paths.
     ``--check`` returns 0 for a matching pin, a SHA at the target release's
     commit, or an interim SHA not contained in the target release, and 2 when
-    an update is needed. ``--apply`` resolves release tags to commit pins and
-    writes recognized pin files unless ``--dry-run`` is set. When the pin is
-    already the target release's commit, ``--apply`` keeps the SHA and only
-    rewrites the release metadata (latest-release rows, staged note, release
-    label prose), returning 0. Return 1 for a
+    an update is needed. It writes nothing. When the pin is already the target
+    release's commit, ``--check`` also returns 2 (``release_metadata_stale=true``,
+    one ``stale=<path>`` line per file) while a read-only preview of the
+    release-metadata rewrite (latest-release rows, staged note, release label
+    prose) would still change files. ``--apply`` resolves release tags to commit
+    pins and writes recognized pin files unless ``--dry-run`` is set; at the
+    release's commit it keeps the SHA and only rewrites that metadata, returning
+    0. Return 1 for a
     missing release, a target SHA absent from the latest release, a refused
     SHA downgrade, or no changes when the pins differ; otherwise return 0.
     ``--allow-missing-release`` skips the release-existence
@@ -607,14 +610,21 @@ def main(argv: list[str] | None = None) -> int:
         if release_commit(desired) == current:
             # The pin already IS the release's exact commit. Rewriting it to
             # the tag name would trade an immutable install contract for a
-            # movable ref, so the pin stays the SHA in both modes. --apply
-            # still runs the release-metadata rewrite (latest rows, staged
-            # note, "release commit" prose), which a release tagged on the
-            # already-pinned commit would otherwise leave stale; --check
-            # stays read-only.
+            # movable ref, so the pin stays the SHA in both modes. The release
+            # metadata (latest rows, staged note, "release commit" prose) still
+            # has to catch up when the release is tagged on the pinned commit:
+            # --apply rewrites it; --check previews the same rewrite read-only
+            # and exits 2 while it is stale, so the daily workflow runs --apply.
             print("immutable_pin=true")
-            if args.apply:
-                changed = apply_pin(current, dry_run=args.dry_run, release=desired)
+            changed = apply_pin(current, dry_run=args.dry_run or args.check, release=desired)
+            if args.check:
+                if changed:
+                    for path in changed:
+                        print(f"stale={path.relative_to(REPO_ROOT)}")
+                    print("release_metadata_stale=true")
+                    print("up_to_date=false")
+                    return 2
+            else:
                 for path in changed:
                     print(f"updated={path.relative_to(REPO_ROOT)}")
                 print(f"changed={len(changed)} dry_run={args.dry_run}")
