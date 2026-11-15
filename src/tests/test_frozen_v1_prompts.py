@@ -38,31 +38,179 @@ def test_frozen_v1_sha256_matches_lineage_catalog():
         assert len(text) == catalog[agent]["chars"]
 
 
-def test_specialists_are_dojo_production_verbatim():
-    from llm_dojo_scoring.prompts import get_prompt
-
-    for agent in SPECIALIST_AGENTS:
-        assert load_specialist_v1(agent) == get_prompt(agent, family="production").text
+_PINNED_FAMILIES = ("production", "production_prompts")
 
 
-def test_eval_catalog_only_diverges_for_the_unpromoted_corporate_v7():
+def _digest(text: str) -> str:
     import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def test_specialists_are_the_lineage_pinned_bytes_from_the_dojo_catalog():
+    """The contract is content-pinned: lineage.json's sha256 and chars, resolved from the Dojo.
+
+    The live specialist text is NOT "whatever the Dojo ``production`` family serves"
+    (Dojo 0.30.0 moved contracts and merger to v2 there); it is the catalog record whose
+    bytes hash to the lineage sha256.
+    """
+    from llm_dojo_scoring.prompts import list_prompts
+
+    for agent, row in lineage()["specialists"].items():
+        text = load_specialist_v1(agent)
+        assert _digest(text) == row["sha256"], agent
+        assert len(text) == row["chars"], agent
+        holders = [
+            (rec.family, rec.version)
+            for family in _PINNED_FAMILIES
+            for rec in list_prompts(agent=agent, family=family)
+            if rec.text == text
+        ]
+        assert holders, f"{agent}: pinned bytes are not in the Dojo catalog"
+
+
+def test_pinned_bytes_live_in_known_dojo_families():
+    """Where each pinned stem sits in the Dojo catalog, so a catalog move is noticed.
+
+    contracts and merger: v1 left ``production`` (now v2) and stay in ``production_prompts``.
+    corporate: the pinned v6 stays in ``production``; ``production_prompts`` holds the
+    unpromoted v7 eval candidate. correspondence and insurance: identical in both.
+    """
     from llm_dojo_scoring.prompts import get_prompt, get_prompt_version
 
-    digest = lambda text: hashlib.sha256(text.encode("utf-8")).hexdigest()
+    pinned = {agent: row["sha256"] for agent, row in lineage()["specialists"].items()}
+    expected_families = {
+        "contracts_specialist": {"production_prompts"},
+        "merger_agreement_specialist": {"production_prompts"},
+        "corporate_records_specialist": {"production"},
+        "correspondence_specialist": {"production", "production_prompts"},
+        "insurance_claims_specialist": {"production", "production_prompts"},
+    }
+    assert set(expected_families) == set(SPECIALIST_AGENTS)
     for agent in SPECIALIST_AGENTS:
-        production = get_prompt(agent, family="production").text
-        evaluation = get_prompt(agent, family="production_prompts").text
-        if agent != "corporate_records_specialist":
-            assert production == evaluation
-        else:
-            assert production != evaluation
-            assert digest(production) == "fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399"
-            assert digest(evaluation) == "253559fcb7ac6b36878453821a4fab0aa94228ad5add77d5aeabb06bb265134c"
-            assert len(production) == 5865
-            assert len(evaluation) == 5462
-            assert get_prompt_version("corporate_records_specialist_v6").sha256 == digest(production)
-            assert get_prompt_version("corporate_records_specialist_v7").sha256 == digest(evaluation)
+        holding = {
+            family
+            for family in _PINNED_FAMILIES
+            if _digest(get_prompt(agent, family=family).text) == pinned[agent]
+        }
+        assert holding == expected_families[agent], agent
+    evaluation = get_prompt("corporate_records_specialist", family="production_prompts").text
+    production = get_prompt("corporate_records_specialist", family="production").text
+    assert _digest(evaluation) == "253559fcb7ac6b36878453821a4fab0aa94228ad5add77d5aeabb06bb265134c"
+    assert len(evaluation) == 5462
+    assert get_prompt_version("corporate_records_specialist_v6").sha256 == _digest(production)
+    assert get_prompt_version("corporate_records_specialist_v7").sha256 == _digest(evaluation)
+
+
+def test_contracts_and_merger_stay_on_v1_while_dojo_production_is_v2():
+    """Dojo 0.30.0 production = contracts/merger v2; the mailroom keeps the v1 pin."""
+    from llm_dojo_scoring.prompts import get_prompt
+
+    pins = {
+        "contracts_specialist": ("d91de3967cc3b12cbd222cc5a4ae167b39578125abc83be7422498dc5024fd24", 9882),
+        "merger_agreement_specialist": ("003232584d6890054d956398135f439b86692a1123683f58914c0393b5e1a00b", 6116),
+    }
+    for agent, (sha, chars) in pins.items():
+        assert specialist_sha256(agent) == sha
+        assert len(load_specialist_v1(agent)) == chars
+        assert load_specialist_v1(agent) == get_prompt(agent, family="production_prompts").text
+        assert get_prompt(agent, family="production").version == "v2"
+        assert specialist_sha256(agent) != _digest(get_prompt(agent, family="production").text)
+
+
+def test_corporate_resolves_to_the_pinned_v6_not_the_production_prompts_v7():
+    from llm_dojo_scoring.prompts import get_prompt
+
+    pinned = "fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399"
+    candidate = get_prompt("corporate_records_specialist", family="production_prompts").text
+    assert specialist_sha256("corporate_records_specialist") == pinned
+    assert load_specialist_v1("corporate_records_specialist") != candidate
+    assert _digest(candidate).startswith("253559fc")
+    assert len(load_specialist_v1("corporate_records_specialist")) == 5865
+
+
+class _FakeRecord:
+    def __init__(self, agent, family, text, version="v1", kind="llm"):
+        self.agent, self.family, self.text, self.version, self.kind = agent, family, text, version, kind
+
+
+def test_loader_follows_content_not_family_precedence(monkeypatch):
+    """The pinned bytes win even when ``production`` is searched first and holds other bytes."""
+    import llm_dojo_scoring.prompts as dojo_prompts
+
+    pinned_text = load_specialist_v1("contracts_specialist")
+    records = [
+        _FakeRecord("contracts_specialist", "production", "newer contracts prompt", version="v2"),
+        _FakeRecord("contracts_specialist", "production_prompts", pinned_text),
+    ]
+
+    def fake_list(*, agent=None, family=None, kind=None):
+        return [r for r in records if r.agent == agent and (family is None or r.family == family)]
+
+    monkeypatch.setattr(dojo_prompts, "list_prompts", fake_list)
+    load_specialist_v1.cache_clear()
+    try:
+        assert load_specialist_v1("contracts_specialist") == pinned_text
+    finally:
+        load_specialist_v1.cache_clear()
+
+
+def _break_lineage(monkeypatch, agent, bogus="0" * 64):
+    import copy
+
+    import llm.frozen_v1 as F
+
+    broken = copy.deepcopy(lineage())
+    broken["specialists"][agent]["sha256"] = bogus
+    monkeypatch.setattr(F, "lineage", lambda: broken)
+    load_specialist_v1.cache_clear()
+    return F
+
+
+def test_unmatched_lineage_sha_fails_fast_and_names_the_pin(monkeypatch):
+    import pytest
+
+    F = _break_lineage(monkeypatch, "contracts_specialist")
+    try:
+        with pytest.raises(F.SpecialistPinError) as err:
+            load_specialist_v1("contracts_specialist")
+        message = str(err.value)
+        assert "contracts_specialist" in message
+        assert "0" * 64 in message
+        assert "production" in message and "production_prompts" in message
+        # Never a silent fallback to other bytes: the other agents still resolve.
+        assert specialist_sha256("insurance_claims_specialist").startswith("6c2776bc")
+    finally:
+        load_specialist_v1.cache_clear()
+
+
+def test_verify_specialist_pins_reports_every_unresolvable_agent(monkeypatch):
+    import pytest
+
+    F = _break_lineage(monkeypatch, "merger_agreement_specialist", bogus="1" * 64)
+    try:
+        with pytest.raises(F.SpecialistPinError, match="merger_agreement_specialist"):
+            F.verify_specialist_pins()
+        monkeypatch.undo()
+        load_specialist_v1.cache_clear()
+        F.verify_specialist_pins()  # the real lineage resolves
+    finally:
+        load_specialist_v1.cache_clear()
+
+
+def test_build_graph_refuses_to_start_when_a_specialist_pin_does_not_resolve(monkeypatch):
+    import pytest
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from graph.build_graph import build_graph
+
+    F = _break_lineage(monkeypatch, "corporate_records_specialist")
+    try:
+        with pytest.raises(F.SpecialistPinError, match="corporate_records_specialist"):
+            build_graph(checkpointer=MemorySaver())
+    finally:
+        monkeypatch.undo()
+        load_specialist_v1.cache_clear()
 
 
 def test_corrected_records_are_served():

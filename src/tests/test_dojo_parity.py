@@ -1,16 +1,18 @@
 """Cross-repo parity guard: live mailroom artifacts vs the pinned dojo.
 
-Guards (1) the live specialist prompts against the dojo ``production`` /
-``production_prompts`` catalog and (2) the taxonomy ``field_types`` maps
+Guards (1) the live specialist prompts against the lineage-pinned bytes in the dojo
+``production`` / ``production_prompts`` catalog and (2) the taxonomy ``field_types`` maps
 against the dojo ``DEFAULT_FIELD_TYPES`` for the live document classes.
 """
 
+import hashlib
+
 from llm_dojo_scoring import get_doc_scorer
 from llm_dojo_scoring.scoring.doc_scorers import DOC_SCORERS
-from llm_dojo_scoring.prompts import get_prompt
+from llm_dojo_scoring.prompts import get_prompt, list_prompts
 from llm_dojo_scoring.suites import DEFAULT_FIELD_TYPES
 
-from llm.frozen_v1 import SPECIALIST_AGENTS
+from llm.frozen_v1 import SPECIALIST_AGENTS, lineage
 from llm.prompts import prompt_templates
 from pipeline.config import EXTRACT_CLASS_ALIASES, load_config
 
@@ -25,16 +27,30 @@ LIVE_DOC_TYPES: tuple[str, ...] = (
 )
 
 
-def test_live_specialists_equal_dojo_production():
-    """Live prompts use production; corporate evaluation v7 is unpromoted."""
+def test_live_specialists_equal_the_lineage_pinned_dojo_bytes():
+    """Live prompts are the lineage-pinned bytes, resolved by content from the pinned Dojo.
+
+    Contract: ``prompt_templates()[agent]`` hashes to ``lineage.json``'s sha256 and
+    chars, and those bytes exist in the pinned Dojo catalog. It is deliberately NOT
+    "equal to the Dojo ``production`` family": Dojo 0.30.0 moved contracts and merger to
+    v2 there, and adopting a newer Dojo prompt is a separate, explicit re-freeze of
+    ``lineage.json``.
+    """
     live = prompt_templates()
+    pinned = lineage()["specialists"]
     for agent in SPECIALIST_AGENTS:
-        assert live[agent] == get_prompt(agent, family="production").text
-        evaluation = get_prompt(agent, family="production_prompts").text
-        if agent == "corporate_records_specialist":
-            assert live[agent] != evaluation
-        else:
-            assert live[agent] == evaluation
+        assert hashlib.sha256(live[agent].encode("utf-8")).hexdigest() == pinned[agent]["sha256"]
+        assert len(live[agent]) == pinned[agent]["chars"]
+        in_catalog = [
+            rec
+            for family in ("production", "production_prompts")
+            for rec in list_prompts(agent=agent, family=family)
+            if rec.text == live[agent]
+        ]
+        assert in_catalog, f"{agent}: pinned bytes are not in the pinned Dojo catalog"
+    # The unpromoted corporate v7 eval candidate is never served.
+    candidate = get_prompt("corporate_records_specialist", family="production_prompts").text
+    assert live["corporate_records_specialist"] != candidate
 
 
 def test_taxonomy_field_types_equal_dojo_defaults_for_live_classes():
