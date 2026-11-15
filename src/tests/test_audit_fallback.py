@@ -518,3 +518,136 @@ async def test_row_held_only_by_write_only_sinks_is_not_reported_pending(sinks, 
     assert out.status != "pending"
     assert out.status == "pending_partial" and [r["sink"] for r in out.refs] == ["langfuse"]
     assert "audit_pending" not in logs
+
+
+# ---------------------------------------------------------------- a parked repeat terminal write (review fix R2)
+
+
+def _second_run(doc_id="d-1"):
+    """A later terminal write of the same document: its own trace, so its detail differs from ``_row``."""
+    row = _row(doc_id)
+    row.detail["trace"][0].update({"visit_id": "v-second", "prompt": "second run only"})
+    return row
+
+
+async def _row_then_parked_repeat(db_down):
+    """d-1 has a row (manifest written); a second terminal write fails 3x and parks."""
+    from audit.row import mark_manifest
+    from audit.writer import commit_or_park
+
+    _save_manifest()
+    db_down[0] = None
+    first = await commit_or_park(_row())
+    assert first.status == "written"
+    mark_manifest("d-1", first.status, first.refs)
+    assert _manifest().audit_written is True
+    db_down[0] = RuntimeError("database is locked")
+    second = await commit_or_park(_second_run())
+    assert second.status == "pending"
+    mark_manifest("d-1", second.status, second.refs)
+    assert _manifest().audit_written == "pending"
+    db_down[0] = None
+
+
+async def test_reconcile_writes_a_parked_repeat_terminal_write_as_a_resumed_addendum(sinks, db_down, logs):
+    """The live writer turns a repeat terminal write into a ``resumed`` addendum; so must reconcile.
+
+    Regression: the parked copy was dropped unwritten and the manifest stayed ``pending`` forever.
+    """
+    from audit.reconcile import reconcile
+    from audit.verify import verify_audit_db
+    from audit.writer import get_row
+
+    await _row_then_parked_repeat(db_down)
+    before = await get_row("d-1")
+    report = await reconcile()
+    assert (report.recovered, report.resumed, report.skipped_existing) == (0, 1, 0)
+    assert report.docs == [{"doc_id": "d-1", "action": "resumed"}]
+    after = await get_row("d-1")
+    assert after["entry_hash"] == before["entry_hash"]  # the row is immutable
+    [add] = after["addenda"]
+    assert add["kind"] == "resumed" and add["actor"] == "archivist" and add["detail"]["event"] == "archived"
+    assert add["detail"]["trace"][0]["prompt"] == "second run only"  # the data of the second run survived
+    assert add["detail"]["recovered_from"]["sink"] == "sql" and add["detail"]["recovered_from"]["detail_sha256"]
+    assert len(add["sub_rows"]) == 1
+    assert sinks[0].fetch_pending() == []  # spent
+    assert _manifest().audit_written is True and _manifest().audit_pending_refs == []
+    assert (await verify_audit_db()).ok
+    assert "audit_repeat_write_recovered" in logs
+
+
+async def test_reconcile_does_not_write_a_repeat_copy_twice(sinks, db_down):
+    """The same parked copy turning up again (a drop that failed, a second sink) adds no second addendum."""
+    from audit.reconcile import reconcile
+    from audit.writer import get_row
+
+    await _row_then_parked_repeat(db_down)
+    [spooled] = sinks[0].fetch_pending()
+    spooled = {k: v for k, v in spooled.items() if k not in ("ref", "_sink")}
+    await reconcile()
+    # The copy is back (the drop did not take, or another sink held it too) and the manifest is stale.
+    sinks[0].capture_pending(spooled)
+    from audit.row import mark_manifest
+
+    mark_manifest("d-1", "pending", ())
+    report = await reconcile()
+    assert (report.resumed, report.skipped_existing) == (0, 1)
+    assert len((await get_row("d-1"))["addenda"]) == 1
+    assert sinks[0].fetch_pending() == []
+    assert _manifest().audit_written is True
+
+
+async def test_reconcile_sets_the_manifest_when_the_row_was_written_but_the_mark_never_ran(sinks, db_down):
+    """The crash window: the recovered row is in the DB, the copy is still parked, the manifest says pending."""
+    from audit.reconcile import reconcile
+    from audit.row import mark_manifest
+    from audit.writer import commit_or_park, get_row
+
+    _save_manifest()
+    out = await commit_or_park(_row())
+    mark_manifest("d-1", out.status, out.refs)
+    [spooled] = sinks[0].fetch_pending()
+    db_down[0] = None
+    await reconcile()
+    row = await get_row("d-1")
+    assert row["detail"]["recovered_from"]["detail_sha256"] == spooled["detail_sha256"]
+    # Rewind to the crash: copy parked again, manifest back to pending.
+    sinks[0].capture_pending({k: v for k, v in spooled.items() if k not in ("ref", "_sink")})
+    mark_manifest("d-1", "pending", out.refs)
+    report = await reconcile()
+    assert (report.recovered, report.resumed, report.skipped_existing) == (0, 0, 1)
+    assert len((await get_row("d-1"))["addenda"]) == 0
+    assert _manifest().audit_written is True and _manifest().audit_pending_refs == []
+    assert sinks[0].fetch_pending() == []
+
+
+async def test_reconcile_dry_run_counts_a_repeat_write_without_writing_it(sinks, db_down):
+    from audit.reconcile import reconcile
+    from audit.writer import get_row
+
+    await _row_then_parked_repeat(db_down)
+    report = await reconcile(dry_run=True)
+    assert report.dry_run and (report.resumed, report.recovered, report.skipped_existing) == (1, 0, 0)
+    assert (await get_row("d-1"))["addenda"] == []
+    assert len(sinks[0].fetch_pending()) == 1 and _manifest().audit_written == "pending"
+
+
+async def test_two_parked_writes_with_no_row_become_a_row_and_a_resumed_addendum(sinks, db_down):
+    """Both terminal writes of a document parked: the earlier is the row, the later is not dropped."""
+    from audit.reconcile import reconcile
+    from audit.verify import verify_audit_db
+    from audit.writer import commit_or_park, get_row
+
+    _save_manifest()
+    await commit_or_park(_row())
+    await commit_or_park(_second_run())
+    assert len(sinks[0].fetch_pending()) == 2
+    db_down[0] = None
+    report = await reconcile()
+    assert (report.recovered, report.resumed) == (1, 1)
+    row = await get_row("d-1")
+    assert row["detail"]["trace"][0]["visit_id"] == "v1"
+    [add] = row["addenda"]
+    assert add["kind"] == "resumed" and add["detail"]["trace"][0]["visit_id"] == "v-second"
+    assert sinks[0].fetch_pending() == [] and _manifest().audit_written is True
+    assert (await verify_audit_db()).ok
