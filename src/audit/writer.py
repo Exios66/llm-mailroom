@@ -664,8 +664,9 @@ RETRY_DELAYS_S = (0.1, 0.3)
 class CommitOutcome:
     """How a terminal row ended: ``written``, ``pending``, ``pending_partial`` or ``gap``.
 
-    ``refs`` names every sink copy, including those of a ``gap`` that only
-    write-only sinks hold.
+    ``refs`` names every sink copy kept (``sink``, ``ref``, ``complete``,
+    ``recoverable``), including those only write-only sinks hold. A ``gap`` has
+    no refs: no sink kept anything.
     """
 
     status: str
@@ -737,28 +738,17 @@ def decisions_only_record(row: TerminalRow, full: dict[str, Any]) -> dict[str, A
     }
 
 
-def _reconcile_reads(sink_name: str) -> bool:
-    """Whether ``audit-reconcile`` can fetch pending records from this sink.
-
-    Of the built-in sinks only ``sql`` (its spool) reads back; the others are
-    write-only (``fetch_pending`` returns ``[]``). An installed entry-point sink
-    is assumed to implement the full ``TraceSink`` protocol.
-    """
-    from audit import sinks
-
-    return sink_name == "sql" or sink_name not in sinks.BUILTIN
-
-
 async def commit_or_park(row: TerminalRow) -> CommitOutcome:
     """Commit the row or park it in trace sinks after bounded failures (§5.6).
 
     ``AuditMigrationPending`` counts as a failure, so the record waits for
     ``audit-reconcile`` after the migration. Return ``written`` on success,
-    ``pending`` if a sink that ``audit-reconcile`` can read holds a full copy,
-    ``pending_partial`` if only reduced copies of that kind survive, or ``gap``
-    if none do (a copy kept only by write-only sinks is a ``gap`` that still
-    lists its refs). Database write failures lead to
-    parking; malformed rows still raise ``ValueError``.
+    ``pending`` if a sink that ``audit-reconcile`` can read back (``recoverable``)
+    holds a full copy, ``pending_partial`` if only reduced copies survive or only
+    write-only sinks hold the record (nothing can recover it, but the refs on the
+    manifest say where the copy went), or ``gap`` if no sink kept anything.
+    Database write failures lead to parking; malformed rows still raise
+    ``ValueError``.
     """
     import asyncio
 
@@ -780,18 +770,17 @@ async def commit_or_park(row: TerminalRow) -> CommitOutcome:
     refs = tuple(sinks.capture_pending(full, partial=lambda: decisions_only_record(row, full)))
     detail = {"doc_id": row.doc_id, "event_name": row.event, "refs": list(refs),
               "error": f"{type(error).__name__}: {error}" if error else None}
-    # Only a sink that ``audit-reconcile`` can read back makes the row pending: a
-    # copy held by a write-only sink exists, but nothing will ever recover it.
-    readable = [r for r in refs if _reconcile_reads(r["sink"])]
-    if any(r["complete"] for r in readable):
+    # ``complete`` is only ever true for a copy a recoverable sink holds in full
+    # (``sinks.capture_pending``), so a write-only sink never makes the row ``pending``.
+    if any(r["complete"] for r in refs):
         logger.info("audit_pending", **detail)
         return CommitOutcome("pending", refs=refs)
-    if readable:
+    if refs:
+        # Decisions-only copies, or copies only write-only sinks hold: the refs stay on the
+        # manifest so an operator can fetch the copy by hand.
+        if not any(r["recoverable"] for r in refs):
+            detail["reason"] = "only_write_only_sinks"
         logger.warning("audit_pending_partial", **detail)
         return CommitOutcome("pending_partial", refs=refs)
-    if refs:
-        # The refs stay on the manifest so an operator can fetch the copy by hand.
-        logger.error("audit_gap", **detail, reason="only_write_only_sinks")
-        return CommitOutcome("gap", refs=refs)
     logger.error("audit_gap", **detail)
     return CommitOutcome("gap")

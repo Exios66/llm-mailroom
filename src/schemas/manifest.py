@@ -81,9 +81,10 @@ class DocumentManifest(BaseModel):
     intake: dict | None = None
     # Unified audit row (spec §5.6): True once the row is committed; "pending"
     # when a sink holds the complete record for ``audit-reconcile``,
-    # "pending_partial" when only decisions-only copies were kept; False when no
-    # sink took it (``audit_gap``). None until a terminal node wrote it.
-    # ``audit_pending_refs`` names the sink copies: [{sink, ref, complete}].
+    # "pending_partial" when only decisions-only copies were kept, or only write-only
+    # sinks (which ``audit-reconcile`` cannot read) hold it; False when no sink took
+    # it (``audit_gap``). None until a terminal node wrote it.
+    # ``audit_pending_refs`` names the sink copies: [{sink, ref, complete, recoverable}].
     audit_written: bool | Literal["pending", "pending_partial"] | None = None
     audit_pending_refs: list[dict] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

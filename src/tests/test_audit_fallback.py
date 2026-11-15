@@ -391,11 +391,16 @@ def test_ephemeral_spool_warning(monkeypatch, tmp_path, logs):
 
 
 async def test_complete_copy_only_in_write_only_sinks_is_not_reported_pending(sinks, db_down, logs):
-    """T9 (#229): ``audit-reconcile`` cannot read a write-only sink, so ``pending`` would never clear."""
+    """T9 (#229) and T19: ``audit-reconcile`` cannot read a write-only sink, so ``pending`` would never clear.
+
+    The copy still exists, so the row is ``pending_partial`` with the write-only refs listed, not a ``gap``.
+    """
     from audit.reconcile import reconcile
     from audit.writer import commit_or_park, get_row
 
     class WriteOnly(FakeSink):
+        recoverable = False
+
         def fetch_pending(self):
             return []
 
@@ -403,9 +408,10 @@ async def test_complete_copy_only_in_write_only_sinks_is_not_reported_pending(si
     sinks[:] = [external]
     out = await commit_or_park(_row())
     assert len(external.pending) == 1
-    assert out.status == "gap"
+    assert out.status == "pending_partial"
     assert [r["sink"] for r in out.refs] == ["phoenix"]  # the copy is still named for an operator
-    assert "audit_gap" in logs and "audit_pending" not in logs
+    assert out.refs[0]["complete"] is False and out.refs[0]["recoverable"] is False
+    assert "audit_pending_partial" in logs and "audit_pending" not in logs and "audit_gap" not in logs
     db_down[0] = None
     assert (await reconcile()).recovered == 0 and await get_row("d-1") is None
 
@@ -414,18 +420,23 @@ async def test_readable_decisions_only_copy_beats_write_only_complete_copy(sinks
     from audit.writer import commit_or_park
 
     class WriteOnly(FakeSink):
+        recoverable = False
+
         def fetch_pending(self):
             return []
 
     sinks[:] = [WriteOnly("phoenix"), FakeSink("tiny", max_payload_bytes=12_000)]
     out = await commit_or_park(_row(big=True))
     assert out.status == "pending_partial"
+    assert {r["sink"]: r["recoverable"] for r in out.refs} == {"phoenix": False, "tiny": True}
 
 
 async def test_complete_copy_in_a_readable_sink_stays_pending(sinks, db_down):
     from audit.writer import commit_or_park
 
     class WriteOnly(FakeSink):
+        recoverable = False
+
         def fetch_pending(self):
             return []
 
