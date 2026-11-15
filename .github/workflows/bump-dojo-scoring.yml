@@ -6,7 +6,9 @@
 #   2. schedule — daily poll of GitHub Releases as a backstop
 #   3. workflow_dispatch — manual bump (optional tag input)
 #
-# Opens a PR on cursor/bump-dojo-scoring-<tag> when the pin is behind.
+# Opens a PR on cursor/bump-dojo-scoring-<tag> when the pin is behind, or when
+# the pin is already the release's commit but its release metadata is stale
+# (a docs-only PR that keeps the SHA pin).
 # Requires a PAT (or GitHub App token) with contents:write + pull-requests:write
 # stored as DOJO_BUMP_TOKEN, OR rely on GITHUB_TOKEN with workflow permissions.
 
@@ -89,7 +91,7 @@ jobs:
             echo "Already on ${{ steps.target.outputs.tag }}."
           else
             echo "needs_bump=true" >> "$GITHUB_OUTPUT"
-            echo "Pin is behind ${{ steps.target.outputs.tag }} (check exit ${code})."
+            echo "Pin or release metadata is stale for ${{ steps.target.outputs.tag }} (check exit ${code})."
           fi
 
       - name: Dry-run preview
@@ -127,6 +129,8 @@ jobs:
           BODY=$(cat <<EOF
           ## Summary
           Automatic bump of the \`llm-dojo-scoring\` git pin to **${TAG}**.
+          When the pin is already the release's commit, only the release
+          metadata (docs rows) changes and the SHA pin is kept.
 
           Triggered by: \`${{ github.event_name }}\`.
 

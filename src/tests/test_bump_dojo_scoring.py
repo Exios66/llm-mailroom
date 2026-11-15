@@ -466,7 +466,10 @@ def test_main_apply_dry_run_on_the_pinned_release_commit_writes_nothing(staged_r
     assert B.main(["--apply", "--dry-run", "--tag", "v0.30.0"]) == 0
     assert _staged_snapshot(staged_release_cli) == before
     out = capsys.readouterr().out
-    assert "changed=3 dry_run=True" in out and "up_to_date=true" in out
+    assert "changed=3 dry_run=True" in out
+    # A dry run writes nothing, so it must not claim the metadata is current.
+    assert "release_metadata_stale=true" in out
+    assert "up_to_date=false" in out and "up_to_date=true" not in out
 
 
 def test_main_check_reports_stale_release_metadata_without_writing(staged_release_cli, capsys):
