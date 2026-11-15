@@ -33,7 +33,7 @@ All extras are declared in `[project.optional-dependencies]` in `pyproject.toml`
 | `dev` | pytest, pytest-asyncio, pytest-mock, httpx, nbformat, nbclient, ipykernel | Running the test suite |
 | `embeddings` | scipy, sentence-transformers | Embedding second signal and Hungarian matcher in field scoring (degrades gracefully without) |
 | `postgres` | psycopg | Postgres storage engine (SQLite is the default) |
-| `deploy` | modal 1.5.5 | Deploying the Modal vLLM app in `deploy/` (never imported by the pipeline) |
+| `deploy` | modal 1.6.2 | Deploying the Modal vLLM app in `deploy/` (never imported by the pipeline) |
 | `bert` | onnxruntime, tokenizers, huggingface-hub | BERT intake fast-path (ONNX inference only) |
 | `notebooks` | ipywidgets, jupyterlab | `notebooks/dataset_browser.ipynb` |
 
