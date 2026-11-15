@@ -61,7 +61,9 @@ _EXTRACT_SKIP = (
     "are not FN; correctly-empty pairs credit 1.0 on the empty-field contract "
     "(#20) and never enter archive overall_score. ERROR_PREFIX predictions "
     "are dropped by the suite. entity_list F1 is None when the document has "
-    "no list fields."
+    "no list fields. A schema field the GT does not label is excluded on both "
+    "sides (a value there is not an FP); with no labelled field the suite "
+    "reports field-micro P/R/F1/F2 as null."
 )
 
 _SUBCLASS = (
