@@ -25,9 +25,11 @@ def reload_api(monkeypatch, temp_base_dir):
     return app
 
 
-def test_embed_watcher_default_off_under_pytest():
+def test_embed_watcher_default_off_under_pytest(monkeypatch):
     from pipeline.watcher import embed_watcher_enabled
 
+    # The default, not an inherited MAILROOM_EMBED_WATCHER, is what this test checks.
+    monkeypatch.delenv("MAILROOM_EMBED_WATCHER", raising=False)
     assert embed_watcher_enabled() is False
 
 
