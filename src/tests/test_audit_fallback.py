@@ -743,3 +743,33 @@ async def test_a_pending_migration_still_stops_reconcile(sinks, db_down, monkeyp
     with pytest.raises(AuditMigrationPending):
         await reconcile()
     assert len(sinks[0].fetch_pending()) == 2
+
+
+# ---------------------------------------------------------------- a failure inside the park step is a gap, not a lost row (review fix R6)
+
+
+@pytest.mark.parametrize("breaks", ["pending_record", "decisions_only_record", "detail_sha256"])
+async def test_a_failing_park_step_is_a_gap_outcome(sinks, db_down, monkeypatch, logs, breaks):
+    """Building or capturing the pending record can itself raise (e.g. mixed-type keys in a detail).
+
+    The exception used to escape ``commit_or_park``: ``write_row`` logged ``audit_row_write_failed``
+    and returned ``None``, with no ``gap`` outcome, no ``audit_gap`` event and ``audit_written`` unset.
+    """
+    from audit import digests, writer
+    from audit.row import write_row
+
+    small = FakeSink("small", max_payload_bytes=100)  # the partial() builder runs for this sink
+    sinks[:] = [small]
+    _save_manifest()
+    if breaks == "detail_sha256":
+        monkeypatch.setattr(digests, "detail_sha256", lambda d: (_ for _ in ()).throw(TypeError("boom")))
+    else:
+        monkeypatch.setattr(writer, breaks, lambda *a, **k: (_ for _ in ()).throw(TypeError("boom")))
+    out = await writer.commit_or_park(_row())
+    assert out.status == "gap" and out.result is None and out.refs == ()
+    assert "audit_gap" in logs and "audit_pending" not in logs
+
+    # Through the terminal path: the manifest says the row is missing, not "no terminal node wrote it".
+    assert write_row({"doc_id": "d-1", "matter_id": "M", "doc_type": "contract"}, event="archived",
+                     actor="archivist") is None
+    assert _manifest().audit_written is False

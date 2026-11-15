@@ -748,7 +748,9 @@ async def commit_or_park(row: TerminalRow) -> CommitOutcome:
     write-only sinks hold the record (nothing can recover it, but the refs on the
     manifest say where the copy went), or ``gap`` if no sink kept anything.
     Database write failures lead to parking; malformed rows still raise
-    ``ValueError``.
+    ``ValueError``. A failure while building or capturing the pending record is
+    logged as ``audit_gap`` (``reason="park_failed"``) and returns ``gap``, so the
+    row is reported lost instead of the exception escaping.
     """
     import asyncio
 
@@ -766,10 +768,16 @@ async def commit_or_park(row: TerminalRow) -> CommitOutcome:
                            error=f"{type(exc).__name__}: {exc}")
             if attempt < COMMIT_ATTEMPTS:
                 await asyncio.sleep(RETRY_DELAYS_S[min(attempt - 1, len(RETRY_DELAYS_S) - 1)])
-    full = pending_record(row)
-    refs = tuple(sinks.capture_pending(full, partial=lambda: decisions_only_record(row, full)))
-    detail = {"doc_id": row.doc_id, "event_name": row.event, "refs": list(refs),
-              "error": f"{type(error).__name__}: {error}" if error else None}
+    commit_error = f"{type(error).__name__}: {error}" if error else None
+    try:
+        full = pending_record(row)
+        refs = tuple(sinks.capture_pending(full, partial=lambda: decisions_only_record(row, full)))
+    except Exception as exc:  # noqa: BLE001 - building the record failed (e.g. a detail that cannot be hashed)
+        # Nothing was kept, so this is a gap, reported like one: ``audit_gap`` and ``audit_written`` False.
+        logger.error("audit_gap", doc_id=row.doc_id, event_name=row.event, refs=[], error=commit_error,
+                     reason="park_failed", park_error=f"{type(exc).__name__}: {exc}", exc_info=True)
+        return CommitOutcome("gap")
+    detail = {"doc_id": row.doc_id, "event_name": row.event, "refs": list(refs), "error": commit_error}
     # ``complete`` is only ever true for a copy a recoverable sink holds in full
     # (``sinks.capture_pending``), so a write-only sink never makes the row ``pending``.
     if any(r["complete"] for r in refs):
