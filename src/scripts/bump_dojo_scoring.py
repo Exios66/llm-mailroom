@@ -628,6 +628,11 @@ def main(argv: list[str] | None = None) -> int:
                 for path in changed:
                     print(f"updated={path.relative_to(REPO_ROOT)}")
                 print(f"changed={len(changed)} dry_run={args.dry_run}")
+                if changed and args.dry_run:
+                    # Nothing was written, so the metadata is still stale.
+                    print("release_metadata_stale=true")
+                    print("up_to_date=false")
+                    return 0
             print("up_to_date=true")
             return 0
         if not tag_contains_commit(current, desired):
