@@ -651,3 +651,40 @@ async def test_two_parked_writes_with_no_row_become_a_row_and_a_resumed_addendum
     assert add["kind"] == "resumed" and add["detail"]["trace"][0]["visit_id"] == "v-second"
     assert sinks[0].fetch_pending() == [] and _manifest().audit_written is True
     assert (await verify_audit_db()).ok
+
+
+# ---------------------------------------------------------------- a partial recovery keeps the gap on the manifest (review fix R3)
+
+
+async def test_partial_recovery_keeps_the_manifest_pending_partial_until_the_complete_copy_closes_it(
+        sinks, db_down):
+    """A decisions-only row is not "fully written": the manifest keeps showing the gap and the kept refs."""
+    from audit.reconcile import reconcile
+    from audit.row import mark_manifest
+    from audit.writer import commit_or_park
+
+    small = FakeSink("small", max_payload_bytes=8_000)
+    late = FakeSink("late")
+    sinks[:] = [small, late]
+    _save_manifest()
+    out = await commit_or_park(_row(big=True))
+    mark_manifest("d-1", out.status, out.refs)
+    held = late.pending.copy()
+    late.pending.clear()  # the complete copy is out of reach on the first run
+    db_down[0] = None
+
+    await reconcile()
+    m = _manifest()
+    assert m.audit_written == "pending_partial"
+    assert [(r["sink"], r["complete"]) for r in m.audit_pending_refs] == [("small", False)]
+    assert m.audit_pending_refs[0]["ref"] in small.pending  # the kept copy is named
+
+    # A second run with nothing new leaves the gap showing; so does a stale manifest (the crash window).
+    mark_manifest("d-1", "written")
+    await reconcile()
+    assert _manifest().audit_written == "pending_partial" and _manifest().audit_pending_refs
+
+    late.pending.update(held)
+    report = await reconcile()
+    assert report.gap_closed == 1
+    assert _manifest().audit_written is True and _manifest().audit_pending_refs == []

@@ -127,6 +127,34 @@ def _row_of(rec: dict[str, Any]):
                        attempts=_attempts(rec))
 
 
+def _kept_refs(copies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The manifest's ``audit_pending_refs`` for copies reconcile read back (so they are recoverable)."""
+    seen: set[tuple[Any, Any]] = set()
+    out = []
+    for c in copies:
+        key = (c["_sink"], c.get("ref"))
+        if key not in seen:
+            seen.add(key)
+            out.append({"sink": c["_sink"], "ref": c.get("ref"), "complete": bool(c.get("complete", True)),
+                        "recoverable": True})
+    return out
+
+
+def _mark_partial(doc_id: str, copies: list[dict[str, Any]]) -> None:
+    """Keep the gap on the manifest: ``pending_partial`` with the kept copies, until a complete one closes it."""
+    from audit.row import mark_manifest
+    from pipeline.bins import load_manifest
+
+    refs = _kept_refs(copies)
+    try:
+        current = load_manifest(doc_id)
+    except Exception:
+        current = None
+    if current is not None and current.audit_written == "pending_partial" and current.audit_pending_refs == refs:
+        return
+    mark_manifest(doc_id, "pending_partial", refs)
+
+
 def _content_sha(detail: Any) -> str | None:
     """Digest of what a run recorded, without the sub-row references and the repeat-write marker.
 
@@ -276,6 +304,8 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
             # The partial row stays open: keep every copy, a complete one may still turn up.
             report.skipped_existing += 1
             report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
+            if not dry_run:
+                _mark_partial(doc_id, copies)  # also repairs a mark a crash left behind
             return True
         await _reconcile_repeats(report, doc_id, row, copies, unique, dry_run=dry_run)
         return True
@@ -289,7 +319,10 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
         except AuditRowExists:
             logger.info("audit_reconcile_lost_race", doc_id=doc_id)
             return False
-        mark_manifest(doc_id, "written")
+        if is_partial:
+            _mark_partial(doc_id, copies)  # the row is only a decisions-only record: the gap stays visible
+        else:
+            mark_manifest(doc_id, "written")
     report.docs.append({"doc_id": doc_id, "action": "partial" if is_partial else "recovered"})
     if is_partial:
         report.partial += 1
