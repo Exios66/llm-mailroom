@@ -94,7 +94,7 @@ Mailroom keeps the dojo pin current via `.github/workflows/bump-dojo-scoring.yml
         client-payload: '{"tag": "v0.12.2"}'  # use github.event.release.tag_name
     ```
 2. **Backstop:** the workflow also runs on a daily cron and via `workflow_dispatch` (optional tag / dry-run inputs), polling `Exios66/llm-dojo-scoring` releases/latest.
-3. When the pin is behind, the workflow opens (or updates) a PR on `cursor/bump-dojo-scoring-<tag>` that rewrites `pyproject.toml` plus the documented pin references. Merge after CI is green.
+3. When the pin is behind, the workflow opens (or updates) a PR on `cursor/bump-dojo-scoring-<tag>` that rewrites `pyproject.toml` plus the documented pin references. When the pin is already the release's commit but the release rows are stale (`--check` prints `release_metadata_stale=true`), the same PR only rewrites those docs and keeps the SHA pin. Merge after CI is green.
 
 > The hub reads only its root `.github/workflows/`; nested package workflows do not run there. Author a release-time dojo pin update in this standalone source using `src/scripts/bump_dojo_scoring.py --check/--apply`, test and merge it to this repo's `main`, then import the committed change with `sync_packages.py pull`.
 
