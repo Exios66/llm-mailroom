@@ -857,7 +857,15 @@ def _verify_unified(
     truncated: list[str],
     matter_id: Any,
     attempts_available: bool = True,
+    addenda_available: bool = True,
 ) -> dict[str, Any]:
+    """Verify one unified record.
+
+    ``attempts_available`` / ``addenda_available`` say whether the tables exist,
+    which is not the same as the rows read being empty: an absent table cannot
+    account for sub-rows the main row never lists, so the record is at best
+    ``unverified``, never ``verified``.
+    """
     failures: list[dict[str, Any]] = []
     notes: list[str] = []
     checked = {"main": 0, "attempts": 0, "addenda": 0, "legacy": 0}
@@ -941,6 +949,8 @@ def _verify_unified(
         )
     if row is not None:
         notes.append("addenda: per-document chain from the row hash with contiguous seq from 1")
+    if not addenda_available:
+        notes.append("the addenda table is not stored in this schema; addenda are not verified")
 
     if "attempts" in truncated:
         notes.append("attempt sub-rows exceed the bounded read; they are not verified")
@@ -974,6 +984,8 @@ def _verify_unified(
 
     if failures:
         status = "failed"
+    elif not attempts_available or not addenda_available:
+        status = "unverified"
     elif not attempts_verified and bool(attempts or _lists_attempts(parents)):
         status = "unverified"
     else:
@@ -1702,6 +1714,7 @@ def _read_unified(
         truncated=truncated,
         matter_id=matter_id,
         attempts_available="audit_attempts" in tables,
+        addenda_available="audit_addenda" in tables,
     )
     if foreign_unlisted:
         payload["verification"]["notes"].append(
