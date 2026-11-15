@@ -88,8 +88,13 @@ def specialist_sha256(agent_name: str) -> str:
 def verify_specialist_pins() -> None:
     """Resolve every specialist pin now; raise one :class:`SpecialistPinError` listing all failures.
 
-    Called when the graph is built, so a Dojo pin that cannot serve the frozen prompts
-    stops the process at startup instead of on the first extracted document.
+    Called at API lifespan startup (``api.main.lifespan``, before any watcher starts),
+    at the top of ``pipeline.watcher.Watcher.start`` (so the embedded watcher and
+    ``python -m pipeline.watcher`` both stop before taking the lock or scanning the
+    inbox) and in ``graph.build_graph.build_graph``. A Dojo pin that cannot serve the
+    frozen prompts therefore stops the process at startup instead of failing every
+    document on its first extraction. A process that only imports the graph (a script
+    or notebook) is covered by the ``build_graph`` call alone.
     """
     failures: list[str] = []
     for agent in SPECIALIST_AGENTS:

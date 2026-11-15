@@ -95,6 +95,11 @@ def _embed_watcher_running() -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _embedded_watcher
+    # Refuse to start (and to accept uploads) on a Dojo pin that cannot serve the
+    # frozen specialist prompts: raises SpecialistPinError before any watcher starts.
+    from llm.frozen_v1 import verify_specialist_pins
+
+    verify_specialist_pins()
     _ensure_dirs()
     watcher = None
     from pipeline.watcher import Watcher, WatcherLockHeld, embed_watcher_enabled
