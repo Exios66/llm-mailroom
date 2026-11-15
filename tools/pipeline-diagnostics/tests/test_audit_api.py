@@ -2023,3 +2023,23 @@ def test_parent_reference_disagreeing_with_the_sub_row_fails(client, tmp_path, m
     } in verification["failures"]
     # Both rows hash correctly on their own; only the cross-check sees the lie.
     assert not any(failure["reason"] == "hash-mismatch" for failure in verification["failures"])
+
+
+@pytest.mark.parametrize("table", ["audit_attempts", "audit_addenda"])
+def test_legacy_only_document_with_a_missing_subrow_table_is_never_verified(
+    client, make_store, monkeypatch, table
+):
+    # Without the table the orphan check cannot run, so a valid legacy chain
+    # alone cannot rule out sub-rows whose terminal row is gone.
+    _fake_foundation(monkeypatch)
+    db = make_store("unified")
+    _exec(db, "DELETE FROM audit_log WHERE doc_id = ?", (LEGACY_DOC,))
+    _exec(db, "DELETE FROM audit_attempts WHERE doc_id = ?", (LEGACY_DOC,))
+    _exec(db, f"DROP TABLE {table}")
+
+    payload = client.get(f"/v1/diagnostics/audit/documents/{LEGACY_DOC}").json()
+    assert payload["record"]["state"] == "legacy-events"
+    verification = payload["verification"]
+    assert verification["status"] == "unverified"
+    assert not verification["failures"]
+    assert any(table in note for note in verification["notes"])

@@ -1629,6 +1629,14 @@ def _read_unified(
             verification["notes"].append(
                 "sub-rows exist without a terminal row; the legacy section alone cannot account for them"
             )
+        missing = [name for name in ("audit_attempts", "audit_addenda") if name not in tables]
+        if missing and verification["status"] == "verified":
+            # Without the table the orphan check above could not run, so a valid
+            # legacy chain cannot rule out sub-rows whose terminal row is gone.
+            verification["status"] = "unverified"
+            verification["notes"].append(
+                f"{', '.join(missing)} missing from the store; orphan sub-rows cannot be ruled out"
+            )
         payload["verification"] = verification
         return
     if len(rows) > 1:
