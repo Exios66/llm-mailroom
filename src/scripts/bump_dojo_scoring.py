@@ -536,9 +536,9 @@ def main(argv: list[str] | None = None) -> int:
     prose) would still change files. ``--apply`` resolves release tags to commit
     pins and writes recognized pin files unless ``--dry-run`` is set; at the
     release's commit it keeps the SHA and only rewrites that metadata, returning
-    0. Return 1 for a
-    missing release, a target SHA absent from the latest release, a refused
-    SHA downgrade, or no changes when the pins differ; otherwise return 0.
+    0. Return 1 for a missing release, a target SHA absent from the latest
+    release, a refused SHA downgrade, or no changes when the pins differ;
+    otherwise return 0.
     ``--allow-missing-release`` skips the release-existence
     check and the SHA ancestry guard, but refuses to replace an immutable SHA
     pin with a movable tag, and refuses any tag target on --apply, because it
@@ -553,7 +553,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument(
         "--check",
         action="store_true",
-        help="exit 0 if current pin equals desired tag; else exit 2 and print both",
+        help="exit 0 if the pin is up to date; exit 2 if it is behind the desired tag, or is the release commit with stale release rows",
     )
     mode.add_argument(
         "--apply",
