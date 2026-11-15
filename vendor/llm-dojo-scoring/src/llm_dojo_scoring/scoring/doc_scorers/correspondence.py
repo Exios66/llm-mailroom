@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 from ...schemas.corpus import DOC_TYPE_SUBCLASSES
 from ..content_scoring import score_correspondence_content
+from ..suites import _labelled_label_pairs
 from .base import TypeScorer
 
 #: Scalar keys this module adds to the payload (the nested topic/sentiment dicts stay out).
@@ -35,16 +36,18 @@ class CorrespondenceScorer(TypeScorer):
         subclass: str | None,
         doc_text: str | None,
     ) -> dict[str, Any]:
-        """Topic / sentiment scores when either side carries the label; else ``{}``."""
+        """Topic / sentiment scores for each labelled expected label; else ``{}``."""
         kwargs: dict[str, Any] = {}
         for label, exp_kw, pred_kw in (
             ("content_topic", "expected_topic", "predicted_topic"),
             ("sentiment_label", "expected_sentiment", "predicted_sentiment"),
         ):
-            exp, pred = raw_expected.get(label), predicted.get(label)
-            if exp is not None or pred is not None:
-                kwargs[exp_kw] = exp if exp is not None else ""
-                kwargs[pred_kw] = pred if pred is not None else ""
+            # A blank expected label (``""``, ``None``, the literal ``"nan"``) is not
+            # ground truth: the suite drops it, so this scorer does too.
+            exp, pred = _labelled_label_pairs(raw_expected.get(label), predicted.get(label))
+            if exp is not None:
+                kwargs[exp_kw] = exp
+                kwargs[pred_kw] = pred
         if not kwargs:
             return {}
         out = score_correspondence_content(**kwargs)
