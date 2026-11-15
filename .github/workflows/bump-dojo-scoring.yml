@@ -82,7 +82,8 @@ jobs:
           python src/scripts/bump_dojo_scoring.py --check --tag "${{ steps.target.outputs.tag }}"
           code=$?
           set -e
-          # --check exits 0 when current == target, 2 when behind
+          # --check exits 0 when current == target, 2 when behind or when the pin
+          # is already the release's commit but release metadata (docs rows) is stale
           if [ "${code}" -eq 0 ]; then
             echo "needs_bump=false" >> "$GITHUB_OUTPUT"
             echo "Already on ${{ steps.target.outputs.tag }}."

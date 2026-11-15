@@ -369,16 +369,17 @@ def test_release_commit_resolves_tag_to_commit(monkeypatch):
 def test_main_keeps_sha_pin_that_is_the_release_commit(monkeypatch, capsys):
     """An immutable SHA pin at the release commit is already up to date.
 
-    The pin is never rewritten to the tag name: ``--check`` writes nothing at all,
-    and ``--apply`` may only re-run the release-metadata rewrite with the current
-    SHA as the pin and the tag as the release label.
+    The pin is never rewritten to the tag name: ``apply_pin`` is only ever called with
+    the current SHA as the pin and the tag as the release label, read-only
+    (``dry_run=True``) for ``--check``. With no stale release metadata, ``--check``
+    exits 0.
     """
-    calls: list[tuple[tuple, dict]] = []
+    calls: list[dict] = []
 
     def fake_apply_pin(*args, **kwargs):
         assert args == (SHA,), "the pin must stay the current commit, never the tag"
         assert kwargs["release"] == "v0.24.2"
-        calls.append((args, kwargs))
+        calls.append(kwargs)
         return []
 
     monkeypatch.setattr(B, "current_pin", lambda root=B.REPO_ROOT: SHA)
@@ -388,12 +389,13 @@ def test_main_keeps_sha_pin_that_is_the_release_commit(monkeypatch, capsys):
     monkeypatch.setattr(B, "apply_pin", fake_apply_pin)
 
     assert B.main(["--check", "--tag", "v0.24.2"]) == 0
-    assert calls == [], "--check must stay read-only"
+    assert [c["dry_run"] for c in calls] == [True], "--check must stay read-only"
     assert B.main(["--apply", "--tag", "v0.24.2"]) == 0
-    assert len(calls) == 1
+    assert [c["dry_run"] for c in calls] == [True, False]
     out = capsys.readouterr().out
-    assert "immutable_pin=true" in out
-    assert "up_to_date=true" in out
+    assert out.count("immutable_pin=true") == 2
+    assert out.count("up_to_date=true") == 2
+    assert "up_to_date=false" not in out
 
 
 STAGED_ROWS = {
@@ -459,21 +461,42 @@ def test_main_apply_advances_release_rows_when_the_tag_lands_on_the_pinned_commi
     assert "changed=0" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "args",
-    [["--apply", "--dry-run", "--tag", "v0.30.0"], ["--check", "--tag", "v0.30.0"]],
-    ids=["dry-run", "check"],
-)
-def test_main_same_commit_release_writes_nothing_in_dry_run_and_check(staged_release_cli, args, capsys):
+def test_main_apply_dry_run_on_the_pinned_release_commit_writes_nothing(staged_release_cli, capsys):
     before = _staged_snapshot(staged_release_cli)
-    assert B.main(args) == 0
+    assert B.main(["--apply", "--dry-run", "--tag", "v0.30.0"]) == 0
     assert _staged_snapshot(staged_release_cli) == before
     out = capsys.readouterr().out
+    assert "changed=3 dry_run=True" in out and "up_to_date=true" in out
+
+
+def test_main_check_reports_stale_release_metadata_without_writing(staged_release_cli, capsys):
+    """The daily workflow runs --apply only when --check is non-zero, so stale rows must say so."""
+    before = _staged_snapshot(staged_release_cli)
+
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 2
+
+    assert _staged_snapshot(staged_release_cli) == before
+    assert B.apply_pin.call_args_list
+    for call in B.apply_pin.call_args_list:
+        assert call.args == (SHA,) and call.kwargs == {"dry_run": True, "release": "v0.30.0"}
+    out = capsys.readouterr().out
+    assert "immutable_pin=true" in out
+    assert "release_metadata_stale=true" in out
+    assert "up_to_date=false" in out and "up_to_date=true" not in out
+    stale = sorted(line.split("=", 1)[1] for line in out.splitlines() if line.startswith("stale="))
+    assert stale == ["README.md", "docs/sister-repos.md", "docs/wiki/Home.md"]
+
+
+def test_main_check_is_up_to_date_once_apply_has_rewritten_the_release_metadata(
+    staged_release_cli, capsys
+):
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 2
+    assert B.main(["--apply", "--tag", "v0.30.0"]) == 0
+    capsys.readouterr()
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 0
+    out = capsys.readouterr().out
     assert "up_to_date=true" in out
-    if "--check" in args:
-        B.apply_pin.assert_not_called()
-    else:
-        assert "changed=3 dry_run=True" in out
+    assert "release_metadata_stale" not in out and "stale=" not in out
 
 
 def test_allow_missing_release_cannot_replace_immutable_sha_with_tag(monkeypatch, capsys):
