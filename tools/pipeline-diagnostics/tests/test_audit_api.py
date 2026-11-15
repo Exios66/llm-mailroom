@@ -1852,3 +1852,27 @@ def test_query_failure_note_is_truthful_and_leaks_no_detail(client, monkeypatch)
     assert detail["verification"]["status"] == "unavailable"
     assert "server log" not in detail_text
     assert "secret-dsn" not in detail_text
+
+
+# ---------------------------------------------------------------------------
+# R3 regressions (bot review of the audit workbench).
+# ---------------------------------------------------------------------------
+
+
+def test_seeder_never_overwrites_a_symlinked_configured_store(tmp_path, monkeypatch):
+    """``$MAILROOM_BASE_DIR/mailroom.db`` may be a symlink to the real store."""
+    from mailroom_diagnostics.seed_audit_demo import seed
+
+    live = tmp_path / "live" / "mailroom.db"
+    seed(live, schema="event-chain")
+    base = tmp_path / "base"
+    base.mkdir()
+    (base / "mailroom.db").symlink_to(live)
+    monkeypatch.setenv("MAILROOM_BASE_DIR", str(base))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    with pytest.raises(SystemExit):
+        seed(live, schema="event-chain", force=True)
+    assert live.is_file(), "--force must not delete the store the base directory points at"
+    with sqlite3.connect(live) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0] > 0

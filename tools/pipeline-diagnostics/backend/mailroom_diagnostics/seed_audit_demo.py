@@ -391,7 +391,7 @@ def _prepare(db_path: Path, *, force: bool) -> None:
     if target.name != "mailroom.db":
         raise SystemExit("refusing to seed: the file must be named mailroom.db")
     for protected in _configured_targets():
-        if target == protected:
+        if target == protected.resolve():
             raise SystemExit(
                 "refusing to seed the configured audit store (MAILROOM_BASE_DIR or "
                 "DATABASE_URL); pass a temporary --out directory"
