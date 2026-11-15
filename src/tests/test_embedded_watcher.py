@@ -128,10 +128,12 @@ def test_api_lifespan_refuses_to_start_when_a_specialist_pin_is_broken(
 
 
 def test_api_lifespan_refuses_a_broken_pin_without_an_embedded_watcher(
-    reload_api, broken_specialist_pin
+    monkeypatch, reload_api, broken_specialist_pin
 ):
     from pipeline.watcher import embed_watcher_enabled
 
+    # Explicit off: an inherited MAILROOM_EMBED_WATCHER=1 must not decide this test.
+    monkeypatch.setenv("MAILROOM_EMBED_WATCHER", "0")
     assert embed_watcher_enabled() is False
     with pytest.raises(broken_specialist_pin.SpecialistPinError):
         with TestClient(reload_api):
