@@ -37,7 +37,7 @@ def lineage() -> dict:
 #: Dojo catalog families searched for the pinned bytes, in order. Both are searched
 #: because the family that holds a given stem moves between Dojo releases (0.30.0:
 #: contracts and merger v1 left ``production`` but remain in ``production_prompts``;
-#: corporate v6 stays in ``production`` while ``production_prompts`` holds an
+#: corporate (catalog ``production/v1``, eval-environment v6) stays in ``production`` while ``production_prompts`` holds an
 #: unpromoted v7 candidate). The sha256 decides, never the family.
 CATALOG_FAMILIES: tuple[str, ...] = ("production", "production_prompts")
 
@@ -62,26 +62,31 @@ def load_specialist_v1(agent_name: str) -> str:
     try:
         pin = lineage()["specialists"][agent_name]
         expected, chars = pin["sha256"], pin["chars"]
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError, OSError, ValueError) as exc:
         raise SpecialistPinError(
             f"{agent_name}: lineage.json has no usable sha256/chars pin ({exc!r})"
         ) from exc
     try:
         from llm_dojo_scoring.prompts import list_prompts
-    except ImportError as exc:
+
+        candidates = [
+            (family, record)
+            for family in CATALOG_FAMILIES
+            for record in list_prompts(agent=agent_name, family=family)
+        ]
+    except Exception as exc:
         raise SpecialistPinError(
-            f"{agent_name}: the pinned llm-dojo-scoring prompt catalog does not import ({exc!r})"
+            f"{agent_name}: the pinned llm-dojo-scoring prompt catalog cannot be read ({exc!r})"
         ) from exc
-    for family in CATALOG_FAMILIES:
-        for record in list_prompts(agent=agent_name, family=family):
-            if record.kind != "llm" or _sha256(record.text) != expected:
-                continue
-            if len(record.text) != chars:
-                raise SpecialistPinError(
-                    f"{agent_name}: catalog record {family}/{record.version} matches the pinned "
-                    f"sha256 {expected} but has {len(record.text)} chars, lineage.json says {chars}"
-                )
-            return record.text
+    for family, record in candidates:
+        if record.kind != "llm" or not isinstance(record.text, str) or _sha256(record.text) != expected:
+            continue
+        if len(record.text) != chars:
+            raise SpecialistPinError(
+                f"{agent_name}: catalog record {family}/{record.version} matches the pinned "
+                f"sha256 {expected} but has {len(record.text)} chars, lineage.json says {chars}"
+            )
+        return record.text
     raise SpecialistPinError(
         f"{agent_name}: no prompt in the pinned llm-dojo-scoring catalog hashes to the "
         f"lineage.json sha256 {expected} (families searched: {', '.join(CATALOG_FAMILIES)}). "

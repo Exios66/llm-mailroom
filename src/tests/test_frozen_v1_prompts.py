@@ -204,6 +204,34 @@ def test_a_missing_lineage_entry_is_a_pin_error_and_is_aggregated(monkeypatch):
         load_specialist_v1.cache_clear()
 
 
+def test_an_unreadable_lineage_or_catalog_is_a_pin_error(monkeypatch):
+    import pytest
+
+    import llm_dojo_scoring.prompts as dojo_prompts
+    from llm import frozen_v1 as F
+
+    def unreadable():
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setattr(F, "lineage", unreadable)
+    load_specialist_v1.cache_clear()
+    try:
+        with pytest.raises(F.SpecialistPinError, match="lineage.json has no usable"):
+            F.verify_specialist_pins()
+        monkeypatch.undo()
+
+        def broken_catalog(**_kwargs):
+            raise ValueError("unknown prompt family")
+
+        monkeypatch.setattr(dojo_prompts, "list_prompts", broken_catalog)
+        load_specialist_v1.cache_clear()
+        with pytest.raises(F.SpecialistPinError, match="prompt catalog cannot be read"):
+            F.verify_specialist_pins()
+    finally:
+        monkeypatch.undo()
+        load_specialist_v1.cache_clear()
+
+
 def test_verify_specialist_pins_reports_every_unresolvable_agent(monkeypatch):
     import pytest
 
