@@ -15,7 +15,7 @@ for the LangGraph `extract` / `retry_extract` nodes.
 Source: the pinned `llm-dojo-scoring` prompt catalog. The version is pinned **by
 content**: `__init__.py` serves the catalog record (families `production`, then
 `production_prompts`) whose text hashes to the `lineage.json` sha256, and raises
-`SpecialistPinError` when none does (also checked when the graph is built). A Dojo bump
+`SpecialistPinError` when none does. `verify_specialist_pins()` runs that check at API startup (`api.main.lifespan`), at the top of `Watcher.start()` (the embedded watcher and `python -m pipeline.watcher`) and in `build_graph()`, so a broken pin stops the process before any document is accepted. A Dojo bump
 therefore never changes the served prompt: as of Dojo 0.30.0 the `production` family
 moved contracts and merger to v2, which the pipeline does **not** serve; their pinned v1
 bytes are served from `production_prompts`. Originally frozen
