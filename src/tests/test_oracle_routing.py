@@ -307,3 +307,14 @@ def test_no_warning_without_oracle_routing(monkeypatch, tmp_path, temp_base_dir)
     monkeypatch.setattr(bg, "_ORACLE_ROUTING_WARNED", set())
     _traced_metadata(monkeypatch, tmp_path, ground_truth=GT_CLASS)
     assert "oracle_routing_enabled" not in seen
+
+
+def test_warn_once_registry_is_bounded(monkeypatch):
+    """Round-2 review: a long-lived watcher gets a fresh run_id per run; the
+    warn-once registry must not grow without bound."""
+    import graph.build_graph as bg
+
+    monkeypatch.setattr(bg, "_ORACLE_ROUTING_WARNED", set())
+    for i in range(bg._ORACLE_ROUTING_WARNED_MAX * 3):
+        bg._warn_oracle_routing_once(f"run-{i}")
+    assert len(bg._ORACLE_ROUTING_WARNED) <= bg._ORACLE_ROUTING_WARNED_MAX
