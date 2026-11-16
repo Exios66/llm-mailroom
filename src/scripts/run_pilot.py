@@ -81,6 +81,7 @@ import observability.scoring_wiring  # noqa: F401,E402
 # so a live run can never silently execute against fake credentials.
 
 from scripts.prepare_samples import is_real_sample, prepare_samples  # noqa: E402
+from pipeline.config import oracle_routing_enabled  # noqa: E402
 from schemas.documents import get_extraction_schema  # noqa: E402
 
 MANIFEST = REPO_ROOT / "docs" / "examples" / "samples" / "manifest.csv"
@@ -1102,6 +1103,7 @@ def main(argv: list[str] | None = None) -> int:
         "run_id": run_id,
         "session_id": session_id,
         "mode": "mock" if mock_mode else "real",
+        "oracle_routing": oracle_routing_enabled(),  # #207: True = routing read ground truth
         "scores_enabled": scores_enabled,
         "prices": {"source": "openrouter_live" if _prices else "fallback_estimates"},
         "summary": summary,
