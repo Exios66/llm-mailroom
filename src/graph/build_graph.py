@@ -1321,9 +1321,10 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     confidence becomes None, and a guard exception is an absent answer; both
     park. Oversized confidences and cutoffs also park. The sorter's label and
     confidence are kept unless the decision accepts, and
-    ``escalation_reason`` uses structured fields rather than model text. A
-    non-transient backend error also records ``error_message`` (exception class
-    and the first 200 characters) beside ``reviewer_unavailable``, so it is not
+    ``escalation_reason`` uses structured fields rather than model text, except
+    that a non-transient backend error appends its exception class and the
+    first 200 characters of its message. That error is also recorded as
+    ``error_message`` beside ``reviewer_unavailable``, so it is not
     mistaken for a reviewer that answered nothing; it never sets
     ``transient_error``.
     Configuration loading errors propagate.
