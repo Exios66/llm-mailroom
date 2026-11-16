@@ -65,7 +65,8 @@ class DocumentManifest(BaseModel):
     # the model said BEFORE the override, reviewer, UTC time, notes). None when
     # no human resolved the document. ``reject_reason`` is the enum-ish token
     # chosen on a rejection; ``file_location`` records where the file actually
-    # sits after a rejection (the review bin when the move to failed/ failed).
+    # sits after a rejection (the review bin when the move to failed/ failed)
+    # or after archiving (the collision-safe archive name, #250).
     extraction_source: str | None = None
     human_label: dict | None = None
     reject_reason: str | None = None

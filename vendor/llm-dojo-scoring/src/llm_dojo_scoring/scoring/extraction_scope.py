@@ -18,109 +18,17 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-# Live extraction keys that the class suite scores. Keep in lockstep with
-# vendored ``schemas.documents`` / ``langchain_agents.specialist_agents`` for
-# the five live classes; as of 0.28.0 each set equals the keys of dojo
-# ``DEFAULT_FIELD_TYPES`` for its class (tests pin it). Trace-only keys
-# (``reasoning``, ``confidence``) are never scoring events.
+from ..schemas import doc_classes
+
+# Live extraction keys that the class suite scores: for each of the five live
+# classes, exactly the fields of ``schemas/doc_classes.py`` (edit the registry,
+# not this table). Keep in lockstep with vendored ``schemas.documents`` /
+# ``langchain_agents.specialist_agents``. The contract's v1 parse-compat
+# ``merger_consideration`` / ``maud_clauses`` are not in its registry fields, so
+# scoping drops them. Trace-only keys (``reasoning``, ``confidence``) are never
+# scoring events.
 LIVE_SCHEMA_FIELDS: dict[str, frozenset[str]] = {
-    # v2 schemas (0.28.0, mailroom-dataset v10). The contract's v1 parse-compat
-    # ``merger_consideration`` / ``maud_clauses`` are not scored, so scoping drops them.
-    "contract": frozenset(
-        {
-            "document_name",
-            "parties",
-            "party_roles",
-            "signatories",
-            "agreement_date",
-            "effective_date",
-            "expiration_date",
-            "term_length",
-            "renewal_terms",
-            "termination_notice_period",
-            "governing_law",
-            "dispute_forum",
-            "contract_value",
-            "payment_terms",
-            "territory",
-            "cuad_family",
-            "cuad_clauses",
-        }
-    ),
-    "merger_agreement": frozenset(
-        {
-            "document_name",
-            "parties",
-            "acquirer",
-            "target",
-            "merger_sub",
-            "signatories",
-            "effective_date",
-            "effective_time",
-            "governing_law",
-            "per_share_cash_amount",
-            "exchange_ratio",
-            "target_termination_fee",
-            "parent_termination_fee",
-            "outside_date",
-            "financial_advisors",
-            "legal_counsel",
-            "merger_consideration",
-            "maud_clauses",
-            "intent",
-            "subject_matter",
-            "keywords",
-        }
-    ),
-    "corporate_record": frozenset(
-        {
-            "entity_name",
-            "record_type",
-            "effective_date",
-            "signatories",
-            "jurisdiction",
-            "filing_number",
-            "intent",
-            "subject_matter",
-            "keywords",
-        }
-    ),
-    "correspondence": frozenset(
-        {
-            "sender",
-            "recipient",
-            "additional_recipients",
-            "communication_type",
-            "communication_date",
-            "demand_amount",
-            "action_items",
-            "urgency",
-            "intent",
-            "subject_matter",
-            "keywords",
-        }
-    ),
-    "insurance_claim": frozenset(
-        {
-            "claim_number",
-            "policy_number",
-            "insurer",
-            "insured_party",
-            "claim_type",
-            "date_of_loss",
-            "date_filed",
-            "claimed_amount",
-            "adjuster",
-            "damages_description",
-            "coverage_determination",
-            "denial_reasons",
-            "supporting_documents",
-            "intent",
-            "subject_matter",
-            "keywords",
-            "claim_checklist",
-        }
-    ),
+    key: frozenset(doc_classes.field_names(key)) for key in doc_classes.LIVE_DOC_TYPES
 }
 
 # Corpus differentiators scored as content extras, not extraction fields.
@@ -196,6 +104,10 @@ def _allowed_fields(doc_type: str) -> frozenset[str] | None:
 
         extensions = {e.key for schema in SUBCLASS_SCHEMAS.values() for e in schema.entities}
         return frozenset(allowed or ()) | extensions
+    if resolved == "insurance_claim" and allowed is not None:
+        # The CMS-row marker is not a registry field, but a prediction that states a
+        # table must reach the scorer, which scores it against the subclass (#132).
+        return allowed | {"cms_source_table"}
     return allowed
 
 

@@ -234,3 +234,68 @@ def test_crash_recovery_injects_a_crash_at_every_point(tmp_path):
     out = _run("--scenarios", "crash_recovery", "--crash-docs-per-point", "1", tmp_path=tmp_path)
     assert "GATE crash_injected PASS" in out.stdout, out.stdout[-1500:] + out.stderr[-1500:]
     assert "GATE scenario_error PASS" in out.stdout
+
+
+def test_worker_env_drops_every_provider_secret(st, monkeypatch, tmp_path):
+    """#251: OPENAI_API_KEY (read by langchain_agents) and the other provider keys
+    must not reach a stress worker, listed or not."""
+    leaked = {
+        "OPENAI_API_KEY": "sk-leak",
+        "ANTHROPIC_API_KEY": "sk-ant-leak",
+        "HF_TOKEN": "hf_leak",
+        "LITELLM_MASTER_KEY": "sk-lite",
+        "MAILROOM_API_TOKEN": "tok",
+        "TWILIO_AUTH_TOKEN": "tw",
+        "NEWPROVIDER_API_KEY": "future-provider",  # not listed: caught by the suffix rule
+    }
+    for key, value in leaked.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("MAILROOM_KEEP_ME", "1")
+    env = st._worker_env(str(tmp_path), "CRITICAL")
+    assert not (set(leaked) & set(env))
+    assert not any(value in env.values() for value in leaked.values())
+    assert env["OPENROUTER_API_KEY"] == "test-key-not-real"  # the harness's own dummy key
+    assert env["MAILROOM_KEEP_ME"] == "1"
+
+
+def test_worker_env_blanks_secrets_the_dotenv_would_restore(st, monkeypatch, tmp_path):
+    """#251: workers call load_env(override=False), which re-reads .env. A secret the
+    file defines must be pinned to "" so the worker cannot pick it up again."""
+    from pipeline.env import load_env
+
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("OPENAI_API_KEY=sk-from-dotenv\nNEWPROVIDER_API_KEY=np\nMAILROOM_SAFE=1\n")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("NEWPROVIDER_API_KEY", raising=False)
+    env = st._worker_env(str(tmp_path / "base"), "CRITICAL", dotenv_path=dotenv)
+    assert env["OPENAI_API_KEY"] == "" and env["NEWPROVIDER_API_KEY"] == ""
+    assert "MAILROOM_SAFE" not in env  # non-secret .env values are left to load_env
+    assert env["OPENROUTER_API_KEY"] == "test-key-not-real"
+    # What the worker would see after its own load_env() call:
+    for key in ("OPENAI_API_KEY", "NEWPROVIDER_API_KEY", "MAILROOM_SAFE"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    load_env(dotenv)
+    import os
+
+    assert os.environ["OPENAI_API_KEY"] == "" and os.environ["NEWPROVIDER_API_KEY"] == ""
+    assert os.environ["MAILROOM_SAFE"] == "1"
+
+
+def test_supports_cap_env_probes_behavior_not_watcher_source(st, monkeypatch):
+    """#251: MAILROOM_MAX_CONCURRENT_DOCS is read in pipeline/config.py, so a grep of the
+    watcher module's source never finds it."""
+    from pipeline import watcher
+
+    monkeypatch.setenv("MAILROOM_MAX_CONCURRENT_DOCS", "3")
+    assert st._supports_cap_env(watcher) is True
+    assert os.environ["MAILROOM_MAX_CONCURRENT_DOCS"] == "3"  # restored
+    assert st._supports_cap_env(SimpleNamespace()) is False  # an older checkout without the getter
+
+
+def test_bedrock_bearer_token_is_treated_as_a_secret():
+    """PR #252 review: the name matches no suffix rule, so it is listed explicitly."""
+    from scripts import stress_test
+
+    assert stress_test._is_secret_env("AWS_BEARER_TOKEN_BEDROCK")

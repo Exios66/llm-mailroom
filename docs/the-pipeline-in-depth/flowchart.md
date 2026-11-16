@@ -109,8 +109,8 @@ flowchart TD
     N_RETRY_EXTRACT -. "transient" .-> N_RETRY_EXTRACT
     N_RETRY_EXTRACT -- "schema invalid, hollow, coverage below floor,<br/>or confidence below low; attempts within retry_max" --> N_RETRY_EXTRACT
     N_RETRY_EXTRACT -- "conflict_detected" --> N_BOSS
-    N_RETRY_EXTRACT -- "judge gate engaged" --> N_JUDGE
-    N_RETRY_EXTRACT -- "confidence at or above low,<br/>judge gate not engaged" --> N_REPORT
+    N_RETRY_EXTRACT -- "judge gate engaged, or an earlier attempt was judged<br/>(judge_rejudge_retry on, passes left)" --> N_JUDGE
+    N_RETRY_EXTRACT -- "confidence at or above low,<br/>judge gate not engaged, no re-judge due" --> N_REPORT
     N_RETRY_EXTRACT -- "unsupported, or retry budget spent" --> N_HUMAN
 
     %% ---------------- Quality and escalation ----------------
@@ -188,10 +188,10 @@ flowchart TD
 
 ### Things the chart compresses
 
-- **Router priority.** Each router checks its conditions in a fixed order and the first match wins. For `extract` and `retry_extract` the order in `after_extraction` is: transient error, unsupported type, conflict, schema invalid, hollow payload, ground-truth coverage below floor, then confidence. Only then does `after_extraction_gated` swap a `compile_report` result for `judge_verify` when `judge_gate` is true.
+- **Router priority.** Each router checks its conditions in a fixed order and the first match wins. For `extract` and `retry_extract` the order in `after_extraction` is: transient error, unsupported type, conflict, schema invalid, hollow payload, ground-truth coverage below floor, then confidence. Only then does `after_extraction_gated` swap a `compile_report` result for `judge_verify` when `judge_gate` is true. `after_retry_extraction_gated` also swaps it when `retry_rejudge_due` holds: an earlier attempt was judged, `judge_pass_count` is below `judge_max_passes` and `judge_rejudge_retry` is on (#241; off by default).
 - **`classify` medium band.** Since change L-9 in `routing.py`, a confidence in the band from `low` up to `high` goes to `retry_classify` first (while attempts are within `retry_max`), and only then to `review_classify`. Below `low` also goes to `retry_classify` while budget remains.
 - **Empty text.** If the document text is empty, `classify_node` sets `doc_type = unknown` and pushes `classification_attempts` past `retry_max`, so `after_classify` sends it straight to `human_review`.
-- **`judge_verify` can skip itself.** The node re-checks `judge_gate`. When the gate is off (for example an arbiter-approved re-extraction that came back with high confidence) it returns `judge_verdict = skipped`, which routes to `compile_report`.
+- **`judge_verify` can skip itself.** The node re-checks `judge_should_run` (`judge_gate`, `retry_rejudge_due`, or an unsure extraction whose retries are spent). When none holds it returns `judge_verdict = skipped`, which routes to `compile_report`. An arbiter-approved re-extraction that comes back with high confidence is judged again while passes remain only when `judge_rejudge_retry` is on; by default it archives unjudged.
 - **Interrupt pause.** `human_review` calls LangGraph `interrupt()`. The run stops there and `_execute_run` records it as a review park, not a failure. The approved/rejected edges only fire when someone resumes the paused thread (see [Human review resolve](#human-review-resolve)).
 - **Audit entries.** Besides the three drawn above, `_emit_stage_audit` writes `ingested` (in `intake`), `classified` (in `classify`), `extracted` (in `extract`), `arbiter_decided` (in `arbiter`) and `boss_adjudicated` (in `boss_escalation`). Every entry links to the previous one for the same `doc_id` by hash.
 - **Every node is bounded.** `_bounded` wraps each node, checks the run deadline and token budget, and touches a heartbeat on the catalog row before the node runs.
@@ -208,6 +208,7 @@ Values from the `confidence:` block of `src/config/taxonomy.yaml`. The per-class
 | `retry_max` | 2 | global | global | global | global | global |
 | `arbiter_retry_max` | 2 | global | global | global | global | global |
 | `judge_max_passes` | 3 | global | global | global | global | global |
+| `judge_rejudge_retry` | false | global | global | global | global | global |
 
 Notes:
 
