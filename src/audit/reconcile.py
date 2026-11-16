@@ -157,16 +157,30 @@ def _mark_partial(doc_id: str, copies: list[dict[str, Any]]) -> None:
     mark_manifest(doc_id, "pending_partial", refs)
 
 
-def _content_sha(detail: Any) -> str | None:
-    """Digest of what a run recorded, without the sub-row references and the repeat-write marker.
+def _content_sha(detail: Any, event: Any, sub_rows: Any) -> str | None:
+    """Digest of what a run recorded, without the row identities.
 
-    A live write and a parked copy of the same run differ in ``attempts`` (the sub-row hashes
-    cover each row's own id) and a ``resumed`` addendum adds ``event``; the rest is the run.
+    A live write and a parked copy of the same run differ in ``detail.attempts`` (the sub-row hashes
+    cover each row's own id) and a ``resumed`` addendum adds ``detail.event``, so those are not
+    compared as written. What the run recorded is still compared: the terminal ``event`` and each
+    attempt's contents (stage, number, trigger, outcome, times, detail) from ``sub_rows``, without the
+    attempt, parent and hash ids and without the ``original_attempt_id`` a repeat write adds.
     """
+    import json
+
     from audit.digests import detail_sha256
 
+    def attempt(sub: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **{k: sub.get(k) for k in ("stage", "attempt_no", "trigger", "outcome", "started_at", "ended_at")},
+            "detail": {k: v for k, v in (sub.get("detail") or {}).items() if k != "original_attempt_id"},
+        }
+
     try:
-        return detail_sha256({k: v for k, v in (detail or {}).items() if k not in ("attempts", "event")})
+        attempts = sorted((attempt(s) for s in sub_rows or []),
+                          key=lambda a: json.dumps(a, sort_keys=True, default=str))
+        body = {k: v for k, v in (detail or {}).items() if k not in ("attempts", "event", "recovered_from")}
+        return detail_sha256({"event": event, "detail": body, "attempts": attempts})
     except Exception:
         return None
 
@@ -182,14 +196,14 @@ def _present_shas(row: dict[str, Any]) -> set[str]:
 
     detail = row.get("detail") or {}
     note_recovered(detail)
-    out.add(_content_sha(detail))
+    out.add(_content_sha(detail, row.get("event"), row.get("sub_rows")))
     for add in row.get("addenda") or []:
         ad = add.get("detail") or {}
         note_recovered(ad)
         if add.get("kind") == "resumed":
-            out.add(_content_sha(ad))
+            out.add(_content_sha(ad, ad.get("event"), add.get("sub_rows")))
         elif add.get("kind") == "recovered_detail":
-            out.add(_content_sha(ad.get("detail")))
+            out.add(_content_sha(ad.get("detail"), row.get("event"), ad.get("sub_rows")))
     out.discard(None)
     return out
 
@@ -204,7 +218,7 @@ def _fresh(unique: list[dict[str, Any]], present: set[str]) -> list[dict[str, An
     out = []
     for c in unique:
         if c.get("complete", True):
-            spent = c["detail_sha256"] in present or _content_sha(c["detail"]) in present
+            spent = c["detail_sha256"] in present or _content_sha(c["detail"], c.get("event"), c.get("sub_rows")) in present
         else:
             full = c.get("full_detail_sha256")
             spent = c["detail_sha256"] in present or full in present or full in complete_shas
@@ -341,7 +355,7 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
     rest = [c for c in copies if not any(c is m for m in mine)]
     if dry_run:
         unique_rest = [c for c in unique if not any(c is m for m in mine)]
-        fresh = _fresh(unique_rest, {rec["detail_sha256"], _content_sha(rec["detail"])} - {None})
+        fresh = _fresh(unique_rest, {rec["detail_sha256"], _content_sha(rec["detail"], rec.get("event"), rec.get("sub_rows"))} - {None})
         for _ in fresh:
             report.resumed += 1
             report.docs.append({"doc_id": doc_id, "action": "resumed"})

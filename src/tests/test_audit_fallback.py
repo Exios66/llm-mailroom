@@ -905,3 +905,74 @@ async def test_a_resumed_addendum_recovered_from_a_sink_must_carry_its_digest(si
     await _forge("addendum", lambda d: d["recovered_from"].update(detail_sha256=""))
     report = await verify_audit_db()
     assert not report.ok and "recovered_detail_unbound" in _failure_kinds(report)
+
+
+# ---------------------------------------------------------------- reconcile keeps every distinct parked write (audit PR #239 review)
+
+
+def _repeat_of(doc_id="d-1", *, event="archived", outcome="ok"):
+    """A later terminal write whose ``detail`` is byte-for-byte the first write's.
+
+    Only the part ``_content_sha`` used to leave out differs: the terminal event, or the attempts' contents.
+    """
+    row = _row(doc_id)
+    row.event = event
+    row.attempts[0].outcome = outcome
+    return row
+
+
+async def _row_then_park(db_down, later):
+    """d-1 has a live row from ``_row()``; ``later`` fails 3x and parks. Return the manifest-marked outcome."""
+    from audit.row import mark_manifest
+    from audit.writer import commit_or_park
+
+    _save_manifest()
+    db_down[0] = None
+    first = await commit_or_park(_row())
+    assert first.status == "written"
+    mark_manifest("d-1", first.status, first.refs)
+    db_down[0] = RuntimeError("database is locked")
+    second = await commit_or_park(later)
+    assert second.status == "pending"
+    mark_manifest("d-1", second.status, second.refs)
+    db_down[0] = None
+
+
+async def test_reconcile_keeps_a_parked_write_whose_attempts_differ_from_the_row(sinks, db_down):
+    """Blocking: ``_content_sha`` ignored the attempts, so a write with other attempts was a "duplicate" and its copy deleted."""
+    from audit.reconcile import reconcile
+    from audit.verify import verify_audit_db
+    from audit.writer import get_row
+
+    await _row_then_park(db_down, _repeat_of(outcome="failed"))
+    report = await reconcile()
+    assert (report.resumed, report.skipped_existing) == (1, 0)
+    [add] = (await get_row("d-1"))["addenda"]
+    assert add["kind"] == "resumed" and [s["outcome"] for s in add["sub_rows"]] == ["failed"]
+    assert sinks[0].fetch_pending() == [] and _manifest().audit_written is True
+    assert (await verify_audit_db()).ok
+
+
+async def test_reconcile_keeps_a_parked_write_whose_terminal_event_differs_from_the_row(sinks, db_down):
+    """Blocking: ``_content_sha`` ignored the event, so ``triage_archived`` after ``archived`` (same detail) was dropped."""
+    from audit.reconcile import reconcile
+    from audit.writer import get_row
+
+    await _row_then_park(db_down, _repeat_of(event="triage_archived"))
+    report = await reconcile()
+    assert (report.resumed, report.skipped_existing) == (1, 0)
+    [add] = (await get_row("d-1"))["addenda"]
+    assert add["detail"]["event"] == "triage_archived"
+    assert sinks[0].fetch_pending() == []
+
+
+async def test_reconcile_still_drops_a_second_copy_of_the_same_run(sinks, db_down):
+    """The content match is for the SAME run parked again under a new entry id (a new digest): spent, not written twice."""
+    from audit.reconcile import reconcile
+    from audit.writer import get_row
+
+    await _row_then_park(db_down, _repeat_of())  # same event, same detail, same attempts as the live row
+    report = await reconcile()
+    assert (report.resumed, report.skipped_existing) == (0, 1)
+    assert (await get_row("d-1"))["addenda"] == []
+    assert sinks[0].fetch_pending() == []
