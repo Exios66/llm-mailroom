@@ -189,3 +189,43 @@ class TestHardFailEscalationCarriesMessage:
         reason = updates["escalation_reason"]
         assert "x" * 300 in reason
         assert "x" * 301 not in reason
+
+
+class TestCauseNeverReachesTheSender:
+    """Round-2 review: the ``[cause: …]`` audit suffix must not be echoed to the
+    external sender (exception text can carry paths, inputs, provider detail)."""
+
+    SECRET = "input_value='/home/svc/secret/key.txt' provider=OpenRouter sk-abc123"
+
+    def _manifest(self, stage):
+        return {
+            "doc_id": "c-1", "matter_id": "M", "original_filename": "c.txt", "stage": stage,
+            "escalation_reason": (
+                "classification failed (ValidationError) -- routing to human review "
+                f"[cause: 1 validation error ] {self.SECRET}]"
+            ),
+            "intake": {"source": "gmail", "message_id": "m", "sender": "a@example.com"},
+        }
+
+    @pytest.mark.parametrize("stage", ["review", "failed"])
+    def test_echo_text_and_html_drop_the_cause(self, stage):
+        from pipeline.gmail_intake import _digest_summary, build_echo_body, build_echo_html
+
+        manifest = self._manifest(stage)
+        body = build_echo_body(manifest, [], True)
+        html = build_echo_html(manifest, [], True)
+        digest = _digest_summary(manifest)
+        for rendered in (body, html, str(digest)):
+            assert "secret" not in rendered and "sk-abc123" not in rendered
+            assert "[cause:" not in rendered
+        assert "classification failed (ValidationError)" in body
+        assert digest["reason"].startswith("classification failed (ValidationError)")
+        # the manifest itself keeps the full audit text
+        assert self.SECRET in manifest["escalation_reason"]
+
+    def test_reason_without_a_cause_is_unchanged(self):
+        from pipeline.gmail_intake import _sender_reason
+
+        assert _sender_reason({"escalation_reason": "low confidence"}) == "low confidence"
+        assert _sender_reason({"error_message": "boom"}) == "boom"
+        assert _sender_reason({}) == ""
