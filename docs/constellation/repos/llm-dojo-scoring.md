@@ -6,7 +6,7 @@
 | :--- | :--- |
 | Repository | [Exios66/llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) |
 | Monorepo path | `packages/llm-dojo-scoring` |
-| Latest | v0.29.0 as of 2026-11-15, 0.30.0 staged and untagged (llm-mailroom pins c0f6cf42e48506b8cb9b930b6667a65fea3c1af7) |
+| Latest | v0.29.0 as of 2026-11-15, 0.30.0 staged and untagged (llm-mailroom pins 1dc9a09e42de88789723ffefbdc5f0ce52bc03dc) |
 | Used by | llm-mailroom, eval-environment, local-mailroom-sandbox |
 
 ## What it does
@@ -27,7 +27,7 @@ An optional embedding similarity "rescues" names and free text that are worded d
 ## Quick start
 
 ```bash
-pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@c0f6cf42e48506b8cb9b930b6667a65fea3c1af7"
+pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@1dc9a09e42de88789723ffefbdc5f0ce52bc03dc"
 pip install -e ".[embeddings]"   # optional extras: embeddings, tracing, dev, all
 ```
 

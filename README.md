@@ -13,7 +13,7 @@
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
 [![Release](https://img.shields.io/badge/release-v0.9.3-2EA043)](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.3)
-[![Dojo](https://img.shields.io/badge/dojo-c0f6cf4-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/c0f6cf42e48506b8cb9b930b6667a65fea3c1af7)
+[![Dojo](https://img.shields.io/badge/dojo-1dc9a09-6f42c1)](https://github.com/Exios66/llm-dojo-scoring/commit/1dc9a09e42de88789723ffefbdc5f0ce52bc03dc)
 [![Hub](https://img.shields.io/badge/🏛️_hub-Digital--Mailroom-000?style=flat-square)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
 [![Observatory](https://img.shields.io/badge/🤗_live_Observatory-Space-FFD21E?style=flat-square)](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory)
 [![Wiki](https://img.shields.io/badge/📖_wiki-deep_dives-555?style=flat-square)](https://github.com/Exios66/llm-mailroom/wiki)
@@ -73,7 +73,7 @@ executes it, [Dojo](https://github.com/Exios66/llm-dojo-scoring) scores it,
 and [The-Mailroom](https://github.com/Exios66/The-Mailroom) visualizes its
 Langfuse traces. The latest published pipeline release is
 [`v0.9.3`](https://github.com/Exios66/llm-mailroom/releases/tag/v0.9.3). The
-dependency badge reflects this checkout's Dojo pin, **c0f6cf4**.
+dependency badge reflects this checkout's Dojo pin, **1dc9a09**.
 
 <details>
 <summary><b>Meet Fumi and Hermes — the original mailroom artwork</b></summary>
