@@ -52,9 +52,9 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.hyperlink import Hyperlink
 
+from llm_dojo_scoring.schemas import doc_classes
 from llm_dojo_scoring.schemas.corporate_record_schema import (
     CORE_FIELDS,
-    DEFAULT_FIELD_TYPES,
     ENTITY_CORE_FIELDS,
     RECORD_TYPES,
     entity_field_types,
@@ -275,7 +275,7 @@ def class_columns(cls: str, sub: pd.DataFrame) -> list[tuple[str, str, str]]:
                     applicable = True
                     break
         if applicable:
-            types["filing_number"] = DEFAULT_FIELD_TYPES["corporate_record"]["filing_number"]
+            types["filing_number"] = doc_classes.field_types("corporate_record")["filing_number"]
         types = {**{f: types[f] for f in CORE_FIELDS if f in types}, **{k: v for k, v in types.items() if k not in CORE_FIELDS}}
         for subclass in subclasses:
             for name, ftype in entity_field_types(subclass).items():
