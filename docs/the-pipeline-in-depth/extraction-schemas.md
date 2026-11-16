@@ -333,8 +333,16 @@ When `chunking.enabled` is true and a document is longer than one window, the sp
 
 * list fields: union, with case- and whitespace-insensitive dedupe;
 * scalar fields: the first non-null value in document order wins;
-* `confidence`: the maximum across windows;
+* `confidence`: the minimum across windows (a document is only as reliable as its weakest window);
 * `reasoning`: entries dedupe by `field` (first witness wins) and summaries join in order.
+
+That is the default, `chunking.merge.policy: union`. It keeps every window's claims, so one window's wrong clause survives and an early window's guess beats the window that states the value (#255). `chunking.merge.policy: evidence` is an opt-in precision filter (set it globally, or per specialist under `chunking.merge.by_agent`), meant to be A/B-tested as a treatment:
+
+* list fields: an item is kept when the window that asserted it evidences it, or when at least `chunking.merge.min_windows` (default 2) windows assert it (same normalized dedupe). Evidence for an item is its own quote found verbatim in that window's text (the part after `<Category>:` for `cuad_clauses` and `claim_checklist`, the whole item for free-text lists; fragments under 12 characters are labels, not quotes) or a `reasoning` entry for that field whose quote and the item contain each other. The `reasoning` trace is per field (one entry per populated field), so a bare entry for a list field does not evidence its items; `maud_clauses` answers (`<Question>: <Answer>`) carry no quotable span, so they survive only through a reasoning quote or `min_windows`. Items that fail are removed from the list and recorded under `_unsupported_chunk_claims` (`{field: [items]}`), next to `_chunk_merge_policy: "evidence"`; no `_unsupported_chunk_claims` key is written when nothing was filtered. Both are `_` metadata keys, so `_clean_fields_for_judge` strips them: the judge scores completeness against the document and the retry loop is the recall path, so the filtered claims are for the reviewer and offline scoring, not judge input;
+* scalar fields: a null is never chosen. A window whose `reasoning` has an entry for the field wins over one without; then the higher window `confidence` (the whole window's, there is no per-field confidence); then document order. The winner's reasoning entry replaces the first-witness one;
+* `confidence` and the rest of the bookkeeping are unchanged.
+
+Only the contracts and merger specialists emit `reasoning`; the corporate, correspondence and insurance specialists have only the verbatim check and `min_windows`.
 
 A window that fails to parse is skipped. If every window fails, the result is `{"_parse_error": true}` plus `_n_chunks` and `_failed_chunks` (both the window count), so routing sees the lost windows and review records `chunk_failed`. Window sizes come from `chunking.chunk_chars` and `chunking.overlap_chars`, capped by the specialist's `max_input_chars`; see [Configuration](../pipeline-reference-llm-mailroom/configuration.md).
 
