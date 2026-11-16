@@ -2,7 +2,7 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `1dc9a09e42de88789723ffefbdc5f0ce52bc03dc` (untagged: the Dojo `v0.30.0` merge of PR #166, which adds the correspondence `production_prompts` v8 correction for llm-mailroom#269 on top of `13adc8e` with the #163 follow-ups; package bytes identical to `c0f6cf4`; no GitHub release exists yet)
+- Exact source commit: `116da0b0f5104165244ec9a4b7f068c1cf0048cf` (untagged: the Dojo `v0.30.0` merge of PR #169, which fixes llm-dojo-scoring#168 (a typed decision is never graded by an untyped score when its class is missing) on top of `1dc9a09`, the merge of PR #166 with the correspondence `production_prompts` v8 correction for llm-mailroom#269 and the #163 follow-ups; no GitHub release exists yet)
 - Source package version: `0.30.0` (`__version__` at that commit)
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
   That includes the package data `schemas/data/extraction_status.json`, `ml/data/ml_contract.json`
