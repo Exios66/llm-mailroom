@@ -68,6 +68,8 @@ def _set_test_env():
     # HUB-050 status channel OFF: no 🟢/🔴/🟠 status emails and no heartbeat
     # enrichment threads unless a case opts in explicitly (test_status_notify).
     os.environ["MAILROOM_WATCHER_STATUS"] = "0"
+    # #207: routing never reads ground_truth unless a test opts in (fixture below).
+    os.environ.pop("MAILROOM_ORACLE_ROUTING", None)
     os.environ["MAILROOM_WATCHDOG"] = "0"
     os.environ.pop("MAILROOM_STATUS_EMAIL", None)
     for k in ("LANGFUSE_SECRET_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_HOST",
@@ -80,6 +82,19 @@ def _set_test_env():
     reset_breaker()
     # Triage result cache (llm/result_cache.py) off unless a case opts in.
     os.environ["MAILROOM_LLM_CACHE"] = "0"
+
+
+@pytest.fixture
+def oracle_routing():
+    """Opt a test into oracle routing: the six GT-aware routing arms read ``ground_truth`` (#207).
+
+    Routing ignores ``ground_truth`` by default; a test that asserts GT-driven routing
+    must say so explicitly instead of inheriting it.
+    """
+    from pipeline.config import oracle_routing_override
+
+    with oracle_routing_override(True):
+        yield
 
 
 @pytest.fixture
