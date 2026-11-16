@@ -127,6 +127,44 @@ class TestDataLoaders:
         rows = lb_data.load_cuad_qa(10_000, seed=1, cuad_path=cuad_file, min_text_chars=10)
         assert len(rows) <= 6  # 2 contracts x 3 categories
 
+    def test_cuad_qa_honours_n_when_many_contracts_are_short(self, tmp_path: Path):
+        """#190: short-text contracts are filtered BEFORE sampling, so the
+        requested n is met whenever enough long-contract pairs exist."""
+
+        def contract(title: str, context: str) -> dict:
+            return {
+                "title": title,
+                "paragraphs": [
+                    {
+                        "context": context,
+                        "qas": [
+                            {
+                                "id": f"{title}__Cat{c}",
+                                "question": f"Highlight Cat{c}.",
+                                "answers": [],
+                                "is_impossible": True,
+                            }
+                            for c in range(2)
+                        ],
+                    }
+                ],
+            }
+
+        short = [contract(f"SHORT_{i:02d}", "tiny") for i in range(20)]
+        long_ = [contract(f"LONG_{i:02d}", "long contract text " * 20) for i in range(3)]
+        path = tmp_path / "CUAD_mixed.json"
+        path.write_text(json.dumps({"data": short + long_}), encoding="utf-8")
+
+        for seed in (1, 7, 42):
+            rows = lb_data.load_cuad_qa(6, seed=seed, cuad_path=path, min_text_chars=50)
+            assert len(rows) == 6, f"seed {seed}: n shrank to {len(rows)}"
+            assert all(r["contract_title"].startswith("LONG_") for r in rows)
+        # asking for more than exist still returns every long pair, no more
+        rows = lb_data.load_cuad_qa(100, seed=1, cuad_path=path, min_text_chars=50)
+        assert len(rows) == 6
+        # every contract short: nothing to return (unchanged behaviour)
+        assert lb_data.load_cuad_qa(5, seed=1, cuad_path=path, min_text_chars=10_000) == []
+
     def test_cuad_missing_raises(self, tmp_path: Path):
         with pytest.raises(lb_data.CorpusUnavailable):
             lb_data.load_cuad_qa(1, seed=1, cuad_path=tmp_path / "nope.json")

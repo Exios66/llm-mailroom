@@ -697,8 +697,32 @@ def _quarantine(
             errors.append(f"quarantine_label_failed:{uid}")
 
 
-def extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes]]:
-    """Filename + decoded-payload pairs for every named attachment."""
+def _nested_message_bytes(part: email.message.Message) -> bytes | None:
+    """Serialise the forwarded message inside a ``message/rfc822`` part, else None."""
+    if part.get_content_type() != "message/rfc822":
+        return None
+    nested = part.get_payload()
+    if not isinstance(nested, list) or not nested:
+        return None
+    try:
+        return nested[0].as_bytes()
+    except Exception:
+        logger.warning("gmail_attachment_rfc822_serialise_failed", exc_info=True)
+        return None
+
+
+def extract_attachments(
+    msg: email.message.Message, rejected: list[tuple[str, str]] | None = None
+) -> list[tuple[str, bytes]]:
+    """Filename + decoded-payload pairs for every named attachment.
+
+    ``get_payload(decode=True)`` is ``None`` for multipart and ``message/rfc822``
+    parts. A forwarded ``message/rfc822`` part is kept as the nested message's
+    bytes (the usual screening then judges its extension and size). Any other
+    named part without a body is logged and, when ``rejected`` is given,
+    recorded there as ``(filename, "payload")`` so the sender hears about it
+    (#189).
+    """
     attachments: list[tuple[str, bytes]] = []
     for part in msg.walk():
         filename = part.get_filename()
@@ -706,6 +730,15 @@ def extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes]]:
             continue
         payload = part.get_payload(decode=True)
         if payload is None:
+            payload = _nested_message_bytes(part)
+        if payload is None:
+            logger.warning(
+                "gmail_attachment_no_payload",
+                filename=filename,
+                content_type=part.get_content_type(),
+            )
+            if rejected is not None:
+                rejected.append((filename, "payload"))
             continue
         attachments.append((filename, payload))
     return attachments
@@ -853,6 +886,7 @@ _REJECT_SENTENCES = {
     "extension": "this file type is not accepted",
     "size": "the file is larger than the {max_mb} MB limit",
     "filename": "the attachment has no usable file name",
+    "payload": "the attachment had no readable content",
     "none": "the email had no attachment",
 }
 
@@ -1498,9 +1532,12 @@ def poll_once(
                     accepted, rejected = [], structure_rejects
                     report["prefiltered"] += 1
                 else:
+                    payload_rejects: list[tuple[str, str]] = []
                     accepted, rejected = _screen_attachments(
-                        extract_attachments(msg), cfg["max_attachment_bytes"]
+                        extract_attachments(msg, payload_rejects),
+                        cfg["max_attachment_bytes"],
                     )
+                    rejected = payload_rejects + rejected
                 for _name, reason in rejected:
                     if reason in ("extension", "filename"):
                         report["skipped_extension"] += 1
