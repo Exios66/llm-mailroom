@@ -83,7 +83,7 @@ def validate_completion(response) -> None:
     """Raise :class:`EmptyChoicesError` when ``response`` has no usable choice.
 
     Unusable means ``choices`` is ``None`` or an empty list/tuple, or the first
-    choice has an explicit ``message`` of ``None``. Anything else (including
+    choice has no ``message`` (absent or ``None``). Anything else (including
     objects without a ``choices`` attribute) is left to the caller.
     """
     choices = getattr(response, "choices", _MISSING)
@@ -95,7 +95,7 @@ def validate_completion(response) -> None:
     elif isinstance(choices, (list, tuple)):
         if not choices:
             problem = "choices is empty"
-        elif getattr(choices[0], "message", _MISSING) is None:
+        elif getattr(choices[0], "message", None) is None:
             problem = "first choice has no message"
     if problem is None:
         return
