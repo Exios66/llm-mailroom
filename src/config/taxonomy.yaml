@@ -180,7 +180,7 @@ run_limits:
 # documents are split on paragraph boundaries into overlapping windows,
 # each window extracted in its own call, and merged deterministically (list
 # fields union with normalized dedupe, scalars keep the first non-null value,
-# confidence takes the MIN across windows; a failed window caps it below the
+# confidence takes the MIN across windows, unless `merge.policy` says otherwise; a failed window caps it below the
 # class `low` threshold, a transient provider error is re-raised) — nothing is
 # truncated. Window size is capped at
 # the specialist's ``max_input_chars`` so a chunk is never silently truncated
@@ -191,6 +191,20 @@ chunking:
   enabled: true
   chunk_chars: 90000     # window size (chars); capped per-agent at max_input_chars
   overlap_chars: 8000    # trailing overlap so clauses crossing a cut are seen twice
+  # How the per-window results are merged (#255).
+  #   union    (default) every window's list items, first non-null scalar.
+  #   evidence (opt-in precision filter) a list item survives only when the window that
+  #            asserted it evidences it (its own quote found verbatim in that window, or a
+  #            reasoning entry for the field quoting it) or when `min_windows` windows
+  #            assert it; filtered items are recorded under `_unsupported_chunk_claims`,
+  #            never shown to the judge. A scalar comes from the window whose reasoning
+  #            evidences it, then the more confident window, then document order.
+  # `by_agent` overrides `policy` / `min_windows` per specialist (an agent key under `agents:`),
+  # e.g. `by_agent: {contracts_specialist: {policy: evidence}}`.
+  merge:
+    policy: union
+    min_windows: 2
+    by_agent: {}
 
 # Approximate per-1M-token pricing used for estimated_cost_usd scoring and
 # synced to the Langfuse model registry via scripts/sync_models.py.

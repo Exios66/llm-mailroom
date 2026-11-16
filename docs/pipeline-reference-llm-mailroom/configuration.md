@@ -12,7 +12,7 @@ Top-level keys:
 pipeline:                      # bins + pdf_direct_chars_per_page
 llm_retry:                     # transient-failure retry tuning
 run_limits:                    # per-run deadline / token budget
-chunking:                      # chunked-extraction windows
+chunking:                      # chunked-extraction windows and merge policy (merge.policy: union | evidence)
 cost_models:                   # per-1M-token pricing for estimated_cost_usd
 confidence:                    # routing thresholds (high/low/retry/bands)
 field_scoring:                 # deterministic field-type-aware scorer
