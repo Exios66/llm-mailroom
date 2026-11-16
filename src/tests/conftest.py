@@ -99,6 +99,7 @@ def oracle_routing():
 
 @pytest.fixture
 def temp_base_dir():
+    previous_base_dir = os.environ.get("MAILROOM_BASE_DIR")
     with tempfile.TemporaryDirectory() as tmpdir:
         os.environ["MAILROOM_BASE_DIR"] = tmpdir
         from pipeline.bins import (
@@ -121,7 +122,10 @@ def temp_base_dir():
         except Exception:
             pass
         yield Path(tmpdir)
-        os.environ.pop("MAILROOM_BASE_DIR", None)
+        if previous_base_dir is None:
+            os.environ.pop("MAILROOM_BASE_DIR", None)
+        else:
+            os.environ["MAILROOM_BASE_DIR"] = previous_base_dir
 
 
 @pytest.fixture
