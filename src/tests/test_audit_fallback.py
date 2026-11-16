@@ -1050,3 +1050,35 @@ async def test_a_complete_copy_arriving_after_a_decisions_only_repeat_write_is_r
     assert (await verify_audit_db()).ok
 
 
+async def test_closing_a_partial_gap_does_not_drop_a_later_write_from_the_same_batch(sinks, db_down):
+    """Major: a ``recovered_detail`` close deleted every copy of the document, including a different later write."""
+    from audit.reconcile import reconcile
+    from audit.row import mark_manifest
+    from audit.verify import verify_audit_db
+    from audit.writer import commit_or_park, get_row
+
+    small = FakeSink("small", max_payload_bytes=8_000)
+    late = FakeSink("late")
+    sinks[:] = [small, late]
+    _save_manifest()
+    out = await commit_or_park(_row(big=True))
+    mark_manifest("d-1", out.status, out.refs)
+    held = dict(late.pending)
+    late.pending.clear()
+    db_down[0] = None
+    assert (await reconcile()).partial == 1  # a decisions-only row; the gap is open
+
+    db_down[0] = RuntimeError("database is locked")
+    later = await commit_or_park(_second_run_big())  # a different, later terminal write of the same document
+    assert later.status == "pending"
+    db_down[0] = None
+    late.pending.update({f"held-{k}": v for k, v in held.items()})  # the first write's complete copy turns up in the same batch
+
+    report = await reconcile()
+    assert (report.gap_closed, report.resumed, report.rejected_hash) == (1, 1, 0)
+    adds = (await get_row("d-1"))["addenda"]
+    assert [a["kind"] for a in adds] == ["recovered_detail", "resumed"]
+    assert adds[1]["detail"]["trace"][0]["visit_id"] == "v-second"  # the later write was recorded, not dropped
+    assert small.pending == {} and late.pending == {}
+    assert _manifest().audit_written is True and _manifest().audit_pending_refs == []
+    assert (await verify_audit_db()).ok

@@ -311,26 +311,37 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
         if rf.get("complete") is False and not closed:
             if complete:
                 match = [r for r in complete if r["detail_sha256"] == rf.get("full_detail_sha256")]
-                report.rejected_hash += len(complete) - len(match)
-                for r in complete:
-                    if r not in match:
-                        logger.error("audit_reconcile_hash_mismatch", doc_id=doc_id, sink=r["_sink"],
-                                     ref=r.get("ref"), reason="not_the_partial_rows_full_record")
                 if match:
                     rec = match[0]
+                    # Only the copies of this write are spent; any other copy is a later write of the
+                    # document and goes through the closed row's path below.
+                    mine = [c for c in copies if rec["detail_sha256"] in (c["detail_sha256"], c.get("full_detail_sha256"))]
+                    rest = [c for c in copies if not any(c is m for m in mine)]
                     report.gap_closed += 1
                     report.docs.append({"doc_id": doc_id, "action": "recovered_detail"})
-                    if not dry_run:
-                        await write_addendum(Addendum(
-                            doc_id=doc_id, kind="recovered_detail", actor="audit-reconcile",
-                            # The sub-rows ride in the detail: their attempt ids are the partial row's.
-                            detail={"detail": rec["detail"], "sub_rows": rec["sub_rows"],
-                                    "recovered_from": _recovered_from(rec)},
-                        ))
-                        mark_manifest(doc_id, "written")
-                        logger.info("audit_gap_closed", doc_id=doc_id, sink=rec["_sink"])
-                        _drop(copies)
+                    if dry_run:
+                        if rest:
+                            unique_rest = [c for c in unique if not any(c is m for m in mine)]
+                            for _ in _fresh(unique_rest, _present_shas(row) | {rec["detail_sha256"]}):
+                                report.resumed += 1
+                                report.docs.append({"doc_id": doc_id, "action": "resumed"})
+                        return True
+                    await write_addendum(Addendum(
+                        doc_id=doc_id, kind="recovered_detail", actor="audit-reconcile",
+                        # The sub-rows ride in the detail: their attempt ids are the partial row's.
+                        detail={"detail": rec["detail"], "sub_rows": rec["sub_rows"],
+                                "recovered_from": _recovered_from(rec)},
+                    ))
+                    mark_manifest(doc_id, "written")
+                    logger.info("audit_gap_closed", doc_id=doc_id, sink=rec["_sink"])
+                    _drop(mine)
+                    if rest:
+                        return await _reconcile_doc(report, doc_id, rest, dry_run=False)
                     return True
+                report.rejected_hash += len(complete)
+                for r in complete:
+                    logger.error("audit_reconcile_hash_mismatch", doc_id=doc_id, sink=r["_sink"],
+                                 ref=r.get("ref"), reason="not_the_partial_rows_full_record")
             # The partial row stays open: keep every copy, a complete one may still turn up.
             report.skipped_existing += 1
             report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
