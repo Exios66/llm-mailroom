@@ -235,7 +235,7 @@ def _fold(text) -> str:
     return " ".join(folded.split()).casefold()
 
 
-def _evidence_fragments(item) -> list[str]:
+def _evidence_fragments(item, field: str) -> list[str]:
     """Folded quote candidates of a list item (may be empty).
 
     ``"<Category>: <span>"`` items (CUAD clauses, claim checklist) carry their
@@ -249,7 +249,7 @@ def _evidence_fragments(item) -> list[str]:
 
     text = _fold(item)
     _head, sep, tail = text.partition(":")
-    span = tail if sep and tail.strip() else text
+    span = tail if field in {"cuad_clauses", "claim_checklist"} and sep and tail.strip() else text
     fragments = []
     for part in re.split(r"\.\.\.", span):
         part = part.strip(_EDGE_PUNCT)
@@ -273,7 +273,7 @@ def _item_support(item, field: str, entries: list[dict], text_norm: str | None) 
     containment-checked as a whole string: its ``<Category>:`` label is not part
     of the document text, and a short bare string would match by accident.
     """
-    fragments = _evidence_fragments(item)
+    fragments = _evidence_fragments(item, field)
     if fragments and text_norm and all(f in text_norm for f in fragments):
         return True
     item_fold = _fold(item)
