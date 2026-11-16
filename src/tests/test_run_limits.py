@@ -79,6 +79,78 @@ class TestLimitsUnit:
         assert usage_summary()["calls"] == 0
         assert usage_summary()["total"] == 0
 
+    def test_record_usage_accepts_integral_floats(self):
+        """#188: JSON usage often decodes counts as floats (128.0); they are
+        real counts and must not vanish from the run's token accounting."""
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        record_usage({"prompt_tokens": 128.0, "completion_tokens": 64.0}, model="m")
+        record_usage({"input_tokens": 10.0, "output_tokens": 5}, model="m")
+        record_usage(MagicMock(prompt_tokens=7.0, completion_tokens=3.0), model="m")
+        summary = usage_summary()
+        assert summary["calls"] == 3
+        assert summary["prompt_tokens"] == 145
+        assert summary["completion_tokens"] == 72
+        # stored as real ints, not floats, so downstream sums and JSON stay integral
+        from pipeline.limits import _run_usage
+        assert all(type(i["prompt_tokens"]) is int and type(i["completion_tokens"]) is int
+                   for i in _run_usage.get())
+
+    def test_record_usage_keeps_a_zero_input_count_with_positive_output(self):
+        """A cached or empty-prompt call can report ``input_tokens=0``; ``or``
+        treated that as missing, so the valid completion count was dropped."""
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        record_usage({"input_tokens": 0, "output_tokens": 50}, model="m")
+        record_usage({"prompt_tokens": 0, "completion_tokens": 7}, model="m")
+        summary = usage_summary()
+        assert summary["calls"] == 2
+        assert summary["prompt_tokens"] == 0
+        assert summary["completion_tokens"] == 57
+
+    @pytest.mark.parametrize(
+        "prompt,completion",
+        [
+            (1.5, 10),
+            (10, 2.25),
+            (float("nan"), 10),
+            (10, float("inf")),
+            (-1, 10),
+            (10, -3.0),
+            (True, 10),
+            (10, False),
+            ("128", 10),
+        ],
+    )
+    def test_record_usage_drops_invalid_counts(self, prompt, completion):
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        record_usage({"prompt_tokens": prompt, "completion_tokens": completion})
+        record_usage(MagicMock(prompt_tokens=prompt, completion_tokens=completion))
+        assert usage_summary()["calls"] == 0
+
+    def test_record_usage_logs_dropped_numeric_counts(self, monkeypatch):
+        from pipeline import limits
+        from pipeline.limits import record_usage, reset_run_usage
+
+        # Record on a stub logger, not structlog.testing.capture_logs: once
+        # another test has run setup_logging(), the configured level filter and
+        # the logger cached on first use hide the event, so the old form
+        # depended on collection order.
+        calls: list[tuple[str, tuple, dict]] = []
+
+        class _Recorder:
+            def __getattr__(self, level):
+                return lambda *a, **kw: calls.append((level, a, kw))
+
+        monkeypatch.setattr(limits, "logger", _Recorder())
+        reset_run_usage()
+        record_usage({"prompt_tokens": 1.5, "completion_tokens": 10}, model="m", agent="sorter")
+        dropped = [c for c in calls if c[1] and c[1][0] == "usage_dropped_invalid_counts"]
+        assert len(dropped) == 1
+        assert dropped[0][0] == "warning"
+        assert dropped[0][2]["agent"] == "sorter"
+
     def test_usage_summary_aggregates(self):
         from pipeline.limits import record_usage, reset_run_usage, usage_summary
         reset_run_usage()

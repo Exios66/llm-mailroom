@@ -101,10 +101,11 @@ def after_classify(state: dict) -> Literal[
 
     # Ground-truth class miss: the model can be overconfident (0.99 on the
     # wrong class). Lane A is the independent second opinion even at high
-    # stated confidence. Live runs without GT are unchanged.
-    from pipeline.reconsideration import class_misses_ground_truth
+    # stated confidence. Oracle routing only (#207): live runs, and runs that
+    # merely carry GT for scoring, are unchanged.
+    from pipeline.reconsideration import routing_class_miss
 
-    if class_misses_ground_truth(state):
+    if routing_class_miss(state):
         logger.info(
             "gt_class_miss_lane_a",
             confidence=confidence,
@@ -171,9 +172,9 @@ def after_retry_classify(state: dict) -> Literal[
             doc_type=doc_type,
         )
         return "human_review"
-    from pipeline.reconsideration import class_misses_ground_truth
+    from pipeline.reconsideration import routing_class_miss
 
-    if class_misses_ground_truth(state):
+    if routing_class_miss(state):
         logger.info(
             "gt_class_miss_lane_a_post_retry",
             confidence=state.get("classification_confidence"),
@@ -332,6 +333,7 @@ def after_extraction(state: dict) -> Literal[
     from pipeline.reconsideration import (
         coverage_below_floor,
         extraction_is_hollow,
+        routing_expected_fields,
     )
 
     extracted = state.get("extracted_data")
@@ -367,14 +369,14 @@ def after_extraction(state: dict) -> Literal[
         )
         return "human_review"
 
-    gt = state.get("ground_truth") or {}
-    expected_fields = gt.get("expected_fields") if isinstance(gt, dict) else None
-    sources = gt.get("expected_fields_sources") if isinstance(gt, dict) else None
+    # Oracle routing only (#207): off by default, so a run that carries
+    # `ground_truth` for scoring still routes on observed confidence alone.
+    expected_fields, sources = routing_expected_fields(state)
     if coverage_below_floor(
         extracted if isinstance(extracted, dict) else {},
         expected_fields,
         doc_type=state.get("doc_type"),
-        sources=sources if isinstance(sources, dict) else None,
+        sources=sources,
     ):
         if attempts <= retry_max:
             logger.info(
@@ -475,6 +477,22 @@ def retry_rejudge_due(state: Mapping[str, Any]) -> bool:
     if passes < 1 or passes >= _judge_max_passes(thresholds):
         return False
     return _judge_can_review(state)
+
+
+def keep_best_attempt_enabled(state: Mapping[str, Any]) -> bool:
+    """#254: keep the best-judged extraction attempt instead of the latest. Off by default.
+
+    ``extraction_attempt_history`` is always recorded; this knob only decides
+    whether ``compile_report`` and the review handoff use the best-ranked
+    attempt (``graph/attempts.py``: ``complete`` > ``partial`` > ``incomplete``,
+    then confidence, ties keep the latest). Archive reporting retains the latest
+    when an earlier selection is still unsure or below the coverage floor.
+    It ships ``false`` for the same
+    reason as ``judge_rejudge_retry``: the ranking trusts the judge, which is not
+    calibrated yet (#242). Taxonomy ``confidence.keep_best_attempt``, per class
+    overridable under ``by_class``. Routing decisions never read it.
+    """
+    return bool(_thresholds_for(state).get("keep_best_attempt", False))
 
 
 def after_extraction_gated(state: dict) -> Literal[
@@ -612,9 +630,9 @@ def after_classification_arbiter(state: dict) -> Literal["extract", "human_revie
     """The arbiter's accepted class continues to extraction; anything else goes to a person."""
     if state.get("classification_arbiter_decision") not in ("accept_sorter", "accept_reviewer"):
         return "human_review"
-    from pipeline.reconsideration import class_misses_ground_truth
+    from pipeline.reconsideration import routing_class_miss
 
-    if class_misses_ground_truth(state):
+    if routing_class_miss(state):
         logger.info("gt_class_miss_after_classification_arbiter", doc_id=state.get("doc_id"))
         return "human_review"
     return "extract"
@@ -649,9 +667,9 @@ def after_review_classify(state: dict) -> Literal[
             return _escalate_decision_review(state)
         # Same ground-truth gate as the LLM accept arm below: a label both
         # opinions share can still miss the grounded class.
-        from pipeline.reconsideration import class_misses_ground_truth
+        from pipeline.reconsideration import routing_class_miss
 
-        if class_misses_ground_truth(state, reviewer=True):
+        if routing_class_miss(state, reviewer=True):
             logger.info(
                 "gt_class_miss_after_reviewer",
                 verdict=state.get("review_verdict"),
@@ -672,9 +690,9 @@ def after_review_classify(state: dict) -> Literal[
         and confidence >= high
         and is_extractable_doc_type(doc_type)
     ):
-        from pipeline.reconsideration import class_misses_ground_truth
+        from pipeline.reconsideration import routing_class_miss
 
-        if class_misses_ground_truth(state, reviewer=True):
+        if routing_class_miss(state, reviewer=True):
             logger.info(
                 "gt_class_miss_after_reviewer",
                 verdict=verdict,

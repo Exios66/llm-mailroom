@@ -48,6 +48,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 | `src/scripts/` | operator and maintenance CLIs (pilots, gates, sync, release, bumps) |
 | `src/tests/` | pipeline pytest suite; `conftest.py` mocks every LLM client |
 | `tools/pipeline-diagnostics/` | native inspect/check CLI, workbench plan, nested tests with their own hermetic fixtures |
+| `tools/gt-label-workbook/` | builds the editable ground-truth label workbook (`.xlsx`) from the pinned corpus; tests in `src/tests/test_gt_label_workbook.py` |
 | `src/legalbench/` | LegalBench evaluation submodule |
 | `deploy/` | compose files, LiteLLM gateway, Modal vLLM, HF Space payload |
 | `contract/` | generated display contract (`export_contract.py --write`) |

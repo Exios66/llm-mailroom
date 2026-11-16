@@ -23,8 +23,9 @@ which are stood in for by a stub payload plus a patched ``validate_extraction``.
 
 States are built WITHOUT ``ground_truth`` (production-faithful: routing reads
 ``ground_truth`` through ``class_misses_ground_truth`` / ``coverage_below_floor``
-and live traffic has none). ``oracle=True`` adds the gold class to the state and
-must be reported separately, never as the objective.
+and live traffic has none). ``oracle=True`` adds the gold class to the state, switches
+oracle routing on for the walk (``pipeline.config.oracle_routing_override``) and must be
+reported separately, never as the objective.
 
 The objective (every constant is a parameter, see :class:`ObjectiveParams`)::
 
@@ -546,6 +547,16 @@ def replay(record: RunRecord, policy: Mapping[str, Any] | None = None, *, oracle
 
 
 def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
+    # Routing reads the gold class only with oracle routing on (#207): the flag
+    # that puts it in state must also opt in, and a production replay must stay
+    # off whatever MAILROOM_ORACLE_ROUTING says.
+    from pipeline.config import oracle_routing_override
+
+    with oracle_routing_override(oracle):
+        return _replay_walk(record, oracle)
+
+
+def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
     import graph.routing as routing
 
     w = _Walk(record, oracle)

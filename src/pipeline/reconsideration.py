@@ -137,6 +137,38 @@ def class_misses_ground_truth(
     return want != got
 
 
+def routing_class_miss(state: Mapping[str, Any] | None, *, reviewer: bool = False) -> bool:
+    """:func:`class_misses_ground_truth` as a routing input: False unless oracle routing is on.
+
+    Routing reads the label only through here, so a run passing ``ground_truth``
+    for scoring routes like production (#207). Cause labelling keeps calling
+    :func:`class_misses_ground_truth` directly: that is evidence, not routing.
+    """
+    from pipeline.config import oracle_routing_enabled
+
+    return oracle_routing_enabled() and class_misses_ground_truth(state, reviewer=reviewer)
+
+
+def routing_expected_fields(
+    state: Mapping[str, Any] | None,
+) -> tuple[Mapping[str, Any] | None, Mapping[str, str] | None]:
+    """The ``(expected_fields, sources)`` the extraction coverage floor may use.
+
+    ``(None, None)`` unless oracle routing is on; :func:`coverage_below_floor`
+    has no opinion without grounded fields, so routing then falls through to
+    the confidence arms.
+    """
+    from pipeline.config import oracle_routing_enabled
+
+    if not oracle_routing_enabled():
+        return None, None
+    gt = (state or {}).get("ground_truth") or {}
+    if not isinstance(gt, dict):
+        return None, None
+    sources = gt.get("expected_fields_sources")
+    return gt.get("expected_fields"), sources if isinstance(sources, dict) else None
+
+
 def extraction_is_hollow(extracted: Any) -> bool:
     """True when the payload has no public extraction fields.
 

@@ -8,7 +8,7 @@ for the LangGraph `extract` / `retry_extract` nodes.
 | --- | --- | --- |
 | `contracts_specialist` | `contracts_specialist_v33_simplified` | `contracts_specialist_v1` |
 | `corporate_records_specialist` | `corporate_records_specialist_simplified` | `corporate_records_specialist_v6` (corrected; derived from `_v1`) |
-| `correspondence_specialist` | `correspondence_specialist_simplified` | `correspondence_specialist_v7` (corrected; derived from `_v1`) |
+| `correspondence_specialist` | `correspondence_specialist_simplified` | `correspondence_specialist_v8` (corrected; derived from `_v1`) |
 | `insurance_claims_specialist` | `insurance_claims_specialist_simplified` | `insurance_claims_specialist_v1` |
 | `merger_agreement_specialist` | `merger_agreement_specialist_simplified` | `merger_agreement_specialist_v1` |
 
@@ -26,17 +26,22 @@ The dojo's `production_prompts` family tracks evaluation candidates separately
 (it also holds the contracts and merger v1 bytes the pipeline pins). Its corporate-records v7 (`253559fcb7ac6b36878453821a4fab0aa94228ad5add77d5aeabb06bb265134c`,
 5,462 characters) has not been promoted to this pipeline's production freeze:
 corporate-records v6 remains `fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399`
-(5,865 characters). The correspondence and insurance stems match across those dojo
-families. All five production hashes and lengths remain unchanged. A sanctioned
+(5,865 characters). The insurance stem matches across those dojo families. The
+correspondence v8 stem (below) is served from `production_prompts` only; the dojo
+`production` family still holds correspondence v7. A sanctioned
 re-freeze must update the lineage record explicitly; selecting a newer eval
 candidate is not a re-freeze.
 
-**Corrected roles.** `corporate_records_specialist` (sha256 `fe13501f…`) and
-`correspondence_specialist` (sha256 `2b0b81ff…`) serve the 2026-10-05
-dojo-corrected bytes (`communication_type` -> `null` not `other`;
-`filing_number` null unless an official number). Eval-environment records them
-as the mutations `corporate_records_specialist_v6` /
-`correspondence_specialist_v7`; `_v1` is unchanged and remains its default.
+**Corrected roles.** `corporate_records_specialist` (sha256 `fe13501f…`) serves the
+2026-10-05 dojo-corrected bytes (`communication_type` -> `null` not `other`;
+`filing_number` null unless an official number). `correspondence_specialist`
+(sha256 `e3bc920d…`, 6,316 characters) serves correspondence v8, the
+`production_prompts` correction of v7 (`2b0b81ff…`, 6,113 characters, which stays in
+the dojo `production` family): `communication_type` types the content, not the
+carrier, so a memo, letter or notice sent in an email keeps its own type (#269).
+Eval-environment records them as the mutations `corporate_records_specialist_v6` /
+`correspondence_specialist_v8` (the v8 key is pending its eval-environment mint);
+`_v1` is unchanged and remains its default.
 `lineage.json` keeps the uncorrected v1 digest under `derived_from`. The
 legacy `*.txt` files for these two roles still hold those uncorrected v1 bytes
 (`484e64dd…`, `eab63b5a…`); nothing loads them.

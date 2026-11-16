@@ -462,7 +462,7 @@ def test_router_without_route_keeps_llm_behavior():
     assert after_review_classify({"review_verdict": "reviewer_conflicts"}) == "human_review"
 
 
-def test_accept_with_ground_truth_class_miss_parks(decision_config, no_llm_reviewer):
+def test_accept_with_ground_truth_class_miss_parks(decision_config, no_llm_reviewer, oracle_routing):
     # Model agrees with a wrong sorter label at/above cutoff: the LLM accept
     # arm would park this on a ground-truth miss, so the decision arm must too.
     register_decision_backend(Spy(answer=answer(conf=0.99)))

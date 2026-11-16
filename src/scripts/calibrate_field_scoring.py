@@ -48,6 +48,11 @@ from pipeline.logging import setup_logging  # noqa: E402
 
 setup_logging()
 
+# Taxonomy field types come from the wiring: without it get_field_types() is
+# empty, every manifest row is skipped and the script reports "no labeled
+# fields produced" (#256). The bands it sweeps are still passed explicitly
+# (--band) or read from the same wired config.
+import observability.scoring_wiring  # noqa: F401,E402
 from llm_dojo_scoring import (  # noqa: E402
     EntityListScore,
     get_ambiguous_band,

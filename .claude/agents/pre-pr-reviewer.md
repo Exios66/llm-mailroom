@@ -57,9 +57,13 @@ Only report real problems. If the diff is clean, say READY with no findings.
 
 ## Lessons from bot reviews
 
+- Exercise public report and email paths for internal exception causes; evidence prefix parsing must be scoped to category-shaped fields.
+
 Careless mistakes that the bots are configured to catch (`.coderabbit.yaml`) or have
 caught before. Check each one. The orchestrator adds a line when a new one gets through (see
 `.claude/rules/pr-flow.md`).
+
+- Response-shape validation must cover absent attributes as well as explicit nulls; exercise both inside the retry wrapper.
 
 - A fact changed in one doc but not in the other pages that repeat it (versions, counts,
   pins, ports, defaults).

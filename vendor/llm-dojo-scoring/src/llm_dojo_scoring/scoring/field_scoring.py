@@ -863,8 +863,9 @@ def _date_is_blank_or_bare_label(exp: str) -> bool:
 def _date_phrase_contained(container: str, target: str) -> bool:
     """True when a date phrase stated in ``target`` appears in ``container``."""
     def norm(text: str) -> str:
-        """Lowercase a date phrase and collapse non-alphanumeric separators to spaces."""
-        return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", str(text).lower())).strip()
+        """Lowercase a date phrase, drop ordinal suffixes ("18th" -> "18") and collapse separators."""
+        ordinal_free = re.sub(r"(\d)(?:st|nd|rd|th)\b", r"\1", str(text).lower())
+        return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", ordinal_free)).strip()
 
     nc = norm(container)
     if not nc:
@@ -873,8 +874,16 @@ def _date_phrase_contained(container: str, target: str) -> bool:
     if not target_norm:
         return False
     dt = _parse_date(target)
+    # A month name after another word makes the phrase explicit ("18 august");
+    # so does a month-first phrase that also states a number ("august 18",
+    # "august 2014"; #162). A lone month word ("may") or month-first prose
+    # ("march of") is not a date phrase.
     explicit_month = (
         any(f" {month}" in target_norm for month in _MONTH_NAMES)
+        or (
+            any(re.search(rf"\b{month}\b", target_norm) for month in _MONTH_NAMES)
+            and bool(re.search(r"\b\d+(?:st|nd|rd|th)?\b", target_norm))
+        )
         or bool(re.search(r"\b\d{4}-\d{1,2}\b", target_norm))
     )
     # Match on word boundaries, so a date is never found inside a different one

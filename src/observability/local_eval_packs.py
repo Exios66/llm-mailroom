@@ -16,6 +16,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import observability.scoring_wiring  # noqa: F401 — import-time taxonomy→dojo wiring; packs are scored with the calibrated taxonomy, not Dojo package defaults (#256)
+
 _FIXTURES = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
 
 # Insurance contrast: mixed coverage_determination so determination_consistency
