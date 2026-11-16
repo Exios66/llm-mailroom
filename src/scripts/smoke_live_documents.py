@@ -77,6 +77,15 @@ def _load(args: argparse.Namespace, *, select: bool = True) -> tuple[list[dict[s
         )
         if stats["integrity"]["mismatched"]:
             raise SystemExit("refusing: content_sha256 mismatches in the live corpus")
+        missing = int(stats["integrity"].get("missing_text") or 0)
+        if missing:
+            message = (
+                f"{missing} corpus rows have no document text and were dropped from the "
+                "manifest (integrity.missing_text)"
+            )
+            if not getattr(args, "allow_missing_text", False):
+                raise SystemExit(f"refusing: {message}; pass --allow-missing-text to keep the rest")
+            print(f"warning: {message}", file=sys.stderr)
         return selected, revision, "live"
     manifest = Path(args.manifest or FIXTURE)
     rows = load_manifest(manifest)
@@ -405,6 +414,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mock", action="store_true", help="deterministic mock LLM (default)")
     parser.add_argument("--real", action="store_true", help="use the real LLM provider")
     parser.add_argument("--replay", type=Path, help="replay a recorded run journal and diff it")
+    parser.add_argument(
+        "--allow-missing-text",
+        action="store_true",
+        help="with --live, proceed when corpus rows with no document text were dropped (refused by default)",
+    )
     args = parser.parse_args(argv)
     args.classes = [part.strip() for part in args.classes.split(",") if part.strip()]
     if args.per_class < 1:
