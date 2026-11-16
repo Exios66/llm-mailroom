@@ -313,3 +313,81 @@ def test_terminal_fetch_over_the_limit_returns_each_document_once(warehouse_env,
     )
 
     assert sorted(record.doc_id for record in records) == ["a-doc", "z-doc"]
+
+
+def _set_updated_at(doc_id_to_ts: dict) -> None:
+    import asyncio
+
+    from sqlalchemy import update
+
+    from storage.catalog import DocumentRecord
+    from storage.db import async_session
+
+    async def _run() -> None:
+        async with async_session() as session:
+            for doc_id, ts in doc_id_to_ts.items():
+                await session.execute(
+                    update(DocumentRecord)
+                    .where(DocumentRecord.doc_id == doc_id)
+                    .values(updated_at=ts)
+                )
+            await session.commit()
+
+    asyncio.run(_run())
+
+
+def test_terminal_fetch_by_doc_ids_applies_since_and_orders_by_updated_at(
+    warehouse_env, temp_base_dir
+):
+    """#185: the ``doc_ids`` branch used to ignore ``since`` and return rows
+    in arbitrary order; it must match the unfiltered branch's contract."""
+    import asyncio
+
+    from storage.warehouse import fetch_terminal_documents
+
+    for doc_id in ("a-doc", "b-doc", "c-doc", "d-doc"):
+        _seed_terminal_doc(temp_base_dir, doc_id=doc_id)
+    t = [datetime(2026, 1, day, 12, 0, tzinfo=timezone.utc) for day in (1, 2, 3, 4)]
+    # id order (a, b, c, d) deliberately differs from updated_at order (b, d, c, a)
+    _set_updated_at({"a-doc": t[3], "b-doc": t[0], "c-doc": t[2], "d-doc": t[1]})
+    ids = ["a-doc", "b-doc", "c-doc", "d-doc"]
+
+    ordered = asyncio.run(fetch_terminal_documents(doc_ids=ids))
+    assert [r.doc_id for r in ordered] == ["b-doc", "d-doc", "c-doc", "a-doc"]
+
+    # ``since`` is exclusive (``updated_at > since``): b-doc sits exactly on it.
+    after = asyncio.run(fetch_terminal_documents(doc_ids=ids, since=t[0]))
+    assert [r.doc_id for r in after] == ["d-doc", "c-doc", "a-doc"]
+
+    # the same holds when the ids span several driver-limit chunks
+    chunked = asyncio.run(
+        fetch_terminal_documents(
+            doc_ids=_ids_spanning_bind_limit("a-doc", "b-doc") + ["c-doc", "d-doc"],
+            since=t[0],
+        )
+    )
+    assert [r.doc_id for r in chunked] == ["d-doc", "c-doc", "a-doc"]
+
+
+
+def test_terminal_fetch_orders_legacy_null_timestamps_last(monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from storage import db
+    from storage.warehouse import fetch_terminal_documents
+
+    records = [SimpleNamespace(doc_id="old-null", updated_at=None),
+               SimpleNamespace(doc_id="recent", updated_at=datetime(2026, 1, 1))]
+
+    async def execute(query):
+        return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: records))
+
+    @asynccontextmanager
+    async def session():
+        yield SimpleNamespace(execute=execute)
+
+    monkeypatch.setattr(db, "ensure_schema", lambda: None)
+    monkeypatch.setattr(db, "async_session", session)
+    rows = asyncio.run(fetch_terminal_documents(doc_ids=["old-null", "recent"]))
+    assert [r.doc_id for r in rows] == ["recent", "old-null"]

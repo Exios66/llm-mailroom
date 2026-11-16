@@ -242,8 +242,9 @@ class TestRetryExtractNode:
 
     def test_transient_error_preserves_previous_extraction(self, monkeypatch):
         """A transient failure on RE-extraction must not erase the prior
-        extraction: the self-looped retry prompts with it ("Previous attempt
-        found: ..."), and an exhausted budget hands it to the human reviewer.
+        extraction: the self-looped retry still reads it from state (its empty
+        field names and findings reach the prompt, #253: never its values), and
+        an exhausted budget hands it to the human reviewer.
         Mirrors the classify-side transient paths, which never clear doc_type."""
         seen = []
 
@@ -254,14 +255,19 @@ class TestRetryExtractNode:
             return {"parties": ["Acme"], "governing_law": "NY", "confidence": 0.93}
 
         monkeypatch.setattr(bg, "_extract_contracts", _flaky)
-        state = _base_state()
+        state = _base_state(
+            extracted_data={"parties": ["Acme"], "governing_law": "NY", "effective_date": None}
+        )
         updates = bg.retry_extract_node(state)
         assert updates["transient_error"] is True
         merged = {**state, **updates}
-        assert merged["extracted_data"] == {"parties": ["Acme"], "governing_law": "NY"}
+        assert merged["extracted_data"] == {
+            "parties": ["Acme"], "governing_law": "NY", "effective_date": None,
+        }
 
         bg.retry_extract_node(merged)
-        assert "governing_law" in seen[1]
+        assert "effective_date" in seen[1]
+        assert "Acme" not in seen[1].split("RE-EXTRACTION REQUESTED")[1]
 
 
 # --- judge_verify (node 7) ---------------------------------------------------

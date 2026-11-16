@@ -121,7 +121,7 @@ Verified in code; "fixed" items have regression tests on this branch.
 | Routing | Conflict escalation ran before the schema/hollow/confidence gates, so the Boss could archive a bad extraction | fixed: checked after the gates; an unadjudicated conflict on the judge/arbiter tail parks |
 | Routing | Conflict detection flagged "Delaware" vs "State of Delaware" and differently formatted dates | fixed: date and jurisdiction-aware comparison |
 | Routing | Classify gets 1 retry although `retry_max: 2`; after the retry, low confidence skips the cheaper reviewer | open — a hill-climb lever, decide with data |
-| Routing | Ground truth in routing state (above) | sweep keeps it out; live flag still open |
+| Routing | Ground truth in routing state (above) | sweep keeps it out; live runs fixed in #207: routing ignores `ground_truth` unless `MAILROOM_ORACLE_ROUTING=1` / taxonomy `routing.use_ground_truth` |
 | Volume | Unbounded concurrency (a thread per inbox file) | fixed: capped worker pool (`watcher.max_concurrent_docs`, default 4) |
 | Volume | Stale-claim reconcile can pull back a document that is still running | fixed for the watcher's own reconcile: claim stamps claim time and the reconcile skips files this process is running or has queued. The separate `recover_processing.py --apply` CLI cannot see another process's in-flight set and relies on the claim time vs `--stale-minutes` only; run it with the watcher stopped |
 | Volume | Concurrent catalog and audit writes lost (`UNIQUE` races, `database is locked`) | fixed: upserts plus lock retry; 0 failed ops at 128 threads |

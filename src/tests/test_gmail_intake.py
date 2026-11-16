@@ -1341,6 +1341,70 @@ def test_unaccepted_extension_gets_reject_reply(temp_base_dir):
     assert "malware.exe" in text and ".pdf" in text
 
 
+def _forwarded_eml_message() -> email.message.EmailMessage:
+    """Outer message carrying a forwarded email as a named message/rfc822 part."""
+    inner = email.message.EmailMessage()
+    inner["Subject"] = "the forwarded original"
+    inner.set_content("original body")
+    outer = email.message.EmailMessage()
+    outer["From"] = "sender@example.com"
+    outer["Subject"] = "Fwd"
+    outer.set_content("see attached")
+    outer.add_attachment(inner, filename="forwarded.eml")
+    return email.message_from_bytes(outer.as_bytes())
+
+
+def test_extract_attachments_keeps_a_forwarded_eml_part_as_bytes():
+    """#189: ``get_payload(decode=True)`` is None for message/rfc822; the part
+    used to vanish. The nested message is serialised and kept for screening."""
+    attachments = gmail_intake.extract_attachments(_forwarded_eml_message())
+    assert [name for name, _ in attachments] == ["forwarded.eml"]
+    assert b"Subject: the forwarded original" in attachments[0][1]
+
+
+@pytest.mark.parametrize("force_none", [False, True])
+def test_extract_attachments_reports_a_part_with_no_body(force_none):
+    msg = email.message.EmailMessage()
+    msg.set_content("see attached")
+    msg.add_attachment(b"%PDF-1.4 real", maintype="application", subtype="pdf", filename="ok.pdf")
+    empty = email.message.Message()  # named part whose payload is None
+    empty["Content-Type"] = "application/pdf"
+    empty["Content-Disposition"] = 'attachment; filename="empty.pdf"'
+    msg.attach(empty)
+    msg = email.message_from_bytes(msg.as_bytes())
+    # as_bytes() of a payload-less part serialises it empty; force the None case
+    if force_none:
+        for part in msg.walk():
+            if part.get_filename() == "empty.pdf":
+                part._payload = None
+
+    rejected: list[tuple[str, str]] = []
+    attachments = gmail_intake.extract_attachments(msg, rejected)
+    assert [name for name, _ in attachments] == ["ok.pdf"]
+    assert rejected == [("empty.pdf", "payload")]
+    # callers that do not pass a rejected list keep working (and still drop it)
+    assert [n for n, _ in gmail_intake.extract_attachments(msg)] == ["ok.pdf"]
+    text, _html = gmail_intake.build_reject_reply("Fwd", rejected, [".pdf"], 25)
+    assert "empty.pdf: the attachment had no readable content" in text
+
+
+def test_forwarded_eml_gets_a_reject_reply_instead_of_vanishing(temp_base_dir):
+    """End to end: a lone forwarded .eml is not an accepted type, so the sender
+    is told so by name, rather than the generic 'no attachment' answer."""
+    outer = _forwarded_eml_message()
+    outer["To"] = "llmmailroom@gmail.com"
+    outer["Message-ID"] = "<rej-eml@x>"
+    outer["Authentication-Results"] = "mx.google.com; dkim=pass; spf=pass; dmarc=pass"
+    outer["Date"] = "Tue, 01 Sep 2026 12:00:00 +0000"
+    client = FakeIMAP({"1": outer.as_bytes()})
+    report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
+    assert report["reject_replies"] == 1
+    assert report["skipped_extension"] == 1
+    (row,) = _outbox_rows()
+    assert "forwarded.eml" in row[3]
+    assert "no attachment" not in row[3]
+
+
 def test_no_attachments_gets_reject_reply(temp_base_dir):
     client = FakeIMAP({"1": _message("hi", message_id="<rej-2@x>")})
     report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)

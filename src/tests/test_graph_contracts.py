@@ -127,7 +127,10 @@ def test_guarded_extraction_is_replaced_before_report_and_archive(run_graph):
     assert states["extract"]["extraction_guardrail"]
     assert states["retry_extract"]["extraction_attempts"] == 2
     assert states["retry_extract"]["extracted_data"]["parties"] == ["Acme", "Beta"]
-    assert "invalid list shape" in run_graph.extractor.call_args_list[1].args[2]
+    # #253: the retry is told what failed (the guardrail issue), never the rejected value.
+    retry_context = run_graph.extractor.call_args_list[1].args[2]
+    assert "invalid list shape" not in retry_context
+    assert "extraction_schema_invalid" in retry_context
     assert [c.args[0] for c in run_graph.extractor.call_args_list] == [CLEAN, CLEAN]
     assert run_graph.reporter.call_args.args[0]["extracted_data"] == states["retry_extract"]["extracted_data"]
     assert final.values["extracted_data"]["_report"]["extracted_data"]["parties"] == ["Acme", "Beta"]

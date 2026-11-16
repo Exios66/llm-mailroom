@@ -58,11 +58,30 @@ def get_run_deadline() -> float | None:
     return _run_deadline.get()
 
 
+def _token_count(value) -> int | None:
+    """A valid token count as an ``int``, else ``None``.
+
+    Accepts ints and integral floats (JSON usage often decodes ``128`` as
+    ``128.0``). Rejects bools (an ``int`` subclass), negatives, NaN/inf and
+    non-integral floats.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float):
+        if not value.is_integer():  # False for NaN and +/-inf too
+            return None
+        value = int(value)
+    if not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
 def record_usage(
     usage, model: str | None = None, agent: str | None = None, served_model: str | None = None
 ) -> None:
     """Append an OpenAI-compatible usage object to the current run's
-    accumulator. Tolerates mocks and odd shapes: only real int counts count.
+    accumulator. Tolerates mocks and odd shapes: only real non-negative integer
+    counts count (integral floats such as ``128.0`` are converted to int).
 
     Accepts SDK ``CompletionUsage`` objects (``usage.prompt_tokens``) and
     LangChain ``usage_metadata`` dicts (``usage["input_tokens"]`` /
@@ -76,13 +95,32 @@ def record_usage(
     if usage is None:
         return
     if isinstance(usage, dict):
-        prompt = usage.get("input_tokens") or usage.get("prompt_tokens")
-        completion = usage.get("output_tokens") or usage.get("completion_tokens")
+        # ``or`` would treat a real 0 as missing; fall back only when the key is absent/None.
+        prompt = usage.get("input_tokens")
+        if prompt is None:
+            prompt = usage.get("prompt_tokens")
+        completion = usage.get("output_tokens")
+        if completion is None:
+            completion = usage.get("completion_tokens")
     else:
         prompt = getattr(usage, "prompt_tokens", None)
         completion = getattr(usage, "completion_tokens", None)
-    if not isinstance(prompt, int) or not isinstance(completion, int):
+    prompt_n = _token_count(prompt)
+    completion_n = _token_count(completion)
+    if prompt_n is None or completion_n is None:
+        # Mocks, None and non-numeric shapes are expected and dropped quietly;
+        # a real number that is not a valid count (1.5, NaN, -1, True) is a
+        # provider/shape bug worth a log line (#188).
+        if any(isinstance(v, (int, float)) for v in (prompt, completion)):
+            logger.warning(
+                "usage_dropped_invalid_counts",
+                prompt_tokens=repr(prompt),
+                completion_tokens=repr(completion),
+                model=model,
+                agent=agent,
+            )
         return
+    prompt, completion = prompt_n, completion_n
     _run_usage.get().append(
         {
             "prompt_tokens": prompt,

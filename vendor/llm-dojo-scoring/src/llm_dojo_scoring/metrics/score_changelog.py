@@ -7,7 +7,11 @@ read without guessing whether a delta is a model effect or a scorer fix.
 Every entry is a release, the canonical ``metric_id`` values it moved, and
 whether stored runs must be re-scored before they can be compared. The table
 is intentionally small: add an entry only when a deterministic scorer change
-can move a number on unchanged predictions.
+can move a number on unchanged predictions, or when a release adds metric ids
+(a new-metrics entry says so, lists the ids and sets ``rescore_required`` to
+``False``: no existing value moves). :func:`score_changes_between` returns both
+kinds, so a reader that wants only the entries needing a re-score filters on
+``rescore_required``.
 """
 
 from __future__ import annotations
@@ -106,8 +110,11 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
         ),
         "change": (
             "Money parsing reads a currency word next to a K/M/B suffix ('1.2M USD', "
-            "'USD 1.2M'; #133). On a CMS insurance row the subclass-derived "
-            "cms_source_table is no longer scored when the prediction states no table "
+            "'USD 1.2M'; #133). The same parser moves two metrics that have no canonical "
+            "metric_id: amount_exactness (an unparsed pair was skipped, now scored) and the "
+            "diagnostics money_mae_usd / money_median_ae_usd / money_mae_per_field / "
+            "money_n_pairs (more pairs, so their values and counts change). On a CMS "
+            "insurance row the subclass-derived cms_source_table is no longer scored when the prediction states no table "
             "(a perfect carrier extraction scored 0.9412; #132); a stated table, on "
             "cms_source_table or claim_type, is still scored."
         ),
@@ -136,7 +143,8 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
             "documented-absent adjuster / denial_reasons). A row "
             "with no labelled extraction field (presence-only CUAD, MAUD-only merger, "
             "no GT) gets them as null from the suite and doc scorers, not 0.0. A MAUD-only merger payload's "
-            "headline metric_id is maud.question.micro_accuracy (overall is null). "
+            "overall score is null and its field-micro P/R/F1/F2 are null (they were 0.0); its "
+            "headline metric_id is maud.question.micro_accuracy only while nothing is derivable. "
             "A blank or literal 'nan' content_topic / sentiment_label is not a label: "
             "no topic or sentiment score is emitted for it (it scored 0.0)."
         ),
@@ -157,10 +165,13 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
             "A Hub merger row's maud_clause_labels are extraction gold: maud_clauses (one "
             "'<Question>: <Hub class>' line per answered question) and merger_consideration "
             "(the Type of Consideration answer, else the subclass) are scored by the suites, "
-            "so such a row has an overall score and field-micro P/R/F1/F2 instead of null, and "
-            "its headline metric_id is pipeline.extraction.overall (it was "
-            "maud.question.micro_accuracy). maud_clauses is scored question by question, not "
-            "as fuzzy text. maud.question.micro_accuracy itself keeps its value."
+            "so such a row has an overall score and field-micro P/R/F1/F2 instead of null / 0.0 "
+            "(its headline metric_id is pipeline.extraction.overall, as it was in 0.29.0). "
+            "maud_clauses is scored question by question, not as fuzzy text. A question the gold skips as ambiguous (a multi-label or flagged "
+            "answer, or case-variant keys with conflicting answers) is unscored on both sides: "
+            "a prediction for it no longer counts as an unmatched prediction in precision. "
+            "A question the Hub leaves blank or 'nan' is not ambiguous; answering it still "
+            "does. maud.question.micro_accuracy itself keeps its value."
         ),
         "rescore_required": True,
     },
@@ -185,7 +196,9 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
         ),
         "change": (
             "New metrics: judge, arbiter, boss and review-tray decision lanes "
-            "(scoring.decision_lanes). No existing metric value changes."
+            "(scoring.decision_lanes). The review tray counts an approve_as_is that records "
+            "edited or removed fields as correct in correction_rate, as every lane does. "
+            "No existing metric value changes."
         ),
         "rescore_required": False,
     },
@@ -208,6 +221,46 @@ SCORE_CHANGELOG: tuple[dict[str, Any], ...] = (
             "fast-path risk (ml.score_intake_model). No existing metric value changes."
         ),
         "rescore_required": False,
+    },
+    {
+        # Sixth 0.30.0 change set: the sandbox re-vendor follow-ups (#159-#162).
+        "version": "0.30.0",
+        "metric_ids": (
+            "pipeline.extraction.overall",
+            "pipeline.extraction.field_micro_f1",
+            "pipeline.extraction.field_micro_f2",
+            "pipeline.extraction.field_micro_precision",
+            "pipeline.extraction.field_micro_recall",
+            "maud.question.micro_accuracy",
+            "ml.intake.selective_risk_upper",
+            "decision.judge.verdict_accuracy",
+            "decision.judge.macro_f1",
+            "decision.judge.escalation_recall",
+            "decision.judge.false_escalation_rate",
+            "decision.arbiter.decision_accuracy",
+            "decision.arbiter.retry_usefulness",
+            "decision.arbiter.wrongful_accept_rate",
+            "decision.arbiter.unnecessary_escalation_rate",
+            "decision.boss.needless_review_rate",
+            "decision.boss.wrongful_approve_rate",
+            "decision.review_tray.correction_rate",
+            "decision.review_tray.reject_rate",
+            "decision.review_tray.wasted_review_rate",
+        ),
+        "change": (
+            "A month-first or month-year date phrase ('August 18', 'August 2014') is found "
+            "inside longer predicted text, ordinal suffixes aside (#162). An "
+            "off-vocabulary MAUD 'Type of Consideration' answer (blank included) no longer "
+            "ties at 'other' with a different answer, and two different ones in one "
+            "prediction are a conflict (#160). The Wilson "
+            "upper bound behind ml.intake.selective_risk_upper is rounded up, never to "
+            "nearest (#160). Decision lanes: an attempt with extractions of several classes "
+            "and no doc_type is unscored (ambiguous_attempt), a typed decision is graded by "
+            "its own class's extraction, human gold grades only a decision on the class the "
+            "person resolved (#160), and llm-mailroom "
+            "RunRecord gold (human_decision approved/rejected) reads as a resolution (#159)."
+        ),
+        "rescore_required": True,
     },
 )
 
