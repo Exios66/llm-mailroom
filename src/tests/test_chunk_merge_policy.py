@@ -143,17 +143,43 @@ def test_span_must_be_in_the_window_that_asserted_it(mock_openai_client, monkeyp
 
 def test_evidence_keeps_claim_backed_by_its_reasoning_entry(mock_openai_client, monkeypatch):
     _config(monkeypatch, policy="evidence", min_windows=2)
-    item = "Audit Rights: Licensee may audit Licensor's books once per year on notice"
+    item = _NONCOMPETE + " unless the Buyer consents"
     agent = _contracts(mock_openai_client, [
+        _window(),
         _window(cuad_clauses=[item], entries=[{
             "field": "cuad_clauses",
-            "evidence": "Licensee may audit Licensor's books once per year",
+            "evidence": "the Seller shall not compete with the Buyer",
             "section_ref": "7.2",
         }]),
         _window(),
-        _window(),
     ])
     assert _run(agent)["cuad_clauses"] == [item]
+
+
+def test_reasoning_quote_must_occur_in_the_asserting_window():
+    from langchain_agents.specialist_agents import merge_windows_by_evidence
+
+    claim = "Termination: The seller may terminate at any time"
+    result = merge_windows_by_evidence([
+        (_window(cuad_clauses=[claim], entries=[{
+            "field": "cuad_clauses", "evidence": "The seller may terminate at any time",
+        }]), "This window says nothing about termination."),
+        (_window(), "Another unrelated window."),
+    ])
+    assert result["cuad_clauses"] == []
+    assert result["_unsupported_chunk_claims"]["cuad_clauses"] == [claim]
+
+
+def test_fabricated_scalar_quote_has_no_evidence_priority():
+    from langchain_agents.specialist_agents import merge_windows_by_evidence
+
+    result = merge_windows_by_evidence([
+        (_window(0.6, governing_law="Delaware", entries=[{
+            "field": "governing_law", "evidence": "Governed by Delaware law",
+        }]), "This window contains only payment terms."),
+        (_window(0.9, governing_law="New York"), "New York law governs this agreement."),
+    ])
+    assert result["governing_law"] == "New York"
 
 
 def test_bare_field_level_reasoning_entry_does_not_evidence_every_item(mock_openai_client, monkeypatch):
