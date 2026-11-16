@@ -1095,10 +1095,13 @@ def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str
     A resume skips documents by ``doc_id`` alone, so it is only sound when the saved records
     came from the same inputs and settings. ``current`` holds this run's ``mode``,
     ``dataset_id``, ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``judge_attempts``,
-    ``max_extraction_candidates`` and ``thresholds``. A saved record that lacks a recorded value
-    cannot be validated and is refused too: start a new output file.
+    ``max_extraction_candidates`` and ``thresholds``, plus the selection settings ``seed`` and
+    ``per_class`` (``None`` unless the HF corpus is sampled) and ``limit``. A saved record that lacks
+    a recorded value cannot be validated and is refused too: start a new output file. ``limit`` is
+    a prefix of the document list, so a resume may raise it (or drop it) to sweep more of the same
+    documents; lowering it is refused.
     """
-    run_keys = ("mode", "dataset_id", "dataset_revision", "split", "taxonomy_sha256")
+    run_keys = ("mode", "dataset_id", "dataset_revision", "split", "taxonomy_sha256", "seed", "per_class")
     diffs: dict[str, str] = {}
     for row in existing:
         run = row.get("run") or {}
@@ -1108,8 +1111,14 @@ def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str
         for key in run_keys:
             if key not in run:
                 diffs.setdefault(key, "not recorded in the saved records")
-            elif run[key] != current[key]:
-                diffs.setdefault(key, f"saved {run[key]!r}, now {current[key]!r}")
+            elif run[key] != current.get(key):
+                diffs.setdefault(key, f"saved {run[key]!r}, now {current.get(key)!r}")
+        if "limit" not in run:
+            diffs.setdefault("limit", "not recorded in the saved records")
+        else:
+            saved_limit, new_limit = run["limit"], current.get("limit")
+            if new_limit is not None and (saved_limit is None or new_limit < saved_limit):
+                diffs.setdefault("limit", f"saved {saved_limit!r}, now {new_limit!r} (it can only be raised)")
         if "judge_attempts" not in diag:
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
         elif diag["judge_attempts"] != current["judge_attempts"]:
@@ -1289,6 +1298,9 @@ def main(argv: list[str] | None = None) -> int:
             docs, ds = load_fixture_docs()
         if args.limit is not None:
             docs = docs[: args.limit]
+        # Only the sampled HF corpus depends on --seed / --per-class; elsewhere they are inert.
+        sample_seed = args.seed if args.hf_split else None
+        sample_per_class = args.per_class if args.hf_split else None
         ids = [d.doc_id for d in docs]
         if len(set(ids)) != len(ids):
             print("duplicate doc_ids in the selected documents", file=sys.stderr)
@@ -1304,6 +1316,7 @@ def main(argv: list[str] | None = None) -> int:
                 "dataset_revision": ds["dataset_revision"], "split": ds["split"],
                 "taxonomy_sha256": _taxonomy_sha256(), "judge_attempts": args.judge_attempts,
                 "max_extraction_candidates": args.max_extraction_candidates, "thresholds": thresholds,
+                "seed": sample_seed, "per_class": sample_per_class, "limit": args.limit,
             }
             why = resume_mismatch(existing, docs, current)
             if why:
@@ -1337,6 +1350,7 @@ def main(argv: list[str] | None = None) -> int:
             git_sha=_git_sha(), taxonomy_sha256=_taxonomy_sha256(), dojo_version=_dojo_version(),
             dataset_id=ds["dataset_id"], dataset_revision=ds["dataset_revision"], split=ds["split"],
             mode="mock" if mock else "real", gt_in_state=False,
+            seed=sample_seed, per_class=sample_per_class, limit=args.limit,
         )
         ctx = SweepContext(
             run=run, base_dir=base_dir, mock=mock, judge_attempts=args.judge_attempts,
