@@ -321,6 +321,43 @@ def test_compile_report_keeps_the_latest_when_the_knob_is_off(monkeypatch):
     assert "extraction_confidence" not in update
 
 
+def test_report_does_not_restore_an_earlier_attempt_that_still_requires_review(monkeypatch):
+    monkeypatch.setattr(routing, "get_confidence_thresholds", lambda doc_type=None: {"keep_best_attempt": True, "low": 0.7})
+    state = _base_state(**_state(_entry(1, "partial", 0.1), _entry(2, "incomplete", 0.95)))
+    update = bg.compile_report_node(state)
+    assert update["selected_attempt"] == 2
+    assert update["extracted_data"]["governing_law"] == "law-2"
+
+
+def test_report_selection_preserves_the_oracle_coverage_gate(monkeypatch):
+    from pipeline.config import oracle_routing_override
+
+    monkeypatch.setattr(routing, "get_confidence_thresholds", lambda doc_type=None: {"keep_best_attempt": True})
+    first, latest = _entry(1, "partial"), _entry(2, "incomplete")
+    latest["extracted_data"] = deepcopy(FIELDS)
+    state = _base_state(**_state(first, latest), ground_truth={"expected_fields": deepcopy(FIELDS)})
+    with oracle_routing_override(True):
+        update = bg.compile_report_node(state)
+    assert update["selected_attempt"] == 2
+    assert update["extracted_data"]["parties"] == FIELDS["parties"]
+
+
+@pytest.mark.parametrize("resolution", ["approve_as_is", "correct"])
+def test_live_human_apply_retains_the_selected_attempt_evidence(monkeypatch, temp_base_dir, resolution):
+    monkeypatch.setattr(routing, "get_confidence_thresholds", lambda doc_type=None: {"keep_best_attempt": True})
+    monkeypatch.setattr(bg, "_restart_review_clock", lambda doc_id: None)
+    state = _base_state(**_state(_entry(1, "complete", 0.8), _entry(2, "partial", 0.95)))
+    fields = {"governing_law": "New York"}
+    monkeypatch.setattr(bg, "interrupt", lambda payload: {
+        "decision": "approved", "resolution": resolution, "extracted_data": fields,
+    })
+    update = bg.human_review_node(state)
+    assert update["extracted_data"] == fields
+    assert update["selected_attempt"] == 1
+    assert update["extraction_confidence"] == 0.8
+    assert update["judge_verdict"] == "complete"
+
+
 def test_the_review_handoff_gets_the_selected_attempt(monkeypatch):
     monkeypatch.setattr(routing, "get_confidence_thresholds", lambda doc_type=None: {"keep_best_attempt": True})
     state = _base_state(**_state(_entry(1, "partial", 0.95), _entry(2, "incomplete", 0.99)))
