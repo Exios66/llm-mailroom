@@ -235,6 +235,13 @@ def _fold(text) -> str:
     return " ".join(folded.split()).casefold()
 
 
+def _contains_evidence(text: str, fragment: str) -> bool:
+    """Match a complete lexical span, including hyphenated-word boundaries."""
+    import re
+
+    return bool(fragment) and re.search(r"(?<![\w-])" + re.escape(fragment) + r"(?![\w-])", text) is not None
+
+
 def _evidence_fragments(item, field: str) -> list[str]:
     """Folded quote candidates of a list item (may be empty).
 
@@ -274,7 +281,7 @@ def _item_support(item, field: str, entries: list[dict], text_norm: str | None) 
     of the document text, and a short bare string would match by accident.
     """
     fragments = _evidence_fragments(item, field)
-    if fragments and text_norm and all(f in text_norm for f in fragments):
+    if fragments and text_norm and all(_contains_evidence(text_norm, f) for f in fragments):
         return True
     item_fold = _fold(item)
     for entry in entries:
@@ -284,7 +291,7 @@ def _item_support(item, field: str, entries: list[dict], text_norm: str | None) 
         if (
             len(quote) >= _MIN_SPAN_CHARS
             and text_norm
-            and quote in text_norm
+            and _contains_evidence(text_norm, quote)
             and (quote in item_fold or item_fold in quote)
         ):
             return True
@@ -296,7 +303,7 @@ def _scalar_has_evidence(field: str, entries: list[dict], text_norm: str | None)
         str(e.get("field") or "").strip().casefold() == field.casefold()
         and (quote := _fold(e.get("evidence")))
         and text_norm
-        and quote in text_norm
+        and _contains_evidence(text_norm, quote)
         for e in entries
     )
 
