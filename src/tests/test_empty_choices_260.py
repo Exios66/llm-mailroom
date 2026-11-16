@@ -253,3 +253,58 @@ def test_arbiter_exception_stays_internal_when_report_is_echoed(monkeypatch):
     for rendered in (build_echo_body(manifest, [], True), build_echo_html(manifest, [], True)):
         assert secret not in rendered
         assert "arbiter failed (RuntimeError)" in rendered
+
+
+class TestReviewerHardFailCause:
+    """The sorter-reviewer hard-fail reason must not echo provider text to the sender
+    (#260 convention), while our own free-only guardrail text stays translatable (HUB-043)."""
+
+    def _fail_with(self, monkeypatch, exc):
+        from graph import build_graph as bg
+
+        class BoomReviewer:
+            def __init__(self):
+                pass
+
+            def review(self, *a, **k):
+                raise exc
+
+        monkeypatch.setattr("agents.sorter_reviewer.SorterReviewerAgent", BoomReviewer)
+        state = {"doc_id": "r-1", "doc_text": "t", "doc_type": "contract", "classification_confidence": 0.8}
+        updates = bg.review_classify_node(state)
+        assert updates["review_verdict"] == "reviewer_error"
+        assert updates["transient_error"] is False
+        return updates
+
+    def test_provider_error_text_is_cut_from_the_sender_reason(self, monkeypatch):
+        from llm.retry import EmptyChoicesError, is_transient_error
+        from pipeline.gmail_intake import _sender_reason
+
+        secret = "User not found for key sk-abc123"
+        exc = EmptyChoicesError(f"provider error 401: {secret}", status_code=401)
+        assert not is_transient_error(exc)  # so it takes the hard-fail branch
+        updates = self._fail_with(monkeypatch, exc)
+        assert secret in updates["escalation_reason"]  # the audit text keeps the cause
+        seen = _sender_reason({"escalation_reason": updates["escalation_reason"]})
+        assert "sk-abc123" not in seen and "provider error" not in seen and "[cause:" not in seen
+        assert seen == "sorter reviewer failed (EmptyChoicesError) — routing to human review"
+
+    def test_free_only_guardrail_stays_translatable_for_the_sender(self, monkeypatch):
+        from pipeline.gmail_intake import _sender_reason, friendly_reason
+
+        exc = RuntimeError(
+            "MAILROOM_LLM_FREE_ONLY is on: model 'qwen/qwen3.7-flash' is not free — refusing to resolve an LLM client for it."
+        )
+        updates = self._fail_with(monkeypatch, exc)
+        seen = _sender_reason({"escalation_reason": updates["escalation_reason"]})
+        assert "MAILROOM_LLM_FREE_ONLY" in seen
+        translated = friendly_reason(seen)
+        assert translated is not None and "free-only pilot guardrail" in translated[0]
+
+    def test_provider_text_that_names_the_guardrail_is_still_cut(self, monkeypatch):
+        from llm.retry import EmptyChoicesError
+        from pipeline.gmail_intake import _sender_reason
+
+        exc = EmptyChoicesError("provider error 401: MAILROOM_LLM_FREE_ONLY is on sk-abc123", status_code=401)
+        updates = self._fail_with(monkeypatch, exc)
+        assert "sk-abc123" not in _sender_reason({"escalation_reason": updates["escalation_reason"]})
