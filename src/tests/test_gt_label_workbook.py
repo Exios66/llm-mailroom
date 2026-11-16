@@ -284,6 +284,19 @@ def test_text_that_looks_like_a_formula_stays_text_and_controls_are_visible(tool
     assert stats["text_controls_replaced"] == 1 and stats["text_truncated"] == 0
 
 
+def test_a_cell_of_astral_characters_is_clipped_to_excels_utf16_limit(tool, tmp_path):
+    """Excel counts UTF-16 units: 20,000 emoji are 20,000 code points (under CELL_MAX)
+    but 40,000 units, past the 32,767 cap, so a code-point clip left the cell unclipped."""
+    gt = _full_gt(tool, "correspondence", subject_matter="\U0001F600" * 20_000)
+    df = pd.DataFrame([_doc(tool, "DOC-EMOJI", "correspondence", "email", "Body.", gt)])
+    out, stats, wb = _build(tool, df, tmp_path, to_label=())
+    assert stats["truncated"] == 1
+    cells = [c.value for row in wb["Correspondence"].iter_rows() for c in row if isinstance(c.value, str)]
+    assert max(tool._utf16_len(v) for v in cells) <= tool.EXCEL_CELL_MAX
+    clipped = [v for v in cells if "[TRUNCATED" in v]
+    assert len(clipped) == 1 and set(clipped[0].split(" …[TRUNCATED")[0]) == {"\U0001F600"}
+
+
 def test_chunk_text_round_trips_a_100k_text_exactly(tool):
     text = "".join(f"Paragraph {i}. " + "word " * 120 + "\n\n" for i in range(170))[:100_000]
     assert len(text) == 100_000
