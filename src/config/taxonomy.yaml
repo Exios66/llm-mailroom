@@ -199,11 +199,16 @@ chunking:
   #            assert it; filtered items are recorded under `_unsupported_chunk_claims`,
   #            never shown to the judge. A scalar comes from the window whose reasoning
   #            evidences it, then the more confident window, then document order.
-  # `by_agent` overrides `policy` / `min_windows` per specialist (an agent key under `agents:`),
-  # e.g. `by_agent: {contracts_specialist: {policy: evidence}}`.
+  # `fields` is the evidence filter's scope: only these list fields are checked (clause,
+  # obligation and reason lists that a model can quote or paraphrase). Every other list
+  # (parties, signatories, keywords, financial_advisors, maud_clauses, ...) is unioned as
+  # under `union`. An in-scope item with no span long enough to check is kept, not dropped.
+  # `by_agent` overrides `policy` / `min_windows` / `fields` per specialist (an agent key
+  # under `agents:`), e.g. `by_agent: {contracts_specialist: {policy: evidence}}`.
   merge:
     policy: union
     min_windows: 2
+    fields: [cuad_clauses, claim_checklist, action_items, denial_reasons]
     by_agent: {}
 
 # Approximate per-1M-token pricing used for estimated_cost_usd scoring and

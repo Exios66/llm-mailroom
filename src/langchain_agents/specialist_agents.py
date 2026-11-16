@@ -16,6 +16,8 @@ module constants so the eval loops and judges can reference the same contracts.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 import structlog
 from langchain_agents.base_agent import BaseAgent, build_structured_schema
 from langchain_agents.doc_inventories import (
@@ -135,16 +137,32 @@ def _merge_reasoning(acc, chunk_reasoning) -> dict:
 CHUNK_MERGE_POLICIES = ("union", "evidence")
 _DEFAULT_MERGE_MIN_WINDOWS = 2
 _MIN_SPAN_CHARS = 12  # shorter spans ("Yes", "all_cash") are labels, not quotes
+# List fields the ``evidence`` policy filters: free text a model can quote or
+# paraphrase. Entity and label lists (parties, signatories, keywords, ...) and
+# ``maud_clauses`` ("<Question>: <valid_class>", a label, not a span) are not
+# claims about a clause, so they keep union semantics unless ``fields`` adds them.
+_DEFAULT_EVIDENCE_FIELDS = ("cuad_clauses", "claim_checklist", "action_items", "denial_reasons")
 
 
-def chunk_merge_settings(agent_name: str) -> tuple[str, int]:
-    """``(policy, min_windows)`` for one specialist from ``chunking.merge``.
+class ChunkMergeSettings(NamedTuple):
+    """Effective ``chunking.merge`` settings for one specialist."""
 
-    ``chunking.merge.by_agent.<agent_name>`` overrides the global ``policy`` /
-    ``min_windows``. Anything unreadable or unknown degrades to ``union`` with
-    the default ``min_windows`` (config trouble must not change extraction).
+    policy: str
+    min_windows: int
+    fields: frozenset[str]
+
+
+def chunk_merge_settings(agent_name: str) -> ChunkMergeSettings:
+    """``(policy, min_windows, fields)`` for one specialist from ``chunking.merge``.
+
+    ``chunking.merge.by_agent.<agent_name>`` overrides the global ``policy``,
+    ``min_windows`` and ``fields`` (the list fields the ``evidence`` policy
+    filters; every other list field is unioned). Anything unreadable or unknown
+    degrades to ``union`` with the default ``min_windows`` / ``fields`` (config
+    trouble must not change extraction).
     """
     policy, min_windows = "union", _DEFAULT_MERGE_MIN_WINDOWS
+    fields = frozenset(_DEFAULT_EVIDENCE_FIELDS)
     try:
         from pipeline.config import load_config
 
@@ -152,15 +170,18 @@ def chunk_merge_settings(agent_name: str) -> tuple[str, int]:
         override = (merge.get("by_agent") or {}).get(agent_name) or {}
         raw_policy = str(override.get("policy", merge.get("policy", "union"))).strip().lower()
         raw_min = override.get("min_windows", merge.get("min_windows", _DEFAULT_MERGE_MIN_WINDOWS))
+        raw_fields = override.get("fields", merge.get("fields", _DEFAULT_EVIDENCE_FIELDS))
         if raw_policy in CHUNK_MERGE_POLICIES:
             policy = raw_policy
         else:
             logger.warning("chunk_merge_policy_unknown", agent=agent_name, policy=raw_policy)
         if isinstance(raw_min, int) and not isinstance(raw_min, bool) and raw_min >= 1:
             min_windows = raw_min
+        if isinstance(raw_fields, (list, tuple)):  # an empty list filters nothing
+            fields = frozenset(str(f).strip() for f in raw_fields if str(f).strip())
     except Exception:  # noqa: BLE001 - never let config trouble break extraction
         pass
-    return policy, min_windows
+    return ChunkMergeSettings(policy, min_windows, fields)
 
 
 def merge_chunk_windows(windows: list[tuple[dict, str | None]], *, agent_name: str) -> dict | None:
@@ -173,9 +194,11 @@ def merge_chunk_windows(windows: list[tuple[dict, str | None]], *, agent_name: s
     """
     if not windows:
         return None
-    policy, min_windows = chunk_merge_settings(agent_name)
+    policy, min_windows, fields = chunk_merge_settings(agent_name)
     if policy == "evidence":
-        return merge_windows_by_evidence(windows, min_windows=min_windows, agent_name=agent_name)
+        return merge_windows_by_evidence(
+            windows, min_windows=min_windows, agent_name=agent_name, fields=fields
+        )
     merged: dict | None = None
     for result, _text in windows:
         merged = result if merged is None else _SpecialistBase._merge_extractions(merged, result)
@@ -186,46 +209,81 @@ def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+_FOLD_TABLE = str.maketrans({
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'", "\u2032": "'", "\u00b4": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2033": '"',
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-",
+    "\u2015": "-", "\u2212": "-",
+})
+_EDGE_PUNCT = " \t\"'.,;:!?()[]-"
+
+
+def _fold(text) -> str:
+    """Matching form for the evidence check: tolerant of typography, not of words.
+
+    NFKC, typographic quotes/apostrophes folded to ASCII, en/em dashes to a
+    hyphen, whitespace collapsed, casefolded. Applied to BOTH the item and the
+    window text, so a model that straightens ``\u2019`` (or the reverse) still
+    matches. Separate from :func:`_norm`, which the ``union`` dedupe uses and
+    which must not change.
+    """
+    import unicodedata
+
+    if text is None:
+        return ""
+    folded = unicodedata.normalize("NFKC", str(text)).translate(_FOLD_TABLE)
+    return " ".join(folded.split()).casefold()
+
+
 def _evidence_fragments(item) -> list[str]:
-    """Normalized quote candidates of a list item.
+    """Folded quote candidates of a list item (may be empty).
 
     ``"<Category>: <span>"`` items (CUAD clauses, claim checklist) carry their
     span after the first colon; free-text items (obligations) are their own
-    span. An ellipsis splits a span into fragments; fragments shorter than
-    ``_MIN_SPAN_CHARS`` are labels or answers, not quotes, and are dropped.
+    span. An ellipsis splits a span into fragments; edge punctuation is
+    stripped; fragments shorter than ``_MIN_SPAN_CHARS`` are labels or answers,
+    not quotes, and are dropped. An item with no fragment left is *unverifiable*
+    (see :func:`_item_support`).
     """
     import re
 
-    text = str(item or "")
+    text = _fold(item)
     _head, sep, tail = text.partition(":")
     span = tail if sep and tail.strip() else text
     fragments = []
-    for part in re.split(r"\.\.\.|…", span):
-        part = _norm(part.strip(" \t\"'“”‘’.,;"))
+    for part in re.split(r"\.\.\.", span):
+        part = part.strip(_EDGE_PUNCT)
         if len(part) >= _MIN_SPAN_CHARS:
             fragments.append(part)
     return fragments
 
 
-def _item_has_evidence(item, field: str, entries: list[dict], text_norm: str | None) -> bool:
+def _item_support(item, field: str, entries: list[dict], text_norm: str | None) -> bool | None:
     """Does the window that asserted ``item`` evidence it?
 
-    Reasoning is per FIELD (one entry per populated field), so a bare entry for
-    the list field proves nothing about one item. Evidence for an item is
-    (a) its own quote found verbatim in the window text, or (b) a reasoning entry
-    for that field whose quote and the item contain each other.
+    ``True``: evidenced, i.e. (a) every quote fragment of the item is found in
+    the folded window text, or (b) a reasoning entry for that field has a quote
+    and the item containing each other (reasoning is per FIELD, one entry per
+    populated field, so a bare entry proves nothing about one item).
+    ``False``: the item has at least one checkable fragment and none of the
+    above holds.
+    ``None``: unverifiable. No fragment is long enough to check (a short answer
+    or label such as ``"Governing Law: Delaware"``), so the filter has no basis
+    to call it unsupported and the item passes through. A short item is not
+    containment-checked as a whole string: its ``<Category>:`` label is not part
+    of the document text, and a short bare string would match by accident.
     """
     fragments = _evidence_fragments(item)
     if fragments and text_norm and all(f in text_norm for f in fragments):
         return True
-    item_norm = _norm(item)
+    item_fold = _fold(item)
     for entry in entries:
         if str(entry.get("field") or "").strip().casefold() != field.casefold():
             continue
-        quote = _norm(entry.get("evidence"))
-        if len(quote) >= _MIN_SPAN_CHARS and (quote in item_norm or item_norm in quote):
+        quote = _fold(entry.get("evidence"))
+        if len(quote) >= _MIN_SPAN_CHARS and (quote in item_fold or item_fold in quote):
             return True
-    return False
+    return False if fragments else None
 
 
 def _scalar_has_evidence(field: str, entries: list[dict]) -> bool:
@@ -241,16 +299,21 @@ def merge_windows_by_evidence(
     *,
     min_windows: int = _DEFAULT_MERGE_MIN_WINDOWS,
     agent_name: str = "",
+    fields: frozenset[str] | set[str] | tuple[str, ...] = _DEFAULT_EVIDENCE_FIELDS,
 ) -> dict:
     """Precision-filtered chunk merge (``chunking.merge.policy: evidence``).
 
-    * **List fields:** an item survives when the window that asserted it
-      evidences it (:func:`_item_has_evidence`) or when ``min_windows`` windows
-      assert it (normalized dedupe, so the overlap re-quote counts once per
-      window). A failing item is NOT dropped silently: it is recorded under
+    * **List fields in ``fields``** (clause, obligation and reason lists; see
+      ``_DEFAULT_EVIDENCE_FIELDS``): an item survives when the window that
+      asserted it evidences it or cannot be checked (:func:`_item_support`
+      is ``True`` or ``None``), or when ``min_windows`` windows assert it
+      (normalized dedupe, so the overlap re-quote counts once per window). A
+      failing item is NOT dropped silently: it is recorded under
       ``_unsupported_chunk_claims[field]`` (underscore metadata; stripped before
       judge input, ignored by scoring and routing) so offline scoring can
       measure what the filter removed.
+    * **Other list fields** (parties, signatories, keywords, ...) are unioned
+      with normalized dedupe, exactly as under ``union``.
     * **Scalar fields:** never a null. Among windows stating a value, one whose
       ``reasoning`` has a non-empty entry for that field wins; then the higher
       window ``confidence`` (whole-window, not per field: the schema has no
@@ -265,7 +328,8 @@ def merge_windows_by_evidence(
         if isinstance(r.get("reasoning"), dict) else []
         for r in results
     ]
-    texts_norm = [_norm(t) if t else None for _, t in windows]
+    texts_norm = [_fold(t) if t else None for _, t in windows]
+    scope = {str(f).strip() for f in fields}
 
     keys: list[str] = []
     for r in results:
@@ -289,13 +353,20 @@ def merge_windows_by_evidence(
                         _norm(item), {"item": item, "windows": set(), "evidenced": False}
                     )
                     slot["windows"].add(i)
-                    if not key.startswith("_") and not slot["evidenced"]:
-                        slot["evidenced"] = _item_has_evidence(
-                            item, key, entries_by_window[i], texts_norm[i]
+                    if key in scope and not key.startswith("_") and not slot["evidenced"]:
+                        # unverifiable (None) passes through; only a failed check filters
+                        slot["evidenced"] = (
+                            _item_support(item, key, entries_by_window[i], texts_norm[i])
+                            is not False
                         )
             kept: list = []
             for slot in asserted.values():
-                if key.startswith("_") or slot["evidenced"] or len(slot["windows"]) >= min_windows:
+                if (
+                    key not in scope
+                    or key.startswith("_")
+                    or slot["evidenced"]
+                    or len(slot["windows"]) >= min_windows
+                ):
                     kept.append(slot["item"])
                 else:
                     unsupported.setdefault(key, []).append(slot["item"])
