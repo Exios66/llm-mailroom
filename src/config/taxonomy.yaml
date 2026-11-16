@@ -289,6 +289,17 @@ confidence:
       low: 0.85
       judge_band_high: 0.92
 
+# Routing inputs beyond the observed run (pipeline/config.py:oracle_routing_enabled).
+routing:
+  # false (default): routing never reads `ground_truth` from state, so a pilot or
+  # experiment routes a document exactly as production would. true: the GT class-miss
+  # arms (after_classify, after_retry_classify, after_classification_arbiter,
+  # after_review_classify) and the expected-field coverage floor in after_extraction act
+  # on the label. That is oracle-assisted: its automation and accuracy numbers do not
+  # transfer to production. MAILROOM_ORACLE_ROUTING=1|0 overrides this for one run.
+  # Cause labelling (class_miss, subclass_miss) and scoring read GT either way.
+  use_ground_truth: false
+
 # Lane A reviewer mode (see pipeline/decision_review.py). Every class keeps
 # the LLM sorter_reviewer unless its by_class entry sets `mode: decision_only`
 # with a tuned `cutoff` (0-1), e.g.
