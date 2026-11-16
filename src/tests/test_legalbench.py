@@ -127,6 +127,66 @@ class TestDataLoaders:
         rows = lb_data.load_cuad_qa(10_000, seed=1, cuad_path=cuad_file, min_text_chars=10)
         assert len(rows) <= 6  # 2 contracts x 3 categories
 
+    @staticmethod
+    def _synthetic_cuad(tmp_path: Path, long_titles: int, short_titles: int) -> Path:
+        """``long_titles`` contracts over 400 chars plus ``short_titles`` under it,
+        each with the same 3 categories."""
+        cats = ["Governing Law", "Non-Compete", "Insurance"]
+
+        def contract(title: str, context: str) -> dict:
+            return {
+                "title": title,
+                "paragraphs": [
+                    {
+                        "context": context,
+                        "qas": [
+                            {
+                                "id": f"{title}__{cat}",
+                                "question": f"Highlight the parts related to {cat}.",
+                                "answers": [{"text": "x", "answer_start": 0}] if i % 2 else [],
+                                "is_impossible": not (i % 2),
+                            }
+                            for i, cat in enumerate(cats)
+                        ],
+                    }
+                ],
+            }
+
+        data = [contract(f"LONG_{i:02d}", "A long agreement clause. " * 40) for i in range(long_titles)]
+        data += [contract(f"SHORT_{i:02d}", "tiny") for i in range(short_titles)]
+        path = tmp_path / "CUAD_synthetic.json"
+        path.write_text(json.dumps({"version": "v1", "data": data}), encoding="utf-8")
+        return path
+
+    def test_cuad_qa_draw_unchanged_when_every_contract_is_long(self, tmp_path: Path):
+        """#190 must not move the seeded draw on a corpus with no short texts
+        (the real CUAD): same candidate list, same ``sample`` call as before."""
+        import random
+
+        path = self._synthetic_cuad(tmp_path, long_titles=5, short_titles=0)
+        cats = ["Governing Law", "Insurance", "Non-Compete"]  # sorted
+        pairs = [(f"LONG_{i:02d}", cat) for i in range(5) for cat in cats]
+        expected = [
+            f"{pairs[i][0]}__{pairs[i][1]}"
+            for i in random.Random(42).sample(range(len(pairs)), 7)
+        ]
+        rows = lb_data.load_cuad_qa(7, seed=42, cuad_path=path)
+        assert [r["qa_id"] for r in rows] == expected
+
+    def test_cuad_qa_short_contracts_do_not_shrink_the_request(self, tmp_path: Path):
+        """#190: short-text contracts used to be sampled and then dropped,
+        so asking for n rows returned fewer than n."""
+        path = self._synthetic_cuad(tmp_path, long_titles=4, short_titles=4)  # 12 + 12 pairs
+        rows = lb_data.load_cuad_qa(10, seed=3, cuad_path=path)
+        assert len(rows) == 10
+        assert all(r["contract_title"].startswith("LONG_") for r in rows)
+        assert len({r["qa_id"] for r in rows}) == 10
+
+    def test_cuad_qa_all_contracts_short_raises(self, tmp_path: Path):
+        path = self._synthetic_cuad(tmp_path, long_titles=0, short_titles=2)
+        with pytest.raises(lb_data.CorpusUnavailable):
+            lb_data.load_cuad_qa(3, seed=1, cuad_path=path)
+
     def test_cuad_missing_raises(self, tmp_path: Path):
         with pytest.raises(lb_data.CorpusUnavailable):
             lb_data.load_cuad_qa(1, seed=1, cuad_path=tmp_path / "nope.json")
@@ -251,7 +311,7 @@ class TestRunner:
         assert result.record["task"] == "legalbench_multiclass_classification"
 
     def test_fingerprint_stable(self, cuad_file: Path):
-        rows = lb_data.load_cuad_qa(4, seed=7, cuad_path=cuad_file)
+        rows = lb_data.load_cuad_qa(4, seed=7, cuad_path=cuad_file, min_text_chars=10)
         fp1 = build_record(task_id="contract_qa", kind="legalbench_binary_answer",
                            experiment_name="x", prompt_version="v", model="m",
                            rows=rows, n_requested=4, seed=7, scores={},

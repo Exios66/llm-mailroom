@@ -109,34 +109,41 @@ def load_cuad_qa(
     if not titles:
         raise CorpusUnavailable(f"No QA pairs in {path}")
 
+    # Full text per contract (all paragraph contexts concatenated).
+    text_cache: dict[str, str] = {
+        title: "\n\n".join(
+            str(p.get("context") or "")
+            for p in by_title[title]["contract"].get("paragraphs") or []
+        )
+        for title in titles
+    }
     # Universe of ACTUAL (title, category) pairs, sorted deterministically.
     # (In the real corpus every contract carries all 41 categories, so this
     # is exactly 510 x 41 = 20,910; contracts with partial coverage are
-    # handled correctly too.)
+    # handled correctly too.) Contracts whose text is under ``min_text_chars``
+    # are excluded BEFORE sampling, as ``load_family_rows`` does, so they
+    # cannot be drawn and then dropped (which silently shrank the request).
+    # With no short contracts the list, and so the seeded draw, is unchanged.
     pairs = [
         (title, cat)
         for title in titles
+        if len(text_cache[title]) >= min_text_chars
         for cat in sorted(by_title[title]["qas"])
     ]
+    if not pairs:
+        raise CorpusUnavailable(
+            f"No contract in {path} has at least {min_text_chars} characters of text"
+        )
     k = min(n, len(pairs))
     idx = random.Random(seed).sample(range(len(pairs)), k)
 
-    text_cache: dict[str, str] = {}
     rows: list[dict[str, Any]] = []
     for i in idx:
         title, cat = pairs[i]
         entry = by_title[title]["qas"][cat]
         qid = entry["qid"]
         qa = entry["qa"]
-        text = text_cache.get(title)
-        if text is None:
-            text = "\n\n".join(
-                str(p.get("context") or "")
-                for p in by_title[title]["contract"].get("paragraphs") or []
-            )
-            text_cache[title] = text
-        if len(text) < min_text_chars:
-            continue
+        text = text_cache[title]
         answers = qa.get("answers") or []
         impossible = bool(qa.get("is_impossible"))
         evidence = str(answers[0].get("text") or "") if answers else ""
