@@ -706,6 +706,13 @@ def extract_attachments(msg: email.message.Message) -> list[tuple[str, bytes]]:
             continue
         payload = part.get_payload(decode=True)
         if payload is None:
+            # A named part with no decodable body (e.g. a forwarded message/rfc822
+            # .eml). Skipped as before, but visible. Never log payload or body text.
+            logger.warning(
+                "gmail_attachment_undecodable",
+                filename=filename,
+                content_type=part.get_content_type(),
+            )
             continue
         attachments.append((filename, payload))
     return attachments

@@ -1879,3 +1879,29 @@ def test_ack_disabled_by_env(echo_env, monkeypatch):
     report = gmail_intake.poll_once(config=_cfg(), imap_factory=lambda: client)
     assert report["attachments_queued"] == 1 and report["ack_replies"] == 0
     assert _keys() == []
+
+
+def test_extract_attachments_logs_undecodable_named_part():
+    """#189: a named part with no decodable payload (a forwarded .eml) is
+    skipped, but no longer silently."""
+    from structlog.testing import capture_logs
+
+    inner = email.message.EmailMessage()
+    inner["Subject"] = "forwarded"
+    inner.set_content("SECRET BODY TEXT that must never be logged")
+    outer = email.message.EmailMessage()
+    outer["Subject"] = "fwd"
+    outer.set_content("see attached")
+    outer.add_attachment(inner, filename="forwarded.eml")
+    outer.add_attachment(
+        _pdf_bytes(), maintype="application", subtype="pdf", filename="real.pdf"
+    )
+    with capture_logs() as logs:
+        found = gmail_intake.extract_attachments(outer)
+    assert [name for name, _ in found] == ["real.pdf"]
+    dropped = [e for e in logs if e.get("event") == "gmail_attachment_undecodable"]
+    assert len(dropped) == 1
+    assert dropped[0]["log_level"] == "warning"
+    assert dropped[0]["filename"] == "forwarded.eml"
+    assert dropped[0]["content_type"] == "message/rfc822"
+    assert "SECRET BODY" not in repr(dropped[0])
