@@ -95,8 +95,13 @@ def record_usage(
     if usage is None:
         return
     if isinstance(usage, dict):
-        prompt = usage.get("input_tokens") or usage.get("prompt_tokens")
-        completion = usage.get("output_tokens") or usage.get("completion_tokens")
+        # ``or`` would treat a real 0 as missing; fall back only when the key is absent/None.
+        prompt = usage.get("input_tokens")
+        if prompt is None:
+            prompt = usage.get("prompt_tokens")
+        completion = usage.get("output_tokens")
+        if completion is None:
+            completion = usage.get("completion_tokens")
     else:
         prompt = getattr(usage, "prompt_tokens", None)
         completion = getattr(usage, "completion_tokens", None)
