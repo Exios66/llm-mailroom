@@ -258,6 +258,31 @@ def test_worker_env_drops_every_provider_secret(st, monkeypatch, tmp_path):
     assert env["MAILROOM_KEEP_ME"] == "1"
 
 
+def test_worker_env_blanks_secrets_the_dotenv_would_restore(st, monkeypatch, tmp_path):
+    """#251: workers call load_env(override=False), which re-reads .env. A secret the
+    file defines must be pinned to "" so the worker cannot pick it up again."""
+    from pipeline.env import load_env
+
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("OPENAI_API_KEY=sk-from-dotenv\nNEWPROVIDER_API_KEY=np\nMAILROOM_SAFE=1\n")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("NEWPROVIDER_API_KEY", raising=False)
+    env = st._worker_env(str(tmp_path / "base"), "CRITICAL", dotenv_path=dotenv)
+    assert env["OPENAI_API_KEY"] == "" and env["NEWPROVIDER_API_KEY"] == ""
+    assert "MAILROOM_SAFE" not in env  # non-secret .env values are left to load_env
+    assert env["OPENROUTER_API_KEY"] == "test-key-not-real"
+    # What the worker would see after its own load_env() call:
+    for key in ("OPENAI_API_KEY", "NEWPROVIDER_API_KEY", "MAILROOM_SAFE"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    load_env(dotenv)
+    import os
+
+    assert os.environ["OPENAI_API_KEY"] == "" and os.environ["NEWPROVIDER_API_KEY"] == ""
+    assert os.environ["MAILROOM_SAFE"] == "1"
+
+
 def test_supports_cap_env_probes_behavior_not_watcher_source(st, monkeypatch):
     """#251: MAILROOM_MAX_CONCURRENT_DOCS is read in pipeline/config.py, so a grep of the
     watcher module's source never finds it."""
