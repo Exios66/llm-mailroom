@@ -186,18 +186,32 @@ def test_judge_complete_archives_and_partial_follows_the_arbiter():
     retry = record(
         sorters=[sorter(0.97)],
         extractions=[extract(0.85), extract(0.95, attempt=2)],
-        judges=[judge("partial"), judge("complete", attempt=2)],  # #241: the confident retry is re-judged
+        judges=[judge("partial")],
         arbiters=[arbiter("retry_extraction")],
     )
     out = pr.replay(retry, POLICY)
     assert out.outcome == pr.AUTO
     assert out.path.count("retry_extract") == 1 and "arbiter" in out.path
+    assert out.path.count("judge_verify") == 1  # judge_rejudge_retry is off by default
+
+
+def test_opt_in_rejudge_replays_the_second_verdict():
+    """#241 opt-in: with judge_rejudge_retry on, the confident retry needs its own verdict."""
+    policy = {**POLICY, "judge_rejudge_retry": True}
+    retry = record(
+        sorters=[sorter(0.97)],
+        extractions=[extract(0.85), extract(0.95, attempt=2)],
+        judges=[judge("partial"), judge("complete", attempt=2)],
+        arbiters=[arbiter("retry_extraction")],
+    )
+    out = pr.replay(retry, policy)
+    assert out.outcome == pr.AUTO
     assert out.path.count("judge_verify") == 2
     unjudged = record(
         sorters=[sorter(0.97)], extractions=retry.extraction, judges=[judge("partial")],
         arbiters=[arbiter("retry_extraction")],
     )
-    assert pr.replay(unjudged, POLICY).reasons == ["judge_not_observed_on_attempt_2"]
+    assert pr.replay(unjudged, policy).reasons == ["judge_not_observed_on_attempt_2"]
 
 
 def test_judge_observation_for_another_attempt_is_not_borrowed():

@@ -461,13 +461,13 @@ def retry_rejudge_due(state: Mapping[str, Any]) -> bool:
     unjudged after the arbiter had asked for it. True when this is a retry
     (``extraction_attempts >= 2``), an earlier attempt was judged
     (``judge_pass_count >= 1``) and the pass budget (``judge_max_passes``) is not
-    spent. Opt out with ``judge_rejudge_retry: false`` (taxonomy, per class
-    overridable). The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY``
+    spent. Off by default until the judge is calibrated (#242): opt in with
+    ``judge_rejudge_retry: true`` (taxonomy, per class overridable). The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY``
     kill switch, a guardrail failure or an empty extraction. When the passes are
     spent the retry archives as before; it does not escalate.
     """
     thresholds = _thresholds_for(state)
-    if not thresholds.get("judge_rejudge_retry", True):
+    if not thresholds.get("judge_rejudge_retry", False):
         return False
     if int(state.get("extraction_attempts") or 0) < 2:
         return False
