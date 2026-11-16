@@ -15,6 +15,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+import observability.scoring_wiring  # noqa: F401 — import-time taxonomy→dojo wiring (field types, bands, embedding); without it score_extraction_case scores on Dojo package defaults (#256)
+
 SRC_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = SRC_DIR.parent
 FIXTURES = SRC_DIR / "tests" / "fixtures"

@@ -532,7 +532,17 @@ def test_scoring_wiring_probe_distinguishes_calibrated_from_defaults():
 
 @pytest.mark.parametrize(
     "entrypoint",
-    ["graph.build_graph", "scripts.run_pilot", "scripts.run_hf_pilot"],
+    [
+        "graph.build_graph",
+        "scripts.run_pilot",
+        "scripts.run_hf_pilot",
+        # #256: the per-agent eval scorer and the local eval packs score on
+        # their own when reached without run_hf_pilot / the graph.
+        "observability.agent_eval",
+        "observability.local_eval_packs",
+        # needs the taxonomy field types: unwired it labels nothing at all
+        "scripts.calibrate_field_scoring",
+    ],
 )
 def test_scoring_entrypoint_import_applies_calibrated_taxonomy(entrypoint):
     """#192 tripwire, behavioural: importing each field-scoring entrypoint in
@@ -549,3 +559,24 @@ def test_scoring_entrypoint_import_applies_calibrated_taxonomy(entrypoint):
     src = Path(__file__).resolve().parent.parent
     own_file = src / (entrypoint.replace(".", "/") + ".py")
     assert seen["importer"] is not None and Path(seen["importer"]) == own_file
+
+
+def test_wire_taxonomy_logs_a_warning_instead_of_failing_silently(monkeypatch):
+    """#256: a failed taxonomy wiring leaves the Dojo on package defaults. It
+    stays best-effort (no raise) but must say so."""
+    import structlog
+
+    import pipeline.config as pipeline_config
+    from observability import scoring_wiring
+
+    def boom():
+        raise RuntimeError("taxonomy exploded")
+
+    monkeypatch.setattr(pipeline_config, "load_config", boom)
+    with structlog.testing.capture_logs() as logs:
+        scoring_wiring.wire_taxonomy()  # must not raise
+
+    warnings = [e for e in logs if e.get("log_level") == "warning"]
+    assert len(warnings) == 1
+    assert warnings[0]["event"] == "dojo_taxonomy_wiring_failed"
+    assert "taxonomy exploded" in str(warnings[0].get("error"))
