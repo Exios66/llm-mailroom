@@ -192,7 +192,10 @@ def _present_shas(row: dict[str, Any]) -> set[str]:
     def note_recovered(detail: Any) -> None:
         rf = (detail or {}).get("recovered_from") if isinstance(detail, dict) else None
         if isinstance(rf, dict):
-            out.update(v for v in (rf.get("detail_sha256"), rf.get("full_detail_sha256")) if v)
+            out.add(rf.get("detail_sha256"))
+            # A decisions-only record names a full record it does not hold: that digest is not on file.
+            if rf.get("complete") is not False:
+                out.add(rf.get("full_detail_sha256"))
 
     detail = row.get("detail") or {}
     note_recovered(detail)
@@ -205,6 +208,7 @@ def _present_shas(row: dict[str, Any]) -> set[str]:
         elif add.get("kind") == "recovered_detail":
             out.add(_content_sha(ad.get("detail"), row.get("event"), ad.get("sub_rows")))
     out.discard(None)
+    out.discard("")
     return out
 
 
@@ -251,7 +255,13 @@ async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str
     """A document with a (complete) row: its copies are spent, or later terminal writes to record."""
     from audit.row import mark_manifest
 
-    fresh = _fresh(unique, _present_shas(row))
+    present = _present_shas(row)
+    fresh = _fresh(unique, present)
+    # A decisions-only copy whose full record is neither on file nor in this batch: the gap stays open,
+    # so its copy is kept and the manifest keeps showing ``pending_partial`` until the complete copy comes.
+    complete_shas = {c["detail_sha256"] for c in unique if c.get("complete", True)}
+    open_partials = [c for c in copies if not c.get("complete", True)
+                     and c.get("full_detail_sha256") not in present and c.get("full_detail_sha256") not in complete_shas]
     if not fresh:
         report.skipped_existing += 1
         report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
@@ -262,6 +272,10 @@ async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str
         return
     for rec in fresh:
         await _write_repeat(doc_id, rec)
+    if open_partials:
+        _mark_partial(doc_id, open_partials)
+        _drop([c for c in copies if not any(c is o for o in open_partials)])
+        return
     # The row (and every repeat write) is in place: the copies are spent. A manifest still
     # ``pending`` (the crash window between the write and the mark) is closed here too.
     mark_manifest(doc_id, "written")

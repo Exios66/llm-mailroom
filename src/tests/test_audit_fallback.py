@@ -976,3 +976,77 @@ async def test_reconcile_still_drops_a_second_copy_of_the_same_run(sinks, db_dow
     assert (report.resumed, report.skipped_existing) == (0, 1)
     assert (await get_row("d-1"))["addenda"] == []
     assert sinks[0].fetch_pending() == []
+def _second_run_big(doc_id="d-1"):
+    row = _row(doc_id, big=True)
+    row.detail["trace"][0].update({"visit_id": "v-second", "prompt": "second run only " + "q" * 20_000})
+    row.detail["extraction"] = {"extracted_data": {"blob": "second " + "w" * 20_000}}
+    return row
+
+
+async def _row_then_parked_big_repeat(sinks, db_down):
+    """d-1 has a live row; its second write parks as a decisions-only copy in ``small``, complete in ``late``.
+
+    Return the complete copy, taken out of ``late`` so a test chooses when it turns up.
+    """
+    from audit.row import mark_manifest
+    from audit.writer import commit_or_park
+
+    small = FakeSink("small", max_payload_bytes=8_000)
+    late = FakeSink("late")
+    sinks[:] = [small, late]
+    _save_manifest()
+    db_down[0] = None
+    first = await commit_or_park(_row())
+    mark_manifest("d-1", first.status, first.refs)
+    db_down[0] = RuntimeError("database is locked")
+    second = await commit_or_park(_second_run_big())
+    assert second.status == "pending"
+    mark_manifest("d-1", second.status, second.refs)
+    db_down[0] = None
+    held = dict(late.pending)
+    late.pending.clear()
+    assert len(small.pending) == 1 and len(held) == 1
+    return small, late, held
+
+
+async def test_a_decisions_only_repeat_write_keeps_its_gap_and_its_spool_copy(sinks, db_down):
+    """Blocking: the partial copy was recorded as a ``resumed`` addendum, then the manifest said ``written`` and the copy was deleted."""
+    from audit.reconcile import reconcile
+    from audit.writer import get_row
+
+    small, late, held = await _row_then_parked_big_repeat(sinks, db_down)
+    await reconcile()
+    [add] = (await get_row("d-1"))["addenda"]
+    assert add["kind"] == "resumed" and add["detail"]["recovered_from"]["complete"] is False
+    m = _manifest()
+    assert m.audit_written == "pending_partial"  # the gap is still visible
+    assert [(r["sink"], r["complete"]) for r in m.audit_pending_refs] == [("small", False)]
+    assert len(small.pending) == 1  # kept: its complete copy may still turn up
+
+    await reconcile()  # nothing new: the gap and the copy stay
+    assert _manifest().audit_written == "pending_partial" and len(small.pending) == 1
+    assert len((await get_row("d-1"))["addenda"]) == 1
+
+
+async def test_a_complete_copy_arriving_after_a_decisions_only_repeat_write_is_recorded(sinks, db_down):
+    """Blocking: the partial addendum's ``full_detail_sha256`` counted as present, so the complete copy was discarded."""
+    from audit.reconcile import reconcile
+    from audit.verify import verify_audit_db
+    from audit.writer import get_row
+
+    small, late, held = await _row_then_parked_big_repeat(sinks, db_down)
+    await reconcile()
+    late.pending.update(held)  # the complete copy of the second write turns up
+    report = await reconcile()
+    assert report.resumed == 1
+    adds = (await get_row("d-1"))["addenda"]
+    assert [a["kind"] for a in adds] == ["resumed", "resumed"]
+    full = adds[1]["detail"]
+    assert full["extraction"] == {"extracted_data": {"blob": "second " + "w" * 20_000}}
+    assert full["recovered_from"].get("complete", True) is not False
+    assert small.pending == {} and late.pending == {}  # both copies of that write are spent
+    m = _manifest()
+    assert m.audit_written is True and m.audit_pending_refs == []
+    assert (await verify_audit_db()).ok
+
+
