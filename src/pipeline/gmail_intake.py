@@ -1923,6 +1923,20 @@ def triage_enabled() -> bool:
     )
 
 
+def _sender_reason(manifest: dict) -> str:
+    """The escalation reason as the external sender may see it.
+
+    Hard-fail branches append ``[cause: <exception text>]`` to
+    ``escalation_reason`` for the audit trail (#260). Exception text can carry
+    local paths, input values or provider detail, so the echo cuts the reason
+    at the first ``[cause:`` (everything after it is internal too). The
+    manifest and audit log keep the full text.
+    """
+    text = str(manifest.get("escalation_reason") or manifest.get("error_message") or "")
+    head, sep, _ = text.partition("[cause:")
+    return head.rstrip(" ;:-—") if sep else text
+
+
 def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_valid: bool | None = None) -> str:
     """Render the completion report for one terminal manifest (plain text)."""
     stage = str(manifest.get("stage") or "unknown").upper()
@@ -2006,9 +2020,7 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
     if narrative:
         lines.append("-- WHAT HAPPENED " + "-" * 42)
         lines.append(narrative)
-        reason = str(
-            manifest.get("escalation_reason") or manifest.get("error_message") or ""
-        )
+        reason = _sender_reason(manifest)
         if stage_upper in ("REVIEW", "FAILED"):
             friendly = friendly_reason(reason)
             if friendly:
@@ -2052,7 +2064,7 @@ def build_echo_body(manifest: dict, audit_rows: list[dict] | None = None, chain_
         else:
             lines.append("archive detail unavailable in audit chain")
     else:
-        why = manifest.get("escalation_reason") or manifest.get("error_message") or ""
+        why = _sender_reason(manifest)
         lines.append(f"not archived — stage {stage}" + (f": {why}" if why else ""))
     lines.append("")
 
@@ -2312,7 +2324,7 @@ def build_echo_html(
                     )
                 break
     else:
-        why = manifest.get("escalation_reason") or manifest.get("error_message") or ""
+        why = _sender_reason(manifest)
         archive_html = (
             f'<div style="margin:10px 0;color:#cf222e;">Not archived &mdash; stage {_esc(stage)}'
             + (f": {_esc(why)}" if why else "")
@@ -2356,7 +2368,7 @@ def build_echo_html(
     narrative = _what_happened(manifest, audit_rows)
     what_html = ""
     if narrative:
-        reason = str(manifest.get("escalation_reason") or manifest.get("error_message") or "")
+        reason = _sender_reason(manifest)
         friendly = friendly_reason(reason) if stage in ("REVIEW", "FAILED") else None
         inner = f'<div>{_esc(narrative)}</div>'
         if friendly:
@@ -2508,7 +2520,7 @@ def _digest_summary(manifest: dict) -> dict:
         "doc_type": manifest.get("doc_type"),
         "doc_subclass": manifest.get("doc_subclass"),
         "confidence": manifest.get("classification_confidence"),
-        "reason": manifest.get("escalation_reason") or manifest.get("error_message"),
+        "reason": _sender_reason(manifest) or None,
         "model": debug.get("model") if isinstance(debug.get("model"), str) else None,
     }
 
