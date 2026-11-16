@@ -17,6 +17,10 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
 ## Fixed
 
+- Workbook review: parse whitespace-prefixed JSON, share Dojo absence rules, and store hidden dropdown values as literal text. Clear losing scalar reasoning, reject empty attachment bytes, sort legacy NULL update timestamps safely, and reject explicit oracle-mode baseline mismatches. Keep archive-selection fallback documentation consistent.
+
+## Fixed
+
 - Ground-truth workbook: read corporate-record field types from the public Dojo schema registry after the 0.30 prerequisite upgrade.
 - Freeze oracle-routing mode for each pipeline execution so trace metadata and every routing call agree even if the process environment changes mid-run.
 - Free-text chunk evidence checks preserve text before colons; only CUAD/checklist category prefixes are omitted. Arbiter failure reports expose the exception type while retaining raw causes only in the internal escalation audit.

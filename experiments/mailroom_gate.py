@@ -49,6 +49,9 @@ def experiment(context):
         "n_errors": len(items) - len(result.item_results),
         "metrics": rx.compute_metrics([rx._row_for(r.item, r.output) for r in result.item_results]),
     }
+    from pipeline.config import oracle_routing_enabled
+
+    summary["oracle_routing"] = oracle_routing_enabled()
     baseline = json.loads(BASELINE.read_text())
     problems = rx.check_regression(summary, baseline)
     if problems:

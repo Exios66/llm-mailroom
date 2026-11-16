@@ -191,6 +191,9 @@ def check_regression(current: dict, baseline: dict | None, tolerance: float = DE
     if current.get("n_errors"):
         problems.append(f"{current['n_errors']} item(s) raised task errors")
     if baseline:
+        # Legacy baselines have no mode; explicit modes must agree.
+        if "oracle_routing" in baseline and current.get("oracle_routing") != baseline["oracle_routing"]:
+            problems.append("oracle_routing mismatch between current run and baseline")
         cur = current.get("metrics") or {}
         for name, base_value in (baseline.get("metrics") or {}).items():
             if name not in cur:
@@ -376,12 +379,13 @@ def main(argv: list[str] | None = None) -> int:
         summary = run_local(items, task, on_progress=lambda rows, errors, finished: _report_progress(
             f"{args.dataset}-{run_id}", label, len(items), rows, errors, finished))
 
+    summary["oracle_routing"] = oracle_routing_enabled()
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     problems = check_regression(summary, baseline, args.tolerance)
     public = {
         "dataset": args.dataset,
         "mode": "mock" if args.mock else "real",
-        "oracle_routing": oracle_routing_enabled(),  # #207: True = routing read ground truth
+        "oracle_routing": summary["oracle_routing"],  # #207: True = routing read ground truth
         "n_items": summary["n_items"],
         "n_errors": summary["n_errors"],
         "metrics": summary["metrics"],

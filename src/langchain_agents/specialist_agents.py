@@ -411,10 +411,9 @@ def merge_windows_by_evidence(
             reasoning = _merge_reasoning(reasoning, r.get("reasoning"))
         for key, winner in winners.items():
             own = next((e for e in entries_by_window[winner] if e.get("field") == key), None)
+            reasoning["entries"] = [e for e in reasoning["entries"] if e.get("field") != key]
             if own is not None:
-                reasoning["entries"] = [
-                    own if e.get("field") == key else e for e in reasoning["entries"]
-                ]
+                reasoning["entries"].append(own)
         merged["reasoning"] = reasoning
 
     merged["_chunk_merge_policy"] = "evidence"

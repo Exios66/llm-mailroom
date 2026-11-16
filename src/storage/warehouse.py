@@ -343,7 +343,7 @@ async def fetch_terminal_documents(
             # Same contract as the unfiltered branch: oldest update first. The
             # chunks are queried separately, so order the combined result here
             # (doc_id breaks ties deterministically).
-            records.sort(key=lambda record: (record.updated_at, record.doc_id))
+            records.sort(key=lambda record: (record.updated_at is None, record.updated_at, record.doc_id))
             return records
         query = select(DocumentRecord).where(
             DocumentRecord.stage.in_(tuple(TERMINAL_STAGES))
