@@ -564,7 +564,6 @@ def test_scoring_entrypoint_import_applies_calibrated_taxonomy(entrypoint):
 def test_wire_taxonomy_logs_a_warning_instead_of_failing_silently(monkeypatch):
     """#256: a failed taxonomy wiring leaves the Dojo on package defaults. It
     stays best-effort (no raise) but must say so."""
-    import structlog
 
     import pipeline.config as pipeline_config
     from observability import scoring_wiring
@@ -573,10 +572,21 @@ def test_wire_taxonomy_logs_a_warning_instead_of_failing_silently(monkeypatch):
         raise RuntimeError("taxonomy exploded")
 
     monkeypatch.setattr(pipeline_config, "load_config", boom)
-    with structlog.testing.capture_logs() as logs:
-        scoring_wiring.wire_taxonomy()  # must not raise
 
-    warnings = [e for e in logs if e.get("log_level") == "warning"]
+    # Record calls on a stub logger rather than structlog.testing.capture_logs:
+    # a logger cached by an earlier test (cache_logger_on_first_use) bypasses
+    # capture_logs, which made this test depend on collection order.
+    calls: list[tuple[str, tuple, dict]] = []
+
+    class _Recorder:
+        def __getattr__(self, level):
+            return lambda *a, **kw: calls.append((level, a, kw))
+
+    monkeypatch.setattr(scoring_wiring, "logger", _Recorder())
+    scoring_wiring.wire_taxonomy()  # must not raise
+
+    warnings = [c for c in calls if c[0] == "warning"]
     assert len(warnings) == 1
-    assert warnings[0]["event"] == "dojo_taxonomy_wiring_failed"
-    assert "taxonomy exploded" in str(warnings[0].get("error"))
+    _, args, kwargs = warnings[0]
+    assert args[0] == "dojo_taxonomy_wiring_failed"
+    assert "taxonomy exploded" in str(kwargs.get("error"))
