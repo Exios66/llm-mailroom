@@ -480,3 +480,14 @@ class TestLangfuseTracingAttach:
         assert agent.usage() == {}  # was a non-empty zero-valued dict
         agent._last_usage = {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5, "cost": None}
         assert agent.usage()["total_tokens"] == 5
+
+
+def test_cuad_length_filter_counts_paragraph_separators(tmp_path):
+    path = tmp_path / "two-paragraphs.json"
+    path.write_text(json.dumps({"data": [{"title": "sample", "paragraphs": [
+        {"context": "abc", "qas": [{"id": "sample__Clause", "question": "q", "answers": []}]},
+        {"context": "def", "qas": []},
+    ]}]}))
+    rows = lb_data.load_cuad_qa(1, cuad_path=path, min_text_chars=8)
+    assert rows[0]["document_text"] == "abc\n\ndef"
+    assert lb_data.load_cuad_qa(1, cuad_path=path, min_text_chars=9) == []

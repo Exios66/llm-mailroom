@@ -112,14 +112,11 @@ def load_cuad_qa(
     if not titles:
         raise CorpusUnavailable(f"No QA pairs in {path}")
 
-    # Contract text per title (all paragraph contexts concatenated).
-    text_cache: dict[str, str] = {
-        title: "\n\n".join(
-            str(p.get("context") or "")
-            for p in by_title[title]["contract"].get("paragraphs") or []
-        )
-        for title in titles
-    }
+    # Compute the joined length without materializing text for unselected titles.
+    text_lengths: dict[str, int] = {}
+    for title in titles:
+        paragraphs = by_title[title]["contract"].get("paragraphs") or []
+        text_lengths[title] = sum(len(str(p.get("context") or "")) for p in paragraphs) + 2 * max(0, len(paragraphs) - 1)
 
     # Universe of ACTUAL (title, category) pairs, sorted deterministically.
     # (In the real corpus every contract carries all 41 categories, so this
@@ -130,18 +127,24 @@ def load_cuad_qa(
     pairs = [
         (title, cat)
         for title in titles
-        if len(text_cache[title]) >= min_text_chars
+        if text_lengths[title] >= min_text_chars
         for cat in sorted(by_title[title]["qas"])
     ]
     k = min(n, len(pairs))
     idx = random.Random(seed).sample(range(len(pairs)), k)
 
+    text_cache: dict[str, str] = {}
     rows: list[dict[str, Any]] = []
     for i in idx:
         title, cat = pairs[i]
         entry = by_title[title]["qas"][cat]
         qid = entry["qid"]
         qa = entry["qa"]
+        if title not in text_cache:
+            text_cache[title] = "\n\n".join(
+                str(p.get("context") or "")
+                for p in by_title[title]["contract"].get("paragraphs") or []
+            )
         text = text_cache[title]
         answers = qa.get("answers") or []
         impossible = bool(qa.get("is_impossible"))

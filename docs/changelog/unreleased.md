@@ -17,6 +17,10 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
 ## Fixed
 
+- Evidence matching requires complete lexical spans, avoiding positive phrases matched inside hyphenated or longer words. CUAD QA sampling checks paragraph lengths before selection and materializes full text only for selected titles.
+
+## Fixed
+
 - Workbook review: parse whitespace-prefixed JSON, share Dojo absence rules, and store hidden dropdown values as literal text. Clear losing scalar reasoning, reject empty attachment bytes, sort legacy NULL update timestamps safely, and reject explicit oracle-mode baseline mismatches. Keep archive-selection fallback documentation consistent.
 
 ## Fixed
