@@ -2330,7 +2330,7 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         logger.exception("arbiter_failed", doc_id=state.get("doc_id"))
         return {
             "arbiter_decision": "human_review",
-            "arbiter_reasoning": f"arbiter failed ({type(exc).__name__}): {_cause(exc)}",
+            "arbiter_reasoning": f"arbiter failed ({type(exc).__name__})",
             "escalation_reason": f"arbitration failed ({type(exc).__name__}) — routing to human review "
             f"[cause: {_cause(exc)}]",
             "transient_error": False,

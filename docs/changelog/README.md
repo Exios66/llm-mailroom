@@ -42,6 +42,7 @@ Work landed on `main` since the last tagged release.
 ### Fixed
 
 - Freeze oracle-routing mode for each pipeline execution so trace metadata and every routing call agree even if the process environment changes mid-run.
+- Free-text chunk evidence checks preserve text before colons; only CUAD/checklist category prefixes are omitted. Arbiter failure reports expose the exception type while retaining raw causes only in the internal escalation audit.
 
 ### Changed
 
