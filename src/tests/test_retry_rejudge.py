@@ -71,7 +71,7 @@ def test_exhausted_passes_keep_archiving():
 
 
 def test_max_passes_is_read_from_thresholds(monkeypatch):
-    _patch_thresholds(monkeypatch, {}, {"low": 0.88, "judge_band_high": 0.95, "judge_max_passes": 1})
+    _patch_thresholds(monkeypatch, {}, {"low": 0.88, "judge_band_high": 0.95, "judge_max_passes": 1, "judge_rejudge_retry": True})
     state = _retry_state(judge_pass_count=1)
     assert retry_rejudge_due(state) is False
     assert after_retry_extraction_gated(state) == "compile_report"
