@@ -866,6 +866,7 @@
     "arbiter_retry_max": 2,
     "judge_max_passes": 3,
     "judge_rejudge_retry": false,
+    "keep_best_attempt": false,
     "conflict_threshold": 0.3,
     "by_class": {
       "contract": {
