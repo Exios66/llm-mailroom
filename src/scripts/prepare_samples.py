@@ -74,6 +74,15 @@ def generate_pdf_from_text(source_txt: Path, dest_pdf: Path) -> None:
 
 
 def _load_manifest():
+    if not MANIFEST.is_file():
+        raise SystemExit(
+            f"Sample manifest not found: {MANIFEST}\n"
+            "The historical sample corpus (docs/examples/samples/) exists only in the "
+            "monorepo, not in a standalone checkout. For a pilot run without it use "
+            "`PYTHONPATH=src python src/scripts/run_pilot.py --mock --dataset hf` "
+            "(pinned Hugging Face corpus; plain `--mock` falls back to it on its own). "
+            "`--real` runs must name `--dataset hf` explicitly."
+        )
     with MANIFEST.open() as fh:
         return list(csv.DictReader(fh))
 

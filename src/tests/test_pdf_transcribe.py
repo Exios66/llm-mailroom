@@ -43,3 +43,18 @@ def test_prepare_samples_materializes_manifest(tmp_path, monkeypatch):
     samples_dir = prepare_samples(tmp_path)
     assert samples_dir.exists()
     assert list(samples_dir.rglob("*.pdf"))
+
+
+def test_prepare_samples_missing_manifest_exits_with_guidance(tmp_path, monkeypatch):
+    """#120: a standalone checkout has no manifest.csv; the failure must say so
+    and point at the HF fallback instead of raising a raw FileNotFoundError."""
+    from scripts import prepare_samples as ps
+
+    monkeypatch.setattr(ps, "MANIFEST", tmp_path / "absent" / "manifest.csv")
+    with pytest.raises(SystemExit) as excinfo:
+        ps.prepare_samples(tmp_path)
+    message = str(excinfo.value)
+    assert "manifest.csv" in message
+    assert "monorepo" in message
+    assert "--dataset hf" in message
+    assert not (tmp_path / "samples").exists()

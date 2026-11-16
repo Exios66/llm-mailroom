@@ -752,21 +752,27 @@ Tests never hit a real LLM — the OpenAI client and `BaseAgent.__init__` are mo
 ### Pilot Testing & Evaluation
 
 The pilot drivers support mock/real execution, baseline diffs and
-LLM-as-a-judge evaluation. **Their historical sample corpus is not included
-in the current source checkout**: `prepare_samples.py` expects
-`docs/examples/samples/manifest.csv` and its source documents. Restore that
-fixture set before using the commands below ([tracked in #120](https://github.com/Exios66/llm-mailroom/issues/120)). The committed upload fixture in
-[Quickstart](#quickstart) and the mocked unit tests work from a fresh clone.
+LLM-as-a-judge evaluation. **The historical sample corpus
+(`docs/examples/samples/`) exists only in the monorepo**, so `prepare_samples.py`
+stops with a pointer to the alternative when its manifest is missing. In a
+standalone checkout `run_pilot.py --mock` falls back to real documents from the
+pinned Hugging Face corpus on its own (`--dataset hf`, public read), and a
+`--real` run must name `--dataset hf` explicitly
+([#120](https://github.com/Exios66/llm-mailroom/issues/120)). The committed
+upload fixture in [Quickstart](#quickstart) and the mocked unit tests work from a
+fresh clone.
 
 <details>
-<summary><b>Pilot commands — require the historical sample corpus</b></summary>
+<summary><b>Pilot commands</b></summary>
 
 ```bash
-# Build the sample PDFs into data/samples/ (gitignored)
+# Build the sample PDFs into data/samples/ (gitignored; monorepo only)
 PYTHONPATH=src python src/scripts/prepare_samples.py
 
 # Deterministic run (fake LLM, no API key) — tests the machinery
 PYTHONPATH=src python src/scripts/run_pilot.py --mock
+# Standalone checkout: the same run against the pinned HF corpus, explicitly
+PYTHONPATH=src python src/scripts/run_pilot.py --mock --dataset hf --per-class 2
 
 # Real run (needs OPENROUTER_API_KEY in .env) — measures LLM accuracy too
 PYTHONPATH=src python src/scripts/run_pilot.py --real --scores
@@ -778,7 +784,7 @@ PYTHONPATH=src python src/scripts/run_pilot.py --mock --baseline data/pilot_repo
 PYTHONPATH=src python src/scripts/run_quality_judges.py --real
 ```
 
-The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `docs/examples/samples/manifest.csv`. The required manifest defines that ground truth.
+The report records per-document stage, doc type, confidence, retries, LLM call count, wall time, and extracted data, and scores each against the ground truth in `docs/examples/samples/manifest.csv` (monorepo) or the corpus labels (`--dataset hf`).
 
 </details>
 
