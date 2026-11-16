@@ -1627,14 +1627,17 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
             }
         # Reviewer hard-failed: escalate with the sorter's original answer
         # intact (fail-safe — same destination the doc had before this lane).
-        # HUB-043: the exception TEXT rides the reason so the completion echo
-        # can translate the actual cause for the recipient (an opaque
-        # "(RuntimeError)" alone told the sender nothing).
+        # HUB-043: our own free-only guardrail text stays visible so the
+        # completion echo can translate it for the recipient. Any other
+        # exception text (provider detail, paths, inputs) goes behind
+        # ``[cause: ...]``, which the sender echo cuts (#260).
         logger.exception("review_classify_failed", doc_id=state.get("doc_id"))
+        own_guardrail = type(exc) is RuntimeError and str(exc).startswith("MAILROOM_LLM_FREE_ONLY is on:")
+        visible = f"{type(exc).__name__}: {str(exc)[:160]}" if own_guardrail else type(exc).__name__
         return {
             "review_verdict": "reviewer_error",
             "stage": PipelineStage.CLASSIFIED.value,
-            "escalation_reason": f"sorter reviewer failed ({type(exc).__name__}: {str(exc)[:160]}) — routing to human review",
+            "escalation_reason": f"sorter reviewer failed ({visible}) — routing to human review [cause: {_cause(exc)}]",
             "transient_error": False,
         }
 

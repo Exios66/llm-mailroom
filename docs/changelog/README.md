@@ -44,6 +44,7 @@ Work landed on `main` since the last tagged release.
 - Evidence matching requires complete lexical spans, avoiding positive phrases matched inside hyphenated or longer words. CUAD QA sampling checks paragraph lengths before selection and materializes full text only for selected titles.
 - Run accounting keeps a call whose usage reports `input_tokens=0` with positive `output_tokens` (a fully cached prompt); the `or` fallback treated the zero as missing and dropped the whole call, completion count included (`pipeline/limits.py:record_usage`).
 - Ground-truth workbook: a cell is clipped by UTF-16 units, as Excel counts them, not by code points, so a value of many emoji can no longer exceed Excel's 32,767-character cell limit.
+- The sorter reviewer's hard-fail `escalation_reason` no longer carries the exception text in the part the Gmail completion echo shows: it names the exception type and puts the text behind `[cause: ...]`, which the echo cuts, so provider error text (for example a 401 body) is not sent to the document's sender (`graph/build_graph.py:review_classify_node`, #260). Our own `MAILROOM_LLM_FREE_ONLY` guardrail text (a plain `RuntimeError` that starts with that name) stays visible so the free-only explanation (HUB-043) still reaches the sender. The manifest and audit log keep the full cause.
 
 ### Fixed
 
