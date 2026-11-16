@@ -443,3 +443,117 @@ def test_knob_on_keeps_a_better_second_attempt(run_graph):
     _, final = run_graph(keep_best=True, second_label="complete", second_score=1.0)
     assert final["selected_attempt"] == 2
     assert final["extracted_data"]["governing_law"] == "New York"
+
+
+# --- the history survives the restart fallback paths -------------------------
+
+
+def _parked_with_history(temp_base_dir):
+    """A manifest parked in the review bin that carries an attempt history, as after a restart."""
+    from pipeline.bins import review_dir, save_manifest
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    history = [
+        {"attempt_no": 1, "kind": "extract", "extracted_data": deepcopy(FIRST), "extraction_confidence": 0.95,
+         "guardrail": [], "schema_valid": True, "gate_ok": True, "judge_verdict": "partial",
+         "judge_score": 0.6, "judge_findings": ["governing_law contradicts source"], "judge_source_verified": True},
+        {"attempt_no": 2, "kind": "retry", "extracted_data": deepcopy(FIELDS), "extraction_confidence": 0.7,
+         "guardrail": [], "schema_valid": True, "gate_ok": True, "judge_verdict": "incomplete",
+         "judge_score": 0.2, "judge_findings": ["still thin"], "judge_source_verified": True},
+    ]
+    manifest = DocumentManifest(
+        doc_id="parked-hist-1",
+        matter_id="KEEP-BEST",
+        original_filename="parked.txt",
+        stage=PipelineStage.REVIEW,
+        doc_type="contract",
+        classification_confidence=0.99,
+        extracted_data=deepcopy(FIELDS),
+        extraction_confidence=0.7,
+        escalation_reason="judge incomplete",
+        extraction_attempts=2,
+        extraction_attempt_history=history,
+        selected_attempt=2,
+        selected_attempt_reason="keep_best_attempt_off",
+    )
+    review_file = review_dir() / "parked.txt"
+    review_file.write_text(CLEAN)
+    save_manifest(manifest)
+    return manifest, review_file, history
+
+
+@pytest.mark.parametrize("resolution", ["approve_as_is", "correct"])
+def test_attempt_history_survives_a_stateless_human_applied_resume(temp_base_dir, monkeypatch, resolution):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("MAILROOM_MEMORY_DIR", str(temp_base_dir / "memory"))
+    manifest, review_file, history = _parked_with_history(temp_base_dir)
+    bg.reset_compiled_graph()  # the MemorySaver is lost, as after a restart
+
+    fields = {**deepcopy(FIELDS), "governing_law": "Delaware"} if resolution == "correct" else deepcopy(FIELDS)
+    out = bg.resume_from_review(
+        manifest,
+        review_file,
+        resolution={"decision": "approved", "resolution": resolution, "extracted_data": fields},
+    )
+    assert out["stage"] == "archived"
+    saved = json.loads((temp_base_dir / "manifests" / "parked-hist-1.json").read_text())
+    assert saved["stage"] == "archived" and saved["extraction_source"] == "human"
+    assert saved["extraction_attempt_history"] == history
+    assert saved["selected_attempt"] == 2
+    assert saved["selected_attempt_reason"] == "keep_best_attempt_off"
+    # The reviewer's fields, not an attempt's, are what was archived.
+    assert saved["extracted_data"]["governing_law"] == fields["governing_law"]
+
+
+def test_a_stateless_re_extraction_still_starts_a_new_history(temp_base_dir, mocker):
+    """Plain approval / reclassify re-extracts, so it must not inherit the pre-review attempts
+    (selection could otherwise restore a pre-review attempt into the corrected run)."""
+    manifest, review_file, _ = _parked_with_history(temp_base_dir)
+    bg.reset_compiled_graph()
+    run = mocker.patch.object(bg, "_execute_run", return_value={})
+    bg.resume_from_review(manifest, review_file, resolution={"decision": "approved", "resolution": "reclassify"})
+    state = run.call_args.args[0]
+    assert not state.get("extraction_attempt_history")
+    assert not state.get("selected_attempt")
+
+
+def test_an_aborted_run_keeps_the_attempt_history_it_carries(temp_base_dir, mocker):
+    from pipeline.bins import load_manifest
+
+    mocker.patch.object(bg, "_write_catalog_record")
+    mocker.patch.object(bg, "_emit_stage_audit")
+    mocker.patch.object(bg, "_maybe_export_warehouse")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.relations.dispatch_relations_scan")
+    history = [_entry(1, "partial"), _entry(2, "incomplete")]
+    bg._finalize_aborted(
+        {"doc_id": "abort-hist-1", "matter_id": "M", "original_filename": "a.txt",
+         "extraction_attempt_history": history, "selected_attempt": 2,
+         "selected_attempt_reason": "keep_best_attempt_off"},
+        "boom",
+    )
+    m = load_manifest("abort-hist-1")
+    assert m.stage.value == "failed"
+    assert [e["attempt_no"] for e in m.extraction_attempt_history] == [1, 2]
+    assert m.selected_attempt == 2 and m.selected_attempt_reason == "keep_best_attempt_off"
+
+
+def test_an_aborted_live_resume_keeps_the_parked_history(temp_base_dir, mocker):
+    """The live-resume abort state is minimal; the history is on the parked manifest it replaces."""
+    from pipeline.bins import load_manifest
+
+    manifest, review_file, history = _parked_with_history(temp_base_dir)
+    mocker.patch.object(bg, "_write_catalog_record")
+    mocker.patch.object(bg, "_emit_stage_audit")
+    mocker.patch.object(bg, "_maybe_export_warehouse")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.relations.dispatch_relations_scan")
+    bg._finalize_aborted(
+        {"doc_id": manifest.doc_id, "matter_id": "KEEP-BEST", "original_filename": "parked.txt",
+         "file_path": str(review_file)},
+        "boom",
+    )
+    m = load_manifest(manifest.doc_id)
+    assert m.stage.value == "failed"
+    assert m.extraction_attempt_history == history
+    assert m.selected_attempt == 2
