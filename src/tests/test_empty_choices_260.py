@@ -231,3 +231,25 @@ class TestCauseNeverReachesTheSender:
         assert _sender_reason({"escalation_reason": "low confidence"}) == "low confidence"
         assert _sender_reason({"error_message": "boom"}) == "boom"
         assert _sender_reason({}) == ""
+
+
+def test_arbiter_exception_stays_internal_when_report_is_echoed(monkeypatch):
+    from graph import build_graph as bg
+    from agents.reporter import compile_matter_record
+    from pipeline.gmail_intake import build_echo_body, build_echo_html
+
+    secret = "private_provider_detail:/srv/private/document.pdf"
+
+    class BoomArbiter:
+        def __init__(self):
+            raise RuntimeError(secret)
+
+    monkeypatch.setattr("agents.arbiter.ArbiterAgent", BoomArbiter)
+    state = {"doc_id": "safe", "doc_type": "contract", "extracted_data": {"document_name": "sample"}}
+    updates = bg.arbiter_node(state)
+    assert secret in updates["escalation_reason"]  # keep the internal audit cause
+    report = compile_matter_record({**state, **updates})
+    manifest = {**state, **updates, "stage": "review", "extracted_data": {"_report": report}}
+    for rendered in (build_echo_body(manifest, [], True), build_echo_html(manifest, [], True)):
+        assert secret not in rendered
+        assert "arbiter failed (RuntimeError)" in rendered

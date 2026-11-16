@@ -93,8 +93,10 @@ def oracle_routing_enabled() -> bool:
     ``MAILROOM_ORACLE_ROUTING`` (``1/true/yes/on`` or ``0/false/no/off``; empty or
     unrecognised values are ignored, so a typo cannot silently switch it on);
     taxonomy ``routing.use_ground_truth`` (only boolean ``true`` enables); off.
-    The env var is read on every call, so a runner can opt in per run; the
-    taxonomy is ``lru_cache``d like the rest of it.
+    Outside a run, the env var is read on every call. Pipeline execution freezes
+    the resolved value in a run-scoped override before opening its trace, so routing
+    agrees with that trace even if the process environment changes. The taxonomy
+    is ``lru_cache``d like the rest of it.
     """
     forced = _ORACLE_OVERRIDE.get()
     if forced is not None:
