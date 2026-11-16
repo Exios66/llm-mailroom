@@ -79,6 +79,39 @@ class TestLimitsUnit:
         assert usage_summary()["calls"] == 0
         assert usage_summary()["total"] == 0
 
+    def test_record_usage_accepts_integral_floats_and_zero_counts(self):
+        """#188: JSON floats like 128.0 and a legitimate 0 count must not drop the call."""
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        record_usage({"input_tokens": 128.0, "output_tokens": 64.0}, model="m")
+        record_usage({"input_tokens": 10, "output_tokens": 0}, model="m")
+        record_usage({"prompt_tokens": 0, "completion_tokens": 7}, model="m")
+        # 0 in the first-choice key must not fall through to the other spelling.
+        record_usage(
+            {"input_tokens": 0, "prompt_tokens": 99, "output_tokens": 0, "completion_tokens": 99},
+            model="m",
+        )
+        summary = usage_summary()
+        assert summary["calls"] == 4
+        assert summary["prompt_tokens"] == 128 + 10 + 0 + 0
+        assert summary["completion_tokens"] == 64 + 0 + 7 + 0
+        assert isinstance(summary["prompt_tokens"], int)
+
+    def test_record_usage_rejects_bool_fractional_and_negative_with_warning(self):
+        from structlog.testing import capture_logs
+
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        with capture_logs() as logs:
+            record_usage({"input_tokens": True, "output_tokens": 5}, model="m", agent="a")
+            record_usage({"input_tokens": 1.5, "output_tokens": 5}, model="m")
+            record_usage({"input_tokens": 5, "output_tokens": "7"}, model="m")
+            record_usage({"input_tokens": -1, "output_tokens": 5}, model="m")
+        assert usage_summary()["calls"] == 0
+        dropped = [entry for entry in logs if entry.get("event") == "usage_record_dropped"]
+        assert len(dropped) == 4
+        assert all(entry["log_level"] == "warning" for entry in dropped)
+
     def test_usage_summary_aggregates(self):
         from pipeline.limits import record_usage, reset_run_usage, usage_summary
         reset_run_usage()

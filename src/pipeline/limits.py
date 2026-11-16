@@ -58,11 +58,39 @@ def get_run_deadline() -> float | None:
     return _run_deadline.get()
 
 
+def _first_present(usage: dict, *keys: str):
+    """First of ``keys`` whose value is not None. ``or`` would skip a real 0."""
+    for key in keys:
+        value = usage.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _as_token_count(value) -> int | None:
+    """A non-negative int token count, or None when ``value`` is not one.
+
+    Accepts ints and integral floats (JSON round-trips turn ``128`` into
+    ``128.0``); rejects bool, fractional or negative numbers, strings and mocks.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float):
+        if not value.is_integer():
+            return None
+        value = int(value)
+    if not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
 def record_usage(
     usage, model: str | None = None, agent: str | None = None, served_model: str | None = None
 ) -> None:
     """Append an OpenAI-compatible usage object to the current run's
-    accumulator. Tolerates mocks and odd shapes: only real int counts count.
+    accumulator. Tolerates mocks and odd shapes: only real non-negative integer
+    counts count (integral floats such as ``128.0`` are accepted; a call that
+    is dropped for a bad count logs ``usage_record_dropped``).
 
     Accepts SDK ``CompletionUsage`` objects (``usage.prompt_tokens``) and
     LangChain ``usage_metadata`` dicts (``usage["input_tokens"]`` /
@@ -76,13 +104,24 @@ def record_usage(
     if usage is None:
         return
     if isinstance(usage, dict):
-        prompt = usage.get("input_tokens") or usage.get("prompt_tokens")
-        completion = usage.get("output_tokens") or usage.get("completion_tokens")
+        prompt = _first_present(usage, "input_tokens", "prompt_tokens")
+        completion = _first_present(usage, "output_tokens", "completion_tokens")
     else:
         prompt = getattr(usage, "prompt_tokens", None)
         completion = getattr(usage, "completion_tokens", None)
-    if not isinstance(prompt, int) or not isinstance(completion, int):
+    prompt_count = _as_token_count(prompt)
+    completion_count = _as_token_count(completion)
+    if prompt_count is None or completion_count is None:
+        logger.warning(
+            "usage_record_dropped",
+            reason="non_integral_token_count",
+            prompt_type=type(prompt).__name__,
+            completion_type=type(completion).__name__,
+            model=model,
+            agent=agent,
+        )
         return
+    prompt, completion = prompt_count, completion_count
     _run_usage.get().append(
         {
             "prompt_tokens": prompt,
