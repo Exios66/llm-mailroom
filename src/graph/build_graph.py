@@ -60,6 +60,13 @@ from pipeline.bins import (
 
 logger = structlog.get_logger(__name__)
 
+
+def _cause(exc: BaseException) -> str:
+    """The exception message, bounded, for ``escalation_reason`` / reasoning
+    text so a hard-failed node is auditable from run artifacts (#260)."""
+    return str(exc)[:300] or "no message"
+
+
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 PDF_EXTENSIONS = {".pdf"}
 # The real intake gate is bins.accepted_extensions(); this aggregate was dead
@@ -896,7 +903,8 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
             "classification_attempts": max(attempts, retry_max) + 1,
             "stage": PipelineStage.CLASSIFIED.value,
             "error_message": f"classification error: {str(exc)[:200]}",
-            "escalation_reason": f"classification failed ({type(exc).__name__}) — routing to human review",
+            "escalation_reason": f"classification failed ({type(exc).__name__}) — routing to human review "
+            f"[cause: {_cause(exc)}]",
             "transient_error": False,
         }
     attempts = attempts + 1
@@ -1032,7 +1040,8 @@ def retry_classify_node(state: DocumentState) -> dict[str, Any]:
             "stage": PipelineStage.CLASSIFIED.value,
             "error_message": f"re-classification error: {str(exc)[:200]}",
             "escalation_reason": (
-                f"re-classification failed ({type(exc).__name__}) — routing to human review"
+                f"re-classification failed ({type(exc).__name__}) — routing to human review "
+                f"[cause: {_cause(exc)}]"
             ),
             "transient_error": False,
         }
@@ -1501,9 +1510,11 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
         return {
             "classification_arbiter_decision": "human_review",
             "classification_arbiter_confidence": None,
-            "classification_arbiter_reasoning": f"classification arbiter failed ({type(exc).__name__})",
+            "classification_arbiter_reasoning": (
+                f"classification arbiter failed ({type(exc).__name__}): {_cause(exc)}"
+            ),
             "escalation_reason": f"{base_reason}; classification arbiter failed "
-            f"({type(exc).__name__}) -- routing to human review",
+            f"({type(exc).__name__}) -- routing to human review [cause: {_cause(exc)}]",
             "transient_error": False,
         }
 
@@ -2233,7 +2244,8 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         logger.exception("judge_failed", doc_id=state.get("doc_id"))
         return {
             "judge_verdict": "judge_error",
-            "escalation_reason": f"judge verification failed ({type(exc).__name__}) — routing to human review",
+            "escalation_reason": f"judge verification failed ({type(exc).__name__}) — routing to human review "
+            f"[cause: {_cause(exc)}]",
             "transient_error": False,
         }
 
@@ -2318,8 +2330,9 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         logger.exception("arbiter_failed", doc_id=state.get("doc_id"))
         return {
             "arbiter_decision": "human_review",
-            "arbiter_reasoning": f"arbiter failed ({type(exc).__name__})",
-            "escalation_reason": f"arbitration failed ({type(exc).__name__}) — routing to human review",
+            "arbiter_reasoning": f"arbiter failed ({type(exc).__name__}): {_cause(exc)}",
+            "escalation_reason": f"arbitration failed ({type(exc).__name__}) — routing to human review "
+            f"[cause: {_cause(exc)}]",
             "transient_error": False,
         }
 
@@ -2951,7 +2964,10 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
         logger.warning("boss_failed_defaulting_to_review", doc_id=state.get("doc_id"),
                        error=type(exc).__name__, exc_info=True)
         decision = "review"
-        reasoning = f"Boss unavailable ({type(exc).__name__}) — defaulting to human review"
+        reasoning = (
+            f"Boss unavailable ({type(exc).__name__}) — defaulting to human review "
+            f"[cause: {_cause(exc)}]"
+        )
 
     logger.info(
         "boss_decision",
