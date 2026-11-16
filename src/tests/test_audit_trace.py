@@ -72,7 +72,7 @@ def test_visit_fields_match_spec(run_graph, monkeypatch):
         assert tuple(v) == VISIT_KEYS + FULL_TRACE_KEYS
 
 
-def test_visit_reads_the_llm_calls_of_its_node(monkeypatch):
+def test_visit_reads_the_llm_calls_of_its_node(temp_base_dir, monkeypatch):
     from audit.digests import io_sha256
     from audit.trace import VISIT_KEYS
     from observability.tracing import traced_node
