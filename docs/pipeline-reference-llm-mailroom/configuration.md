@@ -234,6 +234,21 @@ agents:
   # ... (one entry per agent; includes pdf_transcriber, image_extractor and judge)
 ```
 
+### `chunking.merge`
+
+How the per-window results of a chunked extraction are merged (#255). The window size keys (`enabled`, `chunk_chars`, `overlap_chars`) are described in [Extraction schemas](../the-pipeline-in-depth/extraction-schemas.md).
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `policy` | `union` | `union` keeps every window's list items and takes each scalar from the first window that states it (unchanged behaviour). `evidence` is an opt-in precision filter for the list fields in `fields`. An unknown value falls back to `union` with a warning. |
+| `min_windows` | `2` | `evidence` only: an in-scope item that fails the verbatim check is still kept when at least this many windows assert it. |
+| `fields` | `[cuad_clauses, claim_checklist, action_items, denial_reasons]` | `evidence` only: the list fields the filter applies to, the ones that carry claimable text (a clause, action or reason that a model can quote or paraphrase). Every other list field (`parties`, `party_roles`, `signatories`, `keywords`, `merger_sub`, `financial_advisors`, `legal_counsel`, `additional_recipients`, `supporting_documents`, `maud_clauses`) is unioned exactly as under `union`: entity and label lists are not quotes, and filtering them against the window text emptied them. `[]` filters nothing. |
+| `by_agent` | `{}` | Per-specialist overrides of `policy`, `min_windows` and `fields`, keyed by an agent under `agents:`, e.g. `by_agent: {contracts_specialist: {policy: evidence}}`. |
+
+Under `evidence`, an in-scope item is checked by finding its quoted span in the text of the window that asserted it (typographic quotes, apostrophes and dashes fold to ASCII, whitespace collapses, case is ignored). An item with no span long enough to check (under 12 characters, such as `Governing Law: Delaware`) is kept. Only an item that has a checkable span and fails the check is removed, and it is recorded under `_unsupported_chunk_claims`.
+
+This deviates from the proposal in #255, which was to pass filtered items to the judge. They are not shown to the judge: `_clean_fields_for_judge` strips `_`-prefixed keys, and changing the judge prompt is out of scope (prompts are Langfuse-managed with a matching in-code fallback). The recall cost is real: a genuine clause that every window paraphrased is removed from the extraction, and a retry runs through the same filter, so it is not recovered there either. Treat `evidence` as a treatment to A/B-test, not a default.
+
 ### `llm_retry`
 
 Transient-failure retry for LLM calls (`llm/retry.py`). Retries only connection errors, timeouts, rate limits (429), and 5xx — never 4xx client errors.

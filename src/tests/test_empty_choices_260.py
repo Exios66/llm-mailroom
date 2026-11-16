@@ -94,6 +94,25 @@ class TestRetryChatCompletionEmptyChoices:
         assert is_transient_error(EmptyChoicesError("choices is null (502: upstream provider error)"))
 
 
+    @pytest.mark.parametrize("code", [400, 401, 402, 403, 404, 422])
+    def test_client_error_code_in_body_fails_fast(self, code):
+        from llm.retry import EmptyChoicesError, is_transient_error, retry_chat_completion
+
+        resp = SimpleNamespace(choices=None, usage=None, model="m", error={"code": code, "message": "nope"})
+        client, comps = _client([resp])
+        with pytest.raises(EmptyChoicesError) as info:
+            retry_chat_completion(client, model="m", messages=[], max_attempts=3)
+        assert comps.calls == 1
+        assert info.value.status_code == code
+        assert not is_transient_error(info.value)
+
+    @pytest.mark.parametrize("code", [None, 408, 429, 500, 502, 503, 504, 529])
+    def test_transient_or_missing_code_is_retryable(self, code):
+        from llm.retry import EmptyChoicesError, is_transient_error
+
+        assert is_transient_error(EmptyChoicesError("choices is null", status_code=code))
+
+
 class TestJudgeNodeTransientOnEmptyChoices:
     def _judge(self, responses):
         from agents.judge import CompletenessJudge
