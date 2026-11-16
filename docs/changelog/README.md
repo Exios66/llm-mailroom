@@ -42,6 +42,8 @@ Work landed on `main` since the last tagged release.
 ### Fixed
 
 - Evidence matching requires complete lexical spans, avoiding positive phrases matched inside hyphenated or longer words. CUAD QA sampling checks paragraph lengths before selection and materializes full text only for selected titles.
+- Run accounting keeps a call whose usage reports `input_tokens=0` with positive `output_tokens` (a fully cached prompt); the `or` fallback treated the zero as missing and dropped the whole call, completion count included (`pipeline/limits.py:record_usage`).
+- Ground-truth workbook: a cell is clipped by UTF-16 units, as Excel counts them, not by code points, so a value of many emoji can no longer exceed Excel's 32,767-character cell limit.
 
 ### Fixed
 
