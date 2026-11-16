@@ -263,7 +263,7 @@ def _item_support(item, field: str, entries: list[dict], text_norm: str | None) 
 
     ``True``: evidenced, i.e. (a) every quote fragment of the item is found in
     the folded window text, or (b) a reasoning entry for that field has a quote
-    and the item containing each other (reasoning is per FIELD, one entry per
+    in that window's text, with the quote and item containing each other (reasoning is per FIELD, one entry per
     populated field, so a bare entry proves nothing about one item).
     ``False``: the item has at least one checkable fragment and none of the
     above holds.
@@ -281,15 +281,22 @@ def _item_support(item, field: str, entries: list[dict], text_norm: str | None) 
         if str(entry.get("field") or "").strip().casefold() != field.casefold():
             continue
         quote = _fold(entry.get("evidence"))
-        if len(quote) >= _MIN_SPAN_CHARS and (quote in item_fold or item_fold in quote):
+        if (
+            len(quote) >= _MIN_SPAN_CHARS
+            and text_norm
+            and quote in text_norm
+            and (quote in item_fold or item_fold in quote)
+        ):
             return True
     return False if fragments else None
 
 
-def _scalar_has_evidence(field: str, entries: list[dict]) -> bool:
+def _scalar_has_evidence(field: str, entries: list[dict], text_norm: str | None) -> bool:
     return any(
         str(e.get("field") or "").strip().casefold() == field.casefold()
-        and str(e.get("evidence") or "").strip()
+        and (quote := _fold(e.get("evidence")))
+        and text_norm
+        and quote in text_norm
         for e in entries
     )
 
@@ -315,7 +322,7 @@ def merge_windows_by_evidence(
     * **Other list fields** (parties, signatories, keywords, ...) are unioned
       with normalized dedupe, exactly as under ``union``.
     * **Scalar fields:** never a null. Among windows stating a value, one whose
-      ``reasoning`` has a non-empty entry for that field wins; then the higher
+      ``reasoning`` quotes that window's text for that field wins; then the higher
       window ``confidence`` (whole-window, not per field: the schema has no
       per-field confidence); then document order. The winner's reasoning entry
       replaces the first-witness one so the trace matches the chosen value.
@@ -382,7 +389,7 @@ def merge_windows_by_evidence(
             def rank(i, key=key):
                 confidence = results[i].get("confidence")
                 return (
-                    not _scalar_has_evidence(key, entries_by_window[i]),
+                    not _scalar_has_evidence(key, entries_by_window[i], texts_norm[i]),
                     -(float(confidence) if _is_number(confidence) else float("-inf")),
                     i,
                 )
