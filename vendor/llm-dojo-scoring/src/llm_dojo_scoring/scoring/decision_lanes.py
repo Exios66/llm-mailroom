@@ -14,6 +14,12 @@ Input is a list of mailroom ``RunRecord``-shaped mappings (``model_dump()`` of
   (``approve_as_is`` | ``correct`` | ``reclassify`` | ``reject``),
   ``gold.field_corrections`` (or ``gold.human_fields``) and
   ``gold.human_reject_reason``;
+* llm-mailroom's ``RunRecord.gold`` shape, read when ``human_resolution`` is
+  absent (#159): ``human_decision`` ``rejected`` is ``reject``; ``approved`` is
+  ``reclassify`` when ``human_doc_type`` names a class other than the final
+  extraction's, else ``approve_as_is`` (a ``correct`` when ``human_fields``
+  records edits). ``RunRecord`` keeps no ``removed_fields``, so a review that
+  only removed fields reads as ``approve_as_is``;
 * ``extraction[]``: ``attempt``, ``doc_type`` and ``extraction_score`` (the
   offline dataset score of that attempt);
 * ``judge``: ``ran``, ``verdict``, ``score``, ``on_attempt``, ``doc_type``;
@@ -26,7 +32,12 @@ Gold, in priority order, recorded per scored row in
 
 1. ``human``: the person's resolution in the review tray, used when
    ``label_source`` is ``"human"`` or absent. ``approve_as_is`` that also
-   records removed or corrected fields counts as ``correct``;
+   records removed or corrected fields counts as ``correct``. It grades a judge
+   verdict or arbiter ruling only when that decision observed the class the
+   person resolved; one on another class's extraction is graded by the corpus,
+   and so is a typed one when the resolved class is unknown and the final
+   attempt has several classes (an untyped decision observed the final
+   attempt's class, if it has one);
 2. ``corpus``: the deterministic extraction score against dataset labels, read
    through the verdict band ``[low, high]`` (default
    :func:`~llm_dojo_scoring.scoring.field_scoring.get_ambiguous_band`, the band
@@ -35,6 +46,11 @@ Gold, in priority order, recorded per scored row in
    Only the final extraction attempt grades a decision about it: when that
    attempt has no score the row has no gold, whatever an earlier attempt scored;
 3. none: the row is counted under ``n_unscored_by_reason``. It is never scored 0.
+   ``ambiguous_attempt`` is the reason when a decision names an attempt (or the
+   final one) that has extractions of several classes and no ``doc_type`` says
+   which one it observed. A decision that names its class is graded by that
+   class's extraction, never by an untyped one beside it, and its final score
+   is the record's last attempt, never an older attempt of its class.
 
 Every scorecard carries ``n``, ``n_scored``, ``n_unscored_by_reason``
 (``n == n_scored + sum(n_unscored_by_reason.values())``), a ``metrics`` dict
@@ -81,6 +97,8 @@ DEFAULT_RETRY_EPSILON = 0.05
 _CHANGED = frozenset({"correct", "reclassify", "reject"})
 #: Extraction work the person reviewed field by field.
 _FIELD_REVIEWED = frozenset({"approve_as_is", "correct"})
+#: llm-mailroom ``RunRecord.gold.human_decision`` values (``export_review_labels``).
+_MAILROOM_DECISIONS = frozenset({"approved", "rejected"})
 
 _JUDGE_METRICS = {
     "verdict_accuracy": "judge_verdict_accuracy",
@@ -155,6 +173,7 @@ class _Row:
     corrections: dict[str, Any]
     reject_reason: str | None
     attempts: tuple[tuple[int, str | None, float | None], ...]
+    human_doc_type: str | None
     judge_verdict: str | None
     judge_on_attempt: int | None
     judge_doc_type: str | None
@@ -181,12 +200,39 @@ class _Row:
         """True when the person changed or refused the model's work."""
         return self.outcome in _CHANGED
 
+    def _at(self, attempt: int | None, doc_type: str | None) -> list[tuple[str | None, float | None]]:
+        """``(class, score)`` of the extractions of ``attempt`` (``None``: the final one)."""
+        applicable = [
+            (number, kind, score)
+            for number, kind, score in self.attempts
+            if doc_type is None or kind is None or kind == doc_type
+        ]
+        if attempt is None:
+            # The final attempt of the record, not the last one of ``doc_type``:
+            # an earlier attempt's score never grades the final extraction.
+            attempt = max((number for number, _kind, _score in self.attempts), default=None)
+        matches = [(kind, score) for number, kind, score in applicable if number == attempt]
+        if doc_type is not None:
+            # An extraction of ``doc_type`` wins over an untyped one on the same
+            # attempt, so list order never picks the score.
+            exact = [(kind, score) for kind, score in matches if kind == doc_type]
+            return exact or matches
+        return matches
+
+    def ambiguous(self, attempt: int | None, doc_type: str | None) -> bool:
+        """True when ``attempt`` has extractions of several classes and ``doc_type`` is unknown.
+
+        Taking the first match would let list order decide the gold (#160).
+        """
+        if doc_type is not None:
+            return False
+        # An untyped extraction next to a typed one is ambiguous too.
+        return len({kind for kind, _score in self._at(attempt, None)}) > 1
+
     def score_of(self, attempt: int, doc_type: str | None = None) -> float | None:
         """Dataset score of extraction ``attempt`` (of ``doc_type`` when both are known)."""
-        for number, kind, score in self.attempts:
-            if number == attempt and (doc_type is None or kind is None or kind == doc_type):
-                return score
-        return None
+        matches = self._at(attempt, doc_type)
+        return matches[0][1] if matches else None
 
     def final_score(self, doc_type: str | None = None) -> float | None:
         """Dataset score of the final extraction attempt (of ``doc_type`` if known).
@@ -194,12 +240,39 @@ class _Row:
         ``None`` when that attempt has no score: an earlier attempt's score does
         not grade the final extraction.
         """
-        applicable = [
-            (number, score)
-            for number, kind, score in self.attempts
-            if doc_type is None or kind is None or kind == doc_type
-        ]
-        return max(applicable, key=lambda pair: pair[0])[1] if applicable else None
+        matches = self._at(None, doc_type)
+        return matches[0][1] if matches else None
+
+    @property
+    def resolved_doc_type(self) -> str | None:
+        """The class of the extraction the person resolved, when it is known.
+
+        A ``reclassify`` resolved the final extraction's class (``human_doc_type``
+        is the new class); any other resolution confirmed ``human_doc_type``.
+        """
+        final = {kind for kind, _score in self._at(None, None) if kind is not None}
+        final_kind = next(iter(final)) if len(final) == 1 else None
+        if self.resolution == "reclassify":
+            return final_kind
+        return self.human_doc_type or final_kind
+
+    def human_applies_to(self, doc_type: str | None) -> bool:
+        """True when human gold may grade a decision that observed ``doc_type``."""
+        final = {kind for kind, _score in self._at(None, None) if kind is not None}
+        if doc_type is None:
+            # An untyped decision observed the final attempt's class, if it has one.
+            if not final:
+                return True
+            if len(final) > 1:
+                return False
+            doc_type = next(iter(final))
+        resolved = self.resolved_doc_type
+        if resolved is not None:
+            return doc_type == resolved
+        # The resolved class is unknown. Apply human gold only when nothing
+        # shows another class: a final attempt with several typed classes
+        # leaves the person's class open, so the corpus grades the decision.
+        return not final
 
 
 def _read(raw: Mapping[str, Any], index: int) -> _Row:
@@ -208,8 +281,7 @@ def _read(raw: Mapping[str, Any], index: int) -> _Row:
         raise TypeError(f"record {index} must be a mapping; got {type(raw).__name__}")
     source = _label(_pick(raw, "gold", "label_source"))
     resolution = _label(_pick(raw, "gold", "human_resolution", "resolution"))
-    if resolution not in RESOLUTIONS or source == "corpus":
-        resolution = None  # an explicit corpus label is not the person's outcome
+    human_doc_type = _label(_pick(raw, "gold", "human_doc_type"))
     corrections = _pick(raw, "gold", "field_corrections", "human_fields")
     removed = _pick(raw, "gold", "removed_fields")
     if isinstance(removed, (list, tuple)) and removed:
@@ -222,6 +294,10 @@ def _read(raw: Mapping[str, Any], index: int) -> _Row:
         number = item.get("attempt")
         number = number if isinstance(number, int) and not isinstance(number, bool) else position + 1
         attempts.append((number, _label(item.get("doc_type")), _number(item.get("extraction_score"))))
+    if resolution is None:
+        resolution = _mailroom_resolution(_label(_pick(raw, "gold", "human_decision")), human_doc_type, attempts)
+    if resolution not in RESOLUTIONS or source == "corpus":
+        resolution = None  # an explicit corpus label is not the person's outcome
     judge = _section(raw, "judge")
     ran = judge.get("ran")
     verdict = _label(_pick(raw, "judge", "verdict", "judge_verdict")) if ran is not False else None
@@ -247,6 +323,7 @@ def _read(raw: Mapping[str, Any], index: int) -> _Row:
         corrections=dict(corrections) if isinstance(corrections, Mapping) else {},
         reject_reason=_label(_pick(raw, "gold", "human_reject_reason", "reject_reason")),
         attempts=tuple(attempts),
+        human_doc_type=human_doc_type,
         judge_verdict=verdict,
         judge_on_attempt=judged if isinstance(judged, int) and not isinstance(judged, bool) else None,
         judge_doc_type=_label(judge.get("doc_type")),
@@ -259,6 +336,28 @@ def _read(raw: Mapping[str, Any], index: int) -> _Row:
         dataset_revision=run.get("dataset_revision") or raw.get("dataset_revision"),
         split=run.get("split") or raw.get("split"),
     )
+
+
+def _mailroom_resolution(
+    decision: str | None,
+    human_doc_type: str | None,
+    attempts: list[tuple[int, str | None, float | None]],
+) -> str | None:
+    """Map llm-mailroom's ``human_decision`` onto a resolution (#159).
+
+    ``rejected`` is ``reject``. ``approved`` is ``reclassify`` when the person
+    named a class other than the final extraction's, else ``approve_as_is``;
+    field edits turn that into ``correct`` through :attr:`_Row.outcome`.
+    """
+    if decision not in _MAILROOM_DECISIONS:
+        return None
+    if decision == "rejected":
+        return "reject"
+    last = max((number for number, _kind, _score in attempts), default=None)
+    final = {kind for number, kind, _score in attempts if number == last and kind is not None}
+    if human_doc_type and len(final) == 1 and human_doc_type not in final:
+        return "reclassify"
+    return "approve_as_is"
 
 
 def _rows(records: Iterable[Mapping[str, Any]]) -> list[_Row]:
@@ -341,7 +440,9 @@ def _expected_verdict(row: _Row, low: float, high: float) -> tuple[str | None, s
     }.get(row.outcome or "")
     last = max((number for number, _kind, _score in row.attempts), default=None)
     judged_final = row.judge_on_attempt is None or last is None or row.judge_on_attempt >= last
-    if human and judged_final:
+    if row.ambiguous(row.judge_on_attempt, row.judge_doc_type):
+        return None, "ambiguous_attempt"
+    if human and judged_final and row.human_applies_to(row.judge_doc_type):
         return human, "human"
     if row.judge_on_attempt is not None:
         score = row.score_of(row.judge_on_attempt, row.judge_doc_type)
@@ -452,12 +553,16 @@ def _arbiter_outcome(
         return None, "unknown_decision"
     if decision == "retry_extraction":
         attempt = on_attempt if on_attempt is not None else 1
+        if row.ambiguous(attempt, doc_type) or row.ambiguous(attempt + 1, doc_type):
+            return None, "ambiguous_attempt"
         before, after = row.score_of(attempt, doc_type), row.score_of(attempt + 1, doc_type)
         if before is None or after is None:
             return None, "no_retry_scores"
         # Rounded: 0.85 - 0.80 is 0.04999999999999993 in floats.
         return round(after - before, 9) >= epsilon, "corpus"
-    if row.resolution is not None:
+    if row.ambiguous(None, doc_type):
+        return None, "ambiguous_attempt"
+    if row.resolution is not None and row.human_applies_to(doc_type):
         if decision == "accept_with_caveats":
             return row.outcome == "approve_as_is", "human"
         return row.human_changed, "human"
@@ -595,9 +700,10 @@ def score_review_tray(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
 
     A row is resolved when it carries a human resolution. A row without one is
     ``unresolved`` when it is still parked (``final_stage`` ``review``) and
-    ``not_parked`` otherwise. For resolved rows it reports the resolution mix,
-    ``wasted_review_rate`` (approved as is with no field corrections: the review
-    changed nothing), ``correction_rate``, ``reject_rate``, the reject-reason
+    ``not_parked`` otherwise. For resolved rows it reports the resolution mix (the
+    person's label as given), ``wasted_review_rate`` (approved as is with no field corrections: the review
+    changed nothing), ``correction_rate`` (``correct``, where an ``approve_as_is`` that
+    records field edits counts as ``correct``), ``reject_rate``, the reject-reason
     distribution, ``field_correction_rate`` (per field, over the reviews that
     checked fields: ``approve_as_is`` and ``correct``) and ``by_review_cause``
     (per cause, the share of its parks where the person changed the work).
@@ -612,8 +718,9 @@ def score_review_tray(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             unscored["unresolved"] += 1
         else:
             unscored["not_parked"] += 1
-    mix = Counter(row.resolution for row in resolved)
-    wasted = sum(1 for row in resolved if row.resolution == "approve_as_is" and not row.corrections)
+    mix = Counter(row.resolution for row in resolved)  # the person's label, as given
+    outcomes = Counter(row.outcome for row in resolved)  # an edited approve_as_is is a correct
+    wasted = outcomes["approve_as_is"]
     reasons = Counter(row.reject_reason or "unspecified" for row in resolved if row.resolution == "reject")
     field_reviews = [row for row in resolved if row.resolution in _FIELD_REVIEWED]
     field_edits = Counter(str(name) for row in field_reviews for name in row.corrections)
@@ -625,7 +732,7 @@ def score_review_tray(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             cause_changed[cause] += int(row.human_changed)
     metrics = {
         "wasted_review_rate": _rate(wasted, len(resolved)),
-        "correction_rate": _rate(mix["correct"], len(resolved)),
+        "correction_rate": _rate(outcomes["correct"], len(resolved)),
         "reject_rate": _rate(mix["reject"], len(resolved)),
     }
     return _card(

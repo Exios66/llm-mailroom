@@ -196,8 +196,8 @@ def cross_fit_cutoffs(
         "holdout_accuracy": right / kept if kept else None,
         "holdout_accuracy_ci": interval,
         "holdout_share_accepted": kept / len(shuffled) if shuffled else None,
-        # Decide on the exact bound: ``wilson_ci`` rounds ``lo`` to 4 places,
-        # which can lift a just-short bound over the target.
+        # Decide on the exact bound, not the 4-place display value in
+        # ``holdout_accuracy_ci``.
         "meets_target": bool(kept and _wilson_lower(right / kept, kept, z) >= target),
     }
 

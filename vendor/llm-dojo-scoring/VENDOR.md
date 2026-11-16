@@ -2,7 +2,7 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `93eedd8c3270ce95af56f1e17ce40bae3d03b330` (untagged: the Dojo `v0.30.0` head, i.e. the 0.30.0 cut plus llm-dojo-scoring#157; no GitHub release exists yet)
+- Exact source commit: `c0f6cf42e48506b8cb9b930b6667a65fea3c1af7` (untagged: Dojo `v0.30.0` (`13adc8e`, which includes the #163 follow-ups) plus the correspondence `production_prompts` v8 correction for llm-mailroom#269, on branch `claude/correspondence-v8-on-v0.30.0`; no GitHub release exists yet)
 - Source package version: `0.30.0` (`__version__` at that commit)
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
   That includes the package data `schemas/data/extraction_status.json`, `ml/data/ml_contract.json`

@@ -81,6 +81,6 @@ Package versions and pins refreshed 2026-10-23 from each repository's README and
 | Item             | Version                                                |
 | ---------------- | ------------------------------------------------------ |
 | llm-mailroom     | v0.9.3                                                 |
-| llm-dojo-scoring | v0.29.0 latest as of 2026-11-15, 0.30.0 staged and untagged; llm-mailroom pins 93eedd8c3270ce95af56f1e17ce40bae3d03b330 |
+| llm-dojo-scoring | v0.29.0 latest as of 2026-11-15, 0.30.0 staged and untagged; llm-mailroom pins c0f6cf42e48506b8cb9b930b6667a65fea3c1af7 |
 | The-Mailroom     | v0.5.0                                                 |
 | mailroom-dataset | schema v9, commit `ccd040f6` (tag v9.3), 3,302 documents, as of 2026-11-09 |
