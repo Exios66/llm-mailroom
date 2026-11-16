@@ -66,6 +66,7 @@ the workbook properties.
   `not_applicable`, or changed the subclass. Dataset values stay unhighlighted. `verified` is the only status that
   is not a dataset code: a person sets it after checking a value, and a flagged date stays counted as missing until it
   is `verified`.
+- **One editable source per label:** edit labels on the `To Label` sheet when listed there. The matching class-sheet cells are protected formula links; click one to reach its input. Other class-sheet fields stay editable. The class coverage Summary and To Label progress recalculate from those same inputs. Keep sheet protection and links intact. `Date Audit` is explicitly a snapshot of the original labels as built, rather than a live audit of corrections.
 - **Formulas:** `still missing (live)`, `Labels missing` and the Summary roll-ups count status cells only
   (`SUMPRODUCT` with a column mask), use only functions Excel, LibreOffice and Google Sheets share, and follow edits.
   `fields needing labels (as built)` and `still missing (live)` agree at build time. Filter, do not sort: links between

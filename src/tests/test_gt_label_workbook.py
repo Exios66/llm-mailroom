@@ -181,6 +181,25 @@ def test_to_label_lists_only_documents_with_a_missing_label(tool, label_rows, tm
     assert [ins.cell(row=r, column=1).value for r in range(2, ins.max_row + 1)] == ["DOC-D"]
 
 
+def test_to_label_is_the_single_editable_source_for_its_labels(tool, label_rows, tmp_path):
+    out, _, wb = _build(tool, label_rows, tmp_path)
+    compact, full = wb["To Label – Correspondence"], wb["Correspondence"]
+    input_row = next(r for r in range(2, compact.max_row + 1) if compact.cell(r, 1).value == "DOC-A")
+    view_row = next(r for r in range(2, full.max_row + 1) if full.cell(r, 1).value == "DOC-A")
+    assert full.protection.sheet
+    for name, value in (("communication_date", "March 3, 2001"), ("communication_date | status", "populated")):
+        source = compact.cell(input_row, _col(compact, name))
+        mirror = full.cell(view_row, _col(full, name))
+        assert mirror.data_type == "f" and source.data_type != "f"
+        assert f"'{compact.title}'!{source.coordinate}" in mirror.value
+        assert mirror.protection.locked
+        source.value = value
+    wb.save(out)
+    reloaded = load_workbook(out)
+    assert reloaded[compact.title].cell(input_row, _col(compact, "communication_date")).value == "March 3, 2001"
+    assert reloaded[full.title].cell(view_row, _col(full, "communication_date")).data_type == "f"
+
+
 def test_to_label_columns_follow_the_spec_and_skip_complete_fields(tool, label_rows, tmp_path):
     _, _, wb = _build(tool, label_rows, tmp_path)
     ws = wb["To Label – Correspondence"]
@@ -381,6 +400,17 @@ def _col(ws, header):
     return _headers(ws).index(header) + 1
 
 
+def _linked_value(wb, cell):
+    """Read a literal or the source of a protected class-view link (not a formula evaluator)."""
+    import re
+
+    if cell.data_type != "f":
+        return cell.value
+    match = re.fullmatch(r'=IF\((\x27([^\x27]+)\x27!([A-Z]+[0-9]+))="","",\1\)', cell.value)
+    assert match, cell.value
+    return wb[match[2]][match[3]].value
+
+
 def _readme_text(wb):
     return "\n".join(str(c.value) for row in wb["README"].iter_rows() for c in row if c.value)
 
@@ -447,7 +477,7 @@ def test_revision_is_resolved_and_files_come_from_that_commit(tool, fake_hub, tm
     assert not any("datasets-server" in u or "stale" in u for u in fake_hub)
     assert any(f"/resolve/{SHA}/parquet/ground_truth/train/" in u for u in fake_hub)
     ws = wb["Correspondence"]
-    assert {ws.cell(row=r, column=_col(ws, "expected_subclass")).value for r in range(2, ws.max_row + 1)} <= {
+    assert {_linked_value(wb, ws.cell(row=r, column=_col(ws, "expected_subclass"))) for r in range(2, ws.max_row + 1)} <= {
         "email", "memo"}  # the pinned rows, not the STALE ones
     assert stats["to_label"]["To Label – Correspondence"] == 2
 
@@ -481,7 +511,7 @@ def test_corporate_filing_number_follows_the_dojo_unlabeled_fields(tool, tmp_pat
     headers = _headers(ws)
     assert headers.index("jurisdiction") + 2 == headers.index("filing_number") < headers.index("intent")
     by_id = {ws.cell(row=r, column=1).value: r for r in range(2, ws.max_row + 1)}
-    status = lambda doc: ws.cell(row=by_id[doc], column=_col(ws, "filing_number") + 1).value  # noqa: E731
+    status = lambda doc: _linked_value(wb, ws.cell(row=by_id[doc], column=_col(ws, "filing_number") + 1))  # noqa: E731
     assert status("ART-1") == "UNLABELED" and status("ART-2") == "populated"
     assert status("ART-3") == "schema_documented_absence" and status("BYL-1") == "not_applicable"
     assert status("BYL-2") == "pending_annotation"

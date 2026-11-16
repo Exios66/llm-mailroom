@@ -58,6 +58,8 @@ Work landed on `main` since the last tagged release.
 
 ### Fixed
 
+- **Ground-truth workbook edit consistency:** labels on a To Label sheet are the sole inputs for matching class-sheet cells, which are protected links. Class coverage and compact progress now read the same corrections. Date Audit is labelled as a build-time snapshot.
+
 - **Audit remediation (#191-#201).**
   - Grounded field scoring now receives the real transcription (`result["doc_text"]`), not the pre-invoke snapshot that never carries it (#191), and `observability.scoring_wiring` is imported by `build_graph.py`, `run_pilot.py` and `run_hf_pilot.py` so field scoring, judge gating and the embedding rescue run on the calibrated `taxonomy.yaml` maps instead of Dojo package defaults (#192).
   - `GET /api/relations/mode` runs `mode_status()` off the event loop (#193).

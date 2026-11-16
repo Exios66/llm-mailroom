@@ -1,8 +1,7 @@
 """Build an editable ground-truth label workbook (.xlsx) from a pinned corpus revision.
 
-Every field the Dojo scores gets a value column and a status column, per document
-class, whether or not the dataset labels it, so missing labels are visible and can be
-filled in. A "Date Audit" sheet lists every date label with the components it
+Fields the dataset carries get a value column and a status column, per document
+class, so missing labels are visible and can be filled in. A "Date Audit" sheet lists every date label with the components it
 actually states (year / month / day); a "Summary" sheet counts coverage with live
 formulas. Status, subclass and every closed-vocabulary field are drop-downs (Excel list
 validation, shown as chips by Google Sheets) fed from a hidden "Lists" sheet; a label a
@@ -47,7 +46,7 @@ import pandas as pd
 from openpyxl import Workbook
 from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Protection, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -717,6 +716,13 @@ def _add_to_label(wb: Workbook, rows: pd.DataFrame, class_cols: dict, to_label: 
     tl["text_docs"] = sum(len(docs) for _, _, docs in plan)
 
     for cls, title, docs in plan:
+        class_sheet = wb[title]
+        class_rows = {
+            idx: r for r, (idx, _) in enumerate(
+                rows[rows.expected == cls].sort_values(["split", "expected_subclass", "filename"]).iterrows(),
+                start=2,
+            )
+        }
         tl_name, tx_name = f"To Label – {title}", f"Text – {title}"
         chunked = []
         text_row = 2
@@ -790,12 +796,26 @@ def _add_to_label(wb: Workbook, rows: pd.DataFrame, class_cols: dict, to_label: 
             else:
                 _goto(lc, tx_name, f"A{trow}", "open text")
             _set_str(_data_cell(ws, r, c_sub, wrap=False), d.subclass)
+            # One editable copy: compact inputs feed the class view and its Summary.
+            # Locked links prevent a person from replacing a mirror with a conflicting value.
+            class_row = class_rows[d.row.name]
+            def mirror_class_cell(class_col: int, input_col: int) -> None:
+                ref = f"'{tl_name}'!{get_column_letter(input_col)}{r}"
+                cell = class_sheet.cell(class_row, class_col)
+                cell.value = f'=IF({ref}="","",{ref})'
+                cell.protection = Protection(locked=True)
+                cell.hyperlink = Hyperlink(ref=cell.coordinate, location=ref)
+                cell.comment = Comment(f"Linked view. Edit {ref}; this is the only input for this label.", "gt-label-workbook")
+
+            mirror_class_cell(4, c_sub)
             mask, date_cols = [], []
             for j, idx in enumerate(used):
                 _, header, _, value, status, _ = d.cells[idx]
                 vcell = _data_cell(ws, r, first + 2 * j)
                 _set_str(vcell, clip(value, f"{tl_name}:{d.row.document_id}:{header}"))
                 _data_cell(ws, r, first + 2 * j + 1, status)
+                mirror_class_cell(len(ID_COLS) + 1 + 2 * idx, first + 2 * j)
+                mirror_class_cell(len(ID_COLS) + 2 + 2 * idx, first + 2 * j + 1)
                 if _date_problem(d.cells[idx]):
                     mask.append("2")
                     date_cols.append(get_column_letter(first + 2 * j + 1))
@@ -818,6 +838,8 @@ def _add_to_label(wb: Workbook, rows: pd.DataFrame, class_cols: dict, to_label: 
         ws.freeze_panes = "B2"
         ws.auto_filter.ref = f"A1:{get_column_letter(flag_col)}{n + 1}"
         ws.row_dimensions[1].height = 48
+        class_sheet.protection.sheet = True
+        class_sheet.protection.autoFilter = False
         tl["sheets"].append((tl_name, n, get_column_letter(live), get_column_letter(built)))
 
         if external:
@@ -894,6 +916,10 @@ def _readme_rows(*, dataset: str, revision: str, resolved: str | None, n_rows: i
          "(hidden, right edge) are helper columns: click the + above them to show.", "p"),
         ("", "p"),
         ("HOW TO LABEL", "h"),
+        ("A label has one editable source. When it appears on a To Label sheet, edit it there: the class "
+         "sheet links to that input and protects the linked cell. Click a linked class cell to reach its input. "
+         "Other class-sheet values remain editable. Both class coverage and To Label progress follow the same "
+         "inputs after recalculation; keep the linked formulas and sheet protection intact.", "p"),
         ("1. Yellow cells are missing labels. Type the value as the document states it, then set the status cell "
          "to 'populated' (drop-down). Both cells turn green.", "p"),
         ("2. Dates: write the date exactly as the document states it, INCLUDING THE YEAR when the document has "
@@ -912,7 +938,7 @@ def _readme_rows(*, dataset: str, revision: str, resolved: str | None, n_rows: i
         ("7. Identity columns (document_id, filename, split, ...) are for reading: do not edit them. On the class "
          "sheets, 'Hub viewer' opens the dataset viewer's text search for the filename in the 'default' config "
          "(the viewer's search index can take a minute to load).", "p"),
-        ("8. 'Date Audit' lists every date label, one span per row, with the components it states; use "
+        ("8. 'Date Audit' is a snapshot as built: every original date label, one span per row, with its original components; use "
          "'Corrected value' for rows flagged MISSING LABEL, NO YEAR, NO DAY/MONTH or UNPARSEABLE. Its counts "
          "do not feed the To Label counters: correct the label itself on the To Label sheet.", "p"),
         ("9. FILTER with the header arrows; do not SORT. Links between sheets point at fixed rows.", "p"),
@@ -1018,6 +1044,7 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
             for i, v in enumerate([row.document_id, row.filename, row.split, subclass,
                                    row.source_corpus, row.annotation_method], start=1):
                 _set_str(_data_cell(ws, r, i, fill=None if i == 4 else IDFILL, wrap=i == 2), str(v))
+            ws.cell(r, c_sub).protection = Protection(locked=False)
             link = _data_cell(ws, r, 7, wrap=False)
             _url(link, f"https://huggingface.co/datasets/{dataset}/viewer/default/{row.split}"
                        f"?q={quote(str(row.filename), safe='')}", "open")
@@ -1027,6 +1054,8 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
                 vcell = _data_cell(ws, r, first + 2 * j)
                 _set_str(vcell, clip(value, f"{title}:{row.document_id}:{header}"))
                 _data_cell(ws, r, first + 2 * j + 1, status)
+                vcell.protection = Protection(locked=False)
+                ws.cell(r, first + 2 * j + 1).protection = Protection(locked=False)
                 mask.append("1" if status in MISSING else "0")
                 if status in MISSING:
                     vcell.fill = TODO
@@ -1084,8 +1113,8 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
 
 def _date_audit(dates, date_rows: list[list], parts_source: str) -> None:
     heads = ["Sheet", "document_id", "filename", "split", "subclass", "date field",
-             "GT value (one span per row)", "status", "stated year", "stated month", "stated day",
-             "flag", "Corrected value (edit)", "Notes (edit)"]
+             "GT value (as built, one span per row)", "status (as built)", "stated year", "stated month", "stated day",
+             "flag (as built)", "Corrected value (edit)", "Notes (edit)"]
     for i, (h, w) in enumerate(zip(heads, (18, 22, 34, 7, 18, 18, 40, 18, 9, 9, 9, 22, 28, 30)), start=1):
         _header(dates, i, h, HEAD_VAL if i >= 13 else HEAD_ID, width=w)
     for r, rec in enumerate(date_rows, start=2):
