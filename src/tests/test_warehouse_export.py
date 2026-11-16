@@ -313,3 +313,49 @@ def test_terminal_fetch_over_the_limit_returns_each_document_once(warehouse_env,
     )
 
     assert sorted(record.doc_id for record in records) == ["a-doc", "z-doc"]
+
+
+def _set_updated_at(doc_id: str, when: datetime) -> None:
+    import asyncio
+
+    from sqlalchemy import update
+
+    from storage.catalog import DocumentRecord
+    from storage.db import async_session
+
+    async def _go() -> None:
+        async with async_session() as session:
+            await session.execute(
+                update(DocumentRecord)
+                .where(DocumentRecord.doc_id == doc_id)
+                .values(updated_at=when)
+            )
+            await session.commit()
+
+    asyncio.run(_go())
+
+
+def test_terminal_fetch_by_doc_ids_honours_since_and_orders_across_chunks(
+    warehouse_env, temp_base_dir, monkeypatch
+):
+    """#185: the doc_ids branch ignored ``since`` and returned rows in chunk order."""
+    import asyncio
+
+    from storage import warehouse
+
+    monkeypatch.setattr(warehouse, "_IN_CLAUSE_CHUNK_SIZE", 2)
+    stamps = {
+        f"since-d{n}": datetime(2026, 1, n, 12, 0, tzinfo=timezone.utc) for n in range(1, 6)
+    }
+    for doc_id, when in stamps.items():
+        _seed_terminal_doc(temp_base_dir, doc_id=doc_id)
+        _set_updated_at(doc_id, when)
+    # Newest first, so chunk order (d5,d4 | d3,d2 | d1) is the reverse of updated_at order.
+    requested = list(reversed(list(stamps)))
+
+    everything = asyncio.run(warehouse.fetch_terminal_documents(doc_ids=requested))
+    assert [r.doc_id for r in everything] == list(stamps)
+
+    cutoff = stamps["since-d2"]
+    newer = asyncio.run(warehouse.fetch_terminal_documents(doc_ids=requested, since=cutoff))
+    assert [r.doc_id for r in newer] == ["since-d3", "since-d4", "since-d5"]

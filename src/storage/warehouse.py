@@ -332,13 +332,17 @@ async def fetch_terminal_documents(
         if doc_ids:
             records: list = []
             for chunk in _doc_id_chunks(doc_ids):
-                result = await session.execute(
-                    select(DocumentRecord).where(
-                        DocumentRecord.doc_id.in_(chunk),
-                        DocumentRecord.stage.in_(tuple(TERMINAL_STAGES)),
-                    )
+                chunk_query = select(DocumentRecord).where(
+                    DocumentRecord.doc_id.in_(chunk),
+                    DocumentRecord.stage.in_(tuple(TERMINAL_STAGES)),
                 )
+                if since is not None:
+                    chunk_query = chunk_query.where(DocumentRecord.updated_at > since)
+                result = await session.execute(chunk_query)
                 records.extend(result.scalars().all())
+            # Chunks are fetched independently; restore the same order the
+            # unfiltered branch returns (updated_at, doc_id as a stable tie-break).
+            records.sort(key=lambda record: (record.updated_at, record.doc_id))
             return records
         query = select(DocumentRecord).where(
             DocumentRecord.stage.in_(tuple(TERMINAL_STAGES))
