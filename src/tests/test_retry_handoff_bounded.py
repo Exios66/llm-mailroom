@@ -170,3 +170,70 @@ def test_conflict_detection_still_reads_the_previous_extraction_from_state(monke
     assert len(seen) == 1
     assert seen[0][0] is state or seen[0][0]["extracted_data"] is state["extracted_data"]
     assert seen[0][1]["parties"] == ["Acme"]
+
+
+# --- the findings must describe the extraction being retried -----------------
+
+OLD_FINDING = "OLD finding about the pre-review extraction"
+
+
+def _attempt(n: int, verdict: str | None, findings: list[str] | None = None) -> dict:
+    return {
+        "attempt_no": n,
+        "kind": "extract",
+        "extracted_data": {},
+        "extraction_confidence": 0.6,
+        "guardrail": [],
+        "schema_valid": True,
+        "gate_ok": True,
+        "judge_verdict": verdict,
+        "judge_score": 0.5 if verdict else None,
+        "judge_findings": findings,
+        "judge_source_verified": None,
+    }
+
+
+def test_judge_findings_of_an_unjudged_attempt_are_not_handed_to_the_retry():
+    """The latest attempt has no judge verdict, so ``judge_findings`` are some earlier attempt's."""
+    state = _state(
+        arbiter_retry_count=0,
+        judge_findings=[OLD_FINDING],
+        extraction_attempt_history=[_attempt(1, None)],
+    )
+    assert OLD_FINDING not in bg._retry_handoff_summary(state)
+
+
+def test_judge_findings_of_the_judged_latest_attempt_are_still_handed_over():
+    state = _state(
+        arbiter_retry_count=0,
+        judge_findings=["governing_law contradicts source"],
+        extraction_attempt_history=[_attempt(1, "partial", ["governing_law contradicts source"])],
+    )
+    assert "governing_law contradicts source" in bg._retry_handoff_summary(state)
+
+
+def test_findings_survive_a_human_approval_for_audit_but_not_for_the_re_extraction_retry(monkeypatch):
+    """After a human re-extract the old judge_* fields stay on the state (archive trail), but the
+    retry of the NEW extraction must not be told the pre-review findings."""
+    from unittest.mock import patch
+
+    state = _state(
+        arbiter_retry_count=1,
+        judge_verdict="partial",
+        judge_findings=[OLD_FINDING],
+        extraction_attempt_history=[_attempt(1, "partial", [OLD_FINDING])],
+        review_causes=["low_confidence"],
+    )
+    with patch("graph.build_graph.interrupt", return_value={"decision": "approved", "resolution": "reclassify"}):
+        state.update(bg.human_review_node(state))
+    # Audit fields the human path deliberately keeps.
+    assert state["judge_findings"] == [OLD_FINDING] and state["judge_verdict"] == "partial"
+    assert state["arbiter_retry_count"] == 0 and state["extraction_attempt_history"] == []
+
+    monkeypatch.setattr(
+        bg, "_extract_contracts", lambda *a, **k: {"parties": [], "governing_law": None, "confidence": 0.3}
+    )
+    state.update(bg.extract_node(state))
+    assert [e["attempt_no"] for e in state["extraction_attempt_history"]] == [1]
+
+    assert OLD_FINDING not in bg._retry_handoff_summary(state)

@@ -2099,6 +2099,22 @@ def _is_blank_field(value: Any) -> bool:
     return value is None or (isinstance(value, (str, list, tuple, dict, set)) and len(value) == 0)
 
 
+def _judge_findings_describe_latest_attempt(state: Mapping[str, Any]) -> bool:
+    """True when ``judge_findings`` on the state are the verdict on the LATEST extraction attempt.
+
+    ``judge_verify_node`` stamps its verdict on the last history entry, and every new
+    attempt is appended without one. A human-approved re-extraction keeps the old
+    ``judge_*`` fields on the state for the archive trail but starts a new history,
+    so until the judge has run again the latest entry has no verdict and the findings
+    belong to the pre-review extraction. A state with no history (older checkpoints)
+    cannot say, so its findings are kept as before.
+    """
+    history = [e for e in state.get(attempt_history.HISTORY_KEY) or [] if isinstance(e, Mapping)]
+    if not history:
+        return True
+    return history[-1].get("judge_verdict") is not None
+
+
 def _retry_handoff_summary(state: Mapping[str, Any]) -> str:
     """Bounded retry-extraction prefix: what went wrong, never what was extracted (#253).
 
@@ -2107,7 +2123,10 @@ def _retry_handoff_summary(state: Mapping[str, Any]) -> str:
     and ``reasoning`` stay out (``_clean_fields_for_judge``), and the whole text
     is capped at ``RETRY_HANDOFF_MAX_CHARS`` with an explicit truncation marker.
     An arbiter-ordered retry already carries its fix-list and findings in
-    ``_build_handoff_context``, so those are not repeated here.
+    ``_build_handoff_context``, so those are not repeated here. Findings are
+    only included when they judged the extraction being retried: after a human
+    re-extraction the old ``judge_*`` fields are still on the state (kept for the
+    archive trail) but describe the pre-review attempt.
     """
     previous = state.get("extracted_data")
     previous = previous if isinstance(previous, dict) else {}
@@ -2134,7 +2153,7 @@ def _retry_handoff_summary(state: Mapping[str, Any]) -> str:
     ]
     if empty:
         parts.append("Fields the previous attempt left empty: " + ", ".join(empty) + ".")
-    if not state.get("arbiter_retry_count"):
+    if not state.get("arbiter_retry_count") and _judge_findings_describe_latest_attempt(state):
         findings = [str(f)[:_RETRY_HANDOFF_ITEM_CHARS] for f in state.get("judge_findings") or [] if f]
         if findings:
             parts.append("Judge findings: " + "; ".join(findings) + ".")
@@ -2643,6 +2662,42 @@ def _attempt_manifest_fields(state: Mapping[str, Any]) -> dict[str, Any]:
         "selected_attempt": state.get("selected_attempt"),
         "selected_attempt_reason": state.get("selected_attempt_reason"),
     }
+
+
+def _attempt_state_from_manifest(manifest) -> dict[str, Any]:
+    """The parked manifest's attempt history and selection, as state keys (#254).
+
+    For a run that archives the parked extraction without re-extracting (the
+    stateless approve/correct resume): without these the archive manifest
+    would overwrite the parked history with ``None``. A run that RE-extracts
+    must not call this: it starts its own history (``human_review_node``).
+    """
+    history = getattr(manifest, "extraction_attempt_history", None)
+    return {
+        attempt_history.HISTORY_KEY: [dict(e) for e in history] if history else [],
+        "selected_attempt": getattr(manifest, "selected_attempt", None),
+        "selected_attempt_reason": getattr(manifest, "selected_attempt_reason", None),
+    }
+
+
+def _abort_attempt_fields(state: Mapping[str, Any], doc_id: str | None) -> dict[str, Any]:
+    """Attempt history for an aborted run's manifest: state, else the parked manifest it replaces.
+
+    A live-resume abort carries a minimal state (no history key), and the failed
+    manifest supersedes the parked one, so the history is read from it first.
+    A state that has the key is authoritative, even when the history is empty.
+    """
+    if attempt_history.HISTORY_KEY in state:
+        return _attempt_manifest_fields(state)
+    parked = None
+    if doc_id:
+        from pipeline.bins import load_manifest
+
+        try:
+            parked = load_manifest(doc_id)
+        except Exception:
+            logger.exception("abort_attempt_history_load_failed", doc_id=doc_id)
+    return _attempt_manifest_fields(_attempt_state_from_manifest(parked) if parked is not None else state)
 
 
 def human_review_node(state: DocumentState) -> dict[str, Any]:
@@ -3888,6 +3943,7 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         extraction_source=state.get("extraction_source") or None,
         human_label=state.get("human_label") if isinstance(state.get("human_label"), dict) else None,
         **_abort_review_evidence(state, aborted_doc_id),
+        **_abort_attempt_fields(state, aborted_doc_id),
     )
     if aborted_doc_id:
         manifest_kwargs["doc_id"] = aborted_doc_id
@@ -4804,6 +4860,8 @@ def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> 
         "transient_error": False,
         "run_attempt": 0,
         **_manifest_evidence_state(manifest),
+        # The parked extraction is archived as is: its attempt history goes with it (#254).
+        **_attempt_state_from_manifest(manifest),
     }
     if manifest.intake:
         initial_state["intake_meta"] = dict(manifest.intake)
