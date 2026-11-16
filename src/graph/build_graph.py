@@ -2081,11 +2081,68 @@ def _extract_insurance_claims(
     return _run_chunked_extraction(InsuranceClaimsSpecialist, doc_text, pages, handoff_context)
 
 
+# #253: hard cap on the retry-extraction summary that is prefixed onto every
+# chunk window. The previous extraction's values never enter it.
+RETRY_HANDOFF_MAX_CHARS = 3000
+RETRY_HANDOFF_TRUNCATION_MARKER = " ...[truncated]"
+_RETRY_HANDOFF_ITEM_CHARS = 400
+_RETRY_HANDOFF_NAME_CHARS = 80
+
+
+def _is_blank_field(value: Any) -> bool:
+    return value is None or (isinstance(value, (str, list, tuple, dict, set)) and len(value) == 0)
+
+
+def _retry_handoff_summary(state: Mapping[str, Any]) -> str:
+    """Bounded retry-extraction prefix: what went wrong, never what was extracted (#253).
+
+    Carries the judge findings, the extraction guardrail issues and the NAMES of
+    the fields the previous attempt left empty. Values, ``_``-prefixed metadata
+    and ``reasoning`` stay out (``_clean_fields_for_judge``), and the whole text
+    is capped at ``RETRY_HANDOFF_MAX_CHARS`` with an explicit truncation marker.
+    An arbiter-ordered retry already carries its fix-list and findings in
+    ``_build_handoff_context``, so those are not repeated here.
+    """
+    previous = state.get("extracted_data")
+    previous = previous if isinstance(previous, dict) else {}
+    parts = [
+        "RE-EXTRACTION REQUESTED - previous extraction was low-confidence. "
+        "Please re-examine this document independently."
+    ]
+    notes: list[str] = []
+    if previous.get("_parse_error"):
+        notes.append("the previous reply could not be parsed")
+    failed = previous.get("_failed_chunks")
+    if isinstance(failed, (list, tuple, set, dict)):
+        failed = len(failed)
+    if isinstance(failed, (int, float)) and not isinstance(failed, bool) and failed > 0:
+        notes.append(f"{int(failed)} document window(s) were not extracted")
+    for issue in state.get("extraction_guardrail") or []:
+        notes.append(str(issue)[:_RETRY_HANDOFF_ITEM_CHARS])
+    if notes:
+        parts.append("Previous attempt problems: " + "; ".join(notes) + ".")
+    empty = [
+        str(name)[:_RETRY_HANDOFF_NAME_CHARS]
+        for name, value in _clean_fields_for_judge(previous).items()
+        if _is_blank_field(value)
+    ]
+    if empty:
+        parts.append("Fields the previous attempt left empty: " + ", ".join(empty) + ".")
+    if not state.get("arbiter_retry_count"):
+        findings = [str(f)[:_RETRY_HANDOFF_ITEM_CHARS] for f in state.get("judge_findings") or [] if f]
+        if findings:
+            parts.append("Judge findings: " + "; ".join(findings) + ".")
+    text = " ".join(parts)
+    if len(text) > RETRY_HANDOFF_MAX_CHARS:
+        keep = RETRY_HANDOFF_MAX_CHARS - len(RETRY_HANDOFF_TRUNCATION_MARKER)
+        text = text[:keep] + RETRY_HANDOFF_TRUNCATION_MARKER
+    return text
+
+
 def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     doc_type = state.get("doc_type", "")
     doc_text = state.get("doc_text", "")
     doc_pages = state.get("doc_pages") or []
-    prev_extracted = state.get("extracted_data", {})
     attempts = state.get("extraction_attempts", 0)
 
     # Inner-context memory (iterative improvement): the specialist's retry sees
@@ -2097,11 +2154,10 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         memory = recent_context(mem_name, doc_type=doc_type or "", k=3) if mem_name else ""
     except Exception:
         memory = ""
-    augmented_prefix = (
-        "RE-EXTRACTION REQUESTED - previous extraction was low-confidence. "
-        "Please re-examine this document independently. "
-        f"Previous attempt found: {prev_extracted}"
-    )
+    # #253: findings and field names only, never the previous values. Every
+    # chunk window gets this prefix, and values in it were repeated back by
+    # each window and kept by the merge's list union.
+    augmented_prefix = _retry_handoff_summary(state)
     handoff_parts = [_build_handoff_context(state), augmented_prefix]
     if memory:
         handoff_parts.append(memory)
