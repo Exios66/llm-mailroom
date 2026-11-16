@@ -742,6 +742,7 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
         apply_classification_override,
         copy_to_inbox,
         locate_document_file,
+        normalize_reviewer,
         plan_resolution,
         stage_name,
     )
@@ -869,7 +870,8 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
             notes=notes,
             submitted_extracted=payload.get("extracted_data"),
             field_corrections=payload.get("field_corrections"),
-            reviewer=payload.get("reviewer") or payload.get("reviewer_header"),
+            # A blank body ``reviewer`` must fall through to the X-Reviewer header (#251).
+            reviewer=normalize_reviewer(payload.get("reviewer"), payload.get("reviewer_header")),
             reject_reason=payload.get("reject_reason"),
         )
     except ValueError as exc:

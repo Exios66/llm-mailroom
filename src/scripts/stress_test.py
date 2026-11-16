@@ -177,7 +177,74 @@ SECRET_ENV = (
     "MAILROOM_LLM_FREE_ONLY",
     "GMAIL_ADDRESS",
     "GMAIL_APP_PASSWORD",
+    # Provider and service credentials read anywhere in the repo (#251): the
+    # LangChain agents read OPENAI_API_KEY, the providers read the others.
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY",
+    "GENERIC_API_KEY",
+    "LITELLM_API_KEY",
+    "LITELLM_MASTER_KEY",
+    "VLLM_API_KEY",
+    "MODAL_VLLM_API_TOKEN",
+    "MAILROOM_VLLM_API_TOKEN",
+    "HF_TOKEN",
+    "HUGGING_FACE_HUB_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "MAILROOM_API_TOKEN",
+    "MAILROOM_API_TOKENS",
+    "MAILROOM_API_TOKEN_REVOKED",
+    "MAILROOM_PAGER_WEBHOOK_SECRET",
+    "MAILROOM_PIPELINE_TOKEN",
+    "PIPELINE_TOKEN",
+    "TWILIO_AUTH_TOKEN",
+    "POSTGRES_PASSWORD",
+    "CLICKHOUSE_PASSWORD",
+    "NEXTAUTH_SECRET",
 )
+
+# Defensive: any variable named like a credential is dropped even when it is not
+# listed above, so a newly added provider key cannot leak into a stress worker.
+_SECRET_ENV_SUFFIXES = (
+    "_API_KEY",
+    "_SECRET",
+    "_SECRET_KEY",
+    "_ACCESS_KEY",
+    "_MASTER_KEY",
+    "_TOKEN",
+    "_TOKENS",
+    "_PASSWORD",
+)
+
+
+def _is_secret_env(name: str) -> bool:
+    upper = name.upper()
+    return upper in SECRET_ENV or upper.endswith(_SECRET_ENV_SUFFIXES)
+
+
+def _supports_cap_env(watcher) -> bool:
+    """True when the watcher's concurrency cap honors ``MAILROOM_MAX_CONCURRENT_DOCS``.
+
+    The variable is read in ``pipeline/config.py`` (``get_max_concurrent_docs``), not
+    in the watcher module, so grepping the watcher source never finds it (#251). Probe
+    the behavior the watcher actually uses instead; an older checkout without the
+    function reports False."""
+    getter = getattr(watcher, "get_max_concurrent_docs", None)
+    if not callable(getter):
+        return False
+    name = "MAILROOM_MAX_CONCURRENT_DOCS"
+    previous = os.environ.get(name)
+    os.environ[name] = "7"
+    try:
+        return getter() == 7
+    except Exception:
+        return False
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +273,7 @@ def _pct(values: list[float], q: float) -> float:
 
 def _worker_env(base_dir: str, log_level: str, extra: dict | None = None) -> dict:
     """Environment for a worker: hermetic, no tracing, no secrets, fresh base."""
-    env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV}
+    env = {k: v for k, v in os.environ.items() if not _is_secret_env(k)}
     env.update(
         {
             "MAILROOM_BASE_DIR": base_dir,
@@ -705,7 +772,6 @@ def w_throughput(cfg: dict) -> dict:
 
 
 def w_watcher_backpressure(cfg: dict) -> dict:
-    import inspect
     import threading
     import uuid
 
@@ -713,7 +779,7 @@ def w_watcher_backpressure(cfg: dict) -> dict:
     bins = _ensure_bins()
     from pipeline import watcher
 
-    supports_cap = "MAILROOM_MAX_CONCURRENT_DOCS" in inspect.getsource(watcher)
+    supports_cap = _supports_cap_env(watcher)
     n = cfg["files"]
     run_s = cfg["run_ms"] / 1000.0
     lock = threading.Lock()

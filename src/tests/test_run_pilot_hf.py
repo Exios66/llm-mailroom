@@ -338,3 +338,29 @@ def test_hf_rows_carry_source_corpus_and_source_filter_uses_it(temp_base_dir, mo
     monkeypatch.setattr(run_pilot, "MANIFEST", temp_base_dir / "no-such-manifest.csv")
     assert run_pilot.main(["--mock", "--per-class", "1", "--include", "contract", "--source", "sec_edgar"]) == 0
     assert "samples: 1 " in capsys.readouterr().out
+
+
+def test_progress_cost_includes_billed_error_rows(monkeypatch):
+    """#251: the live pager's ``cost_usd`` summed only non-error rows while the final
+    totals include calls billed before an error."""
+    from pipeline import pager
+
+    seen = {}
+    monkeypatch.setattr(
+        pager, "report_run_progress", lambda run_id, **kw: seen.update(kw)
+    )
+    ok = {"id": "a", "stage": "archived", "class_match": True, "wall_time_s": 1.0, "llm_cost_usd": 0.25,
+          "expected_doc_class": "contract", "llm_calls": 1}
+    err = {"id": "b", "status": "error", "error": "boom", "llm_cost_usd": 0.5, "expected_doc_class": "contract"}
+    run_pilot._page_progress("run-1", "label", 2, [ok, err])
+    assert seen["metrics"]["cost_usd"] == 0.75
+    assert run_pilot.summarize([ok, err])["total_cost_usd"] == 0.75
+
+
+def test_print_rows_class_column_is_the_predicted_class(capsys):
+    row = {"id": "a", "expected_doc_class": "contract", "expected_stage": "archived", "stage": "archived",
+           "actual_doc_class": "correspondence", "class_match": False, "classification_confidence": 0.9,
+           "llm_calls": 2, "wall_time_s": 1.0}
+    run_pilot.print_rows([row])
+    body = capsys.readouterr().out.splitlines()[2]
+    assert body.split()[:2] == ["a", "correspondence"]
