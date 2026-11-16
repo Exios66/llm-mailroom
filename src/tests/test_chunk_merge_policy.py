@@ -481,3 +481,32 @@ def test_free_text_colon_prefix_must_also_be_in_source(field):
     merged = merge_windows_by_evidence([({field: [claim], "confidence": 0.9}, source)])
     assert merged[field] == []
     assert merged["_unsupported_chunk_claims"][field] == [claim]
+
+
+def test_scalar_without_reasoning_removes_the_losing_witness():
+    from langchain_agents.specialist_agents import merge_windows_by_evidence
+
+    old = _window(confidence=0.5, governing_law="New York", entries=[
+        {"field": "governing_law", "evidence": "not present in this source"}])
+    new = _window(confidence=0.9, governing_law="Delaware")
+    result = merge_windows_by_evidence([(old, "a source"), (new, "a different source")])
+    assert result["governing_law"] == "Delaware"
+    assert not any(e.get("field") == "governing_law" for e in result["reasoning"]["entries"])
+
+
+@pytest.mark.parametrize("source", ["non-exclusive to Buyer", "preexclusive to Buyer", "exclusive to Buyership"])
+def test_evidence_does_not_match_inside_a_word(source):
+    from langchain_agents.specialist_agents import merge_windows_by_evidence
+
+    claim = "Exclusivity: exclusive to Buyer"
+    result = merge_windows_by_evidence([({"cuad_clauses": [claim], "confidence": 0.9}, source)])
+    assert result["cuad_clauses"] == []
+    assert result["_unsupported_chunk_claims"]["cuad_clauses"] == [claim]
+
+
+def test_evidence_accepts_a_whole_phrase_next_to_punctuation():
+    from langchain_agents.specialist_agents import merge_windows_by_evidence
+
+    claim = "Exclusivity: exclusive to Buyer"
+    result = merge_windows_by_evidence([({"cuad_clauses": [claim], "confidence": 0.9}, 'It is "exclusive to Buyer", as agreed.')])
+    assert result["cuad_clauses"] == [claim]

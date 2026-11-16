@@ -731,7 +731,7 @@ def extract_attachments(
         payload = part.get_payload(decode=True)
         if payload is None:
             payload = _nested_message_bytes(part)
-        if payload is None:
+        if not payload:
             logger.warning(
                 "gmail_attachment_no_payload",
                 filename=filename,

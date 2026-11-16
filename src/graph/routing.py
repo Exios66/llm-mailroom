@@ -485,7 +485,9 @@ def keep_best_attempt_enabled(state: Mapping[str, Any]) -> bool:
     ``extraction_attempt_history`` is always recorded; this knob only decides
     whether ``compile_report`` and the review handoff use the best-ranked
     attempt (``graph/attempts.py``: ``complete`` > ``partial`` > ``incomplete``,
-    then confidence, ties keep the latest). It ships ``false`` for the same
+    then confidence, ties keep the latest). Archive reporting retains the latest
+    when an earlier selection is still unsure or below the coverage floor.
+    It ships ``false`` for the same
     reason as ``judge_rejudge_retry``: the ranking trusts the judge, which is not
     calibrated yet (#242). Taxonomy ``confidence.keep_best_attempt``, per class
     overridable under ``by_class``. Routing decisions never read it.
