@@ -1101,8 +1101,13 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         }
     else:
         terminal_path = move_to_archive(
-            claimed, matter_id, manifest.doc_type or "unknown", doc_id=manifest.doc_id
+            claimed,
+            matter_id,
+            manifest.doc_type or "unknown",
+            doc_id=manifest.doc_id,
+            manifest=manifest,
         )
+        save_manifest(manifest)  # persist file_location (a numbered re-archive copy, #250)
         terminal_event = "triage_archived"
         sidecar = None
         try:

@@ -105,3 +105,43 @@ def test_release_manifest_parser_reads_path_sha_pairs():
     assert parsed["parquet/default/train/x.parquet"] == "a" * 64
     with pytest.raises(RuntimeError):
         parse_release_manifest("no checksums here")
+
+
+def _stub_fetch(monkeypatch, texts):
+    """Replace every network step of ``fetch_texts`` with an in-memory blind-config frame."""
+    import pandas as pd
+
+    from pipeline import live_manifest as lm
+
+    monkeypatch.setattr(lm, "_tree", lambda sha: [])
+    monkeypatch.setattr(lm, "_get_bytes", lambda url: b"")
+    monkeypatch.setattr(lm, "parse_release_manifest", lambda raw: {})
+    monkeypatch.setattr(lm, "_parquet_paths", lambda tree, config, split: ["blind/part-0.parquet"])
+    monkeypatch.setattr(lm, "_download_verified", lambda path, sha, release: b"")
+    frame = pd.DataFrame({lm.JOIN_KEY: list(texts), "doc_text": list(texts.values())})
+    monkeypatch.setattr(lm.pd, "read_parquet", lambda _buf: frame)
+    return lm
+
+
+def test_fetch_texts_verifies_the_recorded_hash(monkeypatch):
+    lm = _stub_fetch(monkeypatch, {"a.txt": "hello"})
+    row = {"filename": "a.txt", "split": "train", "content_sha256": lm._sha256(b"hello")}
+    assert lm.fetch_texts([row], {"sha": "0" * 40}) == {"a.txt": "hello"}
+    with pytest.raises(RuntimeError, match="content_sha256 mismatch for a.txt"):
+        lm.fetch_texts([{**row, "content_sha256": lm._sha256(b"other")}], {"sha": "0" * 40})
+
+
+def test_fetch_texts_names_a_blank_content_sha256_instead_of_reporting_a_mismatch(monkeypatch):
+    """#246: validation accepts a blank hash, so the fetch must say that is the problem."""
+    lm = _stub_fetch(monkeypatch, {"a.txt": "hello"})
+    row = {"filename": "a.txt", "split": "train", "content_sha256": ""}
+    with pytest.raises(RuntimeError, match=r"a\.txt: manifest row has no content_sha256; cannot verify") as exc:
+        lm.fetch_texts([row], {"sha": "0" * 40})
+    assert "mismatch" not in str(exc.value)
+
+
+def test_blank_content_sha256_still_passes_manifest_validation(tmp_path):
+    rows = load_manifest(FIXTURE)[:1]
+    out = tmp_path / "manifest.csv"
+    write_manifest_csv([{**rows[0], "content_sha256": ""}], out, {"dataset": "test", "revision": {"tag": "v9.3"}})
+    assert load_manifest(out)[0]["content_sha256"] == ""

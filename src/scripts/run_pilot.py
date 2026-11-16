@@ -903,7 +903,7 @@ def diff_report(new: dict, baseline: dict) -> dict:
 
 def print_rows(rows: list[dict]) -> None:
     id_w = max([24] + [len(str(r["id"])) + 1 for r in rows])  # corpus ids can be long
-    header = f"{'id':<{id_w}}{'class':<18}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
+    header = f"{'id':<{id_w}}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
     print(header)
     print("-" * len(header))
     for r in rows:
@@ -911,7 +911,7 @@ def print_rows(rows: list[dict]) -> None:
             print(f"{str(r.get('id')):<{id_w}}ERROR {r.get('error')}")
             continue
         print(
-            f"{r['id']:<{id_w}}{r['expected_doc_class']:<18}{r['expected_stage']:<10}{str(r['stage']):<10}"
+            f"{r['id']:<{id_w}}{r['expected_stage']:<10}{str(r['stage']):<10}"
             f"{r['expected_doc_class']:<18}{str(r['actual_doc_class']):<18}"
             f"{str(r['classification_confidence']):<5}{r['llm_calls']:<6}{r['wall_time_s']:<8}"
         )
@@ -946,7 +946,8 @@ def _page_progress(run_id: str, label: str, total: int, rows: list[dict], finish
         "acc": round(sum(1 for r in ok if r.get("class_match")) / n, 4) if n else None,
         "review_rate": round(sum(1 for r in ok if r.get("stage") == "review") / n, 4) if n else None,
         "failed": sum(1 for r in rows if r.get("status") == "error" or r.get("stage") == "failed"),
-        "cost_usd": round(sum(r.get("llm_cost_usd", 0.0) for r in ok), 4),
+        # Billed error rows count, as in the final totals: calls made before an error still cost money.
+        "cost_usd": round(sum(r.get("llm_cost_usd", 0.0) for r in rows), 4),
         "p50_latency_s": lat[len(lat) // 2] if lat else None,
     })
 
